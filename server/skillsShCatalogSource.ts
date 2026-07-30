@@ -362,6 +362,7 @@ type HashQualifiedSkillsShCatalogDetail = SkillsShCatalogDetail & {
 };
 
 type SkillsShMirrorQuarantineReason =
+  | "detail-http-404"
   | "identity-page-content-type"
   | "identity-page-fetch-failed"
   | "identity-page-http-404"
@@ -799,15 +800,20 @@ export function buildSkillsShMirrorObservation(
 }
 
 function safeMirrorIdentityError(row: SkillsShCatalogListRow, error: unknown) {
-  const externalId = row.id.trim().toLowerCase().slice(0, 512) || "missing";
-  const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
   const reason =
     error instanceof SkillsShMirrorIdentityError ? error.reason : "unsupported-identity";
+  return quarantinedMirrorRow(row, reason);
+}
+
+function quarantinedMirrorRow(row: SkillsShCatalogListRow, reason: SkillsShMirrorQuarantineReason) {
+  const externalId = row.id.trim().toLowerCase().slice(0, 512) || "missing";
+  const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
   const source = row.source.trim().toLowerCase().slice(0, 256) || "missing";
   const installUrl = row.installUrl?.trim() || null;
   console.warn(
-    `Unsupported skills.sh mirror identity: ${externalId} ` +
-      `(sourceType=${upstreamSourceType}, source=${source}, ` +
+    `Quarantined skills.sh mirror row: ${externalId} ` +
+      `(reason=${reason}, ` +
+      `sourceType=${upstreamSourceType}, source=${source}, ` +
       `installUrlPresent=${installUrl !== null})`,
   );
   return {
@@ -2192,10 +2198,20 @@ export async function fetchSkillsShMirrorBatch(
           rows[index] = safeMirrorIdentityError(listRow, error);
           continue;
         }
-        const [detailResponse, auditResponse] = await Promise.all([
-          fetchSkillsShMirrorDetail(identity.row.externalId, fetchOptions),
-          fetchSkillsShMirrorAudit(identity.row.externalId, fetchOptions),
-        ]);
+        let detailResponse: Awaited<ReturnType<typeof fetchSkillsShMirrorDetail>>;
+        let auditResponse: Awaited<ReturnType<typeof fetchSkillsShMirrorAudit>>;
+        try {
+          [detailResponse, auditResponse] = await Promise.all([
+            fetchSkillsShMirrorDetail(identity.row.externalId, fetchOptions),
+            fetchSkillsShMirrorAudit(identity.row.externalId, fetchOptions),
+          ]);
+        } catch (error) {
+          if (error instanceof SkillsShSourceHttpError && error.status === 404) {
+            rows[index] = quarantinedMirrorRow(listRow, "detail-http-404");
+            continue;
+          }
+          throw error;
+        }
         rowSourceBytes += detailResponse.sourceBytes + (auditResponse?.sourceBytes ?? 0);
         const detailPayload = detailResponse.value;
         const auditPayload = auditResponse?.value ?? null;

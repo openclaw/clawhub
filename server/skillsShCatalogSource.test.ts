@@ -2039,6 +2039,83 @@ describe("skills.sh Vercel source boundary", () => {
     );
   });
 
+  it("quarantines a missing captured detail and continues the source batch", async () => {
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "owner/repo/removed-skill",
+                installUrl: "https://github.com/owner/repo",
+                installs: 7,
+                name: "Removed Skill",
+                slug: "removed-skill",
+                source: "owner/repo",
+                sourceType: "github",
+                url: "https://skills.sh/owner/repo/removed-skill",
+              },
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
+      if (url.includes("/api/v1/skills/owner/repo/removed-skill")) {
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
+      if (url.includes("/api/v1/skills/vercel-labs/skills/find-skills")) {
+        return new Response(
+          JSON.stringify({
+            id: "vercel-labs/skills/find-skills",
+            source: "vercel-labs/skills",
+            slug: "find-skills",
+            installs: 42,
+            hash: "a".repeat(64),
+            files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+          }),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 2, maxDetailBytes: 64 },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "owner/repo/removed-skill",
+        upstreamSourceType: "github",
+        reason: "detail-http-404",
+      },
+      expect.objectContaining({
+        externalId: "vercel-labs/skills/find-skills",
+        sourceType: "github",
+        sourceContentHash: "a".repeat(64),
+      }),
+    ]);
+  });
+
   it("cancels an oversized chunked identity page before buffering the full body", async () => {
     let canceled = false;
     let chunkIndex = 0;
