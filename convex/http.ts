@@ -52,7 +52,6 @@ import {
   listPromotionsV1Http,
   promotionsGetRouterV1Http,
   promotionsPostRouterV1Http,
-  catalogFeedV1Http,
   catalogSkillsFeedV1Http,
   catalogClawsFeedV1Http,
   promotionsFeedV1Http,
@@ -65,6 +64,9 @@ import {
   skillsShCatalogTestV1Http,
   skillsShCatalogPublicV1Http,
 } from "./httpApiV1";
+import { signedCatalogFeedChangesHttp } from "./httpApiV1/catalogFeedChanges";
+import { signedCatalogFeedQueryHttp } from "./httpApiV1/catalogFeedQuery";
+import { catalogFeedWithOptionalSigningV1Http } from "./httpApiV1/catalogFeedSigning";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import {
@@ -190,7 +192,19 @@ http.route({
 http.route({
   path: ApiRoutes.catalogFeed,
   method: "GET",
-  handler: catalogFeedV1Http,
+  handler: catalogFeedWithOptionalSigningV1Http,
+});
+
+http.route({
+  path: ApiRoutes.catalogFeedChanges,
+  method: "GET",
+  handler: signedCatalogFeedChangesHttp,
+});
+
+http.route({
+  path: ApiRoutes.catalogFeedQuery,
+  method: "GET",
+  handler: signedCatalogFeedQueryHttp,
 });
 
 http.route({
