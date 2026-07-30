@@ -144,8 +144,8 @@ describe("HomeListingSection", () => {
       .getByRole("group", { name: "Content type" })
       .querySelectorAll("button");
     expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
-      "Plugins",
       "Skills",
+      "Plugins",
     ]);
     expect(screen.getByRole("button", { name: "Plugins" }).getAttribute("aria-pressed")).toBe(
       "true",

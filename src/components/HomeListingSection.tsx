@@ -796,22 +796,22 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             <button
               type="button"
               className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
-                kind === "plugins" ? " is-active" : ""
-              }`}
-              aria-pressed={kind === "plugins"}
-              onClick={() => handleKindChange("plugins")}
-            >
-              Plugins
-            </button>
-            <button
-              type="button"
-              className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
                 kind === "skills" ? " is-active" : ""
               }`}
               aria-pressed={kind === "skills"}
               onClick={() => handleKindChange("skills")}
             >
               Skills
+            </button>
+            <button
+              type="button"
+              className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
+                kind === "plugins" ? " is-active" : ""
+              }`}
+              aria-pressed={kind === "plugins"}
+              onClick={() => handleKindChange("plugins")}
+            >
+              Plugins
             </button>
           </div>
 

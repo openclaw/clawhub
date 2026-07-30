@@ -83,6 +83,13 @@ describe("HomeListingSection", () => {
     const second = makeTrending("second", "Second Skill", 3, 8000);
     render(<HomeListingSection initialListing={initialTrending([first, second])} />);
 
+    const contentTypeButtons = screen
+      .getByRole("group", { name: "Content type" })
+      .querySelectorAll("button");
+    expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
+      "Skills",
+      "Plugins",
+    ]);
     expect(screen.getByRole("button", { name: "Skills" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
