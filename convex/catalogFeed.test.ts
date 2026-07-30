@@ -1,10 +1,21 @@
-import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID, EXPERIMENTAL_CLAW_FEED_ID } from "clawhub-schema";
+import {
+  CATALOG_FEED_ID,
+  CATALOG_FEED_SHARD_MAX_ENTRIES,
+  CATALOG_SKILLS_FEED_ID,
+  EXPERIMENTAL_CLAW_FEED_ID,
+  type CatalogFeedEntry,
+} from "clawhub-schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  __test,
+  acquireCatalogFeedPublicationLease,
+  listChanges,
   listOfficialClawEntries,
   listOfficialEntries,
   listOfficialSkillEntries,
+  pruneCatalogFeedHistoryInternal,
   publish,
+  storePublication,
 } from "./catalogFeed";
 
 vi.mock("./lib/publishers", () => ({
@@ -35,6 +46,45 @@ const listOfficialSkillEntriesHandler = (
 )._handler;
 const publishHandler = (
   publish as unknown as WrappedHandler<{ expiresAt: string }, Array<{ feedId: string }>>
+)._handler;
+const storePublicationHandler = (
+  storePublication as unknown as WrappedHandler<
+    {
+      feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID;
+      description: string;
+      generatedAt: string;
+      expiresAt: string;
+      entries: unknown[];
+    },
+    { sequence: number; entryCount: number }
+  >
+)._handler;
+const acquirePublicationLeaseHandler = (
+  acquireCatalogFeedPublicationLease as unknown as WrappedHandler<{ leaseToken: string }, void>
+)._handler;
+const listChangesHandler = (
+  listChanges as unknown as WrappedHandler<
+    {
+      feedId: typeof CATALOG_FEED_ID;
+      fromSequence: number;
+      toSequence: number;
+      paginationOpts: {
+        cursor: string | null;
+        numItems: number;
+        maximumRowsRead?: number;
+      };
+    },
+    {
+      resetRequired: boolean;
+      page?: Array<{ sequence: number; ordinal: number; payload: string }>;
+    }
+  >
+)._handler;
+const pruneCatalogFeedHistoryHandler = (
+  pruneCatalogFeedHistoryInternal as unknown as WrappedHandler<
+    { batchSize?: number },
+    { deleted: number; hasMore: boolean }
+  >
 )._handler;
 
 function makePackage(overrides: Record<string, unknown> = {}) {
@@ -102,7 +152,14 @@ function makeSkillVersion(overrides: Record<string, unknown> = {}) {
     skillId: "skills:1",
     version: "1.2.3",
     softDeletedAt: undefined,
-    files: [{ path: "SKILL.md", size: 1, storageId: "storage:1", sha256: "file-hash" }],
+    files: [
+      {
+        path: "SKILL.md",
+        size: 1,
+        storageId: "storage:1",
+        sha256: "file-hash",
+      },
+    ],
     sha256hash: "skill-hash",
     ...overrides,
   };
@@ -118,7 +175,7 @@ function makeGitHubSource(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeFeedSkillEntry(index: number) {
+function makeFeedSkillEntry(index: number): CatalogFeedEntry {
   const id = `@openclaw/demo-${index.toString().padStart(3, "0")}`;
   return {
     type: "skill",
@@ -134,6 +191,28 @@ function makeFeedSkillEntry(index: number) {
           package: id,
           version: "1.0.0",
           integrity: `sha256:skill-${index}`,
+        },
+      ],
+    },
+  };
+}
+
+function makeFeedPluginEntry(index: number): CatalogFeedEntry {
+  const id = `@openclaw/plugin-${index.toString().padStart(4, "0")}`;
+  return {
+    type: "plugin",
+    id,
+    title: `Plugin ${index}`,
+    version: "1.0.0",
+    state: "available",
+    publisher: { id: "openclaw", trust: "official" },
+    install: {
+      candidates: [
+        {
+          sourceRef: "public-clawhub",
+          package: id,
+          version: "1.0.0",
+          integrity: `sha256:plugin-${index}`,
         },
       ],
     },
@@ -193,12 +272,327 @@ function makeCtx(
 }
 
 describe("catalog feed projection", () => {
+  it("rejects an overlapping publication while its lease is active", async () => {
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => ({
+              _id: "catalogFeedPublicationLeases:1",
+              leaseToken: crypto.randomUUID(),
+              expirationTime: Date.now() + 60_000,
+            })),
+          })),
+        })),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        get: vi.fn(),
+        normalizeId: vi.fn(),
+        system: { get: vi.fn(), query: vi.fn() },
+      },
+    };
+
+    await expect(
+      acquirePublicationLeaseHandler(ctx, { leaseToken: crypto.randomUUID() }),
+    ).rejects.toThrow("already running");
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+
+  it("builds deterministic complete revision changes", () => {
+    const previous = makeFeedSkillEntry(1);
+    const replacement = { ...previous, title: "Updated" };
+    const removed = makeFeedSkillEntry(2);
+    expect(
+      __test.buildCatalogFeedChanges({
+        sequence: 7,
+        previousEntries: [removed, previous],
+        nextEntries: [replacement],
+        previousDescription: "Official",
+        nextDescription: "Official",
+      }),
+    ).toEqual([
+      {
+        sequence: 7,
+        operation: "remove",
+        entryType: "skill",
+        entryId: removed.id,
+      },
+      { sequence: 7, operation: "upsert", entry: replacement },
+    ]);
+    expect(
+      __test.buildCatalogFeedChanges({
+        sequence: 8,
+        previousEntries: [replacement],
+        nextEntries: [replacement],
+        previousDescription: "Official",
+        nextDescription: "Official",
+      }),
+    ).toEqual([
+      {
+        sequence: 8,
+        operation: "metadata",
+        metadata: { description: "Official" },
+      },
+    ]);
+  });
+
+  it("stores a revision and its journal rows with the current publication", async () => {
+    const insert = vi.fn(async (table: string, _value: Record<string, unknown>) => `${table}:1`);
+    const patch = vi.fn();
+    const eq = vi.fn().mockReturnThis();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((_index: string, apply: (q: { eq: typeof eq }) => unknown) => {
+            apply({ eq });
+            if (table === "catalogFeedRevisions") {
+              return {
+                order: vi.fn(() => ({
+                  first: vi.fn(async () => ({
+                    sequence: 4,
+                    changeCount: 0,
+                    cumulativeChangeCount: 7,
+                    resetRequired: true,
+                  })),
+                })),
+              };
+            }
+            if (table === "catalogFeedShardPublications") {
+              return {
+                order: vi.fn(() => ({
+                  first: vi.fn(async () => ({ sequence: 4 })),
+                })),
+              };
+            }
+            return { unique: vi.fn(async () => null) };
+          }),
+        })),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        get: vi.fn(),
+        normalizeId: vi.fn(),
+        system: { get: vi.fn(), query: vi.fn() },
+      },
+    };
+    const result = await storePublicationHandler(ctx, {
+      feedId: CATALOG_SKILLS_FEED_ID,
+      description: "Official",
+      generatedAt: "2026-07-16T00:00:00.000Z",
+      expiresAt: "2026-07-16T01:00:00.000Z",
+      entries: [makeFeedSkillEntry(1)],
+    });
+
+    expect(result).toMatchObject({ sequence: 5, entryCount: 1 });
+    expect(insert).toHaveBeenCalledWith(
+      "catalogFeedRevisions",
+      expect.objectContaining({
+        feedId: CATALOG_SKILLS_FEED_ID,
+        sequence: 5,
+        indexedEntryCount: 0,
+        changeCount: 2,
+        cumulativeChangeCount: 9,
+        resetRequired: true,
+      }),
+    );
+    const journalRows = insert.mock.calls.filter(([table]) => table === "catalogFeedChanges");
+    expect(journalRows).toHaveLength(2);
+    expect(journalRows.map(([, row]) => JSON.parse(String(row.payload)).operation)).toEqual([
+      "upsert",
+      "metadata",
+    ]);
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("reads only the requested bounded change range", async () => {
+    const builder = {
+      eq: vi.fn().mockReturnThis(),
+      gt: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+    };
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          sequence: 4,
+          ordinal: 0,
+          payload: '{"operation":"metadata"}',
+          expirationTime: 1,
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    }));
+    const query = vi.fn((table: string) => {
+      if (table === "catalogFeedRevisions") {
+        return {
+          withIndex: vi.fn((_index: string, apply?: (q: typeof builder) => unknown) => {
+            apply?.(builder);
+            const ordered = {
+              order: vi.fn((direction: "asc" | "desc") => ({
+                first: vi.fn(async () =>
+                  direction === "asc"
+                    ? {
+                        sequence: 4,
+                        changeCount: 2,
+                        cumulativeChangeCount: 2,
+                      }
+                    : {
+                        sequence: 5,
+                        changeCount: 1,
+                        cumulativeChangeCount: 3,
+                      },
+                ),
+              })),
+            };
+            return {
+              filter: vi.fn(() => ({
+                ...ordered,
+                first: vi.fn(async () => null),
+              })),
+              unique: vi.fn(async () => ({
+                sequence: 4,
+                changeCount: 2,
+                cumulativeChangeCount: 2,
+              })),
+            };
+          }),
+        };
+      }
+      return {
+        withIndex: vi.fn((_index: string, apply: (q: typeof builder) => unknown) => {
+          apply(builder);
+          return { paginate };
+        }),
+      };
+    });
+    const result = await listChangesHandler(
+      {
+        db: { query },
+      },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 3,
+        toSequence: 4,
+        paginationOpts: { cursor: null, numItems: 100 },
+      },
+    );
+
+    expect(builder.gt).toHaveBeenCalledWith("sequence", 3);
+    expect(builder.lte).toHaveBeenCalledWith("sequence", 4);
+    expect(paginate).toHaveBeenCalledWith({
+      cursor: null,
+      numItems: 100,
+      maximumRowsRead: 100,
+    });
+
+    await listChangesHandler(
+      { db: { query } },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 3,
+        toSequence: 4,
+        paginationOpts: { cursor: null, numItems: 100, maximumRowsRead: 25 },
+      },
+    );
+    expect(paginate).toHaveBeenLastCalledWith({
+      cursor: null,
+      numItems: 100,
+      maximumRowsRead: 25,
+    });
+    expect(result).toMatchObject({
+      resetRequired: false,
+      retainedFromSequence: 3,
+      currentSequence: 5,
+      changeCount: 2,
+      page: [{ sequence: 4, ordinal: 0, payload: '{"operation":"metadata"}' }],
+    });
+
+    const laterRange = await listChangesHandler(
+      { db: { query } },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 4,
+        toSequence: 5,
+        paginationOpts: { cursor: null, numItems: 100 },
+      },
+    );
+    expect(laterRange).toMatchObject({ resetRequired: false, changeCount: 1 });
+
+    const reset = await listChangesHandler(
+      { db: { query } },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 2,
+        toSequence: 4,
+        paginationOpts: { cursor: null, numItems: 100 },
+      },
+    );
+    expect(reset).toEqual({
+      resetRequired: true,
+      retainedFromSequence: 3,
+      currentSequence: 5,
+    });
+    await expect(
+      listChangesHandler(
+        { db: { query } },
+        {
+          feedId: CATALOG_FEED_ID,
+          fromSequence: 5,
+          toSequence: 6,
+          paginationOpts: { cursor: null, numItems: 100 },
+        },
+      ),
+    ).rejects.toThrow("starts at or after the current sequence");
+    expect(paginate).toHaveBeenCalledTimes(3);
+  });
+
+  it("prunes catalog history in bounded continuation batches", async () => {
+    const expiredRevisions = [{ _id: "catalogFeedRevisions:1" }, { _id: "catalogFeedRevisions:2" }];
+    const take = vi.fn(async () => expiredRevisions);
+    const delete_ = vi.fn();
+    const runAfter = vi.fn();
+    const result = await pruneCatalogFeedHistoryHandler(
+      {
+        db: {
+          query: vi.fn(() => ({
+            withIndex: vi.fn(
+              (_index: string, apply: (q: { lt: ReturnType<typeof vi.fn> }) => unknown) => {
+                const q = { lt: vi.fn().mockReturnThis() };
+                apply(q);
+                return { take };
+              },
+            ),
+          })),
+          insert: vi.fn(),
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: delete_,
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+          system: { get: vi.fn(), query: vi.fn() },
+        },
+        scheduler: { runAfter },
+      },
+      { batchSize: 2 },
+    );
+
+    expect(result).toEqual({ deleted: 2, hasMore: true });
+    expect(delete_).toHaveBeenCalledTimes(2);
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      batchSize: 2,
+    });
   });
 
   it("projects official releases into ClawHub install candidates", async () => {
@@ -326,12 +720,20 @@ describe("catalog feed projection", () => {
         [
           makePackage({ name: "@openclaw/community", channel: "community" }),
           makePackage({ name: "@openclaw/deleted", softDeletedAt: 1 }),
-          makePackage({ name: "@openclaw/malicious", latestReleaseId: "packageReleases:2" }),
-          makePackage({ name: "@openclaw/no-hash", latestReleaseId: "packageReleases:3" }),
+          makePackage({
+            name: "@openclaw/malicious",
+            latestReleaseId: "packageReleases:2",
+          }),
+          makePackage({
+            name: "@openclaw/no-hash",
+            latestReleaseId: "packageReleases:3",
+          }),
         ],
         {
           "packageReleases:1": makeRelease(),
-          "packageReleases:2": makeRelease({ manualModeration: { state: "quarantined" } }),
+          "packageReleases:2": makeRelease({
+            manualModeration: { state: "quarantined" },
+          }),
           "packageReleases:3": makeRelease({ sha256hash: undefined }),
         },
       ),
@@ -377,7 +779,11 @@ describe("catalog feed projection", () => {
           }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "openclaw",
+          },
           "skillVersions:1": makeSkillVersion(),
         },
       ),
@@ -418,12 +824,19 @@ describe("catalog feed projection", () => {
         [
           makeSkill({
             badges: {
-              highlighted: { byUserId: "users:moderator", at: 1_784_280_000_000 },
+              highlighted: {
+                byUserId: "users:moderator",
+                at: 1_784_280_000_000,
+              },
             },
           }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "openclaw",
+          },
           "skillVersions:1": makeSkillVersion(),
         },
       ),
@@ -443,7 +856,11 @@ describe("catalog feed projection", () => {
   it("keeps suspicious hosted skills in hosted ClawHub install candidates", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill()], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+        "publishers:1": {
+          _id: "publishers:1",
+          kind: "org",
+          handle: "openclaw",
+        },
         "skillVersions:1": makeSkillVersion({
           llmAnalysis: { status: "complete", verdict: "suspicious" },
         }),
@@ -470,7 +887,11 @@ describe("catalog feed projection", () => {
   it("projects current GitHub-backed skills into public GitHub install candidates", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeGitHubSkill({ slug: "aiq-deploy", displayName: "AIQ Deploy" })], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+        "publishers:1": {
+          _id: "publishers:1",
+          kind: "org",
+          handle: "nvidia",
+        },
         "githubSkillSources:1": makeGitHubSource(),
       }),
       { publisherId: "publishers:1", cursor: null },
@@ -508,16 +929,38 @@ describe("catalog feed projection", () => {
     });
   });
 
-  it("caps oversized skills feeds instead of blocking plugin publication", async () => {
+  it("publishes every eligible skill through complete shards beyond the legacy atomic limit", async () => {
     const skillEntries = Array.from({ length: 1001 }, (_, index) => makeFeedSkillEntry(index));
-    const runMutation = vi.fn(
-      async (_ref: unknown, args: { feedId: string; entries: unknown[] }) => ({
-        feedId: args.feedId,
-        entryCount: args.entries.length,
-      }),
-    );
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return {
+          sequence: 1,
+          publishedAt: 1,
+          entryCount: args.publicationId.startsWith(CATALOG_SKILLS_FEED_ID) ? 1001 : 0,
+        };
+      }
+      return {};
+    });
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if ("family" in args) return [];
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
       if ("publisherId" in args) {
         return { entries: skillEntries, isDone: true, continueCursor: "" };
       }
@@ -533,27 +976,114 @@ describe("catalog feed projection", () => {
       { expiresAt: "2026-06-30T00:00:00.000Z" },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(2);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ feedId: CATALOG_FEED_ID, entries: [] }),
     );
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.find(
+          ([, args]) =>
+            args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args && !("entries" in args),
+        )?.[1],
+    ).toMatchObject({ entryCount: 1001 });
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.some(
+          ([, args]) =>
+            args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args && "entries" in args,
+        ),
+    ).toBe(false);
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.filter(([, args]) => "startOrdinal" in args)
+        .map(([, args]) => [args.startOrdinal, (args.entries as unknown[]).length]),
+    ).toEqual([
+      [0, 250],
+      [250, 250],
+      [500, 250],
+      [750, 250],
+      [1000, 1],
+    ]);
+    const skillShardPayloads = vi
+      .mocked(runMutation)
+      .mock.calls.filter(
+        ([, args]) =>
+          args.publicationId === `${CATALOG_SKILLS_FEED_ID}:shards` && "payload" in args,
+      )
+      .map(([, args]) => JSON.parse(args.payload as string) as { entries: unknown[] });
+    expect(skillShardPayloads).toHaveLength(1);
+    expect(
+      skillShardPayloads.every((shard) => shard.entries.length <= CATALOG_FEED_SHARD_MAX_ENTRIES),
+    ).toBe(true);
+    expect(skillShardPayloads.flatMap((shard) => shard.entries)).toHaveLength(1001);
+    expect(result).toEqual([
+      { feedId: CATALOG_FEED_ID, sequence: 1, entryCount: 0 },
+      {
+        publicationId: `${CATALOG_SKILLS_FEED_ID}:shards`,
+        feedId: CATALOG_SKILLS_FEED_ID,
+        sequence: 1,
+        publishedAt: 1,
+        entryCount: 1001,
+      },
+    ]);
+  });
+
+  it("bounds skill collection after independently completing plugin publication", async () => {
+    const skillEntries = Array.from({ length: 10_001 }, (_, index) => makeFeedSkillEntry(index));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return { sequence: 1, publishedAt: 1, entryCount: 0 };
+      }
+      return {};
+    });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
+      if ("publisherId" in args) {
+        return { entries: skillEntries, isDone: true, continueCursor: "" };
+      }
+      return {
+        publishers: [{ _id: "publishers:1" }],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+
+    await expect(
+      publishHandler({ runQuery, runMutation }, { expiresAt: "2026-06-30T00:00:00.000Z" }),
+    ).rejects.toThrow("runtime publication limit of 10000 entries");
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({
-        feedId: CATALOG_SKILLS_FEED_ID,
-        entries: expect.arrayContaining([expect.objectContaining({ id: "@openclaw/demo-999" })]),
-      }),
+      expect.objectContaining({ publicationId: `${CATALOG_FEED_ID}:shards` }),
     );
     expect(
       vi
         .mocked(runMutation)
-        .mock.calls.find(([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID)?.[1].entries,
-    ).toHaveLength(1000);
-    expect(result).toEqual([
-      { feedId: CATALOG_FEED_ID, entryCount: 0 },
-      { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 1000 },
-    ]);
+        .mock.calls.some(
+          ([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args,
+        ),
+    ).toBe(false);
   });
 
   it("publishes Claws through the separate experimental mutation", async () => {
@@ -585,27 +1115,209 @@ describe("catalog feed projection", () => {
       },
     };
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if ("family" in args) return [];
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
+      if ("publisherId" in args) return { entries: [], isDone: true, continueCursor: "" };
       if ("cursor" in args) return { publishers: [], isDone: true, continueCursor: "" };
       return [clawEntry];
     });
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => ({
-      feedId: typeof args.feedId === "string" ? args.feedId : EXPERIMENTAL_CLAW_FEED_ID,
-      entryCount: Array.isArray(args.entries) ? args.entries.length : 0,
-    }));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("entries" in args && !("feedId" in args)) {
+        return { feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 1 };
+      }
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return { sequence: 1, publishedAt: 1, entryCount: 0 };
+      }
+      return {};
+    });
 
     const result = await publishHandler(
       { runQuery, runMutation },
       { expiresAt: "2026-07-20T00:00:00.000Z" },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(3);
-    expect(runMutation).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ entries: [clawEntry] }),
+    expect(runMutation).toHaveBeenCalled();
+    const clawMutation = runMutation.mock.calls.find(
+      ([, args]) => Array.isArray(args.entries) && !("feedId" in args),
     );
-    expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("feedId");
-    expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 1 });
+    expect(clawMutation?.[1]).toEqual(expect.objectContaining({ entries: [clawEntry] }));
+    expect(clawMutation?.[1]).not.toHaveProperty("feedId");
+    expect(result.at(-1)).toEqual({
+      feedId: EXPERIMENTAL_CLAW_FEED_ID,
+      entryCount: 1,
+    });
+  });
+
+  it("publishes plugins through shards beyond the legacy atomic limit", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
+    const pluginEntries = Array.from({ length: 1001 }, (_, index) => makeFeedPluginEntry(index));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return {
+          sequence: 1,
+          publishedAt: 1,
+          entryCount: args.publicationId.startsWith(CATALOG_FEED_ID) ? 1001 : 0,
+        };
+      }
+      return {};
+    });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return args.cursor === null
+          ? {
+              entries: pluginEntries.slice(0, 600),
+              isDone: false,
+              continueCursor: "plugins-2",
+            }
+          : {
+              entries: pluginEntries.slice(600),
+              isDone: true,
+              continueCursor: "",
+            };
+      }
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
+      return { publishers: [], isDone: true, continueCursor: "" };
+    });
+
+    const result = await publishHandler(
+      { runQuery, runMutation },
+      { expiresAt: "2026-06-30T00:00:00.000Z" },
+    );
+
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.some(
+          ([, args]) =>
+            args.feedId === CATALOG_FEED_ID && "description" in args && "entries" in args,
+        ),
+    ).toBe(false);
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.filter(([, args]) => "startOrdinal" in args)
+        .map(([, args]) => [args.startOrdinal, (args.entries as unknown[]).length]),
+    ).toEqual([
+      [0, 250],
+      [250, 250],
+      [500, 250],
+      [750, 250],
+      [1000, 1],
+    ]);
+    const pluginShardPayloads = vi
+      .mocked(runMutation)
+      .mock.calls.filter(
+        ([, args]) => args.publicationId === `${CATALOG_FEED_ID}:shards` && "payload" in args,
+      )
+      .map(([, args]) => JSON.parse(args.payload as string) as { entries: unknown[] });
+    expect(pluginShardPayloads.flatMap((shard) => shard.entries)).toHaveLength(1001);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "code-plugin",
+      cursor: "plugins-2",
+    });
+    expect(result[0]).toMatchObject({
+      feedId: CATALOG_FEED_ID,
+      sequence: 1,
+      entryCount: 1001,
+    });
+  });
+
+  it("uses shards for byte-heavy plugin feeds below the legacy entry limit", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
+    const pluginEntries = [0, 1].map((index) => ({
+      ...makeFeedPluginEntry(index),
+      description: "x".repeat(480 * 1024),
+    }));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return {
+          sequence: 1,
+          publishedAt: 1,
+          entryCount: args.publicationId.startsWith(CATALOG_FEED_ID) ? 2 : 0,
+        };
+      }
+      return {};
+    });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return { entries: pluginEntries, isDone: true, continueCursor: "" };
+      }
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
+      return { publishers: [], isDone: true, continueCursor: "" };
+    });
+
+    await publishHandler({ runQuery, runMutation }, { expiresAt: "2026-06-30T00:00:00.000Z" });
+
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.some(
+          ([, mutationArgs]) =>
+            mutationArgs.feedId === CATALOG_FEED_ID &&
+            "description" in mutationArgs &&
+            "entries" in mutationArgs,
+        ),
+    ).toBe(false);
+    const pluginShardPayloads = vi
+      .mocked(runMutation)
+      .mock.calls.filter(
+        ([, mutationArgs]) =>
+          mutationArgs.publicationId === `${CATALOG_FEED_ID}:shards` && "payload" in mutationArgs,
+      );
+    expect(pluginShardPayloads).toHaveLength(2);
   });
 
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {
@@ -619,7 +1331,11 @@ describe("catalog feed projection", () => {
           }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "nvidia",
+          },
           "githubSkillSources:1": makeGitHubSource(),
         },
       ),
@@ -650,7 +1366,11 @@ describe("catalog feed projection", () => {
   it("includes skills from verified personal publishers", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill({ ownerPublisherId: "publishers:steipete" })], {
-        "publishers:steipete": { _id: "publishers:steipete", kind: "user", handle: "steipete" },
+        "publishers:steipete": {
+          _id: "publishers:steipete",
+          kind: "user",
+          handle: "steipete",
+        },
         "skillVersions:1": makeSkillVersion(),
       }),
       { publisherId: "publishers:steipete", cursor: null },
@@ -668,7 +1388,11 @@ describe("catalog feed projection", () => {
   it("excludes a latest version blocked by the download safety gate", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill()], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+        "publishers:1": {
+          _id: "publishers:1",
+          kind: "org",
+          handle: "openclaw",
+        },
         "skillVersions:1": makeSkillVersion({
           llmAnalysis: { status: "complete", verdict: "malicious" },
         }),
@@ -683,14 +1407,26 @@ describe("catalog feed projection", () => {
     const blockedStates = [
       makeGitHubSkill({ slug: "pending-scan", githubScanStatus: "pending" }),
       makeGitHubSkill({ slug: "failed-scan", githubScanStatus: "failed" }),
-      makeGitHubSkill({ slug: "malicious-scan", githubScanStatus: "malicious" }),
-      makeGitHubSkill({ slug: "missing-upstream", githubCurrentStatus: "missing" }),
+      makeGitHubSkill({
+        slug: "malicious-scan",
+        githubScanStatus: "malicious",
+      }),
+      makeGitHubSkill({
+        slug: "missing-upstream",
+        githubCurrentStatus: "missing",
+      }),
       makeGitHubSkill({ slug: "removed-upstream", githubRemovedAt: 1 }),
       makeGitHubSkill({ slug: "hidden", moderationStatus: "hidden" }),
       makeGitHubSkill({ slug: "missing-source", githubSourceId: undefined }),
       makeGitHubSkill({ slug: "missing-path", githubPath: undefined }),
-      makeGitHubSkill({ slug: "missing-commit", githubCurrentCommit: undefined }),
-      makeGitHubSkill({ slug: "missing-hash", githubCurrentContentHash: undefined }),
+      makeGitHubSkill({
+        slug: "missing-commit",
+        githubCurrentCommit: undefined,
+      }),
+      makeGitHubSkill({
+        slug: "missing-hash",
+        githubCurrentContentHash: undefined,
+      }),
     ];
 
     const result = (await listOfficialSkillEntriesHandler(
@@ -716,7 +1452,9 @@ describe("catalog feed projection", () => {
           kind: "org",
           handle: "community",
         },
-        "githubSkillSources:1": makeGitHubSource({ ownerPublisherId: "publishers:community" }),
+        "githubSkillSources:1": makeGitHubSource({
+          ownerPublisherId: "publishers:community",
+        }),
       }),
       { publisherId: "publishers:community", cursor: null },
     )) as { entries: unknown[] };
@@ -731,7 +1469,11 @@ describe("catalog feed projection", () => {
 
     const unverified = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill({ ownerPublisherId: "publishers:unverified" })], {
-        "publishers:unverified": { _id: "publishers:unverified", kind: "org", handle: "vendor" },
+        "publishers:unverified": {
+          _id: "publishers:unverified",
+          kind: "org",
+          handle: "vendor",
+        },
         "skillVersions:1": makeSkillVersion(),
       }),
       { publisherId: "publishers:unverified", cursor: null },
@@ -740,10 +1482,17 @@ describe("catalog feed projection", () => {
       makeCtx(
         [
           makeSkill({ latestVersionId: undefined }),
-          makeSkill({ _id: "skills:no-hash", latestVersionId: "skillVersions:no-hash" }),
+          makeSkill({
+            _id: "skills:no-hash",
+            latestVersionId: "skillVersions:no-hash",
+          }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "openclaw",
+          },
           "skillVersions:no-hash": makeSkillVersion({ sha256hash: undefined }),
         },
       ),

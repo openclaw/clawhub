@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
-import { catalogClawsFeedV1Handler, catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
+import {
+  catalogClawsFeedV1Handler,
+  catalogFeedV1Handler,
+  catalogSkillsFeedV1Handler,
+} from "./httpApiV1/catalogFeedV1";
 
 type QueryCtx = {
   runQuery: ReturnType<typeof vi.fn>;
@@ -123,5 +127,22 @@ describe("catalogFeedV1Handler", () => {
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.catalogFeed.getLatestPublication, {
       feedId: "clawhub-official-claws",
     });
+  });
+
+  it("keeps unsigned skills clients on the compatibility representation", async () => {
+    ctx.runQuery.mockResolvedValue({
+      ...publication,
+      feedId: "clawhub-official-skills",
+      sequence: 4,
+    });
+
+    const response = await catalogSkillsFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/skills"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(ctx.runQuery).toHaveBeenCalledTimes(1);
   });
 });

@@ -218,5 +218,8 @@ export declare const CATALOG_FEED_SOURCE_REF = "public-clawhub";
 export declare const CATALOG_FEED_GITHUB_SOURCE_REF = "public-github";
 export declare const CATALOG_SKILLS_FEED_ID = "clawhub-official-skills";
 export declare const CATALOG_SKILLS_FEED_DESCRIPTION = "Skills published by verified OpenClaw publishers on ClawHub.";
+/** Locale-independent UTF-16 code-unit ordering for deterministic wire payloads. */
+export declare function compareCatalogFeedStrings(left: string, right: string): number;
 export declare function parseCatalogFeed(value: unknown): CatalogFeed;
+export declare function normalizeCatalogFeedEntries(entries: readonly CatalogFeedEntry[]): CatalogFeedEntry[];
 export declare function serializeCatalogFeed(feed: CatalogFeed): string;

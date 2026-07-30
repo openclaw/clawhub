@@ -55,7 +55,11 @@ function resolveDefaultRouteRateLimit(spec: RouteSpec, request: Request): RouteR
   if (routedPath === ApiRoutes.trending) return { kind: "none" };
 
   if (routedPath === ApiRoutes.publishTokenMint) return { kind: "trustedPublish" };
-  if (routedPath === ApiRoutes.skillsExport || routedPath === ApiRoutes.pluginsExport) {
+  if (
+    routedPath === ApiRoutes.skillsExport ||
+    routedPath === ApiRoutes.pluginsExport ||
+    routedPath === ApiRoutes.catalogFeedQuery
+  ) {
     return { kind: "export" };
   }
 

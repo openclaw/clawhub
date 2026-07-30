@@ -20,6 +20,20 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "catalog-feed-history-prune",
+    { hours: 24 },
+    internal.catalogFeed.pruneCatalogFeedHistoryInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
+    "catalog-feed-shard-prune",
+    { hours: 24 },
+    internal.catalogFeedShards.pruneCatalogFeedShardsInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
     "trending-leaderboard",
     { minutes: 60 },
     internal.leaderboards.rebuildTrendingLeaderboardAction,

@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => {
   const canonicalTrendingMaterializeRef = Symbol("canonical-trending-materialize");
   const canonicalTrendingPruneRef = Symbol("canonical-trending-prune");
   const prepublicationQueueHealthRef = Symbol("prepublication-queue-health");
+  const catalogFeedHistoryPruneRef = Symbol("catalog-feed-history-prune");
+  const catalogFeedShardPruneRef = Symbol("catalog-feed-shard-prune");
   const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
   const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
   return {
@@ -41,6 +43,8 @@ const mocks = vi.hoisted(() => {
     canonicalTrendingMaterializeRef,
     canonicalTrendingPruneRef,
     prepublicationQueueHealthRef,
+    catalogFeedHistoryPruneRef,
+    catalogFeedShardPruneRef,
     securityScanExpiredLeaseRecoveryRef,
     securityScanDispatchWatchdogRef,
   };
@@ -92,6 +96,12 @@ vi.mock("./_generated/api", () => ({
     },
     prepublicationObservability: {
       logPrePublicationQueueHealthInternal: mocks.prepublicationQueueHealthRef,
+    },
+    catalogFeed: {
+      pruneCatalogFeedHistoryInternal: mocks.catalogFeedHistoryPruneRef,
+    },
+    catalogFeedShards: {
+      pruneCatalogFeedShardsInternal: mocks.catalogFeedShardPruneRef,
     },
     vt: {
       pollPendingScans: Symbol("vt-pending-scans"),
@@ -191,6 +201,28 @@ describe("crons", () => {
       { hours: 1 },
       mocks.canonicalTrendingPruneRef,
       {},
+    );
+  });
+
+  it("prunes catalog feed history in bounded daily batches", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "catalog-feed-history-prune",
+      { hours: 24 },
+      mocks.catalogFeedHistoryPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired catalog feed shards in bounded daily batches", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "catalog-feed-shard-prune",
+      { hours: 24 },
+      mocks.catalogFeedShardPruneRef,
+      { batchSize: 500 },
     );
   });
 
