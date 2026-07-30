@@ -3194,7 +3194,7 @@ describe("publishers membership controls", () => {
     });
 
     expect(firstPage.page.map((item) => item.kind)).toEqual(["skill"]);
-    expect(firstPage.page[0]?.downloads).toBe(16);
+    expect(firstPage.page[0]?.downloads).toBe(10);
     expect(firstPage.continueCursor).toBe("1");
     expect(firstPage.isDone).toBe(false);
     expect(secondPage.page.map((item) => item.kind)).toEqual(["plugin"]);
@@ -3519,7 +3519,7 @@ describe("publishers membership controls", () => {
       skills: 1,
       packages: 1,
       installs: 12,
-      downloads: 58,
+      downloads: 50,
       stars: 3,
     });
   });

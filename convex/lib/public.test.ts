@@ -59,7 +59,7 @@ describe("public skill mapping", () => {
 
     expect(mapped).not.toBeNull();
     expect(mapped?.stats).toEqual({
-      downloads: 20,
+      downloads: 12,
       stars: 3,
       installs: 7,
       versions: 0,
@@ -76,7 +76,7 @@ describe("public skill mapping", () => {
       }),
     );
 
-    expect(mapped?.stats.downloads).toBe(20);
+    expect(mapped?.stats.downloads).toBe(12);
     expect(mapped).not.toHaveProperty("statsSkillsShInstalls");
     expect(mapped).not.toHaveProperty("statsGithubStars");
   });

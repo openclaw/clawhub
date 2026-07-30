@@ -32,8 +32,27 @@ describe("source-attributed skill metrics", () => {
     });
   });
 
-  it("adds skills.sh installs to public downloads without double-counting OpenClaw installs", () => {
-    expect(readPublicDownloads(skill)).toBe(49);
+  it("keeps public downloads scoped to ClawHub artifacts", () => {
+    expect(readPublicDownloads(skill)).toBe(40);
+  });
+
+  it("preserves unavailable external metrics instead of serializing them as zero", () => {
+    expect(
+      readSkillMetricSources({
+        statsDownloads: 4,
+        statsStars: 2,
+        statsInstallsCurrent: 1,
+        statsInstallsAllTime: 3,
+        stats: {},
+      }),
+    ).toEqual({
+      clawHubDownloads: 4,
+      skillsShInstalls: null,
+      openClawInstallsCurrent: 1,
+      openClawInstallsAllTime: 3,
+      githubStars: null,
+      bookmarks: 2,
+    });
   });
 
   it("builds a source-only refresh patch and preserves unknown GitHub popularity", () => {

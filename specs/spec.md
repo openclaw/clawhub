@@ -60,9 +60,10 @@ read_when:
 - `statsGithubStars`: upstream GitHub popularity.
 - `statsStars`: ClawHub Bookmarks; existing `stars` rows and API names remain for
   compatibility.
-- Public Downloads are `statsDownloads` for native-only skills and
-  `statsDownloads + statsSkillsShInstalls` for skills.sh-indexed skills.
-- Canonical mixed skill search never ranks by this combined presentation value.
+- Public Downloads are always `statsDownloads`; skills.sh lifetime installs are
+  independently attributed and never folded into Downloads.
+- Canonical mixed skill search gives lifetime Downloads and skills.sh lifetime
+  installs zero ranking weight.
   It uses lexical/semantic relevance first, then ClawHub-observed rolling
   60-day installs, rolling Bookmarks, and freshness for comparable matches.
 - `createdAt`, `updatedAt`

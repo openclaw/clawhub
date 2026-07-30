@@ -30,27 +30,29 @@ for native ClawHub downloads still use the canonical skill download field:
 statsDownloads
 ```
 
-Skills mirrored from skills.sh store the upstream install count separately in
-`statsSkillsShInstalls`. Public skill Downloads are computed at serialization:
+Skills mirrored from skills.sh store the upstream lifetime install count
+separately in `statsSkillsShInstalls`. Public skill Downloads remain scoped to
+ClawHub artifact downloads:
 
 ```text
-native skill:        statsDownloads
-skills.sh indexed:   statsDownloads + statsSkillsShInstalls
+public Downloads:   statsDownloads
+skills.sh installs: statsSkillsShInstalls (lifetime)
 ```
 
-The combined value is never written back into `statsDownloads`. Existing
-historical ClawHub downloads remain intact, and search ranking continues to use
-the native field.
+These values are never combined into one Downloads counter. Existing historical
+ClawHub downloads remain intact, and canonical search gives lifetime downloads
+and skills.sh lifetime installs zero ranking weight.
 
 OpenClaw install telemetry remains in `statsInstallsCurrent` and
 `statsInstallsAllTime`; it is not added to public Downloads. GitHub popularity
 is stored in `statsGithubStars`. Existing `stars` rows and `statsStars` count
 ClawHub Bookmarks and retain those storage/API names for compatibility.
 
-Source refresh, adoption, content replacement, and GitHub synchronization may
-update source metadata or upstream counters, but must not reset or rewrite any
-other metric source. Publisher dashboards receive the source breakdown while
-ordinary public skill shapes expose only the combined Downloads value.
+Source refresh, adoption, content replacement, rollback, and GitHub
+synchronization may update source metadata or newer observations, but must not
+reset or rewrite any metric source. Publisher dashboards receive the attributed
+source breakdown; ordinary public skill shapes expose ClawHub artifact downloads
+as Downloads without manufacturing a cross-source total.
 
 ## Daily Package Graphs
 

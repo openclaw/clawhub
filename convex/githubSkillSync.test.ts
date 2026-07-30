@@ -1471,6 +1471,21 @@ description: Install from a GitHub-backed source.
         scanStatus: "clean",
         now,
       });
+      Object.assign(skill, {
+        statsDownloads: 41,
+        statsStars: 7,
+        statsInstallsCurrent: 3,
+        statsInstallsAllTime: 13,
+        statsSkillsShInstalls: 29,
+        statsGithubStars: 701,
+        stats: {
+          downloads: 41,
+          stars: 7,
+          installsCurrent: 3,
+          installsAllTime: 13,
+          versions: 0,
+        },
+      });
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
         ok: true,
         installKind: "github",
@@ -1512,6 +1527,12 @@ description: Install from a GitHub-backed source.
         githubCurrentStatus: "present",
         githubScanStatus: "clean",
         moderationStatus: "active",
+        statsDownloads: 41,
+        statsStars: 7,
+        statsInstallsCurrent: 3,
+        statsInstallsAllTime: 13,
+        statsSkillsShInstalls: 29,
+        statsGithubStars: 701,
       });
       expect(skill.githubCurrentContentHash).toBe(commitAContentHash);
       expect(tables.githubSkillContents[0]).toMatchObject({
@@ -1562,6 +1583,14 @@ description: Install from a GitHub-backed source.
           contentHash: skill.githubCurrentContentHash,
         },
       });
+      expect(skill).toMatchObject({
+        statsDownloads: 41,
+        statsStars: 7,
+        statsInstallsCurrent: 3,
+        statsInstallsAllTime: 13,
+        statsSkillsShInstalls: 29,
+        statsGithubStars: 701,
+      });
 
       fakeGitHub.setSnapshot({
         commit: "c".repeat(40),
@@ -1583,6 +1612,12 @@ description: Install from a GitHub-backed source.
         softDeletedAt: 300,
         moderationStatus: "hidden",
         moderationReason: "github.upstream.removed",
+        statsDownloads: 41,
+        statsStars: 7,
+        statsInstallsCurrent: 3,
+        statsInstallsAllTime: 13,
+        statsSkillsShInstalls: 29,
+        statsGithubStars: 701,
       });
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
         ok: false,
@@ -1611,6 +1646,12 @@ description: Install from a GitHub-backed source.
         githubScanStatus: "pending",
         moderationStatus: "active",
         moderationReason: "pending.scan",
+        statsDownloads: 41,
+        statsStars: 7,
+        statsInstallsCurrent: 3,
+        statsInstallsAllTime: 13,
+        statsSkillsShInstalls: 29,
+        statsGithubStars: 701,
       });
       expect(reappeared).not.toHaveProperty("softDeletedAt");
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
@@ -2010,6 +2051,8 @@ description: Build HTML artifacts.
           statsStars: 11,
           statsInstallsCurrent: 5,
           statsInstallsAllTime: 23,
+          statsSkillsShInstalls: 47,
+          statsGithubStars: 901,
           stats: {
             downloads: 37,
             stars: 11,
@@ -2080,6 +2123,8 @@ description: Build HTML artifacts.
       statsStars: 11,
       statsInstallsCurrent: 5,
       statsInstallsAllTime: 23,
+      statsSkillsShInstalls: 47,
+      statsGithubStars: 901,
       githubPendingCandidateId: candidate?._id,
     });
     expect(pendingSkill).not.toHaveProperty("installKind");
@@ -2138,6 +2183,8 @@ description: Build HTML artifacts.
       statsStars: 11,
       statsInstallsCurrent: 5,
       statsInstallsAllTime: 23,
+      statsSkillsShInstalls: 47,
+      statsGithubStars: 901,
     });
     expect(tables.skills[0]).not.toHaveProperty("latestVersionId");
     expect(tables.skills[0]).not.toHaveProperty("githubPendingCandidateId");
@@ -2719,6 +2766,12 @@ description: Build HTML artifacts.
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
           tags: {},
+          statsDownloads: 7,
+          statsStars: 3,
+          statsInstallsCurrent: 2,
+          statsInstallsAllTime: 5,
+          statsSkillsShInstalls: 17,
+          statsGithubStars: 321,
           stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
           createdAt: 1,
           updatedAt: 1,
@@ -3010,6 +3063,12 @@ describe("applyGitHubSkillVerificationResultHandler", () => {
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
           tags: {},
+          statsDownloads: 7,
+          statsStars: 3,
+          statsInstallsCurrent: 2,
+          statsInstallsAllTime: 5,
+          statsSkillsShInstalls: 17,
+          statsGithubStars: 321,
           stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
           moderationStatus: "hidden",
           moderationReason: "pending.scan",
@@ -3041,6 +3100,12 @@ describe("applyGitHubSkillVerificationResultHandler", () => {
     });
     expect(tables.skills[0]).toMatchObject({
       githubScanStatus: "pending",
+      statsDownloads: 7,
+      statsStars: 3,
+      statsInstallsCurrent: 2,
+      statsInstallsAllTime: 5,
+      statsSkillsShInstalls: 17,
+      statsGithubStars: 321,
     });
 
     const promoted = await applyGitHubSkillVerificationResultHandler({ db } as never, {

@@ -15,7 +15,7 @@ const skill = {
   tags: {},
   badges: {},
   stats: {
-    downloads: 20,
+    downloads: 12,
     installsCurrent: 3,
     installsAllTime: 7,
     stars: 4,
@@ -42,18 +42,47 @@ const item: DashboardCatalogItem = {
   data: skill,
   updatedAt: skill.updatedAt,
   installs: 7,
-  downloads: 20,
+  downloads: 12,
 };
 
 describe("DashboardCatalogView", () => {
-  it("lets publishers inspect the source breakdown behind combined downloads", () => {
+  it("lets publishers inspect independently attributed metric sources", () => {
     render(
       <DashboardCatalogView items={[item]} view="list" ownerHandle="owner" canManage={true} />,
     );
 
     expect(
       screen.getByTitle(
-        "20 downloads: 12 ClawHub downloads + 8 skills.sh installs. 7 OpenClaw installs; 99 GitHub stars; 4 bookmarks.",
+        "12 ClawHub downloads. 8 skills.sh lifetime installs; 99 GitHub stars. 7 OpenClaw installs; 4 bookmarks.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("distinguishes unavailable external metrics from zero", () => {
+    render(
+      <DashboardCatalogView
+        items={[
+          {
+            ...item,
+            data: {
+              ...skill,
+              metricSources: {
+                ...skill.metricSources!,
+                skillsShInstalls: null,
+                githubStars: null,
+              },
+            },
+          },
+        ]}
+        view="list"
+        ownerHandle="owner"
+        canManage={true}
+      />,
+    );
+
+    expect(
+      screen.getByTitle(
+        "12 ClawHub downloads. skills.sh lifetime installs unavailable; GitHub stars unavailable. 7 OpenClaw installs; 4 bookmarks.",
       ),
     ).toBeTruthy();
   });

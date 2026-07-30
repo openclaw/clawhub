@@ -409,7 +409,7 @@ describe("skills.sh controlled hidden metadata canary", () => {
     });
   });
 
-  it("clears exact-native upstream metrics when the controlled entry is removed", async () => {
+  it("preserves exact-native upstream metric history when the controlled entry is removed", async () => {
     vi.useFakeTimers();
     useEnvironment(LOCAL_ENV);
     const t = convexTest(schema, modules);
@@ -440,12 +440,12 @@ describe("skills.sh controlled hidden metadata canary", () => {
 
     expect(rollback).toMatchObject({
       deletedEntries: 1,
-      nativeSkillsChanged: 1,
+      nativeSkillsChanged: 0,
     });
-    expect(native?.statsSkillsShInstalls).toBeUndefined();
-    expect(native?.statsGithubStars).toBeUndefined();
-    expect(digest?.statsSkillsShInstalls).toBeUndefined();
-    expect(digest?.statsGithubStars).toBeUndefined();
+    expect(native?.statsSkillsShInstalls).toBe(17);
+    expect(native?.statsGithubStars).toBe(321);
+    expect(digest?.statsSkillsShInstalls).toBe(17);
+    expect(digest?.statsGithubStars).toBe(321);
     expect(native).toMatchObject({
       statsDownloads: 143,
       statsStars: 5,
@@ -460,7 +460,7 @@ describe("skills.sh controlled hidden metadata canary", () => {
     });
   });
 
-  it("clears upstream metrics when an exact native match becomes a route collision", async () => {
+  it("preserves upstream metric history when an exact native match becomes a route collision", async () => {
     vi.useFakeTimers();
     useEnvironment(LOCAL_ENV);
     const t = convexTest(schema, modules);
@@ -495,10 +495,10 @@ describe("skills.sh controlled hidden metadata canary", () => {
       exactNativeMatches: 0,
       routeCollisions: 1,
     });
-    expect(native?.statsSkillsShInstalls).toBeUndefined();
-    expect(native?.statsGithubStars).toBeUndefined();
-    expect(digest?.statsSkillsShInstalls).toBeUndefined();
-    expect(digest?.statsGithubStars).toBeUndefined();
+    expect(native?.statsSkillsShInstalls).toBe(17);
+    expect(native?.statsGithubStars).toBe(321);
+    expect(digest?.statsSkillsShInstalls).toBe(17);
+    expect(digest?.statsGithubStars).toBe(321);
     expect(native).toMatchObject({
       statsDownloads: 143,
       stats: { downloads: 143 },

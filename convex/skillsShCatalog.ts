@@ -38,10 +38,6 @@ const MAX_WRITES_PER_BATCH = 100;
 const MAX_SCAN_ADMISSIONS_PER_BATCH = 100;
 const MAX_SCAN_ADMISSIONS_PER_RUN = 500;
 const MAX_REAL_TEST_ADMISSIONS = 10;
-const CLEARED_EXTERNAL_SKILL_METRICS = {
-  statsSkillsShInstalls: undefined,
-  statsGithubStars: undefined,
-};
 const MAX_DETERMINISTIC_COMPLETIONS_PER_BATCH = 50;
 
 const fixtureIdValidator = v.union(
@@ -247,14 +243,16 @@ export const syncNativeSkillMetricsFromCatalogEntryInternal = internalMutation({
   handler: async (ctx, args) => {
     const [entry, skill] = await Promise.all([ctx.db.get(args.entryId), ctx.db.get(args.skillId)]);
     if (!entry || !skill) return { applied: false };
-    const patch =
-      entry.reconciliation?.kind === "exact-native" &&
-      entry.reconciliation.nativeSkillId === args.skillId
-        ? buildExternalSkillMetricPatch({
-            skillsShInstalls: entry.installs,
-            githubStars: entry.githubStars,
-          })
-        : CLEARED_EXTERNAL_SKILL_METRICS;
+    if (
+      entry.reconciliation?.kind !== "exact-native" ||
+      entry.reconciliation.nativeSkillId !== args.skillId
+    ) {
+      return { applied: false };
+    }
+    const patch = buildExternalSkillMetricPatch({
+      skillsShInstalls: entry.installs,
+      githubStars: entry.githubStars,
+    });
     const changed = Object.entries(patch).some(
       ([field, value]) => skill[field as keyof typeof skill] !== value,
     );
@@ -2473,7 +2471,7 @@ export const rollbackFixtureRunInternal = internalMutation({
     }
     const fixture = getSkillsShCatalogFixture(run.fixtureId);
     let deletedEntries = 0;
-    let nativeSkillsChanged = 0;
+    const nativeSkillsChanged = 0;
     for (let index = 0; index < fixture.length; index += 1) {
       const expected = normalizeIdentity(fixture.rowAt(index));
       const entry = await ctx.db
@@ -2495,21 +2493,6 @@ export const rollbackFixtureRunInternal = internalMutation({
         throw new ConvexError(
           `Controlled canary has retained scan history: ${expected.externalId}`,
         );
-      }
-      const nativeSkillId =
-        entry.reconciliation?.kind === "exact-native"
-          ? entry.reconciliation.nativeSkillId
-          : undefined;
-      if (nativeSkillId) {
-        const nativeSkill = await ctx.db.get(nativeSkillId);
-        if (
-          nativeSkill &&
-          (nativeSkill.statsSkillsShInstalls !== undefined ||
-            nativeSkill.statsGithubStars !== undefined)
-        ) {
-          await ctx.db.patch(nativeSkillId, CLEARED_EXTERNAL_SKILL_METRICS);
-          nativeSkillsChanged += 1;
-        }
       }
       await ctx.db.delete(entry._id);
       deletedEntries += 1;

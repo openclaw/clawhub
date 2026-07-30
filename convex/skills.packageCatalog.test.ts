@@ -345,7 +345,7 @@ describe("skills package catalog queries", () => {
     ]);
   });
 
-  it("presents combined downloads without changing the native download index", async () => {
+  it("presents ClawHub downloads without changing the native download index", async () => {
     const indexNames: string[] = [];
     const result = await listPackageCatalogPageHandler(
       makeCtx(
@@ -370,7 +370,7 @@ describe("skills package catalog queries", () => {
     );
 
     expect(indexNames).toContain("by_active_stats_downloads");
-    expect(result.page[0]?.stats.downloads).toBe(20);
+    expect(result.page[0]?.stats.downloads).toBe(12);
   });
 
   it("normalizes and filters skill package catalog topics", async () => {

@@ -227,7 +227,15 @@ function skillMetricSourceLabel(skill: DashboardSkill) {
   const sources = skill.metricSources;
   const downloads = skill.stats?.downloads ?? 0;
   if (!sources) return metricLabel(downloads, "download");
-  return `${metricLabel(downloads, "download")}: ${sources.clawHubDownloads} ClawHub downloads + ${sources.skillsShInstalls} skills.sh installs. ${sources.openClawInstallsAllTime} OpenClaw installs; ${sources.githubStars} GitHub stars; ${sources.bookmarks} bookmarks.`;
+  const externalMetrics = [
+    sources.skillsShInstalls === null
+      ? "skills.sh lifetime installs unavailable"
+      : `${sources.skillsShInstalls} skills.sh lifetime installs`,
+    sources.githubStars === null
+      ? "GitHub stars unavailable"
+      : `${sources.githubStars} GitHub stars`,
+  ];
+  return `${sources.clawHubDownloads} ClawHub downloads. ${externalMetrics.join("; ")}. ${sources.openClawInstallsAllTime} OpenClaw installs; ${sources.bookmarks} bookmarks.`;
 }
 
 function visibilityIcon(label: string) {

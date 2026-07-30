@@ -30,10 +30,10 @@ export type DashboardSkill = Pick<
   settingsHref?: string;
   metricSources?: {
     clawHubDownloads: number;
-    skillsShInstalls: number;
+    skillsShInstalls: number | null;
     openClawInstallsCurrent: number;
     openClawInstallsAllTime: number;
-    githubStars: number;
+    githubStars: number | null;
     bookmarks: number;
   };
   pendingReview?: boolean;

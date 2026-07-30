@@ -240,7 +240,7 @@ describe("skills.listDashboardPaginated", () => {
     expect(result.page).toEqual([
       expect.objectContaining({
         slug: "slack",
-        stats: expect.objectContaining({ downloads: 20 }),
+        stats: expect.objectContaining({ downloads: 12 }),
         metricSources: {
           clawHubDownloads: 12,
           skillsShInstalls: 8,

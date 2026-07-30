@@ -32,6 +32,10 @@ function nonNegativeCount(value: number | undefined): number {
   return Math.max(0, Math.trunc(value));
 }
 
+function optionalNonNegativeCount(value: number | undefined): number | null {
+  return value === undefined ? null : nonNegativeCount(value);
+}
+
 /**
  * Read the canonical value of a migrated stat field from a skill document.
  *
@@ -58,16 +62,16 @@ export function readCanonicalStat(
 export function readSkillMetricSources(skill: SkillStatReadable) {
   return {
     clawHubDownloads: readCanonicalStat(skill, "downloads"),
-    skillsShInstalls: nonNegativeCount(skill.statsSkillsShInstalls),
+    skillsShInstalls: optionalNonNegativeCount(skill.statsSkillsShInstalls),
     openClawInstallsCurrent: readCanonicalStat(skill, "installsCurrent"),
     openClawInstallsAllTime: readCanonicalStat(skill, "installsAllTime"),
-    githubStars: nonNegativeCount(skill.statsGithubStars),
+    githubStars: optionalNonNegativeCount(skill.statsGithubStars),
     bookmarks: readCanonicalStat(skill, "stars"),
   };
 }
 
 export function readPublicDownloads(skill: SkillStatReadable): number {
-  return readCanonicalStat(skill, "downloads") + nonNegativeCount(skill.statsSkillsShInstalls);
+  return readCanonicalStat(skill, "downloads");
 }
 
 export function buildExternalSkillMetricPatch(snapshot: ExternalSkillMetricSnapshot) {
