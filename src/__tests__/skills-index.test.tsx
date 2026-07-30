@@ -149,11 +149,30 @@ describe("SkillsIndex", () => {
   it("renders the total skills count in the unfiltered page title", async () => {
     searchMock = {};
     convexReactMocks.useQuery.mockReturnValue(70_300);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            kind: "skills",
+            snapshotId: "snapshot-1",
+            snapshotCursor: "snapshot-cursor",
+            generatedAt: new Date().toISOString(),
+            windowHours: 24,
+            rankingVersion: "skills-trending-v1",
+            totalItems: 0,
+            items: [],
+            nextCursor: null,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
 
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(screen.getByRole("heading", { name: "Skills 70.3K" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Skills 70.3K" })).toBeTruthy();
   });
 
   it("hides the total skills count when filters are active", async () => {
