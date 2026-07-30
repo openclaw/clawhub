@@ -23,6 +23,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { toDayKey } from "./lib/leaderboards";
+import {
+  bumpLiveHourlySkillStats,
+  ensureHourlyStatsState,
+  toHourKey,
+} from "./lib/skillHourlyStats";
 import { applySkillStatDeltas, bumpDailySkillStats } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
@@ -1153,6 +1158,10 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
       string,
       { skillId: Id<"skills">; occurredAt: number; downloads: number; installs: number }
     >();
+    const hourlyStats = new Map<
+      string,
+      { skillId: Id<"skills">; occurredAt: number; downloads: number; installs: number }
+    >();
 
     for (const delta of args.skillDeltas) {
       for (const occurredAt of delta.downloadEvents) {
@@ -1165,6 +1174,16 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
         };
         current.downloads += 1;
         dailyStats.set(key, current);
+
+        const hourlyKey = `${delta.skillId}:${toHourKey(occurredAt)}`;
+        const hourly = hourlyStats.get(hourlyKey) ?? {
+          skillId: delta.skillId,
+          occurredAt,
+          downloads: 0,
+          installs: 0,
+        };
+        hourly.downloads += 1;
+        hourlyStats.set(hourlyKey, hourly);
       }
       for (const occurredAt of delta.installNewEvents) {
         const key = `${delta.skillId}:${toDayKey(occurredAt)}`;
@@ -1176,6 +1195,16 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
         };
         current.installs += 1;
         dailyStats.set(key, current);
+
+        const hourlyKey = `${delta.skillId}:${toHourKey(occurredAt)}`;
+        const hourly = hourlyStats.get(hourlyKey) ?? {
+          skillId: delta.skillId,
+          occurredAt,
+          downloads: 0,
+          installs: 0,
+        };
+        hourly.installs += 1;
+        hourlyStats.set(hourlyKey, hourly);
       }
     }
 
@@ -1186,6 +1215,11 @@ export const applyAggregatedStatsAndUpdateCursor = internalMutation({
         downloads: stat.downloads,
         installs: stat.installs,
       });
+    }
+
+    const hourlyState = hourlyStats.size > 0 ? await ensureHourlyStatsState(ctx) : null;
+    for (const stat of hourlyStats.values()) {
+      await bumpLiveHourlySkillStats(ctx, stat, { state: hourlyState! });
     }
 
     // Update cursor position (upsert)
@@ -1335,6 +1369,9 @@ export const processSkillStatEventsAction = internalAction({
     // If we have nothing to process, we're done
     if (aggregatedBySkill.size === 0 || maxCreationTime === undefined) {
       console.log("[STAT-AGG] No events to process, done");
+      await ctx.runMutation(internal.skillHourlyStats.markAggregationCompletedInternal, {
+        cursorCreationTime: cursor,
+      });
       return { processed: 0, skillsUpdated: 0, exhausted: true };
     }
 
@@ -1360,6 +1397,9 @@ export const processSkillStatEventsAction = internalAction({
       await ctx.scheduler.runAfter(0, internal.skillStatEvents.processSkillStatEventsAction, {});
     } else {
       console.log("[STAT-AGG] All events processed, done");
+      await ctx.runMutation(internal.skillHourlyStats.markAggregationCompletedInternal, {
+        cursorCreationTime: maxCreationTime,
+      });
     }
 
     return {

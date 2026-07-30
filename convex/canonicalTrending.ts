@@ -13,16 +13,20 @@ import {
   canonicalTrendingSourceRefValidator,
   decodeCanonicalTrendingCursor,
   encodeCanonicalTrendingCursor,
+  isFreshExternalTrendingRun,
   type CanonicalTrendingMaterializationCandidate,
 } from "./lib/canonicalTrending";
 import { shouldExcludeSkillFromPublicBrowse } from "./lib/publicBrowse";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
+import { getCompletedRolling24HourWindow, sumRollingHourlyStats } from "./lib/skillHourlyStats";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 import { assertTestSeedAllowed } from "./lib/testSeed";
 
 const SOURCE_PAGE_SIZE = 250;
 const WRITE_BATCH_SIZE = 100;
 const SNAPSHOT_RETENTION_MS = 48 * 60 * 60 * 1_000;
+const SNAPSHOT_MAX_SERVING_AGE_MS = 2 * 60 * 60 * 1_000;
+const EXTERNAL_SOURCE_MAX_AGE_MS = 2 * 60 * 60 * 1_000;
 const RISING_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 const PRUNE_BATCH_SIZE = 500;
 const PRUNE_MAX_BATCHES = 20;
@@ -32,14 +36,16 @@ const internalRefs = internal as unknown as {
     failSnapshotInternal: unknown;
     finalizeSnapshotInternal: unknown;
     getExternalSourcePageInternal: unknown;
-    getMetricSourcePageInternal: unknown;
-    getMetricWindowInternal: unknown;
+    getHourlySourcePageInternal: unknown;
     getNativeSourcePageInternal: unknown;
     getLatestCompletedTrendingRunInternal: unknown;
     pruneExpiredInternal: unknown;
     pruneExpiredActionInternal: unknown;
     startSnapshotInternal: unknown;
     writeItemsInternal: unknown;
+  };
+  skillHourlyStats: {
+    sealForSnapshotInternal: unknown;
   };
 };
 
@@ -118,26 +124,6 @@ async function collectSourcePages(
   return { rows, documentsRead, functionCalls };
 }
 
-export const getMetricWindowInternal = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const latestImport = await ctx.db
-      .query("rankingMetricImports")
-      .withIndex("by_imported_at")
-      .order("desc")
-      .first();
-    return latestImport
-      ? {
-          datasetVersion: latestImport.datasetVersion,
-          importedAt: latestImport.importedAt,
-          startDay: latestImport.endDay,
-          endDay: latestImport.endDay,
-          documentsRead: 1,
-        }
-      : null;
-  },
-});
-
 export const getNativeSourcePageInternal = internalQuery({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
@@ -157,25 +143,21 @@ export const getNativeSourcePageInternal = internalQuery({
   },
 });
 
-export const getMetricSourcePageInternal = internalQuery({
+export const getHourlySourcePageInternal = internalQuery({
   args: {
-    day: v.number(),
-    datasetVersion: v.string(),
-    importedAt: v.number(),
+    startHour: v.number(),
+    endHour: v.number(),
+    maxGeneration: v.number(),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     const result = await ctx.db
-      .query("skillDailyStats")
-      .withIndex("by_day", (q) => q.eq("day", args.day))
+      .query("skillHourlyStats")
+      .withIndex("by_hour", (q) => q.gte("hour", args.startHour).lte("hour", args.endHour))
       .paginate(args.paginationOpts);
     return {
       ...result,
-      page: result.page.filter(
-        (row) =>
-          row.rankingDatasetVersion === args.datasetVersion &&
-          row.rankingImportedAt === args.importedAt,
-      ),
+      page: result.page.filter((row) => row.generation <= args.maxGeneration),
       documentsRead: result.page.length,
     };
   },
@@ -215,7 +197,11 @@ export const getLatestCompletedTrendingRunInternal = internalQuery({
         q.and(q.eq(q.field("sourceView"), "trending"), q.eq(q.field("status"), "completed")),
       )
       .first();
-    return { runId: run?._id ?? null, documentsRead: Number(Boolean(run)) };
+    return {
+      runId: run?._id ?? null,
+      completedAt: run?.completedAt ?? null,
+      documentsRead: Number(Boolean(run)),
+    };
   },
 });
 
@@ -226,6 +212,8 @@ export const startSnapshotInternal = internalMutation({
     expiresAt: v.number(),
     windowStartDay: v.number(),
     windowEndDay: v.number(),
+    windowStartHour: v.optional(v.number()),
+    windowEndHour: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -243,6 +231,8 @@ export const startSnapshotInternal = internalMutation({
       windowHours: CANONICAL_TRENDING_WINDOW_HOURS,
       windowStartDay: args.windowStartDay,
       windowEndDay: args.windowEndDay,
+      windowStartHour: args.windowStartHour,
+      windowEndHour: args.windowEndHour,
       writtenItems: 0,
     });
   },
@@ -388,10 +378,6 @@ export const materializeInternal = internalAction({
         throw new Error("Invalid CLAW-590 proof snapshot ID");
       }
     }
-    if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
-      return { status: "disabled" as const };
-    }
-
     const startedAt = Date.now();
     const snapshotId = args.proofSnapshotId ?? `skills-${startedAt}`;
     let snapshotStarted = false;
@@ -400,94 +386,96 @@ export const materializeInternal = internalAction({
     let documentsWritten = 0;
 
     try {
-      const metricWindow = (await ctx.runQuery(
-        internalRefs.canonicalTrending.getMetricWindowInternal as never,
-        {},
-      )) as {
-        datasetVersion: string;
-        importedAt: number;
-        startDay: number;
-        endDay: number;
-        documentsRead: number;
-      } | null;
-      functionCalls += 1;
-      documentsRead += metricWindow?.documentsRead ?? 0;
-      if (!metricWindow) throw new Error("No 24-hour ranking metric window is available");
+      type HourlyWindow = {
+        startHour: number;
+        endHour: number;
+        startAt: number;
+        endAt: number;
+        lastAggregationCompletedAt: number;
+        sealedGeneration: number;
+      };
+      const proofWindow =
+        args.proofSnapshotId !== undefined
+          ? {
+              ...getCompletedRolling24HourWindow(startedAt),
+              lastAggregationCompletedAt: startedAt,
+              sealedGeneration: 0,
+            }
+          : null;
+      const hourlyWindow = proofWindow
+        ? proofWindow
+        : ((await ctx.runMutation(
+            internalRefs.skillHourlyStats.sealForSnapshotInternal as never,
+            { now: startedAt } as never,
+          )) as HourlyWindow | null);
+      if (!proofWindow) functionCalls += 1;
+      if (!hourlyWindow) {
+        return { status: "unavailable" as const, reason: "hourly-stats-not-ready" as const };
+      }
 
       const nativeSource = (await collectSourcePages(
         ctx,
         internalRefs.canonicalTrending.getNativeSourcePageInternal,
       )) as CollectedSource<Doc<"skillSearchDigest">>;
-      const metricSource = (await collectSourcePages(
+      const hourlySource = (await collectSourcePages(
         ctx,
-        internalRefs.canonicalTrending.getMetricSourcePageInternal,
+        internalRefs.canonicalTrending.getHourlySourcePageInternal,
         {
-          day: metricWindow.endDay,
-          datasetVersion: metricWindow.datasetVersion,
-          importedAt: metricWindow.importedAt,
+          startHour: hourlyWindow.startHour,
+          endHour: hourlyWindow.endHour,
+          maxGeneration: hourlyWindow.sealedGeneration,
         },
-      )) as CollectedSource<Doc<"skillDailyStats">>;
-      const latestTrendingRun = (await ctx.runQuery(
-        internalRefs.canonicalTrending.getLatestCompletedTrendingRunInternal as never,
-        {},
-      )) as { runId: Doc<"skillsShMirrorRuns">["_id"] | null; documentsRead: number };
-      documentsRead += latestTrendingRun.documentsRead;
-      functionCalls += 1;
-      const externalSource = (await collectSourcePages(
-        ctx,
-        internalRefs.canonicalTrending.getExternalSourcePageInternal,
-      )) as CollectedSource<Doc<"skillsShMirrorDigests">>;
+      )) as CollectedSource<Doc<"skillHourlyStats">>;
+      type TrendingRun = {
+        runId: Doc<"skillsShMirrorRuns">["_id"] | null;
+        completedAt: number | null;
+        documentsRead: number;
+      };
+      let latestTrendingRun: TrendingRun | null = null;
+      let externalSource: CollectedSource<Doc<"skillsShMirrorDigests">> = {
+        rows: [],
+        documentsRead: 0,
+        functionCalls: 0,
+      };
+      if (getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
+        const candidateRun = (await ctx.runQuery(
+          internalRefs.canonicalTrending.getLatestCompletedTrendingRunInternal as never,
+          {},
+        )) as TrendingRun;
+        documentsRead += candidateRun.documentsRead;
+        functionCalls += 1;
+        if (isFreshExternalTrendingRun(candidateRun, startedAt, EXTERNAL_SOURCE_MAX_AGE_MS)) {
+          latestTrendingRun = candidateRun;
+          externalSource = (await collectSourcePages(
+            ctx,
+            internalRefs.canonicalTrending.getExternalSourcePageInternal,
+          )) as CollectedSource<Doc<"skillsShMirrorDigests">>;
+        }
+      }
       documentsRead +=
-        nativeSource.documentsRead + metricSource.documentsRead + externalSource.documentsRead;
+        nativeSource.documentsRead + hourlySource.documentsRead + externalSource.documentsRead;
       functionCalls +=
-        nativeSource.functionCalls + metricSource.functionCalls + externalSource.functionCalls;
+        nativeSource.functionCalls + hourlySource.functionCalls + externalSource.functionCalls;
 
-      const confirmedMetricWindow = (await ctx.runQuery(
-        internalRefs.canonicalTrending.getMetricWindowInternal as never,
-        {},
-      )) as typeof metricWindow;
-      functionCalls += 1;
-      documentsRead += confirmedMetricWindow?.documentsRead ?? 0;
-      if (
-        !confirmedMetricWindow ||
-        confirmedMetricWindow.datasetVersion !== metricWindow.datasetVersion ||
-        confirmedMetricWindow.importedAt !== metricWindow.importedAt
-      ) {
-        throw new Error("24-hour ranking metric import changed during materialization");
+      if (latestTrendingRun) {
+        const confirmedTrendingRun = (await ctx.runQuery(
+          internalRefs.canonicalTrending.getLatestCompletedTrendingRunInternal as never,
+          {},
+        )) as TrendingRun;
+        documentsRead += confirmedTrendingRun.documentsRead;
+        functionCalls += 1;
+        if (confirmedTrendingRun.runId !== latestTrendingRun.runId) {
+          throw new Error("skills.sh Trending run changed during materialization");
+        }
       }
 
-      const confirmedTrendingRun = (await ctx.runQuery(
-        internalRefs.canonicalTrending.getLatestCompletedTrendingRunInternal as never,
-        {},
-      )) as { runId: Doc<"skillsShMirrorRuns">["_id"] | null; documentsRead: number };
-      documentsRead += confirmedTrendingRun.documentsRead;
-      functionCalls += 1;
-      if (confirmedTrendingRun.runId !== latestTrendingRun.runId) {
-        throw new Error("skills.sh Trending run changed during materialization");
-      }
-      const latestTrendingRunId = latestTrendingRun.runId;
-
-      const usageBySkill = new Map(
-        metricSource.rows.map((row) => [
-          String(row.skillId),
-          {
-            installs: row.installs,
-            bookmarks: row.bookmarks ?? 0,
-            updatedAt: row.rankingImportedAt ?? row.updatedAt,
-          },
-        ]),
-      );
+      const usageBySkill = sumRollingHourlyStats(hourlySource.rows);
       const nativeCandidates = nativeSource.rows
-        .map((digest) =>
-          buildNativeCanonicalTrendingCandidate(
-            digest,
-            usageBySkill.get(String(digest.skillId)) ?? {
-              installs: 0,
-              bookmarks: 0,
-              updatedAt: metricWindow.importedAt,
-            },
-          ),
-        )
+        .map((digest) => {
+          const usage = usageBySkill.get(String(digest.skillId));
+          if (!usage || usage.downloads + usage.installs + usage.bookmarks <= 0) return null;
+          return buildNativeCanonicalTrendingCandidate(digest, usage);
+        })
         .filter(
           (candidate): candidate is CanonicalTrendingMaterializationCandidate => candidate !== null,
         );
@@ -496,7 +484,7 @@ export const materializeInternal = internalAction({
         .filter((candidate) => candidate.createdAt >= risingCutoff)
         .map((candidate) => ({ ...candidate, lane: "clawhub-rising" as const }));
       const externalCandidates = externalSource.rows
-        .filter((digest) => digest.trendingObservedRunId === latestTrendingRunId)
+        .filter((digest) => digest.trendingObservedRunId === latestTrendingRun?.runId)
         .map(buildExternalCanonicalTrendingCandidate)
         .filter(
           (candidate): candidate is CanonicalTrendingMaterializationCandidate => candidate !== null,
@@ -514,8 +502,10 @@ export const materializeInternal = internalAction({
           snapshotId,
           generatedAt: startedAt,
           expiresAt,
-          windowStartDay: metricWindow.startDay,
-          windowEndDay: metricWindow.endDay,
+          windowStartDay: Math.floor(hourlyWindow.startHour / 24),
+          windowEndDay: Math.floor(hourlyWindow.endHour / 24),
+          windowStartHour: hourlyWindow.startHour,
+          windowEndHour: hourlyWindow.endHour,
         } as never,
       );
       snapshotStarted = true;
@@ -634,6 +624,12 @@ export const getPageInternal = internalQuery({
           .order("desc")
           .first();
     if (!snapshot && !decoded) return { status: "unavailable" as const };
+    if (snapshot && snapshot.generatedAt + SNAPSHOT_MAX_SERVING_AGE_MS <= now) {
+      return { status: decoded ? ("expired" as const) : ("unavailable" as const) };
+    }
+    if (snapshot && snapshot.rankingVersion !== CANONICAL_TRENDING_RANKING_VERSION) {
+      return { status: decoded ? ("expired" as const) : ("unavailable" as const) };
+    }
     if (
       !snapshot ||
       snapshot.status !== "ready" ||

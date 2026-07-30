@@ -17,12 +17,13 @@ export async function fetchCatalogDiscoveryCapabilities(): Promise<CatalogDiscov
       api.rolloutCapabilities.getPublicCapabilities,
       {},
     )) as {
-      catalogDiscovery?: { apiVersion?: unknown };
-      skillsSh?: { runtimeEnabled?: unknown };
+      catalogDiscovery?: { apiVersion?: unknown; canonicalTrendingEnabled?: unknown };
     };
     return {
       apiVersion: response.catalogDiscovery?.apiVersion === 1 ? 1 : 0,
-      canonicalTrendingEnabled: response.skillsSh?.runtimeEnabled === true,
+      canonicalTrendingEnabled:
+        response.catalogDiscovery?.apiVersion === 1 &&
+        response.catalogDiscovery.canonicalTrendingEnabled === true,
     };
   } catch {
     // Older deployments may not expose the capabilities query at all. Treat

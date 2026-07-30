@@ -7,6 +7,7 @@ const apiRefs = vi.hoisted(() => ({
   getStatEventCursor: Symbol("getStatEventCursor"),
   getUnprocessedEventBatch: Symbol("getUnprocessedEventBatch"),
   kickProcessedSkillStatEventPruneInternal: Symbol("kickProcessedSkillStatEventPruneInternal"),
+  markHourlyAggregationCompletedInternal: Symbol("markHourlyAggregationCompletedInternal"),
   processSkillStatEventBatchInternal: Symbol("processSkillStatEventBatchInternal"),
   processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
   processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
@@ -35,6 +36,9 @@ vi.mock("./_generated/api", () => ({
       pruneProcessedSkillStatEventsInternal: apiRefs.pruneProcessedSkillStatEventsInternal,
       pruneProcessedSkillStatEventBatchInternal: apiRefs.pruneProcessedSkillStatEventBatchInternal,
       releaseSkillStatDocSyncLeaseInternal: apiRefs.releaseSkillStatDocSyncLeaseInternal,
+    },
+    skillHourlyStats: {
+      markAggregationCompletedInternal: apiRefs.markHourlyAggregationCompletedInternal,
     },
   },
 }));
@@ -174,6 +178,9 @@ describe("skill stat events", () => {
         },
       ],
       newCursor: 456,
+    });
+    expect(runMutation).toHaveBeenCalledWith(apiRefs.markHourlyAggregationCompletedInternal, {
+      cursorCreationTime: 456,
     });
     expect(scheduler.runAfter).not.toHaveBeenCalled();
   });

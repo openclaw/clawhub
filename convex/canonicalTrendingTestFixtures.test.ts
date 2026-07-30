@@ -23,24 +23,6 @@ afterEach(() => {
 describe("CLAW-590 permanent Test snapshot ownership", () => {
   it("seeds and removes an exact owned 20-row source corpus", async () => {
     const t = convexTest(schema, modules);
-    await t.run(async (ctx) => {
-      await ctx.db.insert("rankingMetricImports", {
-        datasetVersion: "claw-590-test-dataset",
-        checksum: "claw-590-test-checksum",
-        generatedAt: new Date(1_000).toISOString(),
-        importedAt: 2_000,
-        startDay: 1,
-        endDay: 1,
-        targetCount: 0,
-        skillTargetCount: 0,
-        packageTargetCount: 0,
-        dailyRowCount: 0,
-        importedSkillRows: 0,
-        importedPackageRows: 0,
-        unresolvedTargets: 0,
-        skippedOverlayRows: 0,
-      });
-    });
 
     await expect(
       t.mutation(internal.canonicalTrendingTestFixtures.seedCanonicalTrendingSourceFixture, {
@@ -140,7 +122,7 @@ describe("CLAW-590 permanent Test snapshot ownership", () => {
         snapshotId: SNAPSHOT_ID,
         kind: "skills",
         status: "failed",
-        rankingVersion: "skills-trending-v1",
+        rankingVersion: "skills-trending-v2",
         generatedAt: 1_000,
         completedAt: 2_000,
         expiresAt: Date.now() + 100_000,

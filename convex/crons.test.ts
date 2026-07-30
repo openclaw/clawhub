@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
   const publisherTemporalAbuseScanPruneRef = Symbol("publisher-temporal-abuse-scan-prune");
   const httpRateLimitKeysPruneRef = Symbol("http-rate-limit-keys-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
+  const skillHourlyStatsPruneRef = Symbol("skill-hourly-stats-prune");
   const packageStatEventPruneRef = Symbol("package-stat-event-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => {
     publisherTemporalAbuseScanPruneRef,
     httpRateLimitKeysPruneRef,
     skillStatEventPruneRef,
+    skillHourlyStatsPruneRef,
     packageStatEventPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
@@ -72,6 +74,9 @@ vi.mock("./_generated/api", () => ({
       processSkillStatEventsAction: Symbol("skill-stat-events"),
       processSkillStatEventsInternal: Symbol("skill-doc-stat-sync"),
       pruneProcessedSkillStatEventsInternal: mocks.skillStatEventPruneRef,
+    },
+    skillHourlyStats: {
+      pruneExpiredInternal: mocks.skillHourlyStatsPruneRef,
     },
     packages: {
       processPackageStatEventsInternal: Symbol("package-stat-events"),
@@ -191,6 +196,17 @@ describe("crons", () => {
       { hours: 1 },
       mocks.canonicalTrendingPruneRef,
       {},
+    );
+  });
+
+  it("prunes expired hourly skill stats independently each hour", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-hourly-stats-prune",
+      { hours: 1 },
+      mocks.skillHourlyStatsPruneRef,
+      { batchSize: 500 },
     );
   });
 

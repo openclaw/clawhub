@@ -1,10 +1,20 @@
 import { type Infer, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 
-export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v1";
+export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v2";
 export const CANONICAL_TRENDING_WINDOW_HOURS = 24;
 export const CANONICAL_TRENDING_FIRST_PAGE_SIZE = 20;
 export const CANONICAL_TRENDING_PUBLISHER_CAP = 2;
+
+export function isFreshExternalTrendingRun(
+  run: { runId: string | null; completedAt: number | null },
+  now: number,
+  maxAgeMs: number,
+) {
+  return Boolean(
+    run.runId && run.completedAt !== null && run.completedAt > now - Math.max(0, maxAgeMs),
+  );
+}
 
 const canonicalTrendingUpstreamScannerValidator = v.object({
   status: v.string(),

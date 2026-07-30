@@ -6,6 +6,11 @@ vi.mock("./skillStatEvents", () => ({
   insertStatEvent: vi.fn(),
 }));
 
+vi.mock("./lib/skillHourlyStats", () => ({
+  bumpLiveHourlySkillStats: vi.fn(),
+  ensureHourlyStatsState: vi.fn(async () => ({ activeGeneration: 1 })),
+}));
+
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
   authTables: {},
@@ -18,6 +23,7 @@ vi.mock("./functions", () => ({
 }));
 
 const { insertStatEvent } = await import("./skillStatEvents");
+const { bumpLiveHourlySkillStats, ensureHourlyStatsState } = await import("./lib/skillHourlyStats");
 const { addStarInternal, isStarred, removeStarInternal, toggle } = await import("./stars");
 
 type WrappedHandler<TArgs, TResult> = {
@@ -103,6 +109,8 @@ describe("stars mutations", () => {
   afterEach(() => {
     vi.mocked(getAuthUserId).mockReset();
     vi.mocked(insertStatEvent).mockReset();
+    vi.mocked(bumpLiveHourlySkillStats).mockReset();
+    vi.mocked(ensureHourlyStatsState).mockClear();
   });
 
   it("toggle inserts a star row and updates denormalized star counts synchronously", async () => {
@@ -116,6 +124,7 @@ describe("stars mutations", () => {
       skillId: "skills:1",
       userId: "users:viewer",
       createdAt: expect.any(Number),
+      hourlyStatsRecordedAt: expect.any(Number),
     });
     expect(db.patch).toHaveBeenCalledWith(
       "skills:1",
@@ -129,6 +138,15 @@ describe("stars mutations", () => {
       expect.objectContaining({ totalStars: 3 }),
     );
     expect(insertStatEvent).not.toHaveBeenCalled();
+    expect(bumpLiveHourlySkillStats).toHaveBeenCalledWith(
+      ctx,
+      {
+        skillId: "skills:1",
+        occurredAt: expect.any(Number),
+        bookmarks: 1,
+      },
+      { state: { activeGeneration: 1 } },
+    );
   });
 
   it("toggle deletes a star row and decrements counts without going below zero", async () => {
@@ -145,7 +163,13 @@ describe("stars mutations", () => {
           comments: 0,
         },
       }),
-      existingStar: { _id: "stars:1", skillId: "skills:1", userId: "users:viewer" },
+      existingStar: {
+        _id: "stars:1",
+        skillId: "skills:1",
+        userId: "users:viewer",
+        createdAt: 1234,
+        hourlyStatsRecordedAt: 1200,
+      },
     });
 
     const result = await toggleHandler(ctx, { skillId: "skills:1" });
@@ -160,6 +184,32 @@ describe("stars mutations", () => {
       }),
     );
     expect(insertStatEvent).not.toHaveBeenCalled();
+    expect(bumpLiveHourlySkillStats).toHaveBeenCalledWith(
+      ctx,
+      {
+        skillId: "skills:1",
+        occurredAt: 1234,
+        bookmarks: -1,
+      },
+      { state: { activeGeneration: 1 } },
+    );
+  });
+
+  it("does not write an unmatched hourly decrement for an unbackfilled legacy star", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
+    const { ctx } = makeCtx({
+      existingStar: {
+        _id: "stars:legacy",
+        skillId: "skills:1",
+        userId: "users:viewer",
+        createdAt: 1234,
+      },
+    });
+
+    await expect(toggleHandler(ctx, { skillId: "skills:1" })).resolves.toEqual({
+      starred: false,
+    });
+    expect(bumpLiveHourlySkillStats).not.toHaveBeenCalled();
   });
 
   it("addStarInternal is idempotent and increments only when inserting a row", async () => {

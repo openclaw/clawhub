@@ -5,6 +5,7 @@ import {
   buildNativeCanonicalTrendingCandidate,
   decodeCanonicalTrendingCursor,
   encodeCanonicalTrendingCursor,
+  isFreshExternalTrendingRun,
   sortCanonicalTrendingPools,
   type CanonicalTrendingCandidate,
 } from "./canonicalTrending";
@@ -28,6 +29,18 @@ function candidate(
 }
 
 describe("canonical Trending ordering", () => {
+  it("admits skills.sh only while its latest completed run is fresh", () => {
+    expect(isFreshExternalTrendingRun({ runId: "run-1", completedAt: 8_001 }, 10_000, 2_000)).toBe(
+      true,
+    );
+    expect(isFreshExternalTrendingRun({ runId: "run-1", completedAt: 8_000 }, 10_000, 2_000)).toBe(
+      false,
+    );
+    expect(isFreshExternalTrendingRun({ runId: null, completedAt: 9_999 }, 10_000, 2_000)).toBe(
+      false,
+    );
+  });
+
   it("interleaves complete pools as a continuous 40/20/40 feed", () => {
     const result = blendCanonicalTrendingPools({
       clawhubTrending: Array.from({ length: 4 }, (_, index) =>

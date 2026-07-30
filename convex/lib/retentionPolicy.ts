@@ -192,6 +192,18 @@ export const RETENTION_POLICIES = {
   curatedSkillSearchDigest: derived("Curated search projection of skill state.", "skills"),
   skillTopicSearchDigest: derived("Topic search projection of skill state.", "skills"),
   skillDailyStats: permanent("Daily aggregate stats are product analytics."),
+  skillHourlyStats: ephemeral(
+    "Hourly skill activity is retained only long enough to build rolling Trending snapshots.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "skillHourlyStats.pruneExpiredInternal",
+      retention: "Seventy-two hours after the hourly bucket completes.",
+    },
+  ),
+  skillHourlyStatStates: permanent(
+    "Hourly aggregation rollout boundary and backfill completion state.",
+  ),
   skillLeaderboards: derived("Leaderboard snapshots can be rebuilt from stats.", "skillDailyStats"),
   skillStatBackfillState: permanent("Backfill cursor state."),
   globalStats: derived("Global stats aggregate can be recalculated.", "skills/packages"),

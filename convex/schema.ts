@@ -2618,6 +2618,31 @@ const skillDailyStats = defineTable({
   .index("by_skill_day", ["skillId", "day"])
   .index("by_day", ["day"]);
 
+const skillHourlyStats = defineTable({
+  skillId: v.id("skills"),
+  hour: v.number(),
+  generation: v.number(),
+  downloads: v.number(),
+  installs: v.number(),
+  bookmarks: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+})
+  .index("by_skill_and_hour_and_generation", ["skillId", "hour", "generation"])
+  .index("by_hour", ["hour"])
+  .index("by_expires_at", ["expiresAt"]);
+
+const skillHourlyStatStates = defineTable({
+  key: v.string(),
+  liveStartedAt: v.number(),
+  eventBackfillThroughCreationTime: v.number(),
+  activeGeneration: v.number(),
+  backfillCompletedAt: v.optional(v.number()),
+  lastAggregationCompletedAt: v.optional(v.number()),
+  lastProcessedEventCreationTime: v.optional(v.number()),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
 const skillLeaderboards = defineTable({
   kind: v.string(),
   generatedAt: v.number(),
@@ -2678,6 +2703,8 @@ const canonicalTrendingSnapshots = defineTable({
   windowHours: v.number(),
   windowStartDay: v.number(),
   windowEndDay: v.number(),
+  windowStartHour: v.optional(v.number()),
+  windowEndHour: v.optional(v.number()),
   writtenItems: v.number(),
   totalItems: v.optional(v.number()),
   sourceCounts: v.optional(
@@ -2923,6 +2950,7 @@ const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
   createdAt: v.number(),
+  hourlyStatsRecordedAt: v.optional(v.number()),
 })
   .index("by_skill", ["skillId"])
   .index("by_user", ["userId"])
@@ -4184,6 +4212,8 @@ export default defineSchema({
   curatedSkillSearchDigest,
   skillTopicSearchDigest,
   skillDailyStats,
+  skillHourlyStats,
+  skillHourlyStatStates,
   skillLeaderboards,
   skillStatBackfillState,
   globalStats,

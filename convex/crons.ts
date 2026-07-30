@@ -41,6 +41,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "skill-hourly-stats-prune",
+    { hours: 1 },
+    internal.skillHourlyStats.pruneExpiredInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
     "package-trending-leaderboard",
     { minutes: 60 },
     internal.packageLeaderboards.rebuildTrendingLeaderboardAction,

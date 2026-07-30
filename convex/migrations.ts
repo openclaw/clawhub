@@ -21,6 +21,12 @@ import {
   NVIDIA_GITHUB_DOWNLOAD_BACKFILL_SOURCE_REPO,
 } from "./lib/skillDownloadBackfill";
 import {
+  bumpHistoricalHourlySkillStats,
+  getHistoricalEventHourlyDelta,
+  getHistoricalStarHourlyDelta,
+  HOURLY_STATS_STATE_KEY,
+} from "./lib/skillHourlyStats";
+import {
   buildSkillInstallBackfillPatch,
   INSTALL_BACKFILL_CLEAN_WINDOW,
   INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME,
@@ -36,6 +42,7 @@ const APPLY_SKILL_INSTALL_BACKFILL_CONFIRM = "apply-skill-install-backfill";
 const APPLY_NVIDIA_GITHUB_DOWNLOAD_BACKFILL_CONFIRM = "apply-nvidia-github-download-backfill";
 const BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM = "backfill-plugin-manifest-summaries";
 const RECOVER_SUSPICIOUS_PUBLISH_ATTEMPTS_CONFIRM = "recover-suspicious-publish-attempts";
+const APPLY_SKILL_HOURLY_STATS_BACKFILL_CONFIRM = "apply-skill-hourly-stats-backfill";
 const SKILL_STAT_EVENTS_CURSOR_KEY = "skill_stat_events";
 const MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL = 1_000;
 const PLUGIN_PACKAGE_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
@@ -80,6 +87,48 @@ const nvidiaGitHubDownloadBackfillPreviewValidator = v.object({
 export const migrations = new Migrations(components.migrations, {
   schema,
   defaultBatchSize: 25,
+});
+
+async function requireSkillHourlyStatsBackfillState(ctx: Pick<MutationCtx, "db">) {
+  const state = await ctx.db
+    .query("skillHourlyStatStates")
+    .withIndex("by_key", (q) => q.eq("key", HOURLY_STATS_STATE_KEY))
+    .unique();
+  if (!state) throw new ConvexError("Initialize hourly skill stats before running the backfill.");
+  return state;
+}
+
+export const backfillSkillHourlyStatsFromEvents = migrations.define({
+  table: "skillStatEvents",
+  batchSize: 100,
+  migrateOne: async (ctx, event) => {
+    const state = await requireSkillHourlyStatsBackfillState(ctx);
+    const delta = getHistoricalEventHourlyDelta(event, state, Date.now());
+    if (!delta) return;
+    await bumpHistoricalHourlySkillStats(ctx, {
+      skillId: event.skillId,
+      occurredAt: event.occurredAt,
+      ...delta,
+    });
+  },
+});
+
+export const backfillSkillHourlyStatsFromStars = migrations.define({
+  table: "stars",
+  batchSize: 100,
+  migrateOne: async (ctx, star) => {
+    const state = await requireSkillHourlyStatsBackfillState(ctx);
+    const delta = getHistoricalStarHourlyDelta(star, state, Date.now());
+    if (!delta) return;
+    const hourlyStatId = await bumpHistoricalHourlySkillStats(ctx, {
+      skillId: star.skillId,
+      occurredAt: star.createdAt,
+      ...delta,
+    });
+    if (hourlyStatId) {
+      await ctx.db.patch(star._id, { hourlyStatsRecordedAt: Date.now() });
+    }
+  },
 });
 
 type SuspiciousPublishAttemptRecoveryClassification =
@@ -1295,6 +1344,72 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
 });
 
 export const run = migrations.runner();
+
+type SkillHourlyStatsBackfillRunResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: string;
+  liveStartedAt: number;
+  eventBackfillThroughCreationTime: number;
+  backfillCompletedAt?: number;
+};
+
+export const runSkillHourlyStatsBackfill: ReturnType<typeof internalAction> = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SkillHourlyStatsBackfillRunResult> => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== APPLY_SKILL_HOURLY_STATS_BACKFILL_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${APPLY_SKILL_HOURLY_STATS_BACKFILL_CONFIRM}" to apply.`,
+      );
+    }
+
+    const initialized: Doc<"skillHourlyStatStates"> = await ctx.runMutation(
+      internal.skillHourlyStats.initializeInternal,
+      {},
+    );
+    if (dryRun) {
+      for (const fn of [
+        "migrations:backfillSkillHourlyStatsFromEvents",
+        "migrations:backfillSkillHourlyStatsFromStars",
+      ]) {
+        await ctx.runMutation(internal.migrations.run, {
+          fn,
+          dryRun: true,
+          reset: true,
+        });
+      }
+    } else {
+      await runToCompletion(
+        ctx,
+        components.migrations,
+        internal.migrations.backfillSkillHourlyStatsFromEvents,
+      );
+      await runToCompletion(
+        ctx,
+        components.migrations,
+        internal.migrations.backfillSkillHourlyStatsFromStars,
+      );
+      await ctx.runMutation(internal.skillHourlyStats.markBackfillCompletedInternal, {});
+    }
+    const state: Doc<"skillHourlyStatStates"> | null = await ctx.runQuery(
+      internal.skillHourlyStats.getStateInternal,
+      {},
+    );
+
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? APPLY_SKILL_HOURLY_STATS_BACKFILL_CONFIRM : undefined,
+      liveStartedAt: initialized.liveStartedAt,
+      eventBackfillThroughCreationTime: initialized.eventBackfillThroughCreationTime,
+      backfillCompletedAt: state?.backfillCompletedAt,
+    };
+  },
+});
 
 export const runSuspiciousPublishAttemptRecovery: ReturnType<typeof internalAction> =
   internalAction({

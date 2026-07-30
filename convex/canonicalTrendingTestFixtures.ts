@@ -7,6 +7,7 @@ import {
   internalQuery,
   type QueryCtx,
 } from "./_generated/server";
+import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
 import { assertTestSeedAllowed } from "./lib/testSeed";
 
 const CONFIRM = "manage-claw-590-canonical-trending-test-proof";
@@ -156,13 +157,17 @@ function assertOwnedNativeDigest(
   }
 }
 
-function assertOwnedDailyStat(stat: Doc<"skillDailyStats">, index: number, skillId: Id<"skills">) {
+function assertOwnedHourlyStat(
+  stat: Doc<"skillHourlyStats">,
+  index: number,
+  skillId: Id<"skills">,
+) {
   if (
     stat.skillId !== skillId ||
+    stat.generation !== 0 ||
+    stat.downloads !== 100_000 - index ||
     stat.installs !== 100_000 - index ||
-    stat.bookmarks !== 10_000 - index ||
-    !stat.rankingDatasetVersion ||
-    stat.rankingImportedAt === undefined
+    stat.bookmarks !== 10_000 - index
   ) {
     throw new Error("CLAW-590 source fixture metric ownership mismatch");
   }
@@ -275,8 +280,8 @@ async function readOwnedSourceFixture(ctx: Pick<QueryCtx, "db">) {
         .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
         .unique(),
       ctx.db
-        .query("skillDailyStats")
-        .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id))
+        .query("skillHourlyStats")
+        .withIndex("by_skill_and_hour_and_generation", (q) => q.eq("skillId", skill._id))
         .collect(),
     ]);
     if (!version || !digest || stats.length !== 1) {
@@ -284,7 +289,7 @@ async function readOwnedSourceFixture(ctx: Pick<QueryCtx, "db">) {
     }
     assertOwnedVersion(version, skill._id, owner._id);
     assertOwnedNativeDigest(digest, index, skill._id, owner._id, version._id);
-    assertOwnedDailyStat(stats[0]!, index, skill._id);
+    assertOwnedHourlyStat(stats[0]!, index, skill._id);
     native.push({ owner, skill, version, digest, stat: stats[0]! });
   }
 
@@ -306,7 +311,7 @@ function assertOwnedSnapshot(snapshot: Doc<"canonicalTrendingSnapshots">, snapsh
   if (
     snapshot.snapshotId !== snapshotId ||
     snapshot.kind !== "skills" ||
-    snapshot.rankingVersion !== "skills-trending-v1" ||
+    snapshot.rankingVersion !== "skills-trending-v2" ||
     snapshot.windowHours !== 24
   ) {
     throw new Error("CLAW-590 proof snapshot ownership mismatch");
@@ -327,14 +332,8 @@ export const seedCanonicalTrendingSourceFixture = internalMutation({
       };
     }
 
-    const metricWindow = await ctx.db
-      .query("rankingMetricImports")
-      .withIndex("by_imported_at")
-      .order("desc")
-      .first();
-    if (!metricWindow) throw new Error("CLAW-590 source fixture requires a ranking metric import");
-
     const now = Date.now();
+    const window = getCompletedRolling24HourWindow(now);
     const users: Id<"users">[] = [];
     for (let index = 0; index < NATIVE_PUBLISHER_COUNT; index += 1) {
       users.push(
@@ -420,15 +419,15 @@ export const seedCanonicalTrendingSourceFixture = internalMutation({
         createdAt: now - index,
         updatedAt: now - index,
       });
-      await ctx.db.insert("skillDailyStats", {
+      await ctx.db.insert("skillHourlyStats", {
         skillId,
-        day: metricWindow.endDay,
+        hour: window.endHour,
+        generation: 0,
         downloads: 100_000 - index,
         installs: 100_000 - index,
         bookmarks: 10_000 - index,
-        rankingDatasetVersion: metricWindow.datasetVersion,
-        rankingImportedAt: metricWindow.importedAt,
-        updatedAt: metricWindow.importedAt,
+        updatedAt: now,
+        expiresAt: now + 72 * 60 * 60 * 1_000,
       });
     }
 

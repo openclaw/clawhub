@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -160,11 +161,12 @@ describe("canonical Trending snapshot storage", () => {
   it("keeps pagination pinned to the snapshot encoded by the cursor", async () => {
     const t = convexTest(schema, modules);
     const source = await insertEligibleNativeSource(t, "pagination-source");
+    const now = Date.now();
 
     await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
       snapshotId: "skills-1000",
-      generatedAt: 1_000,
-      expiresAt: Date.now() + 100_000,
+      generatedAt: now - 1_000,
+      expiresAt: now + 100_000,
       windowStartDay: 40,
       windowEndDay: 40,
     });
@@ -193,7 +195,7 @@ describe("canonical Trending snapshot storage", () => {
     });
     await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
       snapshotId: "skills-1000",
-      completedAt: 1_050,
+      completedAt: now - 950,
       totalItems: 3,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 1 },
       operations: { documentsRead: 12, documentsWritten: 4, functionCalls: 3 },
@@ -209,9 +211,9 @@ describe("canonical Trending snapshot storage", () => {
     expect(firstPage).toMatchObject({
       kind: "skills",
       snapshotId: "skills-1000",
-      generatedAt: "1970-01-01T00:00:01.000Z",
+      generatedAt: new Date(now - 1_000).toISOString(),
       windowHours: 24,
-      rankingVersion: "skills-trending-v1",
+      rankingVersion: "skills-trending-v2",
       items: [
         { id: "clawhub:one", rank: 1, lane: "clawhub-trending" },
         { id: "clawhub:two", rank: 2, lane: "skills-sh-trending" },
@@ -221,8 +223,8 @@ describe("canonical Trending snapshot storage", () => {
 
     await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
       snapshotId: "skills-2000",
-      generatedAt: 2_000,
-      expiresAt: Date.now() + 100_000,
+      generatedAt: now,
+      expiresAt: now + 100_000,
       windowStartDay: 41,
       windowEndDay: 41,
     });
@@ -239,7 +241,7 @@ describe("canonical Trending snapshot storage", () => {
     });
     await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
       snapshotId: "skills-2000",
-      completedAt: 2_050,
+      completedAt: now + 50,
       totalItems: 1,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 5, documentsWritten: 2, functionCalls: 3 },
@@ -309,7 +311,7 @@ describe("canonical Trending snapshot storage", () => {
     ).toEqual({ status: "invalid-cursor" });
   });
 
-  it("does not read or write source state while the rollout is dark", async () => {
+  it("reports unavailable without writing when native hourly stats are not ready", async () => {
     vi.stubEnv("CLAWHUB_ENV", "production");
     vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
     const t = convexTest(schema, modules);
@@ -319,8 +321,149 @@ describe("canonical Trending snapshot storage", () => {
       ctx.db.query("canonicalTrendingSnapshots").collect(),
     );
 
-    expect(result).toEqual({ status: "disabled" });
+    expect(result).toEqual({ status: "unavailable", reason: "hourly-stats-not-ready" });
     expect(snapshots).toEqual([]);
+  });
+
+  it("anchors the rolling window to a fresh completed aggregation across cron boundaries", async () => {
+    const t = convexTest(schema, modules);
+    const now = 100 * 60 * 60 * 1_000 + 7 * 60 * 1_000;
+    const lastAggregationCompletedAt = now - 15 * 60 * 1_000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillHourlyStatStates", {
+        key: "canonical_trending",
+        liveStartedAt: now - 60 * 60 * 1_000,
+        eventBackfillThroughCreationTime: 100,
+        activeGeneration: 1,
+        backfillCompletedAt: now - 30 * 60 * 1_000,
+        lastAggregationCompletedAt,
+        updatedAt: lastAggregationCompletedAt,
+      });
+    });
+
+    await expect(
+      t.mutation(internal.skillHourlyStats.sealForSnapshotInternal, { now }),
+    ).resolves.toMatchObject({
+      startHour: 75,
+      endHour: 98,
+      startAt: 75 * 60 * 60 * 1_000,
+      endAt: 99 * 60 * 60 * 1_000,
+      lastAggregationCompletedAt,
+      sealedGeneration: 1,
+    });
+  });
+
+  it("rejects hourly aggregation state once it is two hours old", async () => {
+    const t = convexTest(schema, modules);
+    const now = 100 * 60 * 60 * 1_000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillHourlyStatStates", {
+        key: "canonical_trending",
+        liveStartedAt: now - 3 * 60 * 60 * 1_000,
+        eventBackfillThroughCreationTime: 100,
+        activeGeneration: 1,
+        backfillCompletedAt: now - 3 * 60 * 60 * 1_000,
+        lastAggregationCompletedAt: now - 2 * 60 * 60 * 1_000,
+        updatedAt: now - 2 * 60 * 60 * 1_000,
+      });
+    });
+
+    await expect(
+      t.mutation(internal.skillHourlyStats.sealForSnapshotInternal, { now }),
+    ).resolves.toBeNull();
+  });
+
+  it("materializes native rolling activity while skills.sh is disabled", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
+    const t = convexTest(schema, modules);
+    const source = await insertEligibleNativeSource(t, "native-only");
+    const now = Date.now();
+    const window = getCompletedRolling24HourWindow(now);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillHourlyStatStates", {
+        key: "canonical_trending",
+        liveStartedAt: now - 3_600_000,
+        eventBackfillThroughCreationTime: 100,
+        activeGeneration: 1,
+        backfillCompletedAt: now - 1_000,
+        lastAggregationCompletedAt: window.endAt + 1,
+        lastProcessedEventCreationTime: 100,
+        updatedAt: now,
+      });
+      await ctx.db.insert("skillHourlyStats", {
+        skillId: source.skillId,
+        hour: window.endHour,
+        generation: 0,
+        downloads: 6,
+        installs: 8,
+        bookmarks: 3,
+        updatedAt: now,
+        expiresAt: now + 72 * 3_600_000,
+      });
+    });
+
+    const result = await t.action(internal.canonicalTrending.materializeInternal, {});
+
+    expect(result).toMatchObject({
+      status: "ready",
+      totalItems: 1,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+      sample: [
+        expect.objectContaining({
+          id: expect.stringMatching(/^clawhub:/),
+          trending24hInstalls: 8,
+        }),
+      ],
+    });
+  });
+
+  it("stops serving the last good snapshot after two hours", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-stale-serving",
+      generatedAt: now - 2 * 60 * 60 * 1_000 - 1,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-stale-serving",
+      completedAt: now - 2 * 60 * 60 * 1_000,
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 0, clawhubRising: 0, skillsShTrending: 0 },
+      operations: { documentsRead: 1, documentsWritten: 2, functionCalls: 2 },
+    });
+
+    expect(
+      await t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+    ).toEqual({ status: "unavailable" });
+  });
+
+  it("never serves a snapshot produced by the legacy ranking algorithm", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("canonicalTrendingSnapshots", {
+        snapshotId: "skills-legacy-ranking",
+        kind: "skills",
+        status: "ready",
+        rankingVersion: "skills-trending-v1",
+        generatedAt: now,
+        completedAt: now,
+        expiresAt: now + 24 * 60 * 60 * 1_000,
+        windowHours: 24,
+        windowStartDay: 40,
+        windowEndDay: 40,
+        writtenItems: 0,
+        totalItems: 0,
+      });
+    });
+
+    expect(
+      await t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+    ).toEqual({ status: "unavailable" });
   });
 
   it("prunes expired snapshots independently while materialization is dark", async () => {
@@ -362,11 +505,12 @@ describe("canonical Trending snapshot storage", () => {
     expect(rows).toEqual({ snapshots: [], items: [] });
   });
 
-  it("materializes imported 24-hour metrics into a ready snapshot", async () => {
+  it("materializes hourly native metrics with a fresh enabled skills.sh contribution", async () => {
     vi.stubEnv("CLAWHUB_ENV", "test");
     vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
     const t = convexTest(schema, modules);
     const now = Date.now();
+    const window = getCompletedRolling24HourWindow(now);
 
     await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
@@ -414,39 +558,25 @@ describe("canonical Trending snapshot storage", () => {
         createdAt: now - 1_000,
         updatedAt: now,
       });
-      await ctx.db.insert("rankingMetricImports", {
-        datasetVersion: "ranking-test-v1",
-        checksum: "a".repeat(64),
-        generatedAt: new Date(now).toISOString(),
-        importedAt: now,
-        startDay: 1,
-        endDay: 60,
-        targetCount: 1,
-        skillTargetCount: 1,
-        packageTargetCount: 0,
-        dailyRowCount: 1,
-        importedSkillRows: 1,
-        importedPackageRows: 0,
-        unresolvedTargets: 0,
-        skippedOverlayRows: 0,
+      await ctx.db.insert("skillHourlyStatStates", {
+        key: "canonical_trending",
+        liveStartedAt: now - 3_600_000,
+        eventBackfillThroughCreationTime: 100,
+        activeGeneration: 1,
+        backfillCompletedAt: now - 1_000,
+        lastAggregationCompletedAt: window.endAt + 1,
+        lastProcessedEventCreationTime: 100,
+        updatedAt: now,
       });
-      await ctx.db.insert("skillDailyStats", {
+      await ctx.db.insert("skillHourlyStats", {
         skillId,
-        day: 60,
+        hour: window.endHour,
+        generation: 0,
         downloads: 18,
         installs: 12,
         bookmarks: 4,
-        rankingDatasetVersion: "ranking-test-v1",
-        rankingImportedAt: now,
         updatedAt: now,
-      });
-      await ctx.db.insert("skillDailyStats", {
-        skillId,
-        day: 61,
-        downloads: 999,
-        installs: 999,
-        bookmarks: 999,
-        updatedAt: now + 1,
+        expiresAt: now + 72 * 3_600_000,
       });
       const trendingRunId = await ctx.db.insert("skillsShMirrorRuns", {
         snapshotId: "skills-sh-trending-runtime",

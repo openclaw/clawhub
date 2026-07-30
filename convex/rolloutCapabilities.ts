@@ -22,6 +22,10 @@ export async function getPublicCapabilitiesHandler(
     environment: runtime.environment,
     catalogDiscovery: {
       apiVersion: 1,
+      // This advertises the canonical API contract, not row availability.
+      // Clients must use its unavailable/empty states instead of falling back
+      // to legacy seven-day or lifetime popularity under a 24-hour label.
+      canonicalTrendingEnabled: true,
     },
     skillsSh: {
       mode: runtime.skillsSh.mode,

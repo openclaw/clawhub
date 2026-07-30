@@ -21,10 +21,10 @@ describe("fetchCatalogDiscoveryCapabilities", () => {
     convexQueryMock.mockReset();
   });
 
-  it("enables canonical discovery only when the backend advertises it", async () => {
+  it("enables canonical Trending independently of the skills.sh rollout", async () => {
     convexQueryMock.mockResolvedValue({
-      catalogDiscovery: { apiVersion: 1 },
-      skillsSh: { runtimeEnabled: true },
+      catalogDiscovery: { apiVersion: 1, canonicalTrendingEnabled: true },
+      skillsSh: { runtimeEnabled: false },
     });
 
     await expect(fetchCatalogDiscoveryCapabilities()).resolves.toEqual({

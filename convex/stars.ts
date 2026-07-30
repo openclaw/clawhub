@@ -4,14 +4,32 @@ import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
 import { getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { toPublicSkill } from "./lib/public";
+import { bumpLiveHourlySkillStats, ensureHourlyStatsState } from "./lib/skillHourlyStats";
 import { applySkillStatDeltas } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
-async function applyStarDelta(ctx: Pick<MutationCtx, "db">, skill: Doc<"skills">, delta: 1 | -1) {
+async function applyStarDelta(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills">,
+  delta: 1 | -1,
+  occurredAt: number,
+  hourlyState?: { activeGeneration: number },
+) {
   const patch = applySkillStatDeltas(skill, { stars: delta });
   const nextSkill = { ...skill, ...patch };
   await ctx.db.patch(skill._id, patch);
   await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+  if (hourlyState) {
+    await bumpLiveHourlySkillStats(
+      ctx,
+      {
+        skillId: skill._id,
+        occurredAt,
+        bookmarks: delta,
+      },
+      { state: hourlyState },
+    );
+  }
 }
 
 export const isStarred = query({
@@ -41,19 +59,26 @@ export const toggle = mutation({
 
     if (existing) {
       await ctx.db.delete(existing._id);
-      await applyStarDelta(ctx, skill, -1);
+      const hourlyState =
+        existing.hourlyStatsRecordedAt === undefined
+          ? undefined
+          : await ensureHourlyStatsState(ctx);
+      await applyStarDelta(ctx, skill, -1, existing.createdAt, hourlyState);
       return { starred: false };
     }
 
     if (skill.softDeletedAt) throw new Error("Skill not found");
 
+    const hourlyState = await ensureHourlyStatsState(ctx);
+    const createdAt = Date.now();
     await ctx.db.insert("stars", {
       skillId: args.skillId,
       userId,
-      createdAt: Date.now(),
+      createdAt,
+      hourlyStatsRecordedAt: createdAt,
     });
 
-    await applyStarDelta(ctx, skill, 1);
+    await applyStarDelta(ctx, skill, 1, createdAt, hourlyState);
 
     return { starred: true };
   },
@@ -90,13 +115,16 @@ export const addStarInternal = internalMutation({
       .unique();
     if (existing) return { ok: true as const, starred: true, alreadyStarred: true };
 
+    const hourlyState = await ensureHourlyStatsState(ctx);
+    const createdAt = Date.now();
     await ctx.db.insert("stars", {
       skillId: args.skillId,
       userId: args.userId,
-      createdAt: Date.now(),
+      createdAt,
+      hourlyStatsRecordedAt: createdAt,
     });
 
-    await applyStarDelta(ctx, skill, 1);
+    await applyStarDelta(ctx, skill, 1, createdAt, hourlyState);
 
     return { ok: true as const, starred: true, alreadyStarred: false };
   },
@@ -114,7 +142,9 @@ export const removeStarInternal = internalMutation({
     if (!existing) return { ok: true as const, unstarred: false, alreadyUnstarred: true };
 
     await ctx.db.delete(existing._id);
-    await applyStarDelta(ctx, skill, -1);
+    const hourlyState =
+      existing.hourlyStatsRecordedAt === undefined ? undefined : await ensureHourlyStatsState(ctx);
+    await applyStarDelta(ctx, skill, -1, existing.createdAt, hourlyState);
 
     return { ok: true as const, unstarred: true, alreadyUnstarred: false };
   },

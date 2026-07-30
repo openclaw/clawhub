@@ -32,6 +32,7 @@ describe("getPublicCapabilitiesHandler", () => {
       environment: "unknown",
       catalogDiscovery: {
         apiVersion: 1,
+        canonicalTrendingEnabled: true,
       },
       skillsSh: {
         mode: "off",
@@ -71,6 +72,7 @@ describe("getPublicCapabilitiesHandler", () => {
       environment: "test",
       catalogDiscovery: {
         apiVersion: 1,
+        canonicalTrendingEnabled: true,
       },
       skillsSh: {
         mode: "test",
