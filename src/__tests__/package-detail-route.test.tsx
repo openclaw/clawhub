@@ -2016,6 +2016,11 @@ describe("plugin detail route", () => {
     expect(within(validationRegion).getByText("v1.0.0")).toBeTruthy();
     expect(within(validationRegion).getByText("Target")).toBeTruthy();
     expect(within(validationRegion).getByText("OpenClaw 0.9.0")).toBeTruthy();
+    expect(
+      within(validationRegion).getByText(
+        "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText(/Legacy before_agent_start hook is deprecated\./)).toBeTruthy();
     expect(screen.getByText(/We found/)).toBeTruthy();
     expect(screen.queryByText(/Hey,/)).toBeNull();

@@ -690,6 +690,12 @@ function PluginManifestSkillsPanel({
 }
 
 const PLUGIN_VALIDATE_CLI = "clawhub package validate <path-to-plugin>";
+
+function pluginValidateCommand(openClawVersion?: string) {
+  return openClawVersion
+    ? `${PLUGIN_VALIDATE_CLI} --openclaw-version ${openClawVersion}`
+    : PLUGIN_VALIDATE_CLI;
+}
 const PLUGIN_VALIDATE_TOOLBAR_LABEL = "Validate locally before publishing";
 
 const INSPECTOR_ISSUE_CLASS_LABELS: Record<string, string> = {
@@ -954,10 +960,18 @@ function PluginValidationFindingCard({
         </div>
       ) : null}
       {finding.targetOpenClawVersion ? (
-        <div className="plugin-warning-meta-field">
-          <dt className="plugin-warning-meta-key">Target</dt>
-          <dd className="plugin-warning-meta-value">OpenClaw {finding.targetOpenClawVersion}</dd>
-        </div>
+        <>
+          <div className="plugin-warning-meta-field">
+            <dt className="plugin-warning-meta-key">Target</dt>
+            <dd className="plugin-warning-meta-value">OpenClaw {finding.targetOpenClawVersion}</dd>
+          </div>
+          <div className="plugin-warning-meta-field">
+            <dt className="plugin-warning-meta-key">Reproduce</dt>
+            <dd className="plugin-warning-meta-value">
+              <code>{pluginValidateCommand(finding.targetOpenClawVersion)}</code>
+            </dd>
+          </div>
+        </>
       ) : null}
     </dl>
   ) : null;
