@@ -12504,17 +12504,19 @@ describe("packages public queries", () => {
           if (table === "packageInspectorWarnings") {
             return {
               withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  take: vi.fn().mockResolvedValue([
-                    {
-                      code: "missing-api",
-                      scanSource: "nightly",
-                      inspectorVersion: "0.6.0",
-                      targetOpenClawVersion: "2026.8.0-beta.1",
-                      message: "API removed",
-                      authorRemediation: { summary: "Use the replacement API." },
-                    },
-                  ]),
+                filter: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn().mockResolvedValue([
+                      {
+                        code: "missing-api",
+                        scanSource: "nightly",
+                        inspectorVersion: "0.6.0",
+                        targetOpenClawVersion: "2026.8.0-beta.1",
+                        message: "API removed",
+                        authorRemediation: { summary: "Use the replacement API." },
+                      },
+                    ]),
+                  })),
                 })),
               })),
             };
@@ -12542,7 +12544,7 @@ describe("packages public queries", () => {
     ).resolves.toMatchObject({ packageName: "demo-plugin" });
   });
 
-  it("limits exact-target email context to findings from the current nightly scan", async () => {
+  it("selects the exact nightly scan before limiting owner email findings", async () => {
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -12569,21 +12571,27 @@ describe("packages public queries", () => {
           if (table === "packageInspectorWarnings") {
             return {
               withIndex: vi.fn(() => ({
+                filter: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    take: vi.fn().mockResolvedValue([
+                      {
+                        code: "missing-api",
+                        scanSource: "nightly",
+                        inspectorVersion: "0.6.0",
+                        targetOpenClawVersion: "2026.8.0-beta.1",
+                        message: "API removed",
+                        authorRemediation: { summary: "Use the replacement API." },
+                      },
+                    ]),
+                  })),
+                })),
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue([
                     {
-                      code: "publish-warning",
+                      code: "publish-warning-100",
                       scanSource: "publish",
-                      message: "Static package warning",
+                      message: "The release-wide limit was exhausted by publish findings.",
                       authorRemediation: { summary: "Fix the package metadata." },
-                    },
-                    {
-                      code: "missing-api",
-                      scanSource: "nightly",
-                      inspectorVersion: "0.6.0",
-                      targetOpenClawVersion: "2026.8.0-beta.1",
-                      message: "API removed",
-                      authorRemediation: { summary: "Use the replacement API." },
                     },
                   ]),
                 })),

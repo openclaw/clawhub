@@ -3085,6 +3085,28 @@ async function takeAuthorRemediationWarningsByRelease(
   return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
 }
 
+async function takeExactNightlyAuthorRemediationWarningsByRelease(
+  ctx: DbReaderCtx,
+  releaseId: Id<"packageReleases">,
+  inspectorVersion: string,
+  targetOpenClawVersion: string,
+  limit: number,
+) {
+  const findings = await ctx.db
+    .query("packageInspectorWarnings")
+    .withIndex("by_release_created", (q) => q.eq("releaseId", releaseId))
+    .filter((q) =>
+      q.and(
+        q.eq(q.field("scanSource"), "nightly"),
+        q.eq(q.field("inspectorVersion"), inspectorVersion),
+        q.eq(q.field("targetOpenClawVersion"), targetOpenClawVersion),
+      ),
+    )
+    .order("desc")
+    .take(authorRemediationScanLimit(limit));
+  return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
+}
+
 function authorRemediationScanLimit(limit: number) {
   return Math.min(500, Math.max(limit * 5, 50));
 }
@@ -9973,16 +9995,17 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
     if (!pkg || pkg.softDeletedAt || !release || release.softDeletedAt) return null;
     const owner = await ctx.db.get(pkg.ownerUserId);
     if (!owner || owner.deletedAt || owner.deactivatedAt || !owner.email) return null;
-    const allFindings = await takeAuthorRemediationWarningsByRelease(ctx, release._id, 100);
     const exactScanIdentity = Boolean(args.inspectorVersion && args.targetOpenClawVersion);
-    const findings = exactScanIdentity
-      ? allFindings.filter(
-          (finding) =>
-            finding.scanSource === "nightly" &&
-            finding.inspectorVersion === args.inspectorVersion &&
-            finding.targetOpenClawVersion === args.targetOpenClawVersion,
-        )
-      : allFindings;
+    const findings =
+      args.inspectorVersion && args.targetOpenClawVersion
+        ? await takeExactNightlyAuthorRemediationWarningsByRelease(
+            ctx,
+            release._id,
+            args.inspectorVersion,
+            args.targetOpenClawVersion,
+            100,
+          )
+        : await takeAuthorRemediationWarningsByRelease(ctx, release._id, 100);
     if (findings.length === 0) return null;
     const notificationCompleted = await hasCompletedPackageInspectorNotification(ctx, {
       releaseId: release._id,
