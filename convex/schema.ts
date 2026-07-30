@@ -1984,6 +1984,18 @@ const packageInspectorScanCursors = defineTable({
   updatedAt: v.number(),
 }).index("by_name", ["name"]);
 
+const packageInspectorScanStates = defineTable({
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  inspectorVersion: v.string(),
+  targetOpenClawVersion: v.string(),
+  completedAt: v.number(),
+}).index("by_release_and_inspector_version_and_target_openclaw_version", [
+  "releaseId",
+  "inspectorVersion",
+  "targetOpenClawVersion",
+]);
+
 const securityScanJobs = defineTable({
   targetKind: securityScanTargetKindValidator,
   skillVersionId: v.optional(v.id("skillVersions")),
@@ -4208,6 +4220,7 @@ export default defineSchema({
   packageInspectorWarnings,
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
+  packageInspectorScanStates,
   securityScanJobs,
   securityScanDispatchState,
   skillScanRequests,

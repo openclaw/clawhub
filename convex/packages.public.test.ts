@@ -28,6 +28,7 @@ import {
   listPackageInspectorWarningsForManager,
   listPackageInspectorFindingsPublic,
   insertPackageInspectorWarningsInternal,
+  ingestPackageInspectorScanResultsInternal,
   claimPackageInspectorScanBatchInternal,
   previewPackageInspectorScanBatchInternal,
   getPackageInspectorEmailContextInternal,
@@ -608,6 +609,7 @@ const insertPackageInspectorWarningsInternalHandler = (
       scanSource?: "publish" | "nightly";
       inspectorVersion?: string;
       targetOpenClawVersion?: string;
+      notifyOwners?: boolean;
       findings?: Array<{
         id?: string;
         code: string;
@@ -625,6 +627,25 @@ const insertPackageInspectorWarningsInternalHandler = (
         issueClass?: string;
         evidence?: string[];
         fixture?: string;
+        authorRemediation?: TestPackageInspectorAuthorRemediation;
+      }>;
+    },
+    { ok: true; inserted: number; shouldEmailOwner: boolean }
+  >
+)._handler;
+const ingestPackageInspectorScanResultsInternalHandler = (
+  ingestPackageInspectorScanResultsInternal as unknown as WrappedHandler<
+    {
+      packageId: string;
+      releaseId: string;
+      inspectorVersion?: string;
+      targetOpenClawVersion?: string;
+      notifyOwners?: boolean;
+      findings: Array<{
+        id?: string;
+        code: string;
+        message: string;
+        level?: string;
         authorRemediation?: TestPackageInspectorAuthorRemediation;
       }>;
     },
@@ -11627,7 +11648,7 @@ describe("packages public queries", () => {
           },
         ],
       }),
-    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: true });
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: false });
 
     expect(insert).toHaveBeenCalledWith(
       "packageInspectorWarnings",
@@ -11637,6 +11658,177 @@ describe("packages public queries", () => {
         targetOpenClawVersion: "2026.5.0",
       }),
     );
+  });
+
+  it("replaces the current nightly beta findings while preserving publish findings", async () => {
+    const insert = vi.fn();
+    const deleteRow = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorWarnings") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([
+                  {
+                    _id: "packageInspectorWarnings:static",
+                    scanSource: "publish",
+                    inspectorFindingId: "demo:manifest-name-missing",
+                    code: "manifest-name-missing",
+                    message: "manifest name is missing",
+                    authorRemediation: { summary: "Add a manifest name." },
+                  },
+                  {
+                    _id: "packageInspectorWarnings:old-beta",
+                    scanSource: "nightly",
+                    inspectorFindingId: "demo:old-beta-api",
+                    code: "old-beta-api",
+                    message: "old beta API is missing",
+                    targetOpenClawVersion: "2026.7.0-beta.1",
+                    authorRemediation: { summary: "Use the supported API." },
+                  },
+                ]),
+              })),
+            };
+          }
+          if (table === "packageInspectorFindingNotifications") {
+            return {
+              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: deleteRow,
+        normalizeId: vi.fn((tableName: string, id: string) =>
+          id.startsWith(`${tableName}:`) ? id : null,
+        ),
+      },
+    };
+
+    await expect(
+      insertPackageInspectorWarningsInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        ownerUserId: "users:owner",
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        scanSource: "nightly",
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+        findings: [
+          {
+            id: "demo:new-beta-api",
+            code: "new-beta-api",
+            level: "breakage",
+            message: "new beta API is missing",
+            authorRemediation: { summary: "Use the replacement API." },
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: false });
+
+    expect(deleteRow).toHaveBeenCalledTimes(1);
+    expect(deleteRow).toHaveBeenCalledWith("packageInspectorWarnings:old-beta");
+    expect(insert).toHaveBeenCalledWith(
+      "packageInspectorWarnings",
+      expect.objectContaining({
+        scanSource: "nightly",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+        code: "new-beta-api",
+      }),
+    );
+  });
+
+  it("records a clean beta scan identity without overwriting a previous target", async () => {
+    const insert = vi.fn().mockResolvedValue("packageInspectorScanStates:demo");
+    const deleteRow = vi.fn();
+    const scanStateWithIndex = vi.fn((indexName: string) => ({
+      unique: vi.fn().mockResolvedValue(
+        indexName === "by_release"
+          ? {
+              _id: "packageInspectorScanStates:previous",
+              inspectorVersion: "0.5.0",
+              targetOpenClawVersion: "2026.7.0-beta.1",
+            }
+          : null,
+      ),
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "packages:demo") {
+            return {
+              _id: "packages:demo",
+              name: "demo-plugin",
+              ownerUserId: "users:owner",
+            };
+          }
+          if (id === "packageReleases:demo-1") {
+            return {
+              _id: "packageReleases:demo-1",
+              packageId: "packages:demo",
+              version: "1.0.0",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorWarnings") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([
+                  {
+                    _id: "packageInspectorWarnings:old-beta",
+                    scanSource: "nightly",
+                    code: "old-beta-api",
+                    message: "old beta API is missing",
+                    authorRemediation: { summary: "Use the supported API." },
+                  },
+                ]),
+              })),
+            };
+          }
+          if (table === "packageInspectorScanStates") {
+            return { withIndex: scanStateWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: deleteRow,
+        normalizeId: vi.fn((tableName: string, id: string) =>
+          id.startsWith(`${tableName}:`) ? id : null,
+        ),
+      },
+    };
+
+    await expect(
+      ingestPackageInspectorScanResultsInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+        findings: [],
+      }),
+    ).resolves.toEqual({ ok: true, inserted: 0, shouldEmailOwner: false });
+
+    expect(deleteRow).toHaveBeenCalledWith("packageInspectorWarnings:old-beta");
+    expect(scanStateWithIndex).toHaveBeenCalledWith(
+      "by_release_and_inspector_version_and_target_openclaw_version",
+      expect.any(Function),
+    );
+    expect(insert).toHaveBeenCalledWith("packageInspectorScanStates", {
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+      inspectorVersion: "0.6.0",
+      targetOpenClawVersion: "2026.8.0-beta.1",
+      completedAt: expect.any(Number),
+    });
   });
 
   it("stores nightly plugin inspector errors as public findings", async () => {
@@ -11686,7 +11878,7 @@ describe("packages public queries", () => {
           },
         ],
       }),
-    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: true });
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: false });
 
     expect(insert).toHaveBeenCalledWith(
       "packageInspectorWarnings",
@@ -11755,7 +11947,7 @@ describe("packages public queries", () => {
           },
         ],
       }),
-    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: true });
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: false });
 
     expect(insert).toHaveBeenCalledTimes(1);
     expect(insert).toHaveBeenCalledWith(
@@ -11818,6 +12010,7 @@ describe("packages public queries", () => {
         scanSource: "nightly",
         inspectorVersion: "0.5.0",
         targetOpenClawVersion: "0.10.0",
+        notifyOwners: true,
         findings: [
           {
             id: "demo:legacy-before-agent-start",

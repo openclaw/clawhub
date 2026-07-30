@@ -135,6 +135,10 @@ export const RETENTION_POLICIES = {
     "Notification sent-log prevents duplicate emails.",
   ),
   packageInspectorScanCursors: permanent("Package inspector scan progress cursor."),
+  packageInspectorScanStates: derived(
+    "Successful beta scan identities used to skip unchanged release/target/inspector combinations.",
+    "packageReleases and successful Plugin Inspector runs",
+  ),
   securityScanJobs: permanent("Security scan job history and current processing state."),
   securityScanDispatchState: permanent("Security scan worker dispatch coordination state."),
   skillScanRequests: ephemeral(

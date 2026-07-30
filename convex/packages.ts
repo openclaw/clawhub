@@ -9782,6 +9782,7 @@ async function insertPackageInspectorFindings(
     scanSource?: "publish" | "nightly";
     inspectorVersion?: string;
     targetOpenClawVersion?: string;
+    notifyOwners?: boolean;
     findings?: PackageInspectorFinding[];
     warnings?: PackageInspectorFinding[];
   },
@@ -9791,7 +9792,17 @@ async function insertPackageInspectorFindings(
     .query("packageInspectorWarnings")
     .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
     .collect();
-  const existingAuthorWarnings = existingWarnings.filter(hasStoredAuthorRemediation);
+  const replaceNightlyFindings = args.scanSource === "nightly";
+  if (replaceNightlyFindings) {
+    for (const warning of existingWarnings) {
+      if (warning.scanSource === "nightly") await ctx.db.delete(warning._id);
+    }
+  }
+  const existingAuthorWarnings = existingWarnings.filter(
+    (warning) =>
+      hasStoredAuthorRemediation(warning) &&
+      !(replaceNightlyFindings && warning.scanSource === "nightly"),
+  );
   if (findings.length === 0 && existingAuthorWarnings.length === 0) {
     return { ok: true as const, inserted: 0, shouldEmailOwner: false };
   }
@@ -9856,7 +9867,10 @@ async function insertPackageInspectorFindings(
   return {
     ok: true as const,
     inserted,
-    shouldEmailOwner: !existingNotification && (inserted > 0 || existingAuthorWarnings.length > 0),
+    shouldEmailOwner:
+      (args.notifyOwners ?? args.scanSource !== "nightly") &&
+      !existingNotification &&
+      (inserted > 0 || existingAuthorWarnings.length > 0),
   };
 }
 
@@ -10134,6 +10148,7 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     releaseId: v.id("packageReleases"),
     inspectorVersion: v.optional(v.string()),
     targetOpenClawVersion: v.optional(v.string()),
+    notifyOwners: v.optional(v.boolean()),
     findings: v.array(packageInspectorFindingInputValidator),
   },
   handler: async (ctx, args) => {
@@ -10150,7 +10165,7 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
     ) {
       throw new ConvexError("Package release not found");
     }
-    return await insertPackageInspectorFindings(ctx, {
+    const result = await insertPackageInspectorFindings(ctx, {
       packageId: pkg._id,
       releaseId: release._id,
       ownerUserId: pkg.ownerUserId,
@@ -10160,8 +10175,35 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
       scanSource: "nightly",
       inspectorVersion: args.inspectorVersion,
       targetOpenClawVersion: args.targetOpenClawVersion,
+      notifyOwners: args.notifyOwners,
       findings: args.findings,
     });
+    const { inspectorVersion, targetOpenClawVersion } = args;
+    if (inspectorVersion && targetOpenClawVersion) {
+      const completedAt = Date.now();
+      const existingState = await ctx.db
+        .query("packageInspectorScanStates")
+        .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+          q
+            .eq("releaseId", release._id)
+            .eq("inspectorVersion", inspectorVersion)
+            .eq("targetOpenClawVersion", targetOpenClawVersion),
+        )
+        .unique();
+      const state = {
+        packageId: pkg._id,
+        releaseId: release._id,
+        inspectorVersion,
+        targetOpenClawVersion,
+        completedAt,
+      };
+      if (existingState) {
+        await ctx.db.patch(existingState._id, { completedAt });
+      } else {
+        await ctx.db.insert("packageInspectorScanStates", state);
+      }
+    }
+    return result;
   },
 });
 
