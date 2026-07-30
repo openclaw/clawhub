@@ -59,6 +59,18 @@ describe("packed admin CLI", () => {
     );
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Usage: clawhub-admin");
+    const packagesHelp = spawnSync(
+      process.execPath,
+      [join(installDir, "package", "bin", "clawhub-admin.js"), "packages", "--help"],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: { ...process.env, FORCE_COLOR: "0" },
+      },
+    );
+    expect(packagesHelp.status).toBe(0);
+    expect(packagesHelp.stdout).toContain("validation-report");
+    expect(packagesHelp.stdout).toContain("Export current plugin validation results as JSON");
     await expect(
       readFile(join(installDir, "package", "dist", "clawhub-admin", "src", "cli.js")),
     ).resolves.toBeTruthy();

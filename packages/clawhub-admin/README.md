@@ -129,6 +129,7 @@ bun run admin -- plugins queue [--status open|blocked|manual|all]
 bun run admin -- plugins reports [--status open|confirmed|dismissed|all]
 bun run admin -- plugins triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|quarantine|revoke] [--yes]
 
+bun run admin -- packages validation-report --json > plugin-validation-report.json
 bun run admin -- plugins migrations [--phase <phase>]
 bun run admin -- plugins set-migration <bundled-plugin-id> --package <name>
 bun run admin -- plugins hard-delete <name> --owner <handle> --reason <text> [--apply --confirm <token> --yes] [--json]
@@ -139,3 +140,7 @@ bun run admin -- plugins trusted-publisher delete <name>
 ```
 
 All skill and plugin commands accept `--json` where the underlying endpoint supports machine-readable output.
+
+`packages validation-report --json` exhaustively fetches the current validation state for every
+plugin and writes exactly one JSON document to stdout. Redirect stdout to archive the report;
+authentication, registry, and request failures are written to stderr by the CLI error handler.

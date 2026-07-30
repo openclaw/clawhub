@@ -52,6 +52,7 @@ import {
 } from "./commands/orgs.js";
 import {
   cmdDeletePackageTrustedPublisher,
+  cmdExportPackageValidationReport,
   cmdHardDeletePackage,
   cmdListPackageMigrations,
   cmdListPackageReports,
@@ -767,6 +768,15 @@ function registerPluginModerationCommands(command: Command) {
 }
 
 function registerPluginOperations(command: Command) {
+  command
+    .command("validation-report")
+    .description("Export current plugin validation results as JSON")
+    .requiredOption("--json", "Output one JSON report document")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdExportPackageValidationReport(opts, options);
+    });
+
   command
     .command("moderate")
     .description("Set plugin release moderation state")
