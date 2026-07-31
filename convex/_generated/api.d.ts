@@ -64,6 +64,7 @@ import type * as lib_canonicalSkillSearch from "../lib/canonicalSkillSearch.js";
 import type * as lib_canonicalSkillSearchBounds from "../lib/canonicalSkillSearchBounds.js";
 import type * as lib_canonicalSkillSearchResponse from "../lib/canonicalSkillSearchResponse.js";
 import type * as lib_canonicalTrending from "../lib/canonicalTrending.js";
+import type * as lib_canonicalTrendingPagination from "../lib/canonicalTrendingPagination.js";
 import type * as lib_catalogClassification from "../lib/catalogClassification.js";
 import type * as lib_catalogClassifier from "../lib/catalogClassifier.js";
 import type * as lib_changelog from "../lib/changelog.js";
@@ -270,6 +271,7 @@ declare const fullApi: ApiFromModules<{
   "lib/canonicalSkillSearchBounds": typeof lib_canonicalSkillSearchBounds;
   "lib/canonicalSkillSearchResponse": typeof lib_canonicalSkillSearchResponse;
   "lib/canonicalTrending": typeof lib_canonicalTrending;
+  "lib/canonicalTrendingPagination": typeof lib_canonicalTrendingPagination;
   "lib/catalogClassification": typeof lib_catalogClassification;
   "lib/catalogClassifier": typeof lib_catalogClassifier;
   "lib/changelog": typeof lib_changelog;

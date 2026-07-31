@@ -27,7 +27,7 @@ export function getCompletedRolling24HourWindow(now: number) {
   };
 }
 
-type HourlySkillStat = {
+export type HourlySkillStat = {
   skillId: string;
   downloads: number;
   installs: number;
@@ -35,11 +35,15 @@ type HourlySkillStat = {
   updatedAt: number;
 };
 
-export function sumRollingHourlyStats(rows: readonly HourlySkillStat[]) {
-  const totals = new Map<
-    string,
-    { downloads: number; installs: number; bookmarks: number; updatedAt: number }
-  >();
+export type RollingHourlyStatTotals = Map<
+  string,
+  { downloads: number; installs: number; bookmarks: number; updatedAt: number }
+>;
+
+export function accumulateRollingHourlyStats(
+  totals: RollingHourlyStatTotals,
+  rows: readonly HourlySkillStat[],
+) {
   for (const row of rows) {
     const current = totals.get(row.skillId) ?? {
       downloads: 0,
@@ -53,12 +57,21 @@ export function sumRollingHourlyStats(rows: readonly HourlySkillStat[]) {
     current.updatedAt = Math.max(current.updatedAt, row.updatedAt);
     totals.set(row.skillId, current);
   }
+}
+
+export function finalizeRollingHourlyStats(totals: RollingHourlyStatTotals) {
   for (const total of totals.values()) {
     total.downloads = Math.max(0, total.downloads);
     total.installs = Math.max(0, total.installs);
     total.bookmarks = Math.max(0, total.bookmarks);
   }
   return totals;
+}
+
+export function sumRollingHourlyStats(rows: readonly HourlySkillStat[]) {
+  const totals: RollingHourlyStatTotals = new Map();
+  accumulateRollingHourlyStats(totals, rows);
+  return finalizeRollingHourlyStats(totals);
 }
 
 type HourlyStatDeltas = {

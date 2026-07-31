@@ -6,8 +6,10 @@ import { internal } from "../_generated/api";
 import schema from "../schema";
 import {
   HOUR_MS,
+  accumulateRollingHourlyStats,
   bumpHistoricalHourlySkillStats,
   bumpLiveHourlySkillStats,
+  finalizeRollingHourlyStats,
   getHistoricalEventHourlyDelta,
   getHistoricalStarHourlyDelta,
   getCompletedRolling24HourWindow,
@@ -54,6 +56,42 @@ describe("rolling 24-hour skill metrics", () => {
             downloads: 7,
             installs: 10,
             bookmarks: 0,
+            updatedAt: 20,
+          },
+        ],
+      ]),
+    );
+  });
+
+  it("preserves corrections across streamed page boundaries before clamping", () => {
+    const totals = new Map();
+    accumulateRollingHourlyStats(totals, [
+      {
+        skillId: "skills:one",
+        downloads: -4,
+        installs: -3,
+        bookmarks: -2,
+        updatedAt: 10,
+      },
+    ]);
+    accumulateRollingHourlyStats(totals, [
+      {
+        skillId: "skills:one",
+        downloads: 6,
+        installs: 5,
+        bookmarks: 4,
+        updatedAt: 20,
+      },
+    ]);
+
+    expect(finalizeRollingHourlyStats(totals)).toEqual(
+      new Map([
+        [
+          "skills:one",
+          {
+            downloads: 2,
+            installs: 2,
+            bookmarks: 2,
             updatedAt: 20,
           },
         ],

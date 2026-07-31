@@ -16,14 +16,19 @@ import {
   isFreshExternalTrendingRun,
   type CanonicalTrendingMaterializationCandidate,
 } from "./lib/canonicalTrending";
+import { forEachCanonicalTrendingSourcePage } from "./lib/canonicalTrendingPagination";
 import { shouldExcludeSkillFromPublicBrowse } from "./lib/publicBrowse";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
-import { getCompletedRolling24HourWindow, sumRollingHourlyStats } from "./lib/skillHourlyStats";
+import {
+  accumulateRollingHourlyStats,
+  finalizeRollingHourlyStats,
+  getCompletedRolling24HourWindow,
+  type RollingHourlyStatTotals,
+} from "./lib/skillHourlyStats";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 import { assertTestSeedAllowed } from "./lib/testSeed";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 
-const SOURCE_PAGE_SIZE = 250;
 const WRITE_BATCH_SIZE = 100;
 const SNAPSHOT_RETENTION_MS = 48 * 60 * 60 * 1_000;
 const SNAPSHOT_MAX_SERVING_AGE_MS = 2 * 60 * 60 * 1_000;
@@ -87,44 +92,6 @@ const operationsValidator = v.object({
   documentsWritten: v.number(),
   functionCalls: v.number(),
 });
-
-type SourcePage<T> = {
-  page: T[];
-  isDone: boolean;
-  continueCursor: string;
-  documentsRead: number;
-};
-
-type CollectedSource<T> = {
-  rows: T[];
-  documentsRead: number;
-  functionCalls: number;
-};
-
-async function collectSourcePages(
-  ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
-  ref: unknown,
-  args: Record<string, unknown> = {},
-) {
-  const rows: unknown[] = [];
-  let cursor: string | null = null;
-  let documentsRead = 0;
-  let functionCalls = 0;
-  do {
-    const result = (await ctx.runQuery(
-      ref as never,
-      {
-        ...args,
-        paginationOpts: { cursor, numItems: SOURCE_PAGE_SIZE },
-      } as never,
-    )) as SourcePage<unknown>;
-    rows.push(...result.page);
-    documentsRead += result.documentsRead;
-    functionCalls += 1;
-    cursor = result.isDone ? null : result.continueCursor;
-  } while (cursor);
-  return { rows, documentsRead, functionCalls };
-}
 
 export const getNativeSourcePageInternal = internalQuery({
   args: { paginationOpts: paginationOptsValidator },
@@ -491,11 +458,8 @@ export const materializeInternal = internalAction({
         return { status: "unavailable" as const, reason: "hourly-stats-not-ready" as const };
       }
 
-      const nativeSource = (await collectSourcePages(
-        ctx,
-        internalRefs.canonicalTrending.getNativeSourcePageInternal,
-      )) as CollectedSource<Doc<"skillSearchDigest">>;
-      const hourlySource = (await collectSourcePages(
+      const usageBySkill: RollingHourlyStatTotals = new Map();
+      const hourlySource = await forEachCanonicalTrendingSourcePage(
         ctx,
         internalRefs.canonicalTrending.getHourlySourcePageInternal,
         {
@@ -503,18 +467,35 @@ export const materializeInternal = internalAction({
           endHour: hourlyWindow.endHour,
           maxGeneration: hourlyWindow.sealedGeneration,
         },
-      )) as CollectedSource<Doc<"skillHourlyStats">>;
+        (page) => accumulateRollingHourlyStats(usageBySkill, page as Doc<"skillHourlyStats">[]),
+      );
+      finalizeRollingHourlyStats(usageBySkill);
+
+      const nativeCandidates: CanonicalTrendingMaterializationCandidate[] = [];
+      const nativeSource = await forEachCanonicalTrendingSourcePage(
+        ctx,
+        internalRefs.canonicalTrending.getNativeSourcePageInternal,
+        {},
+        (page) => {
+          for (const digest of page as Doc<"skillSearchDigest">[]) {
+            const usage = usageBySkill.get(String(digest.skillId));
+            if (!usage || usage.downloads + usage.installs + usage.bookmarks <= 0) continue;
+            const candidate = buildNativeCanonicalTrendingCandidate(digest, usage);
+            if (candidate) nativeCandidates.push(candidate);
+          }
+        },
+      );
       type TrendingRun = {
         runId: Doc<"skillsShMirrorRuns">["_id"] | null;
         completedAt: number | null;
         documentsRead: number;
       };
       let latestTrendingRun: TrendingRun | null = null;
-      let externalSource: CollectedSource<Doc<"skillsShMirrorDigests">> = {
-        rows: [],
+      let externalSource = {
         documentsRead: 0,
         functionCalls: 0,
       };
+      const externalCandidates: CanonicalTrendingMaterializationCandidate[] = [];
       if (
         args.skillsShMode !== "native-only" &&
         getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
@@ -527,14 +508,21 @@ export const materializeInternal = internalAction({
         functionCalls += 1;
         if (isFreshExternalTrendingRun(candidateRun, startedAt, EXTERNAL_SOURCE_MAX_AGE_MS)) {
           latestTrendingRun = candidateRun;
-          externalSource = (await collectSourcePages(
+          externalSource = await forEachCanonicalTrendingSourcePage(
             ctx,
             internalRefs.canonicalTrending.getExternalSourcePageInternal,
             {
               activationLockToken: args.activationLockToken,
               allowHiddenProof: args.proofSnapshotId !== undefined,
             },
-          )) as CollectedSource<Doc<"skillsShMirrorDigests">>;
+            (page) => {
+              for (const digest of page as Doc<"skillsShMirrorDigests">[]) {
+                if (digest.trendingObservedRunId !== latestTrendingRun?.runId) continue;
+                const candidate = buildExternalCanonicalTrendingCandidate(digest);
+                if (candidate) externalCandidates.push(candidate);
+              }
+            },
+          );
         }
       }
       documentsRead +=
@@ -554,26 +542,10 @@ export const materializeInternal = internalAction({
         }
       }
 
-      const usageBySkill = sumRollingHourlyStats(hourlySource.rows);
-      const nativeCandidates = nativeSource.rows
-        .map((digest) => {
-          const usage = usageBySkill.get(String(digest.skillId));
-          if (!usage || usage.downloads + usage.installs + usage.bookmarks <= 0) return null;
-          return buildNativeCanonicalTrendingCandidate(digest, usage);
-        })
-        .filter(
-          (candidate): candidate is CanonicalTrendingMaterializationCandidate => candidate !== null,
-        );
       const risingCutoff = startedAt - RISING_MAX_AGE_MS;
       const risingCandidates = nativeCandidates
         .filter((candidate) => candidate.createdAt >= risingCutoff)
         .map((candidate) => ({ ...candidate, lane: "clawhub-rising" as const }));
-      const externalCandidates = externalSource.rows
-        .filter((digest) => digest.trendingObservedRunId === latestTrendingRun?.runId)
-        .map(buildExternalCanonicalTrendingCandidate)
-        .filter(
-          (candidate): candidate is CanonicalTrendingMaterializationCandidate => candidate !== null,
-        );
       const blended = blendCanonicalTrendingPools({
         clawhubTrending: nativeCandidates,
         clawhubRising: risingCandidates,
