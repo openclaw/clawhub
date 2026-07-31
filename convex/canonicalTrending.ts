@@ -1,7 +1,7 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import {
   CANONICAL_TRENDING_RANKING_VERSION,
@@ -30,6 +30,7 @@ import { assertTestSeedAllowed } from "./lib/testSeed";
 import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 
 const WRITE_BATCH_SIZE = 100;
+const NATIVE_SOURCE_BATCH_SIZE = 100;
 const SNAPSHOT_RETENTION_MS = 48 * 60 * 60 * 1_000;
 const SNAPSHOT_MAX_SERVING_AGE_MS = 2 * 60 * 60 * 1_000;
 const EXTERNAL_SOURCE_MAX_AGE_MS = 2 * 60 * 60 * 1_000;
@@ -44,7 +45,7 @@ const internalRefs = internal as unknown as {
     getExternalSourcePageInternal: unknown;
     getHourlySourcePageInternal: unknown;
     getMaterializationModeInternal: unknown;
-    getNativeSourcePageInternal: unknown;
+    getNativeSourceBatchInternal: unknown;
     getLatestCompletedTrendingRunInternal: unknown;
     pruneExpiredInternal: unknown;
     pruneExpiredActionInternal: unknown;
@@ -93,21 +94,29 @@ const operationsValidator = v.object({
   functionCalls: v.number(),
 });
 
-export const getNativeSourcePageInternal = internalQuery({
-  args: { paginationOpts: paginationOptsValidator },
+export const getNativeSourceBatchInternal = internalQuery({
+  args: { skillIds: v.array(v.id("skills")) },
   handler: async (ctx, args) => {
-    const result = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-      .paginate(args.paginationOpts);
-    return {
-      ...result,
-      page: result.page.filter(
-        (digest) =>
-          !shouldExcludeSkillFromPublicBrowse(digest) &&
-          digest.publicVersion?.status === "available",
+    if (args.skillIds.length < 1 || args.skillIds.length > NATIVE_SOURCE_BATCH_SIZE) {
+      throw new Error("Invalid native Trending source batch size");
+    }
+    const digests = await Promise.all(
+      args.skillIds.map((skillId) =>
+        ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+          .unique(),
       ),
-      documentsRead: result.page.length,
+    );
+    const page = digests.filter(
+      (digest): digest is Doc<"skillSearchDigest"> =>
+        digest !== null &&
+        !shouldExcludeSkillFromPublicBrowse(digest) &&
+        digest.publicVersion?.status === "available",
+    );
+    return {
+      page,
+      documentsRead: digests.filter((digest) => digest !== null).length,
     };
   },
 });
@@ -472,19 +481,34 @@ export const materializeInternal = internalAction({
       finalizeRollingHourlyStats(usageBySkill);
 
       const nativeCandidates: CanonicalTrendingMaterializationCandidate[] = [];
-      const nativeSource = await forEachCanonicalTrendingSourcePage(
-        ctx,
-        internalRefs.canonicalTrending.getNativeSourcePageInternal,
-        {},
-        (page) => {
-          for (const digest of page as Doc<"skillSearchDigest">[]) {
-            const usage = usageBySkill.get(String(digest.skillId));
-            if (!usage || usage.downloads + usage.installs + usage.bookmarks <= 0) continue;
-            const candidate = buildNativeCanonicalTrendingCandidate(digest, usage);
-            if (candidate) nativeCandidates.push(candidate);
-          }
-        },
-      );
+      const nativeSource = { documentsRead: 0, functionCalls: 0 };
+      let pendingNativeSkillIds: Id<"skills">[] = [];
+      const flushNativeSourceBatch = async () => {
+        if (pendingNativeSkillIds.length === 0) return;
+        const skillIds = pendingNativeSkillIds;
+        pendingNativeSkillIds = [];
+        const sourceBatch = (await ctx.runQuery(
+          internalRefs.canonicalTrending.getNativeSourceBatchInternal as never,
+          { skillIds } as never,
+        )) as { page: Doc<"skillSearchDigest">[]; documentsRead: number };
+        nativeSource.documentsRead += sourceBatch.documentsRead;
+        nativeSource.functionCalls += 1;
+        for (const digest of sourceBatch.page) {
+          const usage = usageBySkill.get(String(digest.skillId));
+          if (!usage || usage.downloads + usage.installs + usage.bookmarks <= 0) continue;
+          const candidate = buildNativeCanonicalTrendingCandidate(digest, usage);
+          if (candidate) nativeCandidates.push(candidate);
+        }
+        // Each digest is unique by skill, so its rolling totals are no longer needed.
+        for (const skillId of skillIds) usageBySkill.delete(String(skillId));
+      };
+      for (const skillId of usageBySkill.keys()) {
+        pendingNativeSkillIds.push(skillId as Id<"skills">);
+        if (pendingNativeSkillIds.length === NATIVE_SOURCE_BATCH_SIZE) {
+          await flushNativeSourceBatch();
+        }
+      }
+      await flushNativeSourceBatch();
       type TrendingRun = {
         runId: Doc<"skillsShMirrorRuns">["_id"] | null;
         completedAt: number | null;

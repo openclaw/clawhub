@@ -485,6 +485,50 @@ describe("canonical Trending snapshot storage", () => {
     });
   });
 
+  it("reads native digests only for skills with rolling activity", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
+    const t = convexTest(schema, modules);
+    const activeSource = await insertEligibleNativeSource(t, "active-source");
+    for (let index = 0; index < 12; index += 1) {
+      await insertEligibleNativeSource(t, `inactive-source-${index}`);
+    }
+    const now = Date.now();
+    const window = getCompletedRolling24HourWindow(now);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillHourlyStatStates", {
+        key: "canonical_trending",
+        liveStartedAt: now - 3_600_000,
+        eventBackfillThroughCreationTime: 100,
+        activeGeneration: 1,
+        backfillCompletedAt: now - 1_000,
+        lastAggregationCompletedAt: window.endAt + 1,
+        lastProcessedEventCreationTime: 100,
+        updatedAt: now,
+      });
+      await ctx.db.insert("skillHourlyStats", {
+        skillId: activeSource.skillId,
+        hour: window.endHour,
+        generation: 0,
+        downloads: 1,
+        installs: 4,
+        bookmarks: 0,
+        updatedAt: now,
+        expiresAt: now + 72 * 3_600_000,
+      });
+    });
+
+    const result = await t.action(internal.canonicalTrending.materializeInternal, {});
+
+    expect(result).toMatchObject({
+      status: "ready",
+      totalItems: 1,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+      operations: { documentsRead: 2 },
+      sample: [expect.objectContaining({ id: `clawhub:${activeSource.skillId}` })],
+    });
+  });
+
   it("stops serving the last good snapshot after two hours", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();
