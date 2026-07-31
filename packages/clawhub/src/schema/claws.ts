@@ -163,7 +163,8 @@ export const CLAW_MANIFEST_VALIDATION_CODES = {
   invalidAgentId: "claw_v1_invalid_agent_id",
   nonCanonicalString: "claw_v1_non_canonical_string",
   emptyList: "claw_v1_empty_list",
-  invalidProfilePath: "claw_v1_invalid_profile_path",
+  legacyProfilePointer: "claw_v1_legacy_profile_pointer",
+  reservedWorkspaceTarget: "claw_v1_reserved_workspace_target",
   unsafePath: "claw_v1_unsafe_path",
   duplicateWorkspaceDestination: "claw_v1_duplicate_workspace_destination",
   invalidAvatar: "claw_v1_invalid_avatar",
@@ -555,18 +556,12 @@ export function validateClawManifest(
   for (const key of Object.keys(parsed.metadata ?? {})) {
     pushNonEmpty(issues, `$.metadata.${key}`, key);
   }
-  const openClawProfilePath = parsed.metadata?.["openclaw.config"];
-  if (
-    openClawProfilePath !== undefined &&
-    (openClawProfilePath.includes("\\") ||
-      !isSafePackagePath(openClawProfilePath) ||
-      !/\.ya?ml$/i.test(openClawProfilePath))
-  ) {
+  if (Object.hasOwn(parsed.metadata ?? {}, "openclaw.config")) {
     issues.push(
       validationIssue(
-        CLAW_MANIFEST_VALIDATION_CODES.invalidProfilePath,
+        CLAW_MANIFEST_VALIDATION_CODES.legacyProfilePointer,
         "$.metadata.openclaw.config",
-        "Must reference a forward-slash package-relative .yml or .yaml file.",
+        "metadata.openclaw.config is no longer supported; move the profile to profiles/openclaw.yml and remove the metadata entry.",
       ),
     );
   }
@@ -605,6 +600,15 @@ export function validateClawManifest(
       );
     }
     const destinationKey = portablePathKey(file.path);
+    if (destinationKey === portablePathKey("BOOTSTRAP.md")) {
+      issues.push(
+        validationIssue(
+          CLAW_MANIFEST_VALIDATION_CODES.reservedWorkspaceTarget,
+          `$.workspace.files.${index}.path`,
+          "Root BOOTSTRAP.md is reserved for the package-root seed-once bootstrap file.",
+        ),
+      );
+    }
     if (conflictsWithWorkspaceTarget(workspaceTargets, destinationKey)) {
       issues.push(
         validationIssue(

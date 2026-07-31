@@ -331,9 +331,27 @@ describe("published Claw to OpenClaw dry-run proof", () => {
       expect(result.plan.actions).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
+            kind: "agent",
+            id: "hosted-e2e",
+            details: expect.objectContaining({
+              tools: expect.objectContaining({ profile: "coding" }),
+            }),
+          }),
+          expect.objectContaining({
             kind: "workspaceFile",
             id: "SOUL.md",
             sourceKind: "clawMarkdownBody",
+            blocked: false,
+          }),
+          expect.objectContaining({
+            kind: "bootstrap",
+            id: "BOOTSTRAP.md",
+            blocked: false,
+            details: expect.objectContaining({ lifecycle: "native-seed-once" }),
+          }),
+          expect.objectContaining({
+            kind: "workspaceFile",
+            id: "assets/incident.schema.json",
             blocked: false,
           }),
         ]),
