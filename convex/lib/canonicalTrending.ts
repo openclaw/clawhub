@@ -5,6 +5,7 @@ export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v2";
 export const CANONICAL_TRENDING_WINDOW_HOURS = 24;
 export const CANONICAL_TRENDING_FIRST_PAGE_SIZE = 20;
 export const CANONICAL_TRENDING_PUBLISHER_CAP = 2;
+export const CANONICAL_TRENDING_LANE_LIMIT = 1_000;
 
 export function isFreshExternalTrendingRun(
   run: { runId: string | null; completedAt: number | null },
@@ -309,28 +310,78 @@ function compareIdentity(left: CanonicalTrendingCandidate, right: CanonicalTrend
   return left.identity.localeCompare(right.identity);
 }
 
+function compareCanonicalTrendingLaneCandidates(
+  lane: CanonicalTrendingLane,
+  left: CanonicalTrendingCandidate,
+  right: CanonicalTrendingCandidate,
+) {
+  if (lane === "skills-sh-trending") {
+    return (
+      (left.upstreamRank ?? Number.MAX_SAFE_INTEGER) -
+        (right.upstreamRank ?? Number.MAX_SAFE_INTEGER) || compareIdentity(left, right)
+    );
+  }
+  return (
+    compareNumberDesc(left.installs24h, right.installs24h) ||
+    compareNumberDesc(left.bookmarks24h, right.bookmarks24h) ||
+    compareNumberDesc(
+      lane === "clawhub-rising" ? left.createdAt : left.updatedAt,
+      lane === "clawhub-rising" ? right.createdAt : right.updatedAt,
+    ) ||
+    compareIdentity(left, right)
+  );
+}
+
+export function retainTopCanonicalTrendingCandidates<T extends CanonicalTrendingCandidate>(
+  candidates: readonly T[],
+  lane: CanonicalTrendingLane,
+  limit = CANONICAL_TRENDING_LANE_LIMIT,
+  diversity?: { size: number; publisherCap: number },
+) {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new Error("Invalid canonical Trending lane limit");
+  }
+  const sorted = [...candidates].sort((left, right) =>
+    compareCanonicalTrendingLaneCandidates(lane, left, right),
+  );
+  const leaders = sorted.slice(0, limit);
+  if (!diversity) return leaders;
+  if (
+    !Number.isSafeInteger(diversity.size) ||
+    diversity.size < 1 ||
+    !Number.isSafeInteger(diversity.publisherCap) ||
+    diversity.publisherCap < 1
+  ) {
+    throw new Error("Invalid canonical Trending diversity reserve");
+  }
+  const publisherCounts = new Map<string, number>();
+  const reserve: T[] = [];
+  for (const candidate of sorted) {
+    const publisherCount = publisherCounts.get(candidate.publisherKey) ?? 0;
+    if (publisherCount >= diversity.publisherCap) continue;
+    publisherCounts.set(candidate.publisherKey, publisherCount + 1);
+    reserve.push(candidate);
+    if (reserve.length === diversity.size) break;
+  }
+  const retainedByIdentity = new Map(leaders.map((candidate) => [candidate.identity, candidate]));
+  for (const candidate of reserve) retainedByIdentity.set(candidate.identity, candidate);
+  return [...retainedByIdentity.values()].sort((left, right) =>
+    compareCanonicalTrendingLaneCandidates(lane, left, right),
+  );
+}
+
 export function sortCanonicalTrendingPools<T extends CanonicalTrendingCandidate>(
   pools: CanonicalTrendingPools<T>,
 ): CanonicalTrendingPools<T> {
   return {
-    clawhubTrending: [...pools.clawhubTrending].sort(
-      (left, right) =>
-        compareNumberDesc(left.installs24h, right.installs24h) ||
-        compareNumberDesc(left.bookmarks24h, right.bookmarks24h) ||
-        compareNumberDesc(left.updatedAt, right.updatedAt) ||
-        compareIdentity(left, right),
+    clawhubTrending: [...pools.clawhubTrending].sort((left, right) =>
+      compareCanonicalTrendingLaneCandidates("clawhub-trending", left, right),
     ),
-    clawhubRising: [...pools.clawhubRising].sort(
-      (left, right) =>
-        compareNumberDesc(left.installs24h, right.installs24h) ||
-        compareNumberDesc(left.bookmarks24h, right.bookmarks24h) ||
-        compareNumberDesc(left.createdAt, right.createdAt) ||
-        compareIdentity(left, right),
+    clawhubRising: [...pools.clawhubRising].sort((left, right) =>
+      compareCanonicalTrendingLaneCandidates("clawhub-rising", left, right),
     ),
-    skillsShTrending: [...pools.skillsShTrending].sort(
-      (left, right) =>
-        (left.upstreamRank ?? Number.MAX_SAFE_INTEGER) -
-          (right.upstreamRank ?? Number.MAX_SAFE_INTEGER) || compareIdentity(left, right),
+    skillsShTrending: [...pools.skillsShTrending].sort((left, right) =>
+      compareCanonicalTrendingLaneCandidates("skills-sh-trending", left, right),
     ),
   };
 }

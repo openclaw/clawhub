@@ -6,6 +6,7 @@ import {
   decodeCanonicalTrendingCursor,
   encodeCanonicalTrendingCursor,
   isFreshExternalTrendingRun,
+  retainTopCanonicalTrendingCandidates,
   sortCanonicalTrendingPools,
   type CanonicalTrendingCandidate,
 } from "./canonicalTrending";
@@ -173,6 +174,51 @@ describe("canonical Trending ordering", () => {
     ]);
     expect(pools.clawhubRising.map((entry) => entry.identity)).toEqual(["r-new", "r-old"]);
     expect(pools.skillsShTrending.map((entry) => entry.identity)).toEqual(["s-1", "s-2", "s-3"]);
+  });
+
+  it("retains only the strongest bounded candidates for a lane", () => {
+    const retained = retainTopCanonicalTrendingCandidates(
+      [
+        candidate("low", "clawhub-trending", { installs24h: 1 }),
+        candidate("high", "clawhub-trending", { installs24h: 9 }),
+        candidate("middle", "clawhub-trending", { installs24h: 4 }),
+      ],
+      "clawhub-trending",
+      2,
+    );
+
+    expect(retained.map((entry) => entry.identity)).toEqual(["high", "middle"]);
+  });
+
+  it("reserves lower-ranked publishers needed by the first-page cap", () => {
+    const retained = retainTopCanonicalTrendingCandidates(
+      [
+        candidate("alpha-1", "clawhub-trending", {
+          publisherKey: "alpha",
+          installs24h: 5,
+        }),
+        candidate("alpha-2", "clawhub-trending", {
+          publisherKey: "alpha",
+          installs24h: 4,
+        }),
+        candidate("alpha-3", "clawhub-trending", {
+          publisherKey: "alpha",
+          installs24h: 3,
+        }),
+        candidate("beta", "clawhub-trending", { publisherKey: "beta", installs24h: 2 }),
+        candidate("gamma", "clawhub-trending", { publisherKey: "gamma", installs24h: 1 }),
+      ],
+      "clawhub-trending",
+      2,
+      { size: 4, publisherCap: 2 },
+    );
+
+    expect(retained.map((entry) => entry.identity)).toEqual([
+      "alpha-1",
+      "alpha-2",
+      "beta",
+      "gamma",
+    ]);
   });
 });
 
