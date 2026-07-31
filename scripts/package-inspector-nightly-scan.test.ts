@@ -160,6 +160,36 @@ describe("package-inspector-nightly-scan", () => {
     expect(config.plugin.id).toBe(expectedId);
   });
 
+  it("accepts a UTF-8 BOM before a downloaded package.json", async () => {
+    const pluginRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-package-json-"));
+    temporaryRoots.push(pluginRoot);
+    await writeFile(
+      path.join(pluginRoot, "package.json"),
+      '\uFEFF{"name":"eu-compliance-skill","version":"1.0.1"}\n',
+    );
+
+    await expect(
+      prepareExtractedPluginRoot(pluginRoot, "npm-pack", "eu-compliance-skill"),
+    ).resolves.toBe(pluginRoot);
+    const config = JSON.parse(
+      await readFile(path.join(pluginRoot, ".plugin-inspector.json"), "utf8"),
+    );
+    expect(config.plugin.id).toBe("eu-compliance-skill");
+  });
+
+  it.each([
+    ["ordinary invalid JSON", "not json\n"],
+    ["a second leading UTF-8 BOM", '\uFEFF\uFEFF{"name":"still-invalid"}\n'],
+  ])("rejects %s in a downloaded package.json", async (_description, contents) => {
+    const pluginRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-package-json-"));
+    temporaryRoots.push(pluginRoot);
+    await writeFile(path.join(pluginRoot, "package.json"), contents);
+
+    await expect(
+      prepareExtractedPluginRoot(pluginRoot, "npm-pack", "invalid-json-plugin"),
+    ).rejects.toThrow(SyntaxError);
+  });
+
   it("reports the exact beta target and unchanged releases in the run summary", () => {
     const summary = summarizeImpact({
       claimed: 2,
