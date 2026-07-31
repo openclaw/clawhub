@@ -642,8 +642,8 @@ export function validateClawPackageContents(input: {
     }
   }
 
-  const profileFiles = [...fileByPath.values()].filter(
-    (file) => portablePathKey(file.path).startsWith("profiles/") && /\.ya?ml$/i.test(file.path),
+  const profileFiles = [...fileByPath.values()].filter((file) =>
+    portablePathKey(file.path).startsWith("profiles/"),
   );
   for (const profileFile of profileFiles) {
     if (!HARNESS_PROFILE_PATH_PATTERN.test(profileFile.path)) {
@@ -703,12 +703,18 @@ export function validateClawPackageContents(input: {
     }
   }
   if (issues.length > 0) return { ok: false, issues };
+  const summary = summarizeClawManifest(validated.manifest, {
+    clawMarkdownBody: hasClawMarkdownBody,
+  });
+  if (packageBootstrap) {
+    summary.workspace.bootstrapFiles = [...summary.workspace.bootstrapFiles, "BOOTSTRAP.md"].sort();
+  }
   return {
     ok: true,
     value: {
       manifestPath,
       manifest: validated.manifest,
-      summary: summarizeClawManifest(validated.manifest, { clawMarkdownBody: hasClawMarkdownBody }),
+      summary,
       hasClawMarkdownBody,
     },
   };

@@ -481,7 +481,7 @@ export function validateClawPackageContents(input) {
             issues.push(issue("package_bootstrap_empty", "BOOTSTRAP.md", "Package-root BOOTSTRAP.md must contain first-run instructions."));
         }
     }
-    const profileFiles = [...fileByPath.values()].filter((file) => portablePathKey(file.path).startsWith("profiles/") && /\.ya?ml$/i.test(file.path));
+    const profileFiles = [...fileByPath.values()].filter((file) => portablePathKey(file.path).startsWith("profiles/"));
     for (const profileFile of profileFiles) {
         if (!HARNESS_PROFILE_PATH_PATTERN.test(profileFile.path)) {
             issues.push(issue("invalid_harness_profile_path", profileFile.path, "Harness profiles must use profiles/<lowercase-harness-id>.yml conventional paths."));
@@ -522,12 +522,18 @@ export function validateClawPackageContents(input) {
     }
     if (issues.length > 0)
         return { ok: false, issues };
+    const summary = summarizeClawManifest(validated.manifest, {
+        clawMarkdownBody: hasClawMarkdownBody,
+    });
+    if (packageBootstrap) {
+        summary.workspace.bootstrapFiles = [...summary.workspace.bootstrapFiles, "BOOTSTRAP.md"].sort();
+    }
     return {
         ok: true,
         value: {
             manifestPath,
             manifest: validated.manifest,
-            summary: summarizeClawManifest(validated.manifest, { clawMarkdownBody: hasClawMarkdownBody }),
+            summary,
             hasClawMarkdownBody,
         },
     };

@@ -262,24 +262,27 @@ describe("validateClawPackageContents", () => {
     if (result.ok) expect(result.value).not.toHaveProperty("profile");
   });
 
-  it.each(["profiles/OPENCLAW.yml", "profiles/openclaw.yaml", "Profiles/openclaw.yml"])(
-    "requires conventional harness profile path %s",
-    (profilePath) => {
-      const result = validateClawPackageContents({
-        packageName: "@acme/github-triage",
-        version: "1.0.0",
-        packageJson: packageJson(),
-        files: [...files(), { path: profilePath, text: openClawProfile }],
-      });
+  it.each([
+    "profiles/OPENCLAW.yml",
+    "profiles/openclaw.yaml",
+    "Profiles/openclaw.yml",
+    "profiles/openclaw.json",
+    "profiles/codex/settings.yml",
+  ])("requires conventional harness profile path %s", (profilePath) => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [...files(), { path: profilePath, text: openClawProfile }],
+    });
 
-      expect(result).toEqual({
-        ok: false,
-        issues: [
-          expect.objectContaining({ code: "invalid_harness_profile_path", path: profilePath }),
-        ],
-      });
-    },
-  );
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        expect.objectContaining({ code: "invalid_harness_profile_path", path: profilePath }),
+      ],
+    });
+  });
 
   it("accepts native extensions in the conventional OpenClaw profile", () => {
     const result = validateClawPackageContents({
@@ -385,6 +388,9 @@ describe("validateClawPackageContents", () => {
     });
 
     expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.summary.workspace.bootstrapFiles).toEqual(["BOOTSTRAP.md"]);
+    }
   });
 
   it.each([

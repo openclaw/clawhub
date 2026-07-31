@@ -80,7 +80,9 @@ unresolved `${ENV_VAR}` references.
 An optional package-root `BOOTSTRAP.md` contains first-run instructions. It is
 seeded once by a supporting harness and remains separate from the reusable
 portable prompt in the `CLAW.md` body. Do not declare root `BOOTSTRAP.md` as a
-workspace destination; that path is reserved for the package-root file.
+workspace destination; that path is reserved for the package-root file. ClawHub
+includes bootstrap presence, but never its contents, in the bounded catalog
+summary.
 
 Harness-specific tuning uses conventional package paths:
 
@@ -90,7 +92,8 @@ profiles/hermes.yml
 profiles/codex.yml
 ```
 
-Each profile is a JSON-compatible YAML mapping. ClawHub validates the common
+The `profiles/` namespace is reserved for these lowercase, single-file `.yml`
+paths. Each profile is a JSON-compatible YAML mapping. ClawHub validates the common
 shape and fully validates `profiles/openclaw.yml`; it does not interpret foreign
 profiles. A harness discovers only its own profile and ignores the others when
 applying the package. The exact published artifact and its digest still cover

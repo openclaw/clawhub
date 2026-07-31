@@ -10048,7 +10048,9 @@ describe("packages public queries", () => {
               id: "demo-claw",
               description: "x".repeat(1_024),
             }),
-            workspace: expect.objectContaining({ bootstrapFiles: ["SOUL.md"] }),
+            workspace: expect.objectContaining({
+              bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
+            }),
           }),
           pluginManifestSummary: undefined,
         }),
