@@ -1,40 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { isPluginCategorySlug, isSkillCategorySlug } from "clawhub-schema";
-import {
-  Binoculars,
-  Bookmark,
-  CloudOff,
-  Download,
-  LayoutGrid,
-  Loader2,
-  Moon,
-  Plus,
-  Rows3,
-  Search,
-  X,
-} from "lucide-react";
-import {
-  type FormEvent,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { api } from "../../convex/_generated/api";
-import { convexHttp } from "../convex/client";
-import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib/categories";
+import { Bookmark, CloudOff, Download, Loader2, Moon, Plus } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   fetchHomePluginListing as fetchPluginListing,
   fetchHomeSkillListing as fetchSkillListing,
   HOME_LISTING_PAGE_SIZE,
   homeListingCacheKey as listingCacheKey,
   isHomeTrendingSkillEntry,
-  itemMatchesAnyHomeCategory as itemMatchesAnyCategory,
-  skillMatchesAnyHomeCategory as skillMatchesAnyCategory,
-  uniqueHomePlugins as uniquePlugins,
-  uniqueHomeSkillEntries as uniqueSkillEntries,
   type HomeListingCacheEntry,
   type HomeListingInitialData,
   type HomeListingKind as ListingKind,
@@ -44,17 +16,13 @@ import {
   type TrendingFeedState,
 } from "../lib/homeListingData";
 import { formatCompactStat } from "../lib/numberFormat";
-import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
+import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { presentationTitle } from "../lib/presentationTitle";
-import type { PublicSkill, PublicUser } from "../lib/publicUser";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
-import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
-
-type ListingView = "list" | "grid";
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "trending", label: "Trending" },
@@ -73,43 +41,14 @@ const PLUGIN_LISTING_TABS: Array<{
 ];
 
 const LISTING_PAGE_SIZE = HOME_LISTING_PAGE_SIZE;
-const LISTING_SEARCH_DEBOUNCE_MS = 220;
-
-const HOME_SKILL_LISTING_CATEGORIES: BrowseCategory[] = SKILL_CATEGORIES.map(
-  ({ slug, label, icon }) => ({ slug, label, icon }),
-);
-
-function isTypingTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    target.tagName === "INPUT" ||
-    target.tagName === "TEXTAREA" ||
-    target.tagName === "SELECT"
-  );
-}
-
-type SkillSearchHit = {
-  skill: PublicSkill;
-  ownerHandle?: string | null;
-  owner?: PublicUser | null;
-};
+const EMPTY_CATEGORY_SLUGS: string[] = [];
 
 function HomeListingEmptyPanel({
   variant,
-  query,
-  onClearSearch,
 }: {
-  variant: "error" | "search" | "filter" | "trendingEmpty" | "trendingUnavailable";
-  query?: string;
-  onClearSearch?: () => void;
+  variant: "error" | "empty" | "trendingEmpty" | "trendingUnavailable";
 }) {
-  const Icon =
-    variant === "error" || variant === "trendingUnavailable"
-      ? CloudOff
-      : variant === "search"
-        ? Binoculars
-        : Moon;
+  const Icon = variant === "error" || variant === "trendingUnavailable" ? CloudOff : Moon;
   const title =
     variant === "trendingUnavailable"
       ? "24-hour Trending unavailable"
@@ -117,11 +56,7 @@ function HomeListingEmptyPanel({
         ? "No 24-hour activity yet"
         : variant === "error"
           ? "Listings took a coffee break"
-          : variant === "search"
-            ? query
-              ? `No claws for “${query}”`
-              : "No claws in this view"
-            : "Quiet shelf";
+          : "Quiet shelf";
   const body =
     variant === "trendingUnavailable"
       ? "The canonical 24-hour feed isn't available right now. Try another tab."
@@ -129,9 +64,7 @@ function HomeListingEmptyPanel({
         ? "No skills have eligible activity in the current 24-hour window."
         : variant === "error"
           ? "We couldn't load this slice of the catalog. Give it another try in a moment."
-          : variant === "search"
-            ? "Try another query or clear the search."
-            : "Nothing on this tab right now. Peek at another tab or widen the category.";
+          : "Nothing on this tab right now. Peek at another tab.";
 
   return (
     <div className="home-v2-listing-empty" role="status">
@@ -140,33 +73,23 @@ function HomeListingEmptyPanel({
       </div>
       <p className="home-v2-listing-empty-title">{title}</p>
       <p className="home-v2-listing-empty-body">{body}</p>
-      {variant === "search" && onClearSearch ? (
-        <button type="button" className="home-v2-listing-empty-action" onClick={onClearSearch}>
-          <X size={15} aria-hidden="true" />
-          Clear search
-        </button>
-      ) : null}
     </div>
   );
 }
 
 function HomeListingResults({
-  view,
   showMore,
   loadingMore,
   onSeeMore,
   children,
 }: {
-  view: ListingView;
   showMore: boolean;
   loadingMore: boolean;
   onSeeMore: () => void;
   children: ReactNode;
 }) {
   return (
-    <div
-      className={`home-v2-listing-results${showMore ? " is-collapsed" : ""}${view === "grid" ? " is-grid" : " is-list"}`}
-    >
+    <div className={`home-v2-listing-results${showMore ? " is-collapsed" : ""} is-list`}>
       {children}
       {showMore ? (
         <div className="home-v2-listing-more">
@@ -313,124 +236,6 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   );
 }
 
-function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
-  if (isHomeTrendingSkillEntry(entry)) {
-    const item = entry.trending;
-    const owner = item.publisher?.handle;
-    return (
-      <Link to={item.canonicalUrl} className="home-v2-listing-card oc-card oc-card-interactive">
-        <div className="home-v2-listing-card-head">
-          <span className="home-v2-listing-card-icon" aria-hidden="true">
-            <MarketplaceIcon kind="skill" label={item.displayName} size="sm" />
-          </span>
-          <div className="home-v2-listing-card-id">
-            <span className="home-v2-listing-card-name" title={item.displayName}>
-              {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
-            </span>
-            {owner ? <span className="home-v2-listing-card-by">@{owner}</span> : null}
-          </div>
-        </div>
-        <p className="home-v2-listing-card-summary">
-          {truncateText(item.summary || "Agent-ready skill pack.", 80)}
-        </p>
-        {typeof item.metrics.trending24hDownloads === "number" ? (
-          <div className="home-v2-listing-card-stats" aria-label="24-hour downloads">
-            <span>
-              <Download size={13} aria-hidden="true" />
-              {formatCompactStat(item.metrics.trending24hDownloads)}
-            </span>
-          </div>
-        ) : null}
-      </Link>
-    );
-  }
-  const handle = entry.ownerHandle || entry.owner?.handle;
-  const name = presentationTitle(entry.skill.displayName, entry.skill.slug);
-
-  return (
-    <Link
-      to={skillLink(entry)}
-      className={`home-v2-listing-card oc-card oc-card-interactive${
-        showStats ? "" : " has-no-stats"
-      }`}
-    >
-      <div className="home-v2-listing-card-head">
-        <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon
-            kind="skill"
-            label={name}
-            imageUrl={entry.skill.icon}
-            skill={entry.skill}
-            size="sm"
-          />
-        </span>
-        <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name" title={name}>
-            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
-          </span>
-          {handle ? <span className="home-v2-listing-card-by">@{handle}</span> : null}
-        </div>
-      </div>
-      <p className="home-v2-listing-card-summary">
-        {truncateText(entry.skill.summary || "Agent-ready skill pack.", 80)}
-      </p>
-      {showStats ? (
-        <div className="home-v2-listing-card-stats" aria-label="Popularity">
-          <span>
-            <Bookmark size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.stars ?? 0)}
-          </span>
-          <span>
-            <Download size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
-          </span>
-        </div>
-      ) : null}
-    </Link>
-  );
-}
-
-function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
-  const name = presentationTitle(plugin.displayName, plugin.name);
-  const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
-
-  return (
-    <Link to={pluginHref} className="home-v2-listing-card oc-card oc-card-interactive">
-      <div className="home-v2-listing-card-head">
-        <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon
-            kind="plugin"
-            label={name}
-            imageUrl={plugin.icon}
-            categorySlug={plugin.categories?.[0]}
-            size="sm"
-          />
-        </span>
-        <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name" title={name}>
-            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
-          </span>
-          <span className="home-v2-listing-card-by-row">
-            {plugin.ownerHandle ? (
-              <span className="home-v2-listing-card-by">@{plugin.ownerHandle}</span>
-            ) : null}
-            {plugin.isOfficial ? <OfficialBadge /> : null}
-          </span>
-        </div>
-      </div>
-      <p className="home-v2-listing-card-summary">
-        {truncateText(plugin.summary || "Gateway plugin for OpenClaw workflows.", 80)}
-      </p>
-      <div className="home-v2-listing-card-stats" aria-label="Downloads">
-        <span>
-          <Download size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.downloads ?? 0)}
-        </span>
-      </div>
-    </Link>
-  );
-}
-
 type HomeListingSectionProps = {
   initialListing?: HomeListingInitialData | null;
 };
@@ -462,8 +267,6 @@ function createInitialListingCache(initialListing: HomeListingInitialData | null
 }
 
 export function HomeListingSection({ initialListing = null }: HomeListingSectionProps = {}) {
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchRequestRef = useRef(0);
   const listingCacheRef = useRef<Map<string, HomeListingCacheEntry> | null>(null);
   listingCacheRef.current ??= createInitialListingCache(initialListing);
   const listingCache = listingCacheRef.current;
@@ -474,8 +277,6 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       ? "featured"
       : (initialListing?.tab ?? "trending");
   const [tab, setTab] = useState<ListingTab>(initialTab);
-  const [view, setView] = useState<ListingView>("list");
-  const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
   const [fetchLimit, setFetchLimit] = useState(LISTING_PAGE_SIZE);
   const [skills, setSkills] = useState<SkillPageEntry[]>(
@@ -488,29 +289,12 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     initialListing ? "idle" : "loading",
   );
   const [loadingMore, setLoadingMore] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchSkills, setSearchSkills] = useState<SkillPageEntry[]>([]);
-  const [searchPlugins, setSearchPlugins] = useState<PackageListItem[]>([]);
-  const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error">("idle");
   const [listingHasMore, setListingHasMore] = useState(initialListing?.hasMore ?? false);
   const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>(
     initialListing?.kind === "skills" ? initialListing.trendingState : undefined,
   );
   const [canonicalTrendingUnavailable, setCanonicalTrendingUnavailable] = useState(
     initialListing?.kind === "skills" && initialListing.trendingState === "unavailable",
-  );
-
-  const trimmedSearch = searchQuery.trim();
-  const isSearchMode = trimmedSearch.length > 0;
-  const listingCategories = kind === "skills" ? HOME_SKILL_LISTING_CATEGORIES : PLUGIN_CATEGORIES;
-  const selectedCategories = useMemo(
-    () =>
-      categorySlugs.flatMap((slug) => {
-        const category = listingCategories.find((candidate) => candidate.slug === slug);
-        return category ? [category] : [];
-      }),
-    [categorySlugs, listingCategories],
   );
 
   const visibleTabs =
@@ -520,55 +304,20 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
         )
       : PLUGIN_LISTING_TABS;
 
-  const activeItems = isSearchMode
-    ? kind === "skills"
-      ? searchSkills
-      : searchPlugins
-    : kind === "skills"
-      ? skills
-      : plugins;
-  const activeStatus = isSearchMode ? searchStatus : status;
+  const activeItems = kind === "skills" ? skills : plugins;
+  const activeStatus = status;
   const isEmpty = activeStatus === "idle" && activeItems.length === 0;
   const showSkillStats = true;
   const showListingMore =
     activeStatus === "idle" && (activeItems.length > visibleCount || listingHasMore);
 
-  const openListingSearch = useCallback(() => {
-    setSearchOpen(true);
-    window.requestAnimationFrame(() => searchInputRef.current?.focus());
-  }, []);
-
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.defaultPrevented) return;
-      if (isTypingTarget(event.target)) return;
-      event.preventDefault();
-      openListingSearch();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openListingSearch]);
-
-  useEffect(() => {
-    if (!searchOpen) return undefined;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      if (trimmedSearch) {
-        setSearchQuery("");
-        return;
-      }
-      setSearchOpen(false);
-      searchInputRef.current?.blur();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [searchOpen, trimmedSearch]);
-
-  useEffect(() => {
-    if (isSearchMode) return undefined;
-    const cacheKey = listingCacheKey({ kind, tab, categorySlugs, fetchLimit });
+    const cacheKey = listingCacheKey({
+      kind,
+      tab,
+      categorySlugs: EMPTY_CATEGORY_SLUGS,
+      fetchLimit,
+    });
     const cached = listingCache.get(cacheKey);
     if (cached) {
       if (cached.kind === "skills") {
@@ -603,27 +352,29 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
 
     const load =
       kind === "skills"
-        ? fetchSkillListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) => {
-            if (controller.signal.aborted) return;
-            listingCache.set(cacheKey, {
-              kind: "skills",
-              items: result.page,
-              hasMore: result.hasMore,
-              trendingState: result.trendingState,
-            });
-            setSkills(result.page);
-            setTrendingState(result.trendingState);
-            if (tab === "trending") {
-              const unavailable = result.trendingState === "unavailable";
-              setCanonicalTrendingUnavailable(unavailable);
-              if (unavailable) setTab("featured");
-            }
-            setListingHasMore(result.hasMore);
-            setStatus("idle");
-          })
+        ? fetchSkillListing(tab, EMPTY_CATEGORY_SLUGS, fetchLimit, controller.signal).then(
+            (result) => {
+              if (controller.signal.aborted) return;
+              listingCache.set(cacheKey, {
+                kind: "skills",
+                items: result.page,
+                hasMore: result.hasMore,
+                trendingState: result.trendingState,
+              });
+              setSkills(result.page);
+              setTrendingState(result.trendingState);
+              if (tab === "trending") {
+                const unavailable = result.trendingState === "unavailable";
+                setCanonicalTrendingUnavailable(unavailable);
+                if (unavailable) setTab("featured");
+              }
+              setListingHasMore(result.hasMore);
+              setStatus("idle");
+            },
+          )
         : fetchPluginListing(
             tab === "trending" ? "new" : tab,
-            categorySlugs,
+            EMPTY_CATEGORY_SLUGS,
             fetchLimit,
             controller.signal,
           ).then((result) => {
@@ -658,150 +409,27 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       });
 
     return () => controller.abort();
-  }, [categorySlugs, fetchLimit, isSearchMode, kind, listingCache, tab]);
-
-  useEffect(() => {
-    if (!isSearchMode) {
-      setSearchSkills([]);
-      setSearchPlugins([]);
-      setSearchStatus("idle");
-      return undefined;
-    }
-
-    searchRequestRef.current += 1;
-    const requestId = searchRequestRef.current;
-    const controller = new AbortController();
-    const isLoadMore = fetchLimit > LISTING_PAGE_SIZE;
-    if (isLoadMore) {
-      setLoadingMore(true);
-    } else {
-      setSearchStatus("loading");
-      setListingHasMore(false);
-    }
-
-    const handle = window.setTimeout(() => {
-      const load =
-        kind === "skills"
-          ? Promise.all(
-              (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
-                convexHttp.action(api.search.searchNativeSkills, {
-                  query: trimmedSearch,
-                  limit: fetchLimit,
-                  highlightedOnly: tab === "featured" ? true : undefined,
-                  ...(categorySlug ? { categorySlug } : {}),
-                }),
-              ),
-            ).then((results) => {
-              if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-              const rows = uniqueSkillEntries(
-                results.flatMap((hits) =>
-                  (hits as SkillSearchHit[])
-                    .map((hit) => ({
-                      skill: hit.skill,
-                      ownerHandle: hit.ownerHandle,
-                      owner: hit.owner,
-                    }))
-                    .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs)),
-                ),
-              );
-              const items = rows.slice(0, fetchLimit);
-              const hasMore =
-                rows.length > fetchLimit ||
-                results.some((hits) => (hits as SkillSearchHit[]).length >= fetchLimit);
-              setSearchSkills(items);
-              setListingHasMore(hasMore);
-              setSearchStatus("idle");
-            })
-          : Promise.all(
-              (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
-                fetchPluginCatalog({
-                  q: trimmedSearch,
-                  category: categorySlug ?? undefined,
-                  featured: tab === "featured" ? true : undefined,
-                  sort: "updated",
-                  isOfficial: tab === "official" ? true : undefined,
-                  limit: fetchLimit,
-                  signal: controller.signal,
-                }),
-              ),
-            ).then((results) => {
-              if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-              const items = uniquePlugins(
-                results.flatMap((result) =>
-                  result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
-                ),
-              );
-              const hasMore = results.some(
-                (result) => result.nextCursor != null || result.items.length >= fetchLimit,
-              );
-              setSearchPlugins(items);
-              setListingHasMore(hasMore);
-              setSearchStatus("idle");
-            });
-
-      load
-        .catch(() => {
-          if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-          if (isLoadMore) return;
-          if (kind === "skills") setSearchSkills([]);
-          else setSearchPlugins([]);
-          setSearchStatus("error");
-        })
-        .finally(() => {
-          if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-          setLoadingMore(false);
-        });
-    }, LISTING_SEARCH_DEBOUNCE_MS);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(handle);
-    };
-  }, [categorySlugs, fetchLimit, isSearchMode, kind, tab, trimmedSearch]);
-
-  useEffect(() => {
-    if (categorySlugs.length === 0) return;
-    const isValid = kind === "skills" ? isSkillCategorySlug : isPluginCategorySlug;
-    const validCategorySlugs = categorySlugs.filter((slug) => isValid(slug));
-    if (validCategorySlugs.length !== categorySlugs.length) {
-      setCategorySlugs(validCategorySlugs);
-    }
-  }, [categorySlugs, kind]);
+  }, [fetchLimit, kind, listingCache, tab]);
 
   useEffect(() => {
     setVisibleCount(LISTING_PAGE_SIZE);
     setFetchLimit(LISTING_PAGE_SIZE);
-  }, [categorySlugs, isSearchMode, kind, tab, trimmedSearch, view]);
+  }, [kind, tab]);
 
-  const visibleSkills = (isSearchMode ? searchSkills : skills).slice(0, visibleCount);
-  const visiblePlugins = (isSearchMode ? searchPlugins : plugins).slice(0, visibleCount);
+  const visibleSkills = skills.slice(0, visibleCount);
+  const visiblePlugins = plugins.slice(0, visibleCount);
 
   const handleSeeMore = () => {
     setVisibleCount((count) => count + LISTING_PAGE_SIZE);
     setFetchLimit((limit) => limit + LISTING_PAGE_SIZE);
   };
 
-  const closeListingSearch = () => {
-    setSearchOpen(false);
-    setSearchQuery("");
-    searchInputRef.current?.blur();
-  };
-
-  const handleListingSearchSubmit = (event: FormEvent) => {
-    event.preventDefault();
-  };
-
   const handleKindChange = (nextKind: ListingKind) => {
     if (nextKind === kind) return;
     setKind(nextKind);
-    setCategorySlugs([]);
     setTab(
       nextKind === "skills" ? (canonicalTrendingUnavailable ? "featured" : "trending") : "new",
     );
-  };
-
-  const removeCategory = (slug: string) => {
-    setCategorySlugs((current) => current.filter((categorySlug) => categorySlug !== slug));
   };
 
   return (
@@ -812,6 +440,23 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     >
       <div className="home-v2-listing-controls">
         <div className="home-v2-listing-toolbar">
+          <div className="home-v2-listing-sort">
+            <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Sort">
+              {visibleTabs.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === item.id}
+                  className={`home-v2-listing-tab${tab === item.id ? " is-active" : ""}`}
+                  onClick={() => setTab(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div
             className="home-v2-listing-kind clawhub-segmented oc-segmented"
             role="group"
@@ -838,149 +483,10 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               Plugins
             </button>
           </div>
-
-          <span className="home-v2-listing-divider" aria-hidden="true" />
-
-          <div className="home-v2-listing-sort">
-            <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Sort">
-              {visibleTabs.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === item.id}
-                  className={`home-v2-listing-tab${tab === item.id ? " is-active" : ""}`}
-                  onClick={() => {
-                    setTab(item.id);
-                    if (item.id === "trending") setCategorySlugs([]);
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="home-v2-listing-actions">
-            <div className="home-v2-listing-actions-rail has-category">
-              <button
-                type="button"
-                className={`home-v2-listing-search-trigger oc-action oc-action-ghost oc-action-icon${
-                  searchOpen ? " is-active" : ""
-                }`}
-                aria-label="Search catalog"
-                aria-expanded={searchOpen}
-                aria-controls="home-v2-listing-search-panel"
-                title="Search catalog (/)"
-                onClick={openListingSearch}
-              >
-                <Search size={16} aria-hidden="true" />
-              </button>
-
-              {kind === "skills" && tab === "trending" ? null : (
-                <HomeListingCategorySelect
-                  categories={listingCategories}
-                  value={categorySlugs}
-                  onChange={setCategorySlugs}
-                />
-              )}
-
-              <div
-                className="home-v2-listing-view clawhub-segmented oc-segmented"
-                role="group"
-                aria-label="Layout"
-              >
-                <button
-                  type="button"
-                  className={`home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item${
-                    view === "list" ? " is-active" : ""
-                  }`}
-                  aria-pressed={view === "list"}
-                  aria-label="List view"
-                  onClick={() => setView("list")}
-                >
-                  <Rows3 size={16} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className={`home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item${
-                    view === "grid" ? " is-active" : ""
-                  }`}
-                  aria-pressed={view === "grid"}
-                  aria-label="Grid view"
-                  onClick={() => setView("grid")}
-                >
-                  <LayoutGrid size={16} aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
-
-        <div
-          id="home-v2-listing-search-panel"
-          className={`home-v2-listing-search${searchOpen ? " is-open" : ""}`}
-          hidden={!searchOpen}
-        >
-          <form className="home-v2-listing-search-bar" onSubmit={handleListingSearchSubmit}>
-            <Search size={16} className="home-v2-listing-search-icon" aria-hidden="true" />
-            <input
-              ref={searchInputRef}
-              type="search"
-              className="home-v2-listing-search-input"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={
-                kind === "skills" ? "Search skills on ClawHub" : "Search plugins on ClawHub"
-              }
-              aria-label={kind === "skills" ? "Search skills" : "Search plugins"}
-              autoComplete="off"
-            />
-            <button
-              type="button"
-              className="home-v2-listing-search-close"
-              aria-label="Close search"
-              onClick={closeListingSearch}
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
-          </form>
-        </div>
-
-        {selectedCategories.length > 0 ? (
-          <div className="home-v2-listing-active-filters" aria-label="Active category filters">
-            {selectedCategories.length <= 3 ? (
-              selectedCategories.map((category) => (
-                <button
-                  key={category.slug}
-                  type="button"
-                  className="home-v2-listing-filter-chip oc-pill"
-                  onClick={() => removeCategory(category.slug)}
-                  aria-label={`Remove ${category.label} category filter`}
-                >
-                  {category.label}
-                  <X size={13} aria-hidden="true" />
-                </button>
-              ))
-            ) : (
-              <>
-                <span className="home-v2-listing-filter-chip oc-pill is-summary">
-                  {selectedCategories.length} categories
-                </span>
-                <button
-                  type="button"
-                  className="home-v2-listing-filter-clear"
-                  onClick={() => setCategorySlugs([])}
-                >
-                  Clear all
-                </button>
-              </>
-            )}
-          </div>
-        ) : null}
       </div>
 
-      {activeStatus === "idle" && view === "list" && activeItems.length > 0 ? (
+      {activeStatus === "idle" && activeItems.length > 0 ? (
         <div
           className={`home-v2-listing-head${showSkillStats ? "" : " has-no-stats"}`}
           aria-hidden="true"
@@ -1006,65 +512,43 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       {isEmpty ? (
         <HomeListingEmptyPanel
           variant={
-            isSearchMode
-              ? "search"
-              : kind === "skills" && tab === "trending"
-                ? trendingState === "unavailable"
-                  ? "trendingUnavailable"
-                  : "trendingEmpty"
-                : "filter"
+            kind === "skills" && tab === "trending"
+              ? trendingState === "unavailable"
+                ? "trendingUnavailable"
+                : "trendingEmpty"
+              : "empty"
           }
-          query={isSearchMode ? trimmedSearch : undefined}
-          onClearSearch={isSearchMode ? closeListingSearch : undefined}
         />
       ) : null}
 
       {activeStatus === "idle" && kind === "skills" && visibleSkills.length > 0 ? (
         <HomeListingResults
-          view={view}
           showMore={showListingMore}
           loadingMore={loadingMore}
           onSeeMore={handleSeeMore}
         >
-          <div className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}>
-            {visibleSkills.map((entry) =>
-              view === "grid" ? (
-                <HomeListingSkillCard
-                  key={
-                    isHomeTrendingSkillEntry(entry) ? entry.trending.id : String(entry.skill._id)
-                  }
-                  entry={entry}
-                  showStats={showSkillStats}
-                />
-              ) : (
-                <HomeListingSkillRow
-                  key={
-                    isHomeTrendingSkillEntry(entry) ? entry.trending.id : String(entry.skill._id)
-                  }
-                  entry={entry}
-                  showStats={showSkillStats}
-                />
-              ),
-            )}
+          <div className="home-v2-listing-list">
+            {visibleSkills.map((entry) => (
+              <HomeListingSkillRow
+                key={isHomeTrendingSkillEntry(entry) ? entry.trending.id : String(entry.skill._id)}
+                entry={entry}
+                showStats={showSkillStats}
+              />
+            ))}
           </div>
         </HomeListingResults>
       ) : null}
 
       {activeStatus === "idle" && kind === "plugins" && visiblePlugins.length > 0 ? (
         <HomeListingResults
-          view={view}
           showMore={showListingMore}
           loadingMore={loadingMore}
           onSeeMore={handleSeeMore}
         >
-          <div className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}>
-            {visiblePlugins.map((plugin) =>
-              view === "grid" ? (
-                <HomeListingPluginCard key={plugin.name} plugin={plugin} />
-              ) : (
-                <HomeListingPluginRow key={plugin.name} plugin={plugin} />
-              ),
-            )}
+          <div className="home-v2-listing-list">
+            {visiblePlugins.map((plugin) => (
+              <HomeListingPluginRow key={plugin.name} plugin={plugin} />
+            ))}
           </div>
         </HomeListingResults>
       ) : null}

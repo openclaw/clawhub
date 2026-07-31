@@ -103,13 +103,6 @@ describe("restored UI design contract", () => {
   it("uses semantic design-system geometry across landing controls and surfaces", () => {
     const css = styles();
 
-    for (const selector of [
-      ".home-v2-listing-search-bar",
-      ".home-v2-listing-search-close",
-      ".home-v2-listing-category-trigger",
-    ]) {
-      expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-control)");
-    }
     expect(cssRule(css, ".promotion-bar-icon")).toContain("border-radius: var(--oc-radius-inset)");
     expect(cssRule(css, ".home-v2-apps-workflow-tile")).toContain(
       "border-radius: var(--oc-radius-surface)",
@@ -354,14 +347,16 @@ describe("restored UI design contract", () => {
     expect(css.lastIndexOf(".home-v2-static-headline")).toBeGreaterThan(
       css.lastIndexOf(".home-v2-action-word"),
     );
-    expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
+    expect(listingSource).toContain('className="home-v2-listing-list"');
     expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented oc-segmented");
     expect(listingSource).toContain(
       "home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item",
     );
-    expect(listingSource).toContain("home-v2-listing-view clawhub-segmented oc-segmented");
-    expect(listingSource).toContain(
-      "home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item",
+    expect(listingSource).not.toContain("home-v2-listing-view");
+    expect(listingSource).not.toContain("HomeListingCategorySelect");
+    expect(listingSource).not.toContain("Search catalog");
+    expect(listingSource.indexOf('className="home-v2-listing-sort"')).toBeLessThan(
+      listingSource.indexOf('className="home-v2-listing-kind'),
     );
     expect(appsSource).toContain('className="home-v2-apps-tile"');
     expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
@@ -385,13 +380,8 @@ describe("restored UI design contract", () => {
     expect(homeSource).not.toContain("What are you looking for?");
     expect(homeSource).not.toContain("Featured skills");
     expect(homeSource).not.toContain("Trending Now");
-    expect(listingSource).toContain("SKILL_CATEGORIES");
-    expect(listingSource).toContain("PLUGIN_CATEGORIES");
-    expect(listingSource).toContain("HomeListingCategorySelect");
     expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
-    expect(cssRule(css, ".home-v2-listing-grid")).toContain(
-      "grid-template-columns: repeat(3, minmax(0, 1fr))",
-    );
+    expect(cssRule(css, ".home-v2-listing-kind")).toContain("margin-left: auto");
   });
 
   it("requires the restored footer columns and mobile section toggles", () => {

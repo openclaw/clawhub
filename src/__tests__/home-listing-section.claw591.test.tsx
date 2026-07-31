@@ -122,8 +122,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("8K")).toBeNull();
     expect(screen.queryByText("skills.sh")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
-    expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
   });
 
   it("hides unavailable Trending and falls back to the Featured feed", async () => {
@@ -222,7 +221,7 @@ describe("HomeListingSection", () => {
         expect.objectContaining({ sort: "newest", createdAfter: expect.any(Number) }),
       );
     });
-    expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
     await waitFor(() => {
@@ -270,42 +269,6 @@ describe("HomeListingSection", () => {
     });
     expect(screen.getByTitle("First Skill")).toBeTruthy();
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
-  });
-
-  it("keeps search as a separate relevance-first interaction", async () => {
-    convexActionMock.mockResolvedValue([
-      {
-        skill: makeNativeSkill("search-hit", "Search Hit"),
-        ownerHandle: "builder",
-      },
-    ]);
-    render(<HomeListingSection initialListing={initialTrending([])} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), {
-      target: { value: "search" },
-    });
-
-    expect(await screen.findByText("Search Hit")).toBeTruthy();
-    expect(convexActionMock).toHaveBeenCalledWith(
-      "search:searchNativeSkills",
-      expect.objectContaining({ query: "search" }),
-    );
-  });
-
-  it("supports list and grid presentation without changing feed order", () => {
-    const first = makeTrending("first", "First Skill", 17, 9000);
-    const second = makeTrending("second", "Second Skill", 3, 8000);
-    render(<HomeListingSection initialListing={initialTrending([first, second])} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
-    expect(document.querySelector(".home-v2-listing-grid")).toBeTruthy();
-    expect(
-      Array.from(
-        document.querySelectorAll(".home-v2-listing-card-name"),
-        (node) => node.textContent,
-      ),
-    ).toEqual(["First Skill", "Second Skill"]);
   });
 });
 
@@ -370,18 +333,5 @@ function makeTrending(
       lifetimeInstallsPeriod: "lifetime" as const,
       updatedAt: 1,
     },
-  };
-}
-
-function makeNativeSkill(slug: string, displayName: string) {
-  return {
-    _id: `skills:${slug}`,
-    slug,
-    displayName,
-    summary: `${displayName} summary`,
-    stats: { comments: 0, downloads: 0, installs: 0, stars: 0, versions: 1 },
-    tags: {},
-    createdAt: 1,
-    updatedAt: 1,
   };
 }

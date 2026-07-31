@@ -81,7 +81,7 @@ export function homeListingCacheKey({
   return ["listing", kind, tab, categoryCacheKey(categorySlugs), fetchLimit].join(":");
 }
 
-export function itemMatchesAnyHomeCategory(
+function itemMatchesAnyHomeCategory(
   item: { categories?: readonly string[] | null },
   categorySlugs: readonly string[],
 ) {
@@ -90,19 +90,19 @@ export function itemMatchesAnyHomeCategory(
   return categorySlugs.some((slug) => categories.includes(slug));
 }
 
-export function skillMatchesAnyHomeCategory(skill: PublicSkill, categorySlugs: readonly string[]) {
+function skillMatchesAnyHomeCategory(skill: PublicSkill, categorySlugs: readonly string[]) {
   if (categorySlugs.length === 0) return true;
   const categories = getSkillCategoriesForSkill(skill);
   return categorySlugs.some((slug) => categories.some((category) => category.slug === slug));
 }
 
-export function uniqueHomeSkillEntries(entries: HomeNativeSkillListingEntry[]) {
+function uniqueHomeSkillEntries(entries: HomeNativeSkillListingEntry[]) {
   const byId = new Map<string, HomeNativeSkillListingEntry>();
   for (const entry of entries) byId.set(String(entry.skill._id), entry);
   return [...byId.values()];
 }
 
-export function uniqueHomePlugins(items: PackageListItem[]) {
+function uniqueHomePlugins(items: PackageListItem[]) {
   const byName = new Map<string, PackageListItem>();
   for (const item of items) byName.set(item.name, item);
   return [...byName.values()];

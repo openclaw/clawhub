@@ -137,12 +137,15 @@ describe("HomeListingSection", () => {
     });
   });
 
-  it("renders a provided Featured plugin listing as a list", async () => {
+  it("renders listing tabs left, content tabs right, and only the list presentation", async () => {
     render(<HomeListingSection initialListing={initialPluginListing()} />);
 
-    const contentTypeButtons = screen
-      .getByRole("group", { name: "Content type" })
-      .querySelectorAll("button");
+    const toolbar = document.querySelector(".home-v2-listing-toolbar");
+    const sortTabs = screen.getByRole("tablist", { name: "Sort" });
+    const contentType = screen.getByRole("group", { name: "Content type" });
+    const contentTypeButtons = contentType.querySelectorAll("button");
+    expect(toolbar?.firstElementChild?.contains(sortTabs)).toBe(true);
+    expect(toolbar?.lastElementChild).toBe(contentType);
     expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
       "Skills",
       "Plugins",
@@ -153,14 +156,15 @@ describe("HomeListingSection", () => {
     expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByRole("button", { name: "List view" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "Featured",
       "Official",
       "New",
     ]);
+    expect(screen.queryByRole("button", { name: "Search catalog" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List view" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(document.querySelector(".home-v2-listing-list")).toBeTruthy();
     expect(document.querySelector(".marketplace-icon-image")?.getAttribute("src")).toBe(
@@ -263,148 +267,6 @@ describe("HomeListingSection", () => {
     });
   });
 
-  it("opens listing search from the toolbar icon and with slash", async () => {
-    convexActionMock.mockResolvedValue([
-      {
-        skill: {
-          _id: "skills:1",
-          slug: "alpha-skill",
-          displayName: "Alpha Skill",
-          summary: "Alpha",
-          stats: { stars: 1, downloads: 1 },
-        },
-        ownerHandle: "builder",
-      },
-    ]);
-
-    renderSkillsListing();
-
-    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
-    expect(document.querySelector(".home-v2-listing-search.is-open")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
-    expect(document.querySelector(".home-v2-listing-search.is-open")).toBeNull();
-
-    fireEvent.keyDown(document, { key: "/" });
-
-    const searchInput = await screen.findByRole("searchbox", { name: "Search skills" });
-    expect(document.querySelector(".home-v2-listing-search.is-open")).toBeTruthy();
-
-    fireEvent.change(searchInput, { target: { value: "alpha" } });
-
-    await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
-        query: "alpha",
-        limit: 20,
-      });
-      expect(screen.getByText("Alpha Skill")).toBeTruthy();
-    });
-  });
-
-  it("searches skills inside the selected category before truncating results", async () => {
-    convexActionMock.mockResolvedValue([
-      {
-        skill: {
-          _id: "skills:dev-alpha",
-          slug: "dev-alpha",
-          displayName: "Dev Alpha",
-          summary: "Alpha",
-          categories: ["development"],
-          stats: { stars: 1, downloads: 1 },
-        },
-        ownerHandle: "builder",
-      },
-    ]);
-
-    renderSkillsListing();
-
-    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
-    fireEvent.click(screen.getByRole("option", { name: "Development" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
-        "Development",
-      );
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
-    const searchInput = await screen.findByRole("searchbox", { name: "Search skills" });
-    fireEvent.change(searchInput, { target: { value: "alpha" } });
-
-    await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
-        query: "alpha",
-        limit: 20,
-        categorySlug: "development",
-      });
-      expect(screen.getByText("Dev Alpha")).toBeTruthy();
-    });
-  });
-
-  it("keeps listing search fetch-on-query instead of serving repeated queries from tab cache", async () => {
-    convexActionMock.mockResolvedValue([
-      {
-        skill: {
-          _id: "skills:alpha",
-          slug: "alpha-skill",
-          displayName: "Alpha Skill",
-          summary: "Alpha",
-          stats: { stars: 1, downloads: 1 },
-        },
-        ownerHandle: "builder",
-      },
-    ]);
-
-    renderSkillsListing();
-
-    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
-    const searchInput = await screen.findByRole("searchbox", { name: "Search skills" });
-    fireEvent.change(searchInput, { target: { value: "alpha" } });
-
-    await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledTimes(1);
-    });
-
-    fireEvent.change(searchInput, { target: { value: "" } });
-    await waitFor(() => {
-      expect(screen.queryByText("Alpha Skill")).toBeNull();
-    });
-
-    fireEvent.change(searchInput, { target: { value: "alpha" } });
-
-    await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it("renders the canonical skill and plugin category definitions", async () => {
-    renderSkillsListing();
-
-    await waitFor(() => {
-      expect(screen.getByText("Demo Skill").textContent).toBe("Demo Skill");
-    });
-
-    const categorySelect = screen.getByRole("combobox", { name: "Category" });
-    expect(categorySelect.getAttribute("aria-expanded")).toBe("false");
-    expect(categorySelect.textContent).toContain("All categories");
-
-    fireEvent.click(categorySelect);
-    expect(
-      screen.getByRole("listbox", { name: "Category" }).getAttribute("aria-multiselectable"),
-    ).toBe("true");
-    expect(screen.getByRole("option", { name: "All categories" }).textContent).toContain(
-      "All categories",
-    );
-    expect(screen.getByRole("option", { name: "Integrations" }).textContent).toContain(
-      "Integrations",
-    );
-    expect(screen.getByRole("option", { name: "Security" }).textContent).toContain("Security");
-
-    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
-    expect(screen.getByRole("option", { name: "Channels" }).textContent).toContain("Channels");
-    expect(screen.getByRole("option", { name: "Runtime" }).textContent).toContain("Runtime");
-  });
-
   it("expands the listing preview when see more is clicked", async () => {
     const rows = Array.from({ length: 35 }, (_, index) => ({
       skill: {
@@ -480,50 +342,6 @@ describe("HomeListingSection", () => {
       expect(screen.getByText("New Skill")).toBeTruthy();
     });
     expect(convexQueryMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps Featured active for skill search", async () => {
-    convexActionMock.mockResolvedValue([
-      {
-        skill: {
-          _id: "skills:featured-search",
-          slug: "featured-search",
-          displayName: "Featured Search Skill",
-          stats: { installs: 0 },
-        },
-        ownerHandle: "builder",
-      },
-    ]);
-
-    render(<HomeListingSection initialListing={initialPluginListing()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
-    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "search" } });
-
-    await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
-        query: "search",
-        limit: 20,
-        highlightedOnly: true,
-      });
-      expect(screen.getByText("Featured Search Skill")).toBeTruthy();
-    });
-  });
-
-  it("keeps Featured active for plugin search", async () => {
-    render(<HomeListingSection initialListing={initialPluginListing()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "search" } });
-
-    await waitFor(() => {
-      expect(fetchPluginCatalogMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          featured: true,
-          q: "search",
-        }),
-      );
-    });
   });
 
   it("reuses cached plugin tabs instead of refetching when switching back", async () => {
@@ -627,139 +445,5 @@ describe("HomeListingSection", () => {
       "skills:listPublicPageV4",
       expect.objectContaining({ cursor: "skills-cursor-2" }),
     );
-  });
-
-  it("keeps load more available when selected skill categories overflow after merging", async () => {
-    const makeEntry = (index: number, category: string) => ({
-      skill: {
-        _id: `skills:${category}:${index}`,
-        slug: `${category}-skill-${index}`,
-        displayName: `${category} Skill ${index}`,
-        summary: "Category skill.",
-        categories: [category],
-        stats: { installs: 100 - index },
-      },
-      ownerHandle: "builder",
-    });
-    const development = Array.from({ length: 12 }, (_, index) => makeEntry(index, "development"));
-    const security = Array.from({ length: 12 }, (_, index) => makeEntry(index, "security"));
-
-    convexQueryMock.mockImplementation((name, args?: { categorySlug?: string }) => {
-      if (name !== "skills:listPublicPageV4") {
-        return Promise.resolve({ items: [], nextCursor: null });
-      }
-      if (args?.categorySlug === "development") {
-        return Promise.resolve({ page: development, hasMore: false, nextCursor: null });
-      }
-      if (args?.categorySlug === "security") {
-        return Promise.resolve({ page: security, hasMore: false, nextCursor: null });
-      }
-      return Promise.resolve({ page: development, hasMore: false, nextCursor: null });
-    });
-
-    renderSkillsListing();
-
-    await waitFor(() => {
-      expect(screen.getByText("development Skill 0")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
-    fireEvent.click(screen.getByRole("option", { name: "Development" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
-        "Development",
-      );
-    });
-
-    fireEvent.click(screen.getByRole("option", { name: "Security" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
-        "2 categories",
-      );
-      expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
-    });
-    expect(screen.queryByText("security Skill 11")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("security Skill 11")).toBeTruthy();
-    });
-  });
-
-  it("allows selecting multiple skill categories and refetches each selected category", async () => {
-    convexQueryMock.mockResolvedValue({
-      page: [
-        {
-          skill: {
-            _id: "skills:inferred",
-            slug: "inferred-skill",
-            displayName: "Inferred Skill",
-            summary: "Uses inferred category metadata.",
-            inferredCategories: ["development"],
-            latestVersionId: "versions:1",
-            inferredFromVersionId: "versions:1",
-            stats: { installs: 10 },
-          },
-          ownerHandle: "builder",
-        },
-      ],
-      hasMore: false,
-      nextCursor: null,
-    });
-
-    renderSkillsListing();
-
-    await waitFor(() => {
-      expect(screen.getByText("Inferred Skill")).toBeTruthy();
-    });
-
-    convexQueryMock.mockClear();
-    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
-    fireEvent.click(screen.getByRole("option", { name: "Development" }));
-
-    await waitFor(() => {
-      expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicPageV4",
-        expect.objectContaining({ categorySlug: "development" }),
-      );
-    });
-    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain("Development");
-    await waitFor(() => {
-      expect(screen.getByText("Inferred Skill")).toBeTruthy();
-    });
-
-    convexQueryMock.mockClear();
-    fireEvent.click(screen.getByRole("option", { name: "Security" }));
-
-    await waitFor(() => {
-      expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicPageV4",
-        expect.objectContaining({ categorySlug: "development" }),
-      );
-      expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicPageV4",
-        expect.objectContaining({ categorySlug: "security" }),
-      );
-    });
-    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
-      "2 categories",
-    );
-    expect(screen.getByRole("option", { name: "Development" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expect(screen.getByRole("option", { name: "Security" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-
-    fireEvent.click(screen.getByRole("option", { name: "All categories" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
-        "All categories",
-      );
-    });
   });
 });
