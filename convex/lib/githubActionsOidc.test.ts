@@ -562,6 +562,7 @@ describe("verifyGitHubActionsSkillsShSyncJwt", () => {
       repository_owner: "openclaw",
       repository_owner_id: "252820863",
       workflow_ref: "openclaw/clawhub/.github/workflows/skills-sh-sync.yml@refs/heads/main",
+      job_workflow_ref: "openclaw/clawhub/.github/workflows/skills-sh-sync.yml@refs/heads/main",
       runner_environment: "github-hosted",
       environment: "Production",
       event_name: "schedule",

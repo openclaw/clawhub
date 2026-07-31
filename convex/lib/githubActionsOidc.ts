@@ -211,7 +211,9 @@ async function verifyGitHubActionsWorkflowJwt(
       `GitHub OIDC workflow mismatch: expected ${trustedPublisher.workflowFilename}, got ${workflow.workflowFilename}`,
     );
   }
-  if (jobWorkflowRef) {
+  // GitHub now includes job_workflow_ref for direct jobs too; only a different
+  // workflow ref represents a reusable-workflow delegation.
+  if (jobWorkflowRef && jobWorkflowRef !== workflowRef) {
     const reusableWorkflow = parseWorkflowRef(jobWorkflowRef);
     if (!workflowPolicy.reusableWorkflow) {
       throw new Error("Reusable workflows may not run the skills.sh production sync");
