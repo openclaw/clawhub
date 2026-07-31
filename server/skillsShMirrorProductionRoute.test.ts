@@ -9,6 +9,7 @@ const buildProofSnapshotIdMock = vi.fn();
 const measureProofSourceMock = vi.fn();
 const parseProofSnapshotIdMock = vi.fn();
 const productionPolicyMock = vi.fn();
+const resolveConvexProxyEnvMock = vi.fn();
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
@@ -18,6 +19,10 @@ vi.mock("h3", () => ({
 
 vi.mock("@vercel/oidc", () => ({
   getVercelOidcToken: (...args: unknown[]) => getVercelOidcTokenMock(...args),
+}));
+
+vi.mock("./convexProxy", () => ({
+  resolveConvexProxyEnv: (...args: unknown[]) => resolveConvexProxyEnvMock(...args),
 }));
 
 vi.mock("./skillsShCatalogSource", () => ({
@@ -47,6 +52,8 @@ describe("skills.sh production mirror route", () => {
     measureProofSourceMock.mockReset();
     parseProofSnapshotIdMock.mockReset();
     productionPolicyMock.mockReset();
+    resolveConvexProxyEnvMock.mockReset();
+    resolveConvexProxyEnvMock.mockImplementation((env) => env);
     productionPolicyMock.mockReturnValue({ allowed: true, environment: "production" });
     getHeaderMock.mockReturnValue("Bearer github-actions-oidc");
     getVercelOidcTokenMock.mockResolvedValue("vercel-production-oidc");
@@ -79,6 +86,27 @@ describe("skills.sh production mirror route", () => {
     expect(await response.json()).toEqual({ control: null, runs: [] });
     expect(productionPolicyMock).toHaveBeenCalledOnce();
     expect(convexFetch).toHaveBeenCalledOnce();
+  });
+
+  it("validates production source policy against bundled frontend identity", async () => {
+    const resolvedEnv = {
+      VERCEL_ENV: "production",
+      VITE_CLAWHUB_DEPLOY_ENV: "production",
+      VITE_CONVEX_URL: "https://wry-manatee-359.convex.cloud",
+    };
+    resolveConvexProxyEnvMock.mockReturnValue(resolvedEnv);
+    readBodyMock.mockResolvedValue({ operation: "status" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ control: null, runs: [] }))),
+    );
+
+    const handler = (await import("./routes/ops/skills-sh/mirror.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(resolveConvexProxyEnvMock).toHaveBeenCalledWith(process.env);
+    expect(productionPolicyMock).toHaveBeenCalledWith(resolvedEnv);
   });
 
   it("fails closed before the operator call when the production source policy is not exact", async () => {
