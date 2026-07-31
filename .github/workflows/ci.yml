@@ -49,8 +49,8 @@ jobs:
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 25
     env:
-      OPENCLAW_CONTRACT_REPOSITORY: openclaw/openclaw
-      OPENCLAW_CONTRACT_SHA: e79faff8aa755b201302edd286976a03f9ed79ea
+      OPENCLAW_CONTRACT_REPOSITORY: giodl73-repo/openclaw
+      OPENCLAW_CONTRACT_SHA: 9002871d2f3bdf24b288070fa9935638f3ebda5e
 
     steps:
       - uses: actions/checkout@v7.0.1
