@@ -479,6 +479,7 @@ describe("canonical Trending snapshot storage", () => {
       sample: [
         expect.objectContaining({
           id: expect.stringMatching(/^clawhub:/),
+          trending24hDownloads: 6,
           trending24hInstalls: 8,
         }),
       ],
@@ -854,6 +855,7 @@ describe("canonical Trending snapshot storage", () => {
           rank: 1,
           lane: "clawhub-trending",
           id: expect.stringMatching(/^clawhub:/),
+          trending24hDownloads: 18,
           trending24hInstalls: 12,
           lifetimeInstalls: 900,
         },
@@ -861,6 +863,7 @@ describe("canonical Trending snapshot storage", () => {
           rank: 2,
           lane: "skills-sh-trending",
           id: "skills-sh:patrick/repo/external",
+          trending24hDownloads: null,
           trending24hInstalls: null,
           lifetimeInstalls: 4_200,
         },
@@ -928,6 +931,7 @@ describe("canonical Trending snapshot storage", () => {
         source: "clawhub",
         rank: 1,
         metrics: {
+          trending24hDownloads: 18,
           trending24hInstalls: 12,
           trending24hBookmarks: 4,
           lifetimeInstalls: 900,
@@ -944,6 +948,7 @@ describe("canonical Trending snapshot storage", () => {
           sourceUrl: "https://skills.sh/patrick/repo/external",
         },
         metrics: {
+          trending24hDownloads: null,
           trending24hInstalls: null,
           trending24hBookmarks: null,
           lifetimeInstalls: 4_200,

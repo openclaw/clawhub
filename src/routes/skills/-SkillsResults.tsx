@@ -59,10 +59,10 @@ function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
         ) : null}
       </div>
       <div className="skill-list-item-meta" aria-label="24-hour downloads">
-        {typeof trending.metrics.trending24hInstalls === "number" ? (
+        {typeof trending.metrics.trending24hDownloads === "number" ? (
           <span className="skill-list-item-meta-item">
             <Download size={14} aria-hidden="true" />
-            {formatCompactStat(trending.metrics.trending24hInstalls)}
+            {formatCompactStat(trending.metrics.trending24hDownloads)}
           </span>
         ) : null}
       </div>
@@ -94,11 +94,11 @@ function TrendingSkillCard({ item }: { item: TrendingSkillListEntry }) {
           {trending.summary}
         </p>
       ) : null}
-      {typeof trending.metrics.trending24hInstalls === "number" ? (
+      {typeof trending.metrics.trending24hDownloads === "number" ? (
         <div className="skill-card-grid-meta" aria-label="24-hour downloads">
           <span>
             <Download size={14} aria-hidden="true" />
-            {formatCompactStat(trending.metrics.trending24hInstalls)}
+            {formatCompactStat(trending.metrics.trending24hDownloads)}
           </span>
         </div>
       ) : null}

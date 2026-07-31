@@ -219,11 +219,11 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
             {truncateText(item.summary || "Agent-ready skill pack.", 80)}
           </p>
         </div>
-        {typeof item.metrics.trending24hInstalls === "number" ? (
+        {typeof item.metrics.trending24hDownloads === "number" ? (
           <div className="home-v2-listing-row-stats" aria-label="24-hour downloads">
             <span>
               <Download size={13} aria-hidden="true" />
-              {formatCompactStat(item.metrics.trending24hInstalls)}
+              {formatCompactStat(item.metrics.trending24hDownloads)}
             </span>
           </div>
         ) : null}
@@ -333,11 +333,11 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
         <p className="home-v2-listing-card-summary">
           {truncateText(item.summary || "Agent-ready skill pack.", 80)}
         </p>
-        {typeof item.metrics.trending24hInstalls === "number" ? (
+        {typeof item.metrics.trending24hDownloads === "number" ? (
           <div className="home-v2-listing-card-stats" aria-label="24-hour downloads">
             <span>
               <Download size={13} aria-hidden="true" />
-              {formatCompactStat(item.metrics.trending24hInstalls)}
+              {formatCompactStat(item.metrics.trending24hDownloads)}
             </span>
           </div>
         ) : null}

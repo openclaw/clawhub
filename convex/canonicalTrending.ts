@@ -684,6 +684,7 @@ export const materializeInternal = internalAction({
           lane: candidate.lane,
           id: candidate.card.id,
           displayName: candidate.card.displayName,
+          trending24hDownloads: candidate.card.metrics.trending24hDownloads ?? null,
           trending24hInstalls: candidate.card.metrics.trending24hInstalls,
           lifetimeInstalls: candidate.card.metrics.lifetimeInstalls,
         })),

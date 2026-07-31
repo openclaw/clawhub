@@ -73,6 +73,9 @@ export const canonicalTrendingCardValidator = v.object({
     sourceFreshness: v.union(v.literal("native"), v.literal("observed-only")),
   }),
   metrics: v.object({
+    // Optional only so snapshots materialized before this field landed remain readable
+    // until the next hourly materialization replaces them.
+    trending24hDownloads: v.optional(v.union(v.number(), v.null())),
     trending24hInstalls: v.union(v.number(), v.null()),
     trending24hBookmarks: v.union(v.number(), v.null()),
     lifetimeInstalls: v.union(v.number(), v.null()),
@@ -137,7 +140,7 @@ type ExternalTrendingDigest = Pick<
 
 export function buildNativeCanonicalTrendingCandidate(
   digest: NativeTrendingDigest,
-  usage: { installs: number; bookmarks: number; updatedAt: number },
+  usage: { downloads: number; installs: number; bookmarks: number; updatedAt: number },
 ): CanonicalTrendingMaterializationCandidate | null {
   const ownerHandle = digest.ownerHandle?.trim();
   if (!ownerHandle) return null;
@@ -192,6 +195,7 @@ export function buildNativeCanonicalTrendingCandidate(
         sourceFreshness: "native",
       },
       metrics: {
+        trending24hDownloads: Math.max(0, usage.downloads),
         trending24hInstalls: Math.max(0, usage.installs),
         trending24hBookmarks: Math.max(0, usage.bookmarks),
         lifetimeInstalls,
@@ -254,6 +258,7 @@ export function buildExternalCanonicalTrendingCandidate(
         sourceFreshness: "observed-only",
       },
       metrics: {
+        trending24hDownloads: null,
         trending24hInstalls: null,
         trending24hBookmarks: null,
         lifetimeInstalls,

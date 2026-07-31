@@ -19,11 +19,18 @@ export type CanonicalTrendingItem = {
   official: boolean;
   featured: boolean;
   metrics: {
+    trending24hDownloads: number | null;
     trending24hInstalls: number | null;
     trending24hBookmarks: number | null;
     lifetimeInstalls: number | null;
     lifetimeInstallsPeriod: "lifetime";
     updatedAt: number;
+  };
+};
+
+type LegacyCanonicalTrendingItem = Omit<CanonicalTrendingItem, "metrics"> & {
+  metrics: Omit<CanonicalTrendingItem["metrics"], "trending24hDownloads"> & {
+    trending24hDownloads?: number | null;
   };
 };
 
@@ -81,7 +88,7 @@ function isCanonicalPublisher(value: unknown): value is CanonicalTrendingItem["p
   );
 }
 
-function isCanonicalTrendingItem(value: unknown): value is CanonicalTrendingItem {
+function isCanonicalTrendingItem(value: unknown): value is LegacyCanonicalTrendingItem {
   if (!isRecord(value) || !isRecord(value.metrics)) return false;
   return (
     typeof value.id === "string" &&
@@ -93,6 +100,8 @@ function isCanonicalTrendingItem(value: unknown): value is CanonicalTrendingItem
     isCanonicalPublisher(value.publisher) &&
     typeof value.official === "boolean" &&
     typeof value.featured === "boolean" &&
+    (value.metrics.trending24hDownloads === undefined ||
+      isNullableNumber(value.metrics.trending24hDownloads)) &&
     isNullableNumber(value.metrics.trending24hInstalls) &&
     isNullableNumber(value.metrics.trending24hBookmarks) &&
     isNullableNumber(value.metrics.lifetimeInstalls) &&
@@ -118,7 +127,19 @@ function parseCanonicalTrendingPage(value: unknown): CanonicalTrendingPage {
   ) {
     throw new Error("Invalid canonical Trending response");
   }
-  return value as CanonicalTrendingPage;
+  const page = value as Omit<CanonicalTrendingPage, "items"> & {
+    items: LegacyCanonicalTrendingItem[];
+  };
+  return {
+    ...page,
+    items: page.items.map((item) => ({
+      ...item,
+      metrics: {
+        ...item.metrics,
+        trending24hDownloads: item.metrics.trending24hDownloads ?? null,
+      },
+    })),
+  };
 }
 
 export async function fetchCanonicalTrendingPage({

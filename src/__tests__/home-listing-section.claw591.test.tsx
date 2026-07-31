@@ -78,9 +78,9 @@ describe("HomeListingSection", () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([]));
   });
 
-  it("labels canonical Trending values as downloads without changing order or values", () => {
-    const first = makeTrending("first", "First Skill", 17, 9000);
-    const second = makeTrending("second", "Second Skill", 3, 8000);
+  it("shows canonical Trending download totals without changing order", () => {
+    const first = makeTrending("first", "First Skill", 17, 9000, 71);
+    const second = makeTrending("second", "Second Skill", 3, 8000, 29);
     render(<HomeListingSection initialListing={initialTrending([first, second])} />);
 
     const contentTypeButtons = screen
@@ -110,8 +110,10 @@ describe("HomeListingSection", () => {
         (node) => node.textContent,
       ),
     ).toEqual(["First Skill", "Second Skill"]);
-    expect(screen.getByText("17")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("71")).toBeTruthy();
+    expect(screen.getByText("29")).toBeTruthy();
+    expect(screen.queryByText("17")).toBeNull();
+    expect(screen.queryByText("3")).toBeNull();
     expect(screen.getByText("24h downloads")).toBeTruthy();
     expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
     expect(screen.queryByText("24h installs")).toBeNull();
@@ -337,7 +339,13 @@ function canonicalPage(items: ReturnType<typeof makeTrending>[], nextCursor: str
   };
 }
 
-function makeTrending(slug: string, displayName: string, installs: number, lifetime: number) {
+function makeTrending(
+  slug: string,
+  displayName: string,
+  installs: number,
+  lifetime: number,
+  downloads = installs,
+) {
   return {
     id: `clawhub:${slug}`,
     source: "clawhub" as const,
@@ -355,6 +363,7 @@ function makeTrending(slug: string, displayName: string, installs: number, lifet
     official: false,
     featured: false,
     metrics: {
+      trending24hDownloads: downloads,
       trending24hInstalls: installs,
       trending24hBookmarks: null,
       lifetimeInstalls: lifetime,

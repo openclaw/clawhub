@@ -266,10 +266,11 @@ describe("canonical Trending cards", () => {
         createdAt: 100,
         updatedAt: 200,
       },
-      { installs: 12, bookmarks: 4, updatedAt: 300 },
+      { downloads: 37, installs: 12, bookmarks: 4, updatedAt: 300 },
     );
 
     expect(result?.card.metrics).toEqual({
+      trending24hDownloads: 37,
       trending24hInstalls: 12,
       trending24hBookmarks: 4,
       lifetimeInstalls: 900,
@@ -301,7 +302,7 @@ describe("canonical Trending cards", () => {
         createdAt: 100,
         updatedAt: 200,
       },
-      { installs: 1, bookmarks: 0, updatedAt: 300 },
+      { downloads: 9, installs: 1, bookmarks: 0, updatedAt: 300 },
     );
 
     expect(result).toBeNull();
@@ -330,10 +331,11 @@ describe("canonical Trending cards", () => {
         createdAt: 100,
         updatedAt: 200,
       },
-      { installs: 1, bookmarks: 0, updatedAt: 300 },
+      { downloads: 9, installs: 1, bookmarks: 0, updatedAt: 300 },
     );
 
     expect(result?.card.metrics).toMatchObject({
+      trending24hDownloads: 9,
       trending24hInstalls: 1,
       lifetimeInstalls: null,
       updatedAt: 300,
@@ -365,6 +367,7 @@ describe("canonical Trending cards", () => {
 
     expect(result).toMatchObject({ upstreamRank: 7 });
     expect(result?.card.metrics).toEqual({
+      trending24hDownloads: null,
       trending24hInstalls: null,
       trending24hBookmarks: null,
       lifetimeInstalls: 4_200,

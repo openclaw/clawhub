@@ -39,6 +39,33 @@ describe("fetchCanonicalTrendingPage", () => {
     expect(url.searchParams.get("cursor")).toBe("opaque cursor");
   });
 
+  it("preserves the canonical 24-hour download total separately from installs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify(
+            canonicalPage({
+              metrics: {
+                trending24hDownloads: 71,
+                trending24hInstalls: 17,
+                trending24hBookmarks: null,
+                lifetimeInstalls: 10,
+                lifetimeInstallsPeriod: "lifetime",
+                updatedAt: 1,
+              },
+            }),
+          ),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    const page = await fetchCanonicalTrendingPage({ limit: 20 });
+    expect(page.items[0]?.metrics.trending24hDownloads).toBe(71);
+    expect(page.items[0]?.metrics.trending24hInstalls).toBe(17);
+  });
+
   it("fails closed on a malformed canonical response", async () => {
     vi.stubGlobal(
       "fetch",
@@ -129,6 +156,7 @@ function canonicalPage(itemOverrides: Record<string, unknown>) {
         official: false,
         featured: false,
         metrics: {
+          trending24hDownloads: 3,
           trending24hInstalls: 3,
           trending24hBookmarks: null,
           lifetimeInstalls: 10,
