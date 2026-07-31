@@ -175,6 +175,9 @@ describe("package-inspector-nightly-scan", () => {
       await readFile(path.join(pluginRoot, ".plugin-inspector.json"), "utf8"),
     );
     expect(config.plugin.id).toBe("eu-compliance-skill");
+    expect(await readFile(path.join(pluginRoot, "package.json"), "utf8")).toBe(
+      '{"name":"eu-compliance-skill","version":"1.0.1"}\n',
+    );
   });
 
   it.each([

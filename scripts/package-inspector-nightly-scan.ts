@@ -495,7 +495,12 @@ async function writeSyntheticConfigIfNeeded(root: string, packageName: string) {
 async function readJsonIfExists(filePath: string) {
   if (!existsSync(filePath)) return null;
   const contents = await readFile(filePath, "utf8");
-  return JSON.parse(contents.startsWith("\uFEFF") ? contents.slice(1) : contents) as unknown;
+  const normalizedContents = contents.startsWith("\uFEFF") ? contents.slice(1) : contents;
+  const parsed = JSON.parse(normalizedContents) as unknown;
+  if (normalizedContents !== contents) {
+    await writeFile(filePath, normalizedContents);
+  }
+  return parsed;
 }
 
 async function removePosixArchiveMetadata(root: string): Promise<void> {
