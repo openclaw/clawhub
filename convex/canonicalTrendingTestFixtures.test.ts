@@ -122,7 +122,7 @@ describe("CLAW-590 permanent Test snapshot ownership", () => {
         snapshotId: SNAPSHOT_ID,
         kind: "skills",
         status: "failed",
-        rankingVersion: "skills-trending-v2",
+        rankingVersion: "skills-trending-v3",
         generatedAt: 1_000,
         completedAt: 2_000,
         expiresAt: Date.now() + 100_000,

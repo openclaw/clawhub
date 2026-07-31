@@ -215,7 +215,7 @@ describe("canonical Trending snapshot storage", () => {
       snapshotId: "skills-1000",
       generatedAt: new Date(now - 1_000).toISOString(),
       windowHours: 24,
-      rankingVersion: "skills-trending-v2",
+      rankingVersion: "skills-trending-v3",
       items: [
         { id: "clawhub:one", rank: 1, lane: "clawhub-trending" },
         { id: "clawhub:two", rank: 2, lane: "clawhub-trending" },
@@ -556,6 +556,7 @@ describe("canonical Trending snapshot storage", () => {
   it("returns the current native-only snapshot for guarded preflight reuse", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();
+    const source = await insertEligibleNativeSource(t, "native-preflight-ready");
     await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
       snapshotId: "skills-native-preflight-ready",
       generatedAt: now - 1_000,
@@ -563,11 +564,28 @@ describe("canonical Trending snapshot storage", () => {
       windowStartDay: 40,
       windowEndDay: 40,
     });
+    await t.mutation(internal.canonicalTrending.writeItemsInternal, {
+      snapshotId: "skills-native-preflight-ready",
+      items: [
+        {
+          position: 0,
+          lane: "clawhub-trending",
+          sourceRef: { kind: "clawhub", skillId: source.skillId },
+          card: {
+            ...nativeCard("clawhub:native-preflight-ready", 8),
+            metrics: {
+              ...nativeCard("clawhub:native-preflight-ready", 8).metrics,
+              trending24hDownloads: 6,
+            },
+          },
+        },
+      ],
+    });
     await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
       snapshotId: "skills-native-preflight-ready",
       completedAt: now - 500,
-      totalItems: 0,
-      sourceCounts: { clawhubTrending: 3, clawhubRising: 2, skillsShTrending: 0 },
+      totalItems: 1,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
     });
 
@@ -578,12 +596,61 @@ describe("canonical Trending snapshot storage", () => {
       snapshotId: "skills-native-preflight-ready",
       generatedAt: new Date(now - 1_000).toISOString(),
       windowHours: 24,
-      rankingVersion: "skills-trending-v2",
-      totalItems: 0,
-      sourceCounts: { clawhubTrending: 3, clawhubRising: 2, skillsShTrending: 0 },
+      rankingVersion: "skills-trending-v3",
+      totalItems: 1,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
       reused: true,
     });
+  });
+
+  it("does not reuse a native-only snapshot from the pre-download ranking version", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const source = await insertEligibleNativeSource(t, "legacy-native-preflight");
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-legacy-native-preflight",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+    });
+    await t.mutation(internal.canonicalTrending.writeItemsInternal, {
+      snapshotId: "skills-legacy-native-preflight",
+      items: [
+        {
+          position: 0,
+          lane: "clawhub-trending",
+          sourceRef: { kind: "clawhub", skillId: source.skillId },
+          card: {
+            ...nativeCard("clawhub:legacy-native-preflight", 8),
+            metrics: {
+              ...nativeCard("clawhub:legacy-native-preflight", 8).metrics,
+              trending24hDownloads: 6,
+            },
+          },
+        },
+      ],
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-legacy-native-preflight",
+      completedAt: now - 500,
+      totalItems: 1,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+    });
+    await t.run(async (ctx) => {
+      const snapshot = await ctx.db
+        .query("canonicalTrendingSnapshots")
+        .withIndex("by_snapshot_id", (q) => q.eq("snapshotId", "skills-legacy-native-preflight"))
+        .unique();
+      if (!snapshot) throw new Error("Expected legacy native snapshot");
+      await ctx.db.patch(snapshot._id, { rankingVersion: "skills-trending-v2" });
+    });
+
+    await expect(
+      t.query(internal.canonicalTrending.getReadyNativeSnapshotInternal, { now }),
+    ).resolves.toBeNull();
   });
 
   it("never serves a snapshot produced by the legacy ranking algorithm", async () => {

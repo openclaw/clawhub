@@ -7,6 +7,7 @@ import {
   internalQuery,
   type QueryCtx,
 } from "./_generated/server";
+import { CANONICAL_TRENDING_RANKING_VERSION } from "./lib/canonicalTrending";
 import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
 import { assertTestSeedAllowed } from "./lib/testSeed";
 
@@ -311,7 +312,7 @@ function assertOwnedSnapshot(snapshot: Doc<"canonicalTrendingSnapshots">, snapsh
   if (
     snapshot.snapshotId !== snapshotId ||
     snapshot.kind !== "skills" ||
-    snapshot.rankingVersion !== "skills-trending-v2" ||
+    snapshot.rankingVersion !== CANONICAL_TRENDING_RANKING_VERSION ||
     snapshot.windowHours !== 24
   ) {
     throw new Error("CLAW-590 proof snapshot ownership mismatch");
