@@ -10213,72 +10213,61 @@ async function listPackageInspectorScanBatch(
   const batchSize = Math.max(1, Math.min(Math.round(args.batchSize ?? 25), 50));
   const items: PackageInspectorScanBatchItem[] = [];
   let skippedUnchanged = 0;
-  let sourceCursor = args.cursor ?? null;
-  let nextCursor: string | null = sourceCursor;
-  let sourceReleasesRead = 0;
-  // Amortize filtered/unchanged releases without risking an unbounded Convex transaction.
-  const maxSourceReleases = 500;
-  while (items.length < batchSize && sourceReleasesRead < maxSourceReleases) {
-    const pageSize = Math.min(batchSize - items.length, maxSourceReleases - sourceReleasesRead);
-    const page = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-      .order("asc")
-      .paginate({
-        cursor: sourceCursor,
-        numItems: pageSize,
-      });
-    if (!page.isDone && page.continueCursor === sourceCursor) {
-      throw new Error("Package Inspector scan pagination cursor did not advance");
+  const sourceCursor = args.cursor ?? null;
+  // Convex permits only one native paginated query per function. The workflow
+  // acknowledges this source-page cursor and requests the next page separately.
+  const page = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+    .order("asc")
+    .paginate({
+      cursor: sourceCursor,
+      numItems: batchSize,
+    });
+  if (!page.isDone && page.continueCursor === sourceCursor) {
+    throw new Error("Package Inspector scan pagination cursor did not advance");
+  }
+  for (const release of page.page) {
+    if (!isPublishedPackageRelease(release)) continue;
+    const pkg = await ctx.db.get(release.packageId);
+    if (
+      !pkg ||
+      pkg.softDeletedAt ||
+      (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
+      pkg.channel === "private" ||
+      isPackageBlockedFromPublic(resolvePublicPackageScanStatus(pkg, release))
+    ) {
+      continue;
     }
-    // Count the requested page budget as consumed even when Convex returns an
-    // empty split page, so filtered releases remain transaction-bounded.
-    sourceReleasesRead += pageSize;
-    for (const release of page.page) {
-      if (items.length >= batchSize) break;
-      if (!isPublishedPackageRelease(release)) continue;
-      const pkg = await ctx.db.get(release.packageId);
-      if (
-        !pkg ||
-        pkg.softDeletedAt ||
-        (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
-        pkg.channel === "private" ||
-        isPackageBlockedFromPublic(resolvePublicPackageScanStatus(pkg, release))
-      ) {
+    const latestReleaseId = pkg.latestReleaseId ?? pkg.tags?.latest;
+    if (latestReleaseId !== release._id) continue;
+    const { inspectorVersion, targetOpenClawVersion } = args;
+    if (inspectorVersion && targetOpenClawVersion) {
+      const scanState = await ctx.db
+        .query("packageInspectorScanStates")
+        .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+          q
+            .eq("releaseId", release._id)
+            .eq("inspectorVersion", inspectorVersion)
+            .eq("targetOpenClawVersion", targetOpenClawVersion),
+        )
+        .unique();
+      if (scanState && (!args.notifyOwners || scanState.notificationCompletedAt)) {
+        skippedUnchanged += 1;
         continue;
       }
-      const latestReleaseId = pkg.latestReleaseId ?? pkg.tags?.latest;
-      if (latestReleaseId !== release._id) continue;
-      const { inspectorVersion, targetOpenClawVersion } = args;
-      if (inspectorVersion && targetOpenClawVersion) {
-        const scanState = await ctx.db
-          .query("packageInspectorScanStates")
-          .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
-            q
-              .eq("releaseId", release._id)
-              .eq("inspectorVersion", inspectorVersion)
-              .eq("targetOpenClawVersion", targetOpenClawVersion),
-          )
-          .unique();
-        if (scanState && (!args.notifyOwners || scanState.notificationCompletedAt)) {
-          skippedUnchanged += 1;
-          continue;
-        }
-      }
-      items.push({
-        packageId: pkg._id,
-        releaseId: release._id,
-        ownerUserId: pkg.ownerUserId,
-        ownerPublisherId: pkg.ownerPublisherId,
-        packageName: pkg.name,
-        version: release.version,
-        artifactKind: release.artifactKind ?? "legacy-zip",
-      });
     }
-    nextCursor = page.isDone ? null : page.continueCursor;
-    if (page.isDone || items.length >= batchSize) break;
-    sourceCursor = page.continueCursor;
+    items.push({
+      packageId: pkg._id,
+      releaseId: release._id,
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      packageName: pkg.name,
+      version: release.version,
+      artifactKind: release.artifactKind ?? "legacy-zip",
+    });
   }
+  const nextCursor = page.isDone ? null : page.continueCursor;
   return {
     items,
     nextCursor,

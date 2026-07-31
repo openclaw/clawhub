@@ -13416,7 +13416,7 @@ describe("packages public queries", () => {
     });
   });
 
-  it("continues through filtered source pages until the requested plugin batch is full", async () => {
+  it("returns a filtered source page without issuing a second paginated query", async () => {
     const paginate = vi
       .fn()
       .mockResolvedValueOnce({
@@ -13480,14 +13480,11 @@ describe("packages public queries", () => {
     await expect(
       previewPackageInspectorScanBatchInternalHandler(ctx as never, { batchSize: 2 }),
     ).resolves.toMatchObject({
-      nextCursor: null,
-      items: [
-        { releaseId: "packageReleases:current", packageName: "modern-plugin" },
-        { releaseId: "packageReleases:other", packageName: "other-plugin" },
-      ],
+      nextCursor: "page-2",
+      items: [{ releaseId: "packageReleases:current", packageName: "modern-plugin" }],
     });
-    expect(paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 2 });
-    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "page-2", numItems: 1 });
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 2 });
   });
 
   it("rejects a non-advancing nightly scan pagination cursor", async () => {
