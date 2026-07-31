@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   acknowledgeBatch,
+  downloadPackageArtifactForScan,
   prepareExtractedPluginRoot,
   prepareBulkOpenClawTarget,
   resolveNightlyOpenClawTarget,
@@ -20,6 +21,7 @@ import {
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true })));
 });
 
@@ -106,6 +108,140 @@ describe("package-inspector-nightly-scan", () => {
       ),
     ).toBe("legacy-zip");
     expect(resolveArtifactKind("npm-pack", new Headers())).toBe("npm-pack");
+  });
+
+  it("reconstructs a historical legacy package after the protected archive exhausts memory", async () => {
+    const workRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-large-legacy-"));
+    temporaryRoots.push(workRoot);
+    const pluginRoot = path.join(workRoot, "plugin");
+    await mkdir(pluginRoot, { recursive: true });
+    const packageJson = "demo-json\n";
+    const payload = "payload";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Server Error", { status: 500 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          version: {
+            files: [
+              {
+                path: "package.json",
+                size: 10,
+                sha256: "2386ce4f9ff896e68d02f8d831311d17f966d6f91bdbf2c8b9085bbf2f84417d",
+              },
+              {
+                path: "output/payload.bin",
+                size: 7,
+                sha256: "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+              },
+            ],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(packageJson))
+      .mockResolvedValueOnce(new Response(payload));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      downloadPackageArtifactForScan(
+        {
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-1",
+          packageName: "@demo/large-plugin",
+          version: "1.0.0",
+          artifactKind: "legacy-zip",
+          downloadUrl:
+            "https://clawhub.ai/api/v1/package-inspector/artifact?releaseId=packageReleases%3Ademo-1",
+        },
+        workRoot,
+        pluginRoot,
+      ),
+    ).resolves.toBe("legacy-zip");
+
+    await expect(readFile(path.join(pluginRoot, "package", "package.json"), "utf8")).resolves.toBe(
+      packageJson,
+    );
+    await expect(
+      readFile(path.join(pluginRoot, "package", "output", "payload.bin"), "utf8"),
+    ).resolves.toBe(payload);
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://clawhub.ai/api/v1/package-inspector/artifact?releaseId=packageReleases%3Ademo-1",
+      "https://clawhub.ai/api/v1/packages/%40demo%2Flarge-plugin/versions/1.0.0",
+      "https://clawhub.ai/api/v1/packages/%40demo%2Flarge-plugin/file?path=package.json&version=1.0.0",
+      "https://clawhub.ai/api/v1/packages/%40demo%2Flarge-plugin/file?path=output%2Fpayload.bin&version=1.0.0",
+    ]);
+  });
+
+  it("fails closed when a reconstructed legacy file does not match its manifest checksum", async () => {
+    const workRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-legacy-checksum-"));
+    temporaryRoots.push(workRoot);
+    const pluginRoot = path.join(workRoot, "plugin");
+    await mkdir(pluginRoot, { recursive: true });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response("Server Error", { status: 500 }))
+        .mockResolvedValueOnce(
+          Response.json({
+            version: {
+              files: [{ path: "package.json", size: 7, sha256: "0".repeat(64) }],
+            },
+          }),
+        )
+        .mockResolvedValueOnce(new Response("payload")),
+    );
+
+    await expect(
+      downloadPackageArtifactForScan(
+        {
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-1",
+          packageName: "demo",
+          version: "1.0.0",
+          artifactKind: "legacy-zip",
+          downloadUrl: "https://clawhub.ai/api/v1/package-inspector/artifact",
+        },
+        workRoot,
+        pluginRoot,
+      ),
+    ).rejects.toThrow("legacy package file checksum mismatch for package.json");
+    await expect(access(path.join(pluginRoot, "package", "package.json"))).rejects.toThrow();
+  });
+
+  it("fails closed when a reconstructed legacy manifest contains an unsafe path", async () => {
+    const workRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-legacy-path-"));
+    temporaryRoots.push(workRoot);
+    const pluginRoot = path.join(workRoot, "plugin");
+    await mkdir(pluginRoot, { recursive: true });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Server Error", { status: 500 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          version: {
+            files: [{ path: "../outside", size: 7, sha256: "0".repeat(64) }],
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      downloadPackageArtifactForScan(
+        {
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-1",
+          packageName: "demo",
+          version: "1.0.0",
+          artifactKind: "legacy-zip",
+          downloadUrl: "https://clawhub.ai/api/v1/package-inspector/artifact",
+        },
+        workRoot,
+        pluginRoot,
+      ),
+    ).rejects.toThrow("legacy package contains unsafe file path: ../outside");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(access(path.join(workRoot, "outside"))).rejects.toThrow();
   });
 
   it("removes only verified POSIX archive metadata before inspecting a legacy plugin", async () => {

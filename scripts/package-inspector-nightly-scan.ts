@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -271,23 +271,7 @@ async function inspectPackageItem(
   await mkdir(pluginRoot, { recursive: true });
   await mkdir(reportDir, { recursive: true });
   try {
-    const artifact = await fetch(item.downloadUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!artifact.ok) {
-      throw new Error(`download failed ${artifact.status}: ${await artifact.text()}`);
-    }
-    const artifactKind = resolveArtifactKind(item.artifactKind, artifact.headers);
-    const artifactPath = path.join(
-      workRoot,
-      artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
-    );
-    await writeFile(artifactPath, Buffer.from(await artifact.arrayBuffer()));
-    if (artifactKind === "npm-pack") {
-      run("tar", ["-xzf", artifactPath, "-C", pluginRoot, "--strip-components=1"]);
-    } else {
-      run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
-    }
+    const artifactKind = await downloadPackageArtifactForScan(item, workRoot, pluginRoot);
     const scanRoot = await prepareExtractedPluginRoot(pluginRoot, artifactKind, item.packageName);
     if (!inspectorModule.pluginRoot || !inspectorModule.ci || !inspectorModule.reports) {
       throw new Error("The bundled Plugin Inspector bulk APIs are unavailable");
@@ -354,6 +338,112 @@ async function inspectPackageItem(
   } finally {
     await rm(workRoot, { recursive: true, force: true });
   }
+}
+
+export async function downloadPackageArtifactForScan(
+  item: ClaimItem,
+  workRoot: string,
+  pluginRoot: string,
+) {
+  const artifact = await fetch(item.downloadUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!artifact.ok) {
+    const detail = await artifact.text();
+    if (artifact.status === 500 && item.artifactKind === "legacy-zip") {
+      await downloadLegacyPackageFiles(item, pluginRoot);
+      console.warn(
+        `Protected legacy archive failed for ${item.packageName}@${item.version}; reconstructed verified files instead.`,
+      );
+      return "legacy-zip" as const;
+    }
+    throw new Error(`download failed ${artifact.status}: ${detail}`);
+  }
+
+  const artifactKind = resolveArtifactKind(item.artifactKind, artifact.headers);
+  const artifactPath = path.join(
+    workRoot,
+    artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
+  );
+  await writeFile(artifactPath, Buffer.from(await artifact.arrayBuffer()));
+  if (artifactKind === "npm-pack") {
+    run("tar", ["-xzf", artifactPath, "-C", pluginRoot, "--strip-components=1"]);
+  } else {
+    run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
+  }
+  return artifactKind;
+}
+
+async function downloadLegacyPackageFiles(item: ClaimItem, pluginRoot: string) {
+  const versionUrl = new URL(
+    `/api/v1/packages/${encodeURIComponent(item.packageName)}/versions/${encodeURIComponent(item.version)}`,
+    siteUrl,
+  );
+  const detail = await fetch(versionUrl);
+  if (!detail.ok) {
+    throw new Error(`legacy package lookup failed ${detail.status}: ${await detail.text()}`);
+  }
+  const payload = (await detail.json()) as unknown;
+  if (!isPlainObject(payload) || !isPlainObject(payload.version)) {
+    throw new Error("legacy package lookup returned no version");
+  }
+  const files = payload.version.files;
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error("legacy package lookup returned no files");
+  }
+
+  const packageRoot = path.join(pluginRoot, "package");
+  for (const value of files) {
+    if (!isPlainObject(value)) throw new Error("legacy package lookup returned an invalid file");
+    const filePath = stringValue(value.path);
+    const expectedSha256 = stringValue(value.sha256);
+    const expectedSize = typeof value.size === "number" ? value.size : undefined;
+    if (!filePath || !expectedSha256 || expectedSize === undefined) {
+      throw new Error("legacy package lookup returned incomplete file metadata");
+    }
+    const destination = resolveLegacyScanFilePath(packageRoot, filePath);
+    const fileUrl = new URL(
+      `/api/v1/packages/${encodeURIComponent(item.packageName)}/file`,
+      siteUrl,
+    );
+    fileUrl.searchParams.set("path", filePath);
+    fileUrl.searchParams.set("version", item.version);
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(
+        `legacy package file download failed for ${filePath} ${response.status}: ${await response.text()}`,
+      );
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength !== expectedSize) {
+      throw new Error(
+        `legacy package file size mismatch for ${filePath}: expected ${expectedSize}, got ${bytes.byteLength}`,
+      );
+    }
+    const actualSha256 = createHash("sha256").update(bytes).digest("hex");
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(`legacy package file checksum mismatch for ${filePath}`);
+    }
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, bytes);
+  }
+}
+
+function resolveLegacyScanFilePath(packageRoot: string, filePath: string) {
+  if (
+    filePath.length > 500 ||
+    filePath !== filePath.trim() ||
+    filePath.startsWith("/") ||
+    filePath.includes("\\") ||
+    filePath.includes("\0")
+  ) {
+    throw new Error(`legacy package contains unsafe file path: ${filePath}`);
+  }
+  const segments = filePath.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`legacy package contains unsafe file path: ${filePath}`);
+  }
+  return path.join(packageRoot, ...segments);
 }
 
 export function resolveArtifactKind(value: string | undefined, headers: Headers) {
@@ -570,7 +660,7 @@ function hasInspectorConfig(value: unknown) {
   return isPlainObject(record.pluginInspector) || isPlainObject(record["plugin-inspector"]);
 }
 
-function isPlainObject(value: unknown) {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
