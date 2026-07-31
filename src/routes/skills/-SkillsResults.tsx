@@ -58,7 +58,7 @@ function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
           <p className="skill-list-item-summary">{truncateText(trending.summary, 80)}</p>
         ) : null}
       </div>
-      <div className="skill-list-item-meta" aria-label="24-hour installs">
+      <div className="skill-list-item-meta" aria-label="24-hour downloads">
         {typeof trending.metrics.trending24hInstalls === "number" ? (
           <span className="skill-list-item-meta-item">
             <Download size={14} aria-hidden="true" />
@@ -95,7 +95,7 @@ function TrendingSkillCard({ item }: { item: TrendingSkillListEntry }) {
         </p>
       ) : null}
       {typeof trending.metrics.trending24hInstalls === "number" ? (
-        <div className="skill-card-grid-meta" aria-label="24-hour installs">
+        <div className="skill-card-grid-meta" aria-label="24-hour downloads">
           <span>
             <Download size={14} aria-hidden="true" />
             {formatCompactStat(trending.metrics.trending24hInstalls)}
@@ -275,7 +275,7 @@ export function SkillsResults({
             <span className="browse-list-head-label">Skill</span>
             {showTrendingLayout ? null : <span className="browse-list-head-label">Category</span>}
             <span className="browse-list-head-label browse-list-head-stat">
-              {showTrendingLayout ? "24h installs" : "Popularity"}
+              {showTrendingLayout ? "24h downloads" : "Popularity"}
             </span>
           </div>
           <div className="results-list">

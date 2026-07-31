@@ -78,7 +78,7 @@ describe("HomeListingSection", () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([]));
   });
 
-  it("defaults the homepage to Skills and canonical Trending with exact tab order", () => {
+  it("labels canonical Trending values as downloads without changing order or values", () => {
     const first = makeTrending("first", "First Skill", 17, 9000);
     const second = makeTrending("second", "Second Skill", 3, 8000);
     render(<HomeListingSection initialListing={initialTrending([first, second])} />);
@@ -112,9 +112,16 @@ describe("HomeListingSection", () => {
     ).toEqual(["First Skill", "Second Skill"]);
     expect(screen.getByText("17")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("24h downloads")).toBeTruthy();
+    expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
+    expect(screen.queryByText("24h installs")).toBeNull();
+    expect(screen.queryByLabelText("24-hour installs")).toBeNull();
     expect(screen.queryByText("9K")).toBeNull();
     expect(screen.queryByText("8K")).toBeNull();
     expect(screen.queryByText("skills.sh")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Grid view" }));
+    expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
   });
 
   it("hides unavailable Trending and falls back to the Featured feed", async () => {

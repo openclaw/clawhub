@@ -110,7 +110,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByLabelText("Skill categories")).toBeNull();
   });
 
-  it("renders canonical Trending rows in API order with only 24-hour installs", async () => {
+  it("labels canonical Trending rows as downloads without changing API order or values", async () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(
       canonicalPage([
         makeTrending("first", "First Skill", 17, 9000),
@@ -120,7 +120,7 @@ describe("SkillsIndex", () => {
 
     render(<SkillsIndex />);
 
-    expect(await screen.findByTitle("First Skill")).toBeTruthy();
+    expect(await screen.findByText("First Skill")).toBeTruthy();
     const names = Array.from(
       document.querySelectorAll(".skill-list-item-name"),
       (node) => node.textContent,
@@ -128,10 +128,27 @@ describe("SkillsIndex", () => {
     expect(names).toEqual(["First Skill", "Second Skill"]);
     expect(screen.getByText("17")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("24h downloads")).toBeTruthy();
+    expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
+    expect(screen.queryByText("24h installs")).toBeNull();
+    expect(screen.queryByLabelText("24-hour installs")).toBeNull();
     expect(screen.queryByText("9K")).toBeNull();
     expect(screen.queryByText("8K")).toBeNull();
     expect(screen.queryByText("skills.sh")).toBeNull();
     expect(screen.queryByText(/Not scanned by ClawHub/i)).toBeNull();
+  });
+
+  it("labels canonical Trending grid cards as downloads", async () => {
+    searchMock = { view: "grid" };
+    fetchCanonicalTrendingPageMock.mockResolvedValue(
+      canonicalPage([makeTrending("first", "First Skill", 17, 9000)]),
+    );
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("First Skill")).toBeTruthy();
+    expect(screen.getByLabelText("24-hour downloads").textContent).toContain("17");
+    expect(screen.queryByLabelText("24-hour installs")).toBeNull();
   });
 
   it("hides disabled Trending and falls back to the Featured feed", async () => {

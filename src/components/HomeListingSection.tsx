@@ -220,7 +220,7 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
           </p>
         </div>
         {typeof item.metrics.trending24hInstalls === "number" ? (
-          <div className="home-v2-listing-row-stats" aria-label="24-hour installs">
+          <div className="home-v2-listing-row-stats" aria-label="24-hour downloads">
             <span>
               <Download size={13} aria-hidden="true" />
               {formatCompactStat(item.metrics.trending24hInstalls)}
@@ -334,7 +334,7 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
           {truncateText(item.summary || "Agent-ready skill pack.", 80)}
         </p>
         {typeof item.metrics.trending24hInstalls === "number" ? (
-          <div className="home-v2-listing-card-stats" aria-label="24-hour installs">
+          <div className="home-v2-listing-card-stats" aria-label="24-hour downloads">
             <span>
               <Download size={13} aria-hidden="true" />
               {formatCompactStat(item.metrics.trending24hInstalls)}
@@ -990,7 +990,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             {kind === "skills" ? "Skill" : "Plugin"}
           </span>
           {kind === "skills" && tab === "trending" ? (
-            <span className="home-v2-listing-head-stat">24h installs</span>
+            <span className="home-v2-listing-head-stat">24h downloads</span>
           ) : showSkillStats ? (
             <span className="home-v2-listing-head-stat">Popularity</span>
           ) : null}
