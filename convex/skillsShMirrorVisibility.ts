@@ -18,7 +18,7 @@ const MAX_ROWS = 50_000;
 const ACTIVATION_LOCK_LEASE_MS = 15 * 60_000;
 
 const internalRefs = internal as unknown as {
-  canonicalTrending: { materializeInternal: unknown };
+  canonicalTrending: { getReadyNativeSnapshotInternal: unknown; materializeInternal: unknown };
   skillsShMirrorVisibility: {
     beginActivationInternal: unknown;
     beginDeactivationInternal: unknown;
@@ -499,7 +499,22 @@ export const beginNativeTrendingInternal = internalMutation({
   },
 });
 
-async function materializeNativeTrending(ctx: Pick<ActionCtx, "runAction">, lockToken: string) {
+async function materializeNativeTrending(
+  ctx: Pick<ActionCtx, "runAction" | "runQuery">,
+  lockToken: string,
+) {
+  const reusable = (await ctx.runQuery(
+    internalRefs.canonicalTrending.getReadyNativeSnapshotInternal as never,
+    { now: Date.now() } as never,
+  )) as {
+    status: "ready";
+    snapshotId: string;
+    sourceCounts: { clawhubTrending: number; clawhubRising: number; skillsShTrending: 0 };
+    reused: true;
+  } | null;
+  // Native-only data is independent of skills.sh run chronology. The activation path
+  // always materializes its mixed snapshot after verifying the exact imported runs.
+  if (reusable) return reusable;
   const nativeTrending = (await ctx.runAction(
     internalRefs.canonicalTrending.materializeInternal as never,
     { activationLockToken: lockToken, skillsShMode: "native-only" } as never,
@@ -515,7 +530,7 @@ async function materializeNativeTrending(ctx: Pick<ActionCtx, "runAction">, lock
 }
 
 async function materializeNativeTrendingWithLock(
-  ctx: Pick<ActionCtx, "runAction" | "runMutation">,
+  ctx: Pick<ActionCtx, "runAction" | "runMutation" | "runQuery">,
   args: { actor: string; reason: string; confirm: string },
 ) {
   const lockToken = `skills-sh-native-trending:${crypto.randomUUID()}`;

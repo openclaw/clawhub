@@ -705,6 +705,41 @@ export const materializeInternal = internalAction({
   },
 });
 
+export const getReadyNativeSnapshotInternal = internalQuery({
+  args: { now: v.number() },
+  handler: async (ctx, args) => {
+    const snapshot = await ctx.db
+      .query("canonicalTrendingSnapshots")
+      .withIndex("by_kind_and_status_and_expires_at", (q) =>
+        q.eq("kind", "skills").eq("status", "ready").gt("expiresAt", args.now),
+      )
+      .order("desc")
+      .first();
+    if (
+      !snapshot ||
+      snapshot.generatedAt + SNAPSHOT_MAX_SERVING_AGE_MS <= args.now ||
+      snapshot.rankingVersion !== CANONICAL_TRENDING_RANKING_VERSION ||
+      snapshot.totalItems === undefined ||
+      !snapshot.sourceCounts ||
+      snapshot.sourceCounts.skillsShTrending !== 0 ||
+      !snapshot.operations
+    ) {
+      return null;
+    }
+    return {
+      status: "ready" as const,
+      snapshotId: snapshot.snapshotId,
+      generatedAt: new Date(snapshot.generatedAt).toISOString(),
+      windowHours: snapshot.windowHours,
+      rankingVersion: snapshot.rankingVersion,
+      totalItems: snapshot.totalItems,
+      sourceCounts: snapshot.sourceCounts,
+      operations: snapshot.operations,
+      reused: true as const,
+    };
+  },
+});
+
 export const getPageInternal = internalQuery({
   args: {
     cursor: v.union(v.string(), v.null()),

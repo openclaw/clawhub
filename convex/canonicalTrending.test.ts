@@ -552,6 +552,39 @@ describe("canonical Trending snapshot storage", () => {
     ).toEqual({ status: "unavailable" });
   });
 
+  it("returns the current native-only snapshot for guarded preflight reuse", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-native-preflight-ready",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-native-preflight-ready",
+      completedAt: now - 500,
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 3, clawhubRising: 2, skillsShTrending: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+    });
+
+    await expect(
+      t.query(internal.canonicalTrending.getReadyNativeSnapshotInternal, { now }),
+    ).resolves.toEqual({
+      status: "ready",
+      snapshotId: "skills-native-preflight-ready",
+      generatedAt: new Date(now - 1_000).toISOString(),
+      windowHours: 24,
+      rankingVersion: "skills-trending-v2",
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 3, clawhubRising: 2, skillsShTrending: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+      reused: true,
+    });
+  });
+
   it("never serves a snapshot produced by the legacy ranking algorithm", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();

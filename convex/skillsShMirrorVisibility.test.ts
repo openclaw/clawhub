@@ -616,6 +616,52 @@ describe("skills.sh mirror visibility operations", () => {
     ).rejects.toThrow("skills.sh mirror control is not active");
   });
 
+  it("reuses a fresh native-only snapshot instead of rematerializing preflight", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-native-preflight-existing",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-native-preflight-existing",
+      completedAt: now - 500,
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 3, clawhubRising: 2, skillsShTrending: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+    });
+
+    await expect(
+      t.action(internal.skillsShMirrorVisibility.prepareNativeTrendingInternal, {
+        actor: "codex-test",
+        reason: "reuse current native-only Trending",
+        confirm: "deactivate-skills-sh-public-test",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      nativeTrending: {
+        status: "ready",
+        snapshotId: "skills-native-preflight-existing",
+        sourceCounts: { skillsShTrending: 0 },
+        reused: true,
+      },
+    });
+    const state = await t.run(async (ctx) => ({
+      snapshots: await ctx.db.query("canonicalTrendingSnapshots").collect(),
+      control: await ctx.db
+        .query("skillsShMirrorControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique(),
+    }));
+    expect(state).toMatchObject({
+      snapshots: [expect.objectContaining({ snapshotId: "skills-native-preflight-existing" })],
+    });
+    expect(state.control?.activationLockToken).toBeUndefined();
+  });
+
   it("rejects a completed Trending run older than the selected leaderboard import", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
