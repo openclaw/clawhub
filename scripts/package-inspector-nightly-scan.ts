@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -288,11 +288,7 @@ async function inspectPackageItem(
     } else {
       run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
     }
-    const scanRoot =
-      artifactKind === "legacy-zip" && existsSync(path.join(pluginRoot, "package"))
-        ? path.join(pluginRoot, "package")
-        : pluginRoot;
-    await writeSyntheticConfigIfNeeded(scanRoot, item.packageName);
+    const scanRoot = await prepareExtractedPluginRoot(pluginRoot, artifactKind, item.packageName);
     if (!inspectorModule.pluginRoot || !inspectorModule.ci || !inspectorModule.reports) {
       throw new Error("The bundled Plugin Inspector bulk APIs are unavailable");
     }
@@ -366,6 +362,22 @@ export function resolveArtifactKind(value: string | undefined, headers: Headers)
   if (header === "npm-pack-tarball") return "npm-pack";
   if (header === "legacy-plugin-zip") return "legacy-zip";
   return "legacy-zip";
+}
+
+export async function prepareExtractedPluginRoot(
+  pluginRoot: string,
+  artifactKind: "npm-pack" | "legacy-zip",
+  packageName: string,
+) {
+  const scanRoot =
+    artifactKind === "legacy-zip" && existsSync(path.join(pluginRoot, "package"))
+      ? path.join(pluginRoot, "package")
+      : pluginRoot;
+  if (artifactKind === "legacy-zip") {
+    await removePosixArchiveMetadata(scanRoot);
+  }
+  await writeSyntheticConfigIfNeeded(scanRoot, packageName);
+  return scanRoot;
 }
 
 if (import.meta.main) {
@@ -483,6 +495,49 @@ async function writeSyntheticConfigIfNeeded(root: string, packageName: string) {
 async function readJsonIfExists(filePath: string) {
   if (!existsSync(filePath)) return null;
   return JSON.parse(await readFile(filePath, "utf8")) as unknown;
+}
+
+async function removePosixArchiveMetadata(root: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      await removePosixArchiveMetadata(entryPath);
+      if (entry.name === "PaxHeader" && (await readdir(entryPath)).length === 0) {
+        await rmdir(entryPath);
+      }
+      continue;
+    }
+    if (entry.isFile() && path.basename(root) === "PaxHeader") {
+      const { size } = await stat(entryPath);
+      if (size <= 64 * 1024 && isPosixExtendedHeader(await readFile(entryPath))) {
+        await rm(entryPath);
+      }
+    }
+  }
+}
+
+function isPosixExtendedHeader(contents: Uint8Array) {
+  let offset = 0;
+  let records = 0;
+  while (offset < contents.length) {
+    let space = offset;
+    while (space < contents.length && contents[space] >= 48 && contents[space] <= 57) space += 1;
+    if (space === offset || contents[space] !== 32) return false;
+    const recordLength = Number.parseInt(
+      new TextDecoder().decode(contents.subarray(offset, space)),
+      10,
+    );
+    const recordEnd = offset + recordLength;
+    if (!Number.isSafeInteger(recordLength) || recordEnd > contents.length) return false;
+    if (contents[recordEnd - 1] !== 10) return false;
+    const payload = contents.subarray(space + 1, recordEnd - 1);
+    const equals = payload.indexOf(61);
+    if (equals <= 0) return false;
+    offset = recordEnd;
+    records += 1;
+  }
+  return records > 0;
 }
 
 function hasInspectorConfig(value: unknown) {

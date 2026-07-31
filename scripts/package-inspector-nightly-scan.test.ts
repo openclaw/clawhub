@@ -1,8 +1,12 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   acknowledgeBatch,
+  prepareExtractedPluginRoot,
   prepareBulkOpenClawTarget,
   resolveNightlyOpenClawTarget,
   resolveScanRunId,
@@ -12,6 +16,12 @@ import {
   resolveArtifactKind,
   summarizeImpact,
 } from "./package-inspector-nightly-scan";
+
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true })));
+});
 
 describe("package-inspector-nightly-scan", () => {
   it("preserves author remediation when normalizing inspector issues for upload", () => {
@@ -96,6 +106,31 @@ describe("package-inspector-nightly-scan", () => {
       ),
     ).toBe("legacy-zip");
     expect(resolveArtifactKind("npm-pack", new Headers())).toBe("npm-pack");
+  });
+
+  it("removes only verified POSIX archive metadata before inspecting a legacy plugin", async () => {
+    const extractedRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-pax-"));
+    temporaryRoots.push(extractedRoot);
+    const packageRoot = path.join(extractedRoot, "package");
+    await mkdir(path.join(packageRoot, "PaxHeader"), { recursive: true });
+    await writeFile(path.join(packageRoot, "package.json"), '{"name":"demo"}\n');
+    await writeFile(path.join(packageRoot, "openclaw.plugin.json"), '{"id":"demo"}\n');
+    await writeFile(
+      path.join(packageRoot, "PaxHeader", "openclaw.plugin.json"),
+      "30 mtime=1774419511.917787602\n",
+    );
+    await writeFile(path.join(packageRoot, "PaxHeader", "payload.js"), "export default 'keep';\n");
+    await writeFile(path.join(packageRoot, "PaxHeader", "oversized"), Buffer.alloc(64 * 1024 + 1));
+
+    const scanRoot = await prepareExtractedPluginRoot(extractedRoot, "legacy-zip", "demo");
+
+    expect(scanRoot).toBe(packageRoot);
+    await expect(access(path.join(scanRoot, "openclaw.plugin.json"))).resolves.toBeUndefined();
+    await expect(
+      access(path.join(scanRoot, "PaxHeader", "openclaw.plugin.json")),
+    ).rejects.toThrow();
+    await expect(access(path.join(scanRoot, "PaxHeader", "payload.js"))).resolves.toBeUndefined();
+    await expect(access(path.join(scanRoot, "PaxHeader", "oversized"))).resolves.toBeUndefined();
   });
 
   it("reports the exact beta target and unchanged releases in the run summary", () => {
