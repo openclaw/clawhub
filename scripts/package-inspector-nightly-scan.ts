@@ -376,7 +376,7 @@ export async function prepareExtractedPluginRoot(
   if (artifactKind === "legacy-zip") {
     await removePosixArchiveMetadata(scanRoot);
   }
-  await readJsonIfExists(path.join(scanRoot, "openclaw.plugin.json"));
+  await normalizePluginJsonManifests(scanRoot);
   await writeSyntheticConfigIfNeeded(scanRoot, packageName);
   return scanRoot;
 }
@@ -491,6 +491,23 @@ async function writeSyntheticConfigIfNeeded(root: string, packageName: string) {
     path.join(root, ".plugin-inspector.json"),
     `${JSON.stringify({ version: 1, plugin: { id: safeFixtureId(packageName) } }, null, 2)}\n`,
   );
+}
+
+async function normalizePluginJsonManifests(root: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      await normalizePluginJsonManifests(entryPath);
+      continue;
+    }
+    if (
+      entry.isFile() &&
+      (entry.name === "package.json" || entry.name === "openclaw.plugin.json")
+    ) {
+      await readJsonIfExists(entryPath);
+    }
+  }
 }
 
 async function readJsonIfExists(filePath: string) {

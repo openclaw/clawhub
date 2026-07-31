@@ -171,6 +171,12 @@ describe("package-inspector-nightly-scan", () => {
       path.join(pluginRoot, "openclaw.plugin.json"),
       '\uFEFF{"id":"eu-compliance-skill"}\n',
     );
+    const nestedPackageRoot = path.join(pluginRoot, "showmethemoney-skill", "demo-backend");
+    await mkdir(nestedPackageRoot, { recursive: true });
+    await writeFile(
+      path.join(nestedPackageRoot, "package.json"),
+      '\uFEFF{"name":"stablepay-demo-backend"}\n',
+    );
 
     await expect(
       prepareExtractedPluginRoot(pluginRoot, "npm-pack", "eu-compliance-skill"),
@@ -184,6 +190,9 @@ describe("package-inspector-nightly-scan", () => {
     );
     expect(await readFile(path.join(pluginRoot, "openclaw.plugin.json"), "utf8")).toBe(
       '{"id":"eu-compliance-skill"}\n',
+    );
+    expect(await readFile(path.join(nestedPackageRoot, "package.json"), "utf8")).toBe(
+      '{"name":"stablepay-demo-backend"}\n',
     );
   });
 
