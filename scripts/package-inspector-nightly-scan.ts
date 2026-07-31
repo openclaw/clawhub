@@ -488,7 +488,7 @@ async function writeSyntheticConfigIfNeeded(root: string, packageName: string) {
   }
   await writeFile(
     path.join(root, ".plugin-inspector.json"),
-    `${JSON.stringify({ version: 1, plugin: { id: safeArtifactName(packageName) } }, null, 2)}\n`,
+    `${JSON.stringify({ version: 1, plugin: { id: safeFixtureId(packageName) } }, null, 2)}\n`,
   );
 }
 
@@ -773,6 +773,15 @@ function safeArtifactName(value: string) {
     value
       .toLowerCase()
       .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "plugin"
+  );
+}
+
+function safeFixtureId(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "plugin"
   );
 }

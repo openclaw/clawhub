@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -131,6 +131,33 @@ describe("package-inspector-nightly-scan", () => {
     ).rejects.toThrow();
     await expect(access(path.join(scanRoot, "PaxHeader", "payload.js"))).resolves.toBeUndefined();
     await expect(access(path.join(scanRoot, "PaxHeader", "oversized"))).resolves.toBeUndefined();
+  });
+
+  it("writes a valid synthetic fixture id for a scoped package with an underscore", async () => {
+    const pluginRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-fixture-id-"));
+    temporaryRoots.push(pluginRoot);
+
+    await prepareExtractedPluginRoot(pluginRoot, "npm-pack", "@glin_1/miniabc");
+
+    const config = JSON.parse(
+      await readFile(path.join(pluginRoot, ".plugin-inspector.json"), "utf8"),
+    );
+    expect(config.plugin.id).toBe("glin-1-miniabc");
+  });
+
+  it.each([
+    ["plugin.with_dots_and_underscores", "plugin-with-dots-and-underscores"],
+    ["...___", "plugin"],
+  ])("normalizes synthetic fixture id %s to %s", async (packageName, expectedId) => {
+    const pluginRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-fixture-id-"));
+    temporaryRoots.push(pluginRoot);
+
+    await prepareExtractedPluginRoot(pluginRoot, "npm-pack", packageName);
+
+    const config = JSON.parse(
+      await readFile(path.join(pluginRoot, ".plugin-inspector.json"), "utf8"),
+    );
+    expect(config.plugin.id).toBe(expectedId);
   });
 
   it("reports the exact beta target and unchanged releases in the run summary", () => {
