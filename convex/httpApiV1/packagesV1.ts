@@ -1439,6 +1439,32 @@ async function buildPackagePublishRequestFromClawPack(
   return { ...metadata, files, artifact };
 }
 
+function assertClawPackPublicationIdentity(
+  metadata: PackagePublishMetadata,
+  parsed: ParsedPackageClawPack,
+) {
+  if (metadata.family !== "claw") return;
+  const expectedName = tryNormalizePackageName(metadata.name);
+  if (!expectedName || parsed.packageName !== expectedName) {
+    throw new Error(
+      `Claw package name mismatch: expected ${expectedName ?? metadata.name}, got ${parsed.packageName}`,
+    );
+  }
+  const expectedVersion = metadata.version.trim();
+  if (parsed.packageVersion !== expectedVersion) {
+    throw new Error(
+      `Claw package version mismatch: expected ${expectedVersion}, got ${parsed.packageVersion}`,
+    );
+  }
+  const expectedDigest = metadata.expectedArtifactSha256?.trim().toLowerCase();
+  if (!expectedDigest) throw new Error("Claw publication requires expectedArtifactSha256");
+  if (expectedDigest !== parsed.artifactSha256) {
+    throw new Error(
+      `Claw artifact SHA-256 mismatch: expected ${expectedDigest}, got ${parsed.artifactSha256}`,
+    );
+  }
+}
+
 const PACKAGE_PUBLISH_FILE_FIELDS = ["files"] as const;
 const PACKAGE_PUBLISH_TARBALL_FIELDS = ["clawpack"] as const;
 const PACKAGE_PUBLISH_FORM_FIELDS = new Set([
@@ -1489,6 +1515,9 @@ async function parseMultipartPackagePublish(
     PACKAGE_PUBLISH_FILE_FIELDS,
     "Package publish file uploads must be files",
   );
+  if (metadata.family === "claw" && !tarballPart) {
+    throw new Error("Claw publication requires an already-built package tarball (.tgz)");
+  }
 
   if (tarballPart) {
     if (fileParts.length > 0) {
@@ -1498,6 +1527,7 @@ async function parseMultipartPackagePublish(
       await consumePackageTarballUploadTicket(ctx, auth, tarballPart);
       const artifactBytes = await readStoredPackageTarball(ctx, tarballPart.storageId);
       const parsed = await parseClawPack(artifactBytes);
+      assertClawPackPublicationIdentity(metadata, parsed);
       return await buildPackagePublishRequestFromClawPack(
         ctx,
         metadata,
@@ -1522,6 +1552,7 @@ async function parseMultipartPackagePublish(
     }
     const artifactBytes = new Uint8Array(await tarballEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
+    assertClawPackPublicationIdentity(metadata, parsed);
     const artifactStorageId = await ctx.storage.store(
       new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
     );
@@ -2426,6 +2457,7 @@ type PackagePublishAttemptStatusResult = {
   userId: Id<"users">;
   packageId: Id<"packages">;
   releaseId: Id<"packageReleases">;
+  artifactSha256?: string;
   name: string;
   version: string;
   status:
@@ -2482,6 +2514,7 @@ export async function publishAttemptsGetRouterV1Handler(ctx: ActionCtx, request:
     attemptId: attempt.attemptId,
     packageId: attempt.packageId,
     releaseId: attempt.releaseId,
+    ...(attempt.artifactSha256 ? { artifactSha256: attempt.artifactSha256 } : {}),
     name: attempt.name,
     version: attempt.version,
     status: attempt.status,

@@ -8272,6 +8272,28 @@ async function publishPackageImpl(
     throw new ConvexError(`Claw package name must use canonical form ${name}`);
   }
   const version = assertPackageVersion(family, payload.version);
+  if (family === "claw") {
+    if (payload.artifact?.kind !== "npm-pack") {
+      throw new ConvexError("Claw publication requires an already-built package tarball (.tgz)");
+    }
+    const expectedArtifactSha256 = payload.expectedArtifactSha256?.trim().toLowerCase();
+    if (!expectedArtifactSha256) {
+      throw new ConvexError("Claw publication requires expectedArtifactSha256");
+    }
+    if (!/^[a-f0-9]{64}$/.test(expectedArtifactSha256)) {
+      throw new ConvexError(
+        "Claw expectedArtifactSha256 must be a 64-character SHA-256 hex digest",
+      );
+    }
+    if (!/^[a-f0-9]{64}$/.test(payload.artifact.sha256)) {
+      throw new ConvexError("Claw artifact SHA-256 must be a 64-character lowercase hex digest");
+    }
+    if (expectedArtifactSha256 !== payload.artifact.sha256) {
+      throw new ConvexError(
+        `Claw artifact SHA-256 mismatch: expected ${expectedArtifactSha256}, got ${payload.artifact.sha256}`,
+      );
+    }
+  }
   const existingPackage = await runQueryRef<Doc<"packages"> | null>(
     ctx,
     internalRefs.packages.getPackageByNameInternal,
@@ -8720,6 +8742,7 @@ async function publishPackageImpl(
     clawManifestSummary: validatedClaw?.summary,
     source: effectiveSource,
   };
+  const publishedArtifactSha256 = family === "claw" ? packageInsertArgs.clawpackSha256 : undefined;
 
   const inspectorFindings =
     inspectorResult?.warnings.map((finding) =>
@@ -8856,6 +8879,7 @@ async function publishPackageImpl(
       const finalizedResult = {
         ...staged.result,
         publicationStatus: "published" as const,
+        ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
       };
       return inspectorFindings.length > 0
         ? { ...finalizedResult, inspectorFindings }
@@ -8867,6 +8891,7 @@ async function publishPackageImpl(
       status: "pending" as const,
       packageId: pendingResult.packageId,
       releaseId: pendingResult.releaseId,
+      ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
       publicationStatus: "pending" as const,
       attemptId: staged.attemptId,
       packageName: name,
@@ -8966,6 +8991,7 @@ async function publishPackageImpl(
   const publishedResult = {
     ...publishResult,
     publicationStatus: "published" as const,
+    ...(publishedArtifactSha256 ? { artifactSha256: publishedArtifactSha256 } : {}),
   };
   return inspectorFindings.length > 0 ? { ...publishedResult, inspectorFindings } : publishedResult;
 }

@@ -124,28 +124,38 @@ exact. Other harnesses may bind the same application needs using their own
 native profile model; the portable manifest does not impose a capability-name
 registry.
 
-## Validate and publish
+## Validate, build, and publish
 
-Preview the package without uploading it:
+Validate the source project and build its deterministic artifact with
+OpenClaw:
 
 ```bash
-clawhub package publish . --family claw --dry-run
+openclaw claws validate .
+openclaw claws build . --out ./github-triage-1.0.0.tgz
 ```
 
-When the target ClawHub deployment has experimental Claws enabled, publish
-through the existing authenticated package flow:
+Preview that exact artifact without uploading it, then publish it through the
+existing authenticated package flow:
 
 ```bash
-clawhub package publish . --family claw
+clawhub package publish ./github-triage-1.0.0.tgz --family claw --dry-run
+clawhub package publish ./github-triage-1.0.0.tgz --family claw --wait
 ```
 
 The CLI detects `family: claw` when `package.json` contains `openclaw.claw`, so
 `--family claw` is optional for a well-formed package.
 
+Experimental Claw publication accepts only an already-built npm-pack `.tgz`,
+not a source directory or GitHub checkout. The CLI sends the local artifact
+SHA-256 with the request; ClawHub verifies it against the uploaded bytes before
+publication and returns the same digest through pending and final responses.
+
 Publication rejects:
 
 - a missing, invalid, or escaping `openclaw.claw` path;
+- a source folder instead of a built `.tgz`;
 - package identity or version mismatches;
+- a missing or mismatched expected artifact SHA-256;
 - malformed `CLAW.md` frontmatter or manifest fields;
 - a non-empty `CLAW.md` body combined with an explicit `SOUL.md` destination;
 - missing workspace source files or portable path collisions;
@@ -156,7 +166,8 @@ Publication rejects:
 Accepted packages continue through ClawHub's existing ownership, moderation,
 static scanning, release, and artifact storage pipeline. The stored release
 retains the exact artifact plus a non-sensitive summary for later search and
-detail surfaces; it does not duplicate the full manifest into Convex storage.
+detail surfaces; downloads return those same bytes and digest, and ClawHub does
+not duplicate the full manifest into Convex storage.
 
 ## Discover published Claws
 

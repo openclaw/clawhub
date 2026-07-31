@@ -2600,10 +2600,13 @@ describe("package commands", () => {
           "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
         }),
       );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      const artifactSha256 = artifactIdentity(packBytes).sha256;
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         packageId: "pkg_claw",
         releaseId: "rel_claw",
+        artifactSha256,
       });
 
       await cmdPublishPackage(makeOpts(workdir), packName);
@@ -2612,11 +2615,87 @@ describe("package commands", () => {
         name: "demo-claw",
         family: "claw",
         version: "1.0.0",
+        expectedArtifactSha256: artifactSha256,
       });
       const uploaded = getPublishForm().get("clawpack");
       expect(uploaded).toBeInstanceOf(File);
       const parsed = parseClawPack(new Uint8Array(await (uploaded as File).arrayBuffer()));
       expect(parsed.entries.map((entry) => entry.path)).toContain("CLAW.md");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when ClawHub does not confirm the submitted Claw digest", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.0",
+            openclaw: { claw: "CLAW.md" },
+          }),
+          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+        }),
+      );
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256: "0".repeat(64),
+      });
+
+      await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
+        "ClawHub artifact SHA-256 mismatch",
+      );
+      expect(httpMocks.apiRequestForm).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a finalized Claw publish reports a different digest", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      const pack = npmPackFixture({
+        "package/package.json": JSON.stringify({
+          name: "demo-claw",
+          version: "1.0.0",
+          openclaw: { claw: "CLAW.md" },
+        }),
+        "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+      });
+      await writeFile(join(workdir, packName), pack);
+      const artifactSha256 = artifactIdentity(pack).sha256;
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_pending",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+        artifactSha256,
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        attemptId: "attempt_1",
+        packageId: "pkg_claw",
+        releaseId: "rel_published",
+        name: "demo-claw",
+        version: "1.0.0",
+        status: "finalized",
+        publicationStatus: "published",
+        terminal: true,
+        checks: makePublishAttemptChecks(),
+        artifactSha256: "0".repeat(64),
+      });
+
+      await expect(cmdPublishPackage(makeOpts(workdir), packName, { wait: true })).rejects.toThrow(
+        "ClawHub artifact SHA-256 mismatch",
+      );
+      expect(httpMocks.apiRequest).toHaveBeenCalledTimes(1);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -3175,7 +3254,7 @@ describe("package commands", () => {
     }
   });
 
-  it("detects, validates, and publishes a Claw package", async () => {
+  it("validates a Claw source folder but requires a built tarball for publication", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "github-triage");
@@ -3228,19 +3307,10 @@ describe("package commands", () => {
         ].join("\n"),
         "utf8",
       );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
-        ok: true,
-        packageId: "pkg_claw",
-        releaseId: "rel_claw",
-      });
-
-      await cmdPublishPackage(makeOpts(workdir), "github-triage");
-
-      expect(getPublishPayload()).toMatchObject({
-        name: "@acme/github-triage",
-        family: "claw",
-        version: "1.0.0",
-      });
+      await expect(cmdPublishPackage(makeOpts(workdir), "github-triage")).rejects.toThrow(
+        "Claw publication requires an already-built package tarball (.tgz)",
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

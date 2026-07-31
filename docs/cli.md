@@ -667,6 +667,10 @@ clawhub publisher create opik --display-name "Opik"
 - `.tgz` sources are treated as ClawPack. The CLI uploads the exact npm-pack
   bytes and uses the extracted `package/` contents only for validation and
   metadata prefill.
+- Experimental Claws must be published from an already-built `.tgz`. Claw
+  source folders and GitHub sources are rejected; use `openclaw claws build`
+  first. The publish request binds the local SHA-256, and ClawHub returns that
+  digest after accepting the exact bytes.
 - Code-plugin folders are packed into a ClawPack npm tarball before upload so
   OpenClaw installs can verify the exact artifact. Bundle-plugin folders still
   use the extracted-file publish path.
@@ -712,7 +716,7 @@ clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin --wait
 #### Local folder flow
 
 For code plugins, folder publish builds and uploads a ClawPack artifact from
-the package folder:
+the package folder. This convenience does not apply to Claws:
 
 ```bash
 clawhub package publish ./my-plugin --family code-plugin --dry-run

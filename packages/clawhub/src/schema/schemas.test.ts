@@ -140,6 +140,7 @@ describe("packages/clawhub skill metadata schema", () => {
         ok: true,
         packageId: "packages:demo",
         releaseId: "packageReleases:demo",
+        artifactSha256: "a".repeat(64),
         publicationStatus: "pending",
         attemptId: "publishAttempts:demo",
       },
@@ -147,6 +148,7 @@ describe("packages/clawhub skill metadata schema", () => {
     );
 
     expect(parsed.releaseId).toBe("packageReleases:demo");
+    expect(parsed.artifactSha256).toBe("a".repeat(64));
     expect(parsed.publicationStatus).toBe("pending");
     expect(parsed.attemptId).toBe("publishAttempts:demo");
   });
@@ -158,6 +160,7 @@ describe("packages/clawhub skill metadata schema", () => {
         attemptId: "publishAttempts:demo",
         packageId: "packages:demo",
         releaseId: "packageReleases:demo",
+        artifactSha256: "a".repeat(64),
         name: "@openclaw/demo",
         version: "1.0.0",
         status: "finalized",
@@ -172,6 +175,7 @@ describe("packages/clawhub skill metadata schema", () => {
     );
 
     expect(parsed.publicationStatus).toBe("published");
+    expect(parsed.artifactSha256).toBe("a".repeat(64));
     expect(parsed.terminal).toBe(true);
     expect(parsed.checks.clawscan.status).toBe("clean");
   });
