@@ -130,11 +130,32 @@ const inspectorMetadataValidator = v.object({
   targetOpenClawVersion: v.optional(v.string()),
 });
 
-export function buildPublishInspectorRunCheckOptions(root: string, generatedAt: string) {
+export async function preparePublishInspectorOpenClawTarget<ResolvedTarget, PreparedTarget>(
+  root: string,
+  targets: {
+    resolveVersion: (requestedVersion: string) => Promise<ResolvedTarget>;
+    prepare: (
+      resolvedTarget: ResolvedTarget,
+      options: { cacheDir: string },
+    ) => Promise<PreparedTarget>;
+  },
+) {
+  const resolvedTarget = await targets.resolveVersion("latest");
+  return await targets.prepare(resolvedTarget, {
+    // The dependency defaults to os.homedir(), which can be unusable in serverless runtimes.
+    cacheDir: path.join(root, ".plugin-inspector-cache"),
+  });
+}
+
+export function buildPublishInspectorRunCheckOptions(
+  root: string,
+  generatedAt: string,
+  targetOpenClaw: unknown,
+) {
   return {
     pluginRoot: root,
     openclawPath: false,
-    openclawVersion: "latest",
+    targetOpenClaw,
     outDir: "reports",
     capture: false,
     mockSdk: true,
@@ -187,9 +208,11 @@ export const runPackageInspectorForPublishInternal = internalAction({
     metadata: inspectorMetadataValidator,
   }),
   handler: async (ctx, args) => {
-    let root: string | undefined;
+    let workspaceRoot: string | undefined;
     try {
-      root = await createPackageInspectorWorkspace();
+      workspaceRoot = await createPackageInspectorWorkspace();
+      const root = path.join(workspaceRoot, "package");
+      await mkdir(root, { recursive: true });
       for (const file of args.files) {
         const blob = await ctx.storage.get(file.storageId);
         if (!blob) {
@@ -201,8 +224,16 @@ export const runPackageInspectorForPublishInternal = internalAction({
       }
       await writeSyntheticInspectorConfigIfNeeded(root, args.files, args.packageName);
 
-      const { pluginRoot } = await import("@openclaw/plugin-inspector");
-      const runCheckOptions = buildPublishInspectorRunCheckOptions(root, new Date().toISOString());
+      const { openClawTargets, pluginRoot } = await import("@openclaw/plugin-inspector");
+      const targetOpenClaw = await preparePublishInspectorOpenClawTarget(
+        workspaceRoot,
+        openClawTargets,
+      );
+      const runCheckOptions = buildPublishInspectorRunCheckOptions(
+        root,
+        new Date().toISOString(),
+        targetOpenClaw,
+      );
       const { report } = await pluginRoot.runCheck(runCheckOptions);
 
       return normalizeInspectorReportForPublish(report);
@@ -230,8 +261,8 @@ export const runPackageInspectorForPublishInternal = internalAction({
         },
       };
     } finally {
-      if (root) {
-        await rm(root, { recursive: true, force: true });
+      if (workspaceRoot) {
+        await rm(workspaceRoot, { recursive: true, force: true });
       }
     }
   },

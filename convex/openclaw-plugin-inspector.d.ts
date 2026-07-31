@@ -26,7 +26,13 @@ declare module "@openclaw/plugin-inspector" {
       allowExecution?: boolean;
       configPath?: string;
       generatedAt?: string;
+      targetOpenClaw?: unknown;
     }): Promise<{ report: PluginInspectorReport; paths: PluginInspectorPaths }>;
+  };
+
+  export const openClawTargets: {
+    resolveVersion(requestedVersion: string): Promise<unknown>;
+    prepare(resolvedTarget: unknown, options?: { cacheDir?: string }): Promise<unknown>;
   };
 
   export const reports: {

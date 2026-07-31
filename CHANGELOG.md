@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- API: keep publish-time Plugin Inspector target preparation inside its disposable workspace when hosted runtimes expose an unusable home directory.
 - API: keep older code-plugin and Claw backports from replacing the highest-semver `latest` release while preserving custom distribution tags.
 - Integrations: truncate publisher-controlled Discord webhook titles to the platform's 256-character embed limit.
 - Security: recover scheduled temporal publisher-abuse scans from strict Convex payload validation failures without leaving zombie running runs (thanks @jesse-merhi).

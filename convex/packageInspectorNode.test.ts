@@ -1,11 +1,12 @@
 /* @vitest-environment node */
 
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildPublishInspectorRunCheckOptions,
   createPackageInspectorWorkspace,
   normalizeInspectorReportForPublish,
+  preparePublishInspectorOpenClawTarget,
 } from "./packageInspectorNode";
 
 const originalPlatform = process.platform;
@@ -60,12 +61,37 @@ describe("package inspector publish normalization", () => {
     );
   });
 
-  it("targets latest stable OpenClaw for publish-time inspection", () => {
-    expect(buildPublishInspectorRunCheckOptions("/tmp/plugin", "2026-07-30T00:00:00.000Z")).toEqual(
+  it("prepares latest stable OpenClaw with a cache outside the inspected package", async () => {
+    const resolvedTarget = { version: "2026.7.0" };
+    const preparedTarget = { status: "ok", version: "2026.7.0" };
+    const resolveVersion = vi.fn(async () => resolvedTarget);
+    const prepare = vi.fn(async () => preparedTarget);
+
+    await expect(
+      preparePublishInspectorOpenClawTarget("/tmp/plugin", { resolveVersion, prepare }),
+    ).resolves.toBe(preparedTarget);
+    expect(resolveVersion).toHaveBeenCalledWith("latest");
+    expect(prepare).toHaveBeenCalledWith(resolvedTarget, {
+      cacheDir: path.join("/tmp/plugin", ".plugin-inspector-cache"),
+    });
+    expect(path.join("/tmp/plugin", ".plugin-inspector-cache")).not.toContain(
+      path.join("/tmp/plugin", "package") + path.sep,
+    );
+  });
+
+  it("uses the prepared OpenClaw target for publish-time inspection", () => {
+    const targetOpenClaw = { status: "ok", version: "2026.7.0" };
+    expect(
+      buildPublishInspectorRunCheckOptions(
+        "/tmp/plugin",
+        "2026-07-30T00:00:00.000Z",
+        targetOpenClaw,
+      ),
+    ).toEqual(
       expect.objectContaining({
         pluginRoot: "/tmp/plugin",
         openclawPath: false,
-        openclawVersion: "latest",
+        targetOpenClaw,
         authorFacing: true,
       }),
     );
