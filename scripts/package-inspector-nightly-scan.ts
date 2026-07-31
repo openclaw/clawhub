@@ -376,6 +376,7 @@ export async function prepareExtractedPluginRoot(
   if (artifactKind === "legacy-zip") {
     await removePosixArchiveMetadata(scanRoot);
   }
+  await readJsonIfExists(path.join(scanRoot, "openclaw.plugin.json"));
   await writeSyntheticConfigIfNeeded(scanRoot, packageName);
   return scanRoot;
 }

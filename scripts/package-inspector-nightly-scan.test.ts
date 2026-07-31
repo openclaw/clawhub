@@ -160,12 +160,16 @@ describe("package-inspector-nightly-scan", () => {
     expect(config.plugin.id).toBe(expectedId);
   });
 
-  it("accepts a UTF-8 BOM before a downloaded package.json", async () => {
+  it("accepts a UTF-8 BOM before downloaded plugin manifests", async () => {
     const pluginRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-package-json-"));
     temporaryRoots.push(pluginRoot);
     await writeFile(
       path.join(pluginRoot, "package.json"),
       '\uFEFF{"name":"eu-compliance-skill","version":"1.0.1"}\n',
+    );
+    await writeFile(
+      path.join(pluginRoot, "openclaw.plugin.json"),
+      '\uFEFF{"id":"eu-compliance-skill"}\n',
     );
 
     await expect(
@@ -177,6 +181,9 @@ describe("package-inspector-nightly-scan", () => {
     expect(config.plugin.id).toBe("eu-compliance-skill");
     expect(await readFile(path.join(pluginRoot, "package.json"), "utf8")).toBe(
       '{"name":"eu-compliance-skill","version":"1.0.1"}\n',
+    );
+    expect(await readFile(path.join(pluginRoot, "openclaw.plugin.json"), "utf8")).toBe(
+      '{"id":"eu-compliance-skill"}\n',
     );
   });
 
