@@ -17225,6 +17225,15 @@ a.agentic-risk-finding-title:focus-visible {
   justify-self: end;
 }
 
+.browse-page .browse-list-head.browse-list-head-trending {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.browse-page .browse-list-head.browse-list-head-trending .browse-list-head-label,
+.browse-page .browse-list-head.browse-list-head-trending .browse-list-head-stat {
+  grid-column: auto;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

@@ -270,8 +270,11 @@ export function SkillsResults({
         </div>
       ) : (
         <div className="browse-list-stack">
-          <div className="browse-list-head" aria-hidden="true">
-            <span className="browse-list-head-icon-spacer" />
+          <div
+            className={`browse-list-head${showTrendingLayout ? " browse-list-head-trending" : ""}`}
+            aria-hidden="true"
+          >
+            {showTrendingLayout ? null : <span className="browse-list-head-icon-spacer" />}
             <span className="browse-list-head-label">Skill</span>
             {showTrendingLayout ? null : <span className="browse-list-head-label">Category</span>}
             <span className="browse-list-head-label browse-list-head-stat">
