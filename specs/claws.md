@@ -1,8 +1,10 @@
 # Experimental Claw packages
 
-ClawHub's Claw support implements the registry side of
-[OpenClaw RFC #27](https://github.com/openclaw/rfcs/pull/27) plus the experimental
-portable-core addendum in [RFC #48](https://github.com/openclaw/rfcs/pull/48). A
+ClawHub's Claw support implements the registry side of the merged
+[OpenClaw RFC 0016](https://github.com/openclaw/rfcs/blob/main/rfcs/0016-claws.md),
+the experimental portable-core addendum in
+[RFC #48](https://github.com/openclaw/rfcs/pull/48), and the application-layer
+follow-up in [RFC #52](https://github.com/openclaw/rfcs/pull/52). A
 Claw package describes one complete new agent using the grouped `CLAW.md`
 schema. ClawHub owns publication, ownership, discovery, package detail APIs,
 and hosted feed export. OpenClaw remains authoritative for local planning,
@@ -18,22 +20,31 @@ artifact digest and provenance input. Grouped JSON has no body, creates no
 implicit file, and may declare `SOUL.md` explicitly.
 
 The portable agent object carries only identity and purpose. Harness-specific
-settings live in package-local profiles addressed through opaque string
-metadata. OpenClaw recognizes `metadata.openclaw.config`; export conventionally
-uses `profiles/openclaw.yml`, but the pointer is normative and authors may use
-another safe package-relative YAML path.
+settings live in package-local profiles discovered at conventional
+`profiles/<harness>.yml` paths; the manifest contains no profile pointer.
+`metadata.openclaw.config` is retired and rejected with migration guidance.
 
-That profile exists only inside the Claw package. ClawHub requires the pointer
-to resolve to an exact, bounded UTF-8 YAML package file and validates the
-profile's strict v1 OpenClaw policy during publication. OpenClaw validates it
-again during application, includes it in package integrity, and never copies it
-into ordinary OpenClaw configuration. Other harnesses may ignore OpenClaw's
-namespaced key or define their own profile-pointer contract.
+Profiles exist only inside the Claw package. ClawHub reserves the `profiles/`
+namespace for lowercase, single-file harness profiles, requires each profile to
+be a bounded UTF-8 JSON-compatible YAML mapping, and rejects aliases, anchors,
+tags, merge keys, non-string mapping keys, and non-finite values. It validates
+the strict profile-v1 structure of `profiles/openclaw.yml` without resolving
+built-in profile names, installing extensions, or claiming compatibility with
+a particular applying OpenClaw release. Foreign profiles remain structurally
+validated but uninterpreted. Applying harnesses discover only their own profile.
 
 ClawHub validates profile shape but treats `agent.tools.profile` as an opaque,
 non-empty applying-harness identifier. It does not freeze OpenClaw's evolving
 built-in profile registry; OpenClaw resolves the identifier against its current
 registry during preview and application.
+
+An optional package-root `BOOTSTRAP.md` carries reviewed first-run instructions.
+It must be bounded, nonempty UTF-8 text and cannot also be targeted through the
+portable workspace file map. Its presence is included in the bounded manifest
+summary, while its contents remain only in the exact immutable artifact.
+Schemas, templates, examples, fixtures, and static assets require no special
+registry role: they remain ordinary declared `workspace.files` covered by the
+artifact digest.
 
 ## Experimental contract
 
@@ -62,6 +73,9 @@ registry during preview and application.
    `SOUL.md` capability metadata, and prove the feed-to-OpenClaw mapping
    ([PR #3262](https://github.com/openclaw/clawhub/pull/3262), stacked after
    PR #3092).
+6. Adopt conventional harness profiles, package-root bootstrap, native
+   OpenClaw extensions, and ordinary application assets
+   ([PR #3328](https://github.com/openclaw/clawhub/pull/3328)).
 
 The hosted projection uses the separate
 [experimental Claw feed contract](experimental-claw-feed.md), not an extension
@@ -93,13 +107,14 @@ through the shared schema before storage.
 Claws use the existing package publication pipeline. `package.json` declares
 the package identity, version, and package-relative `openclaw.claw` manifest
 path. Publication parses `CLAW.md` YAML frontmatter or the JSON compatibility
-form and validates the grouped manifest, referenced workspace files, and any
-declared package-local OpenClaw profile. A non-empty Markdown body is the
-portable agent prompt and maps to managed `SOUL.md`; publication rejects a body
-combined with any explicit `SOUL.md` workspace declaration. The release retains
-the exact artifact and a bounded derived summary, including the implicit
-`SOUL.md` capability, rather than duplicating the full manifest, prompt body, or
-OpenClaw profile into Convex storage. The server rejects
+form and validates the grouped manifest, referenced workspace files,
+conventional harness profiles, and optional package-root bootstrap. A non-empty
+Markdown body is the portable agent prompt and maps to managed `SOUL.md`;
+publication rejects a body combined with any explicit `SOUL.md` workspace
+declaration. The release retains the exact artifact and a bounded derived
+summary, including implicit prompt and bootstrap presence, rather than
+duplicating the full manifest, prompt body, profile, or bootstrap content into
+Convex storage. The server rejects
 `family: claw` before mutation when the experimental gate is disabled; the gate
 does not bypass ownership, moderation, scanning, or release invariants when
 enabled.
