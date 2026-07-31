@@ -17,6 +17,24 @@ describe("production deploy workflow", () => {
     steps?: WorkflowStep[];
   };
 
+  type DeployWorkflow = {
+    jobs?: Record<string, WorkflowJob>;
+    on?: {
+      workflow_dispatch?: {
+        inputs?: Record<
+          string,
+          {
+            default?: string;
+            description?: string;
+            required?: boolean;
+            type?: string;
+          }
+        >;
+      };
+    };
+    permissions?: Record<string, string>;
+  };
+
   it("queues active deploys instead of cancelling them", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
       concurrency?: {
@@ -51,7 +69,8 @@ describe("production deploy workflow", () => {
     expect(deployJob?.env).toEqual({ PLAYWRIGHT_BASE_URL: "https://clawhub.ai" });
     expect(convexSecretSteps).toEqual([
       "Check deploy configuration",
-      "Require dark rollout modes",
+      "Inspect external skill rollout modes",
+      "Pause external skill rollouts",
       "Stamp Convex runtime environment",
       "Stamp Convex build SHA",
       "Stamp Convex deploy time",
@@ -59,27 +78,81 @@ describe("production deploy workflow", () => {
       "Publish promotions feed snapshot",
       "Verify Convex contract",
       "Verify dark rollout capabilities",
+      "Restore external skill rollouts",
+      "Verify restored external skill rollouts",
     ]);
     expect(authSecretSteps).toEqual(["Write authenticated storage state"]);
     expect(tagJob?.permissions).toEqual({ contents: "write" });
     expect(tagJob?.needs).toEqual(["validate-deploy-request", "deploy-production"]);
   });
 
-  it("refuses production deploys unless both rollout modes are off and reads them back dark", async () => {
-    const workflow = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
-      jobs?: Record<string, WorkflowJob>;
-    };
+  it("fails closed on active rollouts unless a backend deploy explicitly pauses and restores them", async () => {
+    const workflow = parseYaml(
+      await readFile(".github/workflows/deploy.yml", "utf8"),
+    ) as DeployWorkflow;
     const steps = workflow.jobs?.["deploy-production"]?.steps ?? [];
-    const requireDark = steps.find((step) => step.name === "Require dark rollout modes");
+    const validateSteps = workflow.jobs?.["validate-deploy-request"]?.steps ?? [];
+    const resolveMode = validateSteps.find((step) => step.name === "Resolve deploy mode");
+    const inspect = steps.find((step) => step.name === "Inspect external skill rollout modes");
+    const pause = steps.find((step) => step.name === "Pause external skill rollouts");
     const verifyDark = steps.find((step) => step.name === "Verify dark rollout capabilities");
+    const restore = steps.find((step) => step.name === "Restore external skill rollouts");
+    const verifyRestored = steps.find(
+      (step) => step.name === "Verify restored external skill rollouts",
+    );
+    const input = workflow.on?.workflow_dispatch?.inputs?.active_rollout_deploy_confirm;
 
-    expect(requireDark?.run).toContain("CLAWHUB_SKILLS_SH_ROLLOUT_MODE");
-    expect(requireDark?.run).toContain("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE");
-    expect(requireDark?.run).toContain('""|off');
+    expect(input).toMatchObject({
+      required: false,
+      default: "",
+      type: "string",
+    });
+    expect(input?.description).toContain("pause-and-restore-active-rollouts");
+    expect(resolveMode?.run).toContain('"$target" != "backend"');
+    expect(resolveMode?.env?.ACTIVE_ROLLOUT_DEPLOY_CONFIRM).toBe(
+      "${{ inputs.active_rollout_deploy_confirm }}",
+    );
+    expect(resolveMode?.run).not.toContain("${{ inputs.active_rollout_deploy_confirm }}");
+    expect(inspect?.run).toContain("convex env list --names-only --prod");
+    expect(inspect?.run).toContain("CLAWHUB_SKILLS_SH_ROLLOUT_MODE");
+    expect(inspect?.run).toContain("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE");
+    expect(inspect?.run).toContain("test|production");
+    expect(inspect?.run).toContain("pause-and-restore-active-rollouts");
+    expect(inspect?.env?.ACTIVE_ROLLOUT_DEPLOY_CONFIRM).toBe(
+      "${{ inputs.active_rollout_deploy_confirm }}",
+    );
+    expect(inspect?.run).not.toContain("${{ inputs.active_rollout_deploy_confirm }}");
+    expect(pause?.if).toBe("steps.rollout.outputs.pause_required == 'true'");
+    expect(pause?.run).toContain("convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE off --prod");
+    expect(pause?.run).toContain(
+      "convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off --prod",
+    );
     expect(verifyDark?.run).toContain("rolloutCapabilities:getPublicCapabilities");
     expect(verifyDark?.run).toContain('.environment == "production"');
     expect(verifyDark?.run).toContain(".skillsSh.runtimeEnabled == false");
     expect(verifyDark?.run).toContain(".githubSkillSync.selfServiceEnabled == false");
+    expect(restore?.if).toContain("always()");
+    expect(restore?.run).toContain(
+      'convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE" --prod',
+    );
+    expect(restore?.run).toContain(
+      'convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE" --prod',
+    );
+    expect(verifyRestored?.if).toContain("always()");
+    expect(verifyRestored?.run).toContain(".skillsSh.mode == $skills_sh_mode");
+    expect(verifyRestored?.run).toContain(".githubSkillSync.mode == $github_skill_sync_mode");
+
+    const pauseIndex = steps.indexOf(pause!);
+    const deployIndex = steps.findIndex((step) => step.name === "Deploy Convex");
+    const verifyDarkIndex = steps.indexOf(verifyDark!);
+    const restoreIndex = steps.indexOf(restore!);
+    const verifyRestoredIndex = steps.indexOf(verifyRestored!);
+    const smokeIndex = steps.findIndex((step) => step.name === "Smoke test production HTTP");
+    expect(pauseIndex).toBeLessThan(deployIndex);
+    expect(deployIndex).toBeLessThan(verifyDarkIndex);
+    expect(verifyDarkIndex).toBeLessThan(restoreIndex);
+    expect(restoreIndex).toBeLessThan(verifyRestoredIndex);
+    expect(verifyRestoredIndex).toBeLessThan(smokeIndex);
   });
 
   it("stamps the production runtime identity before deploying Convex", async () => {

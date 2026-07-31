@@ -178,8 +178,10 @@ capability is enabled.
 Automation must identify its runtime explicitly. The scheduled live canary runs
 the generic sync path against an in-memory database with `CLAWHUB_ENV=test` and
 the GitHub Skill Sync rollout in `test` mode. Production deploys stamp
-`CLAWHUB_ENV=production` before deploying Convex, while ordinary production
-deploys still require both external-skill rollout modes to remain `off`.
+`CLAWHUB_ENV=production` before deploying Convex. Ordinary production deploys
+still require both external-skill rollout modes to remain `off`; the explicit
+backend-only maintenance path temporarily pauses active modes and restores and
+verifies their exact prior values before production smoke.
 
 When enabled, repository enrollment requires:
 

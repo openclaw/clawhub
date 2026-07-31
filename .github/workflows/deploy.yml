@@ -17,6 +17,11 @@ on:
         required: true
         default: false
         type: boolean
+      active_rollout_deploy_confirm:
+        description: "For backend-only deploys with active external-skill rollouts, enter: pause-and-restore-active-rollouts"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: deploy-production
@@ -44,9 +49,20 @@ jobs:
 
       - name: Resolve deploy mode
         id: mode
+        env:
+          ACTIVE_ROLLOUT_DEPLOY_CONFIRM: ${{ inputs.active_rollout_deploy_confirm }}
         run: |
           set -euo pipefail
           target="${{ inputs.target }}"
+          rollout_confirmation="$ACTIVE_ROLLOUT_DEPLOY_CONFIRM"
+          if [[ -n "$rollout_confirmation" && "$target" != "backend" ]]; then
+            echo "::error::Active rollout pause/restore is supported only for backend deploys."
+            exit 1
+          fi
+          if [[ -n "$rollout_confirmation" && "$rollout_confirmation" != "pause-and-restore-active-rollouts" ]]; then
+            echo "::error::Invalid active rollout deploy confirmation."
+            exit 1
+          fi
           case "$target" in
             full)
               echo "deploy_backend=true" >> "$GITHUB_OUTPUT"
@@ -113,25 +129,73 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      - name: Require dark rollout modes
+      - name: Inspect external skill rollout modes
+        id: rollout
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
+          ACTIVE_ROLLOUT_DEPLOY_CONFIRM: ${{ inputs.active_rollout_deploy_confirm }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           set -euo pipefail
+          names="$(bunx convex env list --names-only --prod)"
+          pause_required=false
+
           for name in \
             CLAWHUB_SKILLS_SH_ROLLOUT_MODE \
             CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE
           do
-            value="$(bunx convex env get "$name" --prod 2>/dev/null || true)"
+            value=""
+            if grep -Fxq "$name" <<< "$names"; then
+              value="$(bunx convex env get "$name" --prod)"
+            fi
             case "$value" in
-              ""|off) ;;
+              ""|off)
+                expected_mode=off
+                restore_mode=""
+                ;;
+              test|production)
+                expected_mode="$value"
+                restore_mode="$value"
+                pause_required=true
+                ;;
               *)
-                echo "::error::$name must be missing or off before an ordinary production deploy"
+                echo "::error::$name has unsupported rollout mode '$value'"
                 exit 1
                 ;;
             esac
+
+            case "$name" in
+              CLAWHUB_SKILLS_SH_ROLLOUT_MODE)
+                echo "skills_sh_expected_mode=$expected_mode" >> "$GITHUB_OUTPUT"
+                echo "skills_sh_restore_mode=$restore_mode" >> "$GITHUB_OUTPUT"
+                ;;
+              CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE)
+                echo "github_skill_sync_expected_mode=$expected_mode" >> "$GITHUB_OUTPUT"
+                echo "github_skill_sync_restore_mode=$restore_mode" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
           done
+
+          echo "pause_required=$pause_required" >> "$GITHUB_OUTPUT"
+          if [[ "$pause_required" == "true" && "$ACTIVE_ROLLOUT_DEPLOY_CONFIRM" != "pause-and-restore-active-rollouts" ]]; then
+            echo "::error::Active external-skill rollouts require a backend deploy with active_rollout_deploy_confirm=pause-and-restore-active-rollouts."
+            exit 1
+          fi
+
+      - name: Pause external skill rollouts
+        if: steps.rollout.outputs.pause_required == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          GITHUB_SKILL_SYNC_RESTORE_MODE: ${{ steps.rollout.outputs.github_skill_sync_restore_mode }}
+          SKILLS_SH_RESTORE_MODE: ${{ steps.rollout.outputs.skills_sh_restore_mode }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$SKILLS_SH_RESTORE_MODE" ]]; then
+            bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE off --prod
+          fi
+          if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]]; then
+            bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off --prod
+          fi
 
       - name: Stamp Convex runtime environment
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
@@ -192,6 +256,47 @@ jobs:
             .githubSkillSync.mode == "off" and
             .githubSkillSync.selfServiceEnabled == false
           ' <<< "$capabilities"
+
+      - name: Restore external skill rollouts
+        if: always() && steps.rollout.outputs.pause_required == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          GITHUB_SKILL_SYNC_RESTORE_MODE: ${{ steps.rollout.outputs.github_skill_sync_restore_mode }}
+          SKILLS_SH_RESTORE_MODE: ${{ steps.rollout.outputs.skills_sh_restore_mode }}
+        run: |
+          set -uo pipefail
+          restore_failed=0
+          if [[ -n "$SKILLS_SH_RESTORE_MODE" ]] &&
+            ! bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE" --prod
+          then
+            echo "::error::Failed to restore CLAWHUB_SKILLS_SH_ROLLOUT_MODE."
+            restore_failed=1
+          fi
+          if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]] &&
+            ! bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE" --prod
+          then
+            echo "::error::Failed to restore CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE."
+            restore_failed=1
+          fi
+          exit "$restore_failed"
+
+      - name: Verify restored external skill rollouts
+        if: always() && steps.rollout.outputs.pause_required == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          GITHUB_SKILL_SYNC_EXPECTED_MODE: ${{ steps.rollout.outputs.github_skill_sync_expected_mode }}
+          SKILLS_SH_EXPECTED_MODE: ${{ steps.rollout.outputs.skills_sh_expected_mode }}
+        run: |
+          set -euo pipefail
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e \
+            --arg skills_sh_mode "$SKILLS_SH_EXPECTED_MODE" \
+            --arg github_skill_sync_mode "$GITHUB_SKILL_SYNC_EXPECTED_MODE" \
+            '
+              .environment == "production" and
+              .skillsSh.mode == $skills_sh_mode and
+              .githubSkillSync.mode == $github_skill_sync_mode
+            ' <<< "$capabilities"
 
       - name: Wait for Vercel production deployment
         id: vercel

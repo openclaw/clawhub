@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- Deploy: allow an explicitly confirmed backend-only deploy to pause and reliably restore active external-skill rollouts instead of requiring a manual dashboard toggle.
 - GitHub Actions/CLI: trigger exact pre-publication checks immediately and wait for package publication to finish, so a pending staged upload no longer reports a successful release.
 - API: keep publish-time Plugin Inspector target preparation inside its disposable workspace when hosted runtimes expose an unusable home directory.
 - API: keep older code-plugin and Claw backports from replacing the highest-semver `latest` release while preserving custom distribution tags.

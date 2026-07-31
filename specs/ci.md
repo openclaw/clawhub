@@ -117,6 +117,11 @@ Production-only checks stay in the manual deploy workflow:
 - `bun run test:e2e:prod-http`
 - production Playwright smoke tests
 
+The default backend deploy remains fail-closed when external-skill rollouts are active. Maintainers
+can explicitly select the backend-only pause/deploy/restore path with
+`active_rollout_deploy_confirm=pause-and-restore-active-rollouts`; the workflow restores the exact
+prior modes under `always()` and verifies the restored public capability modes before smoke.
+
 Successful `full` and `frontend` production deploys create two annotated Git
 tags:
 

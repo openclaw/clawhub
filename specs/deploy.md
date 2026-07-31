@@ -49,6 +49,12 @@ Production deploy notes:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
   - `frontend`: wait for the Vercel production deploy for the selected `main` SHA, then run smoke tests
+- Ordinary backend deploys require both external-skill rollout modes to be missing or `off`.
+  When either rollout is intentionally active, use a backend-only deploy and set
+  `active_rollout_deploy_confirm=pause-and-restore-active-rollouts`. The workflow records the
+  exact active modes, pauses them before deploying Convex, and restores and verifies them before
+  production HTTP smoke. The restore steps run even when deployment or dark-state verification
+  fails.
 - `frontend` does not call `vercel deploy` directly yet. It relies on the existing Vercel Git-based production deploy for that SHA.
 - The real deploy job uses the GitHub `Production` environment for deploy secrets, but it does not wait for a separate approval.
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
