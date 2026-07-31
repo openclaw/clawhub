@@ -15,7 +15,7 @@
         "@fontsource/noto-sans-sc": "5.3.0",
         "@monaco-editor/react": "4.7.0",
         "@openclaw/carapace": "git+https://github.com/openclaw/carapace.git#v0.2.0",
-        "@openclaw/plugin-inspector": "github:openclaw/plugin-inspector#021c6586af78884d27f1be8acedca492acd9f9ae",
+        "@openclaw/plugin-inspector": "github:openclaw/plugin-inspector#c8c755c4279b43a31deeb80b8fae36165e0dd058",
         "@radix-ui/react-avatar": "1.2.3",
         "@radix-ui/react-dialog": "1.1.20",
         "@radix-ui/react-dropdown-menu": "2.1.21",
@@ -108,7 +108,7 @@
       },
       "dependencies": {
         "@clack/prompts": "1.7.0",
-        "@openclaw/plugin-inspector": "github:openclaw/plugin-inspector#021c6586af78884d27f1be8acedca492acd9f9ae",
+        "@openclaw/plugin-inspector": "github:openclaw/plugin-inspector#c8c755c4279b43a31deeb80b8fae36165e0dd058",
         "arktype": "2.2.3",
         "commander": "15.0.0",
         "croner": "10.0.1",
@@ -454,7 +454,7 @@
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
-    "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@github:openclaw/plugin-inspector#021c658", { "dependencies": { "semver": "^7.8.5", "tar": "^7.5.22" }, "bin": { "plugin-inspector": "src/cli.js" } }, "openclaw-plugin-inspector-021c658", "sha512-Cz3NDscaCxvySTNmBz1mQnImKHWdmk50da1VhZnQYKE/EK3qlV/Z/UpYo/7440EEQJ7TQ90V5Eyr6I2811dp6Q=="],
+    "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@github:openclaw/plugin-inspector#c8c755c", { "dependencies": { "semver": "^7.8.5", "tar": "^7.5.22" }, "bin": { "plugin-inspector": "src/cli.js" } }, "openclaw-plugin-inspector-c8c755c", "sha512-yneM5thup+OSzUsklI5J7qex3JbL4943uLJPwc5Y7S3lQeHykZYnWyfhctoRt6i8DDrrR583SLI2xYsxt1gmRg=="],
 
     "@oslojs/asn1": ["@oslojs/asn1@1.0.0", "", { "dependencies": { "@oslojs/binary": "1.0.0" } }, "sha512-zw/wn0sj0j0QKbIXfIlnEcTviaCzYOY3V5rAyjR6YtOByFtJiT574+8p9Wlach0lZH9fddD4yb9laEAIl4vXQA=="],
 
@@ -2091,6 +2091,8 @@
     "babel-dead-code-elimination/@babel/parser": ["@babel/parser@7.29.7", "", { "dependencies": { "@babel/types": "^7.29.7" }, "bin": "./bin/babel-parser.js" }, "sha512-hnORnjP/1P/zFEndoeX+n+t1RwWRJiJpM/jO7FW32Kn9r5+sJB2JWOdYo4L6k78j15eCwY3Gm/7364B1EMwtNg=="],
 
     "babel-dead-code-elimination/@babel/traverse": ["@babel/traverse@7.29.7", "", { "dependencies": { "@babel/code-frame": "^7.29.7", "@babel/generator": "^7.29.7", "@babel/helper-globals": "^7.29.7", "@babel/parser": "^7.29.7", "@babel/template": "^7.29.7", "@babel/types": "^7.29.7", "debug": "^4.3.1" } }, "sha512-EhlfNQtZ+NK22w5BM61ciuiq1m58ed33Wr1Xan//ZRTy6hgjnwyCffRYwzsGXdASJSUJ1guZILsErh1eQcl+zw=="],
+
+    "clawhub/@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@github:openclaw/plugin-inspector#c8c755c", { "dependencies": { "semver": "^7.8.5", "tar": "^7.5.22" }, "bin": { "plugin-inspector": "src/cli.js" } }, "openclaw-plugin-inspector-c8c755c", "sha512-yneM5thup+OSzUsklI5J7qex3JbL4943uLJPwc5Y7S3lQeHykZYnWyfhctoRt6i8DDrrR583SLI2xYsxt1gmRg=="],
 
     "conf/semver": ["semver@7.8.3", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-wnilbGyMxzbY7dNOl7jpKbLSjcfeweJWU5j4+u5qW+6/wuGD9KzIGOyZnQVSBM9E7DtWaaH3CyHkppYrKYoxwg=="],
 
