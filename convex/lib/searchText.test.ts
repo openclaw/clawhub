@@ -94,8 +94,31 @@ describe("searchText", () => {
     });
 
     it("handles Japanese text", () => {
-      const tokens = tokenize("こんにちは世界");
-      expect(tokens.length).toBeGreaterThan(0);
+      expect(tokenize("こんにちは世界")).toEqual(["こんにちは", "世界"]);
+    });
+
+    it("keeps katakana words that contain a prolonged sound mark intact", () => {
+      expect(tokenize("データベース")).toEqual(["データベース"]);
+      expect(tokenize("データベース管理")).toEqual(["データベース", "管理"]);
+      expect(tokenize("ユーザーインターフェース")).toEqual(["ユーザー", "インターフェース"]);
+    });
+
+    it("keeps the iteration mark attached to the character it repeats", () => {
+      expect(tokenize("人々")).toEqual(["人々"]);
+      expect(tokenize("時々")).toEqual(["時々"]);
+    });
+
+    it("matches Japanese query tokens against Japanese skill names", () => {
+      const queryTokens = tokenize("データベース");
+      expect(matchesExactTokens(queryTokens, ["データベース管理ツール"])).toBe(true);
+    });
+
+    it("lets katakana queries reach the exploratory match tiers", () => {
+      // Exploratory tiers require every query token to clear a three-character floor.
+      const queryTokens = tokenize("データベース");
+      expect(matchesExploratoryTokenPrefixes(queryTokens, ["データベース管理ツール"], 3)).toBe(
+        true,
+      );
     });
 
     it("handles Korean text", () => {
