@@ -100,6 +100,7 @@ const dryRunMaxBatches = Math.max(
 const artifactRoot =
   process.env.PLUGIN_INSPECTOR_ARTIFACT_DIR ?? "plugin-inspector-bulk-scan-reports";
 const scanRunId = resolveScanRunId(process.env);
+const legacyFileDownloadAttempts = 4;
 
 export function resolveScanRunId(env: Record<string, string | undefined>) {
   return env.PLUGIN_INSPECTOR_RUN_ID?.trim() || env.GITHUB_RUN_ID?.trim() || randomUUID();
@@ -408,7 +409,7 @@ async function downloadLegacyPackageFiles(item: ClaimItem, pluginRoot: string) {
     );
     fileUrl.searchParams.set("path", filePath);
     fileUrl.searchParams.set("version", item.version);
-    const response = await fetch(fileUrl);
+    const response = await fetchLegacyPackageFile(fileUrl, filePath);
     if (!response.ok) {
       throw new Error(
         `legacy package file download failed for ${filePath} ${response.status}: ${await response.text()}`,
@@ -427,6 +428,31 @@ async function downloadLegacyPackageFiles(item: ClaimItem, pluginRoot: string) {
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, bytes);
   }
+}
+
+async function fetchLegacyPackageFile(fileUrl: URL, filePath: string) {
+  for (let attempt = 1; attempt <= legacyFileDownloadAttempts; attempt += 1) {
+    const response = await fetch(fileUrl);
+    const retryAfter = response.headers.get("Retry-After");
+    if (response.ok || response.status !== 503 || retryAfter === null) return response;
+    if (attempt === legacyFileDownloadAttempts) return response;
+    const delayMs = parseRetryAfterDelayMs(retryAfter);
+    if (delayMs === undefined) return response;
+    await response.body?.cancel();
+    console.warn(
+      `Legacy package file download temporarily unavailable for ${filePath}; retrying in ${delayMs}ms (attempt ${attempt + 1}/${legacyFileDownloadAttempts}).`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  throw new Error(`legacy package file retry exhausted unexpectedly for ${filePath}`);
+}
+
+function parseRetryAfterDelayMs(value: string) {
+  const seconds = Number(value);
+  if (Number.isSafeInteger(seconds) && seconds >= 0) return Math.min(seconds * 1000, 5000);
+  const retryAt = Date.parse(value);
+  if (!Number.isFinite(retryAt)) return undefined;
+  return Math.min(Math.max(0, retryAt - Date.now()), 5000);
 }
 
 function resolveLegacyScanFilePath(packageRoot: string, filePath: string) {

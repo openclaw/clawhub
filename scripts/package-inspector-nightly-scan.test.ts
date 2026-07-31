@@ -209,6 +209,63 @@ describe("package-inspector-nightly-scan", () => {
     await expect(access(path.join(pluginRoot, "package", "package.json"))).rejects.toThrow();
   });
 
+  it.each([
+    ["delay seconds", "0"],
+    ["HTTP date", new Date(0).toUTCString()],
+  ])(
+    "retries a transient rate-limit contention response with Retry-After %s",
+    async (_label, retryAfter) => {
+      const workRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-legacy-retry-"));
+      temporaryRoots.push(workRoot);
+      const pluginRoot = path.join(workRoot, "plugin");
+      await mkdir(pluginRoot, { recursive: true });
+      const payload = "payload";
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response("Server Error", { status: 500 }))
+        .mockResolvedValueOnce(
+          Response.json({
+            version: {
+              files: [
+                {
+                  path: "package.json",
+                  size: 7,
+                  sha256: "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+                },
+              ],
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response("Rate limit temporarily unavailable", {
+            status: 503,
+            headers: { "Retry-After": retryAfter },
+          }),
+        )
+        .mockResolvedValueOnce(new Response(payload));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        downloadPackageArtifactForScan(
+          {
+            packageId: "packages:demo",
+            releaseId: "packageReleases:demo-1",
+            packageName: "demo",
+            version: "1.0.0",
+            artifactKind: "legacy-zip",
+            downloadUrl: "https://clawhub.ai/api/v1/package-inspector/artifact",
+          },
+          workRoot,
+          pluginRoot,
+        ),
+      ).resolves.toBe("legacy-zip");
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      await expect(
+        readFile(path.join(pluginRoot, "package", "package.json"), "utf8"),
+      ).resolves.toBe(payload);
+    },
+  );
+
   it("fails closed when a reconstructed legacy manifest contains an unsafe path", async () => {
     const workRoot = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-legacy-path-"));
     temporaryRoots.push(workRoot);
