@@ -454,9 +454,20 @@ describe("skills.sh mirror visibility operations", () => {
           q.eq("kind", "skills").eq("status", "ready").gt("expiresAt", 0),
         )
         .collect(),
+      runs: await ctx.db.query("skillsShMirrorRuns").withIndex("by_started_at").collect(),
     }));
     expect(activationState.mirrorControl?.activationLockToken).toBeUndefined();
     expect(activationState.snapshots).toHaveLength(1);
+    const activatedLeaderboard = activationState.runs.find(
+      (run) => run._id === activationState.mirrorControl?.latestCompletedLeaderboardRunId,
+    );
+    expect(activatedLeaderboard?.activatedTrendingRunId).toBe(
+      activationState.runs.find((run) => run.sourceView === "trending")?._id,
+    );
+    expect(activatedLeaderboard?.activationSnapshotId).toBe(
+      activationState.snapshots[0]?.snapshotId,
+    );
+    expect(activatedLeaderboard?.activatedAt).toEqual(expect.any(Number));
     await expect(
       t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
     ).resolves.toMatchObject({

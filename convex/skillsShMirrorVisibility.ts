@@ -755,6 +755,11 @@ export const finalizeActivationInternal = internalMutation({
     if (!actor || !reason) throw new Error("skills.sh public gate actor and reason are required");
     const now = Date.now();
     await writePublicGate(ctx, { enabled: true, actor, reason, now });
+    await ctx.db.patch("skillsShMirrorRuns", args.leaderboardRunId, {
+      activatedTrendingRunId: args.trendingRunId,
+      activationSnapshotId: args.snapshotId,
+      activatedAt: now,
+    });
     await ctx.db.patch(control._id, {
       activationLockToken: undefined,
       activationLockedAt: undefined,
@@ -764,7 +769,16 @@ export const finalizeActivationInternal = internalMutation({
       reason,
       updatedAt: now,
     });
-    return { ok: true as const, environment, enabled: true as const, updatedAt: now };
+    return {
+      ok: true as const,
+      environment,
+      enabled: true as const,
+      leaderboardRunId: args.leaderboardRunId,
+      trendingRunId: args.trendingRunId,
+      snapshotId: args.snapshotId,
+      activatedAt: now,
+      updatedAt: now,
+    };
   },
 });
 
@@ -964,7 +978,7 @@ export const verifyAndActivateInternal = internalAction({
       ) {
         throw new Error("skills.sh Trending activation snapshot failed source verification");
       }
-      await ctx.runMutation(
+      const publication = (await ctx.runMutation(
         internalRefs.skillsShMirrorVisibility.finalizeActivationInternal as never,
         {
           ...args,
@@ -974,7 +988,12 @@ export const verifyAndActivateInternal = internalAction({
           snapshotId: trendingSnapshot.snapshotId,
           expectedSkillsShTrending: trendingSnapshot.sourceCounts.skillsShTrending,
         } as never,
-      );
+      )) as {
+        leaderboardRunId: MirrorRun["_id"];
+        trendingRunId: MirrorRun["_id"];
+        snapshotId: string;
+        activatedAt: number;
+      };
       locked = false;
       return {
         ok: true as const,
@@ -984,6 +1003,10 @@ export const verifyAndActivateInternal = internalAction({
         trending,
         corpus: corpusAudit.counts,
         trendingSnapshot,
+        leaderboardRunId: publication.leaderboardRunId,
+        trendingRunId: publication.trendingRunId,
+        snapshotId: publication.snapshotId,
+        activatedAt: publication.activatedAt,
         scansPlanned: 0 as const,
         scansAdmitted: 0 as const,
       };

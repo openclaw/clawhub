@@ -967,6 +967,9 @@ type SummarizableMirrorRun = Pick<
   | "offset"
   | "counts"
   | "operations"
+  | "activatedTrendingRunId"
+  | "activationSnapshotId"
+  | "activatedAt"
   | "startedAt"
   | "completedAt"
   | "updatedAt"
@@ -988,6 +991,9 @@ function summarizeRun(run: SummarizableMirrorRun) {
     offset: run.offset,
     counts: runCounts(run.counts),
     operations: run.operations,
+    activatedTrendingRunId: run.activatedTrendingRunId ?? null,
+    activationSnapshotId: run.activationSnapshotId ?? null,
+    activatedAt: run.activatedAt ?? null,
     startedAt: run.startedAt,
     completedAt: run.completedAt ?? null,
     updatedAt: run.updatedAt,

@@ -453,6 +453,123 @@ describe("skills.sh synchronization runner", () => {
     ]);
   });
 
+  it("reconciles an ambiguous activation timeout only from the exact durable activation receipt", async () => {
+    const operations: string[] = [];
+    let statusCalls = 0;
+    const sleep = vi.fn(async () => undefined);
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      operations.push(String(body.operation));
+      if (body.operation === "status") {
+        statusCalls += 1;
+        if (statusCalls === 1) {
+          return response({ runs: [], invariants: { publicVisible: false } });
+        }
+        if (statusCalls === 2) {
+          return response({
+            control: {
+              activationLockToken: "skills-sh-activation:in-flight",
+              activationLeaderboardRunId: "run-leaderboard",
+              activationTrendingRunId: "run-trending",
+            },
+            runs: [],
+            invariants: { publicVisible: false },
+          });
+        }
+        return response({ runs: [], invariants: { publicVisible: true } });
+      }
+      if (body.operation === "prepare-native-trending") return nativeTrendingPreparation();
+      if (body.operation === "configure") return response({ ok: true });
+      if (body.operation === "start") return response(completedRun("leaderboard"));
+      if (body.operation === "start-trending") return response(completedRun("trending"));
+      if (body.operation === "verify-activate") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "run") {
+        return statusCalls === 1
+          ? response(completedRun("leaderboard"))
+          : response({
+              ...completedRun("leaderboard"),
+              activatedTrendingRunId: "run-trending",
+              activationSnapshotId: "skills-activation",
+              activatedAt: 1_722_345_678_000,
+            });
+      }
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled proof",
+        fetchImpl,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      activation: {
+        activated: true,
+        reconciledAfterTimeout: true,
+        leaderboardRunId: "run-leaderboard",
+        trendingRunId: "run-trending",
+        snapshotId: "skills-activation",
+      },
+    });
+    expect(sleep).toHaveBeenCalled();
+    expect(operations).toEqual([
+      "status",
+      "configure",
+      "prepare-native-trending",
+      "start",
+      "start-trending",
+      "verify-activate",
+      "run",
+      "status",
+      "run",
+      "configure",
+      "status",
+    ]);
+  });
+
+  it("does not wait past the final activation receipt reconciliation read", async () => {
+    const sleep = vi.fn(async () => undefined);
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      if (body.operation === "status") {
+        return response({
+          control: {
+            activationLockToken: "skills-sh-activation:in-flight",
+            activationLeaderboardRunId: "run-leaderboard",
+            activationTrendingRunId: "run-trending",
+          },
+          runs: [],
+          invariants: { publicVisible: false },
+        });
+      }
+      if (body.operation === "prepare-native-trending") return nativeTrendingPreparation();
+      if (body.operation === "configure") return response({ ok: true });
+      if (body.operation === "start") return response(completedRun("leaderboard"));
+      if (body.operation === "start-trending") return response(completedRun("trending"));
+      if (body.operation === "verify-activate") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "run") return response(completedRun("leaderboard"));
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled proof",
+        fetchImpl,
+        sleep,
+      }),
+    ).rejects.toThrow("did not produce an exact durable activation receipt");
+    expect(sleep).toHaveBeenCalledTimes(131);
+  });
+
   it("preserves the last verified public lane on a transient sync failure", async () => {
     const operations: string[] = [];
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {

@@ -14,6 +14,8 @@ const MAX_STEPS = 2_000;
 const MAX_RATE_LIMIT_RETRIES = 30;
 const MAX_RATE_LIMIT_WAIT_MS = 30 * 60 * 1_000;
 const MAX_TRANSPORT_TIMEOUTS = 3;
+const ACTIVATION_RECONCILE_POLL_MS = 5_000;
+const MAX_ACTIVATION_RECONCILE_POLLS = 132;
 
 type MirrorRun = Record<string, unknown>;
 type SyncFetch = (input: string, init: RequestInit) => Promise<Response>;
@@ -45,6 +47,10 @@ function requiredInteger(value: unknown, name: string) {
     throw new Error(`${name} must be a nonnegative integer`);
   }
   return Number(value);
+}
+
+function optionalRecord(value: unknown) {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 function jwtExpiresAt(jwt: string) {
@@ -264,6 +270,44 @@ export async function runSkillsShSync(options: {
     };
   };
 
+  const reconcileTimedOutActivation = async (
+    leaderboardRunId: string,
+    trendingRunId: string,
+  ): Promise<MirrorRun> => {
+    for (let poll = 0; poll < MAX_ACTIVATION_RECONCILE_POLLS; poll += 1) {
+      const leaderboard = mirrorRunFromPayload(
+        await call({ operation: "run", runId: leaderboardRunId }),
+        "run",
+      );
+      if (leaderboard.activatedTrendingRunId === trendingRunId) {
+        return {
+          ok: true,
+          activated: true,
+          reconciledAfterTimeout: true,
+          leaderboardRunId,
+          trendingRunId,
+          snapshotId: requiredString(leaderboard.activationSnapshotId, "activationSnapshotId"),
+          activatedAt: requiredInteger(leaderboard.activatedAt, "activatedAt"),
+        };
+      }
+      const status = await call({ operation: "status" });
+      const control = optionalRecord(status.control);
+      if (!control || typeof control.activationLockToken !== "string") break;
+      if (
+        control.activationLeaderboardRunId !== leaderboardRunId ||
+        control.activationTrendingRunId !== trendingRunId
+      ) {
+        throw new Error("timed-out verify-activate is bound to different source runs");
+      }
+      if (poll + 1 < MAX_ACTIVATION_RECONCILE_POLLS) {
+        await sleep(ACTIVATION_RECONCILE_POLL_MS);
+      }
+    }
+    throw new Error(
+      "timed-out verify-activate did not produce an exact durable activation receipt",
+    );
+  };
+
   const startedAt = Date.now();
   const before = await call({ operation: "status" });
   const publicVisible = (before.invariants as Record<string, unknown> | undefined)?.publicVisible;
@@ -306,7 +350,14 @@ export async function runSkillsShSync(options: {
     try {
       activation = await call({ operation: "verify-activate", reason: options.reason });
     } catch (error) {
-      throw new UnsafeSkillsShCorpusError(error instanceof Error ? error.message : String(error));
+      if (isTransportTimeout(error)) {
+        activation = await reconcileTimedOutActivation(
+          requiredString((leaderboard as MirrorRun).runId, "leaderboard.runId"),
+          requiredString((trending as MirrorRun).runId, "trending.runId"),
+        );
+      } else {
+        throw new UnsafeSkillsShCorpusError(error instanceof Error ? error.message : String(error));
+      }
     }
     await call({ operation: "configure", enabled: false, reason: `${options.reason} complete` });
     const after = await call({ operation: "status" });
