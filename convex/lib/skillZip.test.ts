@@ -4,6 +4,7 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
   buildDeterministicPackageZip,
+  buildLegacyPackageScanZip,
   buildDeterministicZip,
   buildSkillMeta,
   type SkillZipMeta,
@@ -182,5 +183,31 @@ describe("skillZip", () => {
         ]),
       ).toThrow("unsafe package path");
     });
+  });
+
+  describe("buildLegacyPackageScanZip", () => {
+    it("keeps historical Linux-safe names that modern package publication rejects", () => {
+      const zip = buildLegacyPackageScanZip([
+        { path: "s2-os-core:requirements.txt", bytes: new TextEncoder().encode("legacy") },
+        {
+          path: "docs/Standard\u00e2\u0080\u0094_Unit.md",
+          bytes: new TextEncoder().encode("legacy"),
+        },
+      ]);
+
+      expect(Object.keys(unzipSync(zip)).sort()).toEqual([
+        "package/docs/Standard\u00e2\u0080\u0094_Unit.md",
+        "package/s2-os-core:requirements.txt",
+      ]);
+    });
+
+    it.each(["../escape", "dir/../escape", "/absolute", "dir\\escape", "dir//escape"])(
+      "still rejects archive traversal path %s",
+      (path) => {
+        expect(() =>
+          buildLegacyPackageScanZip([{ path, bytes: new TextEncoder().encode("unsafe") }]),
+        ).toThrow("unsafe legacy scan path");
+      },
+    );
   });
 });

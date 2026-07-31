@@ -1,9 +1,11 @@
 /* @vitest-environment node */
 
+import { unzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   absolutePackageArtifactUrl,
   packageInspectorAcknowledgeHttp,
+  packageInspectorArtifactHttp,
   packageInspectorClaimHttp,
   packageInspectorResultsHttp,
 } from "./packageInspectorHttp";
@@ -19,6 +21,8 @@ const packageInspectorClaimHttpHandler = (packageInspectorClaimHttp as unknown a
 const packageInspectorAcknowledgeHttpHandler = (
   packageInspectorAcknowledgeHttp as unknown as HttpHandler
 )._handler;
+const packageInspectorArtifactHttpHandler = (packageInspectorArtifactHttp as unknown as HttpHandler)
+  ._handler;
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -31,6 +35,40 @@ describe("package inspector HTTP helpers", () => {
     expect(absolutePackageArtifactUrl(request, "packageReleases:demo-1")).toBe(
       "https://example.com/api/v1/package-inspector/artifact?releaseId=packageReleases%3Ademo-1",
     );
+  });
+
+  it("projects historical legacy filenames for the protected Linux scan worker", async () => {
+    vi.stubEnv("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN", "worker-token");
+    const response = await packageInspectorArtifactHttpHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          packageName: "s2-space-agent-os",
+          version: "2.0.0",
+          artifactKind: "legacy-zip",
+          files: [
+            { path: "s2-os-core:requirements.txt", storageId: "storage:requirements" },
+            {
+              path: "docs/blueprints/Standard\u00e2\u0080\u0094_Unit_Habitat_Swarm.md",
+              storageId: "storage:blueprint",
+            },
+          ],
+        }),
+        storage: {
+          get: vi.fn(async (storageId: string) => new Blob([storageId])),
+        },
+      },
+      new Request(
+        "https://example.com/api/v1/package-inspector/artifact?releaseId=packageReleases:s2",
+        { headers: { Authorization: "Bearer worker-token" } },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(Object.keys(entries).sort()).toEqual([
+      "package/docs/blueprints/Standard\u00e2\u0080\u0094_Unit_Habitat_Swarm.md",
+      "package/s2-os-core:requirements.txt",
+    ]);
   });
 
   it("keeps owner notifications off when nightly results omit the opt-in", async () => {

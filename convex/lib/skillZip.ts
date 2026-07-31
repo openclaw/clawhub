@@ -81,6 +81,39 @@ export function buildDeterministicPackageZip(entries: ZipEntry[]) {
       `Package contains file/ancestor path collision: ${hierarchyCollision.ancestor} and ${hierarchyCollision.descendant}`,
     );
   }
+  return buildPackageZip(entries);
+}
+
+/**
+ * Reconstruct a historical package only for the protected Linux scan worker.
+ * Legacy rows can predate portable filename validation, so this keeps their
+ * names while retaining the archive traversal and hierarchy protections.
+ */
+export function buildLegacyPackageScanZip(entries: ZipEntry[]) {
+  const unsafeEntry = entries.find((entry) => !isSafeLegacyScanPath(entry.path));
+  if (unsafeEntry) {
+    throw new Error(`Package contains unsafe legacy scan path: ${unsafeEntry.path}`);
+  }
+  const hierarchyCollision = findClawPackagePathHierarchyCollision(
+    entries.map((entry) => entry.path),
+  );
+  if (hierarchyCollision) {
+    throw new Error(
+      `Package contains file/ancestor path collision: ${hierarchyCollision.ancestor} and ${hierarchyCollision.descendant}`,
+    );
+  }
+  return buildPackageZip(entries);
+}
+
+function isSafeLegacyScanPath(value: string) {
+  if (!value || value.length > 500 || value !== value.trim() || value.startsWith("/")) {
+    return false;
+  }
+  if (value.includes("\\") || value.includes("\0")) return false;
+  return value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
+function buildPackageZip(entries: ZipEntry[]) {
   const sorted = [...entries].sort((a, b) => a.path.localeCompare(b.path));
   const zipData: ZipInput = {};
 

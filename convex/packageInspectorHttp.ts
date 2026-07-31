@@ -3,7 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { json, parseJsonPayload, text } from "./httpApiV1/shared";
-import { buildDeterministicPackageZip } from "./lib/skillZip";
+import { buildLegacyPackageScanZip } from "./lib/skillZip";
 
 const internalRefs = internal as unknown as {
   packages: {
@@ -177,7 +177,7 @@ export const packageInspectorArtifactHttp = httpAction(async (ctx, request) => {
       bytes: new Uint8Array(await blob.arrayBuffer()),
     });
   }
-  const zip = buildDeterministicPackageZip(entries);
+  const zip = buildLegacyPackageScanZip(entries);
   return new Response(new Blob([zip], { type: "application/zip" }), {
     status: 200,
     headers: {
