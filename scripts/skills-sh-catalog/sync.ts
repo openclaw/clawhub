@@ -14,8 +14,9 @@ const MAX_STEPS = 2_000;
 const MAX_RATE_LIMIT_RETRIES = 30;
 const MAX_RATE_LIMIT_WAIT_MS = 30 * 60 * 1_000;
 const MAX_TRANSPORT_TIMEOUTS = 3;
+const MAX_NATIVE_TRENDING_RECONCILE_POLLS = 360;
 const ACTIVATION_RECONCILE_POLL_MS = 5_000;
-const MAX_ACTIVATION_RECONCILE_POLLS = 132;
+const MAX_ACTIVATION_RECONCILE_POLLS = 360;
 
 type MirrorRun = Record<string, unknown>;
 type SyncFetch = (input: string, init: RequestInit) => Promise<Response>;
@@ -308,6 +309,40 @@ export async function runSkillsShSync(options: {
     );
   };
 
+  const reconcileTimedOutNativePreparation = async (
+    preflightReason: string,
+  ): Promise<MirrorRun> => {
+    for (let poll = 0; poll < MAX_NATIVE_TRENDING_RECONCILE_POLLS; poll += 1) {
+      const status = await call({ operation: "status" });
+      const control = optionalRecord(status.control);
+      const lockToken = control?.activationLockToken;
+      if (typeof lockToken === "string") {
+        if (
+          !lockToken.startsWith("skills-sh-native-trending:") ||
+          control?.reason !== preflightReason
+        ) {
+          throw new Error("timed-out native Trending preflight is bound to a different lock");
+        }
+        if (poll + 1 < MAX_NATIVE_TRENDING_RECONCILE_POLLS) {
+          await sleep(ACTIVATION_RECONCILE_POLL_MS);
+          continue;
+        }
+        break;
+      }
+      const nativeTrending = optionalRecord(status.nativeTrending);
+      const sourceCounts = optionalRecord(nativeTrending?.sourceCounts);
+      if (nativeTrending?.status !== "ready" || sourceCounts?.skillsShTrending !== 0) {
+        throw new Error("native-only Trending preflight finished without a ready snapshot");
+      }
+      return {
+        ok: true,
+        nativeTrending,
+        reconciledAfterTimeout: true,
+      };
+    }
+    throw new Error("timed-out native Trending preflight did not release its exact durable lock");
+  };
+
   const startedAt = Date.now();
   const before = await call({ operation: "status" });
   const publicVisible = (before.invariants as Record<string, unknown> | undefined)?.publicVisible;
@@ -320,12 +355,18 @@ export async function runSkillsShSync(options: {
   let nativeBefore: Record<string, unknown> | null = null;
   await call({ operation: "configure", enabled: true, reason: options.reason });
   try {
-    nativeBefore = publicVisible
-      ? null
-      : await call({
+    if (!publicVisible) {
+      const preflightReason = `${options.reason} native-only preflight`;
+      try {
+        nativeBefore = await call({
           operation: "prepare-native-trending",
-          reason: `${options.reason} native-only preflight`,
+          reason: preflightReason,
         });
+      } catch (error) {
+        if (!isTransportTimeout(error)) throw error;
+        nativeBefore = await reconcileTimedOutNativePreparation(preflightReason);
+      }
+    }
     if (nativeBefore) {
       const nativeTrending = nativeBefore.nativeTrending as Record<string, unknown> | undefined;
       const sourceCounts = nativeTrending?.sourceCounts as Record<string, unknown> | undefined;

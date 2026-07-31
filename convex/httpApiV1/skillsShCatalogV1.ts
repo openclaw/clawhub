@@ -26,6 +26,9 @@ import {
 import { json, requireAdminOrResponse, requireApiTokenUserOrResponse, text } from "./shared";
 
 const internalRefs = internal as unknown as {
+  canonicalTrending: {
+    getReadyNativeSnapshotInternal: unknown;
+  };
   githubSkillSources: {
     getSkillsShAliasTargetInternal: unknown;
   };
@@ -666,11 +669,17 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       return text("Not found", 404, rate.headers);
     }
     if (operation === "mirror-status") {
-      return json(
-        await runQueryRef(ctx, internalRefs.skillsShMirror.getStatusInternal, {}),
-        200,
-        rate.headers,
-      );
+      const [status, nativeTrending] = await Promise.all([
+        runQueryRef<Record<string, unknown>>(
+          ctx,
+          internalRefs.skillsShMirror.getStatusInternal,
+          {},
+        ),
+        runQueryRef(ctx, internalRefs.canonicalTrending.getReadyNativeSnapshotInternal, {
+          now: Date.now(),
+        }),
+      ]);
+      return json({ ...status, nativeTrending }, 200, rate.headers);
     }
     if (operation === "mirror-isolation") {
       return json(

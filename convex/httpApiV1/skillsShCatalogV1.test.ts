@@ -76,6 +76,44 @@ function artifact(externalId: string, content: string) {
 }
 
 describe("skills.sh catalog Test HTTP API", () => {
+  it("includes native Trending readiness in mirror status", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "wry-manatee-359");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production");
+    vi.mocked(verifyGitHubActionsSkillsShSyncJwt).mockResolvedValue({
+      actor: "github-actions[bot]",
+      eventName: "schedule",
+      runId: "603",
+      runAttempt: "1",
+      sha: "a".repeat(40),
+    } as never);
+    const nativeTrending = {
+      status: "ready",
+      snapshotId: "skills-native-ready",
+      sourceCounts: { clawhubTrending: 10, clawhubRising: 5, skillsShTrending: 0 },
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ runs: [], control: null })
+      .mockResolvedValueOnce(nativeTrending);
+
+    const response = await skillsShCatalogTestV1Handler(
+      { runQuery } as never,
+      new Request("https://wry-manatee-359.convex.site/api/v1/operator/skills-sh/mirror", {
+        method: "POST",
+        headers: { Authorization: "Bearer github-oidc-token" },
+        body: JSON.stringify({ operation: "mirror-status" }),
+      }),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      runs: [],
+      control: null,
+      nativeTrending,
+    });
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
   it("accepts only the exact GitHub Actions production sync identity", async () => {
     const workflowSha = "a".repeat(40);
     vi.stubEnv("CLAWHUB_ENV", "production");

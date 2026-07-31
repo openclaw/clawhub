@@ -160,6 +160,171 @@ describe("skills.sh synchronization runner", () => {
     ]);
   });
 
+  it("waits for a timed-out native preflight to finish without starting it twice", async () => {
+    const operations: string[] = [];
+    const sleep = vi.fn(async () => undefined);
+    let statusCalls = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      operations.push(String(body.operation));
+      if (body.operation === "status") {
+        statusCalls += 1;
+        if (statusCalls === 1) {
+          return response({ runs: [], invariants: { publicVisible: false } });
+        }
+        if (statusCalls === 2) {
+          return response({
+            control: {
+              activationLockToken: "skills-sh-native-trending:in-flight",
+              activationLockedAt: 1_722_345_678_000,
+              reason: "scheduled proof native-only preflight",
+            },
+            nativeTrending: null,
+            runs: [],
+            invariants: { publicVisible: false },
+          });
+        }
+        if (statusCalls === 3) {
+          return response({
+            control: {},
+            nativeTrending: {
+              status: "ready",
+              snapshotId: "skills-native-after-timeout",
+              sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+            },
+            runs: [],
+            invariants: { publicVisible: false },
+          });
+        }
+        return response({ runs: [], invariants: { publicVisible: true } });
+      }
+      if (body.operation === "prepare-native-trending") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      if (body.operation === "start") return response(completedRun("leaderboard"));
+      if (body.operation === "start-trending") return response(completedRun("trending"));
+      if (body.operation === "verify-activate") {
+        return response({ ok: true, activated: true });
+      }
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled proof",
+        fetchImpl,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      nativeBefore: {
+        nativeTrending: {
+          status: "ready",
+          snapshotId: "skills-native-after-timeout",
+          sourceCounts: { skillsShTrending: 0 },
+        },
+        reconciledAfterTimeout: true,
+      },
+    });
+    expect(sleep).toHaveBeenCalledExactlyOnceWith(5_000);
+    expect(operations).toEqual([
+      "status",
+      "configure",
+      "prepare-native-trending",
+      "status",
+      "status",
+      "start",
+      "start-trending",
+      "verify-activate",
+      "configure",
+      "status",
+    ]);
+  });
+
+  it("fails closed when a timed-out native preflight releases without a ready snapshot", async () => {
+    const operations: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      operations.push(String(body.operation));
+      if (body.operation === "status") {
+        return operations.length === 1
+          ? response({ runs: [], invariants: { publicVisible: false } })
+          : response({
+              control: {},
+              nativeTrending: null,
+              runs: [],
+              invariants: { publicVisible: false },
+            });
+      }
+      if (body.operation === "prepare-native-trending") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled proof",
+        fetchImpl,
+      }),
+    ).rejects.toThrow("native-only Trending preflight finished without a ready snapshot");
+    expect(operations).toEqual([
+      "status",
+      "configure",
+      "prepare-native-trending",
+      "status",
+      "configure",
+    ]);
+  });
+
+  it("fails closed when a timed-out native preflight is replaced by another lock", async () => {
+    const operations: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      operations.push(String(body.operation));
+      if (body.operation === "status") {
+        return operations.length === 1
+          ? response({ runs: [], invariants: { publicVisible: false } })
+          : response({
+              control: {
+                activationLockToken: "skills-sh-activation:different-operation",
+                reason: "another activation",
+              },
+              nativeTrending: null,
+              runs: [],
+              invariants: { publicVisible: false },
+            });
+      }
+      if (body.operation === "prepare-native-trending") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled proof",
+        fetchImpl,
+      }),
+    ).rejects.toThrow("timed-out native Trending preflight is bound to a different lock");
+    expect(operations).toEqual([
+      "status",
+      "configure",
+      "prepare-native-trending",
+      "status",
+      "configure",
+    ]);
+  });
+
   it("resumes an interrupted durable run before starting the next source view", async () => {
     const operations: string[] = [];
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
@@ -567,7 +732,7 @@ describe("skills.sh synchronization runner", () => {
         sleep,
       }),
     ).rejects.toThrow("did not produce an exact durable activation receipt");
-    expect(sleep).toHaveBeenCalledTimes(131);
+    expect(sleep).toHaveBeenCalledTimes(359);
   });
 
   it("preserves the last verified public lane on a transient sync failure", async () => {
