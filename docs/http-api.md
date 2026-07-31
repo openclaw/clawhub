@@ -95,6 +95,26 @@ ignored for compatibility, but recognized query parameters with invalid values r
 
 ## Public endpoints (no auth)
 
+### `GET /api/v1/publishers/{publisherId}`
+
+Returns a visible publisher identity and its canonical publisher-feed URL.
+
+### `GET /api/v1/publishers/{publisherId}/feed`
+
+Returns one coherent publisher-feed revision. Use `limit` (1-100) and the
+opaque `cursor` returned as `nextCursor`; `nextCursor` is `null` on the final
+page. A cursor is bound to one immutable sequence. A stale cursor returns `409`
+and the client must restart from the first page.
+
+### `/api/v1/publisher-follows`
+
+API token required. `GET` lists the current user's followed publishers with
+optional `limit`, `cursor`, and `q`. `POST` accepts `{ "publisherId": "..." }`;
+`DELETE` accepts `publisherId` as a query parameter. Follow and unfollow are
+idempotent, users cannot follow their own personal publisher, and each user may
+follow up to 100 publishers. Follow state is private; this API does not expose
+public follower or following lists.
+
 ### `GET /api/v1/search`
 
 Query params:

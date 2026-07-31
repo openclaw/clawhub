@@ -1,4 +1,5 @@
 import { httpAction } from "./functions";
+import { publishersGetRouterV1Handler } from "./httpApiV1/accountFeedsV1";
 import {
   catalogClawsFeedV1Handler,
   catalogFeedV1Handler,
@@ -27,6 +28,11 @@ import {
   promotionsGetRouterV1Handler,
   promotionsPostRouterV1Handler,
 } from "./httpApiV1/promotionsV1";
+import {
+  publisherFollowsDeleteV1Handler,
+  publisherFollowsGetV1Handler,
+  publisherFollowsPostV1Handler,
+} from "./httpApiV1/publisherFollowsV1";
 import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
 import {
   skillsShCatalogPublicV1Handler,
@@ -72,6 +78,10 @@ export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
 export const createPublisherV1Http = httpAction(createPublisherV1Handler);
+export const publishersGetRouterV1Http = httpAction(publishersGetRouterV1Handler);
+export const publisherFollowsGetV1Http = httpAction(publisherFollowsGetV1Handler);
+export const publisherFollowsPostV1Http = httpAction(publisherFollowsPostV1Handler);
+export const publisherFollowsDeleteV1Http = httpAction(publisherFollowsDeleteV1Handler);
 export const contentRightsV1Http = httpAction(contentRightsV1Handler);
 export const skillsShCatalogTestV1Http = httpAction(skillsShCatalogTestV1Handler);
 export const skillsShCatalogPublicV1Http = httpAction(skillsShCatalogPublicV1Handler);
@@ -125,6 +135,10 @@ export const __handlers = {
   listBundlePluginsV1Handler,
   verifyDocsSessionV1Handler,
   createPublisherV1Handler,
+  publishersGetRouterV1Handler,
+  publisherFollowsGetV1Handler,
+  publisherFollowsPostV1Handler,
+  publisherFollowsDeleteV1Handler,
   contentRightsV1Handler,
   skillsShCatalogTestV1Handler,
   skillsShCatalogPublicV1Handler,
