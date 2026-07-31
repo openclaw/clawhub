@@ -126,7 +126,8 @@ export declare const CLAW_MANIFEST_VALIDATION_CODES: {
     readonly invalidAgentId: "claw_v1_invalid_agent_id";
     readonly nonCanonicalString: "claw_v1_non_canonical_string";
     readonly emptyList: "claw_v1_empty_list";
-    readonly invalidProfilePath: "claw_v1_invalid_profile_path";
+    readonly legacyProfilePointer: "claw_v1_legacy_profile_pointer";
+    readonly reservedWorkspaceTarget: "claw_v1_reserved_workspace_target";
     readonly unsafePath: "claw_v1_unsafe_path";
     readonly duplicateWorkspaceDestination: "claw_v1_duplicate_workspace_destination";
     readonly invalidAvatar: "claw_v1_invalid_avatar";

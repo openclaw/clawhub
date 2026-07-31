@@ -3,8 +3,10 @@ schemaVersion: 1
 agent:
   id: hosted-e2e
   name: Hosted E2E
-metadata:
-  openclaw.config: profiles/openclaw.yml
+workspace:
+  files:
+    - source: assets/incident.schema.json
+      path: assets/incident.schema.json
 packages: []
 mcpServers: {}
 cronJobs: []

@@ -7,12 +7,25 @@ const WINDOWS_INVALID_PATH_CHARS = /[<>:"|?*]/;
 const WINDOWS_RESERVED_PATH_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 const UNICODE_CONTROL_CHARACTER = /\p{Cc}/u;
 const MAX_CLAW_MANIFEST_BYTES = 1024 * 1024;
-const MAX_OPENCLAW_PROFILE_BYTES = 256 * 1024;
+const MAX_PACKAGE_BOOTSTRAP_BYTES = 2 * 1024 * 1024;
+const MAX_HARNESS_PROFILE_BYTES = 256 * 1024;
+const HARNESS_PROFILE_PATH_PATTERN = /^profiles\/[a-z][a-z0-9_-]{0,63}\.yml$/;
+const AGENT_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
+const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 const StrictStringArraySchema = type("string[]");
+const OpenClawExtensionSchema = type({
+    "+": "reject",
+    id: "string",
+    kind: '"plugin"',
+    format: '"openclaw"|"claude"|"codex"|"cursor"',
+    source: '"clawhub"',
+    ref: "string",
+    version: "string",
+});
 const OpenClawProfileSchema = type({
     "+": "reject",
     schemaVersion: "1",
-    agent: {
+    agent: type({
         "+": "reject",
         groupChat: type({
             "+": "reject",
@@ -63,10 +76,22 @@ const OpenClawProfileSchema = type({
             minMs: "number?",
             maxMs: "number?",
         }).optional(),
-    },
+    }).optional(),
+    extensions: OpenClawExtensionSchema.array().optional(),
 });
 function isRecord(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function isJsonCompatibleValue(value) {
+    if (value === null || typeof value === "string" || typeof value === "boolean")
+        return true;
+    if (typeof value === "number")
+        return Number.isFinite(value);
+    if (Array.isArray(value))
+        return value.every(isJsonCompatibleValue);
+    if (isRecord(value))
+        return Object.values(value).every(isJsonCompatibleValue);
+    return false;
 }
 export function isSafeClawPackagePath(value) {
     const normalized = value.replaceAll("\\", "/");
@@ -157,6 +182,26 @@ function parseJsonCompatibleYaml(raw, path) {
         };
     }
 }
+function parseGenericHarnessProfile(raw, path) {
+    const parsed = parseJsonCompatibleYaml(raw, path);
+    if (parsed.issues) {
+        return {
+            issues: parsed.issues.map((entry) => ({
+                ...entry,
+                code: entry.code.replace("openclaw", "harness"),
+                message: entry.message.replaceAll("OpenClaw profile", "Harness profile"),
+            })),
+        };
+    }
+    if (!isRecord(parsed.value) || !isJsonCompatibleValue(parsed.value)) {
+        return {
+            issues: [
+                issue("invalid_harness_profile", path, "Harness profiles must be JSON-compatible YAML mappings."),
+            ],
+        };
+    }
+    return parsed;
+}
 function isStrictNonEmpty(value) {
     return value.length > 0 && value === value.trim();
 }
@@ -201,24 +246,25 @@ function validateOpenClawProfile(value, profilePath) {
             }
         }
     };
-    requireNonEmpty("agent.groupChat.mentionPatterns", parsed.agent.groupChat?.mentionPatterns);
-    if (parsed.agent.tools?.profile !== undefined && !isStrictNonEmpty(parsed.agent.tools.profile)) {
+    requireNonEmpty("agent.groupChat.mentionPatterns", parsed.agent?.groupChat?.mentionPatterns);
+    if (parsed.agent?.tools?.profile !== undefined &&
+        !isStrictNonEmpty(parsed.agent?.tools.profile)) {
         add("agent.tools.profile", "Must be non-empty without leading or trailing whitespace.");
     }
-    requireNonEmpty("agent.tools.allow", parsed.agent.tools?.allow);
-    requireNonEmpty("agent.tools.alsoAllow", parsed.agent.tools?.alsoAllow);
-    requireNonEmpty("agent.tools.deny", parsed.agent.tools?.deny);
-    if (parsed.agent.tools?.allow && parsed.agent.tools.alsoAllow) {
+    requireNonEmpty("agent.tools.allow", parsed.agent?.tools?.allow);
+    requireNonEmpty("agent.tools.alsoAllow", parsed.agent?.tools?.alsoAllow);
+    requireNonEmpty("agent.tools.deny", parsed.agent?.tools?.deny);
+    if (parsed.agent?.tools?.allow && parsed.agent?.tools.alsoAllow) {
         add("agent.tools.alsoAllow", "Must not be combined with tools.allow.");
     }
-    if (parsed.agent.memory?.search?.sources?.length === 0) {
+    if (parsed.agent?.memory?.search?.sources?.length === 0) {
         add("agent.memory.search.sources", "Must contain at least one source.");
     }
-    if (parsed.agent.memory?.search?.sources?.includes("sessions") &&
-        parsed.agent.memory.search.rememberAcrossConversations !== true) {
+    if (parsed.agent?.memory?.search?.sources?.includes("sessions") &&
+        parsed.agent?.memory.search.rememberAcrossConversations !== true) {
         add("agent.memory.search.rememberAcrossConversations", "Must be true when memory.search.sources includes sessions.");
     }
-    const heartbeat = parsed.agent.heartbeat;
+    const heartbeat = parsed.agent?.heartbeat;
     if (heartbeat?.every !== undefined && !isValidDuration(heartbeat.every)) {
         add("agent.heartbeat.every", "Must be a valid duration.");
     }
@@ -243,10 +289,32 @@ function validateOpenClawProfile(value, profilePath) {
         add("agent.heartbeat.timeoutSeconds", "Must be a positive integer.");
     }
     for (const field of ["minMs", "maxMs"]) {
-        const delay = parsed.agent.humanDelay?.[field];
+        const delay = parsed.agent?.humanDelay?.[field];
         if (delay !== undefined && (!Number.isInteger(delay) || delay < 0)) {
             add(`agent.humanDelay.${field}`, "Must be a nonnegative integer.");
         }
+    }
+    const extensionIds = new Set();
+    const extensionRefs = new Set();
+    for (const [index, extension] of (parsed.extensions ?? []).entries()) {
+        const path = `extensions.${index}`;
+        if (!AGENT_ID_PATTERN.test(extension.id)) {
+            add(`${path}.id`, "Must use the portable agent-id syntax.");
+        }
+        if (!PACKAGE_NAME_PATTERN.test(extension.ref)) {
+            add(`${path}.ref`, "Must use a canonical lowercase ClawHub package name.");
+        }
+        if (!EXACT_VERSION_PATTERN.test(extension.version)) {
+            add(`${path}.version`, "Must use an exact semantic version.");
+        }
+        if (extensionIds.has(extension.id)) {
+            add(`${path}.id`, "Extension ids must be unique.");
+        }
+        if (extensionRefs.has(extension.ref.toLowerCase())) {
+            add(`${path}.ref`, "Extension package references must be unique.");
+        }
+        extensionIds.add(extension.id);
+        extensionRefs.add(extension.ref.toLowerCase());
     }
     return issues;
 }
@@ -401,23 +469,46 @@ export function validateClawPackageContents(input) {
     if (hasClawMarkdownBody && hasImplicitSoulConflict) {
         issues.push(issue("claw_body_soul_conflict", "$.workspace", "CLAW.md body content and an explicit SOUL.md workspace declaration cannot both be present."));
     }
-    const openClawProfilePath = validated.manifest.metadata?.["openclaw.config"];
-    if (openClawProfilePath !== undefined) {
-        const profileFile = fileByPath.get(openClawProfilePath);
-        if (!profileFile || profileFile.text === undefined) {
-            issues.push(issue("missing_openclaw_profile", openClawProfilePath, "The declared OpenClaw profile is missing or is not UTF-8 text."));
+    const packageBootstrap = fileByPath.get("BOOTSTRAP.md");
+    if (packageBootstrap) {
+        if (packageBootstrap.text === undefined) {
+            issues.push(issue("package_bootstrap_invalid", "BOOTSTRAP.md", "Package-root BOOTSTRAP.md must be UTF-8 text."));
         }
-        else if (new TextEncoder().encode(profileFile.text).byteLength > MAX_OPENCLAW_PROFILE_BYTES) {
-            issues.push(issue("openclaw_profile_too_large", openClawProfilePath, `The OpenClaw profile exceeds ${MAX_OPENCLAW_PROFILE_BYTES} bytes.`));
+        else if (new TextEncoder().encode(packageBootstrap.text).byteLength > MAX_PACKAGE_BOOTSTRAP_BYTES) {
+            issues.push(issue("package_bootstrap_too_large", "BOOTSTRAP.md", `Package-root BOOTSTRAP.md exceeds ${MAX_PACKAGE_BOOTSTRAP_BYTES} bytes.`));
+        }
+        else if (packageBootstrap.text.trim().length === 0) {
+            issues.push(issue("package_bootstrap_empty", "BOOTSTRAP.md", "Package-root BOOTSTRAP.md must contain first-run instructions."));
+        }
+    }
+    const profileFiles = [...fileByPath.values()].filter((file) => portablePathKey(file.path).startsWith("profiles/") && /\.ya?ml$/i.test(file.path));
+    for (const profileFile of profileFiles) {
+        if (!HARNESS_PROFILE_PATH_PATTERN.test(profileFile.path)) {
+            issues.push(issue("invalid_harness_profile_path", profileFile.path, "Harness profiles must use profiles/<lowercase-harness-id>.yml conventional paths."));
+            continue;
+        }
+        if (profileFile.text === undefined) {
+            issues.push(issue("invalid_harness_profile", profileFile.path, "Harness profiles must be UTF-8 text."));
+            continue;
+        }
+        if (new TextEncoder().encode(profileFile.text).byteLength > MAX_HARNESS_PROFILE_BYTES) {
+            const isOpenClawProfile = profileFile.path === "profiles/openclaw.yml";
+            issues.push(issue(isOpenClawProfile ? "openclaw_profile_too_large" : "harness_profile_too_large", profileFile.path, isOpenClawProfile
+                ? `OpenClaw profiles may not exceed ${MAX_HARNESS_PROFILE_BYTES} bytes.`
+                : `Harness profiles may not exceed ${MAX_HARNESS_PROFILE_BYTES} bytes.`));
+            continue;
+        }
+        if (profileFile.path === "profiles/openclaw.yml") {
+            const profile = parseJsonCompatibleYaml(profileFile.text, profileFile.path);
+            if (profile.issues)
+                issues.push(...profile.issues);
+            else
+                issues.push(...validateOpenClawProfile(profile.value, profileFile.path));
         }
         else {
-            const profile = parseJsonCompatibleYaml(profileFile.text, openClawProfilePath);
-            if (profile.issues) {
+            const profile = parseGenericHarnessProfile(profileFile.text, profileFile.path);
+            if (profile.issues)
                 issues.push(...profile.issues);
-            }
-            else {
-                issues.push(...validateOpenClawProfile(profile.value, openClawProfilePath));
-            }
         }
     }
     const sources = [

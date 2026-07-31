@@ -9942,9 +9942,11 @@ describe("packages public queries", () => {
       ],
       [
         "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\nmetadata:\n  openclaw.config: profiles/openclaw.yml\n---\nRun the demo workflow precisely.\n`,
+        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
+      ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
+      ["storage:bootstrap", "Ask which repositories the user owns.\n"],
     ]);
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if (args.minimumRole === "publisher") {
@@ -10009,6 +10011,18 @@ describe("packages public queries", () => {
                 size: 1,
                 storageId: "storage:profile",
                 sha256: "profile",
+              },
+              {
+                path: "profiles/codex.yml",
+                size: 1,
+                storageId: "storage:codex-profile",
+                sha256: "codex-profile",
+              },
+              {
+                path: "BOOTSTRAP.md",
+                size: 1,
+                storageId: "storage:bootstrap",
+                sha256: "bootstrap",
               },
             ],
           },
