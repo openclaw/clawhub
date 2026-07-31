@@ -232,6 +232,24 @@ export const RETENTION_POLICIES = {
       retention: "Forty-eight hours after snapshot generation.",
     },
   ),
+  canonicalTrendingNativePools: ephemeral(
+    "Verified bounded native Trending candidate-pool headers expire with their source window.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "canonicalTrending.pruneExpiredActionInternal",
+      retention: "Forty-eight hours after candidate-pool generation.",
+    },
+  ),
+  canonicalTrendingNativePoolItems: ephemeral(
+    "Verified bounded native Trending candidates expire with their pool header.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "canonicalTrending.pruneExpiredActionInternal",
+      retention: "Forty-eight hours after candidate-pool generation.",
+    },
+  ),
   skillStatEvents: ephemeral(
     "Skill stat event log is retained only after both consumers pass it.",
     {

@@ -2722,6 +2722,7 @@ const canonicalTrendingSnapshots = defineTable({
   windowEndDay: v.number(),
   windowStartHour: v.optional(v.number()),
   windowEndHour: v.optional(v.number()),
+  nativePoolId: v.optional(v.string()),
   writtenItems: v.number(),
   totalItems: v.optional(v.number()),
   sourceCounts: v.optional(
@@ -2757,6 +2758,55 @@ const canonicalTrendingItems = defineTable({
   expiresAt: v.number(),
 })
   .index("by_snapshot_id_and_position", ["snapshotId", "position"])
+  .index("by_expires_at", ["expiresAt"]);
+
+const canonicalTrendingNativePools = defineTable({
+  poolId: v.string(),
+  status: v.union(v.literal("building"), v.literal("ready"), v.literal("failed")),
+  rankingVersion: v.string(),
+  generatedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  expiresAt: v.number(),
+  windowStartHour: v.number(),
+  windowEndHour: v.number(),
+  sealedGeneration: v.number(),
+  writtenTrendingItems: v.number(),
+  writtenRisingItems: v.number(),
+  sourceCounts: v.optional(
+    v.object({
+      clawhubTrending: v.number(),
+      clawhubRising: v.number(),
+    }),
+  ),
+  operations: v.optional(
+    v.object({
+      documentsRead: v.number(),
+      documentsWritten: v.number(),
+      functionCalls: v.number(),
+    }),
+  ),
+  error: v.optional(v.string()),
+})
+  .index("by_pool_id", ["poolId"])
+  .index("by_status_and_generated_at", ["status", "generatedAt"])
+  .index("by_expires_at", ["expiresAt"]);
+
+const canonicalTrendingNativePoolItems = defineTable({
+  poolId: v.string(),
+  lane: v.union(v.literal("clawhub-trending"), v.literal("clawhub-rising")),
+  position: v.number(),
+  identity: v.string(),
+  publisherKey: v.string(),
+  installs24h: v.number(),
+  bookmarks24h: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  upstreamRank: v.union(v.number(), v.null()),
+  sourceRef: canonicalTrendingSourceRefValidator,
+  card: canonicalTrendingCardValidator,
+  expiresAt: v.number(),
+})
+  .index("by_pool_id_and_lane_and_position", ["poolId", "lane", "position"])
   .index("by_expires_at", ["expiresAt"]);
 
 const skillStatEvents = defineTable({
@@ -4263,6 +4313,8 @@ export default defineSchema({
   rankingMetricImports,
   canonicalTrendingSnapshots,
   canonicalTrendingItems,
+  canonicalTrendingNativePools,
+  canonicalTrendingNativePoolItems,
   skillStatEvents,
   skillStatUpdateCursors,
   skillStatDocSyncLeases,

@@ -52,6 +52,10 @@ function nativeTrendingPreparation() {
       status: "ready",
       snapshotId: "skills-native-before-import",
       sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+      nativePool: {
+        poolId: "skills-native-before-import",
+        sourceCounts: { clawhubTrending: 1, clawhubRising: 1 },
+      },
     },
   });
 }
@@ -191,6 +195,10 @@ describe("skills.sh synchronization runner", () => {
               status: "ready",
               snapshotId: "skills-native-after-timeout",
               sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+              nativePool: {
+                poolId: "skills-native-after-timeout",
+                sourceCounts: { clawhubTrending: 1, clawhubRising: 1 },
+              },
             },
             runs: [],
             invariants: { publicVisible: false },
@@ -242,6 +250,44 @@ describe("skills.sh synchronization runner", () => {
       "configure",
       "status",
     ]);
+  });
+
+  it("fails closed when timed-out native readiness has a mismatched candidate pool", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      if (body.operation === "status") {
+        return fetchImpl.mock.calls.length === 1
+          ? response({ runs: [], invariants: { publicVisible: false } })
+          : response({
+              control: {},
+              nativeTrending: {
+                status: "ready",
+                snapshotId: "skills-native-after-timeout",
+                sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+                nativePool: {
+                  poolId: "skills-different-native-pool",
+                  sourceCounts: { clawhubTrending: 1, clawhubRising: 1 },
+                },
+              },
+              runs: [],
+              invariants: { publicVisible: false },
+            });
+      }
+      if (body.operation === "prepare-native-trending") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled proof",
+        fetchImpl,
+      }),
+    ).rejects.toThrow("native-only Trending snapshot and candidate pool do not match");
   });
 
   it("fails closed when a timed-out native preflight releases without a ready snapshot", async () => {

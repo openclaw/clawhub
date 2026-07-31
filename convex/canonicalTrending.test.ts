@@ -104,6 +104,47 @@ async function insertEligibleNativeSource(t: ReturnType<typeof convexTest>, slug
   });
 }
 
+async function insertReadyNativePool(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    poolId: string;
+    skillId: Awaited<ReturnType<typeof insertEligibleNativeSource>>["skillId"];
+    now: number;
+  },
+) {
+  await t.mutation(internal.canonicalTrending.startNativePoolInternal, {
+    poolId: input.poolId,
+    generatedAt: input.now - 1_000,
+    expiresAt: input.now + 24 * 60 * 60 * 1_000,
+    windowStartHour: 100,
+    windowEndHour: 123,
+    sealedGeneration: 7,
+  });
+  await t.mutation(internal.canonicalTrending.writeNativePoolItemsInternal, {
+    poolId: input.poolId,
+    lane: "clawhub-trending",
+    items: [
+      {
+        identity: `clawhub:${input.poolId}`,
+        publisherKey: "user:patrick",
+        installs24h: 8,
+        bookmarks24h: 1,
+        createdAt: input.now - 10_000,
+        updatedAt: input.now - 1_000,
+        upstreamRank: null,
+        sourceRef: { kind: "clawhub", skillId: input.skillId },
+        card: nativeCard(`clawhub:${input.poolId}`, 8),
+      },
+    ],
+  });
+  await t.mutation(internal.canonicalTrending.finalizeNativePoolInternal, {
+    poolId: input.poolId,
+    completedAt: input.now - 500,
+    sourceCounts: { clawhubTrending: 1, clawhubRising: 0 },
+    operations: { documentsRead: 10, documentsWritten: 4, functionCalls: 3 },
+  });
+}
+
 describe("canonical Trending snapshot storage", () => {
   it("selects the newest completed Trending run even when no digest references it", async () => {
     const t = convexTest(schema, modules);
@@ -557,12 +598,19 @@ describe("canonical Trending snapshot storage", () => {
     const t = convexTest(schema, modules);
     const now = Date.now();
     const source = await insertEligibleNativeSource(t, "native-preflight-ready");
+    await insertReadyNativePool(t, {
+      poolId: "skills-native-preflight-ready",
+      skillId: source.skillId,
+      now,
+    });
     await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
       snapshotId: "skills-native-preflight-ready",
       generatedAt: now - 1_000,
       expiresAt: now + 24 * 60 * 60 * 1_000,
       windowStartDay: 40,
       windowEndDay: 40,
+      windowStartHour: 100,
+      windowEndHour: 123,
     });
     await t.mutation(internal.canonicalTrending.writeItemsInternal, {
       snapshotId: "skills-native-preflight-ready",
@@ -587,6 +635,7 @@ describe("canonical Trending snapshot storage", () => {
       totalItems: 1,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+      nativePoolId: "skills-native-preflight-ready",
     });
 
     await expect(
@@ -600,8 +649,103 @@ describe("canonical Trending snapshot storage", () => {
       totalItems: 1,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+      nativePool: {
+        poolId: "skills-native-preflight-ready",
+        sourceCounts: { clawhubTrending: 1, clawhubRising: 0 },
+        operations: { documentsRead: 10, documentsWritten: 4, functionCalls: 3 },
+      },
       reused: true,
     });
+  });
+
+  it("does not expose an orphan native pool as ready for mixed activation", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const source = await insertEligibleNativeSource(t, "orphan-native-pool");
+    await insertReadyNativePool(t, {
+      poolId: "skills-orphan-native-pool",
+      skillId: source.skillId,
+      now,
+    });
+
+    await expect(
+      t.query(internal.canonicalTrending.getReadyNativePoolInternal, { now }),
+    ).resolves.toBeNull();
+  });
+
+  it("reuses an older verified native pool when a newer orphan exists", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const source = await insertEligibleNativeSource(t, "verified-before-orphan");
+    await insertReadyNativePool(t, {
+      poolId: "skills-verified-before-orphan",
+      skillId: source.skillId,
+      now,
+    });
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-verified-before-orphan",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+      windowStartHour: 100,
+      windowEndHour: 123,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-verified-before-orphan",
+      completedAt: now - 500,
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+      nativePoolId: "skills-verified-before-orphan",
+    });
+    await insertReadyNativePool(t, {
+      poolId: "skills-newer-orphan",
+      skillId: source.skillId,
+      now: now + 500,
+    });
+
+    await expect(
+      t.query(internal.canonicalTrending.getReadyNativePoolInternal, { now }),
+    ).resolves.toMatchObject({ poolId: "skills-verified-before-orphan" });
+  });
+
+  it("keeps a native snapshot ready but marks a mismatched pool unusable", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const source = await insertEligibleNativeSource(t, "mismatched-native-pool");
+    await insertReadyNativePool(t, {
+      poolId: "skills-mismatched-native-pool",
+      skillId: source.skillId,
+      now,
+    });
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-mismatched-native-pool",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+      windowStartHour: 100,
+      windowEndHour: 123,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-mismatched-native-pool",
+      completedAt: now - 500,
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 0, clawhubRising: 0, skillsShTrending: 0 },
+      operations: { documentsRead: 1, documentsWritten: 2, functionCalls: 2 },
+      nativePoolId: "skills-mismatched-native-pool",
+    });
+
+    await expect(
+      t.query(internal.canonicalTrending.getReadyNativeSnapshotInternal, { now }),
+    ).resolves.toMatchObject({
+      snapshotId: "skills-mismatched-native-pool",
+      nativePool: null,
+    });
+    await expect(
+      t.query(internal.canonicalTrending.getReadyNativePoolInternal, { now }),
+    ).resolves.toBeNull();
   });
 
   it("does not reuse a native-only snapshot from the pre-download ranking version", async () => {
@@ -701,20 +845,47 @@ describe("canonical Trending snapshot storage", () => {
         },
       ],
     });
+    await t.mutation(internal.canonicalTrending.startNativePoolInternal, {
+      poolId: "skills-expired-cleanup",
+      generatedAt: 1_000,
+      expiresAt: Date.now() - 1,
+      windowStartHour: 100,
+      windowEndHour: 123,
+      sealedGeneration: 1,
+    });
+    await t.mutation(internal.canonicalTrending.writeNativePoolItemsInternal, {
+      poolId: "skills-expired-cleanup",
+      lane: "clawhub-trending",
+      items: [
+        {
+          identity: "clawhub:old",
+          publisherKey: "user:patrick",
+          installs24h: 1,
+          bookmarks24h: 0,
+          createdAt: 1_000,
+          updatedAt: 1_000,
+          upstreamRank: null,
+          sourceRef: { kind: "clawhub", skillId: source.skillId },
+          card: nativeCard("clawhub:old", 1),
+        },
+      ],
+    });
 
     const result = await t.action(internal.canonicalTrending.pruneExpiredActionInternal, {});
     const rows = await t.run(async (ctx) => ({
       snapshots: await ctx.db.query("canonicalTrendingSnapshots").collect(),
       items: await ctx.db.query("canonicalTrendingItems").collect(),
+      nativePools: await ctx.db.query("canonicalTrendingNativePools").collect(),
+      nativePoolItems: await ctx.db.query("canonicalTrendingNativePoolItems").collect(),
     }));
 
     expect(result).toEqual({
-      itemsDeleted: 1,
-      snapshotsDeleted: 1,
+      itemsDeleted: 2,
+      snapshotsDeleted: 2,
       batches: 1,
       continuationScheduled: false,
     });
-    expect(rows).toEqual({ snapshots: [], items: [] });
+    expect(rows).toEqual({ snapshots: [], items: [], nativePools: [], nativePoolItems: [] });
   });
 
   it("materializes hourly native metrics with verified skills.sh rows under the activation lock", async () => {
@@ -910,6 +1081,16 @@ describe("canonical Trending snapshot storage", () => {
       });
     });
 
+    const nativePreflight = await t.action(internal.canonicalTrending.materializeInternal, {
+      activationLockToken: "activation-lock",
+    });
+    expect(nativePreflight).toMatchObject({
+      status: "ready",
+      totalItems: 1,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+      nativePool: { reused: false },
+    });
+
     const result = await t.action(internal.canonicalTrending.materializeInternal, {
       activationLockToken: "activation-lock",
     });
@@ -917,6 +1098,7 @@ describe("canonical Trending snapshot storage", () => {
       status: "ready",
       totalItems: 2,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 1 },
+      nativePool: { poolId: nativePreflight.snapshotId, reused: true },
       sample: [
         {
           rank: 1,
@@ -1033,12 +1215,56 @@ describe("canonical Trending snapshot storage", () => {
       status: "ready",
       totalItems: 1,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+      nativePool: {
+        reused: false,
+        sourceCounts: { clawhubTrending: 1, clawhubRising: 1 },
+        operations: { documentsWritten: 6 },
+      },
     });
     await expect(
       t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
     ).resolves.toMatchObject({
       status: "ok",
       page: { items: [{ source: "clawhub" }] },
+    });
+
+    await t.run(async (ctx) => {
+      const hourlyRows = await ctx.db.query("skillHourlyStats").collect();
+      for (const row of hourlyRows) await ctx.db.delete(row._id);
+      const mirrorControl = await ctx.db
+        .query("skillsShMirrorControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique();
+      if (!mirrorControl) throw new Error("mirror control missing");
+      await ctx.db.patch(mirrorControl._id, {
+        activationLockToken: "mixed-pool-lock",
+        activationLockedAt: Date.now(),
+      });
+    });
+
+    const mixedFromPool = await t.action(internal.canonicalTrending.materializeInternal, {
+      activationLockToken: "mixed-pool-lock",
+    });
+    expect(mixedFromPool).toMatchObject({
+      status: "ready",
+      totalItems: 2,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 1 },
+      nativePool: {
+        reused: true,
+        poolId: nativeOnly.snapshotId,
+        sourceCounts: { clawhubTrending: 1, clawhubRising: 1 },
+      },
+      sample: [
+        expect.objectContaining({
+          lane: "clawhub-trending",
+          trending24hDownloads: 18,
+          trending24hInstalls: 12,
+        }),
+        expect.objectContaining({
+          lane: "skills-sh-trending",
+          id: "skills-sh:patrick/repo/external",
+        }),
+      ],
     });
   });
 });

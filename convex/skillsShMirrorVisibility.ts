@@ -510,11 +510,16 @@ async function materializeNativeTrending(
     status: "ready";
     snapshotId: string;
     sourceCounts: { clawhubTrending: number; clawhubRising: number; skillsShTrending: 0 };
+    nativePool: {
+      poolId: string;
+      sourceCounts: { clawhubTrending: number; clawhubRising: number };
+      operations: { documentsRead: number; documentsWritten: number; functionCalls: number };
+    } | null;
     reused: true;
   } | null;
   // Native-only data is independent of skills.sh run chronology. The activation path
   // always materializes its mixed snapshot after verifying the exact imported runs.
-  if (reusable) return reusable;
+  if (reusable?.nativePool) return reusable;
   const nativeTrending = (await ctx.runAction(
     internalRefs.canonicalTrending.materializeInternal as never,
     { activationLockToken: lockToken, skillsShMode: "native-only" } as never,
@@ -709,6 +714,7 @@ export const finalizeActivationInternal = internalMutation({
     leaderboardRunId: v.id("skillsShMirrorRuns"),
     trendingRunId: v.id("skillsShMirrorRuns"),
     snapshotId: v.string(),
+    nativePoolId: v.string(),
     expectedSkillsShTrending: v.number(),
   },
   handler: async (ctx, args) => {
@@ -742,18 +748,38 @@ export const finalizeActivationInternal = internalMutation({
       )
       .order("desc")
       .first();
+    const now = Date.now();
     if (
       !snapshot ||
       snapshot.status !== "ready" ||
       snapshot.snapshotId !== latestReady?.snapshotId ||
+      snapshot.nativePoolId !== args.nativePoolId ||
       snapshot.sourceCounts?.skillsShTrending !== args.expectedSkillsShTrending
     ) {
       throw new Error("verified skills.sh Trending snapshot is not the current ready snapshot");
     }
+    const nativePool = await ctx.db
+      .query("canonicalTrendingNativePools")
+      .withIndex("by_pool_id", (q) => q.eq("poolId", args.nativePoolId))
+      .unique();
+    if (
+      !nativePool ||
+      nativePool.status !== "ready" ||
+      nativePool.completedAt === undefined ||
+      nativePool.expiresAt <= now ||
+      !nativePool.sourceCounts ||
+      !nativePool.operations ||
+      nativePool.rankingVersion !== snapshot.rankingVersion ||
+      nativePool.sourceCounts.clawhubTrending !== nativePool.writtenTrendingItems ||
+      nativePool.sourceCounts.clawhubRising !== nativePool.writtenRisingItems ||
+      nativePool.sourceCounts.clawhubTrending !== snapshot.sourceCounts?.clawhubTrending ||
+      nativePool.sourceCounts.clawhubRising !== snapshot.sourceCounts.clawhubRising
+    ) {
+      throw new Error("verified skills.sh Trending native candidate pool is not ready");
+    }
     const actor = args.actor.trim();
     const reason = args.reason.trim();
     if (!actor || !reason) throw new Error("skills.sh public gate actor and reason are required");
-    const now = Date.now();
     await writePublicGate(ctx, { enabled: true, actor, reason, now });
     await ctx.db.patch("skillsShMirrorRuns", args.leaderboardRunId, {
       activatedTrendingRunId: args.trendingRunId,
@@ -967,14 +993,25 @@ export const verifyAndActivateInternal = internalAction({
         internalRefs.canonicalTrending.materializeInternal as never,
         { activationLockToken: lockToken } as never,
       )) as {
-        status: "ready";
-        snapshotId: string;
-        sourceCounts: { skillsShTrending: number };
+        status: "ready" | "unavailable";
+        snapshotId?: string;
+        sourceCounts?: { skillsShTrending: number };
+        nativePool?: { poolId: string; reused: boolean };
       };
       if (
         trendingSnapshot.status !== "ready" ||
+        !trendingSnapshot.nativePool ||
+        !trendingSnapshot.sourceCounts ||
+        !trendingSnapshot.snapshotId
+      ) {
+        throw new Error("skills.sh Trending activation snapshot failed source verification");
+      }
+      if (trendingSnapshot.nativePool.reused !== true) {
+        throw new Error("skills.sh activation must reuse the verified native candidate pool");
+      }
+      if (
         trendingSnapshot.sourceCounts.skillsShTrending !==
-          corpusAudit.counts.activationRunTrendingEligible
+        corpusAudit.counts.activationRunTrendingEligible
       ) {
         throw new Error("skills.sh Trending activation snapshot failed source verification");
       }
@@ -986,6 +1023,7 @@ export const verifyAndActivateInternal = internalAction({
           leaderboardRunId: leaderboardRun._id,
           trendingRunId: trendingRun._id,
           snapshotId: trendingSnapshot.snapshotId,
+          nativePoolId: trendingSnapshot.nativePool.poolId,
           expectedSkillsShTrending: trendingSnapshot.sourceCounts.skillsShTrending,
         } as never,
       )) as {

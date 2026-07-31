@@ -86,6 +86,7 @@ import type * as lib_githubIdentity from "../lib/githubIdentity.js";
 import type * as lib_githubImport from "../lib/githubImport.js";
 import type * as lib_githubOrgMemberships from "../lib/githubOrgMemberships.js";
 import type * as lib_githubProfileSync from "../lib/githubProfileSync.js";
+import type * as lib_githubRepositoryDispatch from "../lib/githubRepositoryDispatch.js";
 import type * as lib_githubSkillScans from "../lib/githubSkillScans.js";
 import type * as lib_githubSkillSync from "../lib/githubSkillSync.js";
 import type * as lib_globalStats from "../lib/globalStats.js";
@@ -294,6 +295,7 @@ declare const fullApi: ApiFromModules<{
   "lib/githubImport": typeof lib_githubImport;
   "lib/githubOrgMemberships": typeof lib_githubOrgMemberships;
   "lib/githubProfileSync": typeof lib_githubProfileSync;
+  "lib/githubRepositoryDispatch": typeof lib_githubRepositoryDispatch;
   "lib/githubSkillScans": typeof lib_githubSkillScans;
   "lib/githubSkillSync": typeof lib_githubSkillSync;
   "lib/globalStats": typeof lib_globalStats;

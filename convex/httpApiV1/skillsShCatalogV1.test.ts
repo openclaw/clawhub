@@ -91,6 +91,11 @@ describe("skills.sh catalog Test HTTP API", () => {
       status: "ready",
       snapshotId: "skills-native-ready",
       sourceCounts: { clawhubTrending: 10, clawhubRising: 5, skillsShTrending: 0 },
+      nativePool: {
+        poolId: "skills-native-ready",
+        sourceCounts: { clawhubTrending: 10, clawhubRising: 5 },
+        operations: { documentsRead: 100, documentsWritten: 20, functionCalls: 5 },
+      },
     };
     const runQuery = vi
       .fn()

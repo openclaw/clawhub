@@ -54,6 +54,32 @@ function optionalRecord(value: unknown) {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
+function assertReadyNativeTrending(value: unknown, unavailableMessage: string) {
+  const nativeTrending = optionalRecord(value);
+  const sourceCounts = optionalRecord(nativeTrending?.sourceCounts);
+  const snapshotId = nativeTrending?.snapshotId;
+  if (
+    nativeTrending?.status !== "ready" ||
+    typeof snapshotId !== "string" ||
+    !snapshotId ||
+    sourceCounts?.skillsShTrending !== 0
+  ) {
+    throw new Error(unavailableMessage);
+  }
+  const nativePool = optionalRecord(nativeTrending.nativePool);
+  if (nativePool?.poolId !== snapshotId) {
+    throw new Error("native-only Trending snapshot and candidate pool do not match");
+  }
+  const poolSourceCounts = optionalRecord(nativePool.sourceCounts);
+  if (
+    poolSourceCounts?.clawhubTrending !== sourceCounts.clawhubTrending ||
+    poolSourceCounts?.clawhubRising !== sourceCounts.clawhubRising
+  ) {
+    throw new Error("native-only Trending snapshot and candidate pool counts do not match");
+  }
+  return nativeTrending;
+}
+
 function jwtExpiresAt(jwt: string) {
   const payload = jwt.split(".")[1];
   if (!payload) throw new Error("GitHub OIDC returned a malformed token");
@@ -329,11 +355,10 @@ export async function runSkillsShSync(options: {
         }
         break;
       }
-      const nativeTrending = optionalRecord(status.nativeTrending);
-      const sourceCounts = optionalRecord(nativeTrending?.sourceCounts);
-      if (nativeTrending?.status !== "ready" || sourceCounts?.skillsShTrending !== 0) {
-        throw new Error("native-only Trending preflight finished without a ready snapshot");
-      }
+      const nativeTrending = assertReadyNativeTrending(
+        status.nativeTrending,
+        "native-only Trending preflight finished without a ready snapshot",
+      );
       return {
         ok: true,
         nativeTrending,
@@ -368,11 +393,10 @@ export async function runSkillsShSync(options: {
       }
     }
     if (nativeBefore) {
-      const nativeTrending = nativeBefore.nativeTrending as Record<string, unknown> | undefined;
-      const sourceCounts = nativeTrending?.sourceCounts as Record<string, unknown> | undefined;
-      if (nativeTrending?.status !== "ready" || sourceCounts?.skillsShTrending !== 0) {
-        throw new Error("native-only canonical Trending preflight did not become ready");
-      }
+      assertReadyNativeTrending(
+        nativeBefore.nativeTrending,
+        "native-only canonical Trending preflight did not become ready",
+      );
     }
     const recoveredSourceView = recoverable?.sourceView ?? "leaderboard";
     const recovered = recoverable ? await completeRun(recoverable, recoveredSourceView) : null;

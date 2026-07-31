@@ -182,7 +182,7 @@ describe("skills.sh mirror visibility operations", () => {
     const t = convexTest(schema, modules);
     const now = Date.now();
     const window = getCompletedRolling24HourWindow(now);
-    await t.run(async (ctx) => {
+    const { nativeSkillId } = await t.run(async (ctx) => {
       const leaderboardRunId = await ctx.db.insert("skillsShMirrorRuns", {
         snapshotId: "skills-sh:leaderboard:verified",
         sourceView: "leaderboard",
@@ -353,7 +353,7 @@ describe("skills.sh mirror visibility operations", () => {
         createdAt: now - 10_000,
         updatedAt: now,
       });
-      const nativeSkillId = await ctx.db.insert("skills", {
+      const createdNativeSkillId = await ctx.db.insert("skills", {
         slug: "native-ready",
         displayName: "Native ready",
         summary: "Native canonical Trending fixture",
@@ -365,7 +365,7 @@ describe("skills.sh mirror visibility operations", () => {
         updatedAt: now,
       });
       const nativeVersionId = await ctx.db.insert("skillVersions", {
-        skillId: nativeSkillId,
+        skillId: createdNativeSkillId,
         version: "1.0.0",
         changelog: "Initial",
         files: [],
@@ -374,7 +374,7 @@ describe("skills.sh mirror visibility operations", () => {
         createdAt: now - 10_000,
       });
       await ctx.db.insert("skillSearchDigest", {
-        skillId: nativeSkillId,
+        skillId: createdNativeSkillId,
         slug: "native-ready",
         displayName: "Native ready",
         summary: "Native canonical Trending fixture",
@@ -384,7 +384,7 @@ describe("skills.sh mirror visibility operations", () => {
         ownerName: "Native owner",
         ownerDisplayName: "Native owner",
         latestVersionId: nativeVersionId,
-        latestVersionSkillId: nativeSkillId,
+        latestVersionSkillId: createdNativeSkillId,
         publicVersion: { status: "available", versionId: nativeVersionId },
         tags: {},
         statsInstallsAllTime: 900,
@@ -392,6 +392,18 @@ describe("skills.sh mirror visibility operations", () => {
         createdAt: now - 10_000,
         updatedAt: now,
       });
+      return { nativeSkillId: createdNativeSkillId };
+    });
+
+    await expect(
+      t.action(internal.skillsShMirrorVisibility.verifyAndActivateInternal, {
+        actor: "codex-test",
+        reason: "CLAW-603 unavailable native source",
+        confirm: "activate-skills-sh-public-test",
+      }),
+    ).rejects.toThrow("skills.sh Trending activation snapshot failed source verification");
+
+    await t.run(async (ctx) => {
       await ctx.db.insert("skillHourlyStatStates", {
         key: "canonical_trending",
         liveStartedAt: now - 3_600_000,
@@ -412,6 +424,20 @@ describe("skills.sh mirror visibility operations", () => {
         updatedAt: now,
         expiresAt: now + 72 * 3_600_000,
       });
+    });
+
+    await expect(
+      t.action(internal.skillsShMirrorVisibility.prepareNativeTrendingInternal, {
+        actor: "codex-test",
+        reason: "CLAW-603 persist native candidate pool",
+        confirm: "deactivate-skills-sh-public-test",
+      }),
+    ).resolves.toMatchObject({
+      nativeTrending: {
+        status: "ready",
+        sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+        nativePool: { reused: false },
+      },
     });
 
     await expect(
@@ -439,6 +465,7 @@ describe("skills.sh mirror visibility operations", () => {
       trendingSnapshot: {
         status: "ready",
         sourceCounts: { skillsShTrending: 1 },
+        nativePool: { reused: true },
       },
       scansPlanned: 0,
       scansAdmitted: 0,
@@ -457,7 +484,7 @@ describe("skills.sh mirror visibility operations", () => {
       runs: await ctx.db.query("skillsShMirrorRuns").withIndex("by_started_at").collect(),
     }));
     expect(activationState.mirrorControl?.activationLockToken).toBeUndefined();
-    expect(activationState.snapshots).toHaveLength(1);
+    expect(activationState.snapshots).toHaveLength(2);
     const activatedLeaderboard = activationState.runs.find(
       (run) => run._id === activationState.mirrorControl?.latestCompletedLeaderboardRunId,
     );
@@ -465,7 +492,8 @@ describe("skills.sh mirror visibility operations", () => {
       activationState.runs.find((run) => run.sourceView === "trending")?._id,
     );
     expect(activatedLeaderboard?.activationSnapshotId).toBe(
-      activationState.snapshots[0]?.snapshotId,
+      activationState.snapshots.find((snapshot) => snapshot.sourceCounts?.skillsShTrending === 1)
+        ?.snapshotId,
     );
     expect(activatedLeaderboard?.activatedAt).toEqual(expect.any(Number));
     await expect(
@@ -489,14 +517,70 @@ describe("skills.sh mirror visibility operations", () => {
         reason: "CLAW-603 fail-closed rollback",
         confirm: "deactivate-skills-sh-public-test",
       }),
-    ).rejects.toThrow("native-only canonical Trending did not become ready");
+    ).resolves.toMatchObject({
+      enabled: false,
+      nativeTrending: {
+        status: "ready",
+        sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+        nativePool: { poolId: expect.any(String) },
+        reused: true,
+      },
+    });
     await expect(
       t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
     ).resolves.toMatchObject({
       status: "ok",
       page: { items: [{ source: "clawhub" }] },
     });
+  });
+
+  it("keeps the public gate closed when activation has to build the native pool", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const window = getCompletedRolling24HourWindow(now);
     await t.run(async (ctx) => {
+      const leaderboardRunId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          sourceView: "leaderboard",
+          sourceTotal: 1,
+          counts: mirrorRunCounts({ observed: 1, inserted: 1, detailsInserted: 1 }),
+          startedAt: now - 4_000,
+          completedAt: now - 3_000,
+        }),
+      );
+      const trendingRunId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          sourceView: "trending",
+          sourceTotal: 1,
+          counts: mirrorRunCounts({ observed: 1, trendingJoined: 1 }),
+          startedAt: now - 2_000,
+          completedAt: now - 1_000,
+        }),
+      );
+      await ctx.db.insert(
+        "skillsShMirrorDigests",
+        digest({
+          lastObservedRunId: leaderboardRunId,
+          trendingObservedRunId: trendingRunId,
+          trendingRank: 1,
+          trendingLifetimeInstalls: 10,
+          trendingObservedAt: now - 1_000,
+        }),
+      );
+      await ctx.db.insert("skillsShMirrorControls", {
+        key: "global",
+        enabled: true,
+        paused: false,
+        maxRowsPerRun: 50_000,
+        maxRowsPerBatch: 50,
+        maxDetailBytes: 65_536,
+        latestCompletedLeaderboardRunId: leaderboardRunId,
+        updatedBy: "codex-test",
+        reason: "CLAW-603 activation fallback test",
+        updatedAt: now - 3_000,
+      });
       await ctx.db.insert("skillHourlyStatStates", {
         key: "canonical_trending",
         liveStartedAt: now - 3_600_000,
@@ -510,26 +594,44 @@ describe("skills.sh mirror visibility operations", () => {
     });
 
     await expect(
-      t.action(internal.skillsShMirrorVisibility.deactivateAndMaterializeInternal, {
+      t.action(internal.skillsShMirrorVisibility.verifyAndActivateInternal, {
         actor: "codex-test",
-        reason: "CLAW-603 native-only rollback",
-        confirm: "deactivate-skills-sh-public-test",
+        reason: "CLAW-603 must reuse native preflight",
+        confirm: "activate-skills-sh-public-test",
+      }),
+    ).rejects.toThrow("skills.sh activation must reuse the verified native candidate pool");
+    await expect(
+      t.run(async (ctx) =>
+        ctx.db
+          .query("canonicalTrendingSnapshots")
+          .withIndex("by_kind_and_status_and_expires_at", (q) =>
+            q.eq("kind", "skills").eq("status", "ready").gt("expiresAt", now),
+          )
+          .order("desc")
+          .first(),
+      ),
+    ).resolves.toMatchObject({ sourceCounts: { skillsShTrending: 0 } });
+    await expect(
+      t.run(async (ctx) =>
+        ctx.db
+          .query("skillsShCatalogControls")
+          .withIndex("by_key", (q) => q.eq("key", "global"))
+          .unique(),
+      ),
+    ).resolves.toBeNull();
+
+    await expect(
+      t.action(internal.skillsShMirrorVisibility.verifyAndActivateInternal, {
+        actor: "codex-test",
+        reason: "CLAW-603 retry with verified native pool",
+        confirm: "activate-skills-sh-public-test",
       }),
     ).resolves.toMatchObject({
-      ok: true,
-      enabled: false,
-      nativeTrending: {
-        status: "ready",
-        sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+      activated: true,
+      trendingSnapshot: {
+        sourceCounts: { skillsShTrending: 1 },
+        nativePool: { reused: true },
       },
-      scansPlanned: 0,
-      scansAdmitted: 0,
-    });
-    await expect(
-      t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
-    ).resolves.toMatchObject({
-      status: "ok",
-      page: { items: [{ source: "clawhub" }] },
     });
   });
 
@@ -636,13 +738,30 @@ describe("skills.sh mirror visibility operations", () => {
       expiresAt: now + 24 * 60 * 60 * 1_000,
       windowStartDay: 40,
       windowEndDay: 40,
+      windowStartHour: 960,
+      windowEndHour: 983,
+    });
+    await t.mutation(internal.canonicalTrending.startNativePoolInternal, {
+      poolId: "skills-native-preflight-existing",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartHour: 960,
+      windowEndHour: 983,
+      sealedGeneration: 1,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeNativePoolInternal, {
+      poolId: "skills-native-preflight-existing",
+      completedAt: now - 500,
+      sourceCounts: { clawhubTrending: 0, clawhubRising: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
     });
     await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
       snapshotId: "skills-native-preflight-existing",
       completedAt: now - 500,
       totalItems: 0,
-      sourceCounts: { clawhubTrending: 3, clawhubRising: 2, skillsShTrending: 0 },
+      sourceCounts: { clawhubTrending: 0, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+      nativePoolId: "skills-native-preflight-existing",
     });
 
     await expect(
@@ -657,6 +776,7 @@ describe("skills.sh mirror visibility operations", () => {
         status: "ready",
         snapshotId: "skills-native-preflight-existing",
         sourceCounts: { skillsShTrending: 0 },
+        nativePool: { poolId: "skills-native-preflight-existing" },
         reused: true,
       },
     });
@@ -766,6 +886,7 @@ describe("skills.sh mirror visibility operations", () => {
         leaderboardRunId,
         trendingRunId,
         snapshotId: "stale-snapshot",
+        nativePoolId: "stale-native-pool",
         expectedSkillsShTrending: 0,
       }),
     ).rejects.toThrow("activation lock or source run changed before publication");
