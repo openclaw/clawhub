@@ -1,6 +1,9 @@
 name: Pre-publication Publish Checks
 
 on:
+  repository_dispatch:
+    types:
+      - clawhub-prepublication-publish
   workflow_dispatch:
     inputs:
       batch-limit:
@@ -46,7 +49,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: clawhub-prepublication-publish-checks
+  group: ${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}
   cancel-in-progress: false
 
 jobs:
@@ -59,16 +62,16 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        shard: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '' && '[0]' || '[0,1]') }}
+        shard: ${{ fromJSON((github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && '[0]' || '[0,1]') }}
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      PREPUBLICATION_CHECK_LIMIT: ${{ inputs['batch-limit'] || '4' }}
-      PREPUBLICATION_CHECK_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
-      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '15' }}
-      PREPUBLICATION_CHECK_ATTEMPT_ID: ${{ inputs['attempt-id'] || '' }}
-      PREPUBLICATION_CHECK_KIND: ${{ inputs.kind || '' }}
-      PREPUBLICATION_CHECK_SLUG: ${{ inputs.slug || '' }}
-      PREPUBLICATION_CHECK_VERSION: ${{ inputs.version || '' }}
+      PREPUBLICATION_CHECK_LIMIT: ${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '4' }}
+      PREPUBLICATION_CHECK_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
+      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '15' }}
+      PREPUBLICATION_CHECK_ATTEMPT_ID: ${{ github.event.client_payload.attempt_id || inputs['attempt-id'] || '' }}
+      PREPUBLICATION_CHECK_KIND: ${{ github.event.client_payload.kind || inputs.kind || '' }}
+      PREPUBLICATION_CHECK_SLUG: ${{ github.event.client_payload.slug || inputs.slug || '' }}
+      PREPUBLICATION_CHECK_VERSION: ${{ github.event.client_payload.version || inputs.version || '' }}
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: ${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}
       PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"

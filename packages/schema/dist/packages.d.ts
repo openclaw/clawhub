@@ -1234,6 +1234,37 @@ export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal
     }[] | undefined;
 }, {}>;
 export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
+export declare const PackagePublishAttemptStatusSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize", {}>;
+export type PackagePublishAttemptStatus = (typeof PackagePublishAttemptStatusSchema)[inferred];
+export declare const PackagePublicationStatusSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "expired" | "failed" | "pending" | "published", {}>;
+export type PackagePublicationStatus = (typeof PackagePublicationStatusSchema)[inferred];
+export declare const PackagePublishAttemptCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "blocked" | "clean" | "failed" | "pending";
+    summary?: string | undefined;
+}, {}>;
+export type PackagePublishAttemptCheck = (typeof PackagePublishAttemptCheckSchema)[inferred];
+export declare const ApiV1PackagePublishAttemptResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    attemptId: string;
+    packageId: string;
+    releaseId: string;
+    name: string;
+    version: string;
+    status: "blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize";
+    publicationStatus: "blocked" | "expired" | "failed" | "pending" | "published";
+    terminal: boolean;
+    checks: {
+        trufflehog: {
+            status: "blocked" | "clean" | "failed" | "pending";
+            summary?: string | undefined;
+        };
+        clawscan: {
+            status: "blocked" | "clean" | "failed" | "pending";
+            summary?: string | undefined;
+        };
+    };
+    error?: string | undefined;
+}, {}>;
+export type ApiV1PackagePublishAttemptResponse = (typeof ApiV1PackagePublishAttemptResponseSchema)[inferred];
 export declare const PackageTrustedPublisherUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     repository: string;
     workflowFilename: string;

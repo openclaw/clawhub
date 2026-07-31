@@ -750,6 +750,12 @@ registerCommand(packageCmd, ["package", "publish"])
   .option("--source-ref <ref>", "Git ref/tag/branch")
   .option("--source-path <path>", "Repo subpath")
   .option("--dry-run", "Preview what would be published without uploading")
+  .option("--wait", "Wait for security checks and definitive publication")
+  .option(
+    "--wait-timeout <seconds>",
+    "Maximum seconds to wait for definitive publication",
+    (value) => Number(value),
+  )
   .option("--json", "Output JSON (for CI pipelines)")
   .action(async (source, options) => {
     const opts = await resolveGlobalOpts();

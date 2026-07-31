@@ -5,6 +5,7 @@ import { parseArk } from "./ark";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import {
   ApiV1PackageHardDeleteResponseSchema,
+  ApiV1PackagePublishAttemptResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PackagePublishResponseSchema,
   getPackageScopeOwnerMismatch,
@@ -139,6 +140,32 @@ describe("clawhub-schema", () => {
     expect(response.releaseId).toBe("packageReleases:demo");
     expect(response.publicationStatus).toBe("pending");
     expect(response.attemptId).toBe("publishAttempts:demo");
+  });
+
+  it("parses terminal package publish attempt responses", () => {
+    const response = parseArk(
+      ApiV1PackagePublishAttemptResponseSchema,
+      {
+        attemptId: "publishAttempts:demo",
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo",
+        name: "@openclaw/demo",
+        version: "1.0.0",
+        status: "blocked",
+        publicationStatus: "blocked",
+        terminal: true,
+        checks: {
+          trufflehog: { status: "clean", summary: "No secrets found." },
+          clawscan: { status: "blocked", summary: "Malicious behavior detected." },
+        },
+        error: "Malicious behavior detected.",
+      },
+      "Package publish attempt response",
+    );
+
+    expect(response.publicationStatus).toBe("blocked");
+    expect(response.terminal).toBe(true);
+    expect(response.checks.clawscan.status).toBe("blocked");
   });
 
   it("preserves plugin manifest icons in package version responses", () => {

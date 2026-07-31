@@ -1,7 +1,14 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import { createHttpClient, detectHttpRuntime, registryUrl, shouldUseProxyFromEnv } from "./http.js";
+import {
+  createHttpClient,
+  detectHttpRuntime,
+  getHttpErrorStatus,
+  isRetryableHttpError,
+  registryUrl,
+  shouldUseProxyFromEnv,
+} from "./http.js";
 import { ApiV1WhoamiResponseSchema } from "./schema/index.js";
 
 function createNodeClient(options?: {
@@ -367,6 +374,31 @@ describe("node http client", () => {
     await expect(
       client.apiRequest("https://example.com", { method: "GET", path: "/missing" }),
     ).rejects.toThrow(/Package not found or not visible to this account/i);
+  });
+
+  it("preserves HTTP status and classifies transient request failures", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => "Unauthorized",
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const error = await client
+      .apiRequest("https://example.com", {
+        method: "GET",
+        path: "/auth",
+        retryCount: 0,
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(getHttpErrorStatus(error)).toBe(401);
+    expect(isRetryableHttpError(error)).toBe(false);
+    expect(isRetryableHttpError(Object.assign(new Error("busy"), { status: 408 }))).toBe(true);
+    expect(isRetryableHttpError(Object.assign(new Error("busy"), { status: 429 }))).toBe(true);
+    expect(isRetryableHttpError(Object.assign(new Error("down"), { status: 503 }))).toBe(true);
+    expect(isRetryableHttpError(new TypeError("fetch failed"))).toBe(true);
   });
 
   it("strips Convex transport wrappers from HTTP error bodies", async () => {

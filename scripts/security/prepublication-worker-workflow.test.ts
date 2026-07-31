@@ -36,6 +36,9 @@ describe("pre-publication publish worker workflow", () => {
         };
       };
       on?: {
+        repository_dispatch?: {
+          types?: string[];
+        };
         schedule?: Array<{ cron?: string }>;
         workflow_dispatch?: {
           inputs?: {
@@ -67,6 +70,7 @@ describe("pre-publication publish worker workflow", () => {
 
     const job = workflow.jobs["prepublication-publish-checks"];
     const steps = job.steps;
+    expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-prepublication-publish"]);
     expect(workflow.on?.schedule?.[0]?.cron).toBe("*/5 * * * *");
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.workflow_dispatch?.inputs?.runner).toEqual({
@@ -96,7 +100,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(job["timeout-minutes"]).toBe(25);
     expect(job.strategy?.matrix?.shard).toBe(
-      "${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '' && '[0]' || '[0,1]') }}",
+      "${{ fromJSON((github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && '[0]' || '[0,1]') }}",
     );
     expect(job.strategy?.["max-parallel"]).toBe(2);
     expect(job.env).toMatchObject({
@@ -104,16 +108,29 @@ describe("pre-publication publish worker workflow", () => {
         "${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
         "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}",
-      PREPUBLICATION_CHECK_ATTEMPT_ID: "${{ inputs['attempt-id'] || '' }}",
-      PREPUBLICATION_CHECK_LIMIT: "${{ inputs['batch-limit'] || '4' }}",
-      PREPUBLICATION_CHECK_KIND: "${{ inputs.kind || '' }}",
-      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: "${{ inputs['max-runtime-minutes'] || '15' }}",
-      PREPUBLICATION_CHECK_SLUG: "${{ inputs.slug || '' }}",
-      PREPUBLICATION_CHECK_VERSION: "${{ inputs.version || '' }}",
+      PREPUBLICATION_CHECK_ATTEMPT_ID:
+        "${{ github.event.client_payload.attempt_id || inputs['attempt-id'] || '' }}",
+      PREPUBLICATION_CHECK_LIMIT:
+        "${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '4' }}",
+      PREPUBLICATION_CHECK_KIND: "${{ github.event.client_payload.kind || inputs.kind || '' }}",
+      PREPUBLICATION_CHECK_MAX_JOBS:
+        "${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}",
+      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES:
+        "${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '15' }}",
+      PREPUBLICATION_CHECK_SLUG: "${{ github.event.client_payload.slug || inputs.slug || '' }}",
+      PREPUBLICATION_CHECK_VERSION:
+        "${{ github.event.client_payload.version || inputs.version || '' }}",
       PREPUBLICATION_TRUFFLEHOG_IMAGE:
         "${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}",
     });
     expect(String(job.env?.PREPUBLICATION_TRUFFLEHOG_IMAGE)).toContain("@sha256:");
+    expect(workflow).toMatchObject({
+      concurrency: {
+        group:
+          "${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}",
+        "cancel-in-progress": false,
+      },
+    });
     expect(job.env).not.toHaveProperty("CODEX_API_KEY");
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
     expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");

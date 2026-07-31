@@ -2,7 +2,10 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
-import { ApiV1PackagePublishResponseSchema } from "./packages";
+import {
+  ApiV1PackagePublishAttemptResponseSchema,
+  ApiV1PackagePublishResponseSchema,
+} from "./packages";
 import {
   ApiV1SearchResponseSchema,
   ApiV1SkillRescanResponseSchema,
@@ -139,6 +142,31 @@ describe("packages/clawhub skill metadata schema", () => {
     expect(parsed.releaseId).toBe("packageReleases:demo");
     expect(parsed.publicationStatus).toBe("pending");
     expect(parsed.attemptId).toBe("publishAttempts:demo");
+  });
+
+  it("parses terminal package publish attempt responses", () => {
+    const parsed = parseArk(
+      ApiV1PackagePublishAttemptResponseSchema,
+      {
+        attemptId: "publishAttempts:demo",
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo",
+        name: "@openclaw/demo",
+        version: "1.0.0",
+        status: "finalized",
+        publicationStatus: "published",
+        terminal: true,
+        checks: {
+          trufflehog: { status: "clean", summary: "No secrets found." },
+          clawscan: { status: "clean", summary: "No malicious behavior found." },
+        },
+      },
+      "Package publish attempt response",
+    );
+
+    expect(parsed.publicationStatus).toBe("published");
+    expect(parsed.terminal).toBe(true);
+    expect(parsed.checks.clawscan.status).toBe("clean");
   });
 
   it("parses flattened skill verification envelopes", () => {

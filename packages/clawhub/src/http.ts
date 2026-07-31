@@ -122,6 +122,28 @@ class HttpStatusError extends Error {
   }
 }
 
+export function getHttpErrorStatus(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  ) {
+    return (error as { status: number }).status;
+  }
+  return undefined;
+}
+
+export function isRetryableHttpError(error: unknown) {
+  const status = getHttpErrorStatus(error);
+  if (status !== undefined) return status === 408 || status === 429 || status >= 500;
+  if (!(error instanceof Error)) return false;
+  if (error instanceof TypeError) return true;
+  return /(?:curl failed|fetch failed|network|socket|ECONN|EAI_AGAIN|ENET|ETIMEDOUT|request timed out)/i.test(
+    error.message,
+  );
+}
+
 export function detectHttpRuntime(
   processVersions: NodeJS.ProcessVersions | undefined = process.versions,
 ): HttpRuntime {
@@ -515,7 +537,7 @@ function throwHttpStatusError(
   if (status === 429 || status >= 500 || retryableTransientContention) {
     throw new HttpStatusError(status, message, rateLimit);
   }
-  throw new AbortError(message);
+  throw new AbortError(new HttpStatusError(status, message, rateLimit));
 }
 
 function buildHttpErrorMessage(status: number, text: string, rateLimit: RateLimitInfo): string {

@@ -13,6 +13,8 @@ import {
   apiRequestForm,
   fetchBinary,
   fetchText,
+  getHttpErrorStatus,
+  isRetryableHttpError,
   registryUrl,
   uploadBinary,
 } from "../../http.js";
@@ -25,6 +27,8 @@ import {
   ApiV1PackageArtifactResponseSchema,
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
+  ApiV1PackagePublishAttemptResponseSchema,
+  type ApiV1PackagePublishAttemptResponse,
   ApiV1PackagePublishResponseSchema,
   type ApiV1PackagePublishResponse,
   ApiV1PackageReadinessResponseSchema,
@@ -75,6 +79,8 @@ const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
+const PACKAGE_PUBLISH_POLL_INTERVAL_MS = 5_000;
+const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
 const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
 const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
   "channel-env-vars":
@@ -164,7 +170,14 @@ type PackagePublishOptions = {
   sourceRef?: string;
   sourcePath?: string;
   dryRun?: boolean;
+  wait?: boolean;
+  waitTimeout?: number;
   json?: boolean;
+};
+
+type PackagePublishRuntime = {
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
 };
 
 type PackagePackOptions = {
@@ -890,8 +903,12 @@ export async function cmdPublishPackage(
   opts: GlobalOpts,
   sourceArg: string,
   options: PackagePublishOptions = {},
+  runtime: PackagePublishRuntime = {},
 ) {
   if (!sourceArg?.trim()) fail("Path required");
+  const waitTimeoutSeconds = options.wait
+    ? resolvePackagePublishWaitTimeout(options)
+    : DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS;
 
   let plan: PackagePublishPlan | undefined;
   try {
@@ -931,7 +948,7 @@ export async function cmdPublishPackage(
       ? null
       : createCrabLoader(`Preparing ${plan.payload.name}@${plan.payload.version}`);
     try {
-      const publishToken = await resolvePackagePublishToken({
+      let publishToken = await resolvePackagePublishToken({
         registry,
         packageName: plan.payload.name,
         version: plan.payload.version,
@@ -986,7 +1003,39 @@ export async function cmdPublishPackage(
         ApiV1PackagePublishResponseSchema,
       );
 
-      const publicationStatus = result.publicationStatus;
+      let finalResult: ApiV1PackagePublishResponse | ApiV1PackagePublishAttemptResponse = result;
+      if (options.wait && result.publicationStatus !== "published") {
+        const packageName = plan.payload.name;
+        const version = plan.payload.version;
+        const manualOverrideReason = plan.payload.manualOverrideReason;
+        if (!result.attemptId) {
+          fail(
+            `ClawHub did not confirm publication of ${packageName}@${version} or return a publish attempt ID.`,
+          );
+        }
+        finalResult = await waitForPackagePublication({
+          registry,
+          attemptId: result.attemptId,
+          packageName,
+          version,
+          publishToken,
+          waitTimeoutSeconds,
+          spinner,
+          runtime,
+          refreshPublishToken: async () => {
+            publishToken = await resolvePackagePublishToken({
+              registry,
+              packageName,
+              version,
+              manualOverrideReason,
+              spinner,
+            });
+            return publishToken;
+          },
+        });
+      }
+
+      const publicationStatus = finalResult.publicationStatus;
       const outputStatus =
         publicationStatus === "pending"
           ? "pending-publication"
@@ -999,9 +1048,9 @@ export async function cmdPublishPackage(
             {
               ...plan.output,
               status: outputStatus,
-              releaseId: result.releaseId,
+              releaseId: finalResult.releaseId,
               publicationStatus,
-              attemptId: result.attemptId,
+              attemptId: finalResult.attemptId,
               inspectorFindings: result.inspectorFindings,
             },
             null,
@@ -1015,7 +1064,7 @@ export async function cmdPublishPackage(
           );
         } else if (publicationStatus === "published") {
           spinner?.succeed(
-            `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
+            `OK. Published ${plan.payload.name}@${plan.payload.version} (${finalResult.releaseId})`,
           );
         } else {
           spinner?.succeed(
@@ -1031,6 +1080,102 @@ export async function cmdPublishPackage(
   } finally {
     await plan?.cleanup?.();
   }
+}
+
+function resolvePackagePublishWaitTimeout(options: PackagePublishOptions) {
+  const waitTimeoutSeconds = options.waitTimeout ?? DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS;
+  if (!Number.isInteger(waitTimeoutSeconds) || waitTimeoutSeconds <= 0) {
+    fail("--wait-timeout must be a positive integer number of seconds");
+  }
+  return waitTimeoutSeconds;
+}
+
+async function waitForPackagePublication(params: {
+  registry: string;
+  attemptId: string;
+  packageName: string;
+  version: string;
+  publishToken: string;
+  waitTimeoutSeconds: number;
+  spinner: ReturnType<typeof createCrabLoader> | null;
+  runtime: PackagePublishRuntime;
+  refreshPublishToken: () => Promise<string>;
+}) {
+  const now = params.runtime.now ?? Date.now;
+  const sleep =
+    params.runtime.sleep ??
+    ((milliseconds: number) =>
+      new Promise<void>((resolvePromise) => setTimeout(resolvePromise, milliseconds)));
+  const deadline = now() + params.waitTimeoutSeconds * 1_000;
+  let publishToken = params.publishToken;
+  let refreshedAfterUnauthorized = false;
+
+  while (now() < deadline) {
+    if (params.spinner) {
+      params.spinner.text = `Waiting for security checks on ${params.packageName}@${params.version}`;
+    }
+
+    let status: ApiV1PackagePublishAttemptResponse;
+    try {
+      status = await fetchPackagePublishAttempt(params.registry, params.attemptId, publishToken);
+    } catch (error) {
+      if (
+        getHttpErrorStatus(error) === 401 &&
+        hasGitHubActionsOidcEnv() &&
+        !refreshedAfterUnauthorized
+      ) {
+        publishToken = await params.refreshPublishToken();
+        refreshedAfterUnauthorized = true;
+        continue;
+      }
+      if (!isRetryableHttpError(error)) throw error;
+      const remainingMs = deadline - now();
+      if (remainingMs <= 0) break;
+      if (params.spinner) {
+        params.spinner.text = `Retrying publication status for ${params.packageName}@${params.version}`;
+      }
+      await sleep(Math.min(PACKAGE_PUBLISH_POLL_INTERVAL_MS, remainingMs));
+      continue;
+    }
+    refreshedAfterUnauthorized = false;
+
+    if (status.publicationStatus === "published") return status;
+    if (
+      status.publicationStatus === "blocked" ||
+      status.publicationStatus === "failed" ||
+      status.publicationStatus === "expired"
+    ) {
+      const detail = status.error?.trim() ? `: ${status.error.trim()}` : "";
+      fail(
+        `ClawHub publication ${status.publicationStatus} for ${params.packageName}@${params.version}${detail}`,
+      );
+    }
+
+    const remainingMs = deadline - now();
+    if (remainingMs <= 0) break;
+    await sleep(Math.min(PACKAGE_PUBLISH_POLL_INTERVAL_MS, remainingMs));
+  }
+
+  return fail(
+    `Timed out after ${params.waitTimeoutSeconds}s waiting for ClawHub to publish ${params.packageName}@${params.version}. Attempt ${params.attemptId} is still pending.`,
+  );
+}
+
+async function fetchPackagePublishAttempt(
+  registry: string,
+  attemptId: string,
+  publishToken: string,
+) {
+  return await apiRequest(
+    registry,
+    {
+      method: "GET",
+      path: `${ApiRoutes.publishAttempts}/${encodeURIComponent(attemptId)}`,
+      token: publishToken,
+      retryCount: 0,
+    },
+    ApiV1PackagePublishAttemptResponseSchema,
+  );
 }
 
 function printPackageInspectorFindings(result: ApiV1PackagePublishResponse) {

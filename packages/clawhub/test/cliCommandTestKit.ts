@@ -26,6 +26,20 @@ export function createHttpModuleMocks() {
   const fetchText = vi.fn();
   const uploadBinary = vi.fn();
   const registryUrl = vi.fn(buildRegistryUrl);
+  const getHttpErrorStatus = (error: unknown) => {
+    if (!error || typeof error !== "object" || !("status" in error)) return undefined;
+    const status = error.status;
+    return typeof status === "number" ? status : undefined;
+  };
+  const isRetryableHttpError = (error: unknown) => {
+    const status = getHttpErrorStatus(error);
+    return (
+      status === 408 ||
+      status === 429 ||
+      (typeof status === "number" && status >= 500) ||
+      error instanceof TypeError
+    );
+  };
 
   return {
     apiRequest,
@@ -45,6 +59,8 @@ export function createHttpModuleMocks() {
       fetchText: (registry: unknown, args: unknown) => fetchText(registry, args),
       uploadBinary: (args: unknown, schema?: unknown) => uploadBinary(args, schema),
       registryUrl: (...args: [string, string]) => registryUrl(...args),
+      getHttpErrorStatus,
+      isRetryableHttpError,
     }),
   };
 }

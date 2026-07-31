@@ -33,6 +33,7 @@ import {
   pluginsGetRouterV1Http,
   createPublisherV1Http,
   publishPackageV1Http,
+  publishAttemptsGetRouterV1Http,
   publishSkillV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
@@ -270,6 +271,12 @@ http.route({
   path: ApiRoutes.publishTokenMint,
   method: "POST",
   handler: mintPublishTokenV1Http,
+});
+
+http.route({
+  pathPrefix: "/api/v1/publish/attempts/",
+  method: "GET",
+  handler: publishAttemptsGetRouterV1Http,
 });
 
 http.route({

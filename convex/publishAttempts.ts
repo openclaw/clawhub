@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
+import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
@@ -214,6 +215,9 @@ export const createSkillPublishAttemptInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await findReusablePublishAttemptByIdempotencyKey(ctx, args.idempotencyKey);
     if (existing) {
+      if (existing.status === "pending_checks") {
+        await requestPublishAttemptDispatch(ctx, existing._id);
+      }
       return {
         attemptId: existing._id,
         status: existing.status,
@@ -247,6 +251,7 @@ export const createSkillPublishAttemptInternal = internalMutation({
       updatedAt: now,
       expiresAt: now + THIRTY_DAYS_MS,
     });
+    await requestPublishAttemptDispatch(ctx, attemptId);
 
     return { attemptId, status: "pending_checks" as const, result: undefined };
   },
@@ -340,6 +345,9 @@ export const createPackagePublishAttemptInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await findReusablePublishAttemptByIdempotencyKey(ctx, args.idempotencyKey);
     if (existing) {
+      if (existing.status === "pending_checks") {
+        await requestPublishAttemptDispatch(ctx, existing._id);
+      }
       return {
         attemptId: existing._id,
         status: existing.status,
@@ -375,10 +383,78 @@ export const createPackagePublishAttemptInternal = internalMutation({
       updatedAt: now,
       expiresAt: now + THIRTY_DAYS_MS,
     });
+    await requestPublishAttemptDispatch(ctx, attemptId);
 
     return { attemptId, status: "pending_checks" as const, result: undefined };
   },
 });
+
+export const getPendingPublishAttemptDispatchTargetInternal = internalQuery({
+  args: {
+    attemptId: v.id("publishAttempts"),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.attemptId);
+    if (!attempt || attempt.status !== "pending_checks") return null;
+    return {
+      attemptId: attempt._id,
+      kind: attempt.kind,
+      slug: attempt.slug,
+      version: attempt.version,
+    };
+  },
+});
+
+export const getPackagePublishAttemptStatusInternal = internalQuery({
+  args: {
+    attemptId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const attemptId = ctx.db.normalizeId("publishAttempts", args.attemptId);
+    if (!attemptId) return null;
+    const attempt = await ctx.db.get(attemptId);
+    if (!attempt || attempt.kind !== "package" || !attempt.packageId || !attempt.packageReleaseId) {
+      return null;
+    }
+    return {
+      attemptId: attempt._id,
+      userId: attempt.userId,
+      packageId: attempt.packageId,
+      releaseId: attempt.packageReleaseId,
+      name: attempt.slug,
+      version: attempt.version,
+      status: attempt.status,
+      checks: {
+        trufflehog: compactPublishAttemptCheck(attempt.checks.trufflehog),
+        clawscan: compactPublishAttemptCheck(attempt.checks.clawscan),
+      },
+      error: publishAttemptStatusError(attempt),
+    };
+  },
+});
+
+function compactPublishAttemptCheck(check: {
+  status: "pending" | "clean" | "blocked" | "failed";
+  summary?: string;
+}) {
+  return {
+    status: check.status,
+    ...(check.summary ? { summary: check.summary } : {}),
+  };
+}
+
+function publishAttemptStatusError(attempt: Doc<"publishAttempts">) {
+  if (attempt.finalizationLastError) return attempt.finalizationLastError;
+  if (attempt.checkClaimLastError) return attempt.checkClaimLastError;
+  if (
+    attempt.checks.trufflehog.status === "blocked" ||
+    attempt.checks.trufflehog.status === "failed"
+  )
+    return attempt.checks.trufflehog.summary;
+  if (attempt.checks.clawscan.status === "blocked" || attempt.checks.clawscan.status === "failed")
+    return attempt.checks.clawscan.summary;
+  return undefined;
+}
 
 function getSecretBlockedStorageIds(attempt: {
   files: Array<{ storageId: Id<"_storage"> }>;

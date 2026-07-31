@@ -170,6 +170,7 @@ import type * as packages from "../packages.js";
 import type * as prepublicationObservability from "../prepublicationObservability.js";
 import type * as promotions from "../promotions.js";
 import type * as promotionsFeed from "../promotionsFeed.js";
+import type * as publishAttemptDispatch from "../publishAttemptDispatch.js";
 import type * as publishAttempts from "../publishAttempts.js";
 import type * as publisherAbuse from "../publisherAbuse.js";
 import type * as publisherAbuseDevSeed from "../publisherAbuseDevSeed.js";
@@ -377,6 +378,7 @@ declare const fullApi: ApiFromModules<{
   prepublicationObservability: typeof prepublicationObservability;
   promotions: typeof promotions;
   promotionsFeed: typeof promotionsFeed;
+  publishAttemptDispatch: typeof publishAttemptDispatch;
   publishAttempts: typeof publishAttempts;
   publisherAbuse: typeof publisherAbuse;
   publisherAbuseDevSeed: typeof publisherAbuseDevSeed;

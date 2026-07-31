@@ -16,6 +16,7 @@ export const ApiRoutes = {
   resolve: "/api/v1/resolve",
   download: "/api/v1/download",
   publishTokenMint: "/api/v1/publish/token/mint",
+  publishAttempts: "/api/v1/publish/attempts",
   skills: "/api/v1/skills",
   trending: "/api/v1/trending",
   skillsSh: "/api/v1/skills-sh",

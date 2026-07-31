@@ -5,6 +5,8 @@ import {
   claimPrePublicationChecks,
   claimReadyPublishAttemptFinalizationRetryInternal,
   completePendingPublishAttemptChecksInternal,
+  createPackagePublishAttemptInternal,
+  createSkillPublishAttemptInternal,
   recordSkillPublishAttemptFinalizedInternal,
   releasePackagePublishAttemptFinalizationClaimInternal,
   releaseSkillPublishAttemptFinalizationClaimInternal,
@@ -45,8 +47,135 @@ const recordSkillFinalizedHandler = (
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
+const createSkillPublishAttemptHandler = (
+  createSkillPublishAttemptInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const createPackagePublishAttemptHandler = (
+  createPackagePublishAttemptInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
 
 describe("publishAttempts", () => {
+  it("schedules exact dispatch for fresh skill attempts", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
+    vi.stubEnv("GITHUB_APP_ID", "configured");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "configured");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
+    const runAfter = vi.fn();
+    const insert = vi.fn(async () => "publishAttempts:fresh");
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(),
+        insert,
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => []),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+      scheduler: { runAfter },
+    };
+
+    try {
+      await expect(
+        createSkillPublishAttemptHandler(ctx, {
+          userId: "users:publisher",
+          skillId: "skills:demo",
+          skillVersionId: "skillVersions:demo",
+          slug: "demo",
+          displayName: "Demo",
+          version: "1.0.0",
+          idempotencyKey: "skill:demo",
+          artifactFingerprint: "fingerprint",
+          files: [],
+          followup: {},
+        }),
+      ).resolves.toMatchObject({
+        attemptId: "publishAttempts:fresh",
+        status: "pending_checks",
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      attemptId: "publishAttempts:fresh",
+      retryCount: 0,
+    });
+  });
+
+  it("redispatches pending idempotent package attempts", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
+    vi.stubEnv("GITHUB_APP_ID", "configured");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "configured");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
+    const runAfter = vi.fn();
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [
+                {
+                  _id: "publishAttempts:existing",
+                  status: "pending_checks",
+                  result: undefined,
+                },
+              ]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+      scheduler: { runAfter },
+    };
+
+    try {
+      await expect(
+        createPackagePublishAttemptHandler(ctx, {
+          userId: "users:publisher",
+          ownerUserId: "users:publisher",
+          packageId: "packages:demo",
+          packageReleaseId: "packageReleases:demo",
+          name: "@openclaw/demo",
+          displayName: "Demo",
+          version: "1.0.0",
+          idempotencyKey: "package:demo",
+          artifactFingerprint: "fingerprint",
+          files: [],
+          packageFollowup: {},
+        }),
+      ).resolves.toEqual({
+        attemptId: "publishAttempts:existing",
+        status: "pending_checks",
+        result: undefined,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      attemptId: "publishAttempts:existing",
+      retryCount: 0,
+    });
+  });
+
   it("leases staged publish check claims long enough for scanner timeouts", async () => {
     const attempt = {
       _id: "publishAttempts:demo",

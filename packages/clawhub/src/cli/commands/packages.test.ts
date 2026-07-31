@@ -132,6 +132,13 @@ function getUploadedClawPacks() {
   return form.getAll("clawpack") as Array<Blob & { name?: string }>;
 }
 
+function makePublishAttemptChecks(status: "pending" | "clean" | "blocked" | "failed" = "clean") {
+  return {
+    trufflehog: { status },
+    clawscan: { status },
+  };
+}
+
 function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   return JSON.stringify({
     openclaw: {
@@ -147,6 +154,28 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
     },
     ...overrides,
   });
+}
+
+async function createCodePluginFixture(workdir: string, folderName: string, packageName: string) {
+  const folder = join(workdir, folderName);
+  await mkdir(join(folder, "dist"), { recursive: true });
+  await writeFile(
+    join(folder, "package.json"),
+    makeCodePluginPackageJson({
+      name: packageName,
+      displayName: "Wait Test Plugin",
+      version: "1.0.0",
+      files: ["dist", "openclaw.plugin.json"],
+    }),
+    "utf8",
+  );
+  await writeFile(
+    join(folder, "openclaw.plugin.json"),
+    JSON.stringify({ id: `${folderName}.plugin` }),
+    "utf8",
+  );
+  await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+  return folder;
 }
 
 const TAR_BLOCK_SIZE = 512;
@@ -1534,6 +1563,433 @@ describe("package commands", () => {
         }),
       );
       expect(output.status).not.toBe("published");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("waits for definitive publication and emits only the final json result", async () => {
+    const workdir = await makeTmpWorkdir();
+    let now = 0;
+    const sleep = vi.fn(async (milliseconds: number) => {
+      now += milliseconds;
+    });
+    try {
+      await createCodePluginFixture(workdir, "wait-plugin", "@scope/wait-plugin");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_pending",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+      httpMocks.apiRequest
+        .mockResolvedValueOnce({
+          attemptId: "attempt_1",
+          packageId: "pkg_1",
+          releaseId: "rel_pending",
+          name: "@scope/wait-plugin",
+          version: "1.0.0",
+          status: "pending_checks",
+          publicationStatus: "pending",
+          terminal: false,
+          checks: makePublishAttemptChecks("pending"),
+        })
+        .mockResolvedValueOnce({
+          attemptId: "attempt_1",
+          packageId: "pkg_1",
+          releaseId: "rel_published",
+          name: "@scope/wait-plugin",
+          version: "1.0.0",
+          status: "finalized",
+          publicationStatus: "published",
+          terminal: true,
+          checks: makePublishAttemptChecks(),
+        });
+
+      await cmdPublishPackage(
+        makeOpts(workdir),
+        "wait-plugin",
+        {
+          sourceRepo: "openclaw/wait-plugin",
+          sourceCommit: "abc123",
+          wait: true,
+          waitTimeout: 30,
+          json: true,
+        },
+        { now: () => now, sleep },
+      );
+
+      expect(sleep).toHaveBeenCalledTimes(1);
+      expect(sleep).toHaveBeenCalledWith(5_000);
+      expect(mockWrite).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toMatchObject({
+        status: "published",
+        releaseId: "rel_published",
+        publicationStatus: "published",
+        attemptId: "attempt_1",
+      });
+      expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+        1,
+        "https://clawhub.ai",
+        {
+          method: "GET",
+          path: "/api/v1/publish/attempts/attempt_1",
+          token: "tkn",
+          retryCount: 0,
+        },
+        expect.anything(),
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails wait mode when the staged publish omits its attempt id", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      await createCodePluginFixture(workdir, "missing-attempt", "@scope/missing-attempt");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        publicationStatus: "pending",
+      });
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "missing-attempt", {
+          sourceRepo: "openclaw/missing-attempt",
+          sourceCommit: "abc123",
+          wait: true,
+          json: true,
+        }),
+      ).rejects.toThrow("did not confirm publication");
+      expect(mockWrite).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("waits when a compatible publish response omits publication status", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      await createCodePluginFixture(workdir, "compatible-wait", "@scope/compatible-wait");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_pending",
+        attemptId: "attempt_compatible",
+      });
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        attemptId: "attempt_compatible",
+        packageId: "pkg_1",
+        releaseId: "rel_published",
+        name: "@scope/compatible-wait",
+        version: "1.0.0",
+        status: "finalized",
+        publicationStatus: "published",
+        terminal: true,
+        checks: {
+          trufflehog: { status: "clean" },
+          clawscan: { status: "clean" },
+        },
+      });
+
+      await cmdPublishPackage(
+        makeOpts(workdir),
+        "compatible-wait",
+        {
+          sourceRepo: "openclaw/compatible-wait",
+          sourceCommit: "abc123",
+          wait: true,
+          json: true,
+        },
+        { now: () => 0, sleep: vi.fn() },
+      );
+
+      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+        "https://clawhub.ai",
+        expect.objectContaining({
+          path: "/api/v1/publish/attempts/attempt_compatible",
+        }),
+        expect.anything(),
+      );
+      expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toMatchObject({
+        status: "published",
+        publicationStatus: "published",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])(
+    "rejects invalid package publication wait timeout %s",
+    async (waitTimeout) => {
+      await expect(
+        cmdPublishPackage(makeOpts(), "unused", {
+          wait: true,
+          waitTimeout,
+        }),
+      ).rejects.toThrow("--wait-timeout must be a positive integer number of seconds");
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    },
+  );
+
+  it("ignores the publication wait timeout when wait mode is disabled", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      await createCodePluginFixture(workdir, "async-plugin", "@scope/async-plugin");
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "async-plugin", {
+          dryRun: true,
+          sourceRepo: "openclaw/async-plugin",
+          sourceCommit: "abc123",
+          waitTimeout: 0,
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["blocked", "failed", "expired"] as const)(
+    "fails wait mode when publication is %s",
+    async (publicationStatus) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        await createCodePluginFixture(
+          workdir,
+          `${publicationStatus}-plugin`,
+          `@scope/${publicationStatus}-plugin`,
+        );
+        httpMocks.apiRequestForm.mockResolvedValueOnce({
+          ok: true,
+          packageId: "pkg_1",
+          releaseId: "rel_1",
+          publicationStatus: "pending",
+          attemptId: "attempt_1",
+        });
+        httpMocks.apiRequest.mockResolvedValueOnce({
+          attemptId: "attempt_1",
+          packageId: "pkg_1",
+          releaseId: "rel_1",
+          name: `@scope/${publicationStatus}-plugin`,
+          version: "1.0.0",
+          status: publicationStatus,
+          publicationStatus,
+          terminal: true,
+          checks: makePublishAttemptChecks(publicationStatus === "blocked" ? "blocked" : "failed"),
+          error: "security policy rejected the release",
+        });
+
+        await expect(
+          cmdPublishPackage(
+            makeOpts(workdir),
+            `${publicationStatus}-plugin`,
+            {
+              sourceRepo: `openclaw/${publicationStatus}-plugin`,
+              sourceCommit: "abc123",
+              wait: true,
+              json: true,
+            },
+            { now: () => 0, sleep: vi.fn() },
+          ),
+        ).rejects.toThrow(
+          `publication ${publicationStatus} for @scope/${publicationStatus}-plugin@1.0.0: security policy rejected the release`,
+        );
+        expect(mockWrite).not.toHaveBeenCalled();
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("fails wait mode after the configured timeout", async () => {
+    const workdir = await makeTmpWorkdir();
+    let now = 0;
+    const sleep = vi.fn(async (milliseconds: number) => {
+      now += milliseconds;
+    });
+    try {
+      await createCodePluginFixture(workdir, "timeout-plugin", "@scope/timeout-plugin");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        publicationStatus: "pending",
+        attemptId: "attempt_timeout",
+      });
+      httpMocks.apiRequest.mockResolvedValue({
+        attemptId: "attempt_timeout",
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        name: "@scope/timeout-plugin",
+        version: "1.0.0",
+        status: "pending_checks",
+        publicationStatus: "pending",
+        terminal: false,
+        checks: makePublishAttemptChecks("pending"),
+      });
+
+      await expect(
+        cmdPublishPackage(
+          makeOpts(workdir),
+          "timeout-plugin",
+          {
+            sourceRepo: "openclaw/timeout-plugin",
+            sourceCommit: "abc123",
+            wait: true,
+            waitTimeout: 6,
+            json: true,
+          },
+          { now: () => now, sleep },
+        ),
+      ).rejects.toThrow("Timed out after 6s");
+      expect(sleep.mock.calls).toEqual([[5_000], [1_000]]);
+      expect(mockWrite).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("retries transient publication status failures until the deadline", async () => {
+    const workdir = await makeTmpWorkdir();
+    let now = 0;
+    const sleep = vi.fn(async (milliseconds: number) => {
+      now += milliseconds;
+    });
+    try {
+      await createCodePluginFixture(workdir, "retry-status", "@scope/retry-status");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_pending",
+        publicationStatus: "pending",
+        attemptId: "attempt_retry",
+      });
+      httpMocks.apiRequest
+        .mockRejectedValueOnce(Object.assign(new Error("temporary outage"), { status: 503 }))
+        .mockResolvedValueOnce({
+          attemptId: "attempt_retry",
+          packageId: "pkg_1",
+          releaseId: "rel_published",
+          name: "@scope/retry-status",
+          version: "1.0.0",
+          status: "finalized",
+          publicationStatus: "published",
+          terminal: true,
+          checks: {
+            trufflehog: { status: "clean" },
+            clawscan: { status: "clean" },
+          },
+        });
+
+      await cmdPublishPackage(
+        makeOpts(workdir),
+        "retry-status",
+        {
+          sourceRepo: "openclaw/retry-status",
+          sourceCommit: "abc123",
+          wait: true,
+          waitTimeout: 30,
+          json: true,
+        },
+        { now: () => now, sleep },
+      );
+
+      expect(sleep).toHaveBeenCalledWith(5_000);
+      expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toMatchObject({
+        status: "published",
+        publicationStatus: "published",
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes an expired GitHub publish token while waiting", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
+      process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(async () => {
+          return new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }),
+      );
+      await createCodePluginFixture(workdir, "refresh-plugin", "@scope/refresh-plugin");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+      let mintCount = 0;
+      let statusCount = 0;
+      httpMocks.apiRequest.mockImplementation(
+        async (_registry: string, request: { method?: string; path?: string }) => {
+          if (request.path === "/api/v1/publish/token/mint") {
+            mintCount += 1;
+            return {
+              token: `short_token_${mintCount}`,
+              expiresAt: mintCount * 100,
+            };
+          }
+          if (request.path === "/api/v1/publish/attempts/attempt_1") {
+            statusCount += 1;
+            if (statusCount === 1) {
+              throw Object.assign(new Error("expired"), { status: 401 });
+            }
+            return {
+              attemptId: "attempt_1",
+              packageId: "pkg_1",
+              releaseId: "rel_1",
+              name: "@scope/refresh-plugin",
+              version: "1.0.0",
+              status: "finalized",
+              publicationStatus: "published",
+              terminal: true,
+              checks: makePublishAttemptChecks(),
+            };
+          }
+          throw new Error(`Unexpected API request: ${request.method} ${request.path}`);
+        },
+      );
+
+      await cmdPublishPackage(
+        makeOpts(workdir),
+        "refresh-plugin",
+        {
+          sourceRepo: "openclaw/refresh-plugin",
+          sourceCommit: "abc123",
+          wait: true,
+          waitTimeout: 30,
+          json: true,
+        },
+        { now: () => 0, sleep: vi.fn() },
+      );
+
+      const statusCalls = httpMocks.apiRequest.mock.calls.filter(
+        (call) => (call[1] as { method?: string }).method === "GET",
+      );
+      expect(statusCalls.map((call) => (call[1] as { token?: string }).token)).toEqual([
+        "short_token_1",
+        "short_token_2",
+      ]);
+      expect(mockWrite).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toMatchObject({
+        status: "published",
+        publicationStatus: "published",
+      });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

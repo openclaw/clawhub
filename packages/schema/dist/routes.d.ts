@@ -15,6 +15,7 @@ export declare const ApiRoutes: {
     readonly resolve: "/api/v1/resolve";
     readonly download: "/api/v1/download";
     readonly publishTokenMint: "/api/v1/publish/token/mint";
+    readonly publishAttempts: "/api/v1/publish/attempts";
     readonly skills: "/api/v1/skills";
     readonly trending: "/api/v1/trending";
     readonly skillsSh: "/api/v1/skills-sh";

@@ -124,6 +124,14 @@ available. Tag-push real publishes still need `clawhub_token`, so keep
 `CLAWHUB_TOKEN` available for tag releases, first publishes, untrusted packages,
 or break-glass publishes.
 
+Real publishes through the reusable workflow wait for the staged attempt to
+become public by default. The workflow fails when security checks block or fail
+the attempt, the attempt expires, or the 30-minute publication deadline is
+reached. Callers can adjust the deadline with `publication_timeout_minutes`.
+The maximum is 40 minutes, leaving 35 minutes of reusable job time for setup,
+upload, and output capture.
+Set `wait_for_publication: false` only for an intentional asynchronous publish.
+
 Inspect or remove the config with:
 
 ```bash

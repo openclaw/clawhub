@@ -3,11 +3,16 @@ import { internal } from "./_generated/api";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { createGitHubAppInstallationToken, isGitHubAppConfigured } from "./lib/githubAuth";
+import {
+  dispatchGitHubRepositoryEvent,
+  getGitHubRepositoryDispatchPermission,
+} from "./lib/githubRepositoryDispatch";
+
+export { getGitHubRepositoryDispatchPermission } from "./lib/githubRepositoryDispatch";
 
 const DISPATCH_STATE_KEY = "codex-worker";
 const DISPATCH_LEASE_MS = 15 * 60 * 1000;
 const SCHEDULE_STALE_MS = 60 * 1000;
-const GITHUB_REPOSITORY_DISPATCH_URL = "https://api.github.com/repos/openclaw/clawhub/dispatches";
 
 const internalRefs = internal as unknown as {
   securityScanDispatch: {
@@ -37,14 +42,6 @@ export function isSecurityScanEventDispatchEnabled(env: NodeJS.ProcessEnv = proc
   );
 }
 
-export function getGitHubRepositoryDispatchPermission(permissions: Record<string, string>) {
-  const contentsPermission = permissions.contents ?? "none";
-  return {
-    contentsPermission,
-    canDispatch: contentsPermission === "write",
-  };
-}
-
 export async function dispatchSecurityScanWorkflow(
   installationToken: {
     token: string;
@@ -52,35 +49,18 @@ export async function dispatchSecurityScanWorkflow(
   },
   fetchImpl: typeof fetch = fetch,
 ) {
-  if (!getGitHubRepositoryDispatchPermission(installationToken.permissions).canDispatch) {
-    return { ok: false as const, reason: "contents-write-required" as const };
-  }
-
-  const response = await fetchImpl(GITHUB_REPOSITORY_DISPATCH_URL, {
-    method: "POST",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${installationToken.token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "clawhub/security-scan-dispatch",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body: JSON.stringify({
-      event_type: "clawhub-security-scan",
-      client_payload: {
+  return dispatchGitHubRepositoryEvent(
+    installationToken,
+    {
+      eventType: "clawhub-security-scan",
+      clientPayload: {
         batch_limit: "4",
         max_runtime_minutes: "12",
       },
-    }),
-  });
-  if (!response.ok) {
-    return {
-      ok: false as const,
-      reason: "github-rejected" as const,
-      status: response.status,
-    };
-  }
-  return { ok: true as const };
+      userAgent: "clawhub/security-scan-dispatch",
+    },
+    fetchImpl,
+  );
 }
 
 export async function requestSecurityScanDispatch(ctx: MutationCtx, notBefore = 0) {

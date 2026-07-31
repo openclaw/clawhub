@@ -105,6 +105,12 @@ The full multi-browser Playwright suite is not a required PR check yet. It still
 needs stable read fixtures or a dedicated backend fixture before it can be a hard
 gate without coupling every PR to live data and mobile-browser variance.
 
+The reusable package publish workflow treats publication as a release gate. A
+real publish waits for ClawHub's exact staged attempt to become published and
+fails on blocked, failed, expired, or timed-out attempts. ClawHub dispatches the
+exact pre-publication worker immediately; the scheduled worker is a recovery
+path rather than the normal release trigger.
+
 Production-only checks stay in the manual deploy workflow:
 
 - `bun run verify:convex-contract -- --prod`

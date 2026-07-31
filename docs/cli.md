@@ -647,6 +647,9 @@ clawhub publisher create opik --display-name "Opik"
   Top-level `package.json.version` is not used as a fallback for publish validation.
 - `--dry-run` previews the resolved publish payload without uploading.
 - `--json` emits machine-readable output for CI.
+- `--wait` waits for pre-publication security checks and returns only after the
+  release is published or reaches a terminal failure state.
+- `--wait-timeout <seconds>` sets the `--wait` deadline (default: 1800).
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
 - Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
@@ -664,7 +667,7 @@ source attribution before creating a live release:
 ```bash
 npm pack
 clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin --dry-run
-clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin
+clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin --wait
 ```
 
 #### Local folder flow
@@ -765,6 +768,11 @@ Notes:
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.
 - Trusted publishing without a secret only works on `workflow_dispatch`; tag pushes still need `clawhub_token`.
 - Keep `clawhub_token` available for first publish, untrusted packages, or break-glass publishes.
+- Real publishes wait for definitive publication by default. Set
+  `wait_for_publication: false` only when a caller intentionally wants the
+  legacy submit-and-return behavior.
+- `publication_timeout_minutes` controls the publication wait deadline and
+  defaults to 30 minutes (maximum: 40).
 - The workflow uploads the JSON result as an artifact and exposes it as workflow outputs.
 
 ### `package trusted-publisher get <name>`

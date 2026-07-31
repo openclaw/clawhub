@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- GitHub Actions/CLI: trigger exact pre-publication checks immediately and wait for package publication to finish, so a pending staged upload no longer reports a successful release.
 - API: keep publish-time Plugin Inspector target preparation inside its disposable workspace when hosted runtimes expose an unusable home directory.
 - API: keep older code-plugin and Claw backports from replacing the highest-semver `latest` release while preserving custom distribution tags.
 - Integrations: truncate publisher-controlled Discord webhook titles to the platform's 256-character embed limit.

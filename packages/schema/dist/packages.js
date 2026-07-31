@@ -782,6 +782,27 @@ export const ApiV1PackagePublishResponseSchema = type({
         .array()
         .optional(),
 });
+export const PackagePublishAttemptStatusSchema = type('"pending_checks"|"ready_to_finalize"|"finalizing"|"finalized"|"blocked"|"failed"|"expired"');
+export const PackagePublicationStatusSchema = type('"pending"|"published"|"blocked"|"failed"|"expired"');
+export const PackagePublishAttemptCheckSchema = type({
+    status: '"pending"|"clean"|"blocked"|"failed"',
+    summary: "string?",
+});
+export const ApiV1PackagePublishAttemptResponseSchema = type({
+    attemptId: "string",
+    packageId: "string",
+    releaseId: "string",
+    name: "string",
+    version: "string",
+    status: PackagePublishAttemptStatusSchema,
+    publicationStatus: PackagePublicationStatusSchema,
+    terminal: "boolean",
+    checks: {
+        trufflehog: PackagePublishAttemptCheckSchema,
+        clawscan: PackagePublishAttemptCheckSchema,
+    },
+    error: "string?",
+});
 export const PackageTrustedPublisherUpsertRequestSchema = type({
     repository: "string",
     workflowFilename: "string",

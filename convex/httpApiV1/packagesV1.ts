@@ -176,6 +176,9 @@ const internalRefs = internal as unknown as {
   securityScan: {
     requestPackageRescanForUserInternal: unknown;
   };
+  publishAttempts: {
+    getPackagePublishAttemptStatusInternal: unknown;
+  };
 };
 
 function packageOperationErrorToResponse(
@@ -2414,6 +2417,78 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
   } catch (error) {
     return packagePublishErrorToResponse(error, rate.headers);
   }
+}
+
+type PackagePublishAttemptStatusResult = {
+  attemptId: Id<"publishAttempts">;
+  userId: Id<"users">;
+  packageId: Id<"packages">;
+  releaseId: Id<"packageReleases">;
+  name: string;
+  version: string;
+  status:
+    | "pending_checks"
+    | "ready_to_finalize"
+    | "finalizing"
+    | "finalized"
+    | "blocked"
+    | "failed"
+    | "expired";
+  checks: {
+    trufflehog: {
+      status: "pending" | "clean" | "blocked" | "failed";
+      summary?: string;
+    };
+    clawscan: {
+      status: "pending" | "clean" | "blocked" | "failed";
+      summary?: string;
+    };
+  };
+  error?: string;
+};
+
+function normalizePackagePublicationStatus(status: PackagePublishAttemptStatusResult["status"]) {
+  if (status === "finalized") return "published" as const;
+  if (status === "blocked" || status === "failed" || status === "expired") return status;
+  return "pending" as const;
+}
+
+export async function publishAttemptsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
+  const segments = getPathSegments(request, "/api/v1/publish/attempts/");
+  if (segments.length !== 1) return text("Not found", 404);
+
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+  const auth = await requirePackagePublishAuthOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+
+  const attempt = await runQueryRef<PackagePublishAttemptStatusResult | null>(
+    ctx,
+    internalRefs.publishAttempts.getPackagePublishAttemptStatusInternal,
+    { attemptId: segments[0] },
+  );
+  const authorized =
+    attempt &&
+    (auth.auth.kind === "user"
+      ? auth.auth.userId === attempt.userId
+      : auth.auth.publishToken.packageId === attempt.packageId &&
+        auth.auth.publishToken.version === attempt.version);
+  if (!authorized) return text("Not found", 404, rate.headers);
+
+  const publicationStatus = normalizePackagePublicationStatus(attempt.status);
+  const response = {
+    attemptId: attempt.attemptId,
+    packageId: attempt.packageId,
+    releaseId: attempt.releaseId,
+    name: attempt.name,
+    version: attempt.version,
+    status: attempt.status,
+    publicationStatus,
+    terminal: publicationStatus !== "pending",
+    checks: attempt.checks,
+    ...(attempt.error ? { error: attempt.error } : {}),
+  };
+  return json(response, 200, rate.headers);
 }
 
 async function getPackageAndTrustedPublisherByName(ctx: ActionCtx, packageName: string) {

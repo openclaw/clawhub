@@ -15840,6 +15840,140 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("returns package publish attempt status to the exact API token actor", async () => {
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:publisher",
+      user: { _id: "users:publisher", handle: "publisher" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (!("attemptId" in args)) return null;
+      return {
+        attemptId: "publishAttempts:demo",
+        userId: "users:publisher",
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo",
+        name: "@openclaw/demo",
+        version: "1.0.0",
+        status: "finalized",
+        checks: {
+          trufflehog: { status: "clean", summary: "No secrets found." },
+          clawscan: { status: "clean", summary: "No malicious behavior found." },
+        },
+      };
+    });
+
+    const response = await __handlers.publishAttemptsGetRouterV1Handler(
+      makeCtx({ runMutation, runQuery }),
+      new Request("https://example.com/api/v1/publish/attempts/publishAttempts%3Ademo", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      attemptId: "publishAttempts:demo",
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo",
+      name: "@openclaw/demo",
+      version: "1.0.0",
+      status: "finalized",
+      publicationStatus: "published",
+      terminal: true,
+      checks: {
+        trufflehog: { status: "clean", summary: "No secrets found." },
+        clawscan: { status: "clean", summary: "No malicious behavior found." },
+      },
+    });
+  });
+
+  it("returns package publish attempt status to the exact GitHub publish token", async () => {
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "github-actions",
+      publishToken: {
+        _id: "packagePublishTokens:1",
+        packageId: "packages:demo",
+        version: "1.0.0",
+      },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async () => ({
+      attemptId: "publishAttempts:demo",
+      userId: "users:publisher",
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo",
+      name: "@openclaw/demo",
+      version: "1.0.0",
+      status: "pending_checks",
+      checks: {
+        trufflehog: { status: "failed", summary: "Scanner unavailable." },
+        clawscan: { status: "pending" },
+      },
+      error: "Scanner unavailable.",
+    }));
+
+    const response = await __handlers.publishAttemptsGetRouterV1Handler(
+      makeCtx({ runMutation, runQuery }),
+      new Request("https://example.com/api/v1/publish/attempts/publishAttempts%3Ademo", {
+        headers: { Authorization: "Bearer clh_publish" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: "pending_checks",
+      publicationStatus: "pending",
+      terminal: false,
+      error: "Scanner unavailable.",
+    });
+  });
+
+  it("hides package publish attempts from mismatched actors and publish tokens", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async () => ({
+      attemptId: "publishAttempts:demo",
+      userId: "users:publisher",
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo",
+      name: "@openclaw/demo",
+      version: "1.0.0",
+      status: "blocked",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "blocked", summary: "Blocked detail." },
+      },
+      error: "Blocked detail.",
+    }));
+
+    for (const auth of [
+      {
+        kind: "user",
+        userId: "users:other",
+        user: { _id: "users:other", handle: "other" },
+      },
+      {
+        kind: "github-actions",
+        publishToken: {
+          _id: "packagePublishTokens:other",
+          packageId: "packages:other",
+          version: "1.0.0",
+        },
+      },
+    ]) {
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue(auth as never);
+      const response = await __handlers.publishAttemptsGetRouterV1Handler(
+        makeCtx({ runMutation, runQuery }),
+        new Request("https://example.com/api/v1/publish/attempts/publishAttempts%3Ademo", {
+          headers: { Authorization: "Bearer hidden" },
+        }),
+      );
+
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe("Not found");
+    }
+  });
+
   it("returns trusted publisher config for a package", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {

@@ -992,6 +992,40 @@ export const ApiV1PackagePublishResponseSchema = type({
 });
 export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
 
+export const PackagePublishAttemptStatusSchema = type(
+  '"pending_checks"|"ready_to_finalize"|"finalizing"|"finalized"|"blocked"|"failed"|"expired"',
+);
+export type PackagePublishAttemptStatus = (typeof PackagePublishAttemptStatusSchema)[inferred];
+
+export const PackagePublicationStatusSchema = type(
+  '"pending"|"published"|"blocked"|"failed"|"expired"',
+);
+export type PackagePublicationStatus = (typeof PackagePublicationStatusSchema)[inferred];
+
+export const PackagePublishAttemptCheckSchema = type({
+  status: '"pending"|"clean"|"blocked"|"failed"',
+  summary: "string?",
+});
+export type PackagePublishAttemptCheck = (typeof PackagePublishAttemptCheckSchema)[inferred];
+
+export const ApiV1PackagePublishAttemptResponseSchema = type({
+  attemptId: "string",
+  packageId: "string",
+  releaseId: "string",
+  name: "string",
+  version: "string",
+  status: PackagePublishAttemptStatusSchema,
+  publicationStatus: PackagePublicationStatusSchema,
+  terminal: "boolean",
+  checks: {
+    trufflehog: PackagePublishAttemptCheckSchema,
+    clawscan: PackagePublishAttemptCheckSchema,
+  },
+  error: "string?",
+});
+export type ApiV1PackagePublishAttemptResponse =
+  (typeof ApiV1PackagePublishAttemptResponseSchema)[inferred];
+
 export const PackageTrustedPublisherUpsertRequestSchema = type({
   repository: "string",
   workflowFilename: "string",

@@ -22,6 +22,16 @@ on:
         required: false
         type: boolean
         default: true
+      wait_for_publication:
+        description: Wait for security checks and definitive publication on real publishes.
+        required: false
+        type: boolean
+        default: true
+      publication_timeout_minutes:
+        description: Maximum minutes to wait for definitive publication.
+        required: false
+        type: number
+        default: 30
       registry:
         description: ClawHub registry URL.
         required: false
@@ -102,7 +112,7 @@ permissions: {}
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 75
     permissions:
       actions: read
       contents: read
@@ -186,6 +196,8 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dry_run }}
           JSON_MODE: ${{ inputs.json }}
+          WAIT_FOR_PUBLICATION: ${{ inputs.wait_for_publication }}
+          PUBLICATION_TIMEOUT_MINUTES: ${{ inputs.publication_timeout_minutes }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
@@ -194,6 +206,10 @@ jobs:
           fi
           if [[ "$DRY_RUN" == "true" ]]; then
             exit 0
+          fi
+          if [[ "$WAIT_FOR_PUBLICATION" == "true" ]] && { ! [[ "$PUBLICATION_TIMEOUT_MINUTES" =~ ^[1-9][0-9]*$ ]] || (( PUBLICATION_TIMEOUT_MINUTES > 40 )); }; then
+            echo "::error::publication_timeout_minutes must be an integer from 1 through 40."
+            exit 1
           fi
           if [[ -n "$CLAWHUB_TOKEN" ]]; then
             exit 0
@@ -290,6 +306,8 @@ jobs:
           INPUT_SOURCE: ${{ inputs.source }}
           INPUT_REF: ${{ inputs.ref }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_WAIT_FOR_PUBLICATION: ${{ inputs.wait_for_publication }}
+          INPUT_PUBLICATION_TIMEOUT_MINUTES: ${{ inputs.publication_timeout_minutes }}
           INPUT_OWNER: ${{ inputs.owner }}
           INPUT_FAMILY: ${{ inputs.family }}
           INPUT_VERSION: ${{ inputs.version }}
@@ -451,6 +469,9 @@ jobs:
 
           if os.environ["INPUT_DRY_RUN"] == "true":
               cmd.append("--dry-run")
+          elif os.environ["INPUT_WAIT_FOR_PUBLICATION"] == "true":
+              timeout_minutes = int(os.environ["INPUT_PUBLICATION_TIMEOUT_MINUTES"])
+              cmd += ["--wait", "--wait-timeout", str(timeout_minutes * 60)]
           cmd.append("--json")
 
           owner = os.environ["INPUT_OWNER"].strip()
@@ -623,6 +644,9 @@ jobs:
 
       - name: Capture workflow outputs
         id: capture
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          WAIT_FOR_PUBLICATION: ${{ inputs.wait_for_publication }}
         run: |
           python3 - <<'PY'
           import json
@@ -632,6 +656,15 @@ jobs:
           output_path = Path(os.environ["RUNNER_TEMP"]) / "package-publish.json"
           raw = output_path.read_text(encoding="utf-8").strip()
           parsed = json.loads(raw)
+          if (
+              os.environ["DRY_RUN"] != "true"
+              and os.environ["WAIT_FOR_PUBLICATION"] == "true"
+              and parsed.get("publicationStatus") != "published"
+          ):
+              raise SystemExit(
+                  "ClawHub package publish did not reach definitive publication: "
+                  f"{parsed.get('publicationStatus', 'unknown')}"
+              )
 
           github_output = Path(os.environ["GITHUB_OUTPUT"])
           with github_output.open("a", encoding="utf-8") as fh:

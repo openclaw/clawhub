@@ -286,6 +286,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - For tarball uploads, ClawHub stores the uploaded tarball, derives its
   artifact hashes and npm metadata, and derives package file metadata from the
   tarball contents.
+- A staged publish attempt is not a successful release. ClawHub dispatches an
+  exact pre-publication worker through the production GitHub App as soon as the
+  attempt becomes pending; the scheduled worker remains recovery for missed
+  dispatches.
+- Authenticated package publishers can read only their own exact publish
+  attempt, or the exact package and version authorized by a GitHub Actions
+  publish token. The response exposes one normalized pending, published,
+  blocked, failed, or expired publication state without exposing another
+  publisher's attempt identifiers or scan details.
+- Release automation must wait for the authoritative attempt to become
+  published or terminally fail. A pending upload response alone must never make
+  a package publication workflow succeed.
 
 ## Skill moderation pipeline
 
