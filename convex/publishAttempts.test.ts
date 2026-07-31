@@ -715,11 +715,75 @@ describe("publishAttempts", () => {
         checkClaimedAt: undefined,
         checkClaimExpiresAt: expect.any(Number),
         checkClaimLastError: "scanner unavailable",
+        checkFailureCount: 1,
         failedAt: undefined,
       }),
     );
     const patch = ctx.db.patch.mock.calls[0]?.[1] as { checkClaimExpiresAt: number };
     expect(patch.checkClaimExpiresAt).toBeGreaterThan(now);
+  });
+
+  it("terminalizes an attempt after three consecutive scanner execution failures", async () => {
+    const now = Date.now();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:poison",
+          kind: "skill",
+          status: "pending_checks",
+          artifactFingerprint: "fingerprint",
+          checkClaimId: "checks:claim",
+          checkClaimExpiresAt: now + 60_000,
+          checkFailureCount: 2,
+          checks: {
+            trufflehog: { status: "clean", checkedAt: now - 300_000 },
+            clawscan: {
+              status: "failed",
+              checkedAt: now - 300_000,
+              summary: "ClawScan scanner did not complete: skillspector=failed",
+            },
+          },
+        })),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:poison",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: {
+          status: "failed",
+          summary: "ClawScan scanner did not complete: skillspector=failed",
+        },
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:poison",
+      kind: "skill",
+      status: "failed",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:poison",
+      expect.objectContaining({
+        status: "failed",
+        checkFailureCount: 3,
+        checkClaimExpiresAt: undefined,
+        checkClaimLastError: "ClawScan scanner did not complete: skillspector=failed",
+        failedAt: expect.any(Number),
+      }),
+    );
   });
 
   it("terminalizes an attempt when its staged target disappears during scanning", async () => {

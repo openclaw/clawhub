@@ -1304,6 +1304,7 @@ const publishAttempts = defineTable({
   checkClaimedAt: v.optional(v.number()),
   checkClaimExpiresAt: v.optional(v.number()),
   checkClaimLastError: v.optional(v.string()),
+  checkFailureCount: v.optional(v.number()),
   finalizationClaimId: v.optional(v.string()),
   finalizationClaimedAt: v.optional(v.number()),
   finalizationClaimExpiresAt: v.optional(v.number()),
