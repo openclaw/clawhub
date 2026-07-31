@@ -131,6 +131,7 @@ describe("clawhub-schema", () => {
         ok: true,
         packageId: "packages:demo",
         releaseId: "packageReleases:demo",
+        artifactSha256: "a".repeat(64),
         publicationStatus: "pending",
         attemptId: "publishAttempts:demo",
       },
@@ -138,6 +139,7 @@ describe("clawhub-schema", () => {
     );
 
     expect(response.releaseId).toBe("packageReleases:demo");
+    expect(response.artifactSha256).toBe("a".repeat(64));
     expect(response.publicationStatus).toBe("pending");
     expect(response.attemptId).toBe("publishAttempts:demo");
   });
@@ -149,6 +151,7 @@ describe("clawhub-schema", () => {
         attemptId: "publishAttempts:demo",
         packageId: "packages:demo",
         releaseId: "packageReleases:demo",
+        artifactSha256: "a".repeat(64),
         name: "@openclaw/demo",
         version: "1.0.0",
         status: "blocked",
@@ -164,6 +167,7 @@ describe("clawhub-schema", () => {
     );
 
     expect(response.publicationStatus).toBe("blocked");
+    expect(response.artifactSha256).toBe("a".repeat(64));
     expect(response.terminal).toBe(true);
     expect(response.checks.clawscan.status).toBe("blocked");
   });

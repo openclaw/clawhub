@@ -268,6 +268,7 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     version: string;
     changelog: string;
+    expectedArtifactSha256?: string | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
@@ -296,6 +297,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     version: string;
     changelog: string;
+    expectedArtifactSha256?: string | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
@@ -1216,6 +1218,7 @@ export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal
     ok: true;
     packageId: string;
     releaseId: string;
+    artifactSha256?: string | undefined;
     publicationStatus?: "pending" | "published" | undefined;
     attemptId?: string | undefined;
     inspectorFindings?: {
@@ -1247,6 +1250,7 @@ export declare const ApiV1PackagePublishAttemptResponseSchema: import("arktype/i
     attemptId: string;
     packageId: string;
     releaseId: string;
+    artifactSha256?: string | undefined;
     name: string;
     version: string;
     status: "blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize";

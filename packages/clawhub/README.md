@@ -88,6 +88,16 @@ For code plugins, folder publish builds and uploads a ClawPack artifact from
 the package folder. Bundle-plugin folders still use the extracted-file publish
 path.
 
+Experimental Claws use an exact-artifact flow. Build with OpenClaw, then give
+ClawHub the resulting `.tgz`; Claw source-folder publication is rejected:
+
+```bash
+openclaw claws validate .
+openclaw claws build . --out ./my-claw-1.0.0.tgz
+clawhub package publish ./my-claw-1.0.0.tgz --family claw --dry-run
+clawhub package publish ./my-claw-1.0.0.tgz --family claw --wait
+```
+
 Use `clawhub package download` to resolve the published artifact through
 ClawHub's explicit artifact route. ClawPack downloads are verified against npm
 integrity/shasum plus ClawHub SHA-256; legacy package versions still download

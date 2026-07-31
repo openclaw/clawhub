@@ -7,6 +7,7 @@ import {
   completePendingPublishAttemptChecksInternal,
   createPackagePublishAttemptInternal,
   createSkillPublishAttemptInternal,
+  getPackagePublishAttemptStatusInternal,
   recordSkillPublishAttemptFinalizedInternal,
   releasePackagePublishAttemptFinalizationClaimInternal,
   releaseSkillPublishAttemptFinalizationClaimInternal,
@@ -57,8 +58,50 @@ const createPackagePublishAttemptHandler = (
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
+const getPackagePublishAttemptStatusHandler = (
+  getPackagePublishAttemptStatusInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
 
 describe("publishAttempts", () => {
+  it("returns the stored package artifact digest while publication is pending", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "publishAttempts:demo",
+        kind: "package",
+        userId: "users:publisher",
+        packageId: "packages:demo",
+        packageReleaseId: "packageReleases:demo",
+        slug: "demo-claw",
+        version: "1.0.0",
+        status: "pending_checks",
+        checks: {
+          trufflehog: { status: "pending" },
+          clawscan: { status: "pending" },
+        },
+      })
+      .mockResolvedValueOnce({ clawpackSha256: "a".repeat(64) });
+
+    await expect(
+      getPackagePublishAttemptStatusHandler(
+        {
+          db: {
+            normalizeId: vi.fn(() => "publishAttempts:demo"),
+            get,
+          },
+        },
+        { attemptId: "publishAttempts:demo" },
+      ),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:demo",
+      artifactSha256: "a".repeat(64),
+      status: "pending_checks",
+    });
+    expect(get).toHaveBeenNthCalledWith(2, "packageReleases:demo");
+  });
+
   it("schedules exact dispatch for fresh skill attempts", async () => {
     vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
     vi.stubEnv("GITHUB_APP_ID", "configured");

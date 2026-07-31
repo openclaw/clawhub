@@ -9931,6 +9931,7 @@ describe("packages public queries", () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
     const longClawDescription = "x".repeat(1_100);
+    const artifactSha256 = "a".repeat(64);
     const storedFiles = new Map<string, string>([
       [
         "storage:package",
@@ -9996,6 +9997,7 @@ describe("packages public queries", () => {
             family: "claw",
             version: "1.0.0",
             changelog: "init",
+            expectedArtifactSha256: artifactSha256,
             files: [
               { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
               {
@@ -10011,6 +10013,18 @@ describe("packages public queries", () => {
                 sha256: "profile",
               },
             ],
+            artifact: {
+              kind: "npm-pack",
+              storageId: "storage:archive",
+              sha256: artifactSha256,
+              size: 3,
+              format: "tgz",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "b".repeat(40),
+              npmTarballName: "demo-claw-1.0.0.tgz",
+              npmUnpackedSize: 3,
+              npmFileCount: 3,
+            },
           },
         }),
       ).resolves.toEqual({
@@ -10018,6 +10032,7 @@ describe("packages public queries", () => {
         packageId: "packages:claw",
         releaseId: "releases:claw-1",
         publicationStatus: "published",
+        artifactSha256,
       });
 
       expect(runMutation).toHaveBeenCalledWith(
@@ -10025,10 +10040,10 @@ describe("packages public queries", () => {
         expect.objectContaining({
           family: "claw",
           summary: expect.any(String),
-          artifactKind: "legacy-zip",
-          clawpackStorageId: "storage:legacy-zip",
-          clawpackSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
-          clawpackSize: expect.any(Number),
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:archive",
+          clawpackSha256: artifactSha256,
+          clawpackSize: 3,
           clawManifestSummary: expect.objectContaining({
             agent: expect.objectContaining({
               id: "demo-claw",

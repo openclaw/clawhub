@@ -281,6 +281,7 @@ type PackagePublishPayload = {
   family: PublishablePackageFamily;
   version: string;
   changelog: string;
+  expectedArtifactSha256?: string;
   manualOverrideReason?: string;
   tags: string[];
   categories?: string[];
@@ -310,8 +311,21 @@ type PackagePublishPlan = {
     commit?: string;
     files: number;
     totalBytes: number;
+    artifactSha256?: string;
   };
 };
+
+function assertClawPublishArtifactDigest(
+  plan: PackagePublishPlan,
+  result: { artifactSha256?: string },
+) {
+  if (plan.payload.family !== "claw") return;
+  if (result.artifactSha256 !== plan.payload.expectedArtifactSha256) {
+    fail(
+      `ClawHub artifact SHA-256 mismatch: expected ${plan.payload.expectedArtifactSha256}, got ${result.artifactSha256 ?? "missing"}`,
+    );
+  }
+}
 
 type PackedClawPack = {
   path: string;
@@ -1002,6 +1016,7 @@ export async function cmdPublishPackage(
         },
         ApiV1PackagePublishResponseSchema,
       );
+      assertClawPublishArtifactDigest(plan, result);
 
       let finalResult: ApiV1PackagePublishResponse | ApiV1PackagePublishAttemptResponse = result;
       if (options.wait && result.publicationStatus !== "published") {
@@ -1033,6 +1048,7 @@ export async function cmdPublishPackage(
             return publishToken;
           },
         });
+        assertClawPublishArtifactDigest(plan, finalResult);
       }
 
       const publicationStatus = finalResult.publicationStatus;
@@ -1049,6 +1065,7 @@ export async function cmdPublishPackage(
               ...plan.output,
               status: outputStatus,
               releaseId: finalResult.releaseId,
+              artifactSha256: finalResult.artifactSha256,
               publicationStatus,
               attemptId: finalResult.attemptId,
               inspectorFindings: result.inspectorFindings,
@@ -2542,6 +2559,9 @@ async function preparePackagePublishPlan(
     if (!validation.ok) {
       fail(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
     }
+    if (!clawpackOnDisk) {
+      fail("Claw publication requires an already-built package tarball (.tgz)");
+    }
   }
 
   if (family === "code-plugin" && !clawpackOnDisk) {
@@ -2587,6 +2607,9 @@ async function preparePackagePublishPlan(
     family,
     version,
     changelog,
+    ...(family === "claw" && clawpackOnDisk
+      ? { expectedArtifactSha256: digestHex(clawpackOnDisk.bytes, "sha256") }
+      : {}),
     ...(options.manualOverrideReason?.trim()
       ? { manualOverrideReason: options.manualOverrideReason.trim() }
       : {}),
@@ -2638,6 +2661,9 @@ async function preparePackagePublishPlan(
       ...(source?.commit ? { commit: source.commit } : {}),
       files: filesOnDisk.length,
       totalBytes,
+      ...(family === "claw" && clawpackOnDisk
+        ? { artifactSha256: digestHex(clawpackOnDisk.bytes, "sha256") }
+        : {}),
     },
   };
 }
