@@ -20,8 +20,8 @@ describe("Claw feed OpenClaw contract workflow", () => {
     };
     const job = workflow.jobs["claws-openclaw-contract"];
     expect(job?.env).toMatchObject({
-      OPENCLAW_CONTRACT_REPOSITORY: "openclaw/openclaw",
-      OPENCLAW_CONTRACT_SHA: "e79faff8aa755b201302edd286976a03f9ed79ea",
+      OPENCLAW_CONTRACT_REPOSITORY: "giodl73-repo/openclaw",
+      OPENCLAW_CONTRACT_SHA: "9002871d2f3bdf24b288070fa9935638f3ebda5e",
     });
     expect(job?.steps).toContainEqual(
       expect.objectContaining({
