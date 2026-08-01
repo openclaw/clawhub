@@ -82,4 +82,79 @@ describe("SkillDetailPageView", () => {
     expect(screen.getByText("Source tabs")).toBeTruthy();
     expect(screen.getAllByText("Source provenance")).toHaveLength(2);
   });
+
+  it("omits the fallback title icon and renders source metadata before taxonomy", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <SkillDetailPageView
+          {...makeMinimalProps()}
+          taxonomyPrefix={<a href="https://skills.sh/example/skills/demo">Synced from skills.sh</a>}
+          categories={[{ slug: "development", label: "Development", icon: "wrench", keywords: [] }]}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(container.querySelector(".marketplace-icon")).toBeNull();
+    const taxonomy = container.querySelector(".skill-hero-taxonomy-row");
+    expect(taxonomy).toBeTruthy();
+    expect(taxonomy?.textContent).toContain("Synced from skills.sh");
+    expect(taxonomy?.textContent).toContain("Development");
+    expect(taxonomy?.querySelector(".skill-hero-taxonomy-separator")).toBeTruthy();
+  });
+
+  it("renders the supplied title icon", () => {
+    const icon = `/api/v1/skill-icons/${"a".repeat(64)}`;
+    const { container } = render(
+      <TooltipProvider>
+        <SkillDetailPageView
+          {...makeMinimalProps()}
+          skill={{
+            ...makeMinimalProps().skill,
+            icon,
+          }}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(container.querySelector(".marketplace-icon img")?.getAttribute("src")).toBe(icon);
+  });
 });
+
+function makeMinimalProps(): SkillDetailPageViewProps {
+  return {
+    skill: {
+      slug: "demo",
+      displayName: "Demo Skill",
+      summary: "Shared detail page",
+      icon: null,
+      stats: { downloads: 12, stars: 0 },
+      updatedAt: 1,
+    },
+    owner: null,
+    ownerHandle: "publisher",
+    latestVersion: null,
+    modInfo: null,
+    canManage: false,
+    isAuthenticated: false,
+    isStaff: false,
+    isStarred: false,
+    onToggleStar: vi.fn(),
+    onOpenReport: vi.fn(),
+    onRequireSignIn: vi.fn(),
+    forkOf: null,
+    forkOfLabel: "fork of",
+    forkOfHref: null,
+    forkOfOwnerHandle: null,
+    canonical: null,
+    canonicalHref: null,
+    canonicalOwnerHandle: null,
+    staffVisibilityTag: null,
+    isAutoHidden: false,
+    isRemoved: false,
+    nixPlugin: undefined,
+    hasPluginBundle: false,
+    configRequirements: undefined,
+    cliHelp: undefined,
+    clawdis: undefined,
+  };
+}

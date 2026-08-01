@@ -178,6 +178,7 @@ export type SkillDetailPageViewProps = {
   breadcrumbSkillHref?: string;
   creatorContent?: ReactNode;
   heroNotice?: ReactNode;
+  taxonomyPrefix?: ReactNode;
   installContent?: ReactNode;
   renderSidebarContent?: () => ReactNode;
   showBookmarkAction?: boolean;
@@ -228,6 +229,7 @@ export function SkillDetailPageView({
   breadcrumbSkillHref,
   creatorContent,
   heroNotice,
+  taxonomyPrefix,
   installContent,
   renderSidebarContent,
   showBookmarkAction = true,
@@ -449,8 +451,15 @@ export function SkillDetailPageView({
                   </a>
                 </nav>
                 <div className="skill-hero-heading-stack">
-                  {headerCategories.length > 0 || headerTopics.length > 0 ? (
+                  {taxonomyPrefix || headerCategories.length > 0 || headerTopics.length > 0 ? (
                     <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
+                      {taxonomyPrefix ? (
+                        <div className="skill-hero-taxonomy-prefix">{taxonomyPrefix}</div>
+                      ) : null}
+                      {taxonomyPrefix &&
+                      (headerCategories.length > 0 || headerTopics.length > 0) ? (
+                        <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+                      ) : null}
                       {headerCategories.length > 0 ? (
                         <div className="skill-category-meta-list" aria-label="Categories">
                           {headerCategories.map((categoryItem) => (
@@ -491,13 +500,15 @@ export function SkillDetailPageView({
                     </div>
                   ) : null}
                   <div className="skill-hero-title-row">
-                    <MarketplaceIcon
-                      kind="skill"
-                      label={displayName}
-                      imageUrl={skill.icon}
-                      skill={skill}
-                      size="md"
-                    />
+                    {skill.icon ? (
+                      <MarketplaceIcon
+                        kind="skill"
+                        label={displayName}
+                        imageUrl={skill.icon}
+                        skill={skill}
+                        size="md"
+                      />
+                    ) : null}
                     <h1 className="skill-page-title">{displayName}</h1>
                     {showTitleBadges ? (
                       <div className="skill-title-badges">

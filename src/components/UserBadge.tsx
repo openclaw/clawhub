@@ -33,6 +33,7 @@ type UserBadgeProps = {
   /** Hero creator row: stack `@handle` below the display name. */
   stackMutedHandleBelowName?: boolean;
   disableTooltip?: boolean;
+  profileHref?: string | null;
 };
 
 export function UserBadge({
@@ -46,12 +47,14 @@ export function UserBadge({
   showMutedHandle = false,
   stackMutedHandleBelowName = false,
   disableTooltip = false,
+  profileHref,
 }: UserBadgeProps) {
   const userName =
     hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
   const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
-  const href = handle ? buildPublisherProfileHref(handle) : null;
+  const href =
+    profileHref === undefined ? (handle ? buildPublisherProfileHref(handle) : null) : profileHref;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
   const showStackedMutedHandle =

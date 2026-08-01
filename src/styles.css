@@ -7066,6 +7066,24 @@ code {
   line-height: 1;
 }
 
+.skill-hero-taxonomy-prefix {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.skills-sh-sync-source {
+  color: inherit;
+  font-weight: 520;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.skills-sh-sync-source:hover,
+.skills-sh-sync-source:focus-visible {
+  color: var(--ink);
+}
+
 .skill-category-meta-list {
   display: inline-flex;
   align-items: center;
@@ -7328,97 +7346,48 @@ code {
   font-size: 0.8rem;
 }
 
-.skills-sh-detail-source-badge {
-  flex: 0 0 auto;
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
-}
-
-.skills-sh-detail-source-owner {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.skills-sh-detail-source-owner:hover,
-.skills-sh-detail-source-owner:focus-visible {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.skills-sh-detail-trust-alert {
-  max-width: 760px;
-}
-
-.skills-sh-upstream-checks {
+.skills-sh-security-audits {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
 
-.skills-sh-upstream-checks-heading {
-  display: grid;
-  gap: 3px;
-}
-
-.skills-sh-upstream-checks-heading h2,
-.skills-sh-upstream-checks-heading p,
-.skills-sh-upstream-check p {
+.skills-sh-security-audits h2 {
   margin: 0;
-}
-
-.skills-sh-upstream-checks-heading h2 {
   color: var(--ink);
   font-family: var(--font-display);
   font-size: 0.95rem;
   font-weight: 750;
 }
 
-.skills-sh-upstream-checks-heading p,
-.skills-sh-upstream-check > p {
-  color: var(--ink-soft);
-  font-size: 0.72rem;
-}
-
-.skills-sh-upstream-checks-list {
+.skills-sh-security-audit-list {
   display: grid;
-  gap: 8px;
 }
 
-.skills-sh-upstream-check {
-  display: grid;
-  gap: 5px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface-muted);
-}
-
-.skills-sh-upstream-check-title {
+.skills-sh-security-audit-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
   color: var(--ink);
   font-size: 0.8rem;
-  font-weight: 650;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-.skills-sh-upstream-check a {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  width: fit-content;
-  color: var(--accent-deep);
-  font-size: 0.72rem;
-  font-weight: 650;
+.skills-sh-security-audit-row:last-child {
+  border-bottom: 0;
+}
+
+a.skills-sh-security-audit-row:hover,
+a.skills-sh-security-audit-row:focus-visible {
+  color: var(--ink);
+  text-decoration: none;
+  background: var(--hover-bg);
 }
 
 .skills-sh-detail-links {
@@ -7431,22 +7400,11 @@ code {
   width: 100%;
 }
 
-.skills-sh-content-meta {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+.skills-sh-content-note {
+  margin: 0;
   padding-bottom: 14px;
   color: var(--ink-soft);
   font-size: 0.72rem;
-}
-
-.skills-sh-content-meta code {
-  overflow-wrap: anywhere;
-}
-
-.skills-sh-content-meta span {
-  text-align: right;
 }
 
 .skill-sidebar-actions {

@@ -23,40 +23,59 @@ vi.mock("../lib/useHeroCreatorPublisher", () => ({
 }));
 
 describe("SkillsShCatalogDetailPage", () => {
-  it("shows the external trust boundary, upstream checks, provenance, and freshness", () => {
+  it("shows skills.sh provenance and simple security audit rows", () => {
     const { container } = render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
     expect(screen.getAllByText("Not scanned by ClawHub").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Gen Agent Trust Hub").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Socket").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Snyk").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Separate from ClawHub scanning.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Observed").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("1m ago").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Separate from ClawHub scanning.")).toBeNull();
+    expect(screen.queryByText("Observed")).toBeNull();
+    expect(screen.queryByText("Trust")).toBeNull();
+    expect(screen.queryByText("Path")).toBeNull();
     expect(screen.getByRole("link", { name: /View on skills\.sh/i }).getAttribute("href")).toBe(
       "https://skills.sh/patrick-erichsen/skills/html",
     );
+    expect(screen.getByRole("link", { name: "Synced from skills.sh" }).getAttribute("href")).toBe(
+      "https://skills.sh/patrick-erichsen/skills/html",
+    );
     expect(screen.getAllByText("100").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Upstream installs").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Upstream installs")).toBeNull();
     expect(screen.getByText("HTML Artifact Chooser Build useful artifacts.")).toBeTruthy();
     expect(container.querySelector(".skill-hero-layout.has-sidebar")).toBeTruthy();
     expect(container.querySelector(".skill-hero-sidebar")?.textContent).toContain(
-      "Upstream checks",
+      "Security Audits",
     );
+    expect(
+      screen
+        .getByRole("region", { name: "Security Audits" })
+        .querySelectorAll(".skills-sh-security-audit-row"),
+    ).toHaveLength(4);
+    expect(container.querySelector(".skills-sh-detail-trust-alert")).toBeNull();
+    expect(container.querySelector(".skills-sh-detail-source-badge")).toBeNull();
   });
 
-  it("shows colon-form install commands and a preselected GitHub Skill Sync claim", () => {
+  it("shows the GitHub owner, repository, and a preselected GitHub Skill Sync claim", () => {
     render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
     expect(screen.getByText("openclaw skills install")).toBeTruthy();
     expect(screen.getByText("skills-sh:patrick-erichsen/skills/html")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "ClawHub" }));
-    expect(
-      screen.getByText("clawhub install skills-sh:patrick-erichsen/skills/html", { exact: true }),
-    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "ClawHub" })).toBeNull();
+    const owner = screen.getByRole("link", { name: "View openclaw profile" });
+    expect(owner.getAttribute("href")).toBe("https://github.com/openclaw");
+    expect(owner.querySelector("img")?.getAttribute("src")).toBe(
+      "https://github.com/openclaw.png?size=96",
+    );
+    const repository = screen.getByRole("link", { name: "openclaw/openclaw" });
+    expect(repository.getAttribute("href")).toBe(
+      "https://github.com/openclaw/openclaw/tree/050daba89f6b6636470add5cb300aac46a412cf8/skills/html",
+    );
+    expect(repository.classList.contains("plugin-external-link")).toBe(true);
+    expect(repository.querySelector("svg")).toBeTruthy();
     const claimUrl = new URL(
-      screen.getByRole("link", { name: "Claim" }).getAttribute("href") ?? "",
+      screen.getByRole("link", { name: "Claim this skill" }).getAttribute("href") ?? "",
       "https://clawhub.test",
     );
     expect(claimUrl.pathname).toBe("/settings");
@@ -83,6 +102,7 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.getByRole("heading", { name: "Use this skill" })).toBeTruthy();
     expect(screen.queryByText("Files")).toBeNull();
     expect(screen.queryByText("File explorer")).toBeNull();
+    expect(screen.queryByText("skills/html/SKILL.md")).toBeNull();
     expect(screen.getByText("Content is truncated to the stored 64 KiB snapshot.")).toBeTruthy();
   });
 
@@ -92,7 +112,7 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(container.querySelector(".skill-install-command-card")).toBeTruthy();
     expect(screen.getByText("openclaw skills install")).toBeTruthy();
     expect(screen.getByText("skills-sh:patrick-erichsen/skills/html")).toBeTruthy();
-    expect(screen.getAllByText("skills.sh").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Synced from skills.sh" })).toBeTruthy();
   });
 
   it("uses the shared skill detail shell for content and stats", () => {
@@ -114,7 +134,7 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.getByRole("tab", { name: "Stats & details" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getAllByText("Upstream checks").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Security Audits").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Bookmark skill" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
   });
