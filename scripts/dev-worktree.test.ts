@@ -138,6 +138,7 @@ describe("dev-worktree helpers", () => {
     expect(byName.DEV_AUTH_CONVEX_DEPLOYMENT).toBe("anonymous:anonymous-agent");
     expect(byName.SECURITY_SCAN_WORKER_TOKEN).toBe("local-dev-worker-token");
     expect(byName.SECURITY_SCAN_DEFAULT_VT_WAIT_MS).toBe("0");
+    expect(byName.CLAWHUB_SKILLS_SH_ROLLOUT_MODE).toBe("test");
     expect(byName.AUTH_GITHUB_ID).toBe("local-dev");
     expect(byName.AUTH_GITHUB_SECRET).toBe("local-dev");
     expect(byName.JWT_PRIVATE_KEY).toContain("BEGIN PRIVATE KEY");
@@ -145,6 +146,16 @@ describe("dev-worktree helpers", () => {
       keys: [expect.objectContaining({ use: "sig" })],
     });
     expect(byName.CONVEX_SITE_URL).toBeUndefined();
+  });
+
+  it("preserves an explicit local skills.sh rollout override", () => {
+    const changes = buildLocalConvexEnvChanges({
+      CONVEX_DEPLOYMENT: "anonymous:anonymous-agent",
+      CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "off",
+    });
+    const byName = Object.fromEntries(changes.map((change) => [change.name, change.value]));
+
+    expect(byName.CLAWHUB_SKILLS_SH_ROLLOUT_MODE).toBe("off");
   });
 
   it("does not apply local dev auth overrides for cloud Convex URLs", () => {

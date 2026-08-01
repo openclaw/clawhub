@@ -139,6 +139,10 @@ export function buildLocalConvexEnvChanges(env: NodeJS.ProcessEnv) {
     { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: deployment },
     { name: "SECURITY_SCAN_WORKER_TOKEN", value: LOCAL_DEV_WORKER_TOKEN },
     { name: "SECURITY_SCAN_DEFAULT_VT_WAIT_MS", value: "0" },
+    {
+      name: "CLAWHUB_SKILLS_SH_ROLLOUT_MODE",
+      value: env.CLAWHUB_SKILLS_SH_ROLLOUT_MODE?.trim() || "test",
+    },
     { name: "JWT_PRIVATE_KEY", value: authKeys.JWT_PRIVATE_KEY },
     { name: "JWKS", value: authKeys.JWKS },
     { name: "AUTH_GITHUB_ID", value: env.AUTH_GITHUB_ID?.trim() || "local-dev" },

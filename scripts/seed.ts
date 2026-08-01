@@ -43,6 +43,10 @@ export function buildSeedSteps(options: SeedOptions): SeedStep[] {
       args: ["convex", "run", ...convexTargetArgs, "devSeed:seedLocalFixtures"],
     },
     {
+      command: "bunx",
+      args: ["convex", "run", ...convexTargetArgs, "devSeed:seedCanonicalSearchFixture"],
+    },
+    {
       command: "bun",
       args: ["scripts/public-corpus/seed-public-corpus.ts", ...corpusTargetArgs],
     },

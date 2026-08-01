@@ -929,21 +929,85 @@ export const seedTestFixtures: ReturnType<typeof internalAction> = internalActio
   },
 });
 
-const LOCAL_CANONICAL_SEARCH_EXTERNAL_ID = "acme/skills/risk-auditor";
+const LOCAL_SKILLS_SH_EXTERNAL_ID = "doany-skills/skills/reddit-automation";
+const LOCAL_SKILLS_SH_SNAPSHOT_ID = "local-skills-sh-route-v1";
+const LOCAL_SKILLS_SH_COMMIT = "6875ced8582825395c976099fcc6a00734bb09b1";
+const LOCAL_SKILLS_SH_CONTENT_HASH =
+  "278abced163b5721c6fec6996f73d521c8901b905b4b2fca45757d1ff0ebbfc6";
+const LOCAL_SKILLS_SH_CONTENT = `---
+name: reddit-automation
+displayName: Reddit Automation
+description: Find relevant Reddit conversations and draft genuinely useful, disclosed replies.
+---
 
-/** Explicit local proof fixture; intentionally not part of shared Test seeding. */
+# Reddit Automation
+
+Find people on Reddit who genuinely need what you make, then draft a useful response that
+honestly discloses who you are. Keep a human in the loop to review and post every reply.
+
+## When to use
+
+- Find Reddit conversations relevant to a product.
+- Draft a helpful response for a thread the user provides.
+- Turn a set of research notes into replies for human review.
+
+## Guardrails
+
+- Never auto-post or pretend a draft was published.
+- Never invent posts, quotes, or product facts.
+- Respect each community's self-promotion rules.
+`;
+
+/** Explicit local/PR-preview fixture; intentionally not part of shared Test seeding. */
 export const seedCanonicalSearchFixture = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
+    const existingControl = await ctx.db
+      .query("skillsShCatalogControls")
+      .withIndex("by_key", (q) => q.eq("key", "global"))
+      .unique();
+    const control = {
+      key: "global" as const,
+      mode: "fixture" as const,
+      discoveryEnabled: false,
+      writesEnabled: false,
+      scanPlanningEnabled: false,
+      scanAdmissionEnabled: false,
+      publicVisibilityEnabled: false,
+      mirrorPublicVisibilityEnabled: true,
+      paused: false,
+      maxEntriesPerRun: 1,
+      maxEntriesPerBatch: 1,
+      maxWritesPerBatch: 1,
+      maxPlannedScans: 0,
+      maxScanAdmissionsPerBatch: 0,
+      maxScanAdmissionsPerRun: 0,
+      maxScanAdmissionsPerDay: 0,
+      maxCatalogQueued: 0,
+      maxCatalogInFlight: 0,
+      maxNativeQueued: 0,
+      maxNativeInFlight: 0,
+      realScanAllowlist: [],
+      updatedBy: "local-dev-seed",
+      reason: "Expose the local skills.sh browser fixture without enabling imports or scans.",
+      updatedAt: now,
+    };
+    if (existingControl) {
+      await ctx.db.patch(existingControl._id, control);
+    } else {
+      await ctx.db.insert("skillsShCatalogControls", control);
+    }
+
     const existing = await ctx.db
       .query("skillsShMirrorDigests")
-      .withIndex("by_external_id", (q) => q.eq("externalId", LOCAL_CANONICAL_SEARCH_EXTERNAL_ID))
+      .withIndex("by_external_id", (q) => q.eq("externalId", LOCAL_SKILLS_SH_EXTERNAL_ID))
       .unique();
     const runId =
       existing?.lastObservedRunId ??
       (await ctx.db.insert("skillsShMirrorRuns", {
-        snapshotId: "local-canonical-search-v1",
+        snapshotId: LOCAL_SKILLS_SH_SNAPSHOT_ID,
+        sourceView: "leaderboard",
         status: "completed",
         sourceTotal: 1,
         sourcePageSize: 1,
@@ -959,10 +1023,10 @@ export const seedCanonicalSearchFixture = internalMutation({
           quarantined: 0,
           quarantinedPreserved: 0,
           conflicts: 0,
-          detailsInserted: 0,
+          detailsInserted: 1,
           detailsUpdated: 0,
           detailsUnchanged: 0,
-          detailsMissing: 1,
+          detailsMissing: 0,
           detailsTruncated: 0,
           tombstoned: 0,
           reactivated: 0,
@@ -977,42 +1041,53 @@ export const seedCanonicalSearchFixture = internalMutation({
           sourceBytes: 0,
         },
         actor: "local-dev-seed",
-        reason: "Reusable local canonical mixed-search browser proof fixture.",
+        reason: "Reusable local skills.sh route browser proof fixture.",
         startedAt: now,
         completedAt: now,
         updatedAt: now,
       }));
     const digest = {
-      externalId: LOCAL_CANONICAL_SEARCH_EXTERNAL_ID,
+      externalId: LOCAL_SKILLS_SH_EXTERNAL_ID,
       sourceType: "github" as const,
       upstreamSourceType: "github",
-      owner: "acme",
+      owner: "doany-skills",
       repo: "skills",
-      slug: "risk-auditor",
-      normalizedSlug: "risk auditor",
-      normalizedSlugFirstToken: "risk",
-      displayName: "Risk Auditor",
-      normalizedDisplayName: "risk auditor",
-      normalizedDisplayNameFirstToken: "risk",
-      searchSummary: "Audit agent workflows for security and operational risk.",
+      slug: "reddit-automation",
+      normalizedSlug: "reddit automation",
+      normalizedSlugFirstToken: "reddit",
+      displayName: "Reddit Automation",
+      normalizedDisplayName: "reddit automation",
+      normalizedDisplayNameFirstToken: "reddit",
+      searchSummary:
+        "Find relevant Reddit conversations and draft genuinely useful, disclosed replies.",
       searchText:
-        "Risk Auditor risk-auditor acme skills security risk-management security-audit Audit agent workflows for security and operational risk.",
-      sourceUrl: "https://skills.sh/acme/skills/risk-auditor",
-      canonicalRepoUrl: "https://github.com/acme/skills",
-      githubPath: "skills/risk-auditor",
-      githubCommit: "0000000000000000000000000000000000000000",
-      upstreamInstalls: 9_000_000,
+        "Reddit Automation reddit-automation doany-skills skills automation reddit marketing Find relevant Reddit conversations and draft genuinely useful disclosed replies.",
+      sourceUrl: `https://www.skills.sh/${LOCAL_SKILLS_SH_EXTERNAL_ID}`,
+      canonicalRepoUrl: "https://github.com/doany-skills/skills",
+      githubPath: "reddit-automation",
+      githubCommit: LOCAL_SKILLS_SH_COMMIT,
+      sourceContentHash: LOCAL_SKILLS_SH_CONTENT_HASH,
+      upstreamInstalls: 202_996,
       upstreamScanners: {
-        genAgentTrustHub: { status: "unavailable" },
-        socket: { status: "unavailable" },
-        snyk: { status: "unavailable" },
+        genAgentTrustHub: {
+          status: "pass",
+          sourceUrl: `https://www.skills.sh/${LOCAL_SKILLS_SH_EXTERNAL_ID}/security/agent-trust-hub`,
+        },
+        socket: {
+          status: "warn",
+          sourceUrl: `https://www.skills.sh/${LOCAL_SKILLS_SH_EXTERNAL_ID}/security/socket`,
+        },
+        snyk: {
+          status: "warn",
+          sourceUrl: `https://www.skills.sh/${LOCAL_SKILLS_SH_EXTERNAL_ID}/security/snyk`,
+        },
       },
-      inferredCategories: ["security"],
-      inferredTopics: ["risk-management", "security-audit"],
+      inferredCategories: ["automation"],
+      inferredTopics: ["reddit", "marketing"],
       sourceFreshnessStatus: "observed-only" as const,
-      detailStatus: "missing" as const,
-      observationFingerprint: "local-canonical-search-v1",
-      sourceSnapshotId: "local-canonical-search-v1",
+      detailStatus: "available" as const,
+      observationFingerprint: LOCAL_SKILLS_SH_CONTENT_HASH,
+      sourceSnapshotId: LOCAL_SKILLS_SH_SNAPSHOT_ID,
       lastObservedRunId: runId,
       active: true,
       publicVisible: true,
@@ -1022,15 +1097,45 @@ export const seedCanonicalSearchFixture = internalMutation({
       updatedAt: now,
     };
 
+    let digestId: Id<"skillsShMirrorDigests">;
     if (existing) {
       await ctx.db.patch(existing._id, digest);
-      return { ok: true as const, digestId: existing._id };
+      digestId = existing._id;
+    } else {
+      digestId = await ctx.db.insert("skillsShMirrorDigests", {
+        ...digest,
+        createdAt: now,
+      });
     }
-    const digestId = await ctx.db.insert("skillsShMirrorDigests", {
-      ...digest,
+
+    const existingDetail = await ctx.db
+      .query("skillsShMirrorDetails")
+      .withIndex("by_external_id", (q) => q.eq("externalId", LOCAL_SKILLS_SH_EXTERNAL_ID))
+      .unique();
+    const detail = {
+      externalId: LOCAL_SKILLS_SH_EXTERNAL_ID,
+      digestId,
+      contentKind: "skill-md" as const,
+      path: "SKILL.md",
+      content: LOCAL_SKILLS_SH_CONTENT,
+      contentBytes: new TextEncoder().encode(LOCAL_SKILLS_SH_CONTENT).byteLength,
+      sourceBytes: new TextEncoder().encode(LOCAL_SKILLS_SH_CONTENT).byteLength,
+      sourceFileCount: 1,
+      truncated: false,
+      sourceContentHash: LOCAL_SKILLS_SH_CONTENT_HASH,
+      sourceSnapshotId: LOCAL_SKILLS_SH_SNAPSHOT_ID,
+      lastObservedRunId: runId,
+      updatedAt: now,
+    };
+    if (existingDetail) {
+      await ctx.db.patch(existingDetail._id, detail);
+      return { ok: true as const, digestId, detailId: existingDetail._id };
+    }
+    const detailId = await ctx.db.insert("skillsShMirrorDetails", {
+      ...detail,
       createdAt: now,
     });
-    return { ok: true as const, digestId };
+    return { ok: true as const, digestId, detailId };
   },
 });
 

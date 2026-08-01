@@ -9,6 +9,10 @@ describe("shared seed runner", () => {
         args: ["convex", "run", "--no-push", "devSeed:seedLocalFixtures"],
       },
       {
+        command: "bunx",
+        args: ["convex", "run", "--no-push", "devSeed:seedCanonicalSearchFixture"],
+      },
+      {
         command: "bun",
         args: ["scripts/public-corpus/seed-public-corpus.ts"],
       },
@@ -28,6 +32,16 @@ describe("shared seed runner", () => {
       {
         command: "bunx",
         args: ["convex", "run", "--preview-name", "feature/demo", "devSeed:seedLocalFixtures"],
+      },
+      {
+        command: "bunx",
+        args: [
+          "convex",
+          "run",
+          "--preview-name",
+          "feature/demo",
+          "devSeed:seedCanonicalSearchFixture",
+        ],
       },
       {
         command: "bun",

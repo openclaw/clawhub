@@ -176,7 +176,7 @@ function seedSkillArgs(storageId: string) {
 }
 
 describe("devSeed local fixtures", () => {
-  it("idempotently seeds an activated external row for local canonical search proof", async () => {
+  it("idempotently seeds an installable skills.sh route for local browser proof", async () => {
     const { db, tables } = createDb();
 
     await seedCanonicalSearchFixtureHandler(createMutationCtx(db) as never, {});
@@ -184,14 +184,50 @@ describe("devSeed local fixtures", () => {
 
     expect(tables.skillsShMirrorRuns).toHaveLength(1);
     expect(tables.skillsShMirrorDigests).toHaveLength(1);
+    expect(tables.skillsShMirrorDetails).toHaveLength(1);
+    expect(tables.skillsShCatalogControls).toHaveLength(1);
+    expect(tables.skillsShCatalogControls?.[0]).toEqual(
+      expect.objectContaining({
+        key: "global",
+        mode: "fixture",
+        mirrorPublicVisibilityEnabled: true,
+        writesEnabled: false,
+        scanPlanningEnabled: false,
+        scanAdmissionEnabled: false,
+      }),
+    );
     expect(tables.skillsShMirrorDigests?.[0]).toEqual(
       expect.objectContaining({
-        externalId: "acme/skills/risk-auditor",
-        searchSummary: "Audit agent workflows for security and operational risk.",
+        externalId: "doany-skills/skills/reddit-automation",
+        owner: "doany-skills",
+        repo: "skills",
+        slug: "reddit-automation",
+        displayName: "Reddit Automation",
+        upstreamInstalls: 202_996,
         active: true,
         publicVisible: true,
         installable: true,
         sourceFreshnessStatus: "observed-only",
+        detailStatus: "available",
+        githubPath: "reddit-automation",
+        githubCommit: "6875ced8582825395c976099fcc6a00734bb09b1",
+        sourceContentHash: "278abced163b5721c6fec6996f73d521c8901b905b4b2fca45757d1ff0ebbfc6",
+      }),
+    );
+    expect(tables.skillsShMirrorDetails?.[0]).toEqual(
+      expect.objectContaining({
+        externalId: "doany-skills/skills/reddit-automation",
+        contentKind: "skill-md",
+        path: "SKILL.md",
+        truncated: false,
+        sourceContentHash: "278abced163b5721c6fec6996f73d521c8901b905b4b2fca45757d1ff0ebbfc6",
+      }),
+    );
+    expect(tables.skillsShMirrorDetails?.[0]?.content).toContain("# Reddit Automation");
+    expect(tables.skillsShMirrorRuns?.[0]).toEqual(
+      expect.objectContaining({
+        status: "completed",
+        counts: expect.objectContaining({ scansPlanned: 0, scansAdmitted: 0 }),
       }),
     );
   });
