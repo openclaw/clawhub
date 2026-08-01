@@ -8,6 +8,7 @@ import {
   TriangleAlert,
   XCircle,
 } from "lucide-react";
+import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import {
   isSkillsShCatalogInstallable,
@@ -18,10 +19,10 @@ import {
 } from "../lib/skillsShCatalog";
 import { timeAgo } from "../lib/timeAgo";
 import { truncateText } from "../lib/truncateText";
-import { DetailHero, DetailPageShell } from "./DetailPageShell";
+import { DetailPageShell } from "./DetailPageShell";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { MarketplaceIcon } from "./MarketplaceIcon";
 import { SidebarMetadata } from "./SidebarMetadata";
+import { SkillHeader, type SkillHeaderSkill } from "./SkillHeader";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
@@ -49,184 +50,221 @@ function skillsShSummary(summary: string | undefined) {
 export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDetail }) {
   const installable = isSkillsShCatalogInstallable(entry);
   const repositoryLabel = skillsShRepositoryLabel(entry);
+  const skill: SkillHeaderSkill = {
+    slug: entry.slug,
+    displayName: entry.displayName,
+    summary: skillsShSummary(entry.summary),
+    icon: null,
+    ...(installable
+      ? { installKind: "github" as const, githubSourceRepo: entry.canonicalGitHubRepo }
+      : {}),
+    categories: entry.categories,
+    inferredCategories: [],
+    topics: entry.topics,
+    badges: {},
+    stats: {
+      downloads: entry.upstreamInstalls,
+      stars: 0,
+      installs: entry.upstreamInstalls,
+      versions: 0,
+      comments: 0,
+    },
+    updatedAt: entry.lastObservedAt,
+  };
+
+  const installContent = installable ? (
+    <SkillCommandLineCard
+      slug={entry.slug}
+      displayName={entry.displayName}
+      ownerHandle={entry.owner ?? null}
+      ownerId={null}
+      installTarget={entry.reference}
+      skillPageUrl={null}
+      // The ClawHub CLI resolves skills-sh: references directly; this is not a claimed registry slug.
+      secondaryInstall={{
+        label: "ClawHub",
+        command: `clawhub install ${entry.reference}`,
+        copyAriaLabel: "Copy ClawHub install command",
+      }}
+    />
+  ) : (
+    <Alert variant="warn">
+      <ShieldAlert aria-hidden="true" size={17} />
+      <AlertDescription>
+        This snapshot does not include a commit-pinned GitHub folder, so it cannot be installed yet.
+      </AlertDescription>
+    </Alert>
+  );
 
   return (
     <main className="section detail-page-section skill-detail-page skills-sh-detail-page">
       <DetailPageShell>
-        <DetailHero
-          main={
-            <div className="skill-hero-title">
-              <nav className="skill-hero-breadcrumbs" aria-label="Skill breadcrumbs">
-                <a href="/skills">skills</a>
-                <span aria-hidden="true">/</span>
-                <span>{entry.owner ?? "skills.sh"}</span>
-                <span aria-hidden="true">/</span>
-                <span aria-current="page">{entry.slug}</span>
-              </nav>
-
-              <div className="skill-hero-heading-stack">
-                <div className="skill-hero-title-row">
-                  <MarketplaceIcon kind="skill" label={entry.displayName} size="md" />
-                  <h1 className="skill-page-title">{entry.displayName}</h1>
-                  <Badge variant="compact" className="skills-sh-detail-source-badge">
-                    skills.sh
-                  </Badge>
-                </div>
-              </div>
-
-              <div className="skill-summary-block">
-                <p className="section-subtitle skill-summary-line">
-                  {skillsShSummary(entry.summary)}
-                </p>
-              </div>
-
-              <a
-                className="skills-sh-detail-source-owner"
-                href={entry.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                @{entry.owner ?? repositoryLabel} on skills.sh
-                <ExternalLink aria-hidden="true" size={13} />
-              </a>
-
-              <Alert variant="warn" className="skills-sh-detail-trust-alert">
-                <ShieldAlert aria-hidden="true" size={17} />
-                <AlertDescription>
-                  This is a stored upstream skills.sh listing. ClawHub has not scanned or accepted
-                  this source.
-                </AlertDescription>
-              </Alert>
-            </div>
+        <SkillHeader
+          skill={skill}
+          owner={null}
+          ownerHandle={entry.owner ?? null}
+          latestVersion={null}
+          modInfo={null}
+          canManage={false}
+          isAuthenticated={false}
+          isStaff={false}
+          isStarred={false}
+          onToggleStar={() => undefined}
+          onOpenReport={() => undefined}
+          onRequireSignIn={() => undefined}
+          forkOf={null}
+          forkOfLabel="fork of"
+          forkOfHref={null}
+          forkOfOwnerHandle={null}
+          canonical={null}
+          canonicalHref={null}
+          canonicalOwnerHandle={null}
+          staffVisibilityTag={null}
+          isAutoHidden={false}
+          isRemoved={false}
+          nixPlugin={undefined}
+          hasPluginBundle={false}
+          configRequirements={undefined}
+          cliHelp={undefined}
+          clawdis={undefined}
+          categories={getSkillCategoriesForSkill(skill)}
+          showArchiveMetadata={false}
+          showBookmarkAction={false}
+          showReportAction={false}
+          titleAccessory={
+            <Badge variant="compact" className="skills-sh-detail-source-badge">
+              skills.sh
+            </Badge>
           }
-          sidebar={
-            <div className="skill-hero-sidebar-stack">
-              <SidebarMetadata
-                ariaLabel="skills.sh metadata"
-                density="compact"
-                blocks={[
-                  {
-                    label: "Upstream installs",
-                    value: (
-                      <span title={`${entry.upstreamInstalls.toLocaleString()} installs`}>
-                        {formatCompactStat(entry.upstreamInstalls)}
-                      </span>
-                    ),
-                    large: true,
-                  },
-                  {
-                    label: "Source",
-                    value: (
-                      <a href={entry.sourceUrl} target="_blank" rel="noreferrer">
-                        {repositoryLabel}
-                      </a>
-                    ),
-                  },
-                  {
-                    grid: [
-                      {
-                        label: "Observed",
-                        value: timeAgo(entry.lastObservedAt),
-                      },
-                      {
-                        label: "Trust",
-                        value: SKILLS_SH_TRUST_LABEL,
-                      },
-                    ],
-                  },
-                  ...(entry.githubPath
-                    ? [{ label: "Path", value: <code>{entry.githubPath}</code> }]
-                    : []),
-                  ...(entry.githubCommit
-                    ? [
-                        {
-                          label: "Commit",
-                          value: <code>{entry.githubCommit.slice(0, 12)}</code>,
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-
-              <section className="skills-sh-upstream-checks" aria-labelledby="upstream-checks">
-                <div className="skills-sh-upstream-checks-heading">
-                  <h2 id="upstream-checks">Upstream checks</h2>
-                  <p>Separate from ClawHub scanning.</p>
-                </div>
-                <div className="skills-sh-upstream-checks-list">
-                  {entry.upstreamChecks.map((check) => (
-                    <UpstreamCheck key={check.scanner} check={check} />
-                  ))}
-                </div>
-              </section>
-
-              <div className="skills-sh-detail-links">
-                <Button asChild variant="outline" size="sm">
-                  <a href={entry.sourceUrl} target="_blank" rel="noreferrer">
-                    View on skills.sh <ExternalLink aria-hidden="true" size={14} />
-                  </a>
-                </Button>
-                {entry.canonicalRepoUrl ? (
-                  <Button asChild variant="outline" size="sm">
-                    <a href={entry.canonicalRepoUrl} target="_blank" rel="noreferrer">
-                      Repository <ExternalLink aria-hidden="true" size={14} />
-                    </a>
-                  </Button>
-                ) : null}
-                {entry.githubPath && entry.githubCommit && entry.githubContentHash ? (
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      to="/settings"
-                      search={{
-                        view: "githubSources",
-                        ownerHandle: entry.canonicalGitHubRepo.split("/")[0],
-                        repo: entry.canonicalGitHubRepo,
-                        sourceRepo: entry.canonicalGitHubRepo,
-                        sourceExternalId: entry.externalId,
-                        sourcePath: entry.githubPath,
-                        sourceCommit: entry.githubCommit,
-                        sourceContentHash: entry.githubContentHash,
-                      }}
-                    >
-                      <GitBranch size={15} aria-hidden="true" /> Claim
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            </div>
+          breadcrumbOwnerHref={null}
+          breadcrumbOwnerLabel={entry.owner ?? "skills.sh"}
+          breadcrumbSkillHref={entry.route}
+          creatorContent={
+            <a
+              className="skills-sh-detail-source-owner"
+              href={entry.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              @{entry.owner ?? repositoryLabel} on skills.sh
+              <ExternalLink aria-hidden="true" size={13} />
+            </a>
           }
+          heroNotice={
+            <Alert variant="warn" className="skills-sh-detail-trust-alert">
+              <ShieldAlert aria-hidden="true" size={17} />
+              <AlertDescription>
+                This is a stored upstream skills.sh listing. ClawHub has not scanned or accepted
+                this source.
+              </AlertDescription>
+            </Alert>
+          }
+          installContent={installContent}
+          renderSidebarContent={() => (
+            <SkillsShSidebar entry={entry} repositoryLabel={repositoryLabel} />
+          )}
         >
-          {/* The normal skill page uses this shared surface on desktop and restyles it on mobile. */}
-          <div className="detail-mobile-install">
-            {installable ? (
-              <SkillCommandLineCard
-                slug={entry.slug}
-                displayName={entry.displayName}
-                ownerHandle={entry.owner ?? null}
-                ownerId={null}
-                installTarget={entry.reference}
-                skillPageUrl={null}
-                secondaryInstall={{
-                  label: "ClawHub",
-                  command: `clawhub install ${entry.reference}`,
-                  copyAriaLabel: "Copy ClawHub install command",
-                }}
-              />
-            ) : (
-              <Alert variant="warn">
-                <ShieldAlert aria-hidden="true" size={17} />
-                <AlertDescription>
-                  This snapshot does not include a commit-pinned GitHub folder, so it cannot be
-                  installed yet.
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-
           <SkillsShContentTabs entry={entry} />
-        </DetailHero>
+        </SkillHeader>
       </DetailPageShell>
     </main>
+  );
+}
+
+function SkillsShSidebar({
+  entry,
+  repositoryLabel,
+}: {
+  entry: SkillsShCatalogDetail;
+  repositoryLabel: string;
+}) {
+  return (
+    <div className="skill-hero-sidebar-stack">
+      <SidebarMetadata
+        ariaLabel="skills.sh metadata"
+        density="compact"
+        blocks={[
+          {
+            label: "Upstream installs",
+            value: (
+              <span title={`${entry.upstreamInstalls.toLocaleString()} installs`}>
+                {formatCompactStat(entry.upstreamInstalls)}
+              </span>
+            ),
+            large: true,
+          },
+          {
+            label: "Source",
+            value: (
+              <a href={entry.sourceUrl} target="_blank" rel="noreferrer">
+                {repositoryLabel}
+              </a>
+            ),
+          },
+          {
+            grid: [
+              { label: "Observed", value: timeAgo(entry.lastObservedAt) },
+              { label: "Trust", value: SKILLS_SH_TRUST_LABEL },
+            ],
+          },
+          ...(entry.githubPath ? [{ label: "Path", value: <code>{entry.githubPath}</code> }] : []),
+          ...(entry.githubCommit
+            ? [
+                {
+                  label: "Commit",
+                  value: <code>{entry.githubCommit.slice(0, 12)}</code>,
+                },
+              ]
+            : []),
+        ]}
+      />
+
+      <section className="skills-sh-upstream-checks" aria-label="Upstream checks">
+        <div className="skills-sh-upstream-checks-heading">
+          <h2>Upstream checks</h2>
+          <p>Separate from ClawHub scanning.</p>
+        </div>
+        <div className="skills-sh-upstream-checks-list">
+          {entry.upstreamChecks.map((check) => (
+            <UpstreamCheck key={check.scanner} check={check} />
+          ))}
+        </div>
+      </section>
+
+      <div className="skills-sh-detail-links">
+        <Button asChild variant="outline" size="sm">
+          <a href={entry.sourceUrl} target="_blank" rel="noreferrer">
+            View on skills.sh <ExternalLink aria-hidden="true" size={14} />
+          </a>
+        </Button>
+        {entry.canonicalRepoUrl ? (
+          <Button asChild variant="outline" size="sm">
+            <a href={entry.canonicalRepoUrl} target="_blank" rel="noreferrer">
+              Repository <ExternalLink aria-hidden="true" size={14} />
+            </a>
+          </Button>
+        ) : null}
+        {entry.githubPath && entry.githubCommit && entry.githubContentHash ? (
+          <Button asChild variant="outline" size="sm">
+            <Link
+              to="/settings"
+              search={{
+                view: "githubSources",
+                ownerHandle: entry.canonicalGitHubRepo.split("/")[0],
+                repo: entry.canonicalGitHubRepo,
+                sourceRepo: entry.canonicalGitHubRepo,
+                sourceExternalId: entry.externalId,
+                sourcePath: entry.githubPath,
+                sourceCommit: entry.githubCommit,
+                sourceContentHash: entry.githubContentHash,
+              }}
+            >
+              <GitBranch size={15} aria-hidden="true" /> Claim
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

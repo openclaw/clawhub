@@ -18,22 +18,26 @@ vi.mock("@tanstack/react-router", () => ({
   }) => <a href={`${to}?${new URLSearchParams(search).toString()}`}>{children}</a>,
 }));
 
+vi.mock("../lib/useHeroCreatorPublisher", () => ({
+  useHeroCreatorPublisher: ({ owner }: { owner?: unknown }) => owner,
+}));
+
 describe("SkillsShCatalogDetailPage", () => {
   it("shows the external trust boundary, upstream checks, provenance, and freshness", () => {
     const { container } = render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
     expect(screen.getAllByText("Not scanned by ClawHub").length).toBeGreaterThan(0);
-    expect(screen.getByText("Gen Agent Trust Hub")).toBeTruthy();
-    expect(screen.getByText("Socket")).toBeTruthy();
-    expect(screen.getByText("Snyk")).toBeTruthy();
-    expect(screen.getByText("Separate from ClawHub scanning.")).toBeTruthy();
-    expect(screen.getByText("Observed")).toBeTruthy();
-    expect(screen.getByText("1m ago")).toBeTruthy();
+    expect(screen.getAllByText("Gen Agent Trust Hub").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Socket").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Snyk").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Separate from ClawHub scanning.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Observed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1m ago").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /View on skills\.sh/i }).getAttribute("href")).toBe(
       "https://skills.sh/patrick-erichsen/skills/html",
     );
-    expect(screen.getByText("100")).toBeTruthy();
-    expect(screen.getByText("Upstream installs")).toBeTruthy();
+    expect(screen.getAllByText("100").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Upstream installs").length).toBeGreaterThan(0);
     expect(screen.getByText("HTML Artifact Chooser Build useful artifacts.")).toBeTruthy();
     expect(container.querySelector(".skill-hero-layout.has-sidebar")).toBeTruthy();
     expect(container.querySelector(".skill-hero-sidebar")?.textContent).toContain(
@@ -71,9 +75,10 @@ describe("SkillsShCatalogDetailPage", () => {
   it("renders only stored bounded content and no file explorer", () => {
     render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
-    expect(screen.getByRole("tablist", { name: "Skill detail tabs" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
-      "true",
+    const detailTabs = screen.getByRole("tablist", { name: "Skill detail tabs" });
+    expect(detailTabs).toBeTruthy();
+    expect(detailTabs.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "SKILL.md",
     );
     expect(screen.getByRole("heading", { name: "Use this skill" })).toBeTruthy();
     expect(screen.queryByText("Files")).toBeNull();
@@ -90,6 +95,30 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.getAllByText("skills.sh").length).toBeGreaterThan(0);
   });
 
+  it("uses the shared skill detail shell for content and stats", () => {
+    render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
+
+    const sectionTabs = screen.getByRole("tablist", { name: "Skill mobile sections" });
+    expect(sectionTabs).toBeTruthy();
+    expect(sectionTabs.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "SKILL.md",
+    );
+    expect(screen.getByRole("link", { name: "html", current: "page" }).getAttribute("href")).toBe(
+      "/skills-sh/patrick-erichsen/skills/html",
+    );
+    const breadcrumbs = screen.getByRole("navigation", { name: "Skill breadcrumbs" });
+    expect(breadcrumbs.querySelector("a[href*='skills.sh']")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Stats & details" }));
+
+    expect(screen.getByRole("tab", { name: "Stats & details" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getAllByText("Upstream checks").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Bookmark skill" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
+  });
+
   it("hides install commands without a commit-pinned GitHub folder", () => {
     const entry = makeEntry();
     delete entry.githubCommit;
@@ -97,6 +126,16 @@ describe("SkillsShCatalogDetailPage", () => {
 
     expect(screen.queryByText(/^openclaw skills install /)).toBeNull();
     expect(screen.queryByText(/^clawhub install /)).toBeNull();
+  });
+
+  it("keeps ownerless upstream entries labeled as skills.sh", () => {
+    const entry = makeEntry();
+    delete entry.owner;
+    render(<SkillsShCatalogDetailPage entry={entry} />);
+
+    const breadcrumbs = screen.getByRole("navigation", { name: "Skill breadcrumbs" });
+    expect(breadcrumbs.textContent).toContain("skills.sh");
+    expect(breadcrumbs.textContent).not.toContain("patrick-erichsen/skills");
   });
 });
 

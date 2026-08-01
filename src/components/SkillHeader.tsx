@@ -84,7 +84,40 @@ function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
   return description?.trim() || null;
 }
 
-function getGitHubRepositoryLink(skill: Doc<"skills"> | PublicSkill) {
+export type SkillHeaderSkill = {
+  _id?: string;
+  slug: string;
+  displayName: string;
+  summary?: string | null;
+  icon?: string | null;
+  ownerUserId?: Id<"users">;
+  ownerPublisherId?: Id<"publishers">;
+  installKind?: PublicSkill["installKind"];
+  githubSourceRepo?: string;
+  githubPath?: string;
+  githubCurrentCommit?: string;
+  githubCurrentStatus?: PublicSkill["githubCurrentStatus"];
+  githubScanStatus?: PublicSkill["githubScanStatus"];
+  githubHasSkillCard?: boolean;
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: Id<"skillVersions">;
+  inferredFromVersionId?: Id<"skillVersions">;
+  topics?: string[];
+  badges?: PublicSkill["badges"];
+  stats: {
+    downloads: number;
+    stars: number;
+    installs?: number | null;
+    installsAllTime?: number;
+    installsCurrent?: number;
+    versions?: number;
+    comments?: number;
+  };
+  updatedAt: number;
+};
+
+function getGitHubRepositoryLink(skill: SkillHeaderSkill) {
   const repo = "githubSourceRepo" in skill ? skill.githubSourceRepo : undefined;
   if (skill.installKind !== "github" || !repo) return null;
 
@@ -101,7 +134,7 @@ function getGitHubRepositoryLink(skill: Doc<"skills"> | PublicSkill) {
 }
 
 type SkillHeaderProps = {
-  skill: Doc<"skills"> | PublicSkill;
+  skill: SkillHeaderSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
   latestVersion: SkillHeaderLatestVersion;
@@ -138,6 +171,16 @@ type SkillHeaderProps = {
   newVersionHref?: string | null;
   settingsHref?: string | null;
   showArchiveMetadata?: boolean;
+  titleAccessory?: ReactNode;
+  breadcrumbOwnerHref?: string | null;
+  breadcrumbOwnerLabel?: ReactNode;
+  breadcrumbSkillHref?: string;
+  creatorContent?: ReactNode;
+  heroNotice?: ReactNode;
+  installContent?: ReactNode;
+  renderSidebarContent?: () => ReactNode;
+  showBookmarkAction?: boolean;
+  showReportAction?: boolean;
   children?: ReactNode;
 };
 
@@ -176,12 +219,22 @@ export function SkillHeader({
   newVersionHref,
   settingsHref,
   showArchiveMetadata = true,
+  titleAccessory,
+  breadcrumbOwnerHref,
+  breadcrumbOwnerLabel,
+  breadcrumbSkillHref,
+  creatorContent,
+  heroNotice,
+  installContent,
+  renderSidebarContent,
+  showBookmarkAction = true,
+  showReportAction: showReportActionOverride,
   children,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
   const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
-  const showReportAction = !canManage || isStaff;
+  const showReportAction = showReportActionOverride ?? (!canManage || isStaff);
   const badges = getSkillBadges(skill);
   const titleBadges = badges.filter((badge) => badge !== "Official");
   const heroCreatorPublisher = useHeroCreatorPublisher({
@@ -283,7 +336,7 @@ export function SkillHeader({
       </div>
     ) : null;
 
-  const desktopStatsContent = (
+  const defaultStatsContent = () => (
     <>
       <SkillSidebarDeferredStats
         skill={skill}
@@ -300,24 +353,16 @@ export function SkillHeader({
       {renderSidebarActions()}
     </>
   );
-
-  const mobileStatsContent = (
-    <>
-      <SkillSidebarDeferredStats
-        skill={skill}
-        owner={owner}
-        ownerHandle={ownerHandle}
-        formattedStats={formattedStats}
-        latestVersion={latestVersion}
-        showArchiveMetadata={showArchiveMetadata}
-        securityAuditSummary={securityAuditSummary}
-        activityTrend={activityTrend}
-        activityTrendLoading={activityTrendLoading}
-        hideCreator
-      />
-      {renderSidebarActions()}
-    </>
-  );
+  // Match the normal shell's CSS-exclusive desktop/mobile copies so responsive
+  // transitions never move or remount the active sidebar subtree.
+  const desktopStatsContent = renderSidebarContent ? renderSidebarContent() : defaultStatsContent();
+  const mobileStatsContent = renderSidebarContent ? renderSidebarContent() : defaultStatsContent();
+  const resolvedBreadcrumbOwnerHref =
+    breadcrumbOwnerHref === undefined
+      ? ownerHandle
+        ? buildPublisherProfileHref(ownerHandle)
+        : "#"
+      : breadcrumbOwnerHref;
   const displayName = presentationTitle(skill.displayName, skill.slug);
 
   return (
@@ -355,7 +400,7 @@ export function SkillHeader({
         topClassName={hasPluginBundle ? "has-plugin" : undefined}
         sidebar={
           <div className="skill-hero-sidebar-stack">
-            {!isMobileDetailLayout ? (
+            {!isMobileDetailLayout && showBookmarkAction ? (
               <div className="skill-sidebar-star-band detail-hero-summary-row">
                 {renderStarAction()}
               </div>
@@ -369,12 +414,29 @@ export function SkillHeader({
               <nav className="skill-hero-breadcrumbs" aria-label="Skill breadcrumbs">
                 <a href="/skills">skills</a>
                 <span aria-hidden="true">/</span>
-                <a href={ownerHandle ? buildPublisherProfileHref(ownerHandle) : "#"}>
-                  {ownerHandle ?? owner?.displayName ?? owner?._id ?? "unknown"}
-                </a>
+                {resolvedBreadcrumbOwnerHref ? (
+                  <a href={resolvedBreadcrumbOwnerHref}>
+                    {breadcrumbOwnerLabel ??
+                      ownerHandle ??
+                      owner?.displayName ??
+                      owner?._id ??
+                      "unknown"}
+                  </a>
+                ) : (
+                  <span>
+                    {breadcrumbOwnerLabel ??
+                      ownerHandle ??
+                      owner?.displayName ??
+                      owner?._id ??
+                      "unknown"}
+                  </span>
+                )}
                 <span aria-hidden="true">/</span>
                 <a
-                  href={buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}
+                  href={
+                    breadcrumbSkillHref ??
+                    buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)
+                  }
                   aria-current="page"
                 >
                   {skill.slug}
@@ -441,6 +503,7 @@ export function SkillHeader({
                     </div>
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                  {titleAccessory}
                 </div>
                 {showHeroMeta ? (
                   <div className="skill-hero-meta-row" aria-label="Skill lineage">
@@ -487,24 +550,28 @@ export function SkillHeader({
                   </button>
                 ) : null}
               </div>
-              {owner || ownerHandle ? (
+              {creatorContent || owner || ownerHandle ? (
                 <div className="skill-hero-creator">
-                  <UserBadge
-                    user={heroCreatorPublisher}
-                    fallbackHandle={ownerHandle}
-                    prefix=""
-                    size="md"
-                    showName
-                    showHandle={false}
-                    showMutedHandle
-                    stackMutedHandleBelowName
-                    disableTooltip
-                  />
-                  {isMobileDetailLayout ? (
+                  {creatorContent ?? (
+                    <UserBadge
+                      user={heroCreatorPublisher}
+                      fallbackHandle={ownerHandle}
+                      prefix=""
+                      size="md"
+                      showName
+                      showHandle={false}
+                      showMutedHandle
+                      stackMutedHandleBelowName
+                      disableTooltip
+                    />
+                  )}
+                  {isMobileDetailLayout && showBookmarkAction ? (
                     <div className="skill-hero-creator-star">{renderStarAction()}</div>
                   ) : null}
                 </div>
               ) : null}
+
+              {heroNotice}
 
               {nixPlugin ? (
                 <div className="skill-hero-note">
@@ -516,13 +583,15 @@ export function SkillHeader({
         }
       >
         <div className="detail-mobile-install">
-          <SkillCommandLineCard
-            slug={skill.slug}
-            displayName={skill.displayName}
-            ownerHandle={ownerHandle}
-            ownerId={installOwnerId}
-            clawdis={clawdis}
-          />
+          {installContent ?? (
+            <SkillCommandLineCard
+              slug={skill.slug}
+              displayName={skill.displayName}
+              ownerHandle={ownerHandle}
+              ownerId={installOwnerId}
+              clawdis={clawdis}
+            />
+          )}
         </div>
 
         <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
@@ -656,7 +725,7 @@ function SkillSidebarDeferredStats({
   activityTrendLoading = false,
   hideCreator = false,
 }: {
-  skill: Doc<"skills"> | PublicSkill;
+  skill: SkillHeaderSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
