@@ -11835,7 +11835,7 @@ describe("packages public queries", () => {
           },
         ],
       }),
-    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: true });
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: false });
 
     expect(insert).toHaveBeenCalledTimes(1);
     expect(insert).toHaveBeenCalledWith(
@@ -12002,7 +12002,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("does not notify for preserved publish findings after a clean nightly scan", async () => {
+  it("does not notify for a warning-only nightly result with a preserved publish error", async () => {
     const ctx = {
       db: {
         get: vi.fn(),
@@ -12014,6 +12014,7 @@ describe("packages public queries", () => {
                   {
                     _id: "packageInspectorWarnings:publish",
                     scanSource: "publish",
+                    findingKind: "error",
                     code: "manifest-name-missing",
                     message: "manifest name is missing",
                     authorRemediation: { summary: "Add a manifest name." },
@@ -12048,9 +12049,17 @@ describe("packages public queries", () => {
         inspectorVersion: "0.6.0",
         targetOpenClawVersion: "2026.8.0-beta.1",
         notifyOwners: true,
-        findings: [],
+        findings: [
+          {
+            id: "demo:deprecated-api",
+            code: "deprecated-api",
+            level: "warning",
+            message: "The API is deprecated but still available.",
+            authorRemediation: { summary: "Migrate before a future release." },
+          },
+        ],
       }),
-    ).resolves.toEqual({ ok: true, inserted: 0, shouldEmailOwner: false });
+    ).resolves.toEqual({ ok: true, inserted: 1, shouldEmailOwner: false });
   });
 
   it("records a clean beta scan identity and completes a no-op notification", async () => {
@@ -12242,6 +12251,7 @@ describe("packages public queries", () => {
         scanSource: "nightly",
         inspectorVersion: "0.5.0",
         targetOpenClawVersion: "0.10.0",
+        notifyOwners: true,
         findings: [
           {
             id: "demo:runtime-tool-capture",
@@ -12283,7 +12293,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("retries package inspector finding emails when persisted findings were not notified", async () => {
+  it("stores an exact nightly hard error despite an identical preserved finding", async () => {
     const insert = vi.fn();
     const ctx = {
       db: {
@@ -12292,6 +12302,7 @@ describe("packages public queries", () => {
           withIndex: vi.fn(() => ({
             collect: vi.fn().mockResolvedValue([
               {
+                findingKind: "error",
                 inspectorFindingId: "demo:legacy-before-agent-start",
                 code: "legacy-before-agent-start",
                 message: "legacy before_agent_start hook is deprecated",
@@ -12334,6 +12345,7 @@ describe("packages public queries", () => {
           {
             id: "demo:legacy-before-agent-start",
             code: "legacy-before-agent-start",
+            level: "breakage",
             message: "legacy before_agent_start hook is deprecated",
             evidence: ["src/index.ts:4"],
             fixture: "demo",
@@ -12345,9 +12357,17 @@ describe("packages public queries", () => {
           },
         ],
       }),
-    ).resolves.toMatchObject({ ok: true, inserted: 0, shouldEmailOwner: true });
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: true });
 
-    expect(insert).not.toHaveBeenCalled();
+    expect(insert).toHaveBeenCalledWith(
+      "packageInspectorWarnings",
+      expect.objectContaining({
+        findingKind: "error",
+        scanSource: "nightly",
+        inspectorVersion: "0.5.0",
+        targetOpenClawVersion: "0.10.0",
+      }),
+    );
   });
 
   it("summarizes plugin inspector validation findings for signed-out viewers", async () => {
@@ -12614,7 +12634,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("excludes internal package inspector findings from owner emails", async () => {
+  it("excludes internal and warning-only findings from owner emails", async () => {
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -12668,6 +12688,19 @@ describe("packages public queries", () => {
                       },
                       createdAt: 1,
                     },
+                    {
+                      _id: "packageInspectorWarnings:error",
+                      packageName: "demo-plugin",
+                      version: "1.0.0",
+                      findingKind: "error",
+                      code: "missing-api",
+                      issueClass: "compatibility-error",
+                      message: "an API is unavailable in the upcoming OpenClaw release",
+                      authorRemediation: {
+                        summary: "Use the replacement API.",
+                      },
+                      createdAt: 0,
+                    },
                   ]),
                 })),
               })),
@@ -12690,10 +12723,46 @@ describe("packages public queries", () => {
       releaseId: "packageReleases:demo-1",
     });
     expect(result?.packageName).toBe("demo-plugin");
-    expect(result?.findings.map((finding) => finding.code)).toEqual(["legacy-before-agent-start"]);
+    expect(result?.findings.map((finding) => finding.code)).toEqual(["missing-api"]);
     expect(result?.findings[0]?.authorRemediation).toMatchObject({
-      summary: "Move prompt mutation work to before_prompt_build.",
+      summary: "Use the replacement API.",
     });
+  });
+
+  it("rejects a notification request whose release does not belong to the package", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "packages:demo") {
+            return makePackageDoc({
+              _id: "packages:demo",
+              name: "demo-plugin",
+              ownerUserId: "users:owner",
+            });
+          }
+          if (id === "packageReleases:other") {
+            return makeReleaseDoc({
+              _id: "packageReleases:other",
+              packageId: "packages:other",
+              version: "1.0.0",
+            });
+          }
+          return null;
+        }),
+        query: vi.fn(() => {
+          throw new Error("Mismatched releases must be rejected before querying findings");
+        }),
+      },
+    };
+
+    await expect(
+      getPackageInspectorEmailContextInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:other",
+        inspectorVersion: "0.3.20",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+      }),
+    ).resolves.toBeNull();
   });
 
   it("builds email context for a new exact target despite an older release notification", async () => {
@@ -12727,6 +12796,7 @@ describe("packages public queries", () => {
                   order: vi.fn(() => ({
                     take: vi.fn().mockResolvedValue([
                       {
+                        findingKind: "error",
                         code: "missing-api",
                         scanSource: "nightly",
                         inspectorVersion: "0.6.0",
@@ -12794,6 +12864,7 @@ describe("packages public queries", () => {
                   order: vi.fn(() => ({
                     take: vi.fn().mockResolvedValue([
                       {
+                        findingKind: "error",
                         code: "missing-api",
                         scanSource: "nightly",
                         inspectorVersion: "0.6.0",

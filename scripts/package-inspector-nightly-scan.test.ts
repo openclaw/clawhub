@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   acknowledgeBatch,
   downloadPackageArtifactForScan,
+  loadNotificationManifest,
   prepareExtractedPluginRoot,
   prepareBulkOpenClawTarget,
   resolveNightlyOpenClawTarget,
@@ -422,6 +423,76 @@ describe("package-inspector-nightly-scan", () => {
     });
     expect(renderImpactMarkdown(summary)).toContain("- Target OpenClaw: 2026.8.0-beta.1");
     expect(renderImpactMarkdown(summary)).toContain("- Skipped unchanged releases: 1");
+  });
+
+  it("loads only hard-error releases from an exact completed no-email scan", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-notification-manifest-"));
+    temporaryRoots.push(root);
+    const manifestPath = path.join(root, "run-summary.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        dryRun: false,
+        notificationOnly: false,
+        notifyOwners: false,
+        truncated: false,
+        nextCursor: null,
+        inspectorVersion: "0.3.20",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+        packages: [
+          {
+            packageId: "packages:error",
+            releaseId: "packageReleases:error",
+            packageName: "error-plugin",
+            version: "1.0.0",
+            errorCount: 1,
+          },
+          {
+            packageId: "packages:warning",
+            releaseId: "packageReleases:warning",
+            packageName: "warning-plugin",
+            version: "2.0.0",
+            errorCount: 0,
+          },
+        ],
+      }),
+    );
+
+    await expect(loadNotificationManifest(manifestPath, "0.3.20")).resolves.toEqual({
+      targetOpenClawVersion: "2026.8.0-beta.1",
+      items: [
+        {
+          packageId: "packages:error",
+          releaseId: "packageReleases:error",
+          packageName: "error-plugin",
+          version: "1.0.0",
+          downloadUrl: "",
+        },
+      ],
+    });
+  });
+
+  it("rejects notification manifests that do not prove a completed no-email scan", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "clawhub-inspector-notification-manifest-"));
+    temporaryRoots.push(root);
+    const manifestPath = path.join(root, "run-summary.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        dryRun: false,
+        notificationOnly: false,
+        notifyOwners: true,
+        truncated: false,
+        nextCursor: null,
+        inspectorVersion: "0.3.20",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+        packages: [],
+      }),
+    );
+
+    await expect(loadNotificationManifest(manifestPath, "0.3.20")).rejects.toThrow(
+      "completed no-email production scan",
+    );
   });
 
   it("resolves and prepares the beta target once for reuse across the bulk run", async () => {

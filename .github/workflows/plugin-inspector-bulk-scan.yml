@@ -19,10 +19,19 @@ on:
         required: false
         default: "20"
       notify_owners:
-        description: "Email plugin owners when a manual scan finds issues"
+        description: "Email plugin owners from an explicitly selected reviewed scan"
         required: false
-        default: true
+        default: false
         type: boolean
+      notification_only:
+        description: "Notify from the exact stored scan result without inspecting packages again"
+        required: false
+        default: false
+        type: boolean
+      notification_source_run_id:
+        description: "Successful no-email scan run whose exact artifact is approved for notification"
+        required: false
+        default: ""
       package_names:
         description: "Optional comma or newline separated package names to scan instead of the rolling cursor"
         required: false
@@ -37,6 +46,7 @@ on:
         default: ""
 
 permissions:
+  actions: read
   contents: read
 
 # Side-effecting scans queue behind the active run instead of overlapping.
@@ -60,6 +70,45 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify notification source run
+        if: ${{ inputs.notification_only }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.notification_source_run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_RUN_ID" || { echo "notification_source_run_id is required" >&2; exit 1; }
+          RUN_JSON="$(gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,headBranch,event,conclusion,url)"
+          printf '%s' "$RUN_JSON" | node --input-type=module -e '
+            const chunks = [];
+            process.stdin.on("data", (chunk) => chunks.push(chunk));
+            process.stdin.on("end", () => {
+              const run = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+              const checks = [
+                ["workflowName", "Plugin Inspector Bulk Scan"],
+                ["headBranch", "main"],
+                ["event", "workflow_dispatch"],
+                ["conclusion", "success"],
+              ];
+              for (const [key, expected] of checks) {
+                if (run[key] !== expected) {
+                  console.error(`Notification source run must have ${key}=${expected}, got ${run[key] ?? "<missing>"}.`);
+                  process.exit(1);
+                }
+              }
+              console.log(`Using reviewed no-email scan: ${run.url}`);
+            });'
+
+      - name: Download reviewed scan artifact
+        if: ${{ inputs.notification_only }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: plugin-inspector-bulk-scan-reports
+          path: notification-source
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.notification_source_run_id }}
+          github-token: ${{ github.token }}
+
       - name: Run plugin inspector bulk scan
         if: ${{ github.ref == 'refs/heads/main' }}
         env:
@@ -71,6 +120,8 @@ jobs:
           PLUGIN_INSPECTOR_PACKAGE_NAMES: ${{ inputs.package_names || '' }}
           PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta
           PLUGIN_INSPECTOR_NOTIFY_OWNERS: ${{ github.event_name == 'schedule' && '0' || (inputs.notify_owners && '1' || '0') }}
+          PLUGIN_INSPECTOR_NOTIFICATION_ONLY: ${{ github.event_name == 'schedule' && '0' || (inputs.notification_only && '1' || '0') }}
+          PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST: ${{ inputs.notification_only && 'notification-source/run-summary.json' || '' }}
           PLUGIN_INSPECTOR_SOURCE_PR: ${{ inputs.source_pr || '' }}
           PLUGIN_INSPECTOR_SOURCE_SHA: ${{ inputs.source_sha || '' }}
           PLUGIN_INSPECTOR_ARTIFACT_DIR: plugin-inspector-bulk-scan-reports

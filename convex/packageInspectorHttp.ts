@@ -13,6 +13,7 @@ const internalRefs = internal as unknown as {
     getPackageInspectorArtifactInternal: unknown;
     ingestPackageInspectorScanResultsInternal: unknown;
     sendPackageInspectorFindingsEmailInternal: unknown;
+    markPackageInspectorNotificationCompletedInternal: unknown;
   };
 };
 
@@ -217,6 +218,41 @@ export const packageInspectorResultsHttp = httpAction(async (ctx, request) => {
     } catch (error) {
       console.error("Package Inspector findings email failed", error);
     }
+  }
+  return json(result);
+});
+
+export const packageInspectorNotifyHttp = httpAction(async (ctx, request) => {
+  const auth = requireWorkerToken(request);
+  if (!auth.ok) return auth.response;
+  const parsed = await parseJsonPayload(request, {});
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.payload;
+  if (
+    typeof payload.inspectorVersion !== "string" ||
+    !payload.inspectorVersion.trim() ||
+    typeof payload.targetOpenClawVersion !== "string" ||
+    !payload.targetOpenClawVersion.trim()
+  ) {
+    return text("Missing exact scan identity", 400);
+  }
+  const args = {
+    packageId: payload.packageId,
+    releaseId: payload.releaseId,
+    inspectorVersion: payload.inspectorVersion,
+    targetOpenClawVersion: payload.targetOpenClawVersion,
+  };
+  const result = await runActionRef<{
+    ok: true;
+    sent: boolean;
+    reason?: "no-context";
+  }>(ctx, internalRefs.packages.sendPackageInspectorFindingsEmailInternal, args);
+  if (!result.sent && result.reason === "no-context") {
+    await runMutationRef(
+      ctx,
+      internalRefs.packages.markPackageInspectorNotificationCompletedInternal,
+      args,
+    );
   }
   return json(result);
 });

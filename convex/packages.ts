@@ -61,7 +61,10 @@ import {
   clampActivityTrendEndDay,
   getActivityTrendRangeForEndDay,
 } from "./lib/downloadTrend";
-import { buildPackageInspectorFindingsEmail } from "./lib/emails";
+import {
+  buildPackageInspectorFindingsEmail,
+  buildPackageInspectorValidationUrl,
+} from "./lib/emails";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -9957,17 +9960,19 @@ async function insertPackageInspectorFindings(
     return { ok: true as const, inserted: 0, shouldEmailOwner: false };
   }
   const existingWarningKeys = new Set(
-    existingAuthorWarnings.map((warning) =>
-      packageInspectorWarningDedupeKey({
-        id: warning.inspectorFindingId,
-        code: warning.code,
-        message: warning.message,
-        evidence: warning.evidence,
-        fixture: warning.fixture,
-        inspectorVersion: warning.inspectorVersion,
-        targetOpenClawVersion: warning.targetOpenClawVersion,
-      }),
-    ),
+    replaceNightlyFindings
+      ? []
+      : existingAuthorWarnings.map((warning) =>
+          packageInspectorWarningDedupeKey({
+            id: warning.inspectorFindingId,
+            code: warning.code,
+            message: warning.message,
+            evidence: warning.evidence,
+            fixture: warning.fixture,
+            inspectorVersion: warning.inspectorVersion,
+            targetOpenClawVersion: warning.targetOpenClawVersion,
+          }),
+        ),
   );
   const shouldNotifyOwner = args.notifyOwners ?? args.scanSource !== "nightly";
   const notificationCompleted = shouldNotifyOwner
@@ -9980,6 +9985,9 @@ async function insertPackageInspectorFindings(
     : false;
   const now = Date.now();
   let inserted = 0;
+  let hasStoredHardError =
+    args.scanSource !== "nightly" &&
+    existingAuthorWarnings.some((warning) => warning.findingKind === "error");
   for (const warning of findings.slice(0, 100)) {
     const warningKey = packageInspectorWarningDedupeKey({
       ...warning,
@@ -9991,6 +9999,7 @@ async function insertPackageInspectorFindings(
       warning.level === "breakage" || warning.level === "error" || warning.severity === "P0"
         ? "error"
         : "warning";
+    if (findingKind === "error") hasStoredHardError = true;
     await ctx.db.insert("packageInspectorWarnings", {
       packageId: args.packageId,
       releaseId: args.releaseId,
@@ -10025,6 +10034,7 @@ async function insertPackageInspectorFindings(
     shouldEmailOwner:
       shouldNotifyOwner &&
       !notificationCompleted &&
+      hasStoredHardError &&
       (args.scanSource === "nightly"
         ? findings.length > 0
         : inserted > 0 || existingAuthorWarnings.length > 0),
@@ -10080,6 +10090,33 @@ export const markPackageInspectorFindingsEmailedInternal = internalMutation({
   },
 });
 
+export const markPackageInspectorNotificationCompletedInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    releaseId: v.id("packageReleases"),
+    inspectorVersion: v.string(),
+    targetOpenClawVersion: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const scanState = await ctx.db
+      .query("packageInspectorScanStates")
+      .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+        q
+          .eq("releaseId", args.releaseId)
+          .eq("inspectorVersion", args.inspectorVersion)
+          .eq("targetOpenClawVersion", args.targetOpenClawVersion),
+      )
+      .unique();
+    if (!scanState || scanState.packageId !== args.packageId) {
+      return { ok: true as const, marked: false };
+    }
+    if (!scanState.notificationCompletedAt) {
+      await ctx.db.patch(scanState._id, { notificationCompletedAt: Date.now() });
+    }
+    return { ok: true as const, marked: true };
+  },
+});
+
 export const getPackageInspectorEmailContextInternal = internalQuery({
   args: {
     packageId: v.id("packages"),
@@ -10092,7 +10129,15 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
       ctx.db.get(args.packageId),
       ctx.db.get(args.releaseId),
     ]);
-    if (!pkg || pkg.softDeletedAt || !release || release.softDeletedAt) return null;
+    if (
+      !pkg ||
+      pkg.softDeletedAt ||
+      !release ||
+      release.softDeletedAt ||
+      release.packageId !== pkg._id
+    ) {
+      return null;
+    }
     const owner = await ctx.db.get(pkg.ownerUserId);
     if (!owner || owner.deletedAt || owner.deactivatedAt || !owner.email) return null;
     const exactScanIdentity = Boolean(args.inspectorVersion && args.targetOpenClawVersion);
@@ -10106,7 +10151,8 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
             100,
           )
         : await takeAuthorRemediationWarningsByRelease(ctx, release._id, 100);
-    if (findings.length === 0) return null;
+    const hardErrors = findings.filter((finding) => finding.findingKind === "error");
+    if (hardErrors.length === 0) return null;
     const notificationCompleted = await hasCompletedPackageInspectorNotification(ctx, {
       releaseId: release._id,
       inspectorVersion: args.inspectorVersion,
@@ -10123,7 +10169,7 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
       ownerHandle: owner.handle,
       packageName: pkg.name,
       version: release.version,
-      findings: findings.map(toPublicPackageInspectorFinding),
+      findings: hardErrors.map(toPublicPackageInspectorFinding),
     };
   },
 });
@@ -10164,7 +10210,7 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
       handle: context.ownerHandle,
       packageName: context.packageName,
       version: context.version,
-      findings: context.findings,
+      validationUrl: buildPackageInspectorValidationUrl(context.packageName),
     });
     const sent = await sendResendEmail({
       to: context.ownerEmail,

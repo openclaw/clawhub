@@ -48,6 +48,9 @@ describe("package publish workflow", () => {
         workflow_dispatch?: {
           inputs?: {
             dry_run?: { default?: string };
+            notification_only?: { default?: boolean };
+            notification_source_run_id?: { default?: string };
+            notify_owners?: { default?: boolean };
             package_names?: { default?: string };
           };
         };
@@ -68,7 +71,11 @@ describe("package publish workflow", () => {
     );
     expect(workflow).toContain("PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta");
     expect(workflow).toContain("notify_owners:");
-    expect(workflow).toContain("default: true");
+    expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.notify_owners?.default).toBe(false);
+    expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.notification_only?.default).toBe(false);
+    expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.notification_source_run_id?.default).toBe(
+      "",
+    );
     expect(workflow).toContain(
       "PLUGIN_INSPECTOR_NOTIFY_OWNERS: ${{ github.event_name == 'schedule' && '0' || (inputs.notify_owners && '1' || '0') }}",
     );
@@ -76,6 +83,8 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("if: ${{ github.ref == 'refs/heads/main' }}");
     expect(workflow).toContain("bun install --frozen-lockfile");
     expect(workflow).toContain("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN");
+    expect(workflow).toContain("Download reviewed scan artifact");
+    expect(workflow).toContain("PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST");
     expect(script).toContain("package-inspector/claim");
     expect(script).toContain("prepareBulkOpenClawTarget");
     expect(script).toContain("targetOpenClaw: preparedTarget.target");

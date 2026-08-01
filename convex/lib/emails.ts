@@ -94,27 +94,11 @@ export type SecretBlockedPublishEmailArgs = {
   version?: string;
 };
 
-export type PackageInspectorEmailFinding = {
-  findingKind: "warning" | "error";
-  code: string;
-  issueClass?: string;
-  level?: string;
-  severity?: string;
-  message: string;
-  authorRemediation?: {
-    summary: string;
-    docsUrl?: string;
-  };
-  inspectorVersion?: string;
-  targetOpenClawVersion?: string;
-  scanSource?: "publish" | "nightly";
-};
-
 export type PackageInspectorFindingsEmailArgs = {
   handle?: string;
   packageName: string;
   version: string;
-  findings: PackageInspectorEmailFinding[];
+  validationUrl: string;
 };
 
 export type PublisherAbuseWarningScore = {
@@ -324,11 +308,6 @@ async function renderSecretBlockedPublishTemplate(args: {
   return rendered.html;
 }
 
-function buildPluginValidateCommand(openClawVersion?: string) {
-  const command = "clawhub package validate <path-to-plugin>";
-  return openClawVersion ? `${command} --openclaw-version ${openClawVersion}` : command;
-}
-
 function normalizeEmailFindingSummary(value: string | undefined) {
   const normalized = value?.replace(/\s+/g, " ").trim();
   if (!normalized) return undefined;
@@ -535,67 +514,30 @@ export async function buildSecretBlockedPublishEmail(args: SecretBlockedPublishE
 }
 
 export async function buildPackageInspectorFindingsEmail(args: PackageInspectorFindingsEmailArgs) {
-  const targetOpenClawVersions = Array.from(
-    new Set(
-      args.findings
-        .map((finding) => finding.targetOpenClawVersion?.trim())
-        .filter((target): target is string => Boolean(target)),
-    ),
-  );
-  const validateCommands = targetOpenClawVersions.length
-    ? targetOpenClawVersions.map(buildPluginValidateCommand)
-    : [buildPluginValidateCommand()];
-  const subject = `Plugin Inspector findings for ${args.packageName}@${args.version}`;
-  const findingCount = args.findings.length;
-  const intro = `We found ${findingCount} ${findingCount === 1 ? "issue" : "issues"} with version ${args.version} of ${args.packageName}.`;
-  const nextSteps = [
-    "Address the findings below in your plugin package.",
-    "Run the validation command locally against your changes.",
-    "When validation passes, upload a new version.",
-  ];
-  const findingLines = formatPackageInspectorFindingsText(args.findings);
-  const metadataLines = [
-    `Plugin: ${args.packageName}@${args.version}`,
-    targetOpenClawVersions.length
-      ? `OpenClaw Version${targetOpenClawVersions.length === 1 ? "" : "s"}: ${targetOpenClawVersions.join(", ")}`
-      : null,
-  ].filter((line): line is string => line !== null);
+  const subject = `Update required: ${args.packageName} will break in an upcoming OpenClaw release`;
+  const intro = `ClawHub validated ${args.packageName}@${args.version} against the upcoming OpenClaw release.`;
   const lines = [
     greeting(args.handle),
     "",
     intro,
     "",
-    ...metadataLines,
+    "The plugin uses an import, API, or hook that will no longer be available. If unchanged, the affected functionality will fail when users upgrade OpenClaw.",
     "",
-    "Next steps:",
-    ...nextSteps.map((item) => `- ${item}`),
+    `Review the validation errors: ${args.validationUrl}`,
     "",
-    "Findings:",
-    ...findingLines,
+    "Your plugin page includes the exact errors, affected files, tested OpenClaw version, reproduction command, and fix guidance when available.",
     "",
-    "Validate a local fix:",
-    ...validateCommands,
+    "Please update the plugin and publish a new version before the next OpenClaw release.",
+    "",
+    "—ClawHub",
   ];
 
   const { renderPluginInspectorFindingsEmail } = await import("./emailRendering");
   const rendered = await renderPluginInspectorFindingsEmail({
+    owner: args.handle?.trim() || "there",
     packageName: args.packageName,
     version: args.version,
-    ...(targetOpenClawVersions.length
-      ? { openClawVersion: targetOpenClawVersions.join(", ") }
-      : {}),
-    findings: args.findings.map((finding) => ({
-      code: finding.code,
-      kind: finding.findingKind,
-      meta: [finding.code, finding.issueClass, finding.severity].filter(Boolean).join(" · "),
-      message: finding.message,
-      ...(finding.targetOpenClawVersion
-        ? { targetOpenClawVersion: finding.targetOpenClawVersion }
-        : {}),
-      ...(finding.authorRemediation?.summary ? { fix: finding.authorRemediation.summary } : {}),
-      ...(finding.authorRemediation?.docsUrl ? { docsUrl: finding.authorRemediation.docsUrl } : {}),
-    })),
-    validateCommands,
+    validationUrl: args.validationUrl,
     preheader: intro,
   });
 
@@ -604,6 +546,19 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
     text: lines.join("\n"),
     html: rendered.html,
   };
+}
+
+export function buildPackageInspectorValidationUrl(packageName: string) {
+  const normalized = packageName.trim();
+  if (normalized.startsWith("@")) {
+    const slashIndex = normalized.indexOf("/");
+    if (slashIndex > 1 && slashIndex < normalized.length - 1) {
+      const owner = normalized.slice(1, slashIndex);
+      const name = normalized.slice(slashIndex + 1);
+      return `https://clawhub.ai/${encodeURIComponent(owner)}/plugins/${encodeURIComponent(name)}#validation`;
+    }
+  }
+  return `https://clawhub.ai/plugins/${encodeURIComponent(normalized)}#validation`;
 }
 
 export async function buildPublisherAbuseWarningEmail(args: PublisherAbuseWarningEmailArgs) {
@@ -677,31 +632,4 @@ export async function buildAdminOneOffEmail(args: AdminOneOffEmailArgs) {
     text: lines.join("\n"),
     html,
   };
-}
-
-function formatPackageInspectorFindingsText(findings: PackageInspectorEmailFinding[]) {
-  if (findings.length === 0) return ["- No findings were included."];
-  return findings.flatMap((finding) => {
-    const lines = [
-      `- **${finding.findingKind.toUpperCase()}** \`${finding.code}\`${formatFindingMetaText(finding)}`,
-      `  ${finding.message}`,
-    ];
-    if (finding.targetOpenClawVersion) {
-      lines.push(`  OpenClaw target: ${finding.targetOpenClawVersion}`);
-    }
-    if (finding.authorRemediation?.summary) {
-      lines.push("  Fix:");
-      lines.push(`  ${finding.authorRemediation.summary}`);
-      if (finding.authorRemediation.docsUrl) {
-        lines.push("  Docs:");
-        lines.push(`  ${finding.authorRemediation.docsUrl}`);
-      }
-    }
-    return lines;
-  });
-}
-
-function formatFindingMetaText(finding: PackageInspectorEmailFinding) {
-  const meta = [finding.issueClass, finding.severity].filter(Boolean).join(", ");
-  return meta ? ` (${meta})` : "";
 }

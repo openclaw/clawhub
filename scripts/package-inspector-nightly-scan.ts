@@ -45,6 +45,8 @@ type NormalizedFinding = {
 };
 
 type ImpactEntry = {
+  packageId: string;
+  releaseId: string;
   packageName: string;
   version: string;
   ownerUserId?: string;
@@ -60,6 +62,12 @@ type UploadResult = {
   ok: true;
   inserted: number;
   shouldEmailOwner: boolean;
+};
+
+type NotificationResult = {
+  ok: true;
+  sent: boolean;
+  reason?: string;
 };
 
 type PluginInspectorModule = {
@@ -89,6 +97,8 @@ const token = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
 const batchSize = process.env.PLUGIN_INSPECTOR_BATCH_SIZE ?? "25";
 const dryRun = parseBoolean(process.env.PLUGIN_INSPECTOR_DRY_RUN);
 const notifyOwners = parseBoolean(process.env.PLUGIN_INSPECTOR_NOTIFY_OWNERS);
+const notificationOnly = parseBoolean(process.env.PLUGIN_INSPECTOR_NOTIFICATION_ONLY);
+const notificationManifestPath = process.env.PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST?.trim();
 const targetPackageNames = parsePackageNames(process.env.PLUGIN_INSPECTOR_PACKAGE_NAMES);
 const dryRunMaxBatches = Math.max(
   1,
@@ -137,26 +147,60 @@ export async function prepareBulkOpenClawTarget(
 
 export async function runPackageInspectorNightlyScan() {
   if (!token) throw new Error("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN is required");
+  if (notificationOnly && !notifyOwners) {
+    throw new Error("PLUGIN_INSPECTOR_NOTIFICATION_ONLY requires owner notifications");
+  }
+  if (notifyOwners && !notificationOnly) {
+    throw new Error("Owner notifications require notification-only mode");
+  }
+  if (notificationOnly && dryRun) {
+    throw new Error("Notification-only mode cannot run as a dry run");
+  }
+  if (notificationOnly && targetPackageNames.length > 0) {
+    throw new Error(
+      "Notification-only mode requires the reviewed scan manifest, not package names",
+    );
+  }
 
   const inspectorVersion = getInspectorVersion();
   const inspectorModule =
     (await import("@openclaw/plugin-inspector")) as unknown as PluginInspectorModule;
-  const requestedOpenClawVersion = resolveNightlyOpenClawTarget(
-    process.env.PLUGIN_INSPECTOR_OPENCLAW_VERSION,
-  );
-  const preparedTarget = await prepareBulkOpenClawTarget(requestedOpenClawVersion, inspectorModule);
+  const notificationManifest = notificationOnly
+    ? await loadNotificationManifest(notificationManifestPath, inspectorVersion)
+    : null;
+  const preparedTarget = notificationManifest
+    ? null
+    : await prepareBulkOpenClawTarget(
+        resolveNightlyOpenClawTarget(process.env.PLUGIN_INSPECTOR_OPENCLAW_VERSION),
+        inspectorModule,
+      );
+  const targetOpenClawVersion =
+    notificationManifest?.targetOpenClawVersion ?? preparedTarget?.exactVersion;
+  if (!targetOpenClawVersion) throw new Error("Unable to resolve an exact OpenClaw target");
   await mkdir(artifactRoot, { recursive: true });
+  const scanStartedAt = Date.now();
 
   let hadWorkerFailure = false;
   const impactEntries: ImpactEntry[] = [];
   let claimed = 0;
   let scanned = 0;
   let skippedUnchanged = 0;
+  let notificationAttempts = 0;
+  let notificationsSent = 0;
   let cursor: string | null = null;
   let batches = 0;
   let truncated = false;
 
-  if (targetPackageNames.length > 0) {
+  if (notificationManifest) {
+    batches = 1;
+    claimed = notificationManifest.items.length;
+    for (const item of notificationManifest.items) {
+      const result = await notifyPackageItem(item, inspectorVersion, targetOpenClawVersion);
+      if (result.failed) hadWorkerFailure = true;
+      if (result.notificationAttempted) notificationAttempts += 1;
+      if (result.notificationSent) notificationsSent += 1;
+    }
+  } else if (preparedTarget && targetPackageNames.length > 0) {
     const items = await resolveTargetPackageItems(targetPackageNames);
     batches = 1;
     claimed = items.length;
@@ -170,16 +214,13 @@ export async function runPackageInspectorNightlyScan() {
       if (result.failed) hadWorkerFailure = true;
       if (result.impactEntry) impactEntries.push(result.impactEntry);
       if (result.scanned) scanned += 1;
+      if (result.notificationAttempted) notificationAttempts += 1;
+      if (result.notificationSent) notificationsSent += 1;
     }
-  } else {
+  } else if (preparedTarget) {
     do {
       const claimCursor = cursor;
-      const claim = await claimBatch(
-        cursor,
-        inspectorVersion,
-        preparedTarget.exactVersion,
-        scanRunId,
-      );
+      const claim = await claimBatch(cursor, inspectorVersion, targetOpenClawVersion, scanRunId);
       if (claim.leased) {
         throw new Error("Plugin Inspector bulk scan lease is owned by another run");
       }
@@ -202,6 +243,8 @@ export async function runPackageInspectorNightlyScan() {
         }
         if (result.impactEntry) impactEntries.push(result.impactEntry);
         if (result.scanned) scanned += 1;
+        if (result.notificationAttempted) notificationAttempts += 1;
+        if (result.notificationSent) notificationsSent += 1;
       }
 
       if (!dryRun) {
@@ -220,8 +263,11 @@ export async function runPackageInspectorNightlyScan() {
         }
       }
     } while (cursor);
+  } else {
+    throw new Error("The scan target was not prepared");
   }
 
+  const scanDurationMs = Date.now() - scanStartedAt;
   const summary = summarizeImpact({
     claimed,
     scanned,
@@ -230,7 +276,13 @@ export async function runPackageInspectorNightlyScan() {
     truncated,
     nextCursor: cursor,
     inspectorVersion,
-    targetOpenClawVersion: preparedTarget.exactVersion,
+    targetOpenClawVersion,
+    notifyOwners,
+    notificationOnly,
+    notificationAttempts,
+    notificationsSent,
+    scanStartedAt: new Date(scanStartedAt).toISOString(),
+    scanDurationMs,
     entries: impactEntries,
   });
   await writeFile(
@@ -246,11 +298,119 @@ export async function runPackageInspectorNightlyScan() {
     await writeFile(path.join(artifactRoot, "impact-summary.md"), renderImpactMarkdown(summary));
   }
   console.log(
-    `Bulk scan target OpenClaw ${summary.targetOpenClawVersion}: scanned=${summary.scannedReleases}, skippedUnchanged=${summary.skippedUnchangedReleases}, errors=${summary.pluginsWithErrors}, warnings=${summary.pluginsWithWarnings}.`,
+    notificationOnly
+      ? `Notification phase for OpenClaw ${summary.targetOpenClawVersion}: attempted=${summary.notificationAttempts}, sent=${summary.notificationsSent}, skipped=${summary.skippedUnchangedReleases}.`
+      : `Bulk scan target OpenClaw ${summary.targetOpenClawVersion}: scanned=${summary.scannedReleases}, skippedUnchanged=${summary.skippedUnchangedReleases}, errors=${summary.pluginsWithErrors}, warnings=${summary.pluginsWithWarnings}.`,
   );
 
   if (hadWorkerFailure) {
     process.exitCode = 1;
+  }
+}
+
+export async function loadNotificationManifest(
+  manifestPath: string | undefined,
+  expectedInspectorVersion: string,
+) {
+  if (!manifestPath) {
+    throw new Error(
+      "PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST is required for notification-only mode",
+    );
+  }
+  const raw = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+  if (!isPlainObject(raw)) throw new Error("Notification manifest must be a JSON object");
+  if (
+    raw.dryRun !== false ||
+    raw.notificationOnly !== false ||
+    raw.notifyOwners !== false ||
+    raw.truncated !== false ||
+    raw.nextCursor !== null
+  ) {
+    throw new Error("Notification manifest must come from a completed no-email production scan");
+  }
+  const inspectorVersion = stringValue(raw.inspectorVersion);
+  if (inspectorVersion !== expectedInspectorVersion) {
+    throw new Error(
+      `Notification manifest uses Plugin Inspector ${inspectorVersion ?? "unknown"}; expected ${expectedInspectorVersion}`,
+    );
+  }
+  const targetOpenClawVersion = stringValue(raw.targetOpenClawVersion);
+  if (!targetOpenClawVersion) {
+    throw new Error("Notification manifest is missing the exact OpenClaw target version");
+  }
+  if (!Array.isArray(raw.packages)) throw new Error("Notification manifest is missing packages");
+  const items: ClaimItem[] = [];
+  for (const entry of raw.packages) {
+    if (!isPlainObject(entry) || typeof entry.errorCount !== "number" || entry.errorCount <= 0) {
+      continue;
+    }
+    const packageId = stringValue(entry.packageId);
+    const releaseId = stringValue(entry.releaseId);
+    const packageName = stringValue(entry.packageName);
+    const version = stringValue(entry.version);
+    if (!packageId || !releaseId || !packageName || !version) {
+      throw new Error("Notification manifest contains an incomplete hard-error release");
+    }
+    items.push({ packageId, releaseId, packageName, version, downloadUrl: "" });
+  }
+  return { targetOpenClawVersion, items };
+}
+
+async function notifyPackageItem(
+  item: ClaimItem,
+  inspectorVersion: string,
+  targetOpenClawVersion: string,
+) {
+  if (dryRun) {
+    return {
+      failed: false,
+      scanned: false,
+      notificationAttempted: false,
+      notificationSent: false,
+      impactEntry: undefined,
+    };
+  }
+  const reportDir = path.resolve(
+    artifactRoot,
+    safeArtifactName(`${item.packageName}-${item.version}`),
+  );
+  await mkdir(reportDir, { recursive: true });
+  try {
+    const result = await postJson<NotificationResult>(
+      `${siteUrl}/api/v1/package-inspector/notify`,
+      {
+        packageId: item.packageId,
+        releaseId: item.releaseId,
+        inspectorVersion,
+        targetOpenClawVersion,
+      },
+    );
+    await writeFile(
+      path.join(reportDir, "notification-result.json"),
+      `${JSON.stringify(result, null, 2)}\n`,
+    );
+    console.log(
+      `Notification ${item.packageName}@${item.version}: sent=${result.sent}${result.reason ? `, reason=${result.reason}` : ""}`,
+    );
+    return {
+      failed: false,
+      scanned: false,
+      notificationAttempted: true,
+      notificationSent: result.sent,
+      impactEntry: undefined,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeFile(path.join(reportDir, "notification-error.txt"), message);
+    console.error(`Plugin owner notification failed for ${item.packageName}@${item.version}`);
+    console.error(message);
+    return {
+      failed: true,
+      scanned: false,
+      notificationAttempted: true,
+      notificationSent: false,
+      impactEntry: undefined,
+    };
   }
 }
 
@@ -328,6 +488,8 @@ async function inspectPackageItem(
     return {
       failed: false,
       scanned: true,
+      notificationAttempted: false,
+      notificationSent: false,
       impactEntry: toImpactEntry(item, findings, targetOpenClawVersion),
     };
   } catch (error) {
@@ -335,7 +497,13 @@ async function inspectPackageItem(
     await writeFile(path.join(reportDir, "error.txt"), message);
     console.error(`Plugin Inspector bulk scan failed for ${item.packageName}@${item.version}`);
     console.error(message);
-    return { failed: true, scanned: false, impactEntry: undefined };
+    return {
+      failed: true,
+      scanned: false,
+      notificationAttempted: false,
+      notificationSent: false,
+      impactEntry: undefined,
+    };
   } finally {
     await rm(workRoot, { recursive: true, force: true });
   }
@@ -765,6 +933,8 @@ function toImpactEntry(
     else warningCount += 1;
   }
   return {
+    packageId: item.packageId,
+    releaseId: item.releaseId,
     packageName: item.packageName,
     version: item.version,
     ownerUserId: item.ownerUserId,
@@ -790,6 +960,12 @@ export function summarizeImpact(args: {
   nextCursor: string | null;
   inspectorVersion: string;
   targetOpenClawVersion?: string;
+  notifyOwners?: boolean;
+  notificationOnly?: boolean;
+  notificationAttempts?: number;
+  notificationsSent?: number;
+  scanStartedAt?: string;
+  scanDurationMs?: number;
   entries: ImpactEntry[];
 }) {
   const impactedOwners = new Set<string>();
@@ -826,6 +1002,16 @@ export function summarizeImpact(args: {
     siteUrl,
     inspectorVersion: args.inspectorVersion,
     targetOpenClawVersion: args.targetOpenClawVersion,
+    notifyOwners: args.notifyOwners ?? false,
+    notificationOnly: args.notificationOnly ?? false,
+    notificationAttempts: args.notificationAttempts ?? 0,
+    notificationsSent: args.notificationsSent ?? 0,
+    scanStartedAt: args.scanStartedAt ?? new Date().toISOString(),
+    scanDurationMs: args.scanDurationMs ?? 0,
+    scanThroughputReleasesPerSecond:
+      args.scanDurationMs && args.scanDurationMs > 0
+        ? args.scanned / (args.scanDurationMs / 1000)
+        : 0,
     batchSize: Number.parseInt(batchSize, 10) || batchSize,
     batches: args.batches,
     truncated: args.truncated,
@@ -856,7 +1042,12 @@ export function renderImpactMarkdown(summary: ReturnType<typeof summarizeImpact>
     `- Site: ${summary.siteUrl}`,
     `- Inspector: ${summary.inspectorVersion}`,
     `- Target OpenClaw: ${summary.targetOpenClawVersion ?? "unknown"}`,
+    `- Mode: ${summary.notificationOnly ? "notification-only" : "scan"}`,
     `- Scanned latest releases: ${summary.scannedReleases}`,
+    `- Notification attempts: ${summary.notificationAttempts}`,
+    `- Notifications sent: ${summary.notificationsSent}`,
+    `- Scan wall time: ${(summary.scanDurationMs / 1000).toFixed(3)} seconds`,
+    `- Scan throughput: ${summary.scanThroughputReleasesPerSecond.toFixed(3)} releases/second`,
     `- Skipped unchanged releases: ${summary.skippedUnchangedReleases}`,
     `- Plugins with errors: ${summary.pluginsWithErrors}`,
     `- Plugins with warnings: ${summary.pluginsWithWarnings}`,

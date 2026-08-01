@@ -7,6 +7,7 @@ import {
   packageInspectorAcknowledgeHttp,
   packageInspectorArtifactHttp,
   packageInspectorClaimHttp,
+  packageInspectorNotifyHttp,
   packageInspectorResultsHttp,
 } from "./packageInspectorHttp";
 
@@ -17,6 +18,8 @@ type HttpHandler = {
 const packageInspectorResultsHttpHandler = (packageInspectorResultsHttp as unknown as HttpHandler)
   ._handler;
 const packageInspectorClaimHttpHandler = (packageInspectorClaimHttp as unknown as HttpHandler)
+  ._handler;
+const packageInspectorNotifyHttpHandler = (packageInspectorNotifyHttp as unknown as HttpHandler)
   ._handler;
 const packageInspectorAcknowledgeHttpHandler = (
   packageInspectorAcknowledgeHttp as unknown as HttpHandler
@@ -127,6 +130,42 @@ describe("package inspector HTTP helpers", () => {
       inspectorVersion: "0.6.0",
       targetOpenClawVersion: "2026.8.0-beta.1",
       notifyOwners: true,
+    });
+  });
+
+  it("completes warning-only notification rows without sending email", async () => {
+    vi.stubEnv("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN", "worker-token");
+    const runMutation = vi.fn().mockResolvedValue({ ok: true, marked: true });
+    const runAction = vi.fn().mockResolvedValue({
+      ok: true,
+      sent: false,
+      reason: "no-context",
+    });
+    const response = await packageInspectorNotifyHttpHandler(
+      { runAction, runMutation },
+      new Request("https://example.com/api/v1/package-inspector/notify", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer worker-token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-1",
+          inspectorVersion: "0.6.0",
+          targetOpenClawVersion: "2026.8.0-beta.1",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runAction).toHaveBeenCalledOnce();
+    expect(runMutation).toHaveBeenCalledOnce();
+    expect(runMutation.mock.calls[0]?.[1]).toEqual({
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+      inspectorVersion: "0.6.0",
+      targetOpenClawVersion: "2026.8.0-beta.1",
     });
   });
 

@@ -72,6 +72,7 @@ import {
   packageInspectorAcknowledgeHttp,
   packageInspectorArtifactHttp,
   packageInspectorClaimHttp,
+  packageInspectorNotifyHttp,
   packageInspectorResultsHttp,
 } from "./packageInspectorHttp";
 import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
@@ -301,6 +302,12 @@ http.route({
   path: "/api/v1/package-inspector/results",
   method: "POST",
   handler: packageInspectorResultsHttp,
+});
+
+http.route({
+  path: "/api/v1/package-inspector/notify",
+  method: "POST",
+  handler: packageInspectorNotifyHttp,
 });
 
 http.route({

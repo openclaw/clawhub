@@ -1,98 +1,82 @@
-import type { ReactNode } from "react";
-import {
-  Badge,
-  ClawHubEmailLayout,
-  CodeBox,
-  DetailTable,
-  EmailHeading,
-  FindingCard,
-  Paragraph,
-  type FindingCardProps,
-} from "./_components/clawhub";
-
-export type PluginInspectorFindingEmailItem = FindingCardProps & {
-  code: string;
-  targetOpenClawVersion?: string;
-};
+import { Body, Button, Container, Head, Html, Text } from "@react-email/components";
 
 export type PluginInspectorFindingsEmailProps = {
+  owner: string;
   packageName: string;
   version: string;
-  openClawVersion?: string;
-  findings: PluginInspectorFindingEmailItem[];
-  validateCommands: string[];
+  validationUrl: string;
   preheader: string;
 };
 
 export default function PluginInspectorFindingsEmail({
+  owner,
   packageName,
   version,
-  openClawVersion,
-  findings,
-  validateCommands,
-  preheader,
+  validationUrl,
 }: PluginInspectorFindingsEmailProps) {
-  const issueText = `${findings.length} ${findings.length === 1 ? "issue" : "issues"}`;
   return (
-    <ClawHubEmailLayout preview={preheader} railLabel="Plugin Review">
-      <Badge>{`${issueText} found`}</Badge>
-      <EmailHeading>Plugin Inspector findings</EmailHeading>
-      <Paragraph>{`We found ${issueText} with version ${version} of ${packageName}.`}</Paragraph>
-      <DetailTable
-        rows={[
-          ["Plugin", `${packageName}@${version}`],
-          ["OpenClaw Version", openClawVersion ?? "current"],
-        ]}
-      />
-      <HeadingLabel>Findings</HeadingLabel>
-      {findings.map((finding, index) => (
-        <FindingCard
-          key={`${finding.code}:${finding.targetOpenClawVersion ?? index}`}
-          {...finding}
-          meta={
-            finding.targetOpenClawVersion
-              ? `${finding.meta} · OpenClaw ${finding.targetOpenClawVersion}`
-              : finding.meta
-          }
-        />
-      ))}
-      <HeadingLabel>Validate a local fix</HeadingLabel>
-      {validateCommands.map((command) => (
-        <CodeBox key={command}>{command}</CodeBox>
-      ))}
-    </ClawHubEmailLayout>
+    <Html lang="en">
+      <Head />
+      <Body style={bodyStyle}>
+        <Container style={containerStyle}>
+          <Text style={paragraphStyle}>{`Hi ${owner},`}</Text>
+          <Text style={paragraphStyle}>
+            {`ClawHub validated ${packageName}@${version} against the upcoming OpenClaw release.`}
+          </Text>
+          <Text style={paragraphStyle}>
+            The plugin uses an import, API, or hook that will no longer be available. If unchanged,
+            the affected functionality will fail when users upgrade OpenClaw.
+          </Text>
+          <Button href={validationUrl} style={buttonStyle}>
+            Review the validation errors
+          </Button>
+          <Text style={paragraphStyle}>
+            Your plugin page includes the exact errors, affected files, tested OpenClaw version,
+            reproduction command, and fix guidance when available.
+          </Text>
+          <Text style={paragraphStyle}>
+            Please update the plugin and publish a new version before the next OpenClaw release.
+          </Text>
+          <Text style={paragraphStyle}>—ClawHub</Text>
+        </Container>
+      </Body>
+    </Html>
   );
 }
 
-function HeadingLabel({ children }: { children: ReactNode }) {
-  return (
-    <h2
-      style={{
-        margin: "28px 0 14px",
-        fontFamily: "Helvetica, Arial, sans-serif",
-        fontSize: "16px",
-        color: "#f5f5f5",
-      }}
-    >
-      {children}
-    </h2>
-  );
-}
+const bodyStyle = { margin: 0, padding: "32px 16px", backgroundColor: "#0a0a0b" };
+const containerStyle = {
+  width: "600px",
+  maxWidth: "600px",
+  padding: "36px",
+  backgroundColor: "#141416",
+  border: "1px solid #26262a",
+  borderRadius: "14px",
+};
+const paragraphStyle = {
+  margin: "0 0 18px",
+  fontFamily: "Helvetica, Arial, sans-serif",
+  fontSize: "15px",
+  lineHeight: "23px",
+  color: "#f5f5f5",
+};
+const buttonStyle = {
+  display: "inline-block",
+  margin: "0 0 18px",
+  padding: "12px 18px",
+  backgroundColor: "#e8443a",
+  borderRadius: "8px",
+  color: "#ffffff",
+  fontFamily: "Helvetica, Arial, sans-serif",
+  fontSize: "14px",
+  fontWeight: "bold",
+  textDecoration: "none",
+};
 
 PluginInspectorFindingsEmail.PreviewProps = {
+  owner: "octocat",
   packageName: "demo-plugin",
   version: "1.0.0",
-  openClawVersion: "2026.4.0",
-  validateCommands: ["clawhub package validate <path-to-plugin>"],
-  preheader: "Plugin Inspector found 1 issue with demo-plugin@1.0.0.",
-  findings: [
-    {
-      code: "legacy-before-agent-start",
-      kind: "warning",
-      meta: "legacy-before-agent-start · deprecation-warning · P2",
-      message: "legacy before_agent_start hook is deprecated",
-      fix: "Replace the legacy before_agent_start hook with current prompt hooks.",
-      docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-    },
-  ],
+  validationUrl: "https://clawhub.ai/plugins/demo-plugin#validation",
+  preheader: "ClawHub validated demo-plugin@1.0.0 against the upcoming OpenClaw release.",
 } satisfies PluginInspectorFindingsEmailProps;

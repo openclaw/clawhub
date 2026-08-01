@@ -5,6 +5,7 @@ import {
   buildAdminOneOffEmail,
   buildBanNotificationEmail,
   buildMaliciousArtifactEmail,
+  buildPackageInspectorValidationUrl,
   buildPackageInspectorFindingsEmail,
   buildPublisherAbuseWarningEmail,
   buildRestoredAccountEmail,
@@ -276,181 +277,40 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain("appeal this decision");
   });
 
-  it("builds plugin inspector warning copy with local validation guidance", async () => {
+  it("builds the approved hard-error plugin compatibility email", async () => {
+    const validationUrl = buildPackageInspectorValidationUrl("@openclaw/demo-plugin");
     const email = await buildPackageInspectorFindingsEmail({
       handle: "octocat",
-      packageName: "demo-plugin",
+      packageName: "@openclaw/demo-plugin",
       version: "1.0.0",
-      findings: [
-        {
-          findingKind: "warning",
-          code: "legacy-before-agent-start",
-          issueClass: "deprecation-warning",
-          severity: "P2",
-          message: "legacy before_agent_start hook is deprecated",
-          inspectorVersion: "0.4.0",
-          targetOpenClawVersion: "0.9.0",
-          scanSource: "publish",
-          authorRemediation: {
-            summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
-            docsUrl:
-              "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-          },
-        },
-      ],
+      validationUrl,
     });
 
-    expect(email.subject).toBe("Plugin Inspector findings for demo-plugin@1.0.0");
-    expect(email.text).toContain("Hi octocat,");
-    expect(email.text).toContain("We found 1 issue with version 1.0.0 of demo-plugin.");
-    expect(email.text).toContain("OpenClaw Version: 0.9.0");
-    expect(email.text).toContain("Address the findings below in your plugin package.");
-    expect(email.text).toContain("Run the validation command locally against your changes.");
-    expect(email.text).toContain(
-      "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
+    expect(validationUrl).toBe("https://clawhub.ai/openclaw/plugins/demo-plugin#validation");
+    expect(email.subject).toBe(
+      "Update required: @openclaw/demo-plugin will break in an upcoming OpenClaw release",
     );
-    expect(email.text).toContain(
-      "- **WARNING** `legacy-before-agent-start` (deprecation-warning, P2)",
+    expect(email.text).toBe(
+      [
+        "Hi octocat,",
+        "",
+        "ClawHub validated @openclaw/demo-plugin@1.0.0 against the upcoming OpenClaw release.",
+        "",
+        "The plugin uses an import, API, or hook that will no longer be available. If unchanged, the affected functionality will fail when users upgrade OpenClaw.",
+        "",
+        `Review the validation errors: ${validationUrl}`,
+        "",
+        "Your plugin page includes the exact errors, affected files, tested OpenClaw version, reproduction command, and fix guidance when available.",
+        "",
+        "Please update the plugin and publish a new version before the next OpenClaw release.",
+        "",
+        "—ClawHub",
+      ].join("\n"),
     );
-    expect(email.text).toContain("  legacy before_agent_start hook is deprecated");
-    expect(email.text).toContain("  Fix:");
-    expect(email.text).toContain(
-      "  Replace the legacy before_agent_start hook with current prompt hooks.",
-    );
-    expect(email.text).toContain("  Docs:");
-    expect(email.text).toContain(
-      "  https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-    );
-    expect(email.text).not.toContain("ClawHub Security");
-    expect(email.html).toContain("Validate a local fix");
-    expect(email.html).toContain("Plugin Review");
-    expect(email.html).not.toContain("Open ClawHub");
-    expect(email.html).not.toContain('href="https://clawhub.ai" style="display:inline-block');
-    expect(email.html).not.toContain("You&#39;re receiving this because");
-    expect(email.html).not.toContain("You're receiving this because");
-    expect(email.html).toContain("https://docs.openclaw.ai");
-    expectFooterLinksUnderlined(email.html);
-    expect(email.html).toContain("OpenClaw Version");
-    expect(email.html).toContain("0.9.0");
-    expect(email.html).toContain(
-      "clawhub package validate &lt;path-to-plugin&gt; --openclaw-version 0.9.0",
-    );
-    expect(email.html).toContain("legacy-before-agent-start");
-    expect(email.html).toContain("legacy-before-agent-start · deprecation-warning · P2");
-    expect(email.html).toContain("Fix");
-    expect(email.html).toContain("Replace the legacy before_agent_start hook");
-    expect(email.html).toContain("Docs →");
-    expect(email.html).toContain("plugin-validation-fixes#legacy-before-agent-start");
-    expect(email.html).not.toContain("plugin validation fix docs");
-    expect(email.html).not.toContain("ClawHub Security");
-    expect(email.text).not.toContain("Plugin Inspector: 0.4.0");
-    expect(email.text).not.toContain("Target OpenClaw:");
-    expect(email.html).not.toContain("<strong>Plugin Inspector:</strong>");
-    expect(email.html).not.toContain("<strong>Target OpenClaw:</strong>");
-    expect(email.html).not.toContain("Review:");
-    expect(email.html).not.toContain("plugin validation findings");
-    expect(email.html).not.toContain("https://clawhub.ai/plugins/demo-plugin#validation");
-    expect(email.html).not.toContain("Your plugin was published");
-    expect(email.html).not.toContain("published successfully");
-  });
-
-  it("includes one exact validation command per recorded OpenClaw target", async () => {
-    const email = await buildPackageInspectorFindingsEmail({
-      packageName: "demo-plugin",
-      version: "1.0.0",
-      findings: [
-        {
-          findingKind: "warning",
-          code: "legacy-before-agent-start",
-          message: "legacy hook is deprecated",
-          targetOpenClawVersion: "0.9.0",
-        },
-        {
-          findingKind: "error",
-          code: "missing-expected-seam",
-          message: "registerTool is no longer available",
-          targetOpenClawVersion: "0.10.0",
-        },
-      ],
-    });
-
-    expect(email.text).toContain("OpenClaw Versions: 0.9.0, 0.10.0");
-    expect(email.text).toContain(
-      "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
-    );
-    expect(email.text).toContain(
-      "clawhub package validate <path-to-plugin> --openclaw-version 0.10.0",
-    );
-    expect(email.text).toContain(
-      "`legacy-before-agent-start`\n  legacy hook is deprecated\n  OpenClaw target: 0.9.0",
-    );
-    expect(email.text).toContain(
-      "`missing-expected-seam`\n  registerTool is no longer available\n  OpenClaw target: 0.10.0",
-    );
-    expect(email.html).toContain(
-      "clawhub package validate &lt;path-to-plugin&gt; --openclaw-version 0.9.0",
-    );
-    expect(email.html).toContain(
-      "clawhub package validate &lt;path-to-plugin&gt; --openclaw-version 0.10.0",
-    );
-    expect(email.html).toContain("legacy-before-agent-start · OpenClaw 0.9.0");
-    expect(email.html).toContain("missing-expected-seam · OpenClaw 0.10.0");
-  });
-
-  it("builds plugin inspector error copy without publish-time wording", async () => {
-    const email = await buildPackageInspectorFindingsEmail({
-      packageName: "demo-plugin",
-      version: "1.0.1",
-      findings: [
-        {
-          findingKind: "error",
-          code: "missing-expected-seam",
-          issueClass: "compatibility-error",
-          severity: "P0",
-          level: "breakage",
-          message: "registerTool is no longer available",
-          inspectorVersion: "0.5.0",
-          targetOpenClawVersion: "0.10.0",
-          scanSource: "nightly",
-        },
-      ],
-    });
-
-    expect(email.text).toContain("We found 1 issue with version 1.0.1 of demo-plugin.");
-    expect(email.text).toContain("Address the findings below in your plugin package.");
-    expect(email.text).toContain("Run the validation command locally against your changes.");
-    expect(email.text).toContain(
-      "clawhub package validate <path-to-plugin> --openclaw-version 0.10.0",
-    );
-    expect(email.text).toContain("- **ERROR** `missing-expected-seam` (compatibility-error, P0)");
-    expect(email.text).not.toContain("Your plugin was published");
-    expect(email.text).not.toContain("was published, but");
-    expect(email.text).not.toContain("Some findings are errors");
-    expect(email.text).not.toContain("nightly");
-    expect(email.html).toContain("missing-expected-seam");
-    expect(email.html).toContain("compatibility-error · P0");
-  });
-
-  it("does not rewrite inserted package names, versions, or issue counts", async () => {
-    const findings = Array.from({ length: 11 }, (_, index) => ({
-      findingKind: "warning" as const,
-      code: `finding-${index + 1}`,
-      issueClass: "compatibility-warning",
-      severity: "P2",
-      message: "review finding",
-    }));
-    const email = await buildPackageInspectorFindingsEmail({
-      packageName: "my-demo-plugin",
-      version: "1.0.0-beta",
-      findings,
-    });
-
-    expect(email.text).toContain("We found 11 issues with version 1.0.0-beta of my-demo-plugin.");
-    expect(email.html).toContain("11 issues found");
-    expect(email.html).toContain("my-demo-plugin@1.0.0-beta");
-    expect(email.html).not.toContain("my-my-demo-plugin");
-    expect(email.html).not.toContain("1.0.0-beta-beta");
-    expect(email.html).not.toContain("11 issueses");
+    expect(email.html).toContain(`href="${validationUrl}"`);
+    expect(email.html).toContain("Review the validation errors");
+    expect(email.html).not.toContain("legacy-before-agent-start");
+    expect(email.html).not.toContain("Email preferences");
   });
 
   it("builds publisher abuse warning emails with a deadline and Discord maintainer escalation", async () => {
