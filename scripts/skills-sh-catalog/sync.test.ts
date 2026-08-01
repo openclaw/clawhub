@@ -72,7 +72,8 @@ describe("skills.sh synchronization runner", () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(response({ value: token("first", now + 5 * 60_000) }))
-      .mockResolvedValueOnce(response({ value: token("second", now + 10 * 60_000) }));
+      .mockResolvedValueOnce(response({ value: token("second", now + 10 * 60_000) }))
+      .mockResolvedValueOnce(response({ value: token("forced", now + 10 * 60_000) }));
     const authorization = createGitHubActionsOidcAuthorization({
       requestUrl: "https://token.actions.example/id-token?job=sync",
       requestToken: "request-token",
@@ -85,7 +86,8 @@ describe("skills.sh synchronization runner", () => {
     await expect(authorization()).resolves.toContain(".first");
     now += 2 * 60_000;
     await expect(authorization()).resolves.toContain(".second");
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    await expect(authorization(true)).resolves.toContain(".forced");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("completes leaderboard and Trending before automatic activation", async () => {
@@ -428,6 +430,87 @@ describe("skills.sh synchronization runner", () => {
       "status",
       "configure",
       "prepare-native-trending",
+      "step",
+      "start-trending",
+      "verify-activate",
+      "configure",
+      "status",
+    ]);
+  });
+
+  it("refreshes authorization and reconciles the durable cursor after an operator 401", async () => {
+    const operations: string[] = [];
+    let refreshed = false;
+    const authorization = vi.fn(async (forceRefresh?: boolean) => {
+      if (forceRefresh) refreshed = true;
+      return refreshed ? "fresh-github-oidc" : "stale-github-oidc";
+    });
+    const running = {
+      runId: "run-leaderboard",
+      snapshotId: "skills-sh:leaderboard:durable",
+      sourceView: "leaderboard",
+      sourceTotal: 1,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-08-01T05:32:30.080Z",
+      page: 17,
+      offset: 300,
+      status: "running",
+      startedAt: 1,
+    };
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      const bearer = String((init.headers as Record<string, string>).Authorization);
+      operations.push(String(body.operation));
+      switch (body.operation) {
+        case "status":
+          return response({ runs: [running], invariants: { publicVisible: true } });
+        case "configure":
+          return response({ ok: true, enabled: body.enabled });
+        case "step":
+          if (bearer === "Bearer stale-github-oidc") {
+            return response(
+              {
+                error: "skills_sh_mirror_test_failed",
+                message: "Convex Test mirror operator returned HTTP 401: Unauthorized",
+              },
+              502,
+            );
+          }
+          return response(completedRun("leaderboard"));
+        case "run":
+          expect(bearer).toBe("Bearer fresh-github-oidc");
+          return response(running);
+        case "start-trending":
+          return response(completedRun("trending"));
+        case "verify-activate":
+          return response({ ok: true, activated: true });
+        default:
+          throw new Error(`unexpected operation ${String(body.operation)}`);
+      }
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization,
+        reason: "scheduled recovery",
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      leaderboard: {
+        runId: "run-leaderboard",
+        syncProof: { authorizationRetries: 1 },
+      },
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    expect(authorization).toHaveBeenCalledWith(true);
+    expect(operations).toEqual([
+      "status",
+      "configure",
+      "step",
+      "run",
       "step",
       "start-trending",
       "verify-activate",

@@ -14,13 +14,14 @@ const MAX_STEPS = 2_000;
 const MAX_RATE_LIMIT_RETRIES = 30;
 const MAX_RATE_LIMIT_WAIT_MS = 30 * 60 * 1_000;
 const MAX_TRANSPORT_TIMEOUTS = 3;
+const MAX_AUTHORIZATION_RETRIES = 3;
 const MAX_NATIVE_TRENDING_RECONCILE_POLLS = 360;
 const ACTIVATION_RECONCILE_POLL_MS = 5_000;
 const MAX_ACTIVATION_RECONCILE_POLLS = 360;
 
 type MirrorRun = Record<string, unknown>;
 type SyncFetch = (input: string, init: RequestInit) => Promise<Response>;
-type SyncAuthorization = string | (() => Promise<string>);
+type SyncAuthorization = string | ((forceRefresh?: boolean) => Promise<string>);
 
 const OIDC_REFRESH_SKEW_MS = 2 * 60_000;
 
@@ -107,9 +108,11 @@ export function createGitHubActionsOidcAuthorization(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? Date.now;
   let cached: { token: string; expiresAt: number } | null = null;
-  return async () => {
+  return async (forceRefresh = false) => {
     const currentTime = now();
-    if (cached && currentTime < cached.expiresAt - OIDC_REFRESH_SKEW_MS) return cached.token;
+    if (!forceRefresh && cached && currentTime < cached.expiresAt - OIDC_REFRESH_SKEW_MS) {
+      return cached.token;
+    }
     const separator = requestUrl.includes("?") ? "&" : "?";
     const response = await fetchImpl(`${requestUrl}${separator}audience=clawhub`, {
       headers: { Authorization: `Bearer ${requestToken}` },
@@ -171,11 +174,11 @@ export async function runSkillsShSync(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep =
     options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const callRaw = async (body: Record<string, unknown>) => {
+  const callRaw = async (body: Record<string, unknown>, forceAuthorizationRefresh = false) => {
     const authorization =
       typeof options.authorization === "string"
         ? options.authorization
-        : await options.authorization();
+        : await options.authorization(forceAuthorizationRefresh);
     const response = await fetchImpl(options.targetUrl, {
       method: "POST",
       headers: {
@@ -194,6 +197,15 @@ export async function runSkillsShSync(options: {
     }
     return { response, payload };
   };
+  const isAuthorizationFailure = (result: Awaited<ReturnType<typeof callRaw>>) => {
+    if (result.response.status === 401) return true;
+    const message = result.payload.message;
+    return (
+      result.response.status === 502 &&
+      typeof message === "string" &&
+      /operator returned HTTP 401\b/i.test(message)
+    );
+  };
   const call = async (body: Record<string, unknown>) => {
     const result = await callRaw(body);
     if (!result.response.ok) {
@@ -209,6 +221,7 @@ export async function runSkillsShSync(options: {
     let rateLimitRetries = 0;
     let rateLimitWaitMs = 0;
     let transportTimeouts = 0;
+    let authorizationRetries = 0;
     if (run.status === "paused") {
       run = mirrorRunFromPayload(
         await call({
@@ -259,6 +272,35 @@ export async function runSkillsShSync(options: {
         continue;
       }
       if (!result.response.ok) {
+        if (
+          isAuthorizationFailure(result) &&
+          typeof options.authorization === "function" &&
+          authorizationRetries < MAX_AUTHORIZATION_RETRIES
+        ) {
+          authorizationRetries += 1;
+          const authoritativeResult = await callRaw(
+            { operation: "run", runId: request.runId },
+            true,
+          );
+          if (!authoritativeResult.response.ok) {
+            throw new Error(
+              `run returned HTTP ${authoritativeResult.response.status}: ${JSON.stringify(authoritativeResult.payload)}`,
+            );
+          }
+          const authoritativeRun = mirrorRunFromPayload(authoritativeResult.payload, "run");
+          if (
+            requiredString(authoritativeRun.runId, "runId") !== request.runId ||
+            (authoritativeRun.sourceView ?? "leaderboard") !== sourceView
+          ) {
+            throw new Error(
+              `unauthorized ${request.operation} reconciled to a different durable run`,
+            );
+          }
+          run = authoritativeRun;
+          const cursorAdvanced = run.page !== request.page || run.offset !== request.offset;
+          if (cursorAdvanced) steps += 1;
+          continue;
+        }
         const delayMs = mirrorRateLimitRetryDelayMs(
           result.response.status,
           result.response.headers.get("retry-after"),
@@ -293,6 +335,7 @@ export async function runSkillsShSync(options: {
         rateLimitRetries,
         rateLimitWaitMs,
         transportTimeouts,
+        authorizationRetries,
       },
     };
   };
