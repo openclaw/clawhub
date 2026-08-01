@@ -7072,9 +7072,13 @@ code {
   flex: 0 0 auto;
 }
 
-.skills-sh-sync-source {
+.skills-sh-sync-source-label {
   color: inherit;
   font-weight: 520;
+}
+
+.skills-sh-sync-source {
+  color: inherit;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -7349,16 +7353,15 @@ code {
 .skills-sh-security-audits {
   display: grid;
   gap: 8px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
 }
 
 .skills-sh-security-audits h2 {
   margin: 0;
-  color: var(--ink);
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 750;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .skills-sh-security-audit-list {
@@ -7372,15 +7375,16 @@ code {
   gap: 12px;
   min-height: 36px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--line);
   color: var(--ink);
   font-size: 0.8rem;
   font-weight: 600;
   text-decoration: none;
 }
 
-.skills-sh-security-audit-row:last-child {
-  border-bottom: 0;
+.skills-sh-security-audit-verdict {
+  flex: 0 0 auto;
+  border-radius: var(--oc-radius-control);
+  text-transform: uppercase;
 }
 
 a.skills-sh-security-audit-row:hover,
@@ -7393,6 +7397,7 @@ a.skills-sh-security-audit-row:focus-visible {
 .skills-sh-detail-links {
   display: grid;
   gap: 8px;
+  margin-top: 8px;
 }
 
 .skills-sh-detail-links .btn {

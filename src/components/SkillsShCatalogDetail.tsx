@@ -4,7 +4,6 @@ import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import {
   isSkillsShCatalogInstallable,
-  SKILLS_SH_TRUST_LABEL,
   type SkillsShCatalogDetail,
   type SkillsShUpstreamCheck,
 } from "../lib/skillsShCatalog";
@@ -14,14 +13,15 @@ import { SidebarMetadata } from "./SidebarMetadata";
 import { SkillDetailPageView, type SkillDetailViewSkill } from "./SkillDetailPageView";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Alert, AlertDescription } from "./ui/alert";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
 
 const CHECK_PRESENTATION = {
-  passed: "text-status-success-fg",
-  warning: "text-status-warning-fg",
-  failed: "text-status-error-fg",
-  unavailable: "text-ink-soft",
+  passed: "success",
+  warning: "warning",
+  failed: "destructive",
+  unavailable: "compact",
 } as const;
 
 function GitHubIcon({ size = 14 }: { size?: number }) {
@@ -130,14 +130,17 @@ export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDet
       showBookmarkAction={false}
       showReportAction={false}
       taxonomyPrefix={
-        <a
-          className="skills-sh-sync-source"
-          href={entry.sourceUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Synced from skills.sh
-        </a>
+        <span className="skills-sh-sync-source-label">
+          Synced from{" "}
+          <a
+            className="skills-sh-sync-source"
+            href={entry.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            skills.sh
+          </a>
+        </span>
       }
       breadcrumbOwnerHref={null}
       breadcrumbOwnerLabel={entry.owner ?? "skills.sh"}
@@ -210,12 +213,8 @@ function SkillsShSidebar({ entry }: { entry: SkillsShCatalogDetail }) {
       />
 
       <section className="skills-sh-security-audits" aria-label="Security Audits">
-        <h2>Security Audits</h2>
+        <h2 className="sidebar-metadata-label">Security Audits</h2>
         <div className="skills-sh-security-audit-list">
-          <div className="skills-sh-security-audit-row">
-            <span>ClawHub</span>
-            <span className="text-ink-soft">{SKILLS_SH_TRUST_LABEL}</span>
-          </div>
           {entry.upstreamChecks.map((check) => (
             <UpstreamCheck key={check.scanner} check={check} />
           ))}
@@ -225,7 +224,7 @@ function SkillsShSidebar({ entry }: { entry: SkillsShCatalogDetail }) {
       <div className="skills-sh-detail-links">
         <Button asChild variant="outline" size="sm">
           <a href={entry.sourceUrl} target="_blank" rel="noreferrer">
-            View on skills.sh <ExternalLink aria-hidden="true" size={14} />
+            <ExternalLink aria-hidden="true" size={14} /> View on skills.sh
           </a>
         </Button>
         {entry.githubPath && entry.githubCommit && entry.githubContentHash ? (
@@ -299,7 +298,13 @@ function UpstreamCheck({ check }: { check: SkillsShUpstreamCheck }) {
   const content = (
     <>
       <span>{check.scanner}</span>
-      <span className={CHECK_PRESENTATION[check.status]}>{check.sourceStatus}</span>
+      <Badge
+        variant={CHECK_PRESENTATION[check.status]}
+        size="sm"
+        className="skills-sh-security-audit-verdict"
+      >
+        {check.sourceStatus}
+      </Badge>
     </>
   );
   return check.url ? (

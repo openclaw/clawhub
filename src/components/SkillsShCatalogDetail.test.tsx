@@ -26,7 +26,8 @@ describe("SkillsShCatalogDetailPage", () => {
   it("shows skills.sh provenance and simple security audit rows", () => {
     const { container } = render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
-    expect(screen.getAllByText("Not scanned by ClawHub").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Not scanned by ClawHub")).toBeNull();
+    expect(screen.queryByText("ClawHub")).toBeNull();
     expect(screen.getAllByText("Gen Agent Trust Hub").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Socket").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Snyk").length).toBeGreaterThan(0);
@@ -37,9 +38,10 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.getByRole("link", { name: /View on skills\.sh/i }).getAttribute("href")).toBe(
       "https://skills.sh/patrick-erichsen/skills/html",
     );
-    expect(screen.getByRole("link", { name: "Synced from skills.sh" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "skills.sh" }).getAttribute("href")).toBe(
       "https://skills.sh/patrick-erichsen/skills/html",
     );
+    expect(screen.getByText("Synced from").closest("a")).toBeNull();
     expect(screen.getAllByText("100").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
     expect(screen.queryByText("Upstream installs")).toBeNull();
@@ -48,11 +50,13 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(container.querySelector(".skill-hero-sidebar")?.textContent).toContain(
       "Security Audits",
     );
-    expect(
-      screen
-        .getByRole("region", { name: "Security Audits" })
-        .querySelectorAll(".skills-sh-security-audit-row"),
-    ).toHaveLength(4);
+    const audits = screen.getByRole("region", { name: "Security Audits" });
+    expect(audits.querySelectorAll(".skills-sh-security-audit-row")).toHaveLength(3);
+    expect(audits.querySelector("h2")?.classList.contains("sidebar-metadata-label")).toBe(true);
+    const verdicts = audits.querySelectorAll(".skills-sh-security-audit-verdict");
+    expect(verdicts).toHaveLength(3);
+    expect(verdicts[1]?.className).toContain("bg-status-success-bg");
+    expect(verdicts[2]?.className).toContain("bg-status-warning-bg");
     expect(container.querySelector(".skills-sh-detail-trust-alert")).toBeNull();
     expect(container.querySelector(".skills-sh-detail-source-badge")).toBeNull();
   });
@@ -74,6 +78,8 @@ describe("SkillsShCatalogDetailPage", () => {
     );
     expect(repository.classList.contains("plugin-external-link")).toBe(true);
     expect(repository.querySelector("svg")).toBeTruthy();
+    const source = screen.getByRole("link", { name: "View on skills.sh" });
+    expect(source.firstElementChild?.tagName).toBe("svg");
     const claimUrl = new URL(
       screen.getByRole("link", { name: "Claim this skill" }).getAttribute("href") ?? "",
       "https://clawhub.test",
@@ -112,7 +118,7 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(container.querySelector(".skill-install-command-card")).toBeTruthy();
     expect(screen.getByText("openclaw skills install")).toBeTruthy();
     expect(screen.getByText("skills-sh:patrick-erichsen/skills/html")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Synced from skills.sh" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "skills.sh" })).toBeTruthy();
   });
 
   it("uses the shared skill detail shell for content and stats", () => {

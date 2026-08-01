@@ -1,4 +1,3 @@
-import { Bookmark, Download } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
@@ -107,15 +106,11 @@ export function SkillRelatedSection({
                     ) : null}
                   </span>
                   {isCompact ? (
-                    <span className="related-skill-stats" aria-label="Related skill stats">
-                      <span className="related-skill-stat">
-                        <Bookmark size={13} aria-hidden="true" />
-                        {formattedStats.stars}
-                      </span>
-                      <span className="related-skill-stat">
-                        <Download size={13} aria-hidden="true" />
-                        {formattedStats.installs}
-                      </span>
+                    <span
+                      className="related-skill-stats"
+                      aria-label={`${entry.skill.stats.downloads.toLocaleString()} downloads`}
+                    >
+                      {formattedStats.downloads}
                     </span>
                   ) : (
                     <span className="related-skill-owner">
