@@ -19,10 +19,9 @@ import {
 } from "../lib/skillsShCatalog";
 import { timeAgo } from "../lib/timeAgo";
 import { truncateText } from "../lib/truncateText";
-import { DetailPageShell } from "./DetailPageShell";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SidebarMetadata } from "./SidebarMetadata";
-import { SkillHeader, type SkillHeaderSkill } from "./SkillHeader";
+import { SkillDetailPageView, type SkillDetailViewSkill } from "./SkillDetailPageView";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
@@ -50,7 +49,7 @@ function skillsShSummary(summary: string | undefined) {
 export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDetail }) {
   const installable = isSkillsShCatalogInstallable(entry);
   const repositoryLabel = skillsShRepositoryLabel(entry);
-  const skill: SkillHeaderSkill = {
+  const skill: SkillDetailViewSkill = {
     slug: entry.slug,
     displayName: entry.displayName,
     summary: skillsShSummary(entry.summary),
@@ -97,77 +96,74 @@ export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDet
   );
 
   return (
-    <main className="section detail-page-section skill-detail-page skills-sh-detail-page">
-      <DetailPageShell>
-        <SkillHeader
-          skill={skill}
-          owner={null}
-          ownerHandle={entry.owner ?? null}
-          latestVersion={null}
-          modInfo={null}
-          canManage={false}
-          isAuthenticated={false}
-          isStaff={false}
-          isStarred={false}
-          onToggleStar={() => undefined}
-          onOpenReport={() => undefined}
-          onRequireSignIn={() => undefined}
-          forkOf={null}
-          forkOfLabel="fork of"
-          forkOfHref={null}
-          forkOfOwnerHandle={null}
-          canonical={null}
-          canonicalHref={null}
-          canonicalOwnerHandle={null}
-          staffVisibilityTag={null}
-          isAutoHidden={false}
-          isRemoved={false}
-          nixPlugin={undefined}
-          hasPluginBundle={false}
-          configRequirements={undefined}
-          cliHelp={undefined}
-          clawdis={undefined}
-          categories={getSkillCategoriesForSkill(skill)}
-          showArchiveMetadata={false}
-          showBookmarkAction={false}
-          showReportAction={false}
-          titleAccessory={
-            <Badge variant="compact" className="skills-sh-detail-source-badge">
-              skills.sh
-            </Badge>
-          }
-          breadcrumbOwnerHref={null}
-          breadcrumbOwnerLabel={entry.owner ?? "skills.sh"}
-          breadcrumbSkillHref={entry.route}
-          creatorContent={
-            <a
-              className="skills-sh-detail-source-owner"
-              href={entry.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              @{entry.owner ?? repositoryLabel} on skills.sh
-              <ExternalLink aria-hidden="true" size={13} />
-            </a>
-          }
-          heroNotice={
-            <Alert variant="warn" className="skills-sh-detail-trust-alert">
-              <ShieldAlert aria-hidden="true" size={17} />
-              <AlertDescription>
-                This is a stored upstream skills.sh listing. ClawHub has not scanned or accepted
-                this source.
-              </AlertDescription>
-            </Alert>
-          }
-          installContent={installContent}
-          renderSidebarContent={() => (
-            <SkillsShSidebar entry={entry} repositoryLabel={repositoryLabel} />
-          )}
+    <SkillDetailPageView
+      pageClassName="skills-sh-detail-page"
+      skill={skill}
+      owner={null}
+      ownerHandle={entry.owner ?? null}
+      latestVersion={null}
+      modInfo={null}
+      canManage={false}
+      isAuthenticated={false}
+      isStaff={false}
+      isStarred={false}
+      onToggleStar={() => undefined}
+      onOpenReport={() => undefined}
+      onRequireSignIn={() => undefined}
+      forkOf={null}
+      forkOfLabel="fork of"
+      forkOfHref={null}
+      forkOfOwnerHandle={null}
+      canonical={null}
+      canonicalHref={null}
+      canonicalOwnerHandle={null}
+      staffVisibilityTag={null}
+      isAutoHidden={false}
+      isRemoved={false}
+      nixPlugin={undefined}
+      hasPluginBundle={false}
+      configRequirements={undefined}
+      cliHelp={undefined}
+      clawdis={undefined}
+      categories={getSkillCategoriesForSkill(skill)}
+      showArchiveMetadata={false}
+      showBookmarkAction={false}
+      showReportAction={false}
+      titleAccessory={
+        <Badge variant="compact" className="skills-sh-detail-source-badge">
+          skills.sh
+        </Badge>
+      }
+      breadcrumbOwnerHref={null}
+      breadcrumbOwnerLabel={entry.owner ?? "skills.sh"}
+      breadcrumbSkillHref={entry.route}
+      creatorContent={
+        <a
+          className="skills-sh-detail-source-owner"
+          href={entry.sourceUrl}
+          target="_blank"
+          rel="noreferrer"
         >
-          <SkillsShContentTabs entry={entry} />
-        </SkillHeader>
-      </DetailPageShell>
-    </main>
+          @{entry.owner ?? repositoryLabel} on skills.sh
+          <ExternalLink aria-hidden="true" size={13} />
+        </a>
+      }
+      heroNotice={
+        <Alert variant="warn" className="skills-sh-detail-trust-alert">
+          <ShieldAlert aria-hidden="true" size={17} />
+          <AlertDescription>
+            This is a stored upstream skills.sh listing. ClawHub has not scanned or accepted this
+            source.
+          </AlertDescription>
+        </Alert>
+      }
+      installContent={installContent}
+      renderSidebarContent={() => (
+        <SkillsShSidebar entry={entry} repositoryLabel={repositoryLabel} />
+      )}
+    >
+      <SkillsShContentTabs entry={entry} />
+    </SkillDetailPageView>
   );
 }
 

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
-import { SkillHeader } from "./SkillHeader";
+import { SkillDetailPageView } from "./SkillDetailPageView";
 import { TooltipProvider } from "./ui/tooltip";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -31,7 +31,7 @@ vi.mock("../lib/useHeroCreatorPublisher", () => ({
   useHeroCreatorPublisher: ({ owner }: { owner?: PublicPublisher | null }) => owner,
 }));
 
-describe("SkillHeader", () => {
+describe("SkillDetailPageView", () => {
   function sidebarStatsRoot(container: HTMLElement) {
     const node = container.querySelector(".detail-sidebar-stats");
     if (!node) throw new Error("Missing .detail-sidebar-stats");
@@ -121,8 +121,8 @@ describe("SkillHeader", () => {
     linkedUserId: "users:owner" as Id<"users">,
   };
 
-  function renderHeader(overrides: Partial<Parameters<typeof SkillHeader>[0]> = {}) {
-    const props: Parameters<typeof SkillHeader>[0] = {
+  function renderHeader(overrides: Partial<Parameters<typeof SkillDetailPageView>[0]> = {}) {
+    const props: Parameters<typeof SkillDetailPageView>[0] = {
       skill,
       owner,
       ownerHandle: "local",
@@ -157,7 +157,7 @@ describe("SkillHeader", () => {
 
     return render(
       <TooltipProvider>
-        <SkillHeader {...props} />
+        <SkillDetailPageView {...props} />
       </TooltipProvider>,
     );
   }
@@ -387,7 +387,7 @@ describe("SkillHeader", () => {
       isAuthenticated: true,
       settingsHref: "/local/demo/settings",
       newVersionHref: "/skills/publish?updateSlug=demo&ownerHandle=local",
-    } as Partial<Parameters<typeof SkillHeader>[0]>);
+    } as Partial<Parameters<typeof SkillDetailPageView>[0]>);
 
     const newVersionLink = screen.getByRole("link", { name: "New version" });
     const settingsLink = screen.getByRole("link", { name: "Settings" });
@@ -448,7 +448,7 @@ describe("SkillHeader", () => {
       isAuthenticated: true,
       settingsHref: "/local/demo/settings",
       newVersionHref: "/skills/publish?updateSlug=demo&ownerHandle=local",
-    } as Partial<Parameters<typeof SkillHeader>[0]>);
+    } as Partial<Parameters<typeof SkillDetailPageView>[0]>);
 
     expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
   });
@@ -460,7 +460,7 @@ describe("SkillHeader", () => {
       isStaff: true,
       settingsHref: "/local/demo/settings",
       newVersionHref: "/skills/publish?updateSlug=demo&ownerHandle=local",
-    } as Partial<Parameters<typeof SkillHeader>[0]>);
+    } as Partial<Parameters<typeof SkillDetailPageView>[0]>);
 
     expect(screen.getByRole("button", { name: "Report" })).toBeTruthy();
   });

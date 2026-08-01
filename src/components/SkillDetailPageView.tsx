@@ -20,8 +20,9 @@ import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import { cn } from "../lib/utils";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
-import { DetailHero, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
+import { DetailHero, DetailPageShell, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
 import { InlineCodeSummary } from "./InlineCodeSummary";
@@ -65,13 +66,13 @@ function formatHeaderTopic(topic: string) {
   return formatCatalogTopicLabel(topic);
 }
 
-type SkillHeaderLatestVersion =
+type SkillDetailLatestVersion =
   | (Omit<Doc<"skillVersions">, "parsed"> & {
       parsed?: (Partial<Doc<"skillVersions">["parsed"]> & { description?: string }) | null;
     })
   | null;
 
-function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
+function getLatestVersionDescription(latestVersion: SkillDetailLatestVersion) {
   const parsed = latestVersion?.parsed;
   const description =
     typeof parsed?.presentation?.summary === "string"
@@ -84,7 +85,7 @@ function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
   return description?.trim() || null;
 }
 
-export type SkillHeaderSkill = {
+export type SkillDetailViewSkill = {
   _id?: string;
   slug: string;
   displayName: string;
@@ -117,7 +118,7 @@ export type SkillHeaderSkill = {
   updatedAt: number;
 };
 
-function getGitHubRepositoryLink(skill: SkillHeaderSkill) {
+function getGitHubRepositoryLink(skill: SkillDetailViewSkill) {
   const repo = "githubSourceRepo" in skill ? skill.githubSourceRepo : undefined;
   if (skill.installKind !== "github" || !repo) return null;
 
@@ -133,11 +134,11 @@ function getGitHubRepositoryLink(skill: SkillHeaderSkill) {
   );
 }
 
-type SkillHeaderProps = {
-  skill: SkillHeaderSkill;
+export type SkillDetailPageViewProps = {
+  skill: SkillDetailViewSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
-  latestVersion: SkillHeaderLatestVersion;
+  latestVersion: SkillDetailLatestVersion;
   modInfo: SkillModerationInfo | null;
   canManage: boolean;
   isAuthenticated: boolean;
@@ -181,10 +182,12 @@ type SkillHeaderProps = {
   renderSidebarContent?: () => ReactNode;
   showBookmarkAction?: boolean;
   showReportAction?: boolean;
+  pageClassName?: string;
+  pageOverlays?: ReactNode;
   children?: ReactNode;
 };
 
-export function SkillHeader({
+export function SkillDetailPageView({
   skill,
   owner,
   ownerHandle,
@@ -229,8 +232,10 @@ export function SkillHeader({
   renderSidebarContent,
   showBookmarkAction = true,
   showReportAction: showReportActionOverride,
+  pageClassName,
+  pageOverlays,
   children,
-}: SkillHeaderProps) {
+}: SkillDetailPageViewProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
   const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
@@ -366,329 +371,332 @@ export function SkillHeader({
   const displayName = presentationTitle(skill.displayName, skill.slug);
 
   return (
-    <>
-      {modInfo?.isPendingScan ? (
-        <div className="pending-banner">
-          <div className="pending-banner-content">
-            <strong>Security scan in progress</strong>
-            <p>
-              Your skill is being scanned by VirusTotal. It will be visible to others once the scan
-              completes. This usually takes up to 5 minutes — grab a coffee or exfoliate your shell
-              while you wait.
-            </p>
+    <main className={cn("section detail-page-section skill-detail-page", pageClassName)}>
+      <DetailPageShell>
+        {modInfo?.isPendingScan ? (
+          <div className="pending-banner">
+            <div className="pending-banner-content">
+              <strong>Security scan in progress</strong>
+              <p>
+                Your skill is being scanned by VirusTotal. It will be visible to others once the
+                scan completes. This usually takes up to 5 minutes — grab a coffee or exfoliate your
+                shell while you wait.
+              </p>
+            </div>
           </div>
-        </div>
-      ) : modInfo?.isRemoved ? (
-        <div className="pending-banner pending-banner-blocked">
-          <div className="pending-banner-content">
-            <strong>Skill removed by moderator</strong>
-            <p>This skill has been removed and is not visible to others.</p>
+        ) : modInfo?.isRemoved ? (
+          <div className="pending-banner pending-banner-blocked">
+            <div className="pending-banner-content">
+              <strong>Skill removed by moderator</strong>
+              <p>This skill has been removed and is not visible to others.</p>
+            </div>
           </div>
-        </div>
-      ) : modInfo?.isHiddenByMod ? (
-        <div className="pending-banner pending-banner-blocked">
-          <div className="pending-banner-content">
-            <strong>Skill hidden</strong>
-            <p>This skill is currently hidden and not visible to others.</p>
+        ) : modInfo?.isHiddenByMod ? (
+          <div className="pending-banner pending-banner-blocked">
+            <div className="pending-banner-content">
+              <strong>Skill hidden</strong>
+              <p>This skill is currently hidden and not visible to others.</p>
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      {managementToolbar}
+        {managementToolbar}
 
-      <DetailHero
-        topClassName={hasPluginBundle ? "has-plugin" : undefined}
-        sidebar={
-          <div className="skill-hero-sidebar-stack">
-            {!isMobileDetailLayout && showBookmarkAction ? (
-              <div className="skill-sidebar-star-band detail-hero-summary-row">
-                {renderStarAction()}
-              </div>
-            ) : null}
-            <div className="detail-sidebar-stats">{desktopStatsContent}</div>
-          </div>
-        }
-        main={
-          <>
-            <div className="skill-hero-title">
-              <nav className="skill-hero-breadcrumbs" aria-label="Skill breadcrumbs">
-                <a href="/skills">skills</a>
-                <span aria-hidden="true">/</span>
-                {resolvedBreadcrumbOwnerHref ? (
-                  <a href={resolvedBreadcrumbOwnerHref}>
-                    {breadcrumbOwnerLabel ??
-                      ownerHandle ??
-                      owner?.displayName ??
-                      owner?._id ??
-                      "unknown"}
-                  </a>
-                ) : (
-                  <span>
-                    {breadcrumbOwnerLabel ??
-                      ownerHandle ??
-                      owner?.displayName ??
-                      owner?._id ??
-                      "unknown"}
-                  </span>
-                )}
-                <span aria-hidden="true">/</span>
-                <a
-                  href={
-                    breadcrumbSkillHref ??
-                    buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)
-                  }
-                  aria-current="page"
-                >
-                  {skill.slug}
-                </a>
-              </nav>
-              <div className="skill-hero-heading-stack">
-                {headerCategories.length > 0 || headerTopics.length > 0 ? (
-                  <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
-                    {headerCategories.length > 0 ? (
-                      <div className="skill-category-meta-list" aria-label="Categories">
-                        {headerCategories.map((categoryItem) => (
-                          <a
-                            key={categoryItem.slug}
-                            className="skill-category-meta-link"
-                            href={buildSkillCategoryBrowseHref(categoryItem)}
-                            aria-label={`View ${categoryItem.label} skills`}
-                          >
-                            <BrowseCategoryIcon
-                              slug={categoryItem.slug}
-                              icon={categoryItem.icon}
-                              size={14}
-                              className="skill-category-icon"
-                            />
-                            <span>{categoryItem.label}</span>
-                          </a>
-                        ))}
-                      </div>
-                    ) : null}
-                    {headerCategories.length > 0 && headerTopics.length > 0 ? (
-                      <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
-                    ) : null}
-                    {headerTopics.length > 0 ? (
-                      <div className="skill-hero-topic-list" aria-label="Topics">
-                        {headerTopics.map((topic) => (
-                          <a
-                            key={topic}
-                            className="skill-hero-topic"
-                            href={buildSkillTopicBrowseHref(topic)}
-                            aria-label={`View skills tagged ${formatHeaderTopic(topic)}`}
-                          >
-                            {formatHeaderTopic(topic)}
-                          </a>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="skill-hero-title-row">
-                  <MarketplaceIcon
-                    kind="skill"
-                    label={displayName}
-                    imageUrl={skill.icon}
-                    skill={skill}
-                    size="md"
-                  />
-                  <h1 className="skill-page-title">{displayName}</h1>
-                  {showTitleBadges ? (
-                    <div className="skill-title-badges">
-                      {titleBadges.map((badge) => (
-                        <Badge key={badge} variant="compact">
-                          {badge}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : null}
-                  {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                  {titleAccessory}
-                </div>
-                {showHeroMeta ? (
-                  <div className="skill-hero-meta-row" aria-label="Skill lineage">
-                    {forkOf && forkOfHref ? (
-                      <span className="skill-hero-meta-item">
-                        <span className="skill-hero-meta-label">{forkOfLabel}</span>
-                        <a className="skill-hero-meta-link" href={forkOfHref}>
-                          {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
-                          {forkOf.skill.slug}
-                        </a>
-                        {forkOf.version ? (
-                          <span className="skill-hero-meta-version">({forkOf.version})</span>
-                        ) : null}
-                      </span>
-                    ) : null}
-                    {canonicalHref ? (
-                      <span className="skill-hero-meta-item">
-                        <span className="skill-hero-meta-label">canonical</span>
-                        <a className="skill-hero-meta-link" href={canonicalHref}>
-                          {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
-                          {canonical?.skill?.slug}
-                        </a>
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              <div className="skill-summary-block">
-                <p
-                  className={`section-subtitle skill-summary-line${
-                    hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
-                  }`}
-                >
-                  <InlineCodeSummary>{headerDescription}</InlineCodeSummary>
-                </p>
-                {hasSummaryToggle ? (
-                  <button
-                    type="button"
-                    className="skill-summary-toggle"
-                    aria-expanded={isSummaryExpanded}
-                    onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
-                  >
-                    {isSummaryExpanded ? "Show less" : "Read more"}
-                  </button>
-                ) : null}
-              </div>
-              {creatorContent || owner || ownerHandle ? (
-                <div className="skill-hero-creator">
-                  {creatorContent ?? (
-                    <UserBadge
-                      user={heroCreatorPublisher}
-                      fallbackHandle={ownerHandle}
-                      prefix=""
-                      size="md"
-                      showName
-                      showHandle={false}
-                      showMutedHandle
-                      stackMutedHandleBelowName
-                      disableTooltip
-                    />
-                  )}
-                  {isMobileDetailLayout && showBookmarkAction ? (
-                    <div className="skill-hero-creator-star">{renderStarAction()}</div>
-                  ) : null}
+        <DetailHero
+          topClassName={hasPluginBundle ? "has-plugin" : undefined}
+          sidebar={
+            <div className="skill-hero-sidebar-stack">
+              {!isMobileDetailLayout && showBookmarkAction ? (
+                <div className="skill-sidebar-star-band detail-hero-summary-row">
+                  {renderStarAction()}
                 </div>
               ) : null}
+              <div className="detail-sidebar-stats">{desktopStatsContent}</div>
+            </div>
+          }
+          main={
+            <>
+              <div className="skill-hero-title">
+                <nav className="skill-hero-breadcrumbs" aria-label="Skill breadcrumbs">
+                  <a href="/skills">skills</a>
+                  <span aria-hidden="true">/</span>
+                  {resolvedBreadcrumbOwnerHref ? (
+                    <a href={resolvedBreadcrumbOwnerHref}>
+                      {breadcrumbOwnerLabel ??
+                        ownerHandle ??
+                        owner?.displayName ??
+                        owner?._id ??
+                        "unknown"}
+                    </a>
+                  ) : (
+                    <span>
+                      {breadcrumbOwnerLabel ??
+                        ownerHandle ??
+                        owner?.displayName ??
+                        owner?._id ??
+                        "unknown"}
+                    </span>
+                  )}
+                  <span aria-hidden="true">/</span>
+                  <a
+                    href={
+                      breadcrumbSkillHref ??
+                      buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)
+                    }
+                    aria-current="page"
+                  >
+                    {skill.slug}
+                  </a>
+                </nav>
+                <div className="skill-hero-heading-stack">
+                  {headerCategories.length > 0 || headerTopics.length > 0 ? (
+                    <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
+                      {headerCategories.length > 0 ? (
+                        <div className="skill-category-meta-list" aria-label="Categories">
+                          {headerCategories.map((categoryItem) => (
+                            <a
+                              key={categoryItem.slug}
+                              className="skill-category-meta-link"
+                              href={buildSkillCategoryBrowseHref(categoryItem)}
+                              aria-label={`View ${categoryItem.label} skills`}
+                            >
+                              <BrowseCategoryIcon
+                                slug={categoryItem.slug}
+                                icon={categoryItem.icon}
+                                size={14}
+                                className="skill-category-icon"
+                              />
+                              <span>{categoryItem.label}</span>
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                      {headerCategories.length > 0 && headerTopics.length > 0 ? (
+                        <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+                      ) : null}
+                      {headerTopics.length > 0 ? (
+                        <div className="skill-hero-topic-list" aria-label="Topics">
+                          {headerTopics.map((topic) => (
+                            <a
+                              key={topic}
+                              className="skill-hero-topic"
+                              href={buildSkillTopicBrowseHref(topic)}
+                              aria-label={`View skills tagged ${formatHeaderTopic(topic)}`}
+                            >
+                              {formatHeaderTopic(topic)}
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div className="skill-hero-title-row">
+                    <MarketplaceIcon
+                      kind="skill"
+                      label={displayName}
+                      imageUrl={skill.icon}
+                      skill={skill}
+                      size="md"
+                    />
+                    <h1 className="skill-page-title">{displayName}</h1>
+                    {showTitleBadges ? (
+                      <div className="skill-title-badges">
+                        {titleBadges.map((badge) => (
+                          <Badge key={badge} variant="compact">
+                            {badge}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                    {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                    {titleAccessory}
+                  </div>
+                  {showHeroMeta ? (
+                    <div className="skill-hero-meta-row" aria-label="Skill lineage">
+                      {forkOf && forkOfHref ? (
+                        <span className="skill-hero-meta-item">
+                          <span className="skill-hero-meta-label">{forkOfLabel}</span>
+                          <a className="skill-hero-meta-link" href={forkOfHref}>
+                            {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
+                            {forkOf.skill.slug}
+                          </a>
+                          {forkOf.version ? (
+                            <span className="skill-hero-meta-version">({forkOf.version})</span>
+                          ) : null}
+                        </span>
+                      ) : null}
+                      {canonicalHref ? (
+                        <span className="skill-hero-meta-item">
+                          <span className="skill-hero-meta-label">canonical</span>
+                          <a className="skill-hero-meta-link" href={canonicalHref}>
+                            {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
+                            {canonical?.skill?.slug}
+                          </a>
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="skill-summary-block">
+                  <p
+                    className={`section-subtitle skill-summary-line${
+                      hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
+                    }`}
+                  >
+                    <InlineCodeSummary>{headerDescription}</InlineCodeSummary>
+                  </p>
+                  {hasSummaryToggle ? (
+                    <button
+                      type="button"
+                      className="skill-summary-toggle"
+                      aria-expanded={isSummaryExpanded}
+                      onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
+                    >
+                      {isSummaryExpanded ? "Show less" : "Read more"}
+                    </button>
+                  ) : null}
+                </div>
+                {creatorContent || owner || ownerHandle ? (
+                  <div className="skill-hero-creator">
+                    {creatorContent ?? (
+                      <UserBadge
+                        user={heroCreatorPublisher}
+                        fallbackHandle={ownerHandle}
+                        prefix=""
+                        size="md"
+                        showName
+                        showHandle={false}
+                        showMutedHandle
+                        stackMutedHandleBelowName
+                        disableTooltip
+                      />
+                    )}
+                    {isMobileDetailLayout && showBookmarkAction ? (
+                      <div className="skill-hero-creator-star">{renderStarAction()}</div>
+                    ) : null}
+                  </div>
+                ) : null}
 
-              {heroNotice}
+                {heroNotice}
 
-              {nixPlugin ? (
-                <div className="skill-hero-note">
-                  Bundles the skill pack, CLI binary, and config requirements in one Nix install.
+                {nixPlugin ? (
+                  <div className="skill-hero-note">
+                    Bundles the skill pack, CLI binary, and config requirements in one Nix install.
+                  </div>
+                ) : null}
+              </div>
+            </>
+          }
+        >
+          <div className="detail-mobile-install">
+            {installContent ?? (
+              <SkillCommandLineCard
+                slug={skill.slug}
+                displayName={skill.displayName}
+                ownerHandle={ownerHandle}
+                ownerId={installOwnerId}
+                clawdis={clawdis}
+              />
+            )}
+          </div>
+
+          <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
+            <div
+              className="detail-mobile-master-tab-list"
+              role="tablist"
+              aria-label="Skill mobile sections"
+            >
+              <button
+                id="skill-mobile-master-tab-content"
+                className={`detail-mobile-master-tab${
+                  mobileDetailPanel === "content" ? " is-active" : ""
+                }`}
+                type="button"
+                role="tab"
+                aria-selected={mobileDetailPanel === "content"}
+                aria-controls="skill-mobile-master-panel-content"
+                onClick={() => setMobileDetailPanel("content")}
+              >
+                SKILL.md
+              </button>
+              <button
+                id="skill-mobile-master-tab-stats"
+                className={`detail-mobile-master-tab${
+                  mobileDetailPanel === "stats" ? " is-active" : ""
+                }`}
+                type="button"
+                role="tab"
+                aria-selected={mobileDetailPanel === "stats"}
+                aria-controls="skill-mobile-master-panel-stats"
+                onClick={() => setMobileDetailPanel("stats")}
+              >
+                Stats & details
+              </button>
+            </div>
+            <div
+              className="detail-mobile-master-panel detail-mobile-master-panel-content"
+              id="skill-mobile-master-panel-content"
+              role="tabpanel"
+              aria-labelledby="skill-mobile-master-tab-content"
+              hidden={mobileDetailPanel !== "content"}
+            >
+              {postInstallContent}
+
+              {children}
+
+              {hasPluginBundle ? (
+                <div className="skill-panel bundle-card">
+                  <div className="bundle-header">
+                    <div className="bundle-title">Plugin bundle (nix)</div>
+                    <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
+                  </div>
+                  <div className="bundle-includes">
+                    <span>SKILL.md</span>
+                    <span>CLI</span>
+                    <span>Config</span>
+                  </div>
+                  {configRequirements ? (
+                    <div className="bundle-section">
+                      <div className="bundle-section-title">Config requirements</div>
+                      <div className="bundle-meta">
+                        {configRequirements.requiredEnv?.length ? (
+                          <div className="stat">
+                            <strong>Required env</strong>
+                            <span>{configRequirements.requiredEnv.join(", ")}</span>
+                          </div>
+                        ) : null}
+                        {configRequirements.stateDirs?.length ? (
+                          <div className="stat">
+                            <strong>State dirs</strong>
+                            <span>{configRequirements.stateDirs.join(", ")}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {cliHelp ? (
+                    <details className="bundle-section bundle-details">
+                      <summary>CLI help (from plugin)</summary>
+                      <pre className="hero-install-code mono">{cliHelp}</pre>
+                    </details>
+                  ) : null}
                 </div>
               ) : null}
             </div>
-          </>
-        }
-      >
-        <div className="detail-mobile-install">
-          {installContent ?? (
-            <SkillCommandLineCard
-              slug={skill.slug}
-              displayName={skill.displayName}
-              ownerHandle={ownerHandle}
-              ownerId={installOwnerId}
-              clawdis={clawdis}
-            />
-          )}
-        </div>
-
-        <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
-          <div
-            className="detail-mobile-master-tab-list"
-            role="tablist"
-            aria-label="Skill mobile sections"
-          >
-            <button
-              id="skill-mobile-master-tab-content"
-              className={`detail-mobile-master-tab${
-                mobileDetailPanel === "content" ? " is-active" : ""
-              }`}
-              type="button"
-              role="tab"
-              aria-selected={mobileDetailPanel === "content"}
-              aria-controls="skill-mobile-master-panel-content"
-              onClick={() => setMobileDetailPanel("content")}
+            <div
+              className="detail-mobile-master-panel detail-mobile-master-stats"
+              id="skill-mobile-master-panel-stats"
+              role="tabpanel"
+              aria-labelledby="skill-mobile-master-tab-stats"
+              hidden={mobileDetailPanel !== "stats"}
             >
-              SKILL.md
-            </button>
-            <button
-              id="skill-mobile-master-tab-stats"
-              className={`detail-mobile-master-tab${
-                mobileDetailPanel === "stats" ? " is-active" : ""
-              }`}
-              type="button"
-              role="tab"
-              aria-selected={mobileDetailPanel === "stats"}
-              aria-controls="skill-mobile-master-panel-stats"
-              onClick={() => setMobileDetailPanel("stats")}
-            >
-              Stats & details
-            </button>
+              {mobileStatsContent}
+            </div>
           </div>
-          <div
-            className="detail-mobile-master-panel detail-mobile-master-panel-content"
-            id="skill-mobile-master-panel-content"
-            role="tabpanel"
-            aria-labelledby="skill-mobile-master-tab-content"
-            hidden={mobileDetailPanel !== "content"}
-          >
-            {postInstallContent}
-
-            {children}
-
-            {hasPluginBundle ? (
-              <div className="skill-panel bundle-card">
-                <div className="bundle-header">
-                  <div className="bundle-title">Plugin bundle (nix)</div>
-                  <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
-                </div>
-                <div className="bundle-includes">
-                  <span>SKILL.md</span>
-                  <span>CLI</span>
-                  <span>Config</span>
-                </div>
-                {configRequirements ? (
-                  <div className="bundle-section">
-                    <div className="bundle-section-title">Config requirements</div>
-                    <div className="bundle-meta">
-                      {configRequirements.requiredEnv?.length ? (
-                        <div className="stat">
-                          <strong>Required env</strong>
-                          <span>{configRequirements.requiredEnv.join(", ")}</span>
-                        </div>
-                      ) : null}
-                      {configRequirements.stateDirs?.length ? (
-                        <div className="stat">
-                          <strong>State dirs</strong>
-                          <span>{configRequirements.stateDirs.join(", ")}</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-                {cliHelp ? (
-                  <details className="bundle-section bundle-details">
-                    <summary>CLI help (from plugin)</summary>
-                    <pre className="hero-install-code mono">{cliHelp}</pre>
-                  </details>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-          <div
-            className="detail-mobile-master-panel detail-mobile-master-stats"
-            id="skill-mobile-master-panel-stats"
-            role="tabpanel"
-            aria-labelledby="skill-mobile-master-tab-stats"
-            hidden={mobileDetailPanel !== "stats"}
-          >
-            {mobileStatsContent}
-          </div>
-        </div>
-      </DetailHero>
-    </>
+        </DetailHero>
+      </DetailPageShell>
+      {pageOverlays}
+    </main>
   );
 }
 
@@ -725,11 +733,11 @@ function SkillSidebarDeferredStats({
   activityTrendLoading = false,
   hideCreator = false,
 }: {
-  skill: SkillHeaderSkill;
+  skill: SkillDetailViewSkill;
   owner: PublicPublisher | null;
   ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
-  latestVersion: SkillHeaderLatestVersion;
+  latestVersion: SkillDetailLatestVersion;
   showArchiveMetadata: boolean;
   securityAuditSummary?: ReactNode;
   activityTrend?: ActivityTrend | null;

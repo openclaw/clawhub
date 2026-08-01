@@ -31,6 +31,7 @@ import { DetailBody, DetailPageShell } from "./DetailPageShell";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
 import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
+import { SkillDetailPageView } from "./SkillDetailPageView";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
 import {
   buildSkillHref,
@@ -39,7 +40,6 @@ import {
   formatOsList,
   stripFrontmatter,
 } from "./skillDetailUtils";
-import { SkillHeader } from "./SkillHeader";
 import { buildSkillInstallTabs } from "./SkillInstallCard";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
@@ -882,123 +882,122 @@ export function SkillDetailPage({
   }
 
   return (
-    <main className="section detail-page-section skill-detail-page">
-      <DetailPageShell>
-        <SkillHeader
-          skill={displayedSkill}
-          owner={owner}
-          ownerHandle={ownerHandle}
-          latestVersion={latestVersion}
-          modInfo={modInfo}
-          canManage={canManage}
-          isAuthenticated={isAuthenticated}
-          isStaff={isStaff}
-          isStarred={effectiveIsStarred}
-          onToggleStar={() => void handleToggleStar()}
-          onOpenReport={openReportDialog}
-          onRequireSignIn={requireSignIn}
-          forkOf={forkOf}
-          forkOfLabel={forkOfLabel}
-          forkOfHref={forkOfHref}
-          forkOfOwnerHandle={forkOfOwnerHandle}
-          canonical={canonical}
-          canonicalHref={canonicalHref}
-          canonicalOwnerHandle={canonicalOwnerHandle}
-          staffVisibilityTag={staffVisibilityTag}
-          isAutoHidden={isAutoHidden}
-          isRemoved={isRemoved}
-          nixPlugin={nixPlugin}
-          hasPluginBundle={hasPluginBundle}
-          configRequirements={configRequirements}
-          cliHelp={cliHelp}
-          clawdis={clawdis}
-          category={relatedCategory}
-          categories={relatedCategories}
-          staffVisibilityAlert={staffVisibilityAlert}
-          securityAuditSummary={securitySummary}
-          activityTrend={activityTrend}
-          activityTrendLoading={activityTrendLoading}
-          newVersionHref={newVersionHref}
-          settingsHref={settingsHref}
-          showArchiveMetadata={!isGitHubBackedSkill}
-        >
-          {nixSnippet ? (
-            <Card>
-              <h3 className="m-0 text-[length:var(--text-base)] font-semibold">Install via Nix</h3>
-              <pre className="hero-install-code mt-2">{nixSnippet}</pre>
-            </Card>
-          ) : null}
-
-          {configExample ? (
-            <Card>
-              <h3 className="m-0 text-[length:var(--text-base)] font-semibold">Config example</h3>
-              <pre className="hero-install-code mt-2">{configExample}</pre>
-            </Card>
-          ) : null}
-
-          <SkillDetailTabs
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            onCompareIntent={() => setShouldPrefetchCompare(true)}
-            readmeContent={readmeContent}
-            readmeError={displayedReadmeError}
-            skillCardContent={displayedSkillCard}
-            skillCardError={displayedSkillCardError}
-            hasSkillCard={hasSkillCard}
-            latestFiles={latestFiles}
-            latestVersionId={latestVersion?._id ?? null}
-            latestVersion={latestVersion?.version ?? null}
-            canDeleteVersions={canDeleteSkillVersions}
-            skill={skill as Doc<"skills">}
-            ownerHandle={ownerHandle}
-            diffVersions={diffVersions}
-            versions={versions}
-            nixPlugin={Boolean(nixPlugin)}
-            showArchiveTabs={!isGitHubBackedSkill}
-            suppressVersionScanResults={suppressVersionScanResults}
-            scanResultsSuppressedMessage={scanResultsSuppressedMessage}
-            clawdis={clawdis}
-            osLabels={osLabels}
-            readmeHrefResolver={readmeHrefResolver}
+    <SkillDetailPageView
+      skill={displayedSkill}
+      owner={owner}
+      ownerHandle={ownerHandle}
+      latestVersion={latestVersion}
+      modInfo={modInfo}
+      canManage={canManage}
+      isAuthenticated={isAuthenticated}
+      isStaff={isStaff}
+      isStarred={effectiveIsStarred}
+      onToggleStar={() => void handleToggleStar()}
+      onOpenReport={openReportDialog}
+      onRequireSignIn={requireSignIn}
+      forkOf={forkOf}
+      forkOfLabel={forkOfLabel}
+      forkOfHref={forkOfHref}
+      forkOfOwnerHandle={forkOfOwnerHandle}
+      canonical={canonical}
+      canonicalHref={canonicalHref}
+      canonicalOwnerHandle={canonicalOwnerHandle}
+      staffVisibilityTag={staffVisibilityTag}
+      isAutoHidden={isAutoHidden}
+      isRemoved={isRemoved}
+      nixPlugin={nixPlugin}
+      hasPluginBundle={hasPluginBundle}
+      configRequirements={configRequirements}
+      cliHelp={cliHelp}
+      clawdis={clawdis}
+      category={relatedCategory}
+      categories={relatedCategories}
+      staffVisibilityAlert={staffVisibilityAlert}
+      securityAuditSummary={securitySummary}
+      activityTrend={activityTrend}
+      activityTrendLoading={activityTrendLoading}
+      newVersionHref={newVersionHref}
+      settingsHref={settingsHref}
+      showArchiveMetadata={!isGitHubBackedSkill}
+      pageOverlays={
+        <>
+          <SkillReportDialog
+            isOpen={isAuthenticated && isReportDialogOpen}
+            isSubmitting={isSubmittingReport}
+            reportReason={reportReason}
+            reportError={reportError}
+            onReasonChange={setReportReason}
+            onCancel={closeReportDialog}
+            onSubmit={() => void submitReport()}
           />
-          <SkillRelatedSection
-            category={relatedCategory}
-            relatedSkills={relatedSkillsResult?.items ?? []}
-            isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
-            variant="compact"
+          <SkillPublishSuccessDialog
+            isOpen={showPublishSuccessDialog}
+            displayName={skill.displayName}
+            skillPath={detailHref}
+            skill={skill}
+            publisher={
+              owner
+                ? {
+                    displayName: owner.displayName,
+                    handle: owner.handle ?? ownerHandle,
+                    image: owner.image,
+                    kind: owner.kind,
+                  }
+                : ownerHandle
+                  ? { handle: ownerHandle }
+                  : null
+            }
+            categoryLabel={relatedCategory?.label ?? null}
+            onDismiss={onDismissPostPublish ?? (() => undefined)}
           />
-        </SkillHeader>
-      </DetailPageShell>
+        </>
+      }
+    >
+      {nixSnippet ? (
+        <Card>
+          <h3 className="m-0 text-[length:var(--text-base)] font-semibold">Install via Nix</h3>
+          <pre className="hero-install-code mt-2">{nixSnippet}</pre>
+        </Card>
+      ) : null}
 
-      <SkillReportDialog
-        isOpen={isAuthenticated && isReportDialogOpen}
-        isSubmitting={isSubmittingReport}
-        reportReason={reportReason}
-        reportError={reportError}
-        onReasonChange={setReportReason}
-        onCancel={closeReportDialog}
-        onSubmit={() => void submitReport()}
+      {configExample ? (
+        <Card>
+          <h3 className="m-0 text-[length:var(--text-base)] font-semibold">Config example</h3>
+          <pre className="hero-install-code mt-2">{configExample}</pre>
+        </Card>
+      ) : null}
+
+      <SkillDetailTabs
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onCompareIntent={() => setShouldPrefetchCompare(true)}
+        readmeContent={readmeContent}
+        readmeError={displayedReadmeError}
+        skillCardContent={displayedSkillCard}
+        skillCardError={displayedSkillCardError}
+        hasSkillCard={hasSkillCard}
+        latestFiles={latestFiles}
+        latestVersionId={latestVersion?._id ?? null}
+        latestVersion={latestVersion?.version ?? null}
+        canDeleteVersions={canDeleteSkillVersions}
+        skill={skill as Doc<"skills">}
+        ownerHandle={ownerHandle}
+        diffVersions={diffVersions}
+        versions={versions}
+        nixPlugin={Boolean(nixPlugin)}
+        showArchiveTabs={!isGitHubBackedSkill}
+        suppressVersionScanResults={suppressVersionScanResults}
+        scanResultsSuppressedMessage={scanResultsSuppressedMessage}
+        clawdis={clawdis}
+        osLabels={osLabels}
+        readmeHrefResolver={readmeHrefResolver}
       />
-      <SkillPublishSuccessDialog
-        isOpen={showPublishSuccessDialog}
-        displayName={skill.displayName}
-        skillPath={detailHref}
-        skill={skill}
-        publisher={
-          owner
-            ? {
-                displayName: owner.displayName,
-                handle: owner.handle ?? ownerHandle,
-                image: owner.image,
-                kind: owner.kind,
-              }
-            : ownerHandle
-              ? { handle: ownerHandle }
-              : null
-        }
-        categoryLabel={relatedCategory?.label ?? null}
-        onDismiss={onDismissPostPublish ?? (() => undefined)}
+      <SkillRelatedSection
+        category={relatedCategory}
+        relatedSkills={relatedSkillsResult?.items ?? []}
+        isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
+        variant="compact"
       />
-    </main>
+    </SkillDetailPageView>
   );
 }
