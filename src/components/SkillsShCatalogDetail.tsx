@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { BadgeCheck, ExternalLink, ShieldAlert } from "lucide-react";
+import { BadgeCheck, ShieldAlert } from "lucide-react";
 import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import {
@@ -222,11 +222,6 @@ function SkillsShSidebar({ entry }: { entry: SkillsShCatalogDetail }) {
       </section>
 
       <div className="skills-sh-detail-links">
-        <Button asChild variant="outline" size="sm">
-          <a href={entry.sourceUrl} target="_blank" rel="noreferrer">
-            <ExternalLink aria-hidden="true" size={14} /> View on skills.sh
-          </a>
-        </Button>
         {entry.githubPath && entry.githubCommit && entry.githubContentHash ? (
           <Button asChild variant="outline" size="sm">
             <Link

@@ -35,9 +35,7 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.queryByText("Observed")).toBeNull();
     expect(screen.queryByText("Trust")).toBeNull();
     expect(screen.queryByText("Path")).toBeNull();
-    expect(screen.getByRole("link", { name: /View on skills\.sh/i }).getAttribute("href")).toBe(
-      "https://skills.sh/patrick-erichsen/skills/html",
-    );
+    expect(screen.queryByRole("link", { name: /View on skills\.sh/i })).toBeNull();
     expect(screen.getByRole("link", { name: "skills.sh" }).getAttribute("href")).toBe(
       "https://skills.sh/patrick-erichsen/skills/html",
     );
@@ -78,8 +76,7 @@ describe("SkillsShCatalogDetailPage", () => {
     );
     expect(repository.classList.contains("plugin-external-link")).toBe(true);
     expect(repository.querySelector("svg")).toBeTruthy();
-    const source = screen.getByRole("link", { name: "View on skills.sh" });
-    expect(source.firstElementChild?.tagName).toBe("svg");
+    expect(screen.queryByRole("link", { name: "View on skills.sh" })).toBeNull();
     const claimUrl = new URL(
       screen.getByRole("link", { name: "Claim this skill" }).getAttribute("href") ?? "",
       "https://clawhub.test",

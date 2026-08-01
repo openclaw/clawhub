@@ -7059,7 +7059,7 @@ code {
 .skill-hero-taxonomy-row {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-5);
+  gap: var(--space-3);
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 12px;
@@ -7353,6 +7353,9 @@ code {
 .skills-sh-security-audits {
   display: grid;
   gap: 8px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .skills-sh-security-audits h2 {
@@ -7397,7 +7400,6 @@ a.skills-sh-security-audit-row:focus-visible {
 .skills-sh-detail-links {
   display: grid;
   gap: 8px;
-  margin-top: 8px;
 }
 
 .skills-sh-detail-links .btn {
