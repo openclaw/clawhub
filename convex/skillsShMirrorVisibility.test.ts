@@ -534,6 +534,146 @@ describe("skills.sh mirror visibility operations", () => {
     });
   });
 
+  it("verifies the bounded Trending lane when eligible production rows exceed its limit", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const rowCount = 1_001;
+    const { leaderboardRunId, trendingRunId } = await t.run(async (ctx) => {
+      const createdLeaderboardRunId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          snapshotId: "skills-sh:leaderboard:bounded",
+          sourceView: "leaderboard",
+          sourceTotal: rowCount,
+          counts: mirrorRunCounts({
+            observed: rowCount,
+            inserted: rowCount,
+            detailsInserted: rowCount,
+          }),
+          startedAt: now - 3_000,
+          completedAt: now - 2_000,
+          updatedAt: now - 2_000,
+        }),
+      );
+      const createdTrendingRunId = await ctx.db.insert(
+        "skillsShMirrorRuns",
+        mirrorRun({
+          snapshotId: "skills-sh:trending:bounded",
+          sourceView: "trending",
+          sourceTotal: rowCount,
+          counts: mirrorRunCounts({
+            observed: rowCount,
+            trendingJoined: rowCount,
+          }),
+          startedAt: now - 1_500,
+          completedAt: now - 1_000,
+          updatedAt: now - 1_000,
+        }),
+      );
+      for (let index = 0; index < rowCount; index += 1) {
+        const slug = `bounded-${index}`;
+        const owner = `publisher-${index}`;
+        await ctx.db.insert(
+          "skillsShMirrorDigests",
+          digest({
+            externalId: `${owner}/skills/${slug}`,
+            owner,
+            slug,
+            normalizedSlug: slug,
+            normalizedSlugFirstToken: slug,
+            displayName: `Bounded ${index}`,
+            normalizedDisplayName: `bounded ${index}`,
+            normalizedDisplayNameFirstToken: "bounded",
+            searchText: `bounded ${index}`,
+            sourceUrl: `https://skills.sh/${owner}/skills/${slug}`,
+            canonicalRepoUrl: `https://github.com/${owner}/skills`,
+            githubPath: `skills/${slug}`,
+            lastObservedRunId: createdLeaderboardRunId,
+            trendingObservedRunId: createdTrendingRunId,
+            trendingRank: index + 1,
+            trendingLifetimeInstalls: rowCount - index,
+            trendingObservedAt: now - 1_000,
+          }),
+        );
+      }
+      await ctx.db.insert("skillsShMirrorControls", {
+        key: "global",
+        enabled: true,
+        paused: false,
+        maxRowsPerRun: 50_000,
+        maxRowsPerBatch: 50,
+        maxDetailBytes: 65_536,
+        latestCompletedLeaderboardRunId: createdLeaderboardRunId,
+        updatedBy: "codex-test",
+        reason: "CLAW-603 bounded activation verification",
+        updatedAt: now - 2_000,
+      });
+      return {
+        leaderboardRunId: createdLeaderboardRunId,
+        trendingRunId: createdTrendingRunId,
+      };
+    });
+
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-native-bounded",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+      windowStartHour: 960,
+      windowEndHour: 983,
+    });
+    await t.mutation(internal.canonicalTrending.startNativePoolInternal, {
+      poolId: "skills-native-bounded",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartHour: 960,
+      windowEndHour: 983,
+      sealedGeneration: 1,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeNativePoolInternal, {
+      poolId: "skills-native-bounded",
+      completedAt: now - 500,
+      sourceCounts: { clawhubTrending: 0, clawhubRising: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-native-bounded",
+      completedAt: now - 500,
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 0, clawhubRising: 0, skillsShTrending: 0 },
+      operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
+      nativePoolId: "skills-native-bounded",
+    });
+
+    await expect(
+      t.action(internal.skillsShMirrorVisibility.verifyAndActivateInternal, {
+        actor: "codex-test",
+        reason: "CLAW-603 bounded production-sized activation",
+        confirm: "activate-skills-sh-public-test",
+      }),
+    ).resolves.toMatchObject({
+      activated: true,
+      leaderboard: { sourceTotal: rowCount, accepted: rowCount, rejected: 0 },
+      trending: { sourceTotal: rowCount, joined: rowCount, missing: 0 },
+      corpus: {
+        activationRunAccepted: rowCount,
+        activationRunTrendingEligible: rowCount,
+        activationRunTrendingSelected: 1_000,
+      },
+      trendingSnapshot: {
+        sourceCounts: { skillsShTrending: 1_000 },
+        nativePool: { reused: true },
+      },
+    });
+    const activatedRuns = await t.run(async (ctx) => ({
+      leaderboard: await ctx.db.get(leaderboardRunId),
+      trending: await ctx.db.get(trendingRunId),
+    }));
+    expect(activatedRuns.leaderboard?.activationSnapshotId).toEqual(expect.any(String));
+    expect(activatedRuns.leaderboard?.activatedTrendingRunId).toBe(trendingRunId);
+  });
+
   it("keeps the public gate closed when activation has to build the native pool", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();

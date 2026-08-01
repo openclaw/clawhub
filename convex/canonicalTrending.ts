@@ -6,7 +6,6 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import {
   CANONICAL_TRENDING_FIRST_PAGE_SIZE,
   CANONICAL_TRENDING_LANE_LIMIT,
-  CANONICAL_TRENDING_PUBLISHER_CAP,
   CANONICAL_TRENDING_RANKING_VERSION,
   CANONICAL_TRENDING_WINDOW_HOURS,
   blendCanonicalTrendingPools,
@@ -17,7 +16,7 @@ import {
   decodeCanonicalTrendingCursor,
   encodeCanonicalTrendingCursor,
   isFreshExternalTrendingRun,
-  retainTopCanonicalTrendingCandidates,
+  retainCanonicalTrendingLaneCandidates,
   type CanonicalTrendingMaterializationCandidate,
 } from "./lib/canonicalTrending";
 import { forEachCanonicalTrendingSourcePage } from "./lib/canonicalTrendingPagination";
@@ -122,11 +121,6 @@ const operationsValidator = v.object({
   documentsWritten: v.number(),
   functionCalls: v.number(),
 });
-
-const LANE_DIVERSITY_RESERVE = {
-  size: CANONICAL_TRENDING_FIRST_PAGE_SIZE,
-  publisherCap: CANONICAL_TRENDING_PUBLISHER_CAP,
-};
 
 export const getNativeSourceBatchInternal = internalQuery({
   args: { skillIds: v.array(v.id("skills")) },
@@ -856,17 +850,13 @@ export const materializeInternal = internalAction({
             }
           }
           // The fetched batch is capped at 100, so each lane stays within 100 rows of its limit.
-          nativeCandidates = retainTopCanonicalTrendingCandidates(
+          nativeCandidates = retainCanonicalTrendingLaneCandidates(
             nativeCandidates,
             "clawhub-trending",
-            CANONICAL_TRENDING_LANE_LIMIT,
-            LANE_DIVERSITY_RESERVE,
           );
-          risingCandidates = retainTopCanonicalTrendingCandidates(
+          risingCandidates = retainCanonicalTrendingLaneCandidates(
             risingCandidates,
             "clawhub-rising",
-            CANONICAL_TRENDING_LANE_LIMIT,
-            LANE_DIVERSITY_RESERVE,
           );
           for (const skillId of skillIds) usageBySkill.delete(String(skillId));
         };
@@ -997,11 +987,9 @@ export const materializeInternal = internalAction({
                 const candidate = buildExternalCanonicalTrendingCandidate(digest);
                 if (candidate) externalCandidates.push(candidate);
               }
-              externalCandidates = retainTopCanonicalTrendingCandidates(
+              externalCandidates = retainCanonicalTrendingLaneCandidates(
                 externalCandidates,
                 "skills-sh-trending",
-                CANONICAL_TRENDING_LANE_LIMIT,
-                LANE_DIVERSITY_RESERVE,
               );
             },
           );

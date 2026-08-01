@@ -5,6 +5,12 @@ import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
+  buildExternalCanonicalTrendingCandidate,
+  type CanonicalTrendingCandidate,
+  retainCanonicalTrendingLaneCandidates,
+} from "./lib/canonicalTrending";
+import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
+import {
   assertSkillsShPublicVisibilityMutationAllowed,
   isSkillsShMirrorSourceEligible,
   skillsShMirrorPublicationFlags,
@@ -838,7 +844,9 @@ export const getAuditPageInternal = internalQuery({
       tombstoned: 0,
       activationRunAccepted: 0,
       activationRunTrendingEligible: 0,
+      activationRunTrendingSelected: 0,
     };
+    const activationRunTrendingCandidates: CanonicalTrendingCandidate[] = [];
     for (const digest of page.page) {
       const sourceEligible = isSkillsShMirrorSourceEligible(digest);
       const publicationFlags = skillsShMirrorPublicationFlags(digest);
@@ -870,15 +878,25 @@ export const getAuditPageInternal = internalQuery({
       if (
         args.trendingRunId !== undefined &&
         digest.trendingObservedRunId === args.trendingRunId &&
-        publicationFlags.publicVisible &&
-        publicationFlags.installable &&
-        Number.isSafeInteger(digest.trendingRank) &&
-        (digest.trendingRank ?? 0) >= 1
+        isPublicSkillsShMirrorDigest(digest)
       ) {
-        counts.activationRunTrendingEligible += 1;
+        const candidate = buildExternalCanonicalTrendingCandidate(digest);
+        if (candidate) {
+          counts.activationRunTrendingEligible += 1;
+          activationRunTrendingCandidates.push({
+            identity: candidate.identity,
+            lane: candidate.lane,
+            publisherKey: candidate.publisherKey,
+            installs24h: candidate.installs24h,
+            bookmarks24h: candidate.bookmarks24h,
+            createdAt: candidate.createdAt,
+            updatedAt: candidate.updatedAt,
+            upstreamRank: candidate.upstreamRank,
+          });
+        }
       }
     }
-    return { ...page, page: counts };
+    return { ...page, page: counts, activationRunTrendingCandidates };
   },
 });
 
@@ -907,7 +925,9 @@ async function audit(
     tombstoned: 0,
     activationRunAccepted: 0,
     activationRunTrendingEligible: 0,
+    activationRunTrendingSelected: 0,
   };
+  let activationRunTrendingCandidates: CanonicalTrendingCandidate[] = [];
   while (true) {
     const result = (await ctx.runQuery(internal.skillsShMirrorVisibility.getAuditPageInternal, {
       paginationOpts: { cursor, numItems: MAX_BATCH_SIZE },
@@ -916,10 +936,15 @@ async function audit(
       continueCursor: string;
       isDone: boolean;
       page: typeof counts;
+      activationRunTrendingCandidates: CanonicalTrendingCandidate[];
     };
     for (const key of Object.keys(counts) as Array<keyof typeof counts>) {
       counts[key] += result.page[key];
     }
+    activationRunTrendingCandidates = retainCanonicalTrendingLaneCandidates(
+      [...activationRunTrendingCandidates, ...result.activationRunTrendingCandidates],
+      "skills-sh-trending",
+    );
     batches += 1;
     if (counts.total > MAX_ROWS) {
       throw new Error(`skills.sh visibility audit exceeded ${MAX_ROWS} rows`);
@@ -927,6 +952,7 @@ async function audit(
     if (result.isDone) break;
     cursor = result.continueCursor;
   }
+  counts.activationRunTrendingSelected = activationRunTrendingCandidates.length;
   return {
     ok: true as const,
     batches,
@@ -1011,7 +1037,7 @@ export const verifyAndActivateInternal = internalAction({
       }
       if (
         trendingSnapshot.sourceCounts.skillsShTrending !==
-        corpusAudit.counts.activationRunTrendingEligible
+        corpusAudit.counts.activationRunTrendingSelected
       ) {
         throw new Error("skills.sh Trending activation snapshot failed source verification");
       }

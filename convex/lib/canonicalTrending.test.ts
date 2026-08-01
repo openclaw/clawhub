@@ -7,6 +7,7 @@ import {
   encodeCanonicalTrendingCursor,
   isFreshExternalTrendingRun,
   retainTopCanonicalTrendingCandidates,
+  retainCanonicalTrendingLaneCandidates,
   sortCanonicalTrendingPools,
   type CanonicalTrendingCandidate,
 } from "./canonicalTrending";
@@ -219,6 +220,21 @@ describe("canonical Trending ordering", () => {
       "beta",
       "gamma",
     ]);
+  });
+
+  it("keeps the shared diversity reserve in addition to the bounded lane leaders", () => {
+    const retained = retainCanonicalTrendingLaneCandidates(
+      Array.from({ length: 1_001 }, (_, index) =>
+        candidate(`external-${index}`, "skills-sh-trending", {
+          publisherKey: index === 1_000 ? "beta" : "alpha",
+          upstreamRank: index + 1,
+        }),
+      ),
+      "skills-sh-trending",
+    );
+
+    expect(retained).toHaveLength(1_001);
+    expect(retained.at(-1)?.identity).toBe("external-1000");
   });
 });
 

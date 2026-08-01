@@ -375,6 +375,16 @@ export function retainTopCanonicalTrendingCandidates<T extends CanonicalTrending
   );
 }
 
+export function retainCanonicalTrendingLaneCandidates<T extends CanonicalTrendingCandidate>(
+  candidates: readonly T[],
+  lane: CanonicalTrendingLane,
+) {
+  return retainTopCanonicalTrendingCandidates(candidates, lane, CANONICAL_TRENDING_LANE_LIMIT, {
+    size: CANONICAL_TRENDING_FIRST_PAGE_SIZE,
+    publisherCap: CANONICAL_TRENDING_PUBLISHER_CAP,
+  });
+}
+
 export function sortCanonicalTrendingPools<T extends CanonicalTrendingCandidate>(
   pools: CanonicalTrendingPools<T>,
 ): CanonicalTrendingPools<T> {
