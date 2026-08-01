@@ -5039,6 +5039,7 @@ export const findPackagePublishResultInternal = internalQuery({
     name: v.string(),
     version: v.string(),
     integritySha256: v.string(),
+    clawpackSha256: v.optional(v.string()),
     ownerUserId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
   },
@@ -5052,7 +5053,14 @@ export const findPackagePublishResultInternal = internalQuery({
         q.eq("packageId", pkg._id).eq("version", args.version),
       )
       .unique();
-    if (!isPublishedPackageRelease(release) || release.integritySha256 !== args.integritySha256) {
+    const matchesExactClawArtifact =
+      pkg.family !== "claw" ||
+      (typeof args.clawpackSha256 === "string" && release?.clawpackSha256 === args.clawpackSha256);
+    if (
+      !isPublishedPackageRelease(release) ||
+      release.integritySha256 !== args.integritySha256 ||
+      !matchesExactClawArtifact
+    ) {
       return null;
     }
     return { ok: true as const, packageId: pkg._id, releaseId: release._id };
@@ -8801,9 +8809,9 @@ async function publishPackageImpl(
         ownerUserId,
         name,
         version,
-        integritySha256,
+        artifactFingerprint: publishedArtifactSha256 ?? integritySha256,
       }),
-      artifactFingerprint: integritySha256,
+      artifactFingerprint: publishedArtifactSha256 ?? integritySha256,
       files,
       clawpackStorageId: packageInsertArgs.clawpackStorageId,
       scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
@@ -9019,6 +9027,14 @@ export const publishRelease: ReturnType<typeof action> = action({
     payload: v.any(),
   },
   handler: async (ctx, args) => {
+    if (
+      args.payload &&
+      typeof args.payload === "object" &&
+      !Array.isArray(args.payload) &&
+      (args.payload as Record<string, unknown>).family === "claw"
+    ) {
+      throw new ConvexError("Claw packages must use the exact-artifact HTTP publish flow");
+    }
     const { userId } = await requireUserFromAction(ctx);
     const stagePrePublicationChecks = stagedPrePublicationPublishesEnabled();
     return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload, {
@@ -9079,6 +9095,7 @@ export const finalizePackagePublishAttemptInternal = internalAction({
         name?: string;
         version?: string;
         integritySha256?: string;
+        clawpackSha256?: string;
         ownerUserId?: Id<"users">;
         ownerPublisherId?: Id<"publishers">;
       };
@@ -9095,6 +9112,7 @@ export const finalizePackagePublishAttemptInternal = internalAction({
               name: insertArgs.name,
               version: insertArgs.version,
               integritySha256: insertArgs.integritySha256,
+              clawpackSha256: insertArgs.clawpackSha256,
               ownerUserId: insertArgs.ownerUserId,
               ownerPublisherId: insertArgs.ownerPublisherId,
             })
@@ -9192,7 +9210,7 @@ function buildPackagePublishAttemptIdempotencyKey(args: {
   ownerPublisherId?: Id<"publishers">;
   name: string;
   version: string;
-  integritySha256: string;
+  artifactFingerprint: string;
 }) {
   return [
     "package",
@@ -9200,7 +9218,7 @@ function buildPackagePublishAttemptIdempotencyKey(args: {
     args.ownerPublisherId ?? args.ownerUserId,
     args.name,
     args.version,
-    args.integritySha256,
+    args.artifactFingerprint,
   ].join(":");
 }
 
@@ -11151,10 +11169,15 @@ export const insertReleaseInternal = internalMutation({
         )
         .unique();
       if (releaseExists) {
+        const matchesExactClawArtifact =
+          args.family !== "claw" ||
+          (typeof args.clawpackSha256 === "string" &&
+            releaseExists.clawpackSha256 === args.clawpackSha256);
         if (
           args.allowExistingRelease &&
           !releaseExists.softDeletedAt &&
-          releaseExists.integritySha256 === args.integritySha256
+          releaseExists.integritySha256 === args.integritySha256 &&
+          matchesExactClawArtifact
         ) {
           return {
             ok: true as const,
