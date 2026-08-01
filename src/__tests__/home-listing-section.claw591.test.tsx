@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CanonicalTrendingItem } from "../lib/trendingApi";
 
 const navigateMock = vi.fn();
 const convexQueryMock = vi.fn();
@@ -114,15 +115,48 @@ describe("HomeListingSection", () => {
     expect(screen.getByText("29")).toBeTruthy();
     expect(screen.queryByText("17")).toBeNull();
     expect(screen.queryByText("3")).toBeNull();
-    expect(screen.getByText("24h downloads")).toBeTruthy();
-    expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
+    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getAllByLabelText("Downloads")).toHaveLength(2);
     expect(screen.queryByText("24h installs")).toBeNull();
     expect(screen.queryByLabelText("24-hour installs")).toBeNull();
     expect(screen.queryByText("9K")).toBeNull();
     expect(screen.queryByText("8K")).toBeNull();
     expect(screen.queryByText("skills.sh")).toBeNull();
+    expect(document.querySelector(".home-v2-listing-row-icon")).toBeNull();
+    expect(document.querySelector(".home-v2-listing-row-stats svg")).toBeNull();
 
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
+  });
+
+  it("identifies skills.sh rows by their source owner and upstream install count", () => {
+    const external = {
+      ...makeTrending("reddit-automation", "reddit-automation", 0, 12_345, 0),
+      id: "skills-sh:doany-skills/skills/reddit-automation",
+      source: "skills-sh" as const,
+      canonicalUrl: "/skills-sh/doany-skills/skills/reddit-automation",
+      publisher: null,
+      sourceIdentity: {
+        id: "doany-skills/skills/reddit-automation",
+        owner: "doany-skills",
+        repo: "skills",
+        host: null,
+        lifetimeInstalls: 12_345,
+      },
+      metrics: {
+        trending24hDownloads: null,
+        trending24hInstalls: null,
+        trending24hBookmarks: null,
+        lifetimeInstalls: 12_345,
+        lifetimeInstallsPeriod: "lifetime" as const,
+        updatedAt: 1,
+      },
+    };
+
+    render(<HomeListingSection initialListing={initialTrending([external])} />);
+
+    expect(screen.getByText("@doany-skills")).toBeTruthy();
+    expect(screen.getByText("skills.sh")).toBeTruthy();
+    expect(screen.getByLabelText("Downloads").textContent).toContain("12.3k");
   });
 
   it("hides unavailable Trending and falls back to the Featured feed", async () => {
@@ -273,7 +307,7 @@ describe("HomeListingSection", () => {
 });
 
 function initialTrending(
-  items: ReturnType<typeof makeTrending>[],
+  items: CanonicalTrendingItem[],
   hasMore = false,
   trendingState: "available" | "empty" | "unavailable" = items.length ? "available" : "empty",
 ) {
@@ -288,7 +322,7 @@ function initialTrending(
   };
 }
 
-function canonicalPage(items: ReturnType<typeof makeTrending>[], nextCursor: string | null = null) {
+function canonicalPage(items: CanonicalTrendingItem[], nextCursor: string | null = null) {
   return {
     kind: "skills" as const,
     snapshotId: "snapshot-1",
@@ -308,7 +342,7 @@ function makeTrending(
   installs: number,
   lifetime: number,
   downloads = installs,
-) {
+): CanonicalTrendingItem {
   return {
     id: `clawhub:${slug}`,
     source: "clawhub" as const,

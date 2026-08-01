@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { SkillsShCatalogDetail } from "../lib/skillsShCatalog";
@@ -20,27 +20,34 @@ vi.mock("@tanstack/react-router", () => ({
 
 describe("SkillsShCatalogDetailPage", () => {
   it("shows the external trust boundary, upstream checks, provenance, and freshness", () => {
-    render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
+    const { container } = render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
     expect(screen.getAllByText("Not scanned by ClawHub").length).toBeGreaterThan(0);
     expect(screen.getByText("Gen Agent Trust Hub")).toBeTruthy();
     expect(screen.getByText("Socket")).toBeTruthy();
     expect(screen.getByText("Snyk")).toBeTruthy();
-    expect(screen.getByText("Upstream checks are separate from ClawHub scanning.")).toBeTruthy();
-    expect(screen.getAllByText("Observed 1m ago").length).toBeGreaterThan(0);
+    expect(screen.getByText("Separate from ClawHub scanning.")).toBeTruthy();
+    expect(screen.getByText("Observed")).toBeTruthy();
+    expect(screen.getByText("1m ago")).toBeTruthy();
     expect(screen.getByRole("link", { name: /View on skills\.sh/i }).getAttribute("href")).toBe(
       "https://skills.sh/patrick-erichsen/skills/html",
+    );
+    expect(screen.getByText("100")).toBeTruthy();
+    expect(screen.getByText("Upstream installs")).toBeTruthy();
+    expect(screen.getByText("HTML Artifact Chooser Build useful artifacts.")).toBeTruthy();
+    expect(container.querySelector(".skill-hero-layout.has-sidebar")).toBeTruthy();
+    expect(container.querySelector(".skill-hero-sidebar")?.textContent).toContain(
+      "Upstream checks",
     );
   });
 
   it("shows colon-form install commands and a preselected GitHub Skill Sync claim", () => {
     render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
-    expect(
-      screen.getByText("openclaw skills install skills-sh:patrick-erichsen/skills/html", {
-        exact: true,
-      }),
-    ).toBeTruthy();
+    expect(screen.getByText("openclaw skills install")).toBeTruthy();
+    expect(screen.getByText("skills-sh:patrick-erichsen/skills/html")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "ClawHub" }));
     expect(
       screen.getByText("clawhub install skills-sh:patrick-erichsen/skills/html", { exact: true }),
     ).toBeTruthy();
@@ -64,11 +71,23 @@ describe("SkillsShCatalogDetailPage", () => {
   it("renders only stored bounded content and no file explorer", () => {
     render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
-    expect(screen.getByRole("heading", { name: "Stored SKILL.md" })).toBeTruthy();
+    expect(screen.getByRole("tablist", { name: "Skill detail tabs" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getByRole("heading", { name: "Use this skill" })).toBeTruthy();
     expect(screen.queryByText("Files")).toBeNull();
     expect(screen.queryByText("File explorer")).toBeNull();
     expect(screen.getByText("Content is truncated to the stored 64 KiB snapshot.")).toBeTruthy();
+  });
+
+  it("uses the normal skill install card with the exact skills.sh reference", () => {
+    const { container } = render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
+
+    expect(container.querySelector(".skill-install-command-card")).toBeTruthy();
+    expect(screen.getByText("openclaw skills install")).toBeTruthy();
+    expect(screen.getByText("skills-sh:patrick-erichsen/skills/html")).toBeTruthy();
+    expect(screen.getAllByText("skills.sh").length).toBeGreaterThan(0);
   });
 
   it("hides install commands without a commit-pinned GitHub folder", () => {
@@ -91,6 +110,7 @@ function makeEntry(): SkillsShCatalogDetail {
     repo: "skills",
     slug: "html",
     displayName: "HTML Artifact Chooser",
+    summary: "# HTML Artifact Chooser **Build useful artifacts.**",
     categories: ["development"],
     topics: [],
     sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",

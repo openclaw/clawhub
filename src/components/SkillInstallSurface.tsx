@@ -44,6 +44,13 @@ type SkillInstallSurfaceProps = {
   ownerHandle: string | null;
   ownerId: Id<"users"> | Id<"publishers"> | null;
   clawdis?: ClawdisSkillMetadata;
+  installTarget?: string;
+  skillPageUrl?: string | null;
+  secondaryInstall?: {
+    label: string;
+    command: string;
+    copyAriaLabel: string;
+  };
 };
 
 export function SkillInstallSurface({
@@ -52,6 +59,8 @@ export function SkillInstallSurface({
   ownerHandle,
   ownerId,
   clawdis,
+  installTarget: installTargetOverride,
+  skillPageUrl: skillPageUrlOverride,
 }: SkillInstallSurfaceProps) {
   const headingId = useId();
   const [promptMode, setPromptMode] = useState<SkillPromptMode>("install-and-setup");
@@ -80,7 +89,8 @@ export function SkillInstallSurface({
 
   const selectedPrompt =
     PROMPT_OPTIONS.find((option) => option.mode === promptMode) ?? PROMPT_OPTIONS[1];
-  const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
+  const installTarget =
+    installTargetOverride ?? buildSkillInstallTarget(ownerHandle, ownerId, slug);
   const promptPreview = formatOpenClawPrompt({
     mode: promptMode,
     skillName: displayName,
@@ -88,6 +98,8 @@ export function SkillInstallSurface({
     ownerHandle,
     ownerId,
     clawdis,
+    installTarget: installTargetOverride,
+    skillPageUrl: skillPageUrlOverride,
   });
 
   const promptFeedback =
@@ -105,6 +117,8 @@ export function SkillInstallSurface({
       ownerHandle,
       ownerId,
       clawdis,
+      installTarget: installTargetOverride,
+      skillPageUrl: skillPageUrlOverride,
     });
 
     setPromptMode(mode);
@@ -193,15 +207,24 @@ export function SkillCommandLineCard({
   ownerHandle,
   ownerId,
   clawdis,
+  installTarget: installTargetOverride,
+  skillPageUrl: skillPageUrlOverride,
+  secondaryInstall,
 }: SkillInstallSurfaceProps) {
   const headingId = useId();
   type InstallTab = "cli" | "skills" | "prompt";
   const [activeInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
   const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
-  const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
+  const installTarget =
+    installTargetOverride ?? buildSkillInstallTarget(ownerHandle, ownerId, slug);
   const openClawCommand = formatOpenClawInstallCommand(installTarget);
-  const skillPageUrl = buildSkillPageUrl(ownerHandle, ownerId, slug);
-  const skillsCliCommand = skillPageUrl ? formatSkillsCliInstallCommand(skillPageUrl) : null;
+  const skillPageUrl =
+    skillPageUrlOverride === undefined
+      ? buildSkillPageUrl(ownerHandle, ownerId, slug)
+      : skillPageUrlOverride;
+  const skillsCliCommand =
+    secondaryInstall?.command ??
+    (skillPageUrl ? formatSkillsCliInstallCommand(skillPageUrl) : null);
   const promptPreview = formatOpenClawPrompt({
     mode: "install-and-setup",
     skillName: displayName,
@@ -209,6 +232,8 @@ export function SkillCommandLineCard({
     ownerHandle,
     ownerId,
     clawdis,
+    installTarget: installTargetOverride,
+    skillPageUrl: skillPageUrlOverride,
   });
   const activeInstallText =
     activeInstallTab === "prompt"
@@ -250,7 +275,7 @@ export function SkillCommandLineCard({
               aria-pressed={activeInstallTab === "skills"}
               onClick={() => selectInstallTab("skills")}
             >
-              npx skills
+              {secondaryInstall?.label ?? "npx skills"}
             </button>
           ) : null}
           <button
@@ -295,7 +320,7 @@ export function SkillCommandLineCard({
               activeInstallTab === "prompt"
                 ? "Copy OpenClaw prompt"
                 : activeInstallTab === "skills"
-                  ? "Copy npx skills command"
+                  ? (secondaryInstall?.copyAriaLabel ?? "Copy npx skills command")
                   : "Copy OpenClaw CLI command"
             }
             className="skill-install-command-inline-button"

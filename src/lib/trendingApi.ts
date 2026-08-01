@@ -16,6 +16,13 @@ export type CanonicalTrendingItem = {
     image: string | null;
     official: boolean;
   } | null;
+  sourceIdentity?: {
+    id: string;
+    owner: string | null;
+    repo: string | null;
+    host: string | null;
+    lifetimeInstalls: number | null;
+  };
   official: boolean;
   featured: boolean;
   metrics: {
@@ -88,6 +95,19 @@ function isCanonicalPublisher(value: unknown): value is CanonicalTrendingItem["p
   );
 }
 
+function isCanonicalSourceIdentity(
+  value: unknown,
+): value is NonNullable<CanonicalTrendingItem["sourceIdentity"]> {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    isNullableString(value.owner) &&
+    isNullableString(value.repo) &&
+    isNullableString(value.host) &&
+    isNullableNumber(value.lifetimeInstalls)
+  );
+}
+
 function isCanonicalTrendingItem(value: unknown): value is LegacyCanonicalTrendingItem {
   if (!isRecord(value) || !isRecord(value.metrics)) return false;
   return (
@@ -98,6 +118,7 @@ function isCanonicalTrendingItem(value: unknown): value is LegacyCanonicalTrendi
     isNullableString(value.summary) &&
     isCanonicalPath(value.canonicalUrl) &&
     isCanonicalPublisher(value.publisher) &&
+    (value.sourceIdentity === undefined || isCanonicalSourceIdentity(value.sourceIdentity)) &&
     typeof value.official === "boolean" &&
     typeof value.featured === "boolean" &&
     (value.metrics.trending24hDownloads === undefined ||

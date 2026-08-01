@@ -19,6 +19,8 @@ type SkillPromptContext = {
   ownerHandle: string | null;
   ownerId: SkillOwnerId | null;
   clawdis?: ClawdisSkillMetadata;
+  installTarget?: string;
+  skillPageUrl?: string | null;
 };
 
 export function buildSkillHref(
@@ -205,9 +207,12 @@ export function formatOpenClawPrompt({
   ownerHandle,
   ownerId,
   clawdis,
+  installTarget,
+  skillPageUrl,
 }: SkillPromptContext) {
-  const target = buildSkillInstallTarget(ownerHandle, ownerId, slug);
-  const pageUrl = buildSkillPageUrl(ownerHandle, ownerId, slug);
+  const target = installTarget?.trim() || buildSkillInstallTarget(ownerHandle, ownerId, slug);
+  const pageUrl =
+    skillPageUrl === undefined ? buildSkillPageUrl(ownerHandle, ownerId, slug) : skillPageUrl;
   const displayName = skillName.trim() || slug;
   const requiredEnvVars = new Set(clawdis?.requires?.env ?? []);
 

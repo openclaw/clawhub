@@ -98,13 +98,6 @@ export function skillsShRepositoryLabel(result: SkillsShSearchResult) {
   return result.sourceHost ?? "skills.sh";
 }
 
-export function buildSkillsShInstallCommands(reference: string) {
-  return [
-    { client: "OpenClaw", command: `openclaw skills install ${reference}` },
-    { client: "ClawHub", command: `clawhub install ${reference}` },
-  ] as const;
-}
-
 export function isSkillsShCatalogInstallable(
   detail: Pick<SkillsShCatalogDetail, "githubCommit" | "githubContentHash" | "githubPath">,
 ) {

@@ -167,9 +167,9 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(document.querySelector(".home-v2-listing-list")).toBeTruthy();
-    expect(document.querySelector(".marketplace-icon-image")?.getAttribute("src")).toBe(
-      featuredPlugin.icon,
-    );
+    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(document.querySelector(".home-v2-listing-row-icon")).toBeNull();
+    expect(document.querySelector(".home-v2-listing-row-stats svg")).toBeNull();
   });
 
   it("previews long skill and plugin names while retaining their full labels", async () => {

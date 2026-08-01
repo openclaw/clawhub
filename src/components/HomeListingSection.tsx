@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Bookmark, CloudOff, Download, Loader2, Moon, Plus } from "lucide-react";
+import { CloudOff, Loader2, Moon, Plus } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   fetchHomePluginListing as fetchPluginListing,
@@ -20,7 +20,6 @@ import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { presentationTitle } from "../lib/presentationTitle";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
-import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
 
@@ -122,32 +121,37 @@ function skillLink(entry: HomeNativeSkillListingEntry) {
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(entry.skill.slug)}`;
 }
 
-function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
+function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
   if (isHomeTrendingSkillEntry(entry)) {
     const item = entry.trending;
-    const owner = item.publisher?.handle;
+    const isSkillsSh = item.source === "skills-sh";
+    const owner = isSkillsSh
+      ? (item.sourceIdentity?.owner ?? item.sourceIdentity?.host)
+      : item.publisher?.handle;
+    const upstreamInstalls = item.sourceIdentity?.lifetimeInstalls ?? item.metrics.lifetimeInstalls;
     return (
       <Link to={item.canonicalUrl} className="home-v2-listing-row">
-        <span className="home-v2-listing-row-icon" aria-hidden="true">
-          <MarketplaceIcon kind="skill" label={item.displayName} size="sm" />
-        </span>
         <div className="home-v2-listing-row-body">
           <div className="home-v2-listing-row-title">
             <span className="home-v2-listing-row-name" title={item.displayName}>
               {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
             </span>
+            {isSkillsSh ? <span className="home-v2-listing-source-badge">skills.sh</span> : null}
             {owner ? <span className="home-v2-listing-row-by">@{owner}</span> : null}
           </div>
           <p className="home-v2-listing-row-summary">
             {truncateText(item.summary || "Agent-ready skill pack.", 80)}
           </p>
         </div>
-        {typeof item.metrics.trending24hDownloads === "number" ? (
-          <div className="home-v2-listing-row-stats" aria-label="24-hour downloads">
-            <span>
-              <Download size={13} aria-hidden="true" />
-              {formatCompactStat(item.metrics.trending24hDownloads)}
+        {isSkillsSh && typeof upstreamInstalls === "number" ? (
+          <div className="home-v2-listing-row-stats" aria-label="Downloads">
+            <span title={`${upstreamInstalls.toLocaleString()} skills.sh installs`}>
+              {formatCompactStat(upstreamInstalls)}
             </span>
+          </div>
+        ) : typeof item.metrics.trending24hDownloads === "number" ? (
+          <div className="home-v2-listing-row-stats" aria-label="Downloads">
+            <span>{formatCompactStat(item.metrics.trending24hDownloads)}</span>
           </div>
         ) : null}
       </Link>
@@ -157,19 +161,7 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
   const name = presentationTitle(entry.skill.displayName, entry.skill.slug);
 
   return (
-    <Link
-      to={skillLink(entry)}
-      className={`home-v2-listing-row${showStats ? "" : " has-no-stats"}`}
-    >
-      <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon
-          kind="skill"
-          label={name}
-          imageUrl={entry.skill.icon}
-          skill={entry.skill}
-          size="sm"
-        />
-      </span>
+    <Link to={skillLink(entry)} className="home-v2-listing-row">
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
           <span className="home-v2-listing-row-name" title={name}>
@@ -181,18 +173,9 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
           {truncateText(entry.skill.summary || "Agent-ready skill pack.", 80)}
         </p>
       </div>
-      {showStats ? (
-        <div className="home-v2-listing-row-stats" aria-label="Popularity">
-          <span>
-            <Bookmark size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.stars ?? 0)}
-          </span>
-          <span>
-            <Download size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
-          </span>
-        </div>
-      ) : null}
+      <div className="home-v2-listing-row-stats" aria-label="Downloads">
+        <span>{formatCompactStat(entry.skill.stats?.downloads ?? 0)}</span>
+      </div>
     </Link>
   );
 }
@@ -203,15 +186,6 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
 
   return (
     <Link to={pluginHref} className="home-v2-listing-row">
-      <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon
-          kind="plugin"
-          label={name}
-          imageUrl={plugin.icon}
-          categorySlug={plugin.categories?.[0]}
-          size="sm"
-        />
-      </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
           <span className="home-v2-listing-row-name" title={name}>
@@ -227,10 +201,7 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
         </p>
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Downloads">
-        <span>
-          <Download size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.downloads ?? 0)}
-        </span>
+        <span>{formatCompactStat(plugin.stats?.downloads ?? 0)}</span>
       </div>
     </Link>
   );
@@ -307,7 +278,6 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   const activeItems = kind === "skills" ? skills : plugins;
   const activeStatus = status;
   const isEmpty = activeStatus === "idle" && activeItems.length === 0;
-  const showSkillStats = true;
   const showListingMore =
     activeStatus === "idle" && (activeItems.length > visibleCount || listingHasMore);
 
@@ -487,19 +457,11 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       </div>
 
       {activeStatus === "idle" && activeItems.length > 0 ? (
-        <div
-          className={`home-v2-listing-head${showSkillStats ? "" : " has-no-stats"}`}
-          aria-hidden="true"
-        >
-          <span className="home-v2-listing-head-icon-spacer" />
+        <div className="home-v2-listing-head" aria-hidden="true">
           <span className="home-v2-listing-head-label">
             {kind === "skills" ? "Skill" : "Plugin"}
           </span>
-          {kind === "skills" && tab === "trending" ? (
-            <span className="home-v2-listing-head-stat">24h downloads</span>
-          ) : showSkillStats ? (
-            <span className="home-v2-listing-head-stat">Popularity</span>
-          ) : null}
+          <span className="home-v2-listing-head-stat">Downloads</span>
         </div>
       ) : null}
 
@@ -532,7 +494,6 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               <HomeListingSkillRow
                 key={isHomeTrendingSkillEntry(entry) ? entry.trending.id : String(entry.skill._id)}
                 entry={entry}
-                showStats={showSkillStats}
               />
             ))}
           </div>
