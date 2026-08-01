@@ -196,7 +196,10 @@ async function classifySuspiciousPublishAttemptPublicState(
       )
       .unique();
     if (!release) return "replay_missing";
-    if (release.softDeletedAt || release.integritySha256 !== attempt.artifactFingerprint) {
+    const matchesArtifact =
+      release.integritySha256 === attempt.artifactFingerprint ||
+      (pkg.family === "claw" && release.clawpackSha256 === attempt.artifactFingerprint);
+    if (release.softDeletedAt || !matchesArtifact) {
       return "public_conflict";
     }
     return "replay_identical";

@@ -892,7 +892,10 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         }
       } else if (attempt.kind === "package" && attempt.packageReleaseId) {
         const release = await ctx.db.get(attempt.packageReleaseId);
-        if (release?.integritySha256 === attempt.artifactFingerprint) {
+        const releaseFingerprint = release?.clawManifestSummary
+          ? release.clawpackSha256
+          : release?.integritySha256;
+        if (release && releaseFingerprint === attempt.artifactFingerprint) {
           existingClawscanAnalysis = reusableClawscanAnalysis(release.llmAnalysis);
         }
       }

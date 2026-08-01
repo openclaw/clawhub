@@ -16,6 +16,7 @@ import {
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
   list,
+  publishRelease,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
   generateChangelogPreview,
@@ -277,7 +278,7 @@ const insertReleaseInternalHandler = (
           };
       name: string;
       displayName: string;
-      family: "skill" | "code-plugin" | "bundle-plugin";
+      family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
       version: string;
       publicationStatus?: "pending" | "published";
       changelog: string;
@@ -328,6 +329,7 @@ const findPackagePublishResultInternalHandler = (
       name: string;
       version: string;
       integritySha256: string;
+      clawpackSha256?: string;
       ownerUserId: string;
       ownerPublisherId?: string;
     },
@@ -420,6 +422,9 @@ const publishPackageForUserInternalHandler = (
     },
     unknown
   >
+)._handler;
+const publishReleaseHandler = (
+  publishRelease as unknown as WrappedHandler<{ payload: unknown }, unknown>
 )._handler;
 const publishPackageForTrustedPublisherInternalHandler = (
   publishPackageForTrustedPublisherInternal as unknown as WrappedHandler<
@@ -8555,6 +8560,40 @@ describe("packages public queries", () => {
     });
   });
 
+  it("does not recover a Claw publish result for different exact artifact bytes", async () => {
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn().mockResolvedValue(
+              table === "packages"
+                ? makePackageDoc({
+                    family: "claw",
+                    ownerUserId: "users:owner",
+                    ownerPublisherId: "publishers:owner",
+                  })
+                : makeReleaseDoc({
+                    integritySha256: "same-extracted-files",
+                    clawpackSha256: "a".repeat(64),
+                  }),
+            ),
+          })),
+        })),
+      },
+    };
+
+    await expect(
+      findPackagePublishResultInternalHandler(ctx as never, {
+        name: "demo-claw",
+        version: "1.0.0",
+        integritySha256: "same-extracted-files",
+        clawpackSha256: "b".repeat(64),
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+      }),
+    ).resolves.toBeNull();
+  });
+
   it("does not recover pending package publish results as public successes", async () => {
     const release = makeReleaseDoc({
       integritySha256: "abc123",
@@ -9791,6 +9830,69 @@ describe("packages public queries", () => {
     expect(ctx.patch).not.toHaveBeenCalled();
   });
 
+  it("rejects a Claw version retry when the exact artifact digest differs", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "claw" }), [
+      makeReleaseDoc({
+        _id: "packageReleases:existing",
+        version: "1.0.0",
+        integritySha256: "same-extracted-files",
+        clawpackSha256: "a".repeat(64),
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "retry",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "same-extracted-files",
+        clawpackSha256: "b".repeat(64),
+        allowExistingRelease: true,
+      }),
+    ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
+  });
+
+  it("treats an exact Claw artifact retry as idempotent", async () => {
+    const artifactSha256 = "a".repeat(64);
+    const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "claw" }), [
+      makeReleaseDoc({
+        _id: "packageReleases:existing",
+        version: "1.0.0",
+        integritySha256: "same-extracted-files",
+        clawpackSha256: artifactSha256,
+      }),
+    ]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "retry",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "same-extracted-files",
+        clawpackSha256: artifactSha256,
+        allowExistingRelease: true,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:existing",
+    });
+  });
+
   it("keeps an initial beta-only package publish off latest", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
@@ -9874,6 +9976,19 @@ describe("packages public queries", () => {
         },
       }),
     ).rejects.toThrow("Skill packages must use the skills publish flow");
+  });
+
+  it("requires the exact-artifact HTTP flow for public Claw publishes", async () => {
+    await expect(
+      publishReleaseHandler({} as never, {
+        payload: {
+          name: "demo-claw",
+          family: "claw",
+          version: "1.0.0",
+        },
+      }),
+    ).rejects.toThrow("Claw packages must use the exact-artifact HTTP publish flow");
+    expect(getAuthUserId).not.toHaveBeenCalled();
   });
 
   it("rejects Claw publication before mutation when the experimental gate is disabled", async () => {
