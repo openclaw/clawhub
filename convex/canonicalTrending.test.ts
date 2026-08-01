@@ -673,6 +673,41 @@ describe("canonical Trending snapshot storage", () => {
     ).resolves.toBeNull();
   });
 
+  it("reuses the verified native pool linked to a mixed hourly snapshot", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const source = await insertEligibleNativeSource(t, "mixed-hourly-native-pool");
+    await insertReadyNativePool(t, {
+      poolId: "skills-mixed-hourly-native-pool",
+      skillId: source.skillId,
+      now,
+    });
+    await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+      snapshotId: "skills-mixed-hourly-native-pool",
+      generatedAt: now - 1_000,
+      expiresAt: now + 24 * 60 * 60 * 1_000,
+      windowStartDay: 40,
+      windowEndDay: 40,
+      windowStartHour: 100,
+      windowEndHour: 123,
+    });
+    await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+      snapshotId: "skills-mixed-hourly-native-pool",
+      completedAt: now - 500,
+      totalItems: 0,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 1 },
+      operations: { documentsRead: 20, documentsWritten: 5, functionCalls: 4 },
+      nativePoolId: "skills-mixed-hourly-native-pool",
+    });
+
+    await expect(
+      t.query(internal.canonicalTrending.getReadyNativePoolInternal, { now }),
+    ).resolves.toMatchObject({
+      poolId: "skills-mixed-hourly-native-pool",
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 0 },
+    });
+  });
+
   it("reuses an older verified native pool when a newer orphan exists", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();

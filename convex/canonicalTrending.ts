@@ -288,6 +288,8 @@ export const getReadyNativePoolInternal = internalQuery({
         .query("canonicalTrendingSnapshots")
         .withIndex("by_snapshot_id", (q) => q.eq("snapshotId", pool.poolId))
         .unique();
+      // Hourly mixed snapshots verify the linked native pool just as strictly as
+      // native-only preflight snapshots; the external lane is independent here.
       if (
         !snapshot ||
         snapshot.status !== "ready" ||
@@ -296,7 +298,7 @@ export const getReadyNativePoolInternal = internalQuery({
         snapshot.generatedAt !== pool.generatedAt ||
         snapshot.windowStartHour !== pool.windowStartHour ||
         snapshot.windowEndHour !== pool.windowEndHour ||
-        snapshot.sourceCounts?.skillsShTrending !== 0 ||
+        !snapshot.sourceCounts ||
         snapshot.sourceCounts.clawhubTrending !== pool.sourceCounts.clawhubTrending ||
         snapshot.sourceCounts.clawhubRising !== pool.sourceCounts.clawhubRising
       ) {
