@@ -59,7 +59,7 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(container.querySelector(".skills-sh-detail-source-badge")).toBeNull();
   });
 
-  it("shows the GitHub owner, repository, and a preselected GitHub Skill Sync claim", () => {
+  it("shows the GitHub owner and repository without a public claim action", () => {
     render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
     expect(screen.getByText("openclaw skills install")).toBeTruthy();
@@ -77,21 +77,7 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(repository.classList.contains("plugin-external-link")).toBe(true);
     expect(repository.querySelector("svg")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "View on skills.sh" })).toBeNull();
-    const claimUrl = new URL(
-      screen.getByRole("link", { name: "Claim this skill" }).getAttribute("href") ?? "",
-      "https://clawhub.test",
-    );
-    expect(claimUrl.pathname).toBe("/settings");
-    expect(Object.fromEntries(claimUrl.searchParams)).toEqual({
-      view: "githubSources",
-      ownerHandle: "openclaw",
-      repo: "openclaw/openclaw",
-      sourceRepo: "openclaw/openclaw",
-      sourceExternalId: "patrick-erichsen/skills/html",
-      sourcePath: "skills/html",
-      sourceCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
-      sourceContentHash: "a".repeat(64),
-    });
+    expect(screen.queryByRole("link", { name: "Claim this skill" })).toBeNull();
   });
 
   it("renders only stored bounded content and no file explorer", () => {

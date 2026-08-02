@@ -7397,16 +7397,6 @@ a.skills-sh-security-audit-row:focus-visible {
   background: var(--hover-bg);
 }
 
-.skills-sh-detail-links {
-  display: grid;
-  gap: 8px;
-}
-
-.skills-sh-detail-links .btn {
-  justify-content: flex-start;
-  width: 100%;
-}
-
 .skills-sh-content-note {
   margin: 0;
   padding-bottom: 14px;
@@ -23161,7 +23151,7 @@ a.search-empty-action {
   content: "";
   position: absolute;
   inset: 0 0 2px;
-  border-radius: 10px;
+  border-radius: 0;
   background: transparent;
   pointer-events: none;
 }
@@ -23329,6 +23319,10 @@ a.search-empty-action {
   font-variant-numeric: tabular-nums;
   color: var(--hv2-text-secondary);
   white-space: nowrap;
+}
+
+.home-v2-listing-row-stats.is-skills-sh {
+  gap: 7px;
 }
 
 .home-v2-listing-row-stats span {

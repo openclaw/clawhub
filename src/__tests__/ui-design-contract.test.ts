@@ -382,6 +382,7 @@ describe("restored UI design contract", () => {
     expect(homeSource).not.toContain("Trending Now");
     expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
     expect(cssRule(css, ".home-v2-listing-kind")).toContain("margin-left: auto");
+    expect(cssRule(css, ".home-v2-listing-row::before")).toContain("border-radius: 0");
   });
 
   it("requires the restored footer columns and mobile section toggles", () => {

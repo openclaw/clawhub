@@ -1,5 +1,4 @@
-import { Link } from "@tanstack/react-router";
-import { BadgeCheck, ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import {
@@ -15,7 +14,6 @@ import { stripFrontmatter } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
 import { UserBadge } from "./UserBadge";
 
 const CHECK_PRESENTATION = {
@@ -221,28 +219,6 @@ function SkillsShSidebar({ entry }: { entry: SkillsShCatalogDetail }) {
           ))}
         </div>
       </section>
-
-      <div className="skills-sh-detail-links">
-        {entry.githubPath && entry.githubCommit && entry.githubContentHash ? (
-          <Button asChild variant="outline" size="sm">
-            <Link
-              to="/settings"
-              search={{
-                view: "githubSources",
-                ownerHandle: entry.canonicalGitHubRepo.split("/")[0],
-                repo: entry.canonicalGitHubRepo,
-                sourceRepo: entry.canonicalGitHubRepo,
-                sourceExternalId: entry.externalId,
-                sourcePath: entry.githubPath,
-                sourceCommit: entry.githubCommit,
-                sourceContentHash: entry.githubContentHash,
-              }}
-            >
-              <BadgeCheck size={15} aria-hidden="true" /> Claim this skill
-            </Link>
-          </Button>
-        ) : null}
-      </div>
     </div>
   );
 }

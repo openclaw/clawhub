@@ -22,6 +22,7 @@ import { presentationTitle } from "../lib/presentationTitle";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { OfficialBadge } from "./OfficialBadge";
 import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
+import { Badge } from "./ui/badge";
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "trending", label: "Trending" },
@@ -142,11 +143,16 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
             {truncateText(item.summary || "Agent-ready skill pack.", 80)}
           </p>
         </div>
-        {isSkillsSh && typeof upstreamInstalls === "number" ? (
-          <div className="home-v2-listing-row-stats" aria-label="Downloads">
-            <span title={`${upstreamInstalls.toLocaleString()} skills.sh installs`}>
-              {formatCompactStat(upstreamInstalls)}
-            </span>
+        {isSkillsSh ? (
+          <div className="home-v2-listing-row-stats is-skills-sh" aria-label="Downloads">
+            {typeof upstreamInstalls === "number" ? (
+              <span title={`${upstreamInstalls.toLocaleString()} skills.sh installs`}>
+                {formatCompactStat(upstreamInstalls)}
+              </span>
+            ) : null}
+            <Badge variant="compact" size="sm" title="Synced from skills.sh">
+              skills.sh
+            </Badge>
           </div>
         ) : typeof item.metrics.trending24hDownloads === "number" ? (
           <div className="home-v2-listing-row-stats" aria-label="Downloads">

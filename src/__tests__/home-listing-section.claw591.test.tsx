@@ -155,8 +155,40 @@ describe("HomeListingSection", () => {
     render(<HomeListingSection initialListing={initialTrending([external])} />);
 
     expect(screen.getByText("@doany-skills")).toBeTruthy();
-    expect(screen.queryByText("skills.sh")).toBeNull();
+    const sourceBadge = screen.getByText("skills.sh");
+    expect(sourceBadge.getAttribute("title")).toBe("Synced from skills.sh");
     expect(screen.getByLabelText("Downloads").textContent).toContain("12.3k");
+  });
+
+  it("keeps skills.sh provenance visible when the upstream install count is unavailable", () => {
+    const external = {
+      ...makeTrending("unmetered", "Unmetered", 0, 0, 0),
+      id: "skills-sh:example/skills/unmetered",
+      source: "skills-sh" as const,
+      canonicalUrl: "/skills-sh/example/skills/unmetered",
+      publisher: null,
+      sourceIdentity: {
+        id: "example/skills/unmetered",
+        owner: "example",
+        repo: "skills",
+        host: null,
+        lifetimeInstalls: null,
+      },
+      metrics: {
+        trending24hDownloads: null,
+        trending24hInstalls: null,
+        trending24hBookmarks: null,
+        lifetimeInstalls: null,
+        lifetimeInstallsPeriod: null,
+        updatedAt: 1,
+      },
+    };
+
+    render(<HomeListingSection initialListing={initialTrending([external])} />);
+
+    const sourceBadge = screen.getByText("skills.sh");
+    expect(sourceBadge.getAttribute("title")).toBe("Synced from skills.sh");
+    expect(screen.getByLabelText("Downloads").textContent).toBe("skills.sh");
   });
 
   it("hides unavailable Trending and falls back to the Featured feed", async () => {
