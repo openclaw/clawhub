@@ -24,10 +24,9 @@ test("skills loads without error", async ({ page }) => {
   await expectHealthyPage(page, errors);
 });
 
-test("header menu routes render", async ({ page }) => {
-  const errors = trackRuntimeErrors(page);
-
-  for (const label of navLabels) {
+for (const label of navLabels) {
+  test(`header menu ${label.toLowerCase()} route renders`, async ({ page }) => {
+    const errors = trackRuntimeErrors(page);
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForHydration(page);
 
@@ -43,7 +42,7 @@ test("header menu routes render", async ({ page }) => {
       await expect(page).toHaveURL(/\/plugins(\?|$)/);
       await expect(page.locator("h1", { hasText: "Plugins" })).toBeVisible();
     }
-  }
 
-  await expectHealthyPage(page, errors);
-});
+    await expectHealthyPage(page, errors);
+  });
+}
