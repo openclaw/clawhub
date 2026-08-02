@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,6 +22,17 @@ async function tempDir() {
   const dir = await mkdtemp(join(tmpdir(), "clawhub-codex-worker-test-"));
   tempDirs.push(dir);
   return dir;
+}
+
+async function readStartedPid(path: string) {
+  while (true) {
+    const contents = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return "";
+      throw error;
+    });
+    if (contents) return Number(contents);
+    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+  }
 }
 
 function skillVersionJob(jobId: string): ClaimedJob {
@@ -997,22 +1008,37 @@ child_pid=$!
 printf '%s' "$child_pid" > "${workspace}/descendant.pid"
 wait "$child_pid"`,
     );
+    const descendantPidPath = join(workspace, "descendant.pid");
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
     const previousTimeout = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = "2000";
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = "500";
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
     let descendantPid: number | undefined;
 
     try {
-      await expect(
-        runClawScan(skillVersionJob("securityScanJobs:process-tree-timeout"), workspace, () => {}),
-      ).rejects.toThrow("timed out");
+      const scanPromise = runClawScan(
+        skillVersionJob("securityScanJobs:process-tree-timeout"),
+        workspace,
+        () => {},
+      );
+      void scanPromise.catch(() => undefined);
+      descendantPid = await readStartedPid(descendantPidPath);
+      await vi.advanceTimersByTimeAsync(10_500);
+      await expect(scanPromise).rejects.toThrow("timed out");
+      vi.useRealTimers();
 
-      descendantPid = Number(await readFile(join(workspace, "descendant.pid"), "utf8"));
       let descendantRunning = true;
       for (let attempt = 0; attempt < 20; attempt += 1) {
         try {
-          process.kill(descendantPid, 0);
+          // Signal 0 also succeeds for terminated zombies until their parent reaps them.
+          const state = execFileSync("ps", ["-o", "state=", "-p", String(descendantPid)], {
+            encoding: "utf8",
+          }).trim();
+          if (state.startsWith("Z")) {
+            descendantRunning = false;
+            break;
+          }
           await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
         } catch {
           descendantRunning = false;
@@ -1021,6 +1047,7 @@ wait "$child_pid"`,
       }
       expect(descendantRunning).toBe(false);
     } finally {
+      vi.useRealTimers();
       if (descendantPid) {
         try {
           process.kill(descendantPid, "SIGKILL");

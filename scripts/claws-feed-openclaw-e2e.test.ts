@@ -1,10 +1,12 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { crc32, createDeflateRaw } from "node:zlib";
 import { EXPERIMENTAL_CLAW_FEED_ID, serializeExperimentalClawFeed } from "clawhub-schema";
 import { gzipSync, strToU8, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -76,6 +78,62 @@ function deterministicLinkArchive() {
     offset += part.byteLength;
   }
   return gzipSync(tar);
+}
+
+async function compactZipOfZeros(path: string, unpackedSize: number) {
+  const deflate = createDeflateRaw({ level: 9 });
+  const compressedChunks: Buffer[] = [];
+  deflate.on("data", (chunk: Buffer) => compressedChunks.push(chunk));
+  const finished = once(deflate, "end");
+  const zeroChunk = Buffer.alloc(64 * 1024);
+  let remaining = unpackedSize;
+  let checksum = 0;
+  while (remaining > 0) {
+    const chunk = zeroChunk.subarray(0, Math.min(remaining, zeroChunk.byteLength));
+    checksum = crc32(chunk, checksum);
+    remaining -= chunk.byteLength;
+    if (!deflate.write(chunk)) await once(deflate, "drain");
+  }
+  deflate.end();
+  await finished;
+
+  const compressed = Buffer.concat(compressedChunks);
+  const encodedPath = strToU8(path);
+  const localHeaderSize = 30;
+  const centralHeaderSize = 46;
+  const endRecordSize = 22;
+  const centralOffset = localHeaderSize + encodedPath.byteLength + compressed.byteLength;
+  const centralSize = centralHeaderSize + encodedPath.byteLength;
+  const archive = new Uint8Array(centralOffset + centralSize + endRecordSize);
+  const view = new DataView(archive.buffer);
+
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(8, 8, true);
+  view.setUint32(14, checksum, true);
+  view.setUint32(18, compressed.byteLength, true);
+  view.setUint32(22, unpackedSize, true);
+  view.setUint16(26, encodedPath.byteLength, true);
+  archive.set(encodedPath, localHeaderSize);
+  archive.set(compressed, localHeaderSize + encodedPath.byteLength);
+
+  view.setUint32(centralOffset, 0x02014b50, true);
+  view.setUint16(centralOffset + 4, 20, true);
+  view.setUint16(centralOffset + 6, 20, true);
+  view.setUint16(centralOffset + 10, 8, true);
+  view.setUint32(centralOffset + 16, checksum, true);
+  view.setUint32(centralOffset + 20, compressed.byteLength, true);
+  view.setUint32(centralOffset + 24, unpackedSize, true);
+  view.setUint16(centralOffset + 28, encodedPath.byteLength, true);
+  archive.set(encodedPath, centralOffset + centralHeaderSize);
+
+  const endOffset = centralOffset + centralSize;
+  view.setUint32(endOffset, 0x06054b50, true);
+  view.setUint16(endOffset + 8, 1, true);
+  view.setUint16(endOffset + 10, 1, true);
+  view.setUint32(endOffset + 12, centralSize, true);
+  view.setUint32(endOffset + 16, centralOffset, true);
+  return archive;
 }
 
 async function npmPackFixture(destination: string) {
@@ -240,7 +298,8 @@ describe("published Claw to OpenClaw dry-run proof", () => {
   it("rejects ZIP artifacts whose expanded content exceeds the package limit", async () => {
     const root = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-large-zip-"));
     try {
-      const archive = zipSync({ "package/large.bin": new Uint8Array(50 * 1024 * 1024 + 1) });
+      const archive = await compactZipOfZeros("package/large.bin", 50 * 1024 * 1024 + 1);
+      expect(archive.byteLength).toBeLessThan(64 * 1024);
       await expect(extractSafeClawZip(archive, root)).rejects.toThrow("50MB unpacked limit");
     } finally {
       await rm(root, { recursive: true, force: true });
