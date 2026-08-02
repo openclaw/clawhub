@@ -179,7 +179,7 @@ describe("HomeListingSection", () => {
         trending24hInstalls: null,
         trending24hBookmarks: null,
         lifetimeInstalls: null,
-        lifetimeInstallsPeriod: null,
+        lifetimeInstallsPeriod: "lifetime" as const,
         updatedAt: 1,
       },
     };
