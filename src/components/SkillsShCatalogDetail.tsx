@@ -11,6 +11,7 @@ import { truncateText } from "../lib/truncateText";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { SkillDetailPageView, type SkillDetailViewSkill } from "./SkillDetailPageView";
+import { stripFrontmatter } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
 import { Alert, AlertDescription } from "./ui/alert";
 import { Badge } from "./ui/badge";
@@ -275,7 +276,9 @@ function SkillsShContentTabs({ entry }: { entry: SkillsShCatalogDetail }) {
               </p>
             ) : null}
             <div className="skill-readme-preview">
-              <MarkdownPreview highlight={false}>{entry.content.markdown}</MarkdownPreview>
+              <MarkdownPreview highlight={false}>
+                {stripFrontmatter(entry.content.markdown)}
+              </MarkdownPreview>
             </div>
           </>
         ) : (

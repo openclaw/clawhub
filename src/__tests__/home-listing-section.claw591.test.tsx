@@ -155,7 +155,7 @@ describe("HomeListingSection", () => {
     render(<HomeListingSection initialListing={initialTrending([external])} />);
 
     expect(screen.getByText("@doany-skills")).toBeTruthy();
-    expect(screen.getByText("skills.sh")).toBeTruthy();
+    expect(screen.queryByText("skills.sh")).toBeNull();
     expect(screen.getByLabelText("Downloads").textContent).toContain("12.3k");
   });
 

@@ -136,7 +136,6 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
             <span className="home-v2-listing-row-name" title={item.displayName}>
               {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
             </span>
-            {isSkillsSh ? <span className="home-v2-listing-source-badge">skills.sh</span> : null}
             {owner ? <span className="home-v2-listing-row-by">@{owner}</span> : null}
           </div>
           <p className="home-v2-listing-row-summary">

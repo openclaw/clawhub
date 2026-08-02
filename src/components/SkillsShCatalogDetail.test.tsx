@@ -95,7 +95,18 @@ describe("SkillsShCatalogDetailPage", () => {
   });
 
   it("renders only stored bounded content and no file explorer", () => {
-    render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
+    const entry = makeEntry();
+    entry.content = {
+      ...entry.content!,
+      markdown: `---
+name: html
+description: Build useful HTML artifacts.
+---
+# Use this skill
+
+Build a useful artifact.`,
+    };
+    render(<SkillsShCatalogDetailPage entry={entry} />);
 
     const detailTabs = screen.getByRole("tablist", { name: "Skill detail tabs" });
     expect(detailTabs).toBeTruthy();
@@ -106,6 +117,8 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.queryByText("Files")).toBeNull();
     expect(screen.queryByText("File explorer")).toBeNull();
     expect(screen.queryByText("skills/html/SKILL.md")).toBeNull();
+    expect(screen.queryByText("name: html")).toBeNull();
+    expect(screen.queryByText("description: Build useful HTML artifacts.")).toBeNull();
     expect(screen.getByText("Content is truncated to the stored 64 KiB snapshot.")).toBeTruthy();
   });
 

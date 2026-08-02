@@ -23290,20 +23290,6 @@ a.search-empty-action {
   white-space: nowrap;
 }
 
-.home-v2-listing-source-badge {
-  flex: 0 0 auto;
-  padding: 2px 6px;
-  border: 1px solid color-mix(in srgb, var(--hv2-text-tertiary) 42%, transparent);
-  border-radius: var(--r-pill);
-  color: var(--hv2-text-tertiary);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 9px;
-  font-weight: 650;
-  line-height: 1.2;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
 .home-v2-listing-row-summary {
   margin: 0;
   font-size: 13px;
