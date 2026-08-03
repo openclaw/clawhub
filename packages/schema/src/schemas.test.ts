@@ -508,6 +508,22 @@ describe("clawhub-schema", () => {
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
   });
 
+  it("parses search rows that report a null download counter", () => {
+    // Mirrored skills.sh rows have no ClawHub download counter and the API
+    // sends `downloads: null`; rejecting it dropped every other result too.
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          { slug: "humanizer", score: 6_110, version: null, downloads: null, ownerHandle: "acme" },
+        ],
+      },
+      "Search",
+    );
+
+    expect(parsed.results[0]?.downloads).toBeNull();
+  });
+
   it("parses flattened skill verification envelopes", () => {
     const parsed = parseArk(
       ApiV1SkillVerifyResponseSchema,

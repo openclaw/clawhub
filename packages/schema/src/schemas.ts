@@ -319,7 +319,9 @@ export const ApiV1SearchResponseSchema = type({
     summary: "string|null?",
     version: "string|null?",
     score: "number",
-    downloads: "number?",
+    // Mirrored skills.sh rows carry no ClawHub download counter, so the API
+    // sends `downloads: null` for them. Optional-key (`number?`) is not enough.
+    downloads: "number|null?",
     updatedAt: "number?",
     owner: type({
       handle: "string|null?",

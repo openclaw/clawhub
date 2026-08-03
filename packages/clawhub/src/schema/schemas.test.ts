@@ -74,6 +74,12 @@ describe("packages/clawhub skill metadata schema", () => {
             displayName: "Calendar",
             summary: "Calendar workflows",
             score: 6_110,
+            // Mirrored rows have no ClawHub version or download counter; the
+            // API sends explicit nulls rather than omitting the keys.
+            version: null,
+            downloads: null,
+            ownerHandle: "acme",
+            updatedAt: 10,
             canonicalUrl: "/skills-sh/acme/skills/calendar",
             official: false,
             featured: false,
@@ -124,6 +130,26 @@ describe("packages/clawhub skill metadata schema", () => {
     ]);
     expect(parsed.results[0]?.install?.reference).toBe("skills-sh:acme/skills/calendar");
     expect(parsed.results[0]?.trust?.sourceFreshness).toBe("observed-only");
+    expect(parsed.results[0]?.downloads).toBeNull();
+  });
+
+  it("keeps mixed search results parseable when a mirrored row has null downloads", () => {
+    // Regression: a single `downloads: null` row used to reject the whole
+    // response, so `clawhub search` printed nothing for queries that matched
+    // any skills.sh mirror.
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          { source: "clawhub", slug: "humanizer", score: 9_000, downloads: 126_473 },
+          { source: "skills-sh", slug: "humanizer", score: 6_110, downloads: null },
+          { source: "clawhub", slug: "humanizer-zh", score: 5_000, downloads: 14_636 },
+        ],
+      },
+      "Search",
+    );
+
+    expect(parsed.results.map((result) => result.downloads)).toEqual([126_473, null, 14_636]);
   });
 
   it("parses pending package publish responses with legacy IDs", () => {

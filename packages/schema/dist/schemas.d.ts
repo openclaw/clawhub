@@ -302,7 +302,7 @@ export declare const ApiV1SearchResponseSchema: import("arktype/internal/variant
         summary?: string | null | undefined;
         version?: string | null | undefined;
         score: number;
-        downloads?: number | undefined;
+        downloads?: number | null | undefined;
         updatedAt?: number | undefined;
         owner?: {
             handle?: string | null | undefined;
