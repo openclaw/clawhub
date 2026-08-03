@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TooltipProvider } from "../components/ui/tooltip";
 import type { CanonicalTrendingItem } from "../lib/trendingApi";
 
 const navigateMock = vi.fn();
@@ -128,7 +129,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
   });
 
-  it("identifies skills.sh rows by their source owner and upstream install count", () => {
+  it("identifies skills.sh rows by their source owner and upstream install count", async () => {
     const external = {
       ...makeTrending("reddit-automation", "reddit-automation", 0, 12_345, 0),
       id: "skills-sh:doany-skills/skills/reddit-automation",
@@ -152,12 +153,21 @@ describe("HomeListingSection", () => {
       },
     };
 
-    render(<HomeListingSection initialListing={initialTrending([external])} />);
+    render(
+      <TooltipProvider delayDuration={0}>
+        <HomeListingSection initialListing={initialTrending([external])} />
+      </TooltipProvider>,
+    );
 
     expect(screen.getByText("@doany-skills")).toBeTruthy();
     const sourceBadge = screen.getByText("skills.sh");
-    expect(sourceBadge.getAttribute("title")).toBe("Synced from skills.sh");
-    expect(screen.getByLabelText("Downloads").textContent).toContain("12.3k");
+    const downloads = screen.getByLabelText("Downloads");
+    expect(downloads.firstElementChild).toBe(sourceBadge);
+    expect(sourceBadge.getAttribute("title")).toBeNull();
+    expect(downloads.textContent).toContain("12.3k");
+
+    fireEvent.pointerMove(sourceBadge);
+    expect((await screen.findByRole("tooltip")).textContent).toBe("Synced from skills.sh");
   });
 
   it("keeps skills.sh provenance visible when the upstream install count is unavailable", () => {
@@ -184,10 +194,14 @@ describe("HomeListingSection", () => {
       },
     };
 
-    render(<HomeListingSection initialListing={initialTrending([external])} />);
+    render(
+      <TooltipProvider delayDuration={0}>
+        <HomeListingSection initialListing={initialTrending([external])} />
+      </TooltipProvider>,
+    );
 
     const sourceBadge = screen.getByText("skills.sh");
-    expect(sourceBadge.getAttribute("title")).toBe("Synced from skills.sh");
+    expect(sourceBadge.getAttribute("title")).toBeNull();
     expect(screen.getByLabelText("Downloads").textContent).toBe("skills.sh");
   });
 
