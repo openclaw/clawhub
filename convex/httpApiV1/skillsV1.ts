@@ -1685,6 +1685,53 @@ async function describeOwnerVisibleSkillState(
   return null;
 }
 
+// #3349: a staged publish inserts the skillVersion as "pending" up front and
+// only becomes publicly visible once async finalization completes. Public
+// version reads correctly 404 while pending (no existence leak), but the
+// *owner* was getting the exact same bare 404 with no way to tell "stuck
+// pending" apart from "typo'd version" or "never existed". Surface the real
+// state to the authenticated owner only; every other caller still falls
+// through to the generic 404.
+async function describeOwnerVisibleSkillVersionState(
+  ctx: ActionCtx,
+  request: Request,
+  skillId: Id<"skills">,
+  versionQuery: { version?: string },
+): Promise<{ status: number; message: string } | null> {
+  const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
+    skillId,
+  })) as Doc<"skills"> | null;
+  if (!skill) return null;
+
+  const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
+  const isOwner = Boolean(apiTokenUserId && apiTokenUserId === skill.ownerUserId);
+  if (!isOwner) return null;
+
+  const candidate = versionQuery.version
+    ? ((await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
+        skillId: skill._id,
+        version: versionQuery.version,
+      })) as Doc<"skillVersions"> | null)
+    : ((await ctx.runQuery(internal.skills.getLatestPendingSkillVersionInternal, {
+        skillId: skill._id,
+      })) as Doc<"skillVersions"> | null);
+  if (!candidate || candidate.softDeletedAt) return null;
+
+  if (candidate.publicationStatus === "pending") {
+    return {
+      status: 423,
+      message: `Version ${candidate.version} is pending publication (owner-only diagnostic) and is not yet publicly visible. Re-check shortly, or inspect the publish attempt if this persists.`,
+    };
+  }
+  if (candidate.publicationStatus === "blocked") {
+    return {
+      status: 403,
+      message: `Version ${candidate.version} was blocked during publication (owner-only diagnostic) and was not published.`,
+    };
+  }
+  return null;
+}
+
 function getOwnerHandleParam(url: URL) {
   const value = url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner");
   return value?.trim().replace(/^@+/, "") || undefined;
@@ -2203,7 +2250,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       skillId: skillResult.skill._id,
       version: third,
     })) as PublicSkillVersionResponse | null;
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version) {
+      const pendingState = await describeOwnerVisibleSkillVersionState(
+        ctx,
+        request,
+        skillResult.skill._id,
+        { version: third },
+      );
+      if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
     const effectiveLatestVersionId =
       skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
@@ -2280,6 +2336,17 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     }
 
     if (!version || !isSkillVersionForSkill(version, result.skill._id)) {
+      // A tag miss (e.g. "latest" not yet projected during staged
+      // finalization) is just as likely to be a stuck pending version as an
+      // explicit version miss (#3349). Fall back to "most recent pending
+      // version" when there is no explicit version param to look up by name.
+      const pendingState = await describeOwnerVisibleSkillVersionState(
+        ctx,
+        request,
+        result.skill._id,
+        versionParam ? { version: versionParam } : {},
+      );
+      if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
