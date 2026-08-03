@@ -13383,6 +13383,88 @@ export const getPendingVersionPublishArgsInternal = internalQuery({
   },
 });
 
+// Context for the #3349 orphaned-pending-version repair path (see
+// convex/maintenance.ts). Self-contained: everything the repair needs to
+// re-run finalization lives on the skillVersion's own `pendingPublication`
+// snapshot, so this never has to trust a possibly-stuck publishAttempts row.
+export const getPendingSkillVersionRepairContextInternal = internalQuery({
+  args: { versionId: v.id("skillVersions") },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version) return null;
+    const skill = await ctx.db.get(version.skillId);
+    if (!skill) return null;
+    const pendingPublication =
+      version.pendingPublication &&
+      typeof version.pendingPublication === "object" &&
+      !Array.isArray(version.pendingPublication)
+        ? (version.pendingPublication as { skillInsertArgs?: unknown })
+        : null;
+    return {
+      skillId: skill._id,
+      slug: skill.slug,
+      version: version.version,
+      displayName: skill.displayName,
+      publicationStatus: version.publicationStatus ?? ("published" as const),
+      softDeletedAt: version.softDeletedAt ?? null,
+      skillInsertArgs: pendingPublication?.skillInsertArgs ?? null,
+      publishAttemptId: version.publishAttemptId ?? null,
+    };
+  },
+});
+
+// Owner-visible read-path fallback (see describeOwnerVisibleSkillVersionState
+// in httpApiV1/skillsV1.ts): when a skill has no published version yet
+// because its only version is stuck pending, report that instead of a bare
+// 404 to the authenticated owner. Bounded to the most recent 50 versions to
+// keep this owner-triggered read cheap; a pending version older than that
+// window still falls through to a bare 404 here, but the #3349 sweep in
+// maintenance.ts finds and repairs it regardless of age via full-table
+// pagination, so this bound only affects diagnostic message quality, not
+// actual repair coverage.
+const OWNER_VISIBLE_PENDING_LOOKUP_LIMIT = 50;
+export const getLatestPendingSkillVersionInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args) => {
+    const candidates = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(OWNER_VISIBLE_PENDING_LOOKUP_LIMIT);
+    return candidates.find((version) => version.publicationStatus === "pending") ?? null;
+  },
+});
+
+const ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS = 60 * 60 * 1000;
+
+// Batch scan for the #3349 repair sweep (convex/maintenance.ts). Paginates
+// the active skillVersions table rather than adding a publicationStatus
+// index: orphaned pending versions are rare relative to total versions, and
+// this is an operator-triggered maintenance sweep, not a hot path.
+export const getOrphanedPendingSkillVersionCandidatesPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.min(Math.max(args.batchSize ?? 50, 1), 200);
+    const cutoff = Date.now() - ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    const items = page
+      .filter((version) => version.publicationStatus === "pending" && version.createdAt < cutoff)
+      .map((version) => ({ versionId: version._id, skillId: version.skillId }));
+
+    return { items, scanned: page.length, cursor: continueCursor, isDone };
+  },
+});
+
 export const discardPendingPublicationInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
