@@ -52,6 +52,65 @@ jobs:
 
 Use `dry_run: true` to preview new and changed skills without publishing.
 
+### Skill catalog metadata
+
+Categories place a skill in the category filters on the ClawHub skills browse
+page. Topics become the filter chips offered inside a selected category. Set both
+when you publish:
+
+```bash
+clawhub skill publish ./my-skill \
+  --categories development,operations \
+  --topics "git,worktree,cleanup"
+```
+
+Both flags take comma-separated values. Categories must be slugs from this list,
+matched exactly, so `Development` is rejected. Topics are free-form labels;
+ClawHub stores what you pass and displays the normalized form, so `Git Worktree`
+appears as `#git-worktree`.
+
+| Slug            | Description                                                               |
+| --------------- | ------------------------------------------------------------------------- |
+| `integrations`  | Connect services, fetch data, reconcile records, and operate APIs.        |
+| `automation`    | Build repeatable processes, scheduled jobs, pipelines, and orchestration. |
+| `research`      | Search, browse, scrape, summarize, monitor, and extract web information.  |
+| `development`   | Inspect, edit, test, build, debug, and operate codebases.                 |
+| `productivity`  | Manage tasks, calendars, email, meetings, projects, and business work.    |
+| `communication` | Message, publish, and operate social or communication services.           |
+| `creative`      | Create and edit images, video, audio, music, design, and writing.         |
+| `knowledge`     | Work with documents, notes, knowledge bases, teaching, and learning.      |
+| `agents`        | Change how an agent plans, reflects, learns, remembers, or collaborates.  |
+| `operations`    | Inspect, monitor, deploy, and operate local systems or infrastructure.    |
+| `security`      | Audit, scan, authenticate, and protect systems or data.                   |
+| `finance`       | Work with payments, budgets, banking, shopping, markets, and commerce.    |
+| `lifestyle`     | Travel, health, fitness, cooking, sports, home, and daily-life utilities. |
+| `other`         | Skills that do not yet fit another browse category.                       |
+
+Rules ClawHub applies to both fields:
+
+- A skill can carry at most 3 categories and at most 5 topics.
+- An unknown category slug fails the publish. `--dry-run` does not check slugs;
+  the registry validates them when the publish runs.
+- `other` is dropped when it is passed alongside a specific category.
+- Each topic is at most 48 characters.
+- These topic names are reserved by ClawHub and are rejected: `approved`,
+  `audited`, `certified`, `clawhub`, `community`, `curated`, `endorsed`,
+  `featured`, `official`, `officials`, `openclaw`, `recommended`, `staff-pick`,
+  `trusted`, `trusted-publisher`, `verified`. The check runs on the normalized
+  form, so `Official` and `staff pick` are rejected too.
+- A skill first published without `--categories` is stored as `other`, so it only
+  appears under the Other category.
+- On a later publish, omitting `--categories` or `--topics` keeps the values
+  already stored. Pass the flag again to change them. Passing an empty value
+  clears the field: `--categories ""` returns the skill to `other`, and
+  `--topics ""` removes its topics.
+- Passing either flag publishes even when the files have not changed, so fixing
+  metadata this way creates a new patch version.
+
+Skill owners can also edit categories and topics from the skill's settings page
+on ClawHub. That is the quickest fix for a skill that was already published into
+`other`.
+
 ## Plugins
 
 Plugins use npm-style package names. Scoped package names include the owner in

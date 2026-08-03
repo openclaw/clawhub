@@ -192,6 +192,12 @@ Stores your API token + cached registry URL.
   actor has publisher access.
 - `--migrate-owner` moves an existing skill to `--owner` while publishing a new
   version. Requires admin/owner access on both publishers.
+- `--categories <slugs>` and `--topics <topics>` take comma-separated values and
+  set where the skill appears in browse filters. A skill first published without
+  `--categories` is stored as `other`; a later publish that omits the flag keeps
+  whatever is already stored. Valid category slugs, the limits, and the reserved
+  topic names are listed in
+  [Skill catalog metadata](./publishing.md#skill-catalog-metadata).
 - Owner and review behavior is explained in `docs/publishing.md`.
 - Publishing a skill means it is released under `MIT-0` on ClawHub.
 - Published skills are free to use, modify, and redistribute without attribution.
@@ -233,6 +239,9 @@ Set `dry_run: true` to preview without a token. Real publishes require the
   actor has publisher access.
 - `sync` is one-way publish only. It does not install, update, download, or
   report install/download telemetry.
+- `sync` has no `--categories` or `--topics`. Skills first published through
+  `sync` are stored as `other` until someone sets
+  [skill catalog metadata](./publishing.md#skill-catalog-metadata) on them.
 
 ```bash
 clawhub sync --all --dry-run
