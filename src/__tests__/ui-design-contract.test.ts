@@ -19,8 +19,7 @@ function cssRule(css: string, selector: string) {
 function cssMediaContaining(css: string, query: string, required: readonly string[]) {
   let start = css.indexOf(`@media ${query}`);
   while (start >= 0) {
-    const nextMedia = css.indexOf("@media ", start + 1);
-    const block = css.slice(start, nextMedia === -1 ? undefined : nextMedia);
+    const block = balancedCssBlock(css, start, `@media ${query}`);
     if (required.every((snippet) => block.includes(snippet))) return block;
     start = css.indexOf(`@media ${query}`, start + 1);
   }
@@ -34,6 +33,22 @@ function cssBlock(css: string, selector: string) {
   const end = css.indexOf("\n}", start);
   expect(end, `Unclosed CSS block for ${selector}`).toBeGreaterThan(start);
   return css.slice(start, end + 2);
+}
+
+function balancedCssBlock(css: string, start: number, label: string) {
+  const open = css.indexOf("{", start);
+  expect(open, `Missing opening brace for ${label}`).toBeGreaterThanOrEqual(0);
+
+  let depth = 0;
+  for (let index = open; index < css.length; index += 1) {
+    if (css[index] === "{") depth += 1;
+    if (css[index] !== "}") continue;
+
+    depth -= 1;
+    if (depth === 0) return css.slice(start, index + 1);
+  }
+
+  throw new Error(`Unclosed CSS block for ${label}`);
 }
 
 function tokenValue(css: string, selector: string, token: string) {
@@ -386,13 +401,15 @@ describe("restored UI design contract", () => {
   });
 
   it("keeps the mobile app-category scroller within the page width", () => {
-    const css = styles();
-
-    cssMediaContaining(css, "(max-width: 760px)", [
-      ".home-v2-apps-categories {\n    width: 100%;",
-      "min-width: 0;",
-      "overflow-x: auto;",
+    const mobileBlock = cssMediaContaining(styles(), "(max-width: 760px)", [
+      ".home-v2-apps-categories {",
     ]);
+    const scroller = mobileBlock.match(/\.home-v2-apps-categories \{([^}]*)\}/)?.[1];
+
+    expect(scroller, "Missing .home-v2-apps-categories rule").toBeTruthy();
+    expect(scroller).toMatch(/width:\s*100%/);
+    expect(scroller).toMatch(/min-width:\s*0/);
+    expect(scroller).toMatch(/overflow-x:\s*auto/);
   });
 
   it("requires the restored footer columns and mobile section toggles", () => {
