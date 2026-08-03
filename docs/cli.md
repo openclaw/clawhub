@@ -221,6 +221,9 @@ same automatic patch-version behavior.
 Set `dry_run: true` to preview without a token. Real publishes require the
 `clawhub_token` secret.
 
+The workflow has no `categories` or `topics` input, so skills first published
+through it are stored as `other`, the same as `sync`.
+
 ### `sync`
 
 - Scans the current workdir, the configured skills directory, and any
@@ -660,6 +663,12 @@ clawhub publisher create opik --display-name "Opik"
   release is published or reaches a terminal failure state.
 - `--wait-timeout <seconds>` sets the `--wait` deadline (default: 1800).
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
+- `--categories <slugs>` and `--topics <topics>` behave as they do for
+  `skill publish`, but categories are matched against the plugin list, not the
+  skill one: `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
+  `tools`, `runtime`, `gateway`, `security`, `other`. The topic rules in
+  [Skill catalog metadata](./publishing.md#skill-catalog-metadata) — limits,
+  reserved names, republish behavior — are shared.
 - Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.

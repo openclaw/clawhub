@@ -34,24 +34,6 @@ the authenticated user. Publishing skips unchanged content. A new skill starts
 at `1.0.0`, and later changes automatically publish the next patch version. Pass
 `--version` only when you need an explicit version.
 
-For catalog repos, use ClawHub's reusable
-[`skill-publish.yml` workflow](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml).
-It calls `skill publish` for each immediate skill folder under `root` (default:
-`skills`), or only the folder supplied as `skill_path`.
-
-```yaml
-jobs:
-  publish:
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
-    with:
-      owner: <owner>
-      dry_run: false
-    secrets:
-      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
-```
-
-Use `dry_run: true` to preview new and changed skills without publishing.
-
 ### Skill catalog metadata
 
 Categories place a skill in the category filters on the ClawHub skills browse
@@ -91,8 +73,14 @@ Rules ClawHub applies to both fields:
 - A skill can carry at most 3 categories and at most 5 topics.
 - An unknown category slug fails the publish. `--dry-run` does not check slugs;
   the registry validates them when the publish runs.
-- `other` is dropped when it is passed alongside a specific category.
-- Each topic is at most 48 characters.
+- `other` is dropped when it is passed alongside a specific category. The
+  3-category limit is applied after that, so `other,development,operations`
+  stores two categories rather than failing.
+- Repeats are dropped rather than rejected, and they are matched after
+  normalization, so `git,Git` is one topic. Both limits count what is left after
+  that, not what you passed.
+- Each topic is at most 48 characters, and topics cannot contain invisible
+  formatting characters.
 - These topic names are reserved by ClawHub and are rejected: `approved`,
   `audited`, `certified`, `clawhub`, `community`, `curated`, `endorsed`,
   `featured`, `official`, `officials`, `openclaw`, `recommended`, `staff-pick`,
@@ -110,6 +98,32 @@ Rules ClawHub applies to both fields:
 Skill owners can also edit categories and topics from the skill's settings page
 on ClawHub. That is the quickest fix for a skill that was already published into
 `other`.
+
+### Publishing from a catalog repo
+
+For catalog repos, use ClawHub's reusable
+[`skill-publish.yml` workflow](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml).
+It calls `skill publish` for each immediate skill folder under `root` (default:
+`skills`), or only the folder supplied as `skill_path`.
+
+```yaml
+jobs:
+  publish:
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      owner: <owner>
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+```
+
+Use `dry_run: true` to preview new and changed skills without publishing.
+
+The workflow has no `categories` or `topics` input. It calls `skill publish`
+with `--owner` and `--tags` only, so skills first published through it are
+stored as `other`, the same as [`clawhub sync`](./cli.md#sync). Set catalog
+metadata on those skills from the skill's settings page, or publish once from
+the CLI with `--categories`.
 
 ## Plugins
 
