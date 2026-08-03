@@ -161,19 +161,30 @@ describe("run-skill-card-worker Codex skill setup", () => {
   it("keeps the neutral template close to NVIDIA's public card shape", async () => {
     const template = await readFile(neutralTemplatePath(), "utf8");
 
-    expect(template).toContain("## Description: <br>");
+    expect(template).toContain("## Description:");
     expect(template).toContain("## Publisher:");
-    expect(template).toContain("### License/Terms of Use: <br>");
+    expect(template).toContain("### License/Terms of Use:");
     expect(template).toContain("license_identifier is defined");
-    expect(template).toContain("## Use Case: <br>");
-    expect(template).toContain("### Deployment Geography for Use: <br>");
-    expect(template).toContain("## Known Risks and Mitigations: <br>");
-    expect(template).toContain("## Reference(s): <br>");
-    expect(template).toContain("## Skill Output: <br>");
-    expect(template).toContain("## Skill Version(s): <br>");
+    expect(template).toContain("## Use Case:");
+    expect(template).toContain("### Deployment Geography for Use:");
+    expect(template).toContain("## Known Risks and Mitigations:");
+    expect(template).toContain("## Reference(s):");
+    expect(template).toContain("## Skill Output:");
+    expect(template).toContain("## Skill Version(s):");
     expect(template).not.toContain("Third-Party Community Consideration");
     expect(template).not.toContain("Provenance");
     expect(template).not.toContain("For Release on NVIDIA Platforms Only");
+  });
+
+  // skill-card.md ships inside the installed skill bundle and is read as plain
+  // Markdown by agents, the Files tab, the CLI, and the HTTP API. NVIDIA's
+  // upstream template ends every content line with <br> because its cards
+  // render into HTML surfaces; keeping those tags leaked literal markup into
+  // every raw consumer, so the neutral template must stay <br>-free.
+  it("emits plain Markdown with no <br> line-break tags", async () => {
+    const template = await readFile(neutralTemplatePath(), "utf8");
+
+    expect(template).not.toMatch(/<br\s*\/?>/i);
   });
 
   it("rejects NVIDIA-only public-card boilerplate", () => {
