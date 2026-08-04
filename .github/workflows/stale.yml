@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Mark stale unassigned issues and pull requests
-        uses: actions/stale@v10
+        uses: actions/stale@v11
         with:
           repo-token: ${{ github.token }}
           days-before-issue-stale: 14
@@ -48,7 +48,7 @@ jobs:
             If this PR should be revived, reopen it with current context and a fresh validation plan.
 
       - name: Mark stale assigned issues
-        uses: actions/stale@v10
+        uses: actions/stale@v11
         with:
           repo-token: ${{ github.token }}
           days-before-issue-stale: 30
@@ -70,7 +70,7 @@ jobs:
           close-issue-reason: not_planned
 
       - name: Mark stale assigned pull requests
-        uses: actions/stale@v10
+        uses: actions/stale@v11
         with:
           repo-token: ${{ github.token }}
           days-before-issue-stale: -1
