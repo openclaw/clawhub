@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
 type Options = {
@@ -104,6 +104,25 @@ function readSource(path: string): Source | null {
   };
 }
 
+function describeUnavailableSource(path: string, names: readonly (".env.local" | ".convex")[]) {
+  const problems: string[] = [];
+
+  for (const name of names) {
+    const localPath = resolve(path, name);
+    if (existsSync(localPath)) continue;
+
+    try {
+      if (lstatSync(localPath).isSymbolicLink()) {
+        problems.push(`${name} is a broken symlink to ${readlinkSync(localPath)}`);
+      }
+    } catch {
+      // Missing local state is normal; dangling links require operator repair.
+    }
+  }
+
+  return problems.join("; ");
+}
+
 function readConvexConfig(convexPath: string) {
   const configPath = resolve(convexPath, "local/default/config.json");
   return existsSync(configPath) ? JSON.parse(readFileSync(configPath, "utf8")) : null;
@@ -200,8 +219,22 @@ export function findSource(options: Options, cwd = process.cwd()) {
 
   const rejected: string[] = [];
   for (const candidate of candidates) {
+    const unavailableEnv = describeUnavailableSource(candidate, [".env.local"]);
+    if (unavailableEnv) {
+      const unavailableConvex = describeUnavailableSource(candidate, [".convex"]);
+      const unavailable = [unavailableEnv, unavailableConvex].filter(Boolean).join("; ");
+      rejected.push(`${candidate}: ${unavailable}`);
+      continue;
+    }
     const source = readSource(candidate);
     if (!source) continue;
+    const unavailableConvex = source.env.CONVEX_DEPLOYMENT?.startsWith("local:")
+      ? describeUnavailableSource(candidate, [".convex"])
+      : "";
+    if (unavailableConvex) {
+      rejected.push(`${candidate}: ${unavailableConvex}`);
+      continue;
+    }
     const invalid = validateSource(source);
     if (!invalid) return source;
     rejected.push(`${candidate}: ${invalid}`);

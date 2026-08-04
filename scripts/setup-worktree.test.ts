@@ -6,6 +6,7 @@ import {
   mkdirSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -342,6 +343,71 @@ describe("setup-worktree", () => {
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
+  });
+
+  it("reports broken local-state symlinks in rejected worktree sources", () => {
+    withSourceAndCurrent((source, current) => {
+      symlinkSync("missing.env.local", join(source, ".env.local"));
+      symlinkSync("missing.convex", join(source, ".convex"));
+
+      expect(() =>
+        findSource(
+          {
+            force: false,
+            from: source,
+            quiet: true,
+          },
+          current,
+        ),
+      ).toThrow(
+        `Rejected sources:\n- ${source}: .env.local is a broken symlink to missing.env.local; .convex is a broken symlink to missing.convex`,
+      );
+    });
+  });
+
+  it("reports a broken Convex symlink when the source env remains readable", () => {
+    withSourceAndCurrent((source, current) => {
+      writeWorktree(source, "local-clawhub");
+      rmSync(join(source, ".convex"), { force: true, recursive: true });
+      symlinkSync("missing.convex", join(source, ".convex"));
+
+      expect(() =>
+        findSource(
+          {
+            force: false,
+            from: source,
+            quiet: true,
+          },
+          current,
+        ),
+      ).toThrow(`${source}: .convex is a broken symlink to missing.convex`);
+    });
+  });
+
+  it("accepts a remote source when only its unused Convex symlink is broken", () => {
+    withSourceAndCurrent((source, current) => {
+      writeWorktree(source, "remote-clawhub", {
+        env: {
+          CONVEX_DEPLOYMENT: "dev:remote-clawhub",
+          CONVEX_SITE_URL: null,
+          VITE_CONVEX_SITE_URL: null,
+          VITE_CONVEX_URL: "https://remote-clawhub.convex.cloud",
+        },
+      });
+      rmSync(join(source, ".convex"), { force: true, recursive: true });
+      symlinkSync("missing.convex", join(source, ".convex"));
+
+      expect(
+        findSource(
+          {
+            force: false,
+            from: source,
+            quiet: true,
+          },
+          current,
+        ).path,
+      ).toBe(source);
+    });
   });
 
   it("rejects local sources that point browser HTTP routes at the Convex function port", () => {
