@@ -1598,6 +1598,25 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
 }
 
+async function isOwnerVisibleSkillCaller(
+  ctx: ActionCtx,
+  skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
+  apiTokenUserId: Id<"users"> | null,
+): Promise<boolean> {
+  if (!apiTokenUserId) return false;
+  // Match canReadSkillVersionFiles / isDirectSkillOwner: personal skills have
+  // no ownerPublisherId; org/publisher-owned skills authorize via publisher scope.
+  if (!skill.ownerPublisherId) {
+    return skill.ownerUserId === apiTokenUserId;
+  }
+  return (await ctx.runQuery(internal.publishers.canAccessOwnerScopeInternal, {
+    publisherId: skill.ownerPublisherId,
+    userId: apiTokenUserId,
+    allowedPublisherRoles: ["publisher"],
+    legacyOwnerUserId: skill.ownerUserId,
+  })) as boolean;
+}
+
 async function describeOwnerVisibleSkillState(
   ctx: ActionCtx,
   request: Request,
@@ -1611,8 +1630,7 @@ async function describeOwnerVisibleSkillState(
   if (!skill) return null;
 
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
-  const isOwner = Boolean(apiTokenUserId && apiTokenUserId === skill.ownerUserId);
-  if (!isOwner) return null;
+  if (!(await isOwnerVisibleSkillCaller(ctx, skill, apiTokenUserId))) return null;
 
   if (skill.softDeletedAt) {
     return {
@@ -1672,8 +1690,7 @@ async function describeOwnerVisibleSkillVersionState(
   if (!skill) return null;
 
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
-  const isOwner = Boolean(apiTokenUserId && apiTokenUserId === skill.ownerUserId);
-  if (!isOwner) return null;
+  if (!(await isOwnerVisibleSkillCaller(ctx, skill, apiTokenUserId))) return null;
 
   const candidate = versionQuery.version
     ? ((await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
@@ -1686,6 +1703,21 @@ async function describeOwnerVisibleSkillVersionState(
   if (!candidate || candidate.softDeletedAt) return null;
 
   if (candidate.publicationStatus === "pending") {
+    // Cap-exhausted finalize leaves the version "pending" while the attempt
+    // row is terminal "failed" — "re-check shortly" would be wrong.
+    if (candidate.publishAttemptId) {
+      const attempt = (await ctx.runQuery(internal.publishAttempts.getPublishAttemptByIdInternal, {
+        attemptId: candidate.publishAttemptId,
+      })) as { status: string; finalizationLastError?: string | null } | null;
+      if (attempt?.status === "failed") {
+        return {
+          status: 409,
+          message: `Version ${candidate.version} is stuck pending after publication finalization failed (owner-only diagnostic)${
+            attempt.finalizationLastError ? `: ${attempt.finalizationLastError}` : ""
+          }. The version exists and blocks republish; an operator can repair it with maintenance:repairOrphanedPendingSkillVersion.`,
+        };
+      }
+    }
     return {
       status: 423,
       message: `Version ${candidate.version} is pending publication (owner-only diagnostic) and is not yet publicly visible. Re-check shortly, or inspect the publish attempt if this persists.`,
