@@ -17,6 +17,7 @@ export const ApiRoutes = {
     publishTokenMint: "/api/v1/publish/token/mint",
     publishAttempts: "/api/v1/publish/attempts",
     skills: "/api/v1/skills",
+    skillUploadUrl: "/api/v1/skills/-/upload-url",
     trending: "/api/v1/trending",
     skillsSh: "/api/v1/skills-sh",
     skillScans: "/api/v1/skills/-/scan",

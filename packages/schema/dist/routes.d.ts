@@ -17,6 +17,7 @@ export declare const ApiRoutes: {
     readonly publishTokenMint: "/api/v1/publish/token/mint";
     readonly publishAttempts: "/api/v1/publish/attempts";
     readonly skills: "/api/v1/skills";
+    readonly skillUploadUrl: "/api/v1/skills/-/upload-url";
     readonly trending: "/api/v1/trending";
     readonly skillsSh: "/api/v1/skills-sh";
     readonly skillScans: "/api/v1/skills/-/scan";

@@ -1,5 +1,6 @@
 import {
   ApiRoutes,
+  ApiV1SkillUploadUrlRequestSchema,
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
   ApiV1SkillHardDeleteRequestSchema,
@@ -94,6 +95,30 @@ const MAX_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_EXPORT_PAGE_LIMIT = 250;
 const MAX_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 const MAX_SECURITY_VERDICT_ITEMS = 100;
+
+async function readRequestBodyWithinLimit(request: Request, maxBytes: number) {
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel("Upload exceeds its declared size").catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
 
 type ListSkillsResult = {
   items: Array<{
@@ -2625,6 +2650,13 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
+      if (payload.files.some((file) => !file.uploadTicket)) {
+        return text(
+          "Every directly uploaded skill file requires an upload ticket",
+          400,
+          rate.headers,
+        );
+      }
       const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
     }
@@ -2651,6 +2683,13 @@ async function publishSkillPayloadForApiUser(
   payload: ReturnType<typeof parsePublishBody>,
 ) {
   const { ownerHandle, sourceOwnerHandle, migrateOwner, ...publishPayload } = payload;
+  const uploadTickets = publishPayload.files.flatMap((file) =>
+    file.uploadTicket ? [file.uploadTicket] : [],
+  );
+  if (uploadTickets.length > 0 && uploadTickets.length !== publishPayload.files.length) {
+    throw new Error("Every directly uploaded skill file requires an upload ticket");
+  }
+  const files = publishPayload.files.map(({ uploadTicket: _uploadTicket, ...file }) => file);
   const target = ownerHandle
     ? ((await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
         actorUserId: userId,
@@ -2667,11 +2706,17 @@ async function publishSkillPayloadForApiUser(
         })) as { publisherId: Id<"publishers"> })
       : null;
   const shouldMigrateOwner = Boolean(target && source);
-  return await publishVersionForUser(ctx, userId, publishPayload, {
-    ...(target ? { ownerPublisherId: target.publisherId } : {}),
-    ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
-    ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
-  });
+  return await publishVersionForUser(
+    ctx,
+    userId,
+    { ...publishPayload, files },
+    {
+      ...(target ? { ownerPublisherId: target.publisherId } : {}),
+      ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
+      ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
+      ...(uploadTickets.length > 0 ? { skillPublishUploadTickets: uploadTickets } : {}),
+    },
+  );
 }
 
 function hasAcceptedLegacyLicenseTerms(acceptLicenseTerms: boolean | undefined) {
@@ -2941,6 +2986,82 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/skills/");
   const action = segments[1] ?? "";
   const slug = segments[0]?.trim().toLowerCase() ?? "";
+
+  if (segments.length === 2 && slug === "-" && action === "upload-url") {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const expected = parseArk(
+        ApiV1SkillUploadUrlRequestSchema,
+        await request.json(),
+        "Skill upload request",
+      );
+      const { uploadTicket } = await ctx.runMutation(
+        internal.skillPublishUploads.createSkillPublishUploadInternal,
+        {
+          userId: auth.userId,
+          path: expected.path,
+          size: expected.size,
+          sha256: expected.sha256,
+          ...(expected.contentType ? { contentType: expected.contentType } : {}),
+        },
+      );
+      // The request reaching this Convex action has the direct Convex origin even
+      // when clawhub.ai forwarded it. Keep the file body off the Vercel request path.
+      const uploadUrl = new URL(
+        `/api/v1/skills/-/upload/${encodeURIComponent(uploadTicket)}`,
+        request.url,
+      ).toString();
+      return json({ uploadUrl, uploadTicket }, 200, rate.headers);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid skill upload request";
+      return text(message, 400, rate.headers);
+    }
+  }
+
+  if (segments.length === 3 && slug === "-" && action === "upload" && segments[2]) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const uploadTicket = segments[2] as Id<"skillPublishUploadTickets">;
+    let storageId: Id<"_storage"> | undefined;
+    try {
+      const expected = await ctx.runQuery(
+        internal.skillPublishUploads.getSkillPublishUploadForUserInternal,
+        { userId: auth.userId, uploadTicket },
+      );
+      const declaredLength = Number(request.headers.get("content-length"));
+      if (Number.isFinite(declaredLength) && declaredLength > expected.size) {
+        return text("Uploaded file exceeds its declared size", 413, rate.headers);
+      }
+      const bytes = await readRequestBodyWithinLimit(request, expected.size);
+      if (!bytes) {
+        return text("Uploaded file exceeds its declared size", 413, rate.headers);
+      }
+      if (bytes.byteLength !== expected.size) {
+        return text("Uploaded file size does not match its upload ticket", 400, rate.headers);
+      }
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const sha256 = Array.from(new Uint8Array(digest), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
+      if (sha256 !== expected.sha256) {
+        return text("Uploaded file SHA-256 does not match its upload ticket", 400, rate.headers);
+      }
+      storageId = await ctx.storage.store(
+        new Blob([bytes], expected.contentType ? { type: expected.contentType } : undefined),
+      );
+      await ctx.runMutation(internal.skillPublishUploads.attachSkillPublishUploadInternal, {
+        userId: auth.userId,
+        uploadTicket,
+        storageId,
+      });
+      return json({ storageId }, 200, rate.headers);
+    } catch (error) {
+      if (storageId) await ctx.storage.delete(storageId).catch(() => undefined);
+      const message = error instanceof Error ? error.message : "Skill upload failed";
+      return text(message, 400, rate.headers);
+    }
+  }
 
   if (segments.length === 3 && segments[1] === "tags" && segments[2]) {
     if (!slug) return text("Slug required", 400, rate.headers);

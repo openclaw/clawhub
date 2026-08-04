@@ -109,3 +109,34 @@ export const pruneExpiredPublisherInvitesInternal = internalMutation({
     return { deleted: stale.length, hasMore };
   },
 });
+
+export const pruneExpiredSkillPublishUploadsInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = normalizeRetentionBatchSize(args.batchSize);
+    const stale = await ctx.db
+      .query("skillPublishUploadTickets")
+      .withIndex("by_expires_at", (q) => q.lt("expiresAt", Date.now()))
+      .take(batchSize);
+
+    let deletedStorage = 0;
+    for (const ticket of stale) {
+      if (!ticket.usedAt && ticket.storageId) {
+        await ctx.storage.delete(ticket.storageId);
+        deletedStorage += 1;
+      }
+      await ctx.db.delete(ticket._id);
+    }
+
+    const hasMore = stale.length === batchSize;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.retention.pruneExpiredSkillPublishUploadsInternal, {
+        batchSize,
+      });
+    }
+
+    return { deletedTickets: stale.length, deletedStorage, hasMore };
+  },
+});

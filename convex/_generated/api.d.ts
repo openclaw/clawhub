@@ -192,6 +192,7 @@ import type * as skillPresentationAssets from "../skillPresentationAssets.js";
 import type * as skillPresentationAssetsHttp from "../skillPresentationAssetsHttp.js";
 import type * as skillPresentationBackfill from "../skillPresentationBackfill.js";
 import type * as skillPresentationImageNode from "../skillPresentationImageNode.js";
+import type * as skillPublishUploads from "../skillPublishUploads.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
 import type * as skills from "../skills.js";
@@ -401,6 +402,7 @@ declare const fullApi: ApiFromModules<{
   skillPresentationAssetsHttp: typeof skillPresentationAssetsHttp;
   skillPresentationBackfill: typeof skillPresentationBackfill;
   skillPresentationImageNode: typeof skillPresentationImageNode;
+  skillPublishUploads: typeof skillPublishUploads;
   skillStatEvents: typeof skillStatEvents;
   skillTransfers: typeof skillTransfers;
   skills: typeof skills;

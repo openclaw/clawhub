@@ -173,6 +173,7 @@ import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
+import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
 const MAX_POINTERLESS_VERSION_SURVIVOR_SCAN = 100;
@@ -12454,6 +12455,7 @@ function stripUndefinedForStoredPublication(value: unknown): unknown {
 export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
+    skillPublishUploadTickets: v.optional(v.array(v.id("skillPublishUploadTickets"))),
     ownerPublisherId: v.optional(v.id("publishers")),
     sourceOwnerPublisherId: v.optional(v.id("publishers")),
     // Explicit opt-in to owner migration. When an existing skill row already has
@@ -12587,6 +12589,13 @@ export const insertVersion = internalMutation({
     if (!normalizedSlug) throw new ConvexError("Slug is required.");
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+    if (args.skillPublishUploadTickets) {
+      await consumeSkillPublishUploads(ctx, {
+        userId,
+        uploadTickets: args.skillPublishUploadTickets,
+        files: args.files,
+      });
+    }
     const personalPublisher = await ensurePersonalPublisherForUser(ctx, user, {
       actorUserId: userId,
       source: "skill.publish",

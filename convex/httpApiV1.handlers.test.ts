@@ -7228,6 +7228,124 @@ describe("httpApiV1 handlers", () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(fileBytes);
   });
 
+  it("creates a direct skill upload URL for an authenticated API user", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(okRate())
+      .mockResolvedValueOnce({ uploadTicket: "skillPublishUploadTickets:1" });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/upload-url", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer clh_test",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          path: "SKILL.md",
+          size: 5,
+          sha256: "a".repeat(64),
+          contentType: "text/markdown",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      uploadUrl: "https://example.com/api/v1/skills/-/upload/skillPublishUploadTickets%3A1",
+      uploadTicket: "skillPublishUploadTickets:1",
+    });
+  });
+
+  it("stores a bounded direct skill upload and attaches it to its ticket", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const bytes = new TextEncoder().encode("hello");
+    const runQuery = vi.fn().mockResolvedValue({
+      path: "SKILL.md",
+      size: bytes.byteLength,
+      sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      contentType: "text/markdown",
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const store = vi.fn().mockResolvedValue("storage:1");
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { store, delete: vi.fn() } }),
+      new Request(
+        "https://example.convex.site/api/v1/skills/-/upload/skillPublishUploadTickets%3A1",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "Content-Type": "text/markdown",
+          },
+          body: bytes,
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ storageId: "storage:1" });
+    expect(store).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.skillPublishUploads.attachSkillPublishUploadInternal,
+      {
+        userId: "users:1",
+        uploadTicket: "skillPublishUploadTickets:1",
+        storageId: "storage:1",
+      },
+    );
+  });
+
+  it("stops reading a direct skill upload once it exceeds the ticket size", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue({
+      path: "SKILL.md",
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+    });
+    const store = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.enqueue(new Uint8Array([4, 5, 6]));
+        controller.close();
+      },
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation: vi.fn().mockResolvedValue(okRate()),
+        storage: { store, delete: vi.fn() },
+      }),
+      new Request(
+        "https://example.convex.site/api/v1/skills/-/upload/skillPublishUploadTickets%3A1",
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body,
+          duplex: "half",
+        } as RequestInit & { duplex: "half" },
+      ),
+    );
+
+    expect(response.status).toBe(413);
+    expect(store).not.toHaveBeenCalled();
+  });
+
   it("publish json succeeds", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
@@ -7254,6 +7372,7 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:1",
           sha256: "abc",
           contentType: "text/plain",
+          uploadTicket: "skillPublishUploadTickets:1",
         },
       ],
     });
@@ -7312,6 +7431,7 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:1",
           sha256: "abc",
           contentType: "text/plain",
+          uploadTicket: "skillPublishUploadTickets:1",
         },
       ],
     });
@@ -7376,6 +7496,7 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:1",
           sha256: "abc",
           contentType: "text/plain",
+          uploadTicket: "skillPublishUploadTickets:1",
         },
       ],
     });
@@ -7394,7 +7515,9 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.objectContaining({ source }),
-      {},
+      expect.objectContaining({
+        skillPublishUploadTickets: ["skillPublishUploadTickets:1"],
+      }),
     );
     expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
       "sourceProvenance",
@@ -7431,6 +7554,7 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:1",
           sha256: "abc",
           contentType: "text/plain",
+          uploadTicket: "skillPublishUploadTickets:1",
         },
       ],
     });
@@ -7455,7 +7579,10 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw" },
+      expect.objectContaining({
+        ownerPublisherId: "publishers:openclaw",
+        skillPublishUploadTickets: ["skillPublishUploadTickets:1"],
+      }),
     );
   });
 
@@ -7490,6 +7617,7 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:1",
           sha256: "abc",
           contentType: "text/plain",
+          uploadTicket: "skillPublishUploadTickets:1",
         },
       ],
     });
@@ -7506,7 +7634,10 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw" },
+      expect.objectContaining({
+        ownerPublisherId: "publishers:openclaw",
+        skillPublishUploadTickets: ["skillPublishUploadTickets:1"],
+      }),
     );
   });
 
@@ -7533,6 +7664,7 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:1",
           sha256: "abc",
           contentType: "text/plain",
+          uploadTicket: "skillPublishUploadTickets:1",
         },
       ],
     });
@@ -7568,6 +7700,7 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:1",
           sha256: "abc",
           contentType: "text/plain",
+          uploadTicket: "skillPublishUploadTickets:1",
         },
       ],
     });

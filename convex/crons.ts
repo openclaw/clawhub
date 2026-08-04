@@ -246,6 +246,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "skill-publish-upload-retention-prune",
+    { hours: 1 },
+    internal.retention.pruneExpiredSkillPublishUploadsInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
     "http-rate-limit-keys-prune",
     { hours: 1 },
     internal.rateLimits.pruneHttpRateLimitKeysInternal,

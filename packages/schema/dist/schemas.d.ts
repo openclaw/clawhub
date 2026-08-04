@@ -55,12 +55,23 @@ export declare const ApiCliUploadUrlResponseSchema: import("arktype/internal/var
 export declare const ApiUploadFileResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     storageId: string;
 }, {}>;
+export declare const ApiV1SkillUploadUrlRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    path: string;
+    size: number;
+    sha256: string;
+    contentType?: string | undefined;
+}, {}>;
+export declare const ApiV1SkillUploadUrlResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    uploadUrl: string;
+    uploadTicket: string;
+}, {}>;
 export declare const CliPublishFileSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     path: string;
     size: number;
     storageId: string;
     sha256: string;
     contentType?: string | undefined;
+    uploadTicket?: string | undefined;
 }, {}>;
 export type CliPublishFile = (typeof CliPublishFileSchema)[inferred];
 export declare const PublishSourceSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -104,6 +115,7 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
         storageId: string;
         sha256: string;
         contentType?: string | undefined;
+        uploadTicket?: string | undefined;
     }[];
 }, {}>;
 export type CliPublishRequest = (typeof CliPublishRequestSchema)[inferred];

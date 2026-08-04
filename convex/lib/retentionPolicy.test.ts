@@ -45,6 +45,12 @@ describe("retention policies", () => {
       expirationIndex: "by_expires_at",
       prune: "retention.pruneExpiredPublisherInvitesInternal",
     });
+    expect(getRetentionPolicy("skillPublishUploadTickets")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "retention.pruneExpiredSkillPublishUploadsInternal",
+    });
   });
 
   it("documents package daily stats as durable analytics", () => {

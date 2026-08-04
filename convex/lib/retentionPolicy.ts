@@ -105,6 +105,15 @@ export const RETENTION_POLICIES = {
       retention: "Organization logo upload ticket TTL.",
     },
   ),
+  skillPublishUploadTickets: ephemeral(
+    "Direct skill file upload tickets are deleted after their short staging window.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "retention.pruneExpiredSkillPublishUploadsInternal",
+      retention: "1 hour.",
+    },
+  ),
   officialPublishers: permanent("Manual official publisher assignments."),
   githubSkillSources: permanent("Tracked GitHub source configuration."),
   githubSkillContents: derived("Cached GitHub source content snapshots.", "githubSkillSources"),

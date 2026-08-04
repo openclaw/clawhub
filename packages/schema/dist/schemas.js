@@ -53,12 +53,23 @@ export const ApiCliUploadUrlResponseSchema = type({
 export const ApiUploadFileResponseSchema = type({
     storageId: "string",
 });
+export const ApiV1SkillUploadUrlRequestSchema = type({
+    path: "string",
+    size: "number",
+    sha256: "string",
+    contentType: "string?",
+});
+export const ApiV1SkillUploadUrlResponseSchema = type({
+    uploadUrl: "string",
+    uploadTicket: "string",
+});
 export const CliPublishFileSchema = type({
     path: "string",
     size: "number",
     storageId: "string",
     sha256: "string",
     contentType: "string?",
+    uploadTicket: "string?",
 });
 export const PublishSourceSchema = type({
     kind: '"github"',
