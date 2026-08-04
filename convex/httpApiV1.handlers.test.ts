@@ -4729,6 +4729,119 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toContain("blocked during publication");
   });
 
+  it("surfaces owner-visible stuck-pending when finalize attempt terminally failed (#3349)", async () => {
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+          publishAttemptId: "publishAttempts:failed",
+        };
+      }
+      if ("attemptId" in args) {
+        return {
+          status: "failed",
+          finalizationLastError: "finalize timed out",
+          finalizationFailureCount: 5,
+        };
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain("stuck pending after publication finalization failed");
+    expect(body).toContain("finalize timed out");
+  });
+
+  it("surfaces owner-visible pending status for org publisher owners (#3349)", async () => {
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:legacy-owner",
+            ownerPublisherId: "publishers:org",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("publisherId" in args && "userId" in args) {
+        expect(args.publisherId).toBe("publishers:org");
+        expect(args.userId).toBe("users:org-admin");
+        return true;
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      if ("skillId" in args) {
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          ownerUserId: "users:legacy-owner",
+          ownerPublisherId: "publishers:org",
+        };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:org-admin" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending publication");
+  });
+
   it("does not leak owner-visible pending status to non-owner callers (#3349)", async () => {
     let versionLookupCount = 0;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {

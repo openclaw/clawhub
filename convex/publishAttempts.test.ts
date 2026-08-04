@@ -1947,6 +1947,43 @@ describe("publishAttempts", () => {
     ).resolves.toBeNull();
   });
 
+  it("still protects pending_checks between scanner retries with nonzero checkFailureCount (#3349)", async () => {
+    const now = Date.now();
+    // Scanner released the claim and scheduled a retry; checkFailureCount is
+    // nonzero but the attempt is still actively pending_checks within grace.
+    const betweenScannerRetries = {
+      _id: "publishAttempts:scanner-retry",
+      skillId: "skills:demo",
+      status: "pending_checks",
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      checkFailureCount: 2,
+      createdAt: now - 5 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [betweenScannerRetries]),
+            })),
+          })),
+        })),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:scanner-retry",
+      status: "pending_checks",
+    });
+  });
+
   it("still protects a genuinely fresh unclaimed attempt with zero failures", async () => {
     const now = Date.now();
     const fresh = {
