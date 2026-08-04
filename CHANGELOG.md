@@ -21,6 +21,12 @@
 - CLI: accept npm 12's package-keyed `npm pack --json` output when building ClawPacks while retaining compatibility with earlier npm array output.
 - Web/API: preserve JSON, SSR, and OG responses through the Convex proxy after the H3 response-wrapper update.
 
+## 0.23.3 - 2026-08-03
+
+### Fixes
+
+- CLI/API: stage skill files directly in Convex storage before publishing metadata, so bundles within the documented 50MB total limit no longer hit Vercel's smaller request-body limit.
+
 ## 0.23.2 - 2026-08-03
 
 ### Changes

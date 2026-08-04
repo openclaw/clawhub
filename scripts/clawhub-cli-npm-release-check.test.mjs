@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 describe("clawhub CLI npm release metadata check", () => {
-  const releaseTag = "v0.23.2";
+  const releaseTag = "v0.23.3";
 
   function runCheck(args) {
     const env = { ...process.env };
