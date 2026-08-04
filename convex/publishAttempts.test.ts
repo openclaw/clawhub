@@ -8,6 +8,7 @@ import {
   completePendingPublishAttemptChecksInternal,
   createPackagePublishAttemptInternal,
   createSkillPublishAttemptInternal,
+  findActiveSkillPublishAttemptByIdInternal,
   findActiveSkillPublishAttemptInternal,
   recordSkillPublishAttemptFinalizedInternal,
   releasePackagePublishAttemptFinalizationClaimInternal,
@@ -61,6 +62,11 @@ const createPackagePublishAttemptHandler = (
 )._handler;
 const findActiveSkillPublishAttemptHandler = (
   findActiveSkillPublishAttemptInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const findActiveSkillPublishAttemptByIdHandler = (
+  findActiveSkillPublishAttemptByIdInternal as unknown as {
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
@@ -1277,6 +1283,57 @@ describe("publishAttempts", () => {
     );
   });
 
+  it("keeps retrying package finalization past the skill cap since there is no package repair path yet (#3401)", async () => {
+    // Finding 1: releaseFinalizationClaimPatch used to terminalize at
+    // MAX_CONSECUTIVE_FINALIZATION_FAILURES for both kinds, but a
+    // terminalized package attempt has no repair sweep (unlike
+    // repairOrphanedPendingSkillVersion for skills), so it would permanently
+    // orphan the pending package release. Package finalization must stay
+    // retriable past the skill cap until a package repair path exists.
+    const attemptId = "publishAttempts:package-looping";
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: attemptId,
+          kind: "package",
+          status: "finalizing",
+          packageInsertArgs: { name: "@demo/plugin", version: "1.0.0" },
+          packageReleaseId: "packageReleases:demo",
+          finalizationClaimId: "finalize:claim",
+          finalizationFailureCount: 4,
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    // The 5th consecutive transient failure would terminalize a skill
+    // attempt (see the cap test above), but a package attempt must stay
+    // "ready_to_finalize" instead of "failed".
+    await expect(
+      releasePackageFinalizationHandler(ctx, {
+        attemptId,
+        claimId: "finalize:claim",
+        error: "Rate limit exceeded",
+      }),
+    ).resolves.toEqual({ attemptId, status: "ready_to_finalize" });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      attemptId,
+      expect.objectContaining({
+        status: "ready_to_finalize",
+        finalizationClaimId: undefined,
+        finalizationLastError: "Rate limit exceeded",
+        finalizationFailureCount: 5,
+      }),
+    );
+    expect(ctx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
+  });
+
   it("terminalizes deleted package releases instead of retrying finalization", async () => {
     const ctx = {
       db: {
@@ -1911,27 +1968,73 @@ describe("publishAttempts", () => {
     ).resolves.toBeNull();
   });
 
-  it("treats a recently-created attempt whose finalizer already died as abandoned, not freshly-dispatched (#3349)", async () => {
+  it("treats a below-cap finalization failure with recent activity as still active for dispatcher retry (#3401)", async () => {
     const now = Date.now();
-    // Created only 5 minutes ago (well inside the 30-minute unclaimed
-    // grace), but finalizationFailureCount is nonzero: a worker already
-    // claimed and dropped this attempt at least once, so it must not get
-    // the "nobody has touched it yet" protection.
-    const deadFinalizer = {
-      _id: "publishAttempts:dead-finalizer",
+    // Created 5 minutes ago with finalizationFailureCount 2 (below
+    // MAX_CONSECUTIVE_FINALIZATION_FAILURES) and updatedAt only 1 minute
+    // ago: releaseFinalizationClaimPatch intentionally handed this back to
+    // "ready_to_finalize" for the dispatcher to retry. A manual repair must
+    // not treat a nonzero failure count alone as abandonment while the
+    // attempt is still fresh relative to its last activity (#3401 finding
+    // 2) — the old behavior abandoned this immediately, racing the
+    // dispatcher's own retry.
+    const retryingFinalizer = {
+      _id: "publishAttempts:retrying-finalizer",
       skillId: "skills:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       finalizationFailureCount: 2,
       createdAt: now - 5 * 60_000,
+      updatedAt: now - 60_000,
     };
     const ctx = {
       db: {
         query: vi.fn(() => ({
           withIndex: vi.fn(() => ({
             order: vi.fn(() => ({
-              take: vi.fn(async () => [deadFinalizer]),
+              take: vi.fn(async () => [retryingFinalizer]),
+            })),
+          })),
+        })),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:retrying-finalizer",
+      status: "ready_to_finalize",
+    });
+  });
+
+  it("treats a finalization failure as abandoned once it goes stale past the retry window (#3401)", async () => {
+    const now = Date.now();
+    // Same nonzero finalizationFailureCount as the still-active case above,
+    // but updatedAt is well past ACTIVE_ATTEMPT_RETRYABLE_STALE_MS
+    // (2x FINALIZATION_CLAIM_LEASE_MS = 20 minutes): nothing has touched
+    // this attempt in 25 minutes despite it already failing once, so it is
+    // genuinely stuck and must not block manual repair.
+    const staleFinalizer = {
+      _id: "publishAttempts:stale-finalizer",
+      skillId: "skills:demo",
+      status: "ready_to_finalize",
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      finalizationFailureCount: 2,
+      createdAt: now - 30 * 60_000,
+      updatedAt: now - 25 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [staleFinalizer]),
             })),
           })),
         })),
@@ -2013,6 +2116,180 @@ describe("publishAttempts", () => {
         version: "1.0.0",
       }),
     ).resolves.toEqual({ attemptId: "publishAttempts:fresh", status: "ready_to_finalize" });
+  });
+
+  it("treats a zero-failure attempt as active when it recently transitioned status, even if created long ago (#3401)", async () => {
+    const now = Date.now();
+    // Created an hour ago (well past ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS from
+    // createdAt alone) but updatedAt is only 2 minutes ago: a long-running
+    // pending_checks phase just moved cleanly to ready_to_finalize with zero
+    // failures. Using createdAt alone here would wrongly call this abandoned
+    // while the dispatcher still actively owns it, racing manual repair
+    // against a live finalize attempt.
+    const recentlyTransitioned = {
+      _id: "publishAttempts:recently-transitioned",
+      skillId: "skills:demo",
+      status: "ready_to_finalize",
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+      updatedAt: now - 2 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [recentlyTransitioned]),
+            })),
+          })),
+        })),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:recently-transitioned",
+      status: "ready_to_finalize",
+    });
+  });
+
+  it("treats a zero-failure attempt as abandoned once both createdAt and updatedAt go stale", async () => {
+    const now = Date.now();
+    // Created an hour ago and last updated 45 minutes ago (past
+    // ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS from updatedAt too): genuinely
+    // abandoned, not merely old, so manual repair must still proceed.
+    const staleTransitioned = {
+      _id: "publishAttempts:stale-transitioned",
+      skillId: "skills:demo",
+      status: "ready_to_finalize",
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+      updatedAt: now - 45 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [staleTransitioned]),
+            })),
+          })),
+        })),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
+  it("returns the attempt when it is live and owned by the given skill", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:by-id",
+      kind: "skill",
+      skillId: "skills:demo",
+      status: "ready_to_finalize",
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:by-id",
+        skillId: "skills:demo",
+      }),
+    ).resolves.toEqual({ attemptId: "publishAttempts:by-id", status: "ready_to_finalize" });
+  });
+
+  it("returns null when the attempt belongs to a different skill", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:mismatched",
+      kind: "skill",
+      skillId: "skills:other",
+      status: "ready_to_finalize",
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:mismatched",
+        skillId: "skills:demo",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null when the attempt is already terminal", async () => {
+    const attempt = {
+      _id: "publishAttempts:terminal",
+      kind: "skill",
+      skillId: "skills:demo",
+      status: "failed",
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: Date.now() - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:terminal",
+        skillId: "skills:demo",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null when the attempt is non-terminal but stale (no live claim, past retry window)", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:stale",
+      kind: "skill",
+      skillId: "skills:demo",
+      status: "ready_to_finalize",
+      finalizationFailureCount: 3,
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+      updatedAt: now - 60 * 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:stale",
+        skillId: "skills:demo",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null when the attempt does not exist", async () => {
+    const ctx = { db: { get: vi.fn(async () => null) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:missing",
+        skillId: "skills:demo",
+      }),
+    ).resolves.toBeNull();
   });
 });
 

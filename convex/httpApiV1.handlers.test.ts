@@ -4842,6 +4842,66 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toContain("pending publication");
   });
 
+  // #3401 finding 4: a brand-new staged skill has no published version at
+  // all yet (hidden, moderationReason "pending.publication", no
+  // latestVersionId/tags), so the public api.skills.getBySlug lookup misses
+  // entirely (skillResult.skill is null), not just the specific version.
+  // The exact-version route must still fall back to the owner-only
+  // stuck-pending diagnostic instead of an immediate bare 404.
+  it("surfaces owner-visible pending status when the whole skill is still hidden pending first publish (#3349)", async () => {
+    let slugLookupCount = 0;
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        slugLookupCount += 1;
+        // First call is the public api.skills.getBySlug lookup, which
+        // misses because the skill is hidden pending its first publish.
+        if (slugLookupCount === 1) return null;
+        // Later calls are internal.skills.getSkillBySlugInternal, which can
+        // see the hidden skill regardless of public visibility.
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          softDeletedAt: undefined,
+          latestVersionId: undefined,
+          tags: {},
+          moderationStatus: "hidden",
+          moderationReason: "pending.publication",
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        // First such call is inside getUnavailableSkillVersionBlock, which
+        // misses because the skill has no latest/tagged version yet.
+        if (versionLookupCount === 1) return null;
+        // Second call is the owner-only diagnostic lookup inside
+        // describeOwnerVisibleSkillVersionState.
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending publication");
+  });
+
   it("does not leak owner-visible pending status to non-owner callers (#3349)", async () => {
     let versionLookupCount = 0;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {

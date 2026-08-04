@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
@@ -15,8 +15,20 @@ const MAX_CONSECUTIVE_FINALIZATION_FAILURES = 5;
 // How long a non-terminal attempt (pending_checks/ready_to_finalize/finalizing)
 // blocks a manual repair even with no live claim lease. Protects a
 // freshly-dispatched attempt from being raced by an operator repair before its
-// worker has had a chance to claim it.
+// worker has had a chance to claim it. Applies only to a never-touched
+// attempt (zero finalization/check failures): there is no failure-timestamp
+// signal yet, so this is a static grace period from creation.
 const ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS = 30 * 60 * 1000;
+// How long a non-terminal attempt that has already failed at least once
+// (finalizationFailureCount or checkFailureCount > 0) stays "live" relative
+// to its last recorded activity (updatedAt, falling back to createdAt).
+// Below MAX_CONSECUTIVE_FINALIZATION_FAILURES / MAX_CONSECUTIVE_SCANNER_FAILURES,
+// a failed attempt is intentionally handed back to the dispatcher
+// (ready_to_finalize / pending_checks) for retry (#3349), so a nonzero
+// failure count alone must not make it look abandoned. Grounded in twice the
+// finalization claim lease so at least one more claim-and-release cycle can
+// complete before a manual repair treats the attempt as dead.
+const ACTIVE_ATTEMPT_RETRYABLE_STALE_MS = FINALIZATION_CLAIM_LEASE_MS * 2;
 const ACTIVE_PUBLISH_ATTEMPT_STATUSES = [
   "pending_checks",
   "ready_to_finalize",
@@ -157,6 +169,7 @@ function terminalFinalizationFailurePatch(error: string | undefined, now: number
 }
 
 function releaseFinalizationClaimPatch(
+  kind: "skill" | "package",
   previousFinalizationFailureCount: number,
   error: string | undefined,
   now: number,
@@ -171,7 +184,13 @@ function releaseFinalizationClaimPatch(
   // permanently "pending" with no visible failure and no latest/index
   // projection update (#3349). Cap retries so the attempt surfaces as failed
   // instead of looping forever.
-  if (finalizationFailureCount >= MAX_CONSECUTIVE_FINALIZATION_FAILURES) {
+  //
+  // Package attempts have no equivalent repair path yet (no
+  // repairOrphanedPendingPackageRelease sweep), so terminalizing a package
+  // attempt at the cap would permanently orphan the pending package release
+  // with no way back. Keep package finalization retrying uncapped until a
+  // package repair path exists; only skill attempts terminalize.
+  if (kind === "skill" && finalizationFailureCount >= MAX_CONSECUTIVE_FINALIZATION_FAILURES) {
     return { ...terminalFinalizationFailurePatch(error, now), finalizationFailureCount };
   }
   return {
@@ -358,26 +377,35 @@ export const findExistingPublishAttemptForArtifactInternal = internalQuery({
 function isActiveAttemptLive(attempt: Doc<"publishAttempts">, now: number) {
   if ((attempt.finalizationClaimExpiresAt ?? 0) > now) return true;
   if ((attempt.checkClaimExpiresAt ?? 0) > now) return true;
-  // finalizationFailureCount survives claim release (unlike claimedAt/expiresAt).
-  // A nonzero count means a finalizer already claimed and dropped this attempt,
-  // so the unclaimed grace below should not apply — otherwise a dead finalizer
-  // can block repair for the rest of the 30-minute window even though nothing
-  // is still working it.
-  //
-  // Do NOT treat checkFailureCount the same way: scanner retries release the
-  // check claim between attempts (CHECK_RETRY_BACKOFF_MS), so a nonzero
-  // checkFailureCount is normal in-flight pending_checks work. Abandoning on
-  // that count would let manual repair publishPendingVersion before checks
-  // finish (#3349).
-  if ((attempt.finalizationFailureCount ?? 0) > 0) {
-    return false;
+
+  // finalizationFailureCount and checkFailureCount both survive claim release
+  // (unlike claimedAt/expiresAt). A nonzero count means a worker already
+  // claimed and dropped this attempt at least once, but below the terminal
+  // cap (MAX_CONSECUTIVE_FINALIZATION_FAILURES / MAX_CONSECUTIVE_SCANNER_FAILURES)
+  // that is a *normal* in-flight retry cycle, not abandonment: the attempt
+  // was intentionally handed back to "ready_to_finalize"/"pending_checks" for
+  // the dispatcher to pick up again (#3349). Treat it as live until it goes
+  // stale relative to its last recorded activity, not merely because it once
+  // failed — otherwise a below-cap retry (finalization retry or scanner
+  // backoff) can be raced by a manual repair before the dispatcher gets
+  // another chance.
+  const hasRetryActivity =
+    (attempt.finalizationFailureCount ?? 0) > 0 || (attempt.checkFailureCount ?? 0) > 0;
+  const lastActivity = attempt.updatedAt ?? attempt.createdAt;
+  if (hasRetryActivity) {
+    return now - lastActivity < ACTIVE_ATTEMPT_RETRYABLE_STALE_MS;
   }
-  // No live claim lease and never finalized: still protect a recently-created
-  // attempt whose worker has not claimed it yet (or is between scanner
-  // retries), so a manual repair cannot race a legitimate in-flight dispatch.
-  // Older unclaimed attempts are treated as abandoned so a genuinely stuck
-  // attempt cannot block repair forever.
-  return now - attempt.createdAt < ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS;
+
+  // No live claim lease and never failed: still protect a recently-created
+  // attempt whose worker has not claimed it yet, so a manual repair cannot
+  // race a legitimate in-flight dispatch. Use updatedAt (falling back to
+  // createdAt) rather than createdAt alone: a zero-failure attempt that
+  // recently transitioned status (e.g. a long-running pending_checks phase
+  // that just moved cleanly to ready_to_finalize) is still actively owned by
+  // the dispatcher even though it was *created* long ago. Older attempts with
+  // no recent activity are treated as abandoned so a genuinely stuck attempt
+  // cannot block repair forever.
+  return now - lastActivity < ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS;
 }
 
 // Used by the #3349 orphaned-pending-version repair path to refuse repairing
@@ -413,54 +441,97 @@ export const findActiveSkillPublishAttemptInternal = internalQuery({
   },
 });
 
-// Used by the #3349 orphaned-pending-version repair path once it has already
-// republished the version directly. Without this, the original publishAttempts
-// row (still "pending_checks"/"ready_to_finalize"/"finalizing" if its worker
-// crashed or exhausted retries) stays claimable by the normal finalization
-// dispatcher, which would re-run followups (owner webhook, security/VT scans)
-// against an already-published version. Scoped to one exact attemptId — the
-// caller already resolved it from skillVersion.publishAttemptId — so this
-// never force-closes an unrelated attempt. No-ops if a claim is still live,
-// since that means a worker may genuinely still be working it.
+// Direct-attemptId variant of findActiveSkillPublishAttemptInternal, used by
+// the #3349 repair pre-check when the skillVersion already records its own
+// publishAttemptId. Avoids the slug/version take(10) scan (and its blind
+// spot if more than 10 attempts ever share the same kind+status+slug+version)
+// by going straight to the known attempt. Still scoped to skillId so a stale
+// or mismatched publishAttemptId can never block repair of a different
+// skill's version.
+export const findActiveSkillPublishAttemptByIdInternal = internalQuery({
+  args: {
+    attemptId: v.id("publishAttempts"),
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.attemptId);
+    if (!attempt || attempt.kind !== "skill" || attempt.skillId !== args.skillId) return null;
+    if (!(ACTIVE_PUBLISH_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status)) {
+      return null;
+    }
+    if (!isActiveAttemptLive(attempt, Date.now())) return null;
+    return { attemptId: attempt._id, status: attempt.status };
+  },
+});
+
+export type OrphanedSkillPublishAttemptCloseOutcome =
+  | { closed: true }
+  | { closed: false; reason: "not-found" | "claim-active" }
+  | { closed: false; reason: "already-terminal"; status: string };
+
+// Used by the #3349 orphaned-pending-version repair path once the version has
+// already been (re)published directly. Without this, the original
+// publishAttempts row (still "pending_checks"/"ready_to_finalize"/"finalizing"
+// if its worker crashed or exhausted retries) stays claimable by the normal
+// finalization dispatcher, which would re-run followups (owner webhook,
+// security/VT scans) against an already-published version. Scoped to one
+// exact attemptId — the caller already resolved it from
+// skillVersion.publishAttemptId — so this never force-closes an unrelated
+// attempt. No-ops if a claim is still live, since that means a worker may
+// genuinely still be working it.
+//
+// Exported as a plain function (not just the wrapped mutation below) so
+// publishPendingVersionAndCloseAttemptInternal (convex/skills.ts) can close
+// the attempt in the *same* mutation transaction as the publish write
+// (#3401 finding 3): calling this mutation separately via a second
+// ctx.runMutation would leave a window where publish succeeds but the
+// process crashes or throws before closing the attempt, leaving it
+// reclaimable by the dispatcher against an already-published version.
+export async function closeOrphanedSkillPublishAttempt(
+  ctx: Pick<MutationCtx, "db">,
+  attemptId: Id<"publishAttempts">,
+  result: Infer<typeof publishResultValidator>,
+): Promise<OrphanedSkillPublishAttemptCloseOutcome> {
+  const attempt = await ctx.db.get(attemptId);
+  if (!attempt || attempt.kind !== "skill") {
+    return { closed: false, reason: "not-found" };
+  }
+  if (attempt.status === "finalized" || attempt.status === "failed") {
+    return { closed: false, reason: "already-terminal", status: attempt.status };
+  }
+  const now = Date.now();
+  if (isActiveAttemptLive(attempt, now)) {
+    return { closed: false, reason: "claim-active" };
+  }
+
+  await ctx.db.patch(attempt._id, {
+    status: "finalized",
+    checkClaimId: undefined,
+    checkClaimedAt: undefined,
+    checkClaimExpiresAt: undefined,
+    checkClaimLastError: undefined,
+    checkFailureCount: undefined,
+    finalizationClaimId: undefined,
+    finalizationClaimedAt: undefined,
+    finalizationClaimExpiresAt: undefined,
+    finalizationLastError: undefined,
+    finalizationFailureCount: undefined,
+    result,
+    finalizedAt: now,
+    updatedAt: now,
+  });
+  if (attempt.skillVersionId && attempt.skillVersionId === result.versionId) {
+    await ctx.db.patch(attempt.skillVersionId, { pendingPublication: undefined });
+  }
+  return { closed: true };
+}
+
 export const closeOrphanedSkillPublishAttemptInternal = internalMutation({
   args: {
     attemptId: v.id("publishAttempts"),
     result: publishResultValidator,
   },
-  handler: async (ctx, args) => {
-    const attempt = await ctx.db.get(args.attemptId);
-    if (!attempt || attempt.kind !== "skill") {
-      return { closed: false, reason: "not-found" as const };
-    }
-    if (attempt.status === "finalized" || attempt.status === "failed") {
-      return { closed: false, reason: "already-terminal" as const, status: attempt.status };
-    }
-    const now = Date.now();
-    if (isActiveAttemptLive(attempt, now)) {
-      return { closed: false, reason: "claim-active" as const };
-    }
-
-    await ctx.db.patch(attempt._id, {
-      status: "finalized",
-      checkClaimId: undefined,
-      checkClaimedAt: undefined,
-      checkClaimExpiresAt: undefined,
-      checkClaimLastError: undefined,
-      checkFailureCount: undefined,
-      finalizationClaimId: undefined,
-      finalizationClaimedAt: undefined,
-      finalizationClaimExpiresAt: undefined,
-      finalizationLastError: undefined,
-      finalizationFailureCount: undefined,
-      result: args.result,
-      finalizedAt: now,
-      updatedAt: now,
-    });
-    if (attempt.skillVersionId && attempt.skillVersionId === args.result.versionId) {
-      await ctx.db.patch(attempt.skillVersionId, { pendingPublication: undefined });
-    }
-    return { closed: true as const };
-  },
+  handler: async (ctx, args) => closeOrphanedSkillPublishAttempt(ctx, args.attemptId, args.result),
 });
 
 export const createPackagePublishAttemptInternal = internalMutation({
@@ -1271,6 +1342,7 @@ export const releaseSkillPublishAttemptFinalizationClaimInternal = internalMutat
     }
 
     const patch = releaseFinalizationClaimPatch(
+      "skill",
       attempt.finalizationFailureCount ?? 0,
       args.error,
       Date.now(),
@@ -1293,6 +1365,7 @@ export const releasePackagePublishAttemptFinalizationClaimInternal = internalMut
     }
 
     const patch = releaseFinalizationClaimPatch(
+      "package",
       attempt.finalizationFailureCount ?? 0,
       args.error,
       Date.now(),
