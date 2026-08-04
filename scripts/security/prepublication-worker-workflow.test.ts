@@ -42,6 +42,10 @@ describe("pre-publication publish worker workflow", () => {
         schedule?: Array<{ cron?: string }>;
         workflow_dispatch?: {
           inputs?: {
+            "batch-limit"?: {
+              default?: string;
+              required?: boolean;
+            };
             "attempt-id"?: {
               default?: string;
               required?: boolean;
@@ -73,6 +77,10 @@ describe("pre-publication publish worker workflow", () => {
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-prepublication-publish"]);
     expect(workflow.on?.schedule?.[0]?.cron).toBe("*/5 * * * *");
     expect(workflow.on?.workflow_dispatch).toBeDefined();
+    expect(workflow.on?.workflow_dispatch?.inputs?.["batch-limit"]).toMatchObject({
+      required: true,
+      default: "2",
+    });
     expect(workflow.on?.workflow_dispatch?.inputs?.runner).toEqual({
       description: "Runner label for manual recovery dispatches",
       required: true,
@@ -111,7 +119,7 @@ describe("pre-publication publish worker workflow", () => {
       PREPUBLICATION_CHECK_ATTEMPT_ID:
         "${{ github.event.client_payload.attempt_id || inputs['attempt-id'] || '' }}",
       PREPUBLICATION_CHECK_LIMIT:
-        "${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '4' }}",
+        "${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '2' }}",
       PREPUBLICATION_CHECK_KIND: "${{ github.event.client_payload.kind || inputs.kind || '' }}",
       PREPUBLICATION_CHECK_MAX_JOBS:
         "${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}",
