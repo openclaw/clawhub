@@ -326,10 +326,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
   SkillSpector and static scan evidence as context.
-- Package-release SkillSpector runs scan only normalized bundled-skill roots
-  declared by the stored plugin manifest summary. The plugin package root is
-  never a fallback SkillSpector target; packages with no bundled roots provide
-  ClawScan an explicit not-applicable SkillSpector result.
+- In the external Codex security worker, package-release SkillSpector runs scan
+  only normalized bundled-skill roots declared by the stored plugin manifest
+  summary. The plugin package root is never a fallback SkillSpector target;
+  packages with no bundled roots provide ClawScan an explicit not-applicable
+  result. This is not a prepublication-worker contract.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
 - VirusTotal telemetry remains a separate Security audit signal and is not an

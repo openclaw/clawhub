@@ -239,17 +239,20 @@ describe("run-codex-scan-worker clawscan authority", () => {
     {
       name: "one root",
       roots: ["skills/alpha"],
-      expected: ["artifact/package/skills/alpha"],
+      expected: [{ rootPath: "skills/alpha", scanPath: "artifact/package/skills/alpha" }],
     },
     {
       name: "multiple roots in deterministic order",
       roots: ["skills/zeta/", "./skills/alpha", "skills/zeta"],
-      expected: ["artifact/package/skills/alpha", "artifact/package/skills/zeta"],
+      expected: [
+        { rootPath: "skills/alpha", scanPath: "artifact/package/skills/alpha" },
+        { rootPath: "skills/zeta", scanPath: "artifact/package/skills/zeta" },
+      ],
     },
     {
       name: "traversal roots rejected",
       roots: ["../outside", "skills/../../outside", "/absolute", ".", "skills/safe"],
-      expected: ["artifact/package/skills/safe"],
+      expected: [{ rootPath: "skills/safe", scanPath: "artifact/package/skills/safe" }],
     },
   ])("selects $name only from the package manifest", async ({ name, roots, expected }) => {
     const workspace = await tempDir();
@@ -364,7 +367,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 cat > "$out" <<JSON
-{"status":"clean","risk_score":0,"risk_severity":"LOW","risk_recommendation":"ALLOW","issue_count":0,"issues":[],"scanner_version":"test","summary":"$(basename "$target") clean"}
+{"status":"suspicious","risk_score":25,"risk_severity":"MEDIUM","risk_recommendation":"REVIEW","issue_count":1,"issues":[{"id":"same-name","severity":"MEDIUM","file":"SKILL.md","explanation":"review"}],"scanner_version":"test","summary":"$(basename "$target") suspicious"}
 JSON`,
     );
 
@@ -421,9 +424,13 @@ JSON`,
       ]);
       expect(JSON.parse(await readFile(copiedFixture, "utf8"))).toMatchObject({
         applicable: true,
-        status: "clean",
-        issue_count: 0,
-        summary: "Scanned 2 bundled skills. alpha clean beta clean",
+        status: "suspicious",
+        issue_count: 2,
+        filtered_findings: [
+          { file: "skills/alpha/SKILL.md" },
+          { file: "skills/beta/SKILL.md" },
+        ],
+        summary: "Scanned 2 bundled skills. alpha suspicious beta suspicious",
       });
     } finally {
       if (previousClawScan === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;

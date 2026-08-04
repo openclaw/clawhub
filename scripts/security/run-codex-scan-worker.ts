@@ -109,6 +109,11 @@ type SkillSpectorScannerResult = {
   summary?: string;
 };
 
+type BundledSkillSpectorScanInput = {
+  rootPath: string;
+  scanPath: string;
+};
+
 type ClawScanCommandDiagnostic = {
   args?: string[];
   artifactPath?: string;
@@ -1213,9 +1218,41 @@ export async function resolveBundledSkillSpectorScanInputs(workspace: string, jo
   return bundledSkillRootsForJob(job)
     .map((rootPath) => {
       const skillRoot = resolve(artifactRoot, rootPath);
-      return skillRoot.startsWith(`${artifactRoot}${sep}`) ? join(packageRoot, rootPath) : null;
+      return skillRoot.startsWith(`${artifactRoot}${sep}`)
+        ? { rootPath, scanPath: join(packageRoot, rootPath) }
+        : null;
     })
-    .filter((path): path is string => Boolean(path));
+    .filter((input): input is BundledSkillSpectorScanInput => Boolean(input));
+}
+
+function packageRelativeSkillSpectorIssueFile(rootPath: string, file: string) {
+  const normalized = file.trim().replaceAll("\\", "/").replace(/^\.\/+/, "");
+  if (normalized === rootPath || normalized.startsWith(`${rootPath}/`)) return normalized;
+  const rootedSuffix = `/${rootPath}/`;
+  const rootedIndex = normalized.lastIndexOf(rootedSuffix);
+  if (rootedIndex >= 0) return normalized.slice(rootedIndex + 1);
+  const relative = normalized
+    .split("/")
+    .filter((segment) => segment && segment !== "." && segment !== "..")
+    .join("/");
+  return relative ? `${rootPath}/${relative}` : rootPath;
+}
+
+function prefixSkillSpectorFindingPaths(
+  analysis: SkillSpectorAnalysis,
+  rootPath: string,
+): SkillSpectorAnalysis {
+  return {
+    ...analysis,
+    issues: analysis.issues.map((issue) =>
+      issue.file
+        ? {
+            ...issue,
+            file: packageRelativeSkillSpectorIssueFile(rootPath, issue.file),
+          }
+        : issue,
+    ),
+  };
 }
 
 function compareSkillSpectorIssues(left: SkillSpectorIssue, right: SkillSpectorIssue) {
@@ -1313,22 +1350,38 @@ export function aggregateSkillSpectorAnalyses(
   };
 }
 
-async function runBundledSkillSpector(workspace: string, scanInputs: string[]) {
+async function runBundledSkillSpector(
+  workspace: string,
+  scanInputs: BundledSkillSpectorScanInput[],
+) {
   const analyses: SkillSpectorAnalysis[] = [];
+  const deadlineMs = Date.now() + clawScanTimeoutMs();
   for (const [index, scanInput] of scanInputs.entries()) {
+    const remainingMs = deadlineMs - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error("SkillSpector bundled-skill scan deadline exceeded");
+    }
     const resultPath = join(workspace, `skillspector-report-${index}.json`);
-    const args = ["scan", scanInput, "--format", "json", "--output", resultPath];
+    const args = ["scan", scanInput.scanPath, "--format", "json", "--output", resultPath];
     try {
       await runCommand("skillspector", args, {
         cwd: workspace,
-        timeoutMs: clawScanTimeoutMs(),
+        timeoutMs: remainingMs,
       });
-      analyses.push(normalizeSkillSpectorAnalysis(await readFile(resultPath, "utf8"), 0));
+      analyses.push(
+        prefixSkillSpectorFindingPaths(
+          normalizeSkillSpectorAnalysis(await readFile(resultPath, "utf8"), 0),
+          scanInput.rootPath,
+        ),
+      );
     } catch (error) {
       if (error instanceof CommandFailure) {
         const rawResult = await readFile(resultPath, "utf8").catch(() => undefined);
         if (rawResult) {
-          const analysis = normalizeSkillSpectorAnalysis(rawResult, 0);
+          const analysis = prefixSkillSpectorFindingPaths(
+            normalizeSkillSpectorAnalysis(rawResult, 0),
+            scanInput.rootPath,
+          );
           const validFindingsExit =
             error.exitCode === 1 &&
             (analysis.status === "suspicious" || analysis.status === "malicious") &&
