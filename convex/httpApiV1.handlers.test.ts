@@ -2114,6 +2114,7 @@ describe("httpApiV1 handlers", () => {
         source: "skills-sh",
         slug: "find-skills",
         score: 5_095,
+        downloads: 3_062,
         canonicalUrl: "/skills-sh/vercel-labs/skills/find-skills",
       },
     ];

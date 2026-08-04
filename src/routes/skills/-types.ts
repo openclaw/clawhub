@@ -77,7 +77,7 @@ export type SkillSearchEntry = {
   } | null;
   ownerHandle: string | null;
   version: string | null;
-  downloads: number | null;
+  downloads: number;
   updatedAt: number;
 };
 

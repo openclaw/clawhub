@@ -1365,6 +1365,7 @@ describe("search helpers", () => {
       install: { reference: "skills-sh:acme/skills/calendar" },
       icon: null,
       sourceIdentity: { lifetimeInstalls: 10_000_000 },
+      downloads: 10_000_000,
     });
   });
 

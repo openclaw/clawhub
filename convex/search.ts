@@ -621,7 +621,7 @@ type CanonicalSkillSearchResult = {
   // Compatibility fields retained for existing CLI/OpenClaw parsers.
   ownerHandle: string | null;
   version: string | null;
-  downloads: number | null;
+  downloads: number;
   updatedAt: number;
 };
 
@@ -812,7 +812,7 @@ function buildExternalCanonicalResult(
     native: null,
     ownerHandle: sourceOwner,
     version: null,
-    downloads: null,
+    downloads: digest.upstreamInstalls,
   };
 }
 

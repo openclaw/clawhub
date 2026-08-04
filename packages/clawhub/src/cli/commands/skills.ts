@@ -393,7 +393,7 @@ function maxColumnWidth(values: string[]) {
 }
 
 function formatSearchMetric(entry: {
-  downloads?: number | null;
+  downloads?: number;
   score: number;
   metrics?: { rolling60DayInstalls?: number | null };
   sourceIdentity?: { lifetimeInstalls?: number | null };
