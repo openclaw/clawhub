@@ -92,6 +92,23 @@ export type SkillSpectorAnalysis = {
   checkedAt: number;
 };
 
+type SkillSpectorScannerResult = {
+  applicable: boolean;
+  error?: string;
+  filtered_findings: SkillSpectorIssue[];
+  issue_count: number;
+  metadata?: {
+    skillspector_version: string;
+  };
+  risk_assessment: {
+    recommendation?: string;
+    score?: number;
+    severity?: string;
+  };
+  status: string;
+  summary?: string;
+};
+
 type ClawScanCommandDiagnostic = {
   args?: string[];
   artifactPath?: string;
@@ -1156,6 +1173,179 @@ function clawScanTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CLAWSCAN_TIMEOUT_MS;
 }
 
+function normalizedBundledSkillRoot(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/^\.\/+/, "")
+    .replace(/\/+$/, "");
+  if (
+    !normalized ||
+    normalized === "." ||
+    normalized.startsWith("/") ||
+    normalized.split("/").some((segment) => segment === "..")
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function bundledSkillRootsForJob(job: ClaimedJob) {
+  if (job.job.targetKind !== "packageRelease") return [];
+  const release = asRecord(job.target.release);
+  const pluginManifestSummary = asRecord(release?.pluginManifestSummary);
+  const bundledSkills = pluginManifestSummary?.bundledSkills;
+  if (!Array.isArray(bundledSkills)) return [];
+  return [
+    ...new Set(
+      bundledSkills
+        .map((skill) => normalizedBundledSkillRoot(asRecord(skill)?.rootPath))
+        .filter((rootPath): rootPath is string => Boolean(rootPath)),
+    ),
+  ].sort();
+}
+
+export async function resolveBundledSkillSpectorScanInputs(workspace: string, job: ClaimedJob) {
+  if (job.job.targetKind !== "packageRelease") return [];
+  const packageRoot = await resolveClawScanTarget(workspace, job);
+  const artifactRoot = resolve(workspace, packageRoot);
+  return bundledSkillRootsForJob(job)
+    .map((rootPath) => {
+      const skillRoot = resolve(artifactRoot, rootPath);
+      return skillRoot.startsWith(`${artifactRoot}${sep}`) ? join(packageRoot, rootPath) : null;
+    })
+    .filter((path): path is string => Boolean(path));
+}
+
+function compareSkillSpectorIssues(left: SkillSpectorIssue, right: SkillSpectorIssue) {
+  return JSON.stringify(left).localeCompare(JSON.stringify(right));
+}
+
+export function aggregateSkillSpectorAnalyses(
+  analyses: SkillSpectorAnalysis[],
+): SkillSpectorScannerResult {
+  if (analyses.length === 0) {
+    return {
+      applicable: false,
+      status: "clean",
+      risk_assessment: {
+        score: 0,
+        severity: "NONE",
+        recommendation: "NOT_APPLICABLE",
+      },
+      issue_count: 0,
+      filtered_findings: [],
+      metadata: { skillspector_version: "skillspector" },
+      summary: "Package declares no bundled skills; SkillSpector was not applicable.",
+    };
+  }
+  if (analyses.length === 1) {
+    const [analysis] = analyses;
+    return {
+      applicable: true,
+      status: analysis.status,
+      risk_assessment: {
+        score: analysis.score,
+        severity: analysis.severity,
+        recommendation: analysis.recommendation,
+      },
+      issue_count: analysis.issueCount,
+      filtered_findings: analysis.issues,
+      metadata: analysis.scannerVersion
+        ? { skillspector_version: analysis.scannerVersion }
+        : undefined,
+      summary: analysis.summary,
+      error: analysis.error,
+    };
+  }
+
+  const statuses = analyses.map((analysis) => analysis.status);
+  const status = statuses.some((value) => value === "error" || value === "failed")
+    ? "error"
+    : statuses.includes("malicious")
+      ? "malicious"
+      : statuses.includes("suspicious")
+        ? "suspicious"
+        : "clean";
+  const severityRank = ["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+  const severity = analyses
+    .map((analysis) => analysis.severity?.toUpperCase())
+    .filter((value): value is string => Boolean(value))
+    .sort(
+      (left, right) =>
+        severityRank.indexOf(right) - severityRank.indexOf(left) || left.localeCompare(right),
+    )[0];
+  const recommendations = [
+    ...new Set(analyses.map((analysis) => analysis.recommendation).filter(Boolean)),
+  ].sort();
+  const scannerVersions = [
+    ...new Set(analyses.map((analysis) => analysis.scannerVersion).filter(Boolean)),
+  ].sort();
+  const summaries = analyses
+    .map((analysis) => analysis.summary)
+    .filter((summary): summary is string => Boolean(summary))
+    .sort();
+  const errors = analyses
+    .map((analysis) => analysis.error)
+    .filter((error): error is string => Boolean(error))
+    .sort();
+  return {
+    applicable: true,
+    status,
+    risk_assessment: {
+      score: Math.max(...analyses.map((analysis) => analysis.score ?? 0)),
+      severity,
+      recommendation: recommendations.length > 0 ? recommendations.join("; ") : undefined,
+    },
+    issue_count: analyses.reduce((total, analysis) => total + analysis.issueCount, 0),
+    filtered_findings: analyses
+      .flatMap((analysis) => analysis.issues)
+      .sort(compareSkillSpectorIssues)
+      .slice(0, MAX_STORED_SKILLSPECTOR_ISSUES),
+    metadata:
+      scannerVersions.length > 0 ? { skillspector_version: scannerVersions.join(", ") } : undefined,
+    summary:
+      summaries.length > 0
+        ? `Scanned ${analyses.length} bundled skills. ${summaries.join(" ")}`
+        : `Scanned ${analyses.length} bundled skills.`,
+    error: errors.length > 0 ? errors.join("; ") : undefined,
+  };
+}
+
+async function runBundledSkillSpector(workspace: string, scanInputs: string[]) {
+  const analyses: SkillSpectorAnalysis[] = [];
+  for (const [index, scanInput] of scanInputs.entries()) {
+    const resultPath = join(workspace, `skillspector-report-${index}.json`);
+    const args = ["scan", scanInput, "--format", "json", "--output", resultPath];
+    try {
+      await runCommand("skillspector", args, {
+        cwd: workspace,
+        timeoutMs: clawScanTimeoutMs(),
+      });
+      analyses.push(normalizeSkillSpectorAnalysis(await readFile(resultPath, "utf8"), 0));
+    } catch (error) {
+      if (error instanceof CommandFailure) {
+        const rawResult = await readFile(resultPath, "utf8").catch(() => undefined);
+        if (rawResult) {
+          const analysis = normalizeSkillSpectorAnalysis(rawResult, 0);
+          const validFindingsExit =
+            error.exitCode === 1 &&
+            (analysis.status === "suspicious" || analysis.status === "malicious") &&
+            analysis.issueCount > 0 &&
+            analysis.issues.length > 0;
+          if (validFindingsExit) {
+            analyses.push(analysis);
+            continue;
+          }
+        }
+      }
+      throw error;
+    }
+  }
+  return aggregateSkillSpectorAnalyses(analyses);
+}
+
 const REQUIRED_CLAWHUB_RESULT_KEYS = [
   ...CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredResultKeys,
   "artifact_inspection",
@@ -1383,7 +1573,21 @@ export async function runClawScan(
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
   const target = await resolveClawScanTarget(workspace, job);
-  const args = [target, "--profile", "clawhub", "--output", artifactPath];
+  const args = [target, "--profile", "clawhub"];
+  if (job.job.targetKind === "packageRelease") {
+    // SkillSpector only understands skills. ClawHub owns the plugin manifest
+    // boundary, so never let ClawScan fall back to scanning the whole package.
+    const scanInputs = await resolveBundledSkillSpectorScanInputs(workspace, job);
+    const skillSpectorResultPath = join(workspace, "skillspector-aggregate.json");
+    const skillSpectorResult = await runBundledSkillSpector(workspace, scanInputs);
+    await writeFile(
+      skillSpectorResultPath,
+      `${JSON.stringify(skillSpectorResult, null, 2)}\n`,
+      "utf8",
+    );
+    args.push("--scanner-result", `skillspector=${skillSpectorResultPath}`);
+  }
+  args.push("--output", artifactPath);
   onDiagnostic({ args: [command, ...args], artifactPath });
 
   const captureArtifact = async () => {
