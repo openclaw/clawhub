@@ -484,6 +484,22 @@ describe("restored UI design contract", () => {
     expect(lightRatio).toBeGreaterThanOrEqual(7);
   });
 
+  it("uses Carapace semantic tokens for metric trend lines", () => {
+    const css = styles();
+    const rootRule = cssRule(css, ":root");
+
+    expect(rootRule).toContain("--metric-trend-line: var(--oc-status-info-fg)");
+    expect(rootRule).toContain(
+      "--metric-trend-area: color-mix(in srgb, var(--oc-status-info-fg) 18%, transparent)",
+    );
+    expect(rootRule).toContain("--metric-trend-marker: var(--oc-chart-line)");
+    expect(cssRule(css, ".metric-trend-chart")).toContain("color: var(--metric-trend-line)");
+    expect(cssRule(css, ".metric-trend-marker-line")).toContain(
+      "stroke: var(--metric-trend-marker)",
+    );
+    expect(css).not.toMatch(/#(?:8eb8e8|4a7fd0|6b9fd4)/i);
+  });
+
   it("keeps detail heroes full width unless an explicit sidebar is present", () => {
     const shellSource = read("src/components/DetailPageShell.tsx");
     const css = styles();

@@ -195,9 +195,9 @@
   --font-mono: var(--oc-font-mono);
 
   /* Metric trend sparklines */
-  --metric-trend-line: color-mix(in srgb, #8eb8e8 78%, var(--ink));
-  --metric-trend-area: color-mix(in srgb, #8eb8e8 20%, transparent);
-  --metric-trend-marker: color-mix(in srgb, #8eb8e8 42%, transparent);
+  --metric-trend-line: var(--oc-status-info-fg);
+  --metric-trend-area: color-mix(in srgb, var(--oc-status-info-fg) 18%, transparent);
+  --metric-trend-marker: var(--oc-chart-line);
 }
 
 /* Light theme — OpenClaw black, white, red */
@@ -250,11 +250,6 @@
   --shadow-dialog: var(--oc-shadow-lg);
   --shadow-hover: var(--oc-shadow-md);
   --shadow-card: var(--oc-shadow-sm);
-
-  /* Metric trend sparklines */
-  --metric-trend-line: color-mix(in srgb, #4a7fd0 84%, var(--ink));
-  --metric-trend-area: color-mix(in srgb, #4a7fd0 14%, transparent);
-  --metric-trend-marker: color-mix(in srgb, #4a7fd0 30%, transparent);
 
   /* Diff viewer — muted, readable in light mode */
   --diff-added: #16a34a;
@@ -317,11 +312,6 @@
     --shadow-dialog: var(--oc-shadow-lg);
     --shadow-hover: var(--oc-shadow-md);
     --shadow-card: var(--oc-shadow-sm);
-
-    /* Metric trend sparklines */
-    --metric-trend-line: color-mix(in srgb, #4a7fd0 84%, var(--ink));
-    --metric-trend-area: color-mix(in srgb, #4a7fd0 14%, transparent);
-    --metric-trend-marker: color-mix(in srgb, #4a7fd0 30%, transparent);
 
     /* Diff viewer — muted, readable in light mode */
     --diff-added: #16a34a;
@@ -7905,7 +7895,7 @@ a.skills-sh-security-audit-row:focus-visible {
   display: block;
   width: 100%;
   height: 34px;
-  color: var(--metric-trend-line, color-mix(in srgb, #6b9fd4 76%, var(--ink)));
+  color: var(--metric-trend-line);
   outline: none;
   touch-action: pan-y;
 }
@@ -7916,7 +7906,7 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .metric-trend-area {
-  fill: var(--metric-trend-area, color-mix(in srgb, #6b9fd4 18%, transparent));
+  fill: var(--metric-trend-area);
 }
 
 .metric-trend-line {
@@ -7928,7 +7918,7 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .metric-trend-marker-line {
-  stroke: var(--metric-trend-marker, color-mix(in srgb, #6b9fd4 36%, transparent));
+  stroke: var(--metric-trend-marker);
   stroke-width: 1.5;
 }
 
