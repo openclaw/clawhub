@@ -406,20 +406,25 @@ export const findExistingPublishAttemptForArtifactInternal = internalQuery({
 function isActiveAttemptLive(attempt: Doc<"publishAttempts">, now: number) {
   if ((attempt.finalizationClaimExpiresAt ?? 0) > now) return true;
   if ((attempt.checkClaimExpiresAt ?? 0) > now) return true;
-  // finalizationFailureCount/checkFailureCount survive claim release (unlike
-  // claimedAt/expiresAt, which get cleared). A nonzero count means a worker
-  // already claimed and dropped this attempt at least once, so it is not
-  // "freshly dispatched, nobody has touched it yet" — the unclaimed grace
-  // below should not apply, or a dead finalizer can block repair for the
-  // rest of the 30-minute window even though nothing is still working it.
-  if ((attempt.finalizationFailureCount ?? 0) > 0 || (attempt.checkFailureCount ?? 0) > 0) {
+  // finalizationFailureCount survives claim release (unlike claimedAt/expiresAt).
+  // A nonzero count means a finalizer already claimed and dropped this attempt,
+  // so the unclaimed grace below should not apply — otherwise a dead finalizer
+  // can block repair for the rest of the 30-minute window even though nothing
+  // is still working it.
+  //
+  // Do NOT treat checkFailureCount the same way: scanner retries release the
+  // check claim between attempts (CHECK_RETRY_BACKOFF_MS), so a nonzero
+  // checkFailureCount is normal in-flight pending_checks work. Abandoning on
+  // that count would let manual repair publishPendingVersion before checks
+  // finish (#3349).
+  if ((attempt.finalizationFailureCount ?? 0) > 0) {
     return false;
   }
-  // No live claim lease and never claimed: still protect a recently-created
-  // attempt whose worker has not claimed it yet, so a manual repair cannot
-  // race a legitimate in-flight dispatch. Older unclaimed attempts are
-  // treated as abandoned so a genuinely stuck attempt cannot block repair
-  // forever.
+  // No live claim lease and never finalized: still protect a recently-created
+  // attempt whose worker has not claimed it yet (or is between scanner
+  // retries), so a manual repair cannot race a legitimate in-flight dispatch.
+  // Older unclaimed attempts are treated as abandoned so a genuinely stuck
+  // attempt cannot block repair forever.
   return now - attempt.createdAt < ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS;
 }
 
@@ -592,6 +597,23 @@ export const getPendingPublishAttemptDispatchTargetInternal = internalQuery({
       kind: attempt.kind,
       slug: attempt.slug,
       version: attempt.version,
+    };
+  },
+});
+
+// Owner-visible stuck-pending diagnostic (#3349): distinguish in-flight pending
+// from terminal finalize failure while the skillVersion row is still pending.
+export const getPublishAttemptByIdInternal = internalQuery({
+  args: {
+    attemptId: v.id("publishAttempts"),
+  },
+  handler: async (ctx, args) => {
+    const attempt = await ctx.db.get(args.attemptId);
+    if (!attempt) return null;
+    return {
+      status: attempt.status,
+      finalizationLastError: attempt.finalizationLastError ?? null,
+      finalizationFailureCount: attempt.finalizationFailureCount ?? 0,
     };
   },
 });
