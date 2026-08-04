@@ -120,14 +120,17 @@ export const attachSkillPublishUploadInternal = internalMutation({
       throw new Error("Skill upload ticket is missing, used, or expired");
     }
     const metadata = await ctx.db.system.get("_storage", args.storageId);
-    if (
-      !metadata ||
-      metadata._creationTime < ticket.createdAt ||
-      metadata.size !== ticket.size ||
-      !matchesStorageSha256(metadata.sha256, ticket.sha256) ||
-      normalizeContentType(metadata.contentType) !== ticket.contentType
-    ) {
-      throw new Error("Uploaded file does not match its skill upload ticket");
+    if (!metadata) {
+      throw new Error("Uploaded file metadata not found in storage");
+    }
+    if (ticket.size !== metadata.size) {
+      throw new Error("Uploaded file size does not match its skill upload ticket");
+    }
+    if (!matchesStorageSha256(metadata.sha256, ticket.sha256)) {
+      throw new Error("Uploaded file SHA-256 does not match its skill upload ticket");
+    }
+    if (ticket.contentType !== normalizeContentType(metadata.contentType)) {
+      throw new Error("Uploaded file content-type does not match its skill upload ticket");
     }
     await ctx.db.patch(ticket._id, { storageId: args.storageId });
   },

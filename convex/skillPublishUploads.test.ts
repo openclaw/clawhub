@@ -178,6 +178,131 @@ describe("skill publish upload tickets", () => {
     expect(ctx.db.delete).toHaveBeenCalledWith("skillPublishUploadTickets:1");
   });
 
+  it("attaches a staged upload whose storage metadata matches the ticket", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const ctx = makeCtx({
+      _id: "skillPublishUploadTickets:1",
+      userId: "users:1",
+      path: "SKILL.md",
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+      createdAt: 1_000,
+      expiresAt: 60_000,
+    });
+    ctx.db.system.get = vi.fn(async () => ({
+      _id: "_storage:1",
+      _creationTime: 2_000,
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+    }));
+
+    await attachHandler(ctx as never, {
+      userId: "users:1" as never,
+      uploadTicket: "skillPublishUploadTickets:1" as never,
+      storageId: "_storage:1" as never,
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("skillPublishUploadTickets:1", {
+      storageId: "_storage:1",
+    });
+  });
+
+  it("accepts a staged upload even when the storage creation time predates the ticket's wall-clock creation time", async () => {
+    // Convex _storage._creationTime is a database logical timestamp, not
+    // wall-clock time. It can legitimately predate the ticket's Date.now()
+    // even though the upload happened after the ticket was issued.
+    vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const ctx = makeCtx({
+      _id: "skillPublishUploadTickets:1",
+      userId: "users:1",
+      path: "SKILL.md",
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+      createdAt: 5_000,
+      expiresAt: 60_000,
+    });
+    ctx.db.system.get = vi.fn(async () => ({
+      _id: "_storage:1",
+      _creationTime: 2_000,
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+    }));
+
+    await attachHandler(ctx as never, {
+      userId: "users:1" as never,
+      uploadTicket: "skillPublishUploadTickets:1" as never,
+      storageId: "_storage:1" as never,
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("skillPublishUploadTickets:1", {
+      storageId: "_storage:1",
+    });
+  });
+
+  it("rejects a staged upload whose stored size does not match the ticket", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const ctx = makeCtx({
+      _id: "skillPublishUploadTickets:1",
+      userId: "users:1",
+      path: "SKILL.md",
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+      createdAt: 1_000,
+      expiresAt: 60_000,
+    });
+    ctx.db.system.get = vi.fn(async () => ({
+      _id: "_storage:1",
+      _creationTime: 2_000,
+      size: 6,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+    }));
+
+    await expect(
+      attachHandler(ctx as never, {
+        userId: "users:1" as never,
+        uploadTicket: "skillPublishUploadTickets:1" as never,
+        storageId: "_storage:1" as never,
+      }),
+    ).rejects.toThrow("Uploaded file size does not match its skill upload ticket");
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a staged upload whose stored content type does not match the ticket", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const ctx = makeCtx({
+      _id: "skillPublishUploadTickets:1",
+      userId: "users:1",
+      path: "SKILL.md",
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/markdown",
+      createdAt: 1_000,
+      expiresAt: 60_000,
+    });
+    ctx.db.system.get = vi.fn(async () => ({
+      _id: "_storage:1",
+      _creationTime: 2_000,
+      size: 5,
+      sha256: "a".repeat(64),
+      contentType: "text/plain",
+    }));
+
+    await expect(
+      attachHandler(ctx as never, {
+        userId: "users:1" as never,
+        uploadTicket: "skillPublishUploadTickets:1" as never,
+        storageId: "_storage:1" as never,
+      }),
+    ).rejects.toThrow("Uploaded file content-type does not match its skill upload ticket");
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
   it("keeps published storage when deleting a consumed ticket", async () => {
     const ctx = makeCtx({
       _id: "skillPublishUploadTickets:1",
