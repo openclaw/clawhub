@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
