@@ -21,6 +21,16 @@
 - CLI: accept npm 12's package-keyed `npm pack --json` output when building ClawPacks while retaining compatibility with earlier npm array output.
 - Web/API: preserve JSON, SSR, and OG responses through the Convex proxy after the H3 response-wrapper update.
 
+## 0.23.2 - 2026-08-03
+
+### Changes
+
+- CLI/API: add owner-authorized `clawhub skill tag <skill> <version> --yes` so personal owners and organization owner/admin members can safely repoint `latest` to an existing public version.
+
+### Fixes
+
+- API: reject version-bearing requests on the legacy whole-skill delete route instead of silently soft-deleting the entire skill.
+
 ## 0.23.1 - 2026-06-29
 
 ### Changes
