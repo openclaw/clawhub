@@ -2,7 +2,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Route as SkillsRoute, SkillsIndex } from "../routes/skills/index";
+import {
+  Route as SkillsRoute,
+  SKILLS_INITIAL_PAGE_TIMEOUT_MS,
+  SkillsIndex,
+} from "../routes/skills/index";
 import {
   convexHttpMock,
   convexReactMocks,
@@ -12,6 +16,7 @@ import {
 
 const navigateMock = vi.fn();
 const fetchCatalogDiscoveryCapabilitiesMock = vi.fn();
+const fetchCanonicalTrendingPageMock = vi.fn();
 let searchMock: Record<string, unknown> = {};
 let loaderDataMock: unknown = null;
 
@@ -19,6 +24,14 @@ vi.mock("../lib/catalogDiscoveryCapabilities", () => ({
   fetchCatalogDiscoveryCapabilities: (...args: unknown[]) =>
     fetchCatalogDiscoveryCapabilitiesMock(...args),
 }));
+
+vi.mock("../lib/trendingApi", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/trendingApi")>();
+  return {
+    ...original,
+    fetchCanonicalTrendingPage: (...args: unknown[]) => fetchCanonicalTrendingPageMock(...args),
+  };
+});
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown; validateSearch: unknown }) => ({
@@ -60,6 +73,18 @@ describe("SkillsIndex", () => {
       apiVersion: 1,
       canonicalTrendingEnabled: true,
     });
+    fetchCanonicalTrendingPageMock.mockReset();
+    fetchCanonicalTrendingPageMock.mockResolvedValue({
+      kind: "skills",
+      snapshotId: "snapshot-1",
+      snapshotCursor: "snapshot-cursor",
+      generatedAt: "2026-08-04T00:00:00.000Z",
+      windowHours: 24,
+      rankingVersion: "skills-trending-v1",
+      totalItems: 0,
+      items: [],
+      nextCursor: null,
+    });
   });
 
   afterEach(() => {
@@ -99,6 +124,108 @@ describe("SkillsIndex", () => {
     expect(validateSearch({ category: "unknown" })).toEqual(
       expect.objectContaining({ category: undefined }),
     );
+  });
+
+  it("loads the canonical first page on the server and excludes view-only state", async () => {
+    const routeConfig = (
+      SkillsRoute as unknown as {
+        __config: {
+          loaderDeps: (args: { search: Record<string, unknown> }) => Record<string, unknown>;
+          loader: (args: {
+            deps: Record<string, unknown>;
+            abortController: AbortController;
+          }) => unknown;
+          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+        };
+      }
+    ).__config;
+    const canonicalSearch = routeConfig.validateSearch({});
+    const controller = new AbortController();
+    const firstPage = {
+      kind: "skills",
+      snapshotId: "snapshot-1",
+      snapshotCursor: "snapshot-cursor",
+      generatedAt: "2026-08-04T00:00:00.000Z",
+      windowHours: 24,
+      rankingVersion: "skills-trending-v1",
+      totalItems: 1,
+      items: [makeTrendingResult("server-skill", "Server Skill")],
+      nextCursor: "cursor-2",
+    };
+    fetchCanonicalTrendingPageMock.mockResolvedValue(firstPage);
+
+    const canonicalDeps = routeConfig.loaderDeps({ search: canonicalSearch });
+    expect(
+      routeConfig.loaderDeps({ search: routeConfig.validateSearch({ view: "grid" }) }),
+    ).toEqual(canonicalDeps);
+    expect(
+      routeConfig.loaderDeps({ search: routeConfig.validateSearch({ tab: "new" }) }),
+    ).not.toEqual(canonicalDeps);
+
+    await expect(
+      routeConfig.loader({ deps: canonicalDeps, abortController: controller }),
+    ).resolves.toEqual({
+      kind: "canonical",
+      results: [{ trending: firstPage.items[0] }],
+      nextCursor: "cursor-2",
+      trendingState: "available",
+    });
+    expect(fetchCanonicalTrendingPageMock).toHaveBeenCalledTimes(1);
+    expect(fetchCanonicalTrendingPageMock).toHaveBeenCalledWith({
+      cursor: null,
+      limit: 20,
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("releases the initial response when the canonical page exceeds its latency budget", async () => {
+    vi.useFakeTimers();
+    const routeConfig = (
+      SkillsRoute as unknown as {
+        __config: {
+          loader: (args: {
+            deps: Record<string, unknown>;
+            abortController: AbortController;
+          }) => Promise<unknown>;
+          loaderDeps: (args: { search: Record<string, unknown> }) => Record<string, unknown>;
+          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+        };
+      }
+    ).__config;
+    let requestSignal: AbortSignal | undefined;
+    fetchCanonicalTrendingPageMock.mockImplementation(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise((_, reject) => {
+          requestSignal = signal;
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+    );
+    const deps = routeConfig.loaderDeps({ search: routeConfig.validateSearch({}) });
+    const result = routeConfig.loader({ deps, abortController: new AbortController() });
+
+    await vi.advanceTimersByTimeAsync(SKILLS_INITIAL_PAGE_TIMEOUT_MS);
+
+    await expect(result).resolves.toBeNull();
+    expect(requestSignal?.aborted).toBe(true);
+    expect(requestSignal?.reason).toEqual(expect.objectContaining({ name: "TimeoutError" }));
+  });
+
+  it("renders canonical loader data without a duplicate first-page request", async () => {
+    searchMock = {};
+    loaderDataMock = {
+      kind: "canonical",
+      results: [{ trending: makeTrendingResult("server-skill", "Server Skill") }],
+      nextCursor: "cursor-2",
+      trendingState: "available",
+    };
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.getByText("Server Skill")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    expect(fetchCatalogDiscoveryCapabilitiesMock).not.toHaveBeenCalled();
+    expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
   });
 
   it("requests the first skills page", async () => {
@@ -1185,4 +1312,32 @@ function makeSearchEntry(params: {
   const entry = makeSearchResult(params.slug, params.displayName, 0.9, params.updatedAt);
   if (entry.native) entry.native.skill.stats.stars = params.stars;
   return entry;
+}
+
+function makeTrendingResult(slug: string, displayName: string) {
+  return {
+    id: `clawhub:${slug}`,
+    source: "clawhub" as const,
+    slug,
+    displayName,
+    summary: `${displayName} summary`,
+    canonicalUrl: `/owner/${slug}`,
+    publisher: {
+      kind: "user" as const,
+      handle: "owner",
+      displayName: "Owner",
+      image: null,
+      official: false,
+    },
+    official: false,
+    featured: false,
+    metrics: {
+      trending24hDownloads: null,
+      trending24hInstalls: 1,
+      trending24hBookmarks: null,
+      lifetimeInstalls: 100,
+      lifetimeInstallsPeriod: "lifetime" as const,
+      updatedAt: 1,
+    },
+  };
 }

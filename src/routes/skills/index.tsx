@@ -23,16 +23,20 @@ import {
   parseBrowseTopicFromSearchInput,
   sanitizeBrowseTopicSearch,
 } from "../../lib/browseTopicSearch";
+import { fetchCatalogDiscoveryCapabilities } from "../../lib/catalogDiscoveryCapabilities";
 import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
+import { fetchCanonicalTrendingPage } from "../../lib/trendingApi";
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import type { SkillSearchEntry } from "./-types";
 import {
   buildSkillsSearchKey,
+  type InitialSkillsListData,
   type InitialSkillsSearchData,
   normalizeSkillsView,
   normalizeSkillsCatalogTab,
+  SKILLS_PAGE_SIZE,
   useSkillsBrowseModel,
   type SkillsSearchState,
 } from "./-useSkillsBrowseModel";
@@ -44,6 +48,9 @@ const SKILLS_VIEW_OPTIONS = [
   { value: "new", label: "New" },
 ];
 const SKILLS_INITIAL_SEARCH_LIMIT = 25;
+export const SKILLS_INITIAL_PAGE_TIMEOUT_MS = 250;
+
+type InitialSkillsLoaderData = InitialSkillsSearchData | InitialSkillsListData;
 
 function parseSkillCategorySlug(value: unknown) {
   return typeof value === "string" ? resolveSkillBrowseCategorySlug(value) : undefined;
@@ -81,53 +88,143 @@ export const Route = createFileRoute("/skills/")({
       }),
     };
   },
-  loaderDeps: ({ search }) => ({
-    q: search.q,
-    featured: search.featured,
-    highlighted: search.highlighted,
-    category: search.category,
-    topic: search.topic,
-  }),
-  loader: async ({ deps }): Promise<InitialSkillsSearchData> => await loadInitialSkillsSearch(deps),
+  loaderDeps: ({ search }) => {
+    const hasQuery = Boolean(search.q?.trim());
+    return {
+      q: search.q,
+      featured: search.featured,
+      highlighted: search.highlighted,
+      category: search.category,
+      topic: search.topic,
+      tab: hasQuery ? undefined : search.tab,
+      sort: hasQuery ? undefined : search.sort,
+      dir: hasQuery ? undefined : search.dir,
+    };
+  },
+  loader: async ({ deps, abortController }): Promise<InitialSkillsLoaderData> =>
+    isCanonicalSkillsBrowse(deps)
+      ? await loadInitialSkillsDataWithinBudget(deps, abortController.signal)
+      : await loadInitialSkillsData(deps, abortController.signal),
   component: SkillsIndex,
 });
 
-async function loadInitialSkillsSearch(
+export async function loadInitialSkillsData(
   search: SkillsSearchState,
-): Promise<InitialSkillsSearchData> {
+  signal?: AbortSignal,
+): Promise<InitialSkillsLoaderData> {
   const query = search.q?.trim();
-  if (!query) return null;
-
-  const featuredOnly = search.featured ?? search.highlighted ?? false;
-  const key = buildSkillsSearchKey({
-    query,
-    featuredOnly,
-    categorySlug: search.category,
-    topic: search.topic,
-  });
-  try {
-    const results = (await convexHttp.action(api.search.searchSkills, {
+  if (query) {
+    const featuredOnly = search.featured ?? search.highlighted ?? false;
+    const key = buildSkillsSearchKey({
       query,
-      highlightedOnly: featuredOnly,
+      featuredOnly,
       categorySlug: search.category,
       topic: search.topic,
-      limit: SKILLS_INITIAL_SEARCH_LIMIT,
-    })) as SkillSearchEntry[];
-    return { key, limit: SKILLS_INITIAL_SEARCH_LIMIT, results };
+    });
+    try {
+      const results = (await convexHttp.action(api.search.searchSkills, {
+        query,
+        highlightedOnly: featuredOnly,
+        categorySlug: search.category,
+        topic: search.topic,
+        limit: SKILLS_INITIAL_SEARCH_LIMIT,
+      })) as SkillSearchEntry[];
+      return { key, limit: SKILLS_INITIAL_SEARCH_LIMIT, results };
+    } catch (error) {
+      console.error("Failed to load initial skills search:", error);
+      return null;
+    }
+  }
+
+  if (!isCanonicalSkillsBrowse(search)) return null;
+
+  try {
+    const capabilities = await fetchCatalogDiscoveryCapabilities();
+    if (signal?.aborted) throw signal.reason;
+    if (!capabilities.canonicalTrendingEnabled) return null;
+
+    const result = await fetchCanonicalTrendingPage({
+      cursor: null,
+      limit: SKILLS_PAGE_SIZE,
+      signal,
+    });
+    return {
+      kind: "canonical",
+      results: result.items.map((trending) => ({ trending })),
+      nextCursor: result.nextCursor,
+      trendingState: result.items.length > 0 || result.nextCursor ? "available" : "empty",
+    };
   } catch (error) {
-    console.error("Failed to load initial skills search:", error);
+    if (signal?.aborted) throw error;
+    console.error("Failed to load initial skills page:", error);
     return null;
   }
+}
+
+async function loadInitialSkillsDataWithinBudget(
+  search: SkillsSearchState,
+  navigationSignal: AbortSignal,
+): Promise<InitialSkillsLoaderData> {
+  if (navigationSignal.aborted) throw navigationSignal.reason;
+
+  const requestController = new AbortController();
+  let rejectOnNavigationAbort: (reason: unknown) => void = () => {};
+  const navigationAbort = new Promise<never>((_, reject) => {
+    rejectOnNavigationAbort = reject;
+  });
+  const abortFromNavigation = () => {
+    requestController.abort(navigationSignal.reason);
+    rejectOnNavigationAbort(navigationSignal.reason);
+  };
+  navigationSignal.addEventListener("abort", abortFromNavigation, { once: true });
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timeoutId = setTimeout(() => {
+      resolve(null);
+      requestController.abort(
+        new DOMException("Initial Skills catalog request timed out", "TimeoutError"),
+      );
+    }, SKILLS_INITIAL_PAGE_TIMEOUT_MS);
+  });
+
+  try {
+    // Slow catalog dependencies must not hold the document response open.
+    // Hydration falls back to the existing client fetch after this budget.
+    return await Promise.race([
+      loadInitialSkillsData(search, requestController.signal),
+      timeout,
+      navigationAbort,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    navigationSignal.removeEventListener("abort", abortFromNavigation);
+  }
+}
+
+function isCanonicalSkillsBrowse(search: SkillsSearchState) {
+  return (
+    search.tab === "trending" &&
+    search.sort === undefined &&
+    search.dir === undefined &&
+    search.featured === undefined &&
+    search.highlighted === undefined &&
+    search.category === undefined &&
+    search.topic === undefined
+  );
 }
 
 export function SkillsIndex() {
   const navigate = Route.useNavigate();
   const routeSearch = Route.useSearch();
-  const initialSearch = Route.useLoaderData() as InitialSkillsSearchData | undefined;
+  const initialData = Route.useLoaderData() as InitialSkillsLoaderData | undefined;
+  const initialList = initialData && "kind" in initialData ? initialData : undefined;
+  const initialSearch = initialData && !("kind" in initialData) ? initialData : undefined;
   const { search, activeTopic } = useBrowseTopicSearch(routeSearch, navigate);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const model = useSkillsBrowseModel({
+    initialList,
     initialSearch,
     navigate,
     search,

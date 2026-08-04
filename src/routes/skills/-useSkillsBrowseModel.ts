@@ -18,7 +18,7 @@ import {
   type SkillSearchEntry,
 } from "./-types";
 
-const pageSize = 20;
+export const SKILLS_PAGE_SIZE = 20;
 const featuredPageSize = 40;
 const newWindowMs = 14 * 24 * 60 * 60 * 1_000;
 const maxConsecutiveEmptyPagesPerFetch = 3;
@@ -72,6 +72,13 @@ export type InitialSkillsSearchData = {
   results: SkillSearchEntry[];
 } | null;
 
+export type InitialSkillsListData = {
+  kind: "canonical";
+  results: SkillListEntry[];
+  nextCursor: string | null;
+  trendingState: TrendingFeedState;
+};
+
 type SkillsNavigate = (options: {
   search: (prev: SkillsSearchState) => SkillsSearchState;
   replace?: boolean;
@@ -97,11 +104,13 @@ export function buildSkillsSearchKey({
 }
 
 export function useSkillsBrowseModel({
+  initialList,
   initialSearch,
   search,
   navigate,
   searchInputRef,
 }: {
+  initialList?: InitialSkillsListData;
   initialSearch?: InitialSkillsSearchData;
   search: SkillsSearchState;
   navigate: SkillsNavigate;
@@ -161,18 +170,28 @@ export function useSkillsBrowseModel({
     matchedInitialSearch ? matchedInitialSearch.results : [],
   );
   const [searchLimit, setSearchLimit] = useState(() =>
-    matchedInitialSearch ? matchedInitialSearch.limit : pageSize,
+    matchedInitialSearch ? matchedInitialSearch.limit : SKILLS_PAGE_SIZE,
   );
   const [isSearching, setIsSearching] = useState(() => hasQuery && !initialSearchMatches);
   const appliedInitialSearchKey = useRef(matchedInitialSearch ? matchedInitialSearch.key : null);
 
   // One-shot paginated fetches (no reactive subscription)
-  const [listResults, setListResults] = useState<SkillListEntry[]>([]);
-  const [listCursor, setListCursor] = useState<string | null>(null);
-  const [listStatus, setListStatus] = useState<ListStatus>("loading");
-  const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>();
+  const matchedInitialList = !hasQuery && requestedCatalogTab === "trending" ? initialList : null;
+  const [listResults, setListResults] = useState<SkillListEntry[]>(
+    () => matchedInitialList?.results ?? [],
+  );
+  const [listCursor, setListCursor] = useState<string | null>(
+    () => matchedInitialList?.nextCursor ?? null,
+  );
+  const [listStatus, setListStatus] = useState<ListStatus>(() =>
+    matchedInitialList?.nextCursor ? "idle" : matchedInitialList ? "done" : "loading",
+  );
+  const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>(
+    () => matchedInitialList?.trendingState,
+  );
   const [, setListAutoLoadPaused] = useState(false);
   const fetchGeneration = useRef(0);
+  const appliedInitialList = useRef(matchedInitialList);
   const newCutoff = useMemo(() => Date.now() - newWindowMs, [catalogTab]);
 
   const fetchPage = useCallback(
@@ -197,7 +216,7 @@ export function useSkillsBrowseModel({
 
           const result = await fetchCanonicalTrendingPage({
             cursor: pageCursor,
-            limit: pageSize,
+            limit: SKILLS_PAGE_SIZE,
           });
           if (generation !== fetchGeneration.current) return;
           const entries = result.items.map((trending) => ({ trending }));
@@ -216,7 +235,7 @@ export function useSkillsBrowseModel({
         while (true) {
           const result = await convexHttp.query(api.skills.listPublicPageV4, {
             cursor: pageCursor ?? undefined,
-            numItems: catalogTab === "featured" ? featuredPageSize : pageSize,
+            numItems: catalogTab === "featured" ? featuredPageSize : SKILLS_PAGE_SIZE,
             ...(listSort ? { sort: listSort } : {}),
             dir,
             highlightedOnly: catalogTab === "featured" ? true : undefined,
@@ -302,6 +321,21 @@ export function useSkillsBrowseModel({
     }
     fetchGeneration.current += 1;
     const generation = fetchGeneration.current;
+    if (matchedInitialList) {
+      if (appliedInitialList.current !== matchedInitialList) {
+        setCanonicalTrendingUnavailable(false);
+        setListResults(matchedInitialList.results);
+        setListCursor(matchedInitialList.nextCursor);
+        setListAutoLoadPaused(false);
+        setTrendingState(matchedInitialList.trendingState);
+        setListStatus(matchedInitialList.nextCursor ? "idle" : "done");
+        appliedInitialList.current = matchedInitialList;
+      }
+      return () => {
+        fetchGeneration.current += 1;
+      };
+    }
+    appliedInitialList.current = null;
     setListResults([]);
     setListCursor(null);
     setListAutoLoadPaused(false);
@@ -311,7 +345,7 @@ export function useSkillsBrowseModel({
     return () => {
       fetchGeneration.current += 1;
     };
-  }, [hasQuery, fetchPage]);
+  }, [hasQuery, fetchPage, matchedInitialList]);
 
   const isLoadingList = listStatus === "loading";
   const canLoadMoreList = listStatus === "idle";
@@ -344,7 +378,7 @@ export function useSkillsBrowseModel({
     }
     if (matchedInitialSearch) return;
     setSearchResults([]);
-    setSearchLimit(pageSize);
+    setSearchLimit(SKILLS_PAGE_SIZE);
     setIsSearching(true);
     appliedInitialSearchKey.current = null;
   }, [matchedInitialSearch, searchKey]);
@@ -485,7 +519,7 @@ export function useSkillsBrowseModel({
     loadMoreInFlightRef.current = true;
     setListAutoLoadPaused(false);
     if (hasQuery) {
-      setSearchLimit((value) => value + pageSize);
+      setSearchLimit((value) => value + SKILLS_PAGE_SIZE);
     } else {
       setListStatus("loadingMore");
       void fetchPage(listCursor, fetchGeneration.current);
