@@ -426,10 +426,7 @@ JSON`,
         applicable: true,
         status: "suspicious",
         issue_count: 2,
-        filtered_findings: [
-          { file: "skills/alpha/SKILL.md" },
-          { file: "skills/beta/SKILL.md" },
-        ],
+        filtered_findings: [{ file: "skills/alpha/SKILL.md" }, { file: "skills/beta/SKILL.md" }],
         summary: "Scanned 2 bundled skills. alpha suspicious beta suspicious",
       });
     } finally {

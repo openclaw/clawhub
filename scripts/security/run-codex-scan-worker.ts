@@ -1226,7 +1226,10 @@ export async function resolveBundledSkillSpectorScanInputs(workspace: string, jo
 }
 
 function packageRelativeSkillSpectorIssueFile(rootPath: string, file: string) {
-  const normalized = file.trim().replaceAll("\\", "/").replace(/^\.\/+/, "");
+  const normalized = file
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/^\.\/+/, "");
   if (normalized === rootPath || normalized.startsWith(`${rootPath}/`)) return normalized;
   const rootedSuffix = `/${rootPath}/`;
   const rootedIndex = normalized.lastIndexOf(rootedSuffix);

@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(
-  new URL("./run-codex-scan-worker.ts", import.meta.url),
-  "utf8",
-);
+const source = readFileSync(new URL("./run-codex-scan-worker.ts", import.meta.url), "utf8");
 const functionStart = source.indexOf("async function runBundledSkillSpector(");
 const functionEnd = source.indexOf("\nconst REQUIRED_CLAWHUB_RESULT_KEYS", functionStart);
 const functionSource = source.slice(functionStart, functionEnd);
