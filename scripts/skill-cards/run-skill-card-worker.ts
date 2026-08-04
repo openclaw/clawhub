@@ -8,6 +8,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
+import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
@@ -129,16 +130,6 @@ export function skillCardWorkerId(env: NodeJS.ProcessEnv = process.env) {
       env.SKILL_CARD_WORKER_SHARD ?? env.GITHUB_JOB ?? "0"
     }`
   );
-}
-
-function safeOutputPath(workspace: string, artifactPath: string) {
-  const normalized = artifactPath.replace(/^\/+/, "");
-  const out = resolve(workspace, "artifact", normalized);
-  const artifactRoot = resolve(workspace, "artifact");
-  if (!out.startsWith(`${artifactRoot}/`) && out !== artifactRoot) {
-    throw new Error(`Unsafe artifact path: ${safeWorkerArtifactPathLabel(artifactPath)}`);
-  }
-  return out;
 }
 
 function artifactDownloadDescription(artifactPath: string) {
@@ -352,11 +343,11 @@ export async function writeWorkspace(job: ClaimedSkillCardJob, workspace: string
     join(workspace, "evidence.json"),
     `${JSON.stringify(job.target.evidence, null, 2)}\n`,
   );
-  for (const file of job.target.files) {
-    const out = safeOutputPath(workspace, file.path);
-    await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, await download(file.url, { path: file.path }));
-  }
+  await materializeVerifiedArtifactFiles({
+    artifactRoot: join(workspace, "artifact"),
+    files: job.target.files,
+    download: async (file) => await download(file.url, { path: file.path }),
+  });
 }
 
 async function generateSkillCardWithCodex(

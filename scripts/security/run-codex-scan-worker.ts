@@ -1,15 +1,15 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
+import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
@@ -703,16 +703,6 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
   await writeFile(join(jobDir, "diagnostic.json"), `${JSON.stringify(diagnostic, null, 2)}\n`);
 }
 
-function safeOutputPath(workspace: string, artifactPath: string) {
-  const normalized = artifactPath.replace(/^\/+/, "");
-  const out = resolve(workspace, "artifact", normalized);
-  const artifactRoot = resolve(workspace, "artifact");
-  if (!out.startsWith(`${artifactRoot}/`) && out !== artifactRoot) {
-    throw new Error(`Unsafe artifact path: ${safeWorkerArtifactPathLabel(artifactPath)}`);
-  }
-  return out;
-}
-
 function artifactDownloadDescription(kind: "file" | "clawpack", artifactPath: string) {
   const safePath = safeWorkerArtifactPathLabel(artifactPath);
   return kind === "file" ? `artifact file ${safePath}` : `artifact tarball ${safePath}`;
@@ -748,29 +738,11 @@ export async function writeArtifactWorkspace(job: ClaimedJob, workspace: string)
   };
   await writeFile(join(workspace, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
 
-  const files = (job.target.files ?? []).map((file) => ({
-    file,
-    out: safeOutputPath(workspace, file.path),
-  }));
-  for (const candidate of files) {
-    const isDirectoryMarker =
-      candidate.file.size === 0 &&
-      files.some(
-        (other) => other.out !== candidate.out && other.out.startsWith(`${candidate.out}${sep}`),
-      );
-    if (isDirectoryMarker) continue;
-
-    const { file, out } = candidate;
-    await mkdir(dirname(out), { recursive: true });
-    const bytes = await download(file.url, { kind: "file", path: file.path });
-    const actualSha256 = createHash("sha256").update(bytes).digest("hex");
-    if (actualSha256 !== file.sha256.toLowerCase()) {
-      throw new Error(
-        `Downloaded artifact hash mismatch for artifact file ${safeWorkerArtifactPathLabel(file.path)}`,
-      );
-    }
-    await writeFile(out, bytes);
-  }
+  await materializeVerifiedArtifactFiles({
+    artifactRoot: join(workspace, "artifact"),
+    files: job.target.files ?? [],
+    download: async (file) => await download(file.url, { kind: "file", path: file.path }),
+  });
 
   // Legacy ZIP releases are already materialized above as individually verified files.
   // Their archival copy is not an npm tarball and makes GNU tar fail before scanning.
