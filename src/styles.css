@@ -1,9 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./publisher-profile.css";
-@import "@fontsource/bricolage-grotesque/latin.css";
-@import "@fontsource/manrope/latin.css";
-@import "@fontsource/ibm-plex-mono/latin.css";
 
 @theme {
   /* Colors — core palette */

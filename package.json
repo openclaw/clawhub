@@ -99,7 +99,6 @@
     "@convex-dev/rate-limiter": "0.3.2",
     "@fontsource/bricolage-grotesque": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
-    "@fontsource/manrope": "5.3.0",
     "@fontsource/noto-sans-sc": "5.3.0",
     "@monaco-editor/react": "4.7.0",
     "@openclaw/carapace": "git+https://github.com/openclaw/carapace.git#v0.6.1",
