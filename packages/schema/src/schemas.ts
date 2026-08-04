@@ -882,6 +882,13 @@ export const ApiV1DeleteResponseSchema = type({
   slugReservedUntil: "number?",
 });
 
+export const ApiV1SkillTagResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  tag: "string",
+  version: "string",
+});
+
 export const ApiV1SkillRenameResponseSchema = type({
   ok: "true",
   slug: "string",

@@ -336,6 +336,7 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     deleteOwnedVersionForUserInternal: unknown;
+    setSkillTagForUserInternal: unknown;
     restoreOwnedVersionForUserInternal: unknown;
     revokeSkillVersionForUserInternal: unknown;
     getSecurityVerdictTargetInternal: unknown;
@@ -2940,6 +2941,30 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
   const segments = getPathSegments(request, "/api/v1/skills/");
   const action = segments[1] ?? "";
   const slug = segments[0]?.trim().toLowerCase() ?? "";
+
+  if (segments.length === 3 && segments[1] === "tags" && segments[2]) {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    try {
+      const body = await readOptionalJson(request);
+      const version = optionalStringField(body, "version")?.trim();
+      if (!version) return text("Version required", 400, rate.headers);
+      const ownerHandle =
+        optionalStringField(body, "ownerHandle") ?? getOwnerHandleParam(new URL(request.url));
+      const result = await runMutationRef(ctx, internalRefs.skills.setSkillTagForUserInternal, {
+        actorUserId: auth.userId,
+        slug,
+        tag: segments[2],
+        version,
+        ...(ownerHandle ? { ownerHandle } : {}),
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return ownershipErrorToResponse(error, rate.headers);
+    }
+  }
 
   if (
     segments.length === 4 &&

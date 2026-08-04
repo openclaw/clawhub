@@ -323,6 +323,8 @@ Notes:
 - `--reason <text>` records a moderation note on a whole-skill soft-delete and audit log.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
+- The legacy `POST /api/cli/skill/delete` endpoint rejects a supplied `version` instead of
+  interpreting it as a whole-skill delete.
 
 ### `undelete <skill>`
 
@@ -334,6 +336,22 @@ Notes:
 - `--reason <text>` records a moderation note on the skill and audit log.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
+
+### `skill tag <skill> <version>`
+
+- Moves an owned skill tag to an existing public version; `latest` is the default.
+- Calls `POST /api/v1/skills/{slug}/tags/{tag}`.
+- Org publishers require owner or admin membership, matching version withdrawal.
+- Use this to roll `latest` back after an accidental higher-version publish; publishing a lower
+  version alone intentionally does not replace the highest-semver latest version.
+- `--tag <tag>` selects another tag.
+- `--yes` skips confirmation.
+
+Example:
+
+```bash
+clawhub skill tag @owner/example 1.2.3 --yes
+```
 
 ### `hide <skill>`
 

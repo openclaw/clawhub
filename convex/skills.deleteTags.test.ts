@@ -267,6 +267,30 @@ describe("deleteTags", () => {
     expect(newTags).toHaveProperty("stable");
   });
 
+  it("allows publisher admins to delete tags on org-owned skills", async () => {
+    const { db, auth, patch } = makeCtx({
+      user: otherUser,
+      skill: publisherSkill,
+      publisher: activePublisher,
+      membership: {
+        _id: "publisherMembers:1",
+        publisherId: "publishers:org",
+        userId: "users:other",
+        role: "admin",
+      },
+    });
+
+    await deleteTagsHandler(
+      { db, auth } as never,
+      { skillId: "skills:1", tags: ["stable"] } as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({ tags: expect.not.objectContaining({ stable: expect.anything() }) }),
+    );
+  });
+
   it("throws when skill not found", async () => {
     const { db, auth } = makeCtx({ user: ownerUser, skill: null });
     await expect(
@@ -304,13 +328,92 @@ describe("updateTags", () => {
 
     await updateTagsHandler(
       { db, auth } as never,
-      { skillId: "skills:1", tags: [{ tag: "stable", versionId: "versions:2" }] } as never,
+      { skillId: "skills:1", tags: [{ tag: "old-tag", versionId: "versions:2" }] } as never,
     );
 
     expect(patch).toHaveBeenCalledOnce();
     expect(patch.mock.calls[0][1]).toMatchObject({
-      tags: expect.objectContaining({ stable: "versions:2" }),
+      tags: expect.objectContaining({ "old-tag": "versions:2" }),
     });
+  });
+
+  it("allows publisher admins to repoint latest for org-owned skills", async () => {
+    const { db, auth, patch } = makeCtx({
+      user: otherUser,
+      skill: publisherSkill,
+      publisher: activePublisher,
+      membership: {
+        _id: "publisherMembers:1",
+        publisherId: "publishers:org",
+        userId: "users:other",
+        role: "admin",
+      },
+      versionsById: {
+        "versions:2": {
+          _id: "versions:2",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 10,
+          changelog: "corrected release",
+          changelogSource: "user",
+          parsed: { description: "Corrected release" },
+          softDeletedAt: undefined,
+        },
+      },
+    });
+
+    await updateTagsHandler(
+      { db, auth } as never,
+      { skillId: "skills:1", tags: [{ tag: "latest", versionId: "versions:2" }] } as never,
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        latestVersionId: "versions:2",
+        tags: expect.objectContaining({ latest: "versions:2" }),
+      }),
+    );
+    expect(db.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:other",
+        action: "skill.tags.update",
+        targetId: "skills:1",
+      }),
+    );
+  });
+
+  it("rejects publisher members without tag-management access", async () => {
+    const { db, auth, patch } = makeCtx({
+      user: otherUser,
+      skill: publisherSkill,
+      publisher: activePublisher,
+      membership: {
+        _id: "publisherMembers:1",
+        publisherId: "publishers:org",
+        userId: "users:other",
+        role: "publisher",
+      },
+      versionsById: {
+        "versions:2": {
+          _id: "versions:2",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 10,
+          changelog: "corrected release",
+          softDeletedAt: undefined,
+        },
+      },
+    });
+
+    await expect(
+      updateTagsHandler(
+        { db, auth } as never,
+        { skillId: "skills:1", tags: [{ tag: "latest", versionId: "versions:2" }] } as never,
+      ),
+    ).rejects.toThrow("Forbidden");
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("rejects tag updates to another skill's version", async () => {

@@ -10588,6 +10588,101 @@ export const resolveVersionByHash = query({
   },
 });
 
+async function updateSkillTagsForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  skill: Doc<"skills">,
+  tags: Array<{ tag: string; versionId: Id<"skillVersions"> }>,
+) {
+  if (actor.role !== "admin" && actor.role !== "moderator") {
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+    });
+  }
+
+  const versionsById = new Map<Id<"skillVersions">, Doc<"skillVersions">>();
+  for (const entry of tags) {
+    let version = versionsById.get(entry.versionId) ?? null;
+    if (!version) {
+      version = await ctx.db.get(entry.versionId);
+      if (version) versionsById.set(entry.versionId, version);
+    }
+    if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) {
+      throw new Error("Version not found");
+    }
+  }
+
+  const nextTags = { ...skill.tags };
+  for (const entry of tags) {
+    nextTags[entry.tag] = entry.versionId;
+  }
+
+  const changedTags = tags.filter((entry) => skill.tags[entry.tag] !== entry.versionId);
+  if (changedTags.length === 0) return { ok: true as const, skillId: skill._id };
+
+  let latestEntry: (typeof tags)[number] | undefined;
+  for (const entry of tags) {
+    if (entry.tag === "latest") latestEntry = entry;
+  }
+  const now = Date.now();
+  const patch: Partial<Doc<"skills">> = {
+    tags: nextTags,
+    latestVersionId: latestEntry ? latestEntry.versionId : skill.latestVersionId,
+    updatedAt: now,
+  };
+
+  // Keep latestVersionSummary in sync when the latest tag is repointed.
+  if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
+    const version = versionsById.get(latestEntry.versionId)!;
+    patch.latestVersionSummary = {
+      version: version.version,
+      createdAt: version.createdAt,
+      changelog: version.changelog,
+      changelogSource: version.changelogSource,
+      description: skillSummaryFromSkillVersion(version),
+      clawdis: version.parsed?.clawdis,
+    };
+  }
+
+  await ctx.db.patch(skill._id, patch);
+
+  if (
+    latestEntry &&
+    latestEntry.versionId !== skill.latestVersionId &&
+    shouldSyncModerationFromLatestVersion(skill)
+  ) {
+    await syncSkillModerationFromLatestVersion(
+      ctx,
+      { ...skill, latestVersionId: latestEntry.versionId },
+      now,
+    );
+  }
+
+  if (latestEntry) {
+    await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
+  }
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "skill.tags.update",
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: {
+      slug: skill.slug,
+      previous: Object.fromEntries(
+        changedTags.map((entry) => [entry.tag, skill.tags[entry.tag] ?? null]),
+      ),
+      next: Object.fromEntries(changedTags.map((entry) => [entry.tag, entry.versionId])),
+    },
+    createdAt: now,
+  });
+
+  return { ok: true as const, skillId: skill._id };
+}
+
 export const updateTags = mutation({
   args: {
     skillId: v.id("skills"),
@@ -10597,65 +10692,56 @@ export const updateTags = mutation({
     const { user } = await requireUser(ctx);
     const skill = await ctx.db.get(args.skillId);
     if (!skill) throw new Error("Skill not found");
-    if (skill.ownerUserId !== user._id) {
-      assertModerator(user);
-    }
+    return await updateSkillTagsForActor(ctx, user, skill, args.tags);
+  },
+});
 
-    const versionsById = new Map<Id<"skillVersions">, Doc<"skillVersions">>();
-    for (const entry of args.tags) {
-      let version = versionsById.get(entry.versionId) ?? null;
-      if (!version) {
-        version = await ctx.db.get(entry.versionId);
-        if (version) versionsById.set(entry.versionId, version);
-      }
-      if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) {
-        throw new Error("Version not found");
-      }
-    }
+export const setSkillTagForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    tag: v.string(),
+    version: v.string(),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
 
-    const nextTags = { ...skill.tags };
-    for (const entry of args.tags) {
-      nextTags[entry.tag] = entry.versionId;
-    }
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const requestedTag = args.tag.trim();
+    const normalizedTag =
+      requestedTag.toLowerCase() === "latest"
+        ? "latest"
+        : (normalizeSkillTags([requestedTag])?.[0] ?? "");
+    if (!normalizedTag) throw new ConvexError("Valid tag required");
+    const versionName = args.version.trim();
+    if (!versionName) throw new ConvexError("Version required");
+    const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
 
-    const latestEntry = args.tags.find((entry) => entry.tag === "latest");
-    const now = Date.now();
-    const patch: Partial<Doc<"skills">> = {
-      tags: nextTags,
-      latestVersionId: latestEntry ? latestEntry.versionId : skill.latestVersionId,
-      updatedAt: now,
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, ownerHandle);
+    if (resolved.ambiguous) {
+      throw new ConvexError("Slug is used by multiple publishers. Pass an owner handle.");
+    }
+    const skill = resolved.skill;
+    if (!skill) throw new ConvexError("Skill not found");
+
+    const version = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", versionName))
+      .unique();
+    if (!version) throw new ConvexError("Skill version not found");
+
+    await updateSkillTagsForActor(ctx, actor, skill, [
+      { tag: normalizedTag, versionId: version._id },
+    ]);
+    return {
+      ok: true as const,
+      slug: skill.slug,
+      tag: normalizedTag,
+      version: version.version,
     };
-
-    // Keep latestVersionSummary in sync when the latest tag is repointed
-    if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
-      const version = versionsById.get(latestEntry.versionId)!;
-      patch.latestVersionSummary = {
-        version: version.version,
-        createdAt: version.createdAt,
-        changelog: version.changelog,
-        changelogSource: version.changelogSource,
-        description: skillSummaryFromSkillVersion(version),
-        clawdis: version.parsed?.clawdis,
-      };
-    }
-
-    await ctx.db.patch(skill._id, patch);
-
-    if (
-      latestEntry &&
-      latestEntry.versionId !== skill.latestVersionId &&
-      shouldSyncModerationFromLatestVersion(skill)
-    ) {
-      await syncSkillModerationFromLatestVersion(
-        ctx,
-        { ...skill, latestVersionId: latestEntry.versionId },
-        now,
-      );
-    }
-
-    if (latestEntry) {
-      await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
-    }
   },
 });
 
@@ -10668,8 +10754,13 @@ export const deleteTags = mutation({
     const { user } = await requireUser(ctx);
     const skill = await ctx.db.get(args.skillId);
     if (!skill) throw new Error("Skill not found");
-    if (skill.ownerUserId !== user._id) {
-      assertModerator(user);
+    if (user.role !== "admin" && user.role !== "moderator") {
+      await assertCanManageOwnedResource(ctx, {
+        actor: user,
+        ownerUserId: skill.ownerUserId,
+        ownerPublisherId: skill.ownerPublisherId,
+        allowedPublisherRoles: ["admin"],
+      });
     }
 
     const nextTags = { ...skill.tags };

@@ -872,6 +872,26 @@ describe("httpApi handlers", () => {
     expect(await response.json()).toEqual({ ok: true });
   });
 
+  it("cliSkillDeleteHandler rejects a version instead of deleting the whole skill", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+    const request = new Request("https://x/api/cli/skill/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: "demo", version: "1.2.3" }),
+    });
+
+    const response = await __handlers.cliSkillDeleteHandler(
+      makeCtx({ runMutation }),
+      request,
+      true,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/legacy skill delete does not support versions/i);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
   it("cliSkillDeleteHandler supports undelete", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "user1" } as never);
     const runMutation = vi.fn().mockResolvedValue({ ok: true });

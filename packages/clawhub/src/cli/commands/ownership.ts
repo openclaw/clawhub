@@ -3,6 +3,7 @@ import {
   ApiRoutes,
   ApiV1SkillMergeResponseSchema,
   ApiV1SkillRenameResponseSchema,
+  ApiV1SkillTagResponseSchema,
   parseArk,
 } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
@@ -155,6 +156,58 @@ export async function cmdMergeSkill(
     );
     const parsed = parseArk(ApiV1SkillMergeResponseSchema, result, "Merge skill response");
     spinner.succeed(`Merged ${parsed.sourceSlug} into ${parsed.targetSlug}`);
+    return parsed;
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdSetSkillTag(
+  opts: GlobalOpts,
+  skillArg: string,
+  versionArg: string,
+  options: ConfirmOptions & { tag?: string },
+  inputAllowed: boolean,
+) {
+  const skill = parseSkillRef(skillArg);
+  const version = versionArg.trim();
+  if (!version) fail("Version required");
+  const requestedTag = options.tag?.trim() || "latest";
+  const tag = requestedTag.toLowerCase() === "latest" ? "latest" : requestedTag;
+  if (!/^[\x20-\x7e]+$/.test(tag) || tag.startsWith("$") || tag.startsWith("_")) {
+    fail("Valid tag required");
+  }
+
+  const confirmed = await requireYesOrConfirm(
+    options,
+    inputAllowed,
+    `Set ${tag} for ${formatSkillRef(skill)} to version ${version}?`,
+  );
+  if (!confirmed) return undefined;
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createCrabLoader(
+    `Setting ${tag} for ${formatSkillRef(skill)} to version ${version}`,
+  );
+
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}/tags/${encodeURIComponent(tag)}`,
+        token,
+        body: {
+          version,
+          ...(skill.ownerHandle ? { ownerHandle: skill.ownerHandle } : {}),
+        },
+      },
+      ApiV1SkillTagResponseSchema,
+    );
+    const parsed = parseArk(ApiV1SkillTagResponseSchema, result, "Set skill tag response");
+    spinner.succeed(`Set ${parsed.tag} for ${formatSkillRef(skill)} to ${parsed.version}`);
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));

@@ -7943,6 +7943,49 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("repoints a skill tag through the authenticated skill route", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        slug: "demo",
+        tag: "latest",
+        version: "1.2.3",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/tags/latest", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ version: "1.2.3", ownerHandle: "alice" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      slug: "demo",
+      tag: "latest",
+      version: "1.2.3",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:1",
+        slug: "demo",
+        tag: "latest",
+        version: "1.2.3",
+        ownerHandle: "alice",
+      }),
+    );
+  });
+
   it("deletes one skill version through the authenticated skill delete route", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",

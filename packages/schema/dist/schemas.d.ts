@@ -831,6 +831,12 @@ export declare const ApiV1DeleteResponseSchema: import("arktype/internal/variant
     ok: true;
     slugReservedUntil?: number | undefined;
 }, {}>;
+export declare const ApiV1SkillTagResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    tag: string;
+    version: string;
+}, {}>;
 export declare const ApiV1SkillRenameResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     slug: string;

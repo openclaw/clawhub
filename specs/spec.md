@@ -150,6 +150,8 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 - Each upload is a new `SkillVersion`.
 - `latest` tag always points to most recent version unless user re-tags.
 - Rollback: move `latest` (and optionally other tags) to an older version.
+- Tag movement requires personal ownership or org owner/admin membership, records an audit event,
+  and may target only an available version of the same skill.
 - Changelog is optional.
 
 ## Search

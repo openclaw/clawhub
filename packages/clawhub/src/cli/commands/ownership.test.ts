@@ -19,13 +19,34 @@ vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
 
-const { cmdMergeSkill, cmdRenameSkill } = await import("./ownership");
+const { cmdMergeSkill, cmdRenameSkill, cmdSetSkillTag } = await import("./ownership");
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 describe("ownership commands", () => {
+  it("repoints latest through the skill tag endpoint", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "demo",
+      tag: "latest",
+      version: "1.2.3",
+    });
+
+    await cmdSetSkillTag(makeGlobalOpts(), "@Alice/Demo", " 1.2.3 ", { yes: true }, false);
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo/tags/latest",
+        body: { version: "1.2.3", ownerHandle: "alice" },
+      }),
+      expect.anything(),
+    );
+  });
+
   it("rename requires --yes when input is disabled", async () => {
     await expect(cmdRenameSkill(makeGlobalOpts(), "demo", "demo-new", {}, false)).rejects.toThrow(
       /--yes/i,
