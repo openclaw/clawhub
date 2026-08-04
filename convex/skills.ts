@@ -172,6 +172,7 @@ import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
+import { closeOrphanedSkillPublishAttempt } from "./publishAttempts";
 import schema from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
@@ -13532,12 +13533,10 @@ export const discardPendingPublicationInternal = internalMutation({
   },
 });
 
-export const publishPendingVersionInternal = internalMutation({
-  args: {
-    versionId: v.id("skillVersions"),
-    publishArgs: v.any(),
-  },
-  handler: async (ctx, args) => {
+async function publishPendingVersionHandler(
+  ctx: MutationCtx,
+  args: { versionId: Id<"skillVersions">; publishArgs: unknown },
+) {
     const version = await ctx.db.get(args.versionId);
     if (!version || version.softDeletedAt) {
       throw new ConvexError("Pending skill version not found.");
@@ -13765,6 +13764,51 @@ export const publishPendingVersionInternal = internalMutation({
       embeddingId,
       publicationStatus: "published" as const,
     };
+}
+
+export const publishPendingVersionInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    publishArgs: v.any(),
+  },
+  handler: publishPendingVersionHandler,
+});
+
+// #3401 finding 3: repairOrphanedPendingSkillVersionHandler used to publish,
+// schedule followups, and only then force-close the orphaned publishAttempts
+// row as three separate steps. If the process crashed (or followups threw)
+// between the publish and the close, the version was already published but
+// the attempt stayed non-terminal and reclaimable, so the normal finalization
+// dispatcher could later re-run followups (owner webhook, duplicate
+// VT/security scans) against an already-published version. Publishing and
+// closing the attempt in the same mutation transaction removes that window:
+// either both happen atomically, or neither does and the repair is retried
+// from the top. Safe to call with an already-published version (idempotent
+// early-return above) plus a still-open attemptId, which is exactly the
+// cleanup path an interrupted repair needs on retry.
+export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    publishArgs: v.any(),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
+  },
+  handler: async (ctx, args) => {
+    const result = await publishPendingVersionHandler(ctx, {
+      versionId: args.versionId,
+      publishArgs: args.publishArgs,
+    });
+    if (!args.publishAttemptId) return { result, attemptCloseWarning: undefined };
+
+    const closeOutcome = await closeOrphanedSkillPublishAttempt(
+      ctx,
+      args.publishAttemptId,
+      result,
+    );
+    const attemptCloseWarning =
+      !closeOutcome.closed && closeOutcome.reason === "claim-active"
+        ? ("claim-active" as const)
+        : undefined;
+    return { result, attemptCloseWarning };
   },
 });
 

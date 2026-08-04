@@ -3814,15 +3814,16 @@ type SkillVersionRepairOutcome =
       version: string;
       result: PublishResult;
       // Set when the original publishAttempts row could not be force-closed
-      // because a live worker still claims it (see the force-close comment
-      // below). The version write above is idempotent, so a racing worker's
-      // own publishPendingVersionInternal call is a safe no-op, but its
+      // because a live worker still claims it (see
+      // publishPendingVersionAndCloseAttemptInternal in convex/skills.ts).
+      // The version write is idempotent, so a racing worker's own
+      // publishPendingVersionInternal call is a safe no-op, but its
       // followups are not: it will still schedule an owner webhook and a
       // duplicate VT/security-scan dispatch. Rare (requires a worker to claim
-      // the attempt in the gap between the pre-check above and this close
-      // call) and left to surface here rather than engineered away, since
-      // this whole path is an admin-triggered manual/sweep repair, not a
-      // request-time flow.
+      // the attempt in the gap between the pre-check above and the combined
+      // publish+close mutation) and left to surface here rather than
+      // engineered away, since this whole path is an admin-triggered
+      // manual/sweep repair, not a request-time flow.
       attemptCloseWarning?: "claim-active";
     };
 
@@ -3844,10 +3845,22 @@ export async function repairOrphanedPendingSkillVersionHandler(
     };
   }
 
-  const activeAttempt = await ctx.runQuery(
-    internal.publishAttempts.findActiveSkillPublishAttemptInternal,
-    { skillId: context.skillId, slug: context.slug, version: context.version },
-  );
+  // Prefer the exact attemptId recorded on the version's own repair context
+  // (#3401): a single direct get is both cheaper and more precise than the
+  // slug/version take(10) scan, which can miss an active attempt if more
+  // than 10 attempts ever shared the same kind+status+slug+version. Fall
+  // back to the scan only when the version predates publishAttemptId being
+  // recorded.
+  const activeAttempt = context.publishAttemptId
+    ? await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal, {
+        attemptId: context.publishAttemptId,
+        skillId: context.skillId,
+      })
+    : await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptInternal, {
+        skillId: context.skillId,
+        slug: context.slug,
+        version: context.version,
+      });
   if (activeAttempt) {
     return {
       repaired: false,
@@ -3866,10 +3879,24 @@ export async function repairOrphanedPendingSkillVersionHandler(
   }
 
   const skillInsertArgs = await prepareSkillInsertArgsForFinalization(ctx, context.skillInsertArgs);
-  const result = (await ctx.runMutation(internal.skills.publishPendingVersionInternal, {
-    versionId,
-    publishArgs: skillInsertArgs,
-  })) as PublishResult;
+  // Publish and force-close the orphaned publishAttempts row in the same
+  // mutation transaction (#3401 finding 3). Doing these as two separate
+  // ctx.runMutation calls left a window where a crash or thrown error
+  // between them published the version but left the attempt reclaimable by
+  // the normal finalization dispatcher, which would then re-run followups
+  // (duplicate owner webhook, duplicate scan dispatch) against an
+  // already-published version. This also covers the retry cleanup case: if
+  // a prior repair attempt already published the version but crashed before
+  // closing the attempt, this call is idempotent on the publish side and
+  // still closes the still-open attempt.
+  const { result, attemptCloseWarning } = (await ctx.runMutation(
+    internal.skills.publishPendingVersionAndCloseAttemptInternal,
+    {
+      versionId,
+      publishArgs: skillInsertArgs,
+      publishAttemptId: context.publishAttemptId ?? undefined,
+    },
+  )) as { result: PublishResult; attemptCloseWarning?: "claim-active" };
 
   // A manual repair runs long after the original publish request landed;
   // skip the owner webhook (still schedules VT/security-scan followups)
@@ -3880,22 +3907,6 @@ export async function repairOrphanedPendingSkillVersionHandler(
     version: context.version,
     displayName: context.displayName,
   } satisfies SkillPublishFollowup);
-
-  // The original publishAttempts row (if its worker crashed or exhausted
-  // retries) is still non-terminal at this point. Force-close it now that
-  // the version is republished directly, so the normal finalization
-  // dispatcher can never re-claim it and re-run followups (duplicate owner
-  // webhook, duplicate scan dispatch) against an already-published version.
-  let attemptCloseWarning: "claim-active" | undefined;
-  if (context.publishAttemptId) {
-    const closeOutcome = await ctx.runMutation(
-      internal.publishAttempts.closeOrphanedSkillPublishAttemptInternal,
-      { attemptId: context.publishAttemptId, result },
-    );
-    if (!closeOutcome.closed && closeOutcome.reason === "claim-active") {
-      attemptCloseWarning = "claim-active";
-    }
-  }
 
   return {
     repaired: true,
