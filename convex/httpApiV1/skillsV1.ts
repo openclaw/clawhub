@@ -2269,6 +2269,26 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       if (moderationBlock) {
         return text(moderationBlock.message, moderationBlock.status, rate.headers);
       }
+      // #3401 finding 4: a brand-new staged skill has no published version
+      // at all (hidden, moderationReason "pending.publication", no
+      // latest/tags), so the public getBySlug above and
+      // getUnavailableSkillVersionBlock's version lookup both miss entirely.
+      // Fall back to the same owner-only stuck-pending diagnostic used when
+      // the skill exists but the specific version doesn't, so the owner gets
+      // 423/409 instead of a bare 404 immediately after publishing.
+      const internalSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+        slug,
+        ...(ownerHandle ? { ownerHandle } : {}),
+      });
+      if (internalSkill) {
+        const pendingState = await describeOwnerVisibleSkillVersionState(
+          ctx,
+          request,
+          internalSkill._id,
+          { version: third },
+        );
+        if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
+      }
       return skillNotFoundOrAmbiguousResponse(
         request,
         skillResult,
