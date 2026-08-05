@@ -15,7 +15,7 @@
         "@fontsource/noto-sans-sc": "5.3.0",
         "@monaco-editor/react": "4.7.0",
         "@openclaw/carapace": "git+https://github.com/openclaw/carapace.git#v0.6.1",
-        "@openclaw/plugin-inspector": "0.3.20",
+        "@openclaw/plugin-inspector": "0.3.21",
         "@radix-ui/react-avatar": "1.2.6",
         "@radix-ui/react-dialog": "1.1.23",
         "@radix-ui/react-dropdown-menu": "2.1.24",
@@ -108,7 +108,7 @@
       },
       "dependencies": {
         "@clack/prompts": "1.7.0",
-        "@openclaw/plugin-inspector": "0.3.20",
+        "@openclaw/plugin-inspector": "0.3.21",
         "arktype": "2.2.3",
         "commander": "15.0.0",
         "croner": "10.0.1",
@@ -455,7 +455,7 @@
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
-    "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.20", "", { "dependencies": { "semver": "^7.8.5", "tar": "^7.5.22" }, "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-Tyudswj2I/0BCCK9cQ2x8znzjOEuZZhT00hTnGaPiinYHvbPwiZIW7s8EMJKnGW53g7e1UGccCq+Fq2OCfKMsA=="],
+    "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.21", "", { "dependencies": { "semver": "^7.8.5", "tar": "^7.5.22" }, "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-EKrsUSI+cYNMi90XECHNbvJ7HrlBS8XXcXFMaw3c64ZVCAVC93dF6f9OgOJ7Mli8XzTnN5vOEhg+K/gKC5l6fg=="],
 
     "@oslojs/asn1": ["@oslojs/asn1@1.0.0", "", { "dependencies": { "@oslojs/binary": "1.0.0" } }, "sha512-zw/wn0sj0j0QKbIXfIlnEcTviaCzYOY3V5rAyjR6YtOByFtJiT574+8p9Wlach0lZH9fddD4yb9laEAIl4vXQA=="],
 
