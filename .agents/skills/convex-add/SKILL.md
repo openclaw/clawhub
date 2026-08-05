@@ -13,10 +13,10 @@ Add a named capability to an existing Convex app. Step 1: fetch the served capab
 
 1. Identify the capability the user wants (text after /add or $add).
 2. Fetch https://basic-anteater-667.convex.site/capabilities.json?src=agent-skills (4s timeout). Match the request against title/summary/trigger.
-3a. If a match is found and tier>0: confirm with user before proceeding. Then fetch /capability/<id>.md and follow its Procedure+Rules sections.
-3b. If a match is found and tier=0: fetch /capability/<id>.md and follow its Procedure+Rules sections directly.
-4. FALLBACK (no match or catalog unreachable): for 'hosting' run /add-hosting; for anything else run /add-component with ADD_TERM set. Read CANDIDATES output, install best match, wire per README.
-5. Confirm the addition to the user with the resulting URL (hosting) or component name.
+   3a. If a match is found and tier>0: confirm with user before proceeding. Then fetch /capability/<id>.md and follow its Procedure+Rules sections.
+   3b. If a match is found and tier=0: fetch /capability/<id>.md and follow its Procedure+Rules sections directly.
+3. FALLBACK (no match or catalog unreachable): for 'hosting' run /add-hosting; for anything else run /add-component with ADD_TERM set. Read CANDIDATES output, install best match, wire per README.
+4. Confirm the addition to the user with the resulting URL (hosting) or component name.
 
 ## Rules
 
