@@ -312,6 +312,9 @@ jobs:
     with:
       owner: nvidia
       dry_run: false
+      changelog: "Describe the changes in this release."
+      categories: "automation"
+      topics: "code-review,linting"
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
@@ -321,6 +324,15 @@ Notes:
 - `root` defaults to `skills` for catalog repos.
 - Pass `skill_path: skills/review-helper` to process one skill folder.
 - `owner` maps to the CLI `--owner` flag; omit it to publish as the authenticated user.
+- `changelog`, `categories`, and `topics` map to the matching `skill publish`
+  flags and are optional. Omitting them leaves the published metadata untouched.
+- Like `tags`, these three apply to **every** skill the run publishes. Pass
+  `skill_path` when the values describe one skill rather than the whole catalog.
+- Categories and topics are comma-separated and validated server-side, so an
+  unknown category slug or a topic over the per-skill limit fails the publish
+  after the run has already built and validated the skill.
+- The run logs echo the resolved `skill publish` command for each target, so a
+  forwarded flag is visible in CI output. Keep the values non-sensitive.
 - V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
 
 ### `delete <skill>`
