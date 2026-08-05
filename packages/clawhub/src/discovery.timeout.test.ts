@@ -35,6 +35,33 @@ function stubJsonFetch(status: number, body: unknown) {
   );
 }
 
+function stubStalledBodyFetch() {
+  globalStubs.stub(
+    "fetch",
+    vi.fn(
+      async (_input: unknown, init?: RequestInit) => {
+        const signal = init?.signal;
+        // Return a response with headers immediately, but body never completes
+        const response = new Response(null, {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+        // Override .json() to hang forever (or abort if signal fires)
+        response.json = vi.fn(
+          () =>
+            new Promise<unknown>((_resolve, reject) => {
+              if (!signal) return; // hangs forever
+              signal.addEventListener("abort", () => {
+                reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+              });
+            }),
+        );
+        return response;
+      },
+    ) as unknown as typeof fetch,
+  );
+}
+
 describe("discoverRegistryFromSite timeout", () => {
   afterEach(() => {
     globalStubs.restoreAll();
@@ -47,6 +74,17 @@ describe("discoverRegistryFromSite timeout", () => {
     { timeout: 5_000 },
     async () => {
       stubNeverResolvingFetch();
+      await expect(discoverRegistryFromSite("https://example.com", 50)).rejects.toThrow(
+        /Request timed out after \d+s/,
+      );
+    },
+  );
+
+  it(
+    "rejects with a timeout error when the response body never completes",
+    { timeout: 5_000 },
+    async () => {
+      stubStalledBodyFetch();
       await expect(discoverRegistryFromSite("https://example.com", 50)).rejects.toThrow(
         /Request timed out after \d+s/,
       );
