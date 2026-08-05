@@ -3,6 +3,7 @@
 @import "@openclaw/carapace/typography.css";
 @import "@openclaw/carapace/themes/product.css";
 @import "@openclaw/carapace/components.css";
+@import "@openclaw/carapace/candidate/data.css";
 @import "@openclaw/carapace/compat/clawhub.css";
 
 /*

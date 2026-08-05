@@ -7891,9 +7891,8 @@ a.skills-sh-security-audit-row:focus-visible {
   white-space: nowrap;
 }
 
-.metric-trend-chart {
-  display: block;
-  width: 100%;
+.oc-sparkline.metric-trend-chart {
+  max-width: none;
   height: 34px;
   color: var(--metric-trend-line);
   outline: none;
@@ -7905,15 +7904,12 @@ a.skills-sh-security-audit-row:focus-visible {
   outline-offset: 3px;
 }
 
-.metric-trend-area {
+.oc-sparkline-fill.metric-trend-area {
   fill: var(--metric-trend-area);
 }
 
-.metric-trend-line {
-  fill: none;
+.oc-sparkline-line.metric-trend-line {
   stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
   stroke-width: 2;
 }
 
@@ -9281,7 +9277,7 @@ a.skills-sh-security-audit-row:focus-visible {
     font-size: 11px;
   }
 
-  .metric-trend-chart {
+  .oc-sparkline.metric-trend-chart {
     height: 22px;
   }
 
