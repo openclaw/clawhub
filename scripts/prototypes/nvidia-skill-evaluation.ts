@@ -8,12 +8,14 @@ import {
   readFile,
   readdir,
   rename,
+  rmdir,
   stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { computeGitHubSkillFolderContentHash } from "../../convex/lib/githubSkillSync";
@@ -324,11 +326,18 @@ export async function planOfficialSkillEvaluation(input: OfficialSkillEvaluation
   };
 }
 
-async function capture(command: string[]) {
+async function capture(
+  command: string[],
+  options: { cwd?: string; environment?: Record<string, string> } = {},
+) {
   const [executable, ...args] = command;
   if (!executable) throw new Error("Cannot run an empty command");
   return await new Promise<string>((resolvePromise, reject) => {
-    const child = spawn(executable, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(executable, args, {
+      cwd: options.cwd,
+      env: options.environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
@@ -384,35 +393,39 @@ async function assertOfficialGitHubCheckout(
   if (githubRepositoryFromRemote(remote) !== expectedRepository.toLowerCase()) {
     throw new Error(`${label} checkout origin must be github.com/${expectedRepository}.`);
   }
-  const remoteRefs = await capture([
-    "git",
-    "-C",
-    checkoutPath,
-    "for-each-ref",
-    "--contains",
-    "HEAD",
-    "--format=%(refname)",
-    "refs/remotes/origin",
-  ]);
-  if (!remoteRefs.split("\n").some((ref) => ref.startsWith("refs/remotes/origin/"))) {
-    throw new Error(`${label} commit must be present on a fetched origin ref.`);
-  }
 }
 
-async function materializeGitSnapshot(checkoutPath: string, commit: string, label: string) {
+function officialGitHubRemoteUrl(repository: string) {
+  if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repository)) {
+    throw new Error(`Invalid GitHub repository identity: ${repository}`);
+  }
+  return `https://github.com/${repository}.git`;
+}
+
+async function materializeOfficialGitHubSnapshot(
+  repository: string,
+  commit: string,
+  label: string,
+) {
   const snapshotRoot = await mkdtemp(join(tmpdir(), "clawhub-skill-eval-snapshot-"));
   process.once("exit", () => rmSync(snapshotRoot, { recursive: true, force: true }));
   const snapshotPath = join(snapshotRoot, "checkout");
+  await capture(["git", "init", "--quiet", snapshotPath]);
   await capture([
     "git",
-    "clone",
-    "--quiet",
-    "--shared",
-    "--no-checkout",
-    checkoutPath,
+    "-C",
     snapshotPath,
+    "fetch",
+    "--quiet",
+    "--depth=1",
+    officialGitHubRemoteUrl(repository),
+    commit,
   ]);
-  await capture(["git", "-C", snapshotPath, "checkout", "--quiet", "--detach", commit]);
+  const fetchedCommit = await capture(["git", "-C", snapshotPath, "rev-parse", "FETCH_HEAD"]);
+  if (fetchedCommit !== commit) {
+    throw new Error(`${label} remote resolved ${commit} to unexpected commit ${fetchedCommit}.`);
+  }
+  await capture(["git", "-C", snapshotPath, "checkout", "--quiet", "--detach", "FETCH_HEAD"]);
   const snapshotCommit = await capture(["git", "-C", snapshotPath, "rev-parse", "HEAD"]);
   if (snapshotCommit !== commit) throw new Error(`${label} snapshot did not resolve to ${commit}.`);
   return snapshotPath;
@@ -519,6 +532,27 @@ async function writeJson(path: string, value: unknown) {
   } catch (error) {
     await unlink(temporaryPath).catch(() => undefined);
     throw error;
+  }
+}
+
+async function withFilesystemLock<T>(lockPath: string, operation: () => Promise<T>) {
+  await mkdir(dirname(lockPath), { recursive: true });
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await mkdir(lockPath);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (attempt >= 399) {
+        throw new Error(`Timed out waiting for local evaluation lock: ${lockPath}`);
+      }
+      await delay(25);
+    }
+  }
+  try {
+    return await operation();
+  } finally {
+    await rmdir(lockPath);
   }
 }
 
@@ -631,24 +665,26 @@ export async function updateLocalEvaluationIndex({
   contentHash: string;
 }) {
   const indexPath = join(webRoot, "index.json");
-  const index = await readJsonFile<EvaluationIndex>(indexPath, {
-    schemaVersion: 1,
-    evaluations: [],
+  await withFilesystemLock(`${indexPath}.lock`, async () => {
+    const index = await readJsonFile<EvaluationIndex>(indexPath, {
+      schemaVersion: 1,
+      evaluations: [],
+    });
+    if (index.schemaVersion !== 1 || !Array.isArray(index.evaluations)) {
+      throw new Error("Unsupported local evaluation index");
+    }
+    const evaluations = index.evaluations.filter(
+      (entry) =>
+        !(entry.repository === repository && entry.commit === commit && entry.path === sourcePath),
+    );
+    evaluations.push({ repository, commit, path: sourcePath, contentHash });
+    evaluations.sort((left, right) =>
+      [left.repository, left.commit, left.path]
+        .join(":")
+        .localeCompare([right.repository, right.commit, right.path].join(":")),
+    );
+    await writeJson(indexPath, { schemaVersion: 1, evaluations } satisfies EvaluationIndex);
   });
-  if (index.schemaVersion !== 1 || !Array.isArray(index.evaluations)) {
-    throw new Error("Unsupported local evaluation index");
-  }
-  const evaluations = index.evaluations.filter(
-    (entry) =>
-      !(entry.repository === repository && entry.commit === commit && entry.path === sourcePath),
-  );
-  evaluations.push({ repository, commit, path: sourcePath, contentHash });
-  evaluations.sort((left, right) =>
-    [left.repository, left.commit, left.path]
-      .join(":")
-      .localeCompare([right.repository, right.commit, right.path].join(":")),
-  );
-  await writeJson(indexPath, { schemaVersion: 1, evaluations } satisfies EvaluationIndex);
 }
 
 function relativeRepoPath(checkoutPath: string, path: string | undefined) {
@@ -679,6 +715,9 @@ async function main() {
   let evaluatorRepoPath = requestedEvaluatorRepoPath;
   const sourcePath = normalizeSourcePath(checkoutPath, values["skill-path"]);
   const sourceRepo = values["source-repo"].trim().toLowerCase();
+  if (!OFFICIAL_SKILL_SOURCES.has(sourceRepo)) {
+    throw new Error(`${sourceRepo} is not an allowlisted official skill source.`);
+  }
   const outputDirectory = resolve(values["output-dir"]);
   const webRoot = resolve(LOCAL_EVALUATION_WEB_ROOT);
   const model = values.model;
@@ -687,23 +726,24 @@ async function main() {
   await Promise.all([
     assertCleanGitCheckout(checkoutPath, "Skill source"),
     assertCleanGitCheckout(evaluatorRepoPath, "SkillEvaluator"),
-    ...(OFFICIAL_SKILL_SOURCES.has(sourceRepo)
-      ? [assertOfficialGitHubCheckout(checkoutPath, sourceRepo, "Skill source")]
-      : []),
+    assertOfficialGitHubCheckout(checkoutPath, sourceRepo, "Skill source"),
     assertOfficialGitHubCheckout(evaluatorRepoPath, "nvidia/skillevaluator", "SkillEvaluator"),
   ]);
   [checkoutPath, evaluatorRepoPath] = await Promise.all([
-    materializeGitSnapshot(requestedCheckoutPath, sourceCommit, "Skill source"),
-    materializeGitSnapshot(requestedEvaluatorRepoPath, evaluatorCommit, "SkillEvaluator"),
+    materializeOfficialGitHubSnapshot(sourceRepo, sourceCommit, "Skill source"),
+    materializeOfficialGitHubSnapshot(
+      "nvidia/skillevaluator",
+      evaluatorCommit,
+      "SkillEvaluator",
+    ),
   ]);
-  const evaluatorVersion = await capture([
-    "uv",
-    "run",
-    "--project",
-    evaluatorRepoPath,
-    "skillevaluator",
-    "--version",
-  ]);
+  const evaluatorVersion = await capture(
+    ["uv", "run", "--project", evaluatorRepoPath, "skillevaluator", "--version"],
+    {
+      cwd: evaluatorRepoPath,
+      environment: buildEvaluatorProcessEnvironment(process.env, {}, evaluatorRepoPath),
+    },
+  );
   const trackedEntries = await gitTrackedEntries(checkoutPath, sourcePath);
   const contentHash = await computeGitHubSkillFolderContentHash(trackedEntries, sourcePath);
   const statePath = join(outputDirectory, "sync-state.json");

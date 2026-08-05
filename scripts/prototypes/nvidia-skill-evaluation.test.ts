@@ -316,4 +316,25 @@ describe("local evaluation artifact index", () => {
       ],
     });
   });
+
+  it("preserves every entry when index updates overlap", async () => {
+    const webRoot = await mkdtemp(join(tmpdir(), "clawhub-skill-eval-web-"));
+    const commits = Array.from({ length: 20 }, (_, index) => index.toString(16).padStart(40, "0"));
+    await Promise.all(
+      commits.map((commit) =>
+        updateLocalEvaluationIndex({
+          webRoot,
+          repository: "nvidia/skills",
+          commit,
+          sourcePath: "skills/doca-dpa",
+          contentHash: "b".repeat(64),
+        }),
+      ),
+    );
+
+    const index = JSON.parse(await readFile(join(webRoot, "index.json"), "utf8")) as {
+      evaluations: Array<{ commit: string }>;
+    };
+    expect(index.evaluations.map((entry) => entry.commit)).toEqual(commits);
+  });
 });
