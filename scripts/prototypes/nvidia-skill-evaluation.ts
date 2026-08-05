@@ -563,12 +563,27 @@ async function republishDurableArtifact(
   return true;
 }
 
-function artifactRelativeDirectory(sourceRepo: string, contentHash: string, sourcePath: string) {
+function artifactIdentitySegments(sourceRepo: string, contentHash: string, sourcePath: string) {
   const segments = [...sourceRepo.split("/"), contentHash, ...sourcePath.split("/")];
   if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
     throw new Error("Artifact identity contains an unsafe path segment");
   }
-  return join(...segments);
+  return segments;
+}
+
+function artifactRelativeDirectory(sourceRepo: string, contentHash: string, sourcePath: string) {
+  return join(...artifactIdentitySegments(sourceRepo, contentHash, sourcePath));
+}
+
+export function buildLocalEvaluationArtifactBaseUrl(
+  sourceRepo: string,
+  contentHash: string,
+  sourcePath: string,
+) {
+  const encodedPath = artifactIdentitySegments(sourceRepo, contentHash, sourcePath)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${LOCAL_EVALUATION_WEB_BASE_URL}/${encodedPath}`;
 }
 
 async function findLatestRunDirectory(resultsRoot: string) {
@@ -708,12 +723,7 @@ async function main() {
   const durableArtifactDirectory = join(outputDirectory, "runs", relativeArtifactDirectory);
   const webArtifactDirectory = join(webRoot, relativeArtifactDirectory);
   const manifestPath = join(webArtifactDirectory, "evaluation.json");
-  const manifestBaseUrl = `${LOCAL_EVALUATION_WEB_BASE_URL}/${relative(
-    webRoot,
-    webArtifactDirectory,
-  )
-    .split(sep)
-    .join("/")}`;
+  const manifestBaseUrl = buildLocalEvaluationArtifactBaseUrl(sourceRepo, contentHash, sourcePath);
   if (values.rerun) {
     const existingRecord = await readJsonFile<SkillEvaluationRunRecord | null>(
       join(durableArtifactDirectory, "evaluation.json"),

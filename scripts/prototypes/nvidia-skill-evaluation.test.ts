@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildEvaluatorProcessEnvironment,
+  buildLocalEvaluationArtifactBaseUrl,
   buildTier3EvaluateInvocation,
   discoverSkillEvals,
   planOfficialSkillEvaluation,
@@ -278,6 +279,12 @@ describe("canonical SkillEvaluator execution", () => {
 });
 
 describe("local evaluation artifact index", () => {
+  it("URL-encodes every published artifact identity segment", () => {
+    expect(
+      buildLocalEvaluationArtifactBaseUrl("nvidia/skills", "b".repeat(64), "skills/doca#dpa/café"),
+    ).toBe(`/__skill-evaluator-demo/nvidia/skills/${"b".repeat(64)}/skills/doca%23dpa/caf%C3%A9`);
+  });
+
   it("maps each observed source commit to reusable skill-content artifacts", async () => {
     const webRoot = await mkdtemp(join(tmpdir(), "clawhub-skill-eval-web-"));
     const contentHash = "b".repeat(64);
