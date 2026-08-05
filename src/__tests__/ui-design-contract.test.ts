@@ -402,8 +402,13 @@ describe("restored UI design contract", () => {
     );
     expect(listingSource).not.toContain("home-v2-listing-view");
     expect(listingSource).not.toContain("HomeListingCategorySelect");
-    expect(listingSource).not.toContain("Search catalog");
+    expect(listingSource).toContain("BrowseSearchTrigger");
+    expect(listingSource).toContain("BrowseCategorySelect");
+    expect(listingSource).toContain('label="Search catalog"');
     expect(listingSource.indexOf('className="home-v2-listing-sort"')).toBeLessThan(
+      listingSource.indexOf('className="home-v2-listing-actions"'),
+    );
+    expect(listingSource.indexOf('className="home-v2-listing-actions"')).toBeLessThan(
       listingSource.indexOf('className="home-v2-listing-kind'),
     );
     expect(appsSource).toContain('className="home-v2-apps-tile"');
@@ -429,7 +434,7 @@ describe("restored UI design contract", () => {
     expect(homeSource).not.toContain("Featured skills");
     expect(homeSource).not.toContain("Trending Now");
     expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
-    expect(cssRule(css, ".home-v2-listing-kind")).toContain("margin-left: auto");
+    expect(cssRule(css, ".home-v2-listing-actions")).toContain("margin-left: auto");
     expect(cssRule(css, ".home-v2-listing-row::before")).toContain("border-radius: 0");
   });
 

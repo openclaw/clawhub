@@ -161,8 +161,10 @@ describe("HomeListingSection", () => {
       "Official",
       "New",
     ]);
-    expect(screen.queryByRole("button", { name: "Search catalog" })).toBeNull();
-    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Search catalog" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+      "All categories",
+    );
     expect(screen.queryByRole("button", { name: "List view" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
@@ -186,6 +188,101 @@ describe("HomeListingSection", () => {
     expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
     expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
     expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(6);
+  });
+
+  it("searches skills within the selected tab and category", async () => {
+    convexActionMock.mockResolvedValue([
+      {
+        skill: {
+          _id: "skills:featured-development",
+          slug: "featured-development",
+          displayName: "Featured Development Skill",
+          summary: "Builds software.",
+          categories: ["development"],
+          stats: { stars: 1, downloads: 10 },
+        },
+        ownerHandle: "builder",
+      },
+    ]);
+
+    render(<HomeListingSection initialListing={initialPluginListing()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Development" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "development" },
+    });
+
+    await waitFor(() => {
+      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
+        query: "development",
+        limit: 20,
+        highlightedOnly: true,
+        categorySlug: "development",
+      });
+      expect(screen.getByText("Featured Development Skill")).toBeTruthy();
+    });
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
+
+  it("searches plugins within the selected tab and category", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({
+      items: [
+        {
+          ...featuredPlugin,
+          name: "official-channel-plugin",
+          displayName: "Official Channel Plugin",
+          isOfficial: true,
+          categories: ["channels"],
+        },
+      ],
+      nextCursor: null,
+    });
+
+    render(<HomeListingSection initialListing={initialPluginListing()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Channels" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search plugins" }), {
+      target: { value: "channel" },
+    });
+
+    await waitFor(() => {
+      expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: "channel",
+          category: "channels",
+          isOfficial: true,
+          limit: 20,
+        }),
+      );
+      expect(screen.getByText("Official Channel Plugin")).toBeTruthy();
+    });
+    expect(screen.getByRole("tab", { name: "Official" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
+
+  it("clears and hides the category filter when Trending is selected", async () => {
+    render(<HomeListingSection initialListing={initialPluginListing()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Development" }));
+
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain("Development");
+    fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
+    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+      "All categories",
+    );
   });
 
   it("previews long skill and plugin names while retaining their full labels", async () => {

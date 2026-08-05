@@ -302,7 +302,9 @@ describe("HomeListingSection", () => {
         expect.objectContaining({ sort: "newest", createdAfter: expect.any(Number) }),
       );
     });
-    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+      "All categories",
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
     await waitFor(() => {
