@@ -168,7 +168,12 @@ describe("HomeListingSection", () => {
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(document.querySelector(".home-v2-listing-list")).toBeTruthy();
     expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(document.querySelector(".home-v2-listing-row-icon")).toBeNull();
+    expect(document.querySelectorAll(".home-v2-listing-row-icon")).toHaveLength(1);
+    expect(
+      document
+        .querySelector<HTMLImageElement>(".home-v2-listing-row-icon img")
+        ?.getAttribute("src"),
+    ).toBe(featuredPlugin.icon);
     expect(document.querySelector(".home-v2-listing-row-stats svg")).toBeNull();
   });
 
@@ -261,6 +266,8 @@ describe("HomeListingSection", () => {
     );
 
     expect(screen.getByText("Initial Skill")).toBeTruthy();
+    expect(document.querySelector(".home-v2-listing-row-icon")).toBeNull();
+    expect(document.querySelector(".marketplace-icon-skill")).toBeNull();
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
     await waitFor(() => {
       expect(convexQueryMock).not.toHaveBeenCalled();

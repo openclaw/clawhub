@@ -20,6 +20,7 @@ import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { presentationTitle } from "../lib/presentationTitle";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
 import { Badge } from "./ui/badge";
@@ -192,7 +193,16 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
-    <Link to={pluginHref} className="home-v2-listing-row">
+    <Link to={pluginHref} className="home-v2-listing-row home-v2-listing-row-with-icon">
+      <span className="home-v2-listing-row-icon" aria-hidden="true">
+        <MarketplaceIcon
+          kind="plugin"
+          label={name}
+          imageUrl={plugin.icon}
+          categorySlug={plugin.categories?.[0]}
+          size="sm"
+        />
+      </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
           <span className="home-v2-listing-row-name" title={name}>
@@ -464,7 +474,13 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       </div>
 
       {activeStatus === "idle" && activeItems.length > 0 ? (
-        <div className="home-v2-listing-head" aria-hidden="true">
+        <div
+          className={`home-v2-listing-head${
+            kind === "plugins" ? " home-v2-listing-head-with-icon" : ""
+          }`}
+          aria-hidden="true"
+        >
+          {kind === "plugins" ? <span className="home-v2-listing-head-icon-spacer" /> : null}
           <span className="home-v2-listing-head-label">
             {kind === "skills" ? "Skill" : "Plugin"}
           </span>

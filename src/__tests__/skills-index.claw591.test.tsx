@@ -140,6 +140,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText("8K")).toBeNull();
     expect(screen.queryByText("skills.sh")).toBeNull();
     expect(screen.queryByText(/Not scanned by ClawHub/i)).toBeNull();
+    expect(document.querySelector(".marketplace-icon-skill")).toBeNull();
   });
 
   it("labels canonical Trending grid cards as downloads", async () => {
@@ -153,6 +154,7 @@ describe("SkillsIndex", () => {
     expect(await screen.findByText("First Skill")).toBeTruthy();
     expect(screen.getByLabelText("24-hour downloads").textContent).toContain("17");
     expect(screen.queryByLabelText("24-hour installs")).toBeNull();
+    expect(document.querySelector(".marketplace-icon-skill")).toBeNull();
   });
 
   it("shows skills.sh provenance without presenting lifetime installs as downloads", async () => {

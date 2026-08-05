@@ -802,6 +802,30 @@ describe("SkillsIndex", () => {
     );
     expect(titles).toEqual(["Native Find", "Find Skills"]);
     expect(screen.getByText("skills.sh")).toBeTruthy();
+    expect(document.querySelector(".marketplace-icon-skill")).toBeNull();
+    expect(document.querySelector(".browse-list-head-icon-spacer")).toBeNull();
+  });
+
+  it("keeps native and external grid results free of skill icons", async () => {
+    searchMock = { q: "find skills", view: "grid" };
+    convexReactMocks.useAction.mockReturnValue(
+      vi
+        .fn()
+        .mockResolvedValue([
+          makeSearchResult("native-find", "Native Find", 6_000, 2_000),
+          makeExternalSearchResult("vercel-labs/skills/find-skills", "Find Skills", 5_000),
+        ]),
+    );
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(screen.getByText("Native Find")).toBeTruthy();
+    expect(screen.getByText("Find Skills")).toBeTruthy();
+    expect(document.querySelector(".marketplace-icon-skill")).toBeNull();
   });
 
   it("includes results explicitly assigned to the selected category", async () => {
