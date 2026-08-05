@@ -31,6 +31,20 @@ describe("truncateText", () => {
     );
   });
 
+  it("keeps the word boundary when a long Latin word ends the slice", () => {
+    // The only space sits before 60% of the slice, but the discarded tail is space-separated
+    // text, so the preview must still end on a word rather than mid-word.
+    expect(truncateText("Read this hyperextendedword", 20)).toBe("Read this…");
+    expect(truncateText("Ship internationalization", 22)).toBe("Ship…");
+  });
+
+  it("keeps the Latin word boundary when only a short CJK tail is discarded", () => {
+    // Here the boundary already keeps most of the slice, so backtracking loses nothing but a
+    // stray CJK character that reads as noise on its own.
+    expect(truncateText("Deploy helper for 中文文档管理", 20)).toBe("Deploy helper for…");
+    expect(truncateText("Release notes generator 日本語対応", 28)).toBe("Release notes generator…");
+  });
+
   it("keeps the preview budget for Chinese summaries carrying an early Latin space", () => {
     // The single space after "5GC" is the only space in 104 characters, so backtracking
     // to it would leave a three-character preview.
