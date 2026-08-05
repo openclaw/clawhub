@@ -47,6 +47,44 @@ describe("skill publish workflow", () => {
     }
   });
 
+  it("can clear catalog metadata the CLI already treats as an explicit empty value", () => {
+    const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
+    const parsed = parseYaml(workflow) as {
+      on: {
+        workflow_call: {
+          inputs: Record<string, { type: string; required: boolean; default: boolean }>;
+        };
+      };
+    };
+    const inputs = parsed.on.workflow_call.inputs;
+
+    for (const name of ["categories", "topics"] as const) {
+      const clearName = `clear_${name}` as const;
+
+      // Omitting the input must stay the no-op it is today, so the clear is its own signal.
+      expect(inputs[clearName]).toMatchObject({
+        type: "boolean",
+        required: false,
+        default: false,
+      });
+      expect(workflow).toContain(
+        `          INPUT_CLEAR_${name.toUpperCase()}: \${{ inputs.${clearName} }}`,
+      );
+      expect(workflow).toContain(
+        `          ${clearName} = os.environ["INPUT_CLEAR_${name.toUpperCase()}"] == "true"`,
+      );
+      // A non-empty value wins nothing silently - the two are mutually exclusive.
+      expect(workflow).toContain(`              (${name}, ${clearName}, "${name}"),`);
+      expect(workflow).toContain(
+        `              elif ${clearName}:\n                  command += ["--${name}", ""]`,
+      );
+    }
+
+    expect(workflow).toContain("if value and clearing:\n                  raise SystemExit(");
+    // changelog has no clear counterpart: the CLI reads an omitted --changelog as "".
+    expect(inputs.clear_changelog).toBeUndefined();
+  });
+
   it("logs the resolved command without routing it through a shell", () => {
     const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
 
