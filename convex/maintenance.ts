@@ -2690,10 +2690,14 @@ export const backfillSkillSearchDigestFirstTokensInternal = internalMutation({
   args: {
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    // Catalog search subscribes to skillSearchDigest, so batches are spaced out to keep the
+    // backfill from driving reactive re-reads back to back.
+    const delayMs = clampInt(args.delayMs ?? 500, 0, 60_000);
     const dryRun = args.dryRun ?? false;
     const { page, continueCursor, isDone } = await ctx.db
       .query("skillSearchDigest")
@@ -2728,11 +2732,12 @@ export const backfillSkillSearchDigestFirstTokensInternal = internalMutation({
 
     if (!dryRun && !isDone) {
       await ctx.scheduler.runAfter(
-        0,
+        delayMs,
         internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
         {
           cursor: continueCursor,
           batchSize: args.batchSize,
+          delayMs: args.delayMs,
           dryRun,
         },
       );
@@ -2753,6 +2758,7 @@ export const backfillSkillSearchDigestFirstTokens: ReturnType<typeof action> = a
   args: {
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
     dryRun: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {

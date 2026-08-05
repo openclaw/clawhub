@@ -2080,9 +2080,53 @@ describe("backfillSkillSearchDigestFirstTokensInternal", () => {
       normalizedDisplayNameFirstToken: "データベース",
     });
     expect(runAfter).toHaveBeenCalledWith(
-      0,
+      500,
       internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
-      { cursor: "next-page", batchSize: 25, dryRun: false },
+      { cursor: "next-page", batchSize: 25, delayMs: undefined, dryRun: false },
+    );
+  });
+
+  it("spaces the next batch by the requested delay and clamps it", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:stale",
+      slug: "database",
+      displayName: "データベース管理",
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const handler = (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler;
+    const ctx = {
+      db: { query, get, patch, normalizeId: vi.fn() },
+      scheduler: { runAfter },
+    } as never;
+
+    await handler(ctx, { delayMs: 2_000 });
+    expect(runAfter).toHaveBeenLastCalledWith(
+      2_000,
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      { cursor: "next-page", batchSize: undefined, delayMs: 2_000, dryRun: false },
+    );
+
+    await handler(ctx, { delayMs: 600_000 });
+    expect(runAfter).toHaveBeenLastCalledWith(
+      60_000,
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      { cursor: "next-page", batchSize: undefined, delayMs: 600_000, dryRun: false },
     );
   });
 
