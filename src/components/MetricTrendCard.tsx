@@ -115,7 +115,7 @@ export function MetricTrendCard({
         )}
       </div>
       <svg
-        className="oc-sparkline metric-trend-chart"
+        className="metric-trend-chart"
         viewBox="0 0 100 34"
         role="img"
         aria-label={ariaLabel}
@@ -130,9 +130,9 @@ export function MetricTrendCard({
         onPointerMove={showNearestPoint}
         onPointerLeave={() => setActiveIndex(null)}
       >
-        <path className="oc-sparkline-fill metric-trend-area" d={chart.area} aria-hidden="true" />
+        <path className="metric-trend-area" d={chart.area} aria-hidden="true" />
         <polyline
-          className="oc-sparkline-line metric-trend-line"
+          className="metric-trend-line"
           points={chart.line}
           vectorEffect="non-scaling-stroke"
           aria-hidden="true"

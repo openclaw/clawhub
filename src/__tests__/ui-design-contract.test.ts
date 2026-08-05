@@ -94,7 +94,6 @@ describe("restored UI design contract", () => {
     expect(sharedCss).toContain('@import "@openclaw/carapace/typography.css";');
     expect(sharedCss).toContain('@import "@openclaw/carapace/themes/product.css";');
     expect(sharedCss).toContain('@import "@openclaw/carapace/components.css";');
-    expect(sharedCss).toContain('@import "@openclaw/carapace/candidate/data.css";');
     expect(sharedCss).toContain('@import "@openclaw/carapace/compat/clawhub.css";');
     expect(sharedCss).toContain(".home-v2-main.oc-app-surface");
     expect(sharedCss).toContain("--hv2-bg: var(--oc-bg-page)");
@@ -488,19 +487,13 @@ describe("restored UI design contract", () => {
   it("uses Carapace semantic tokens for metric trend lines", () => {
     const css = styles();
     const rootRule = cssRule(css, ":root");
-    const trendCardSource = read("src/components/MetricTrendCard.tsx");
 
-    expect(trendCardSource).toContain('className="oc-sparkline metric-trend-chart"');
-    expect(trendCardSource).toContain('className="oc-sparkline-fill metric-trend-area"');
-    expect(trendCardSource).toContain('className="oc-sparkline-line metric-trend-line"');
     expect(rootRule).toContain("--metric-trend-line: var(--oc-status-info-fg)");
     expect(rootRule).toContain(
       "--metric-trend-area: color-mix(in srgb, var(--oc-status-info-fg) 18%, transparent)",
     );
     expect(rootRule).toContain("--metric-trend-marker: var(--oc-chart-line)");
-    expect(cssRule(css, ".oc-sparkline.metric-trend-chart")).toContain(
-      "color: var(--metric-trend-line)",
-    );
+    expect(cssRule(css, ".metric-trend-chart")).toContain("color: var(--metric-trend-line)");
     expect(cssRule(css, ".metric-trend-marker-line")).toContain(
       "stroke: var(--metric-trend-marker)",
     );
