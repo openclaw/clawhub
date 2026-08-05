@@ -2015,6 +2015,11 @@ describe("maintenance empty skill nominations", () => {
   });
 });
 
+const SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM =
+  "backfill-skill-search-digest-first-tokens";
+const SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM =
+  "backfill-skills-sh-mirror-digest-first-tokens";
+
 describe("backfillSkillSearchDigestFirstTokensInternal", () => {
   it("repairs digest rows whose stored first tokens predate the tokenizer", async () => {
     const paginate = vi.fn().mockResolvedValue({
@@ -2065,7 +2070,12 @@ describe("backfillSkillSearchDigestFirstTokensInternal", () => {
         db: { query, get, patch, normalizeId: vi.fn() },
         scheduler: { runAfter },
       } as never,
-      { cursor: "start", batchSize: 25 },
+      {
+        cursor: "start",
+        batchSize: 25,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
     );
 
     expect(result).toEqual({
@@ -2075,6 +2085,7 @@ describe("backfillSkillSearchDigestFirstTokensInternal", () => {
       cursor: "next-page",
       isDone: false,
       dryRun: false,
+      confirmRequired: undefined,
     });
     expect(query).toHaveBeenCalledWith("skillSearchDigest");
     expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
@@ -2083,11 +2094,81 @@ describe("backfillSkillSearchDigestFirstTokensInternal", () => {
       normalizedSlugFirstToken: "database",
       normalizedDisplayNameFirstToken: "データベース",
     });
+    // The scheduled page has to carry the token, otherwise the run stalls on its own guard.
     expect(runAfter).toHaveBeenCalledWith(
       500,
       internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
-      { cursor: "next-page", batchSize: 25, delayMs: undefined, dryRun: false },
+      {
+        cursor: "next-page",
+        batchSize: 25,
+        delayMs: undefined,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
     );
+  });
+
+  it("previews without writing or scheduling when arguments are omitted", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:stale",
+      slug: "database",
+      displayName: "データベース管理",
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      {},
+    );
+
+    expect(result.dryRun).toBe(true);
+    expect(result.patched).toBe(1);
+    expect(result.confirmRequired).toBe(SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rejects an apply that omits the confirmation token", async () => {
+    const paginate = vi.fn();
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn();
+    const runAfter = vi.fn();
+    const ctx = {
+      db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+      scheduler: { runAfter },
+    } as never;
+    const handler = (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler;
+
+    await expect(handler(ctx, { dryRun: false })).rejects.toThrow(
+      `Pass confirm="${SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    await expect(handler(ctx, { dryRun: false, confirm: "wrong-token" })).rejects.toThrow(
+      `Pass confirm="${SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    expect(paginate).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("spaces the next batch by the requested delay and clamps it", async () => {
@@ -2119,18 +2200,38 @@ describe("backfillSkillSearchDigestFirstTokensInternal", () => {
       scheduler: { runAfter },
     } as never;
 
-    await handler(ctx, { delayMs: 2_000 });
+    await handler(ctx, {
+      delayMs: 2_000,
+      dryRun: false,
+      confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+    });
     expect(runAfter).toHaveBeenLastCalledWith(
       2_000,
       internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
-      { cursor: "next-page", batchSize: undefined, delayMs: 2_000, dryRun: false },
+      {
+        cursor: "next-page",
+        batchSize: undefined,
+        delayMs: 2_000,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
     );
 
-    await handler(ctx, { delayMs: 600_000 });
+    await handler(ctx, {
+      delayMs: 600_000,
+      dryRun: false,
+      confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+    });
     expect(runAfter).toHaveBeenLastCalledWith(
       60_000,
       internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
-      { cursor: "next-page", batchSize: undefined, delayMs: 600_000, dryRun: false },
+      {
+        cursor: "next-page",
+        batchSize: undefined,
+        delayMs: 600_000,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
     );
   });
 });
@@ -2170,7 +2271,12 @@ describe("backfillSkillsShMirrorDigestFirstTokensInternal", () => {
         db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
         scheduler: { runAfter },
       } as never,
-      { cursor: "start", batchSize: 25 },
+      {
+        cursor: "start",
+        batchSize: 25,
+        dryRun: false,
+        confirm: SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
     );
 
     expect(result).toEqual({
@@ -2179,6 +2285,7 @@ describe("backfillSkillsShMirrorDigestFirstTokensInternal", () => {
       cursor: "next-page",
       isDone: false,
       dryRun: false,
+      confirmRequired: undefined,
     });
     expect(query).toHaveBeenCalledWith("skillsShMirrorDigests");
     expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
@@ -2190,8 +2297,71 @@ describe("backfillSkillsShMirrorDigestFirstTokensInternal", () => {
     expect(runAfter).toHaveBeenCalledWith(
       500,
       internal.maintenance.backfillSkillsShMirrorDigestFirstTokensInternal,
-      { cursor: "next-page", batchSize: 25, delayMs: undefined, dryRun: false },
+      {
+        cursor: "next-page",
+        batchSize: 25,
+        delayMs: undefined,
+        dryRun: false,
+        confirm: SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
     );
+  });
+
+  it("previews without writing or scheduling when arguments are omitted", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: mirrorPage(),
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      {},
+    );
+
+    expect(result.dryRun).toBe(true);
+    expect(result.patched).toBe(1);
+    expect(result.confirmRequired).toBe(SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rejects an apply that omits the confirmation token", async () => {
+    const paginate = vi.fn();
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn();
+    const runAfter = vi.fn();
+    const ctx = {
+      db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+      scheduler: { runAfter },
+    } as never;
+    const handler = (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler;
+
+    await expect(handler(ctx, { dryRun: false })).rejects.toThrow(
+      `Pass confirm="${SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    await expect(
+      handler(ctx, {
+        dryRun: false,
+        // The native token must not unlock the mirror path.
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      }),
+    ).rejects.toThrow(
+      `Pass confirm="${SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    expect(paginate).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("reports would-be patches without writing or scheduling in dry run mode", async () => {

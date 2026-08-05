@@ -12,6 +12,12 @@ const modules = import.meta.glob("./**/*.ts");
 const STALE_FIRST_TOKEN = "デ";
 const DISPLAY_NAME = "データベース管理";
 const SLUG = "database-kanri";
+// The backfill previews unless an apply is confirmed, so the runtime cases that expect
+// writes have to opt in the same way an operator does.
+const APPLY = {
+  dryRun: false,
+  confirm: "backfill-skill-search-digest-first-tokens",
+} as const;
 
 async function insertDigestWithStaleFirstToken(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => {
@@ -76,9 +82,19 @@ describe("skillSearchDigest first-token resynchronization", () => {
     const before = await t.run(async (ctx) => await ctx.db.get(digestId));
     expect(before?.normalizedDisplayNameFirstToken).toBe(STALE_FIRST_TOKEN);
 
-    const result = await t.mutation(
+    // An unconfirmed call reports the same repair without performing it.
+    const preview = await t.mutation(
       internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
       {},
+    );
+    expect(preview.patched).toBe(1);
+    expect(preview.dryRun).toBe(true);
+    const afterPreview = await t.run(async (ctx) => await ctx.db.get(digestId));
+    expect(afterPreview?.normalizedDisplayNameFirstToken).toBe(STALE_FIRST_TOKEN);
+
+    const result = await t.mutation(
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      APPLY,
     );
     expect(result.patched).toBe(1);
     expect(result.missingSkills).toBe(0);
@@ -113,7 +129,7 @@ describe("skillSearchDigest first-token resynchronization", () => {
     // predates the tokenizer, so the range bound the search computes never reaches it.
     expect(await recall()).toHaveLength(0);
 
-    await t.mutation(internal.maintenance.backfillSkillSearchDigestFirstTokensInternal, {});
+    await t.mutation(internal.maintenance.backfillSkillSearchDigestFirstTokensInternal, APPLY);
 
     expect(await recall()).toHaveLength(1);
   });
@@ -122,10 +138,10 @@ describe("skillSearchDigest first-token resynchronization", () => {
     const t = convexTest(schema, modules);
     const { digestId } = await insertDigestWithStaleFirstToken(t);
 
-    await t.mutation(internal.maintenance.backfillSkillSearchDigestFirstTokensInternal, {});
+    await t.mutation(internal.maintenance.backfillSkillSearchDigestFirstTokensInternal, APPLY);
     const second = await t.mutation(
       internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
-      {},
+      APPLY,
     );
 
     expect(second.scanned).toBe(1);
