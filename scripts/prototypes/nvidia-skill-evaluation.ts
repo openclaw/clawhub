@@ -675,6 +675,26 @@ async function findLatestRunDirectory(resultsRoot: string) {
 
 type SyncState = Record<string, { contentHash: string; commit: string; observedAt: string }>;
 
+export async function updateLocalEvaluationSyncState({
+  statePath,
+  stateKey,
+  contentHash,
+  commit,
+  observedAt,
+}: {
+  statePath: string;
+  stateKey: string;
+  contentHash: string;
+  commit: string;
+  observedAt: string;
+}) {
+  await withFilesystemLock(`${statePath}.lock`, async () => {
+    const latestState = await readJsonFile<SyncState>(statePath, {});
+    latestState[stateKey] = { contentHash, commit, observedAt };
+    await writeJson(statePath, latestState);
+  });
+}
+
 type EvaluationIndex = {
   schemaVersion: 1;
   evaluations: Array<{
@@ -845,8 +865,13 @@ async function main() {
   };
 
   const recordTerminalSyncState = async () => {
-    syncState[stateKey] = { contentHash, commit: sourceCommit, observedAt: now.toISOString() };
-    await writeJson(statePath, syncState);
+    await updateLocalEvaluationSyncState({
+      statePath,
+      stateKey,
+      contentHash,
+      commit: sourceCommit,
+      observedAt: now.toISOString(),
+    });
   };
 
   const indexCurrentObservation = async () => {

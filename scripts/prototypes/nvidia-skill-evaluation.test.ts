@@ -11,6 +11,7 @@ import {
   discoverSkillEvals,
   planOfficialSkillEvaluation,
   updateLocalEvaluationIndex,
+  updateLocalEvaluationSyncState,
 } from "./nvidia-skill-evaluation";
 
 async function makeSkill(files: Record<string, string> = {}) {
@@ -361,5 +362,29 @@ describe("local evaluation artifact index", () => {
       evaluations: Array<{ commit: string }>;
     };
     expect(index.evaluations.map((entry) => entry.commit)).toEqual(commits);
+  });
+});
+
+describe("local evaluation sync state", () => {
+  it("preserves every skill observation when updates overlap", async () => {
+    const outputRoot = await mkdtemp(join(tmpdir(), "clawhub-skill-eval-state-"));
+    const statePath = join(outputRoot, "sync-state.json");
+    const skills = Array.from({ length: 20 }, (_, index) => `skills/demo-${index}`);
+    await Promise.all(
+      skills.map((skillPath, index) =>
+        updateLocalEvaluationSyncState({
+          statePath,
+          stateKey: `nvidia/skills:${skillPath}`,
+          contentHash: index.toString(16).padStart(64, "0"),
+          commit: index.toString(16).padStart(40, "0"),
+          observedAt: "2026-08-05T00:00:00.000Z",
+        }),
+      ),
+    );
+
+    const state = JSON.parse(await readFile(statePath, "utf8")) as Record<string, unknown>;
+    expect(Object.keys(state).sort()).toEqual(
+      skills.map((skillPath) => `nvidia/skills:${skillPath}`).sort(),
+    );
   });
 });
