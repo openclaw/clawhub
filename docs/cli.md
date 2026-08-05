@@ -664,11 +664,14 @@ clawhub publisher create opik --display-name "Opik"
 - `--wait-timeout <seconds>` sets the `--wait` deadline (default: 1800).
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
 - `--categories <slugs>` and `--topics <topics>` behave as they do for
-  `skill publish`, but categories are matched against the plugin list, not the
-  skill one: `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
-  `tools`, `runtime`, `gateway`, `security`, `other`. The topic rules in
-  [Skill catalog metadata](./publishing.md#skill-catalog-metadata) — limits,
-  reserved names, republish behavior — are shared.
+  `skill publish`, but code-plugin and bundle-plugin categories are matched
+  against the plugin list, not the skill one: `channels`, `models`, `memory`,
+  `context`, `voice`, `media`, `web`, `tools`, `runtime`, `gateway`,
+  `security`, `other`. Experimental [`--family claw`](./claws.md) publishes
+  skip that category check and store the passed slugs as-is. The topic rules
+  in [Skill catalog metadata](./publishing.md#skill-catalog-metadata) —
+  limits, reserved names, republish behavior — apply to every family,
+  including `claw`.
 - Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
 - Private GitHub repos require `GITHUB_TOKEN`.
