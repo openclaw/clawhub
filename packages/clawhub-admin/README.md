@@ -94,10 +94,13 @@ Org publisher administration:
 
 ```bash
 bun run admin -- org create <handle> --member <handle> [--display-name <name>] [--role owner|admin|publisher] [--trusted] [--json]
+bun run admin -- org profile update <handle> [--bio <text>] [--logo-file <path>] --reason <text> [--yes] [--json]
 ```
 
 `org create` requires `--member` and defaults that member to `owner`; it does
 not add the admin running the command as an org member.
+`org profile update` requires a bio, a PNG/JPEG/WebP logo under 2 MB, or both,
+and records the supplied audit reason.
 
 Publisher administration:
 

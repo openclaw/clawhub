@@ -1697,6 +1697,105 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("users/publisher-profile updates an org bio and stores a logo for admin", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:heygen",
+        handle: "heygen-com",
+        bio: "HeyGen is an AI video platform.",
+        image: "https://storage.example/heygen-logo",
+        bioUpdated: true,
+        logoUpdated: true,
+      };
+    });
+    const store = vi.fn(async () => "storage:heygen-logo");
+    const remove = vi.fn(async () => {});
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        handle: "HeyGen-Com",
+        bio: "HeyGen is an AI video platform.",
+        reason: "Refresh official publisher profile",
+      }),
+    );
+    form.set(
+      "logo",
+      new File([new Uint8Array([137, 80, 78, 71])], "heygen.png", { type: "image/png" }),
+    );
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({
+        runQuery: vi.fn(),
+        runAction: vi.fn(),
+        runMutation,
+        storage: { store, delete: remove },
+      }),
+      new Request("https://example.com/api/v1/users/publisher-profile", {
+        method: "POST",
+        body: form,
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    expect(store).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        handle: "heygen-com",
+        bio: "HeyGen is an AI video platform.",
+        imageStorageId: "storage:heygen-logo",
+        reason: "Refresh official publisher profile",
+      }),
+    );
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      handle: "heygen-com",
+      bioUpdated: true,
+      logoUpdated: true,
+    });
+  });
+
+  it("users/publisher-profile forbids non-admin api tokens before storing files", async () => {
+    const store = vi.fn(async () => "storage:unused");
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:member",
+      user: { _id: "users:member", role: "user" },
+    } as never);
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        handle: "opik",
+        bio: "Opik is an AI observability platform.",
+        reason: "Refresh official publisher profile",
+      }),
+    );
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation, storage: { store } }),
+      new Request("https://example.com/api/v1/users/publisher-profile", {
+        method: "POST",
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(store).not.toHaveBeenCalled();
+  });
+
   it("users/publisher-recovery plans personal publisher recovery for admin", async () => {
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();

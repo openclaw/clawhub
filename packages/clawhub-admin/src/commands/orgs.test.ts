@@ -31,6 +31,7 @@ const {
   cmdRemoveOfficialOrg,
   cmdRemoveOrgMember,
   cmdRepairScopedPackages,
+  cmdUpdateOrgProfile,
 } = await import("./orgs");
 
 afterEach(() => {
@@ -166,6 +167,75 @@ describe("cmdCreateOrg", () => {
   it("requires an explicit member so the moderator is not added as owner", async () => {
     await expect(cmdCreateOrg(makeGlobalOpts(), "opik", {})).rejects.toThrow(/--member required/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("cmdUpdateOrgProfile", () => {
+  it("updates an org bio and uploads a validated logo through the staff profile endpoint", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawhub-admin-org-profile-"));
+    const logoFile = join(dir, "heygen-logo.png");
+    await writeFile(logoFile, new Uint8Array([137, 80, 78, 71]));
+    httpMocks.apiRequestForm.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:heygen",
+      handle: "heygen-com",
+      bio: "HeyGen is an AI video platform.",
+      image: "https://storage.example/heygen-logo",
+      bioUpdated: true,
+      logoUpdated: true,
+    });
+
+    try {
+      await cmdUpdateOrgProfile(
+        makeGlobalOpts(),
+        "@HeyGen-Com",
+        {
+          bio: " HeyGen is an AI video platform. ",
+          logoFile,
+          reason: "Refresh official publisher profile",
+          yes: true,
+          json: true,
+        },
+        false,
+      );
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+
+    expect(httpMocks.apiRequestForm).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/publisher-profile",
+        token: "tkn",
+        retryCount: 0,
+        form: expect.any(FormData),
+      }),
+      expect.anything(),
+    );
+    const call = httpMocks.apiRequestForm.mock.calls[0]?.[1] as { form: FormData };
+    const payload = call.form.get("payload");
+    expect(typeof payload).toBe("string");
+    expect(JSON.parse(payload as string)).toEqual({
+      handle: "heygen-com",
+      bio: "HeyGen is an AI video platform.",
+      reason: "Refresh official publisher profile",
+    });
+    const logo = call.form.get("logo") as File;
+    expect(logo.name).toBe("heygen-logo.png");
+    expect(logo.type).toBe("image/png");
+  });
+
+  it("requires at least one profile field", async () => {
+    await expect(
+      cmdUpdateOrgProfile(
+        makeGlobalOpts(),
+        "opik",
+        { reason: "Refresh official publisher profile", yes: true },
+        false,
+      ),
+    ).rejects.toThrow(/--bio or --logo-file required/i);
+    expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
   });
 });
 

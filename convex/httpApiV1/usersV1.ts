@@ -24,6 +24,7 @@ const usersV1InternalRefs = internal as unknown as {
     removeOrgPublisherMemberInternal: unknown;
     removeOfficialPublisherInternal: unknown;
     recoverPersonalPublisherInternal: unknown;
+    updateOrgPublisherProfileInternal: unknown;
   };
   users: {
     getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
@@ -98,10 +99,19 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "publisher-delete" &&
     action !== "publisher-official" &&
     action !== "publisher-member" &&
+    action !== "publisher-profile" &&
     action !== "publisher-reclaim" &&
     action !== "publisher-recovery"
   ) {
     return text("Not found", 404, rate.headers);
+  }
+
+  if (action === "publisher-profile") {
+    const authResult = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!authResult.ok) return authResult.response;
+    const admin = requireAdminOrResponse(authResult.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminUpdatePublisherProfile(ctx, request, authResult.userId, rate.headers);
   }
 
   const payloadResult = await parseJsonPayload(request, rate.headers);
@@ -926,6 +936,85 @@ async function handleAdminEnsurePublisher(
     if (message.toLowerCase().includes("not found")) {
       return text(message, 404, headers);
     }
+    return text(message, 400, headers);
+  }
+}
+
+const PUBLISHER_PROFILE_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const PUBLISHER_PROFILE_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+async function handleAdminUpdatePublisherProfile(
+  ctx: ActionCtx,
+  request: Request,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return text("Invalid multipart form", 400, headers);
+  }
+  const payloadRaw = form.get("payload");
+  if (typeof payloadRaw !== "string") return text("Missing payload", 400, headers);
+  let payload: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(payloadRaw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return text("JSON payload must be an object", 400, headers);
+    }
+    payload = parsed as Record<string, unknown>;
+  } catch {
+    return text("Invalid JSON payload", 400, headers);
+  }
+
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  const reason = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  const hasBio = Object.prototype.hasOwnProperty.call(payload, "bio");
+  const bio = typeof payload.bio === "string" ? payload.bio.trim() : undefined;
+  if (!handle) return text("Missing handle", 400, headers);
+  if (!reason) return text("Missing reason", 400, headers);
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+  if (hasBio && typeof payload.bio !== "string") return text("bio must be a string", 400, headers);
+
+  const logoParts = form.getAll("logo");
+  if (logoParts.length > 1) return text("Upload one logo", 400, headers);
+  const logo = logoParts[0];
+  if (typeof logo === "string") return text("logo must be a file", 400, headers);
+  if (!hasBio && !logo) return text("bio or logo required", 400, headers);
+  if (
+    logo &&
+    (logo.size <= 0 ||
+      logo.size > PUBLISHER_PROFILE_IMAGE_MAX_BYTES ||
+      !PUBLISHER_PROFILE_IMAGE_CONTENT_TYPES.has(logo.type))
+  ) {
+    return text("Logo must be a PNG, JPEG, or WebP image smaller than 2 MB", 400, headers);
+  }
+
+  let imageStorageId: Id<"_storage"> | undefined;
+  try {
+    if (logo) imageStorageId = await ctx.storage.store(logo);
+    const result = await runUsersV1MutationRef<{
+      ok: true;
+      publisherId: Id<"publishers">;
+      handle: string;
+      bio: string | null;
+      image: string | null;
+      bioUpdated: boolean;
+      logoUpdated: boolean;
+    }>(ctx, usersV1InternalRefs.publishers.updateOrgPublisherProfileInternal, {
+      actorUserId,
+      handle,
+      ...(hasBio ? { bio: bio ?? "" } : {}),
+      ...(imageStorageId ? { imageStorageId } : {}),
+      reason,
+    });
+    return json(result, 200, headers);
+  } catch (error) {
+    if (imageStorageId) await ctx.storage.delete(imageStorageId);
+    const message = error instanceof Error ? error.message : "Publisher profile update failed";
+    if (/not found/i.test(message)) return text(message, 404, headers);
+    if (/unauthorized|forbidden/i.test(message)) return text("Forbidden", 403, headers);
     return text(message, 400, headers);
   }
 }

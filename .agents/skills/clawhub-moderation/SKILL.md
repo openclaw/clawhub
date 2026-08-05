@@ -115,6 +115,7 @@ has asked for fuzzy handle resolution or the exact handle is ambiguous.
 ```text
 official
 create <handle>
+profile update <handle>
 remove-member <handle> <member>
 delete <handle>
 repair-scoped-packages <csv>
@@ -127,6 +128,8 @@ bun run admin -- org official list
 bun run admin -- org official add <handle> --reason "<reason>" --yes
 bun run admin -- org official remove <handle> --reason "<reason>" --yes
 bun run admin -- org create <handle> --display-name "<name>" --member <user-handle> --role owner
+bun run admin -- org profile update <handle> --bio "<description>" --reason "<reason>" --yes
+bun run admin -- org profile update <handle> --logo-file <path> --reason "<reason>" --yes
 bun run admin -- org remove-member <handle> <member-handle>
 bun run admin -- org delete <handle> --reason "<reason>"          # dry-run
 bun run admin -- org delete <handle> --reason "<reason>" --apply
@@ -136,7 +139,8 @@ bun run admin -- org repair-scoped-packages <csv> --apply
 
 `org create` requires `--member`; it must not add the moderator running the
 command as an implicit owner. `org delete` only works for empty org publishers
-and defaults to dry-run.
+and defaults to dry-run. `org profile update` accepts a bio, a PNG/JPEG/WebP
+logo under 2 MB, or both, and records the required reason in the audit log.
 
 ### Plugin Packages
 

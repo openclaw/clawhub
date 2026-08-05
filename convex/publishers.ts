@@ -3295,6 +3295,95 @@ export const ensureOrgPublisherHandleInternal = internalMutation({
   handler: async (ctx, args) => await ensureOrgPublisherHandleWithActor(ctx, args),
 });
 
+export const updateOrgPublisherProfileInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    bio: v.optional(v.string()),
+    imageStorageId: v.optional(v.id("_storage")),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
+      throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
+    }
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+    if (args.bio === undefined && args.imageStorageId === undefined) {
+      throw new ConvexError("Bio or logo required");
+    }
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher || publisher.kind !== "org" || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError("Publisher not found");
+    }
+
+    const bioUpdated = args.bio !== undefined;
+    const nextBio = bioUpdated ? args.bio?.trim() || undefined : publisher.bio;
+    let nextImage = publisher.image;
+    if (args.imageStorageId) {
+      const metadata = await ctx.db.system.get("_storage", args.imageStorageId);
+      if (
+        !metadata ||
+        metadata.size <= 0 ||
+        metadata.size > PUBLISHER_IMAGE_MAX_BYTES ||
+        !metadata.contentType ||
+        !PUBLISHER_IMAGE_CONTENT_TYPES.has(metadata.contentType)
+      ) {
+        throw new ConvexError("Logo must be a PNG, JPEG, or WebP image smaller than 2 MB");
+      }
+      const uploadedImageUrl = await ctx.storage.getUrl(args.imageStorageId);
+      if (!uploadedImageUrl) throw new ConvexError("Uploaded logo is no longer available");
+      nextImage = uploadedImageUrl;
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(publisher._id, {
+      ...(bioUpdated ? { bio: nextBio } : {}),
+      ...(args.imageStorageId ? { image: nextImage, imageStorageId: args.imageStorageId } : {}),
+      updatedAt: now,
+    });
+    if (
+      args.imageStorageId &&
+      publisher.imageStorageId &&
+      publisher.imageStorageId !== args.imageStorageId
+    ) {
+      await ctx.storage.delete(publisher.imageStorageId);
+    }
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.profile.update",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        source: "publisher.org.admin",
+        reason,
+        bioUpdated,
+        logoUpdated: Boolean(args.imageStorageId),
+        ...(bioUpdated ? { bio: nextBio ?? null } : {}),
+        ...(args.imageStorageId ? { imageStorageId: args.imageStorageId } : {}),
+      },
+      createdAt: now,
+    });
+
+    return {
+      ok: true as const,
+      publisherId: publisher._id,
+      handle,
+      bio: nextBio ?? null,
+      image: nextImage ?? null,
+      bioUpdated,
+      logoUpdated: Boolean(args.imageStorageId),
+    };
+  },
+});
+
 export const removeOrgPublisherMemberInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),

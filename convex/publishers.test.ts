@@ -42,6 +42,7 @@ import {
   resolvePublishTargetForUserInternal,
   setTrustedPublisherInternal,
   updateProfile,
+  updateOrgPublisherProfileInternal,
 } from "./publishers";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -135,6 +136,27 @@ const ensureOrgPublisherHandleInternalHandler = (
       handle: string;
       created: boolean;
       member?: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
+    }
+  >
+)._handler;
+
+const updateOrgPublisherProfileInternalHandler = (
+  updateOrgPublisherProfileInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      bio?: string;
+      imageStorageId?: string;
+      reason: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      bio: string | null;
+      image: string | null;
+      bioUpdated: boolean;
+      logoUpdated: boolean;
     }
   >
 )._handler;
@@ -9253,6 +9275,131 @@ describe("legacy publisher migration", () => {
         }),
       }),
     ]);
+  });
+
+  it("lets admins update an org bio while preserving its logo and recording the reason", async () => {
+    const publisher = {
+      _id: "publishers:opik",
+      kind: "org",
+      handle: "opik",
+      displayName: "Opik",
+      bio: undefined,
+      image: "https://storage.example/opik-logo",
+      imageStorageId: "storage:opik-logo",
+    };
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async () => "auditLogs:1");
+    const deleteStorage = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id, role: "admin" };
+          return null;
+        }),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn(async () => publisher) })),
+        })),
+        patch,
+        insert,
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: { delete: deleteStorage },
+    };
+
+    await expect(
+      updateOrgPublisherProfileInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "OPIK",
+        bio: "Open-source AI observability and evaluation platform.",
+        reason: "Replace placeholder copy with verified official publisher description",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      handle: "opik",
+      bioUpdated: true,
+      logoUpdated: false,
+      image: "https://storage.example/opik-logo",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:opik",
+      expect.objectContaining({
+        bio: "Open-source AI observability and evaluation platform.",
+      }),
+    );
+    expect(deleteStorage).not.toHaveBeenCalled();
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "publisher.profile.update",
+        targetId: "publishers:opik",
+        metadata: expect.objectContaining({
+          source: "publisher.org.admin",
+          reason: "Replace placeholder copy with verified official publisher description",
+          bioUpdated: true,
+          logoUpdated: false,
+        }),
+      }),
+    );
+  });
+
+  it("replaces a stored org logo only after validating the uploaded file", async () => {
+    const publisher = {
+      _id: "publishers:heygen",
+      kind: "org",
+      handle: "heygen-com",
+      displayName: "HeyGen",
+      image: "https://storage.example/old-logo",
+      imageStorageId: "storage:old-logo",
+    };
+    const patch = vi.fn(async () => {});
+    const deleteStorage = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id, role: "admin" };
+          return null;
+        }),
+        system: {
+          get: vi.fn(async () => ({ contentType: "image/png", size: 1024 })),
+        },
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn(async () => publisher) })),
+        })),
+        patch,
+        insert: vi.fn(async () => "auditLogs:1"),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        getUrl: vi.fn(async () => "https://storage.example/new-logo"),
+        delete: deleteStorage,
+      },
+    };
+
+    await expect(
+      updateOrgPublisherProfileInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "heygen-com",
+        imageStorageId: "storage:new-logo",
+        reason: "Replace personal avatar with the official HeyGen brand symbol",
+      }),
+    ).resolves.toMatchObject({
+      bioUpdated: false,
+      logoUpdated: true,
+      image: "https://storage.example/new-logo",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:heygen",
+      expect.objectContaining({
+        image: "https://storage.example/new-logo",
+        imageStorageId: "storage:new-logo",
+      }),
+    );
+    expect(deleteStorage).toHaveBeenCalledWith("storage:old-logo");
   });
 
   it("lets an admin remove one org owner when another owner remains", async () => {

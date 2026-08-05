@@ -317,6 +317,18 @@ export const ApiV1PublisherRemoveMemberResponseSchema = type({
 export type ApiV1PublisherRemoveMemberResponse =
   (typeof ApiV1PublisherRemoveMemberResponseSchema)[inferred];
 
+export const ApiV1PublisherProfileUpdateResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  bio: "string|null",
+  image: "string|null",
+  bioUpdated: "boolean",
+  logoUpdated: "boolean",
+});
+export type ApiV1PublisherProfileUpdateResponse =
+  (typeof ApiV1PublisherProfileUpdateResponseSchema)[inferred];
+
 export const ApiV1PublisherDeleteResponseSchema = type({
   ok: "true",
   publisherId: "string",

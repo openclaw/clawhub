@@ -49,6 +49,7 @@ import {
   cmdRemoveOfficialOrg,
   cmdRemoveOrgMember,
   cmdRepairScopedPackages,
+  cmdUpdateOrgProfile,
 } from "./commands/orgs.js";
 import {
   cmdDeletePackageTrustedPublisher,
@@ -526,6 +527,21 @@ function registerOfficialPublisherCommands(command: Command) {
 
 function registerOrgCommands(command: Command) {
   registerOfficialPublisherCommands(command);
+
+  const profile = command.command("profile").description("Manage org publisher profiles");
+  profile
+    .command("update")
+    .description("Update an org publisher bio or logo")
+    .argument("<handle>", "Org publisher handle")
+    .option("--bio <text>", "Publisher bio")
+    .option("--logo-file <path>", "PNG, JPEG, or WebP logo under 2 MB")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdUpdateOrgProfile(opts, handle, options, isInputAllowed());
+    });
 
   command
     .command("create")

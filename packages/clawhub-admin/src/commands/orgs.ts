@@ -1,4 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
+import { basename, extname } from "node:path";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
@@ -9,7 +10,7 @@ import {
   isInteractive,
   promptConfirm,
 } from "../../../clawhub/src/cli/ui.js";
-import { apiRequest } from "../../../clawhub/src/http.js";
+import { apiRequest, apiRequestForm } from "../../../clawhub/src/http.js";
 import type { ApiV1PackageRepairNameResponse } from "../../../clawhub/src/schema/index.js";
 import {
   ApiV1OfficialPublisherListResponseSchema,
@@ -18,6 +19,7 @@ import {
   ApiRoutes,
   ApiV1PublisherDeleteResponseSchema,
   ApiV1PublisherEnsureResponseSchema,
+  ApiV1PublisherProfileUpdateResponseSchema,
   ApiV1PublisherReclaimResponseSchema,
   ApiV1PublisherRemoveMemberResponseSchema,
 } from "../../../clawhub/src/schema/index.js";
@@ -33,6 +35,14 @@ type OrgCreateOptions = {
 };
 
 type OrgRemoveMemberOptions = {
+  json?: boolean;
+};
+
+type OrgProfileUpdateOptions = {
+  bio?: string;
+  logoFile?: string;
+  reason?: string;
+  yes?: boolean;
   json?: boolean;
 };
 
@@ -105,6 +115,14 @@ function normalizeRoleOrFail(role: string | undefined): OrgMemberRole {
     return normalized;
   }
   return fail("--role must be owner, admin, or publisher");
+}
+
+function publisherLogoContentType(path: string) {
+  const extension = extname(path).toLowerCase();
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".webp") return "image/webp";
+  return fail("--logo-file must be a PNG, JPEG, or WebP image");
 }
 
 export async function cmdCreateOrg(opts: GlobalOpts, handle: string, options: OrgCreateOptions) {
@@ -188,6 +206,63 @@ export async function cmdRemoveOrgMember(
     if (options.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     }
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdUpdateOrgProfile(
+  opts: GlobalOpts,
+  handle: string,
+  options: OrgProfileUpdateOptions,
+  inputAllowed: boolean,
+) {
+  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const bio = options.bio?.trim();
+  const logoFile = options.logoFile?.trim();
+  const reason = normalizeReasonOrFail(options.reason);
+  if (!bio && !logoFile) fail("--bio or --logo-file required");
+  await confirmProfileUpdate(orgHandle, options, inputAllowed);
+
+  const form = new FormData();
+  form.set(
+    "payload",
+    JSON.stringify({
+      handle: orgHandle,
+      ...(bio ? { bio } : {}),
+      reason,
+    }),
+  );
+  if (logoFile) {
+    const metadata = await stat(logoFile);
+    if (!metadata.isFile()) fail("--logo-file must point to a file");
+    if (metadata.size <= 0 || metadata.size > 2 * 1024 * 1024) {
+      fail("--logo-file must be smaller than 2 MB");
+    }
+    const contentType = publisherLogoContentType(logoFile);
+    const bytes = await readFile(logoFile);
+    form.set("logo", new File([new Uint8Array(bytes)], basename(logoFile), { type: contentType }));
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createCrabLoader(`Updating @${orgHandle} profile`);
+  try {
+    const result = await apiRequestForm(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/publisher-profile`,
+        token,
+        form,
+        retryCount: 0,
+      },
+      ApiV1PublisherProfileUpdateResponseSchema,
+    );
+    spinner?.succeed(`Updated @${result.handle} profile`);
+    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result;
   } catch (error) {
     spinner?.fail(formatError(error));
@@ -569,6 +644,20 @@ async function confirmOfficialOrgUpdate(
   if (options.yes) return;
   if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
   const confirmed = await promptConfirm(prompt);
+  if (!confirmed) fail("Canceled");
+}
+
+async function confirmProfileUpdate(
+  handle: string,
+  options: OrgProfileUpdateOptions,
+  inputAllowed: boolean,
+) {
+  if (options.yes) return;
+  if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
+  const fields = [options.bio?.trim() ? "bio" : "", options.logoFile?.trim() ? "logo" : ""]
+    .filter(Boolean)
+    .join(" and ");
+  const confirmed = await promptConfirm(`Update @${handle} ${fields}? (admin only)`);
   if (!confirmed) fail("Canceled");
 }
 
