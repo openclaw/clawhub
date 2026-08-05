@@ -81,8 +81,8 @@ describe("HomeListingSection", () => {
   });
 
   it("shows canonical Trending download totals without changing order", () => {
-    const first = makeTrending("first", "First Skill", 17, 9000, 71);
-    const second = makeTrending("second", "Second Skill", 3, 8000, 29);
+    const first = makeTrending("first", "First Skill", 3, 9000, 71);
+    const second = makeTrending("second", "Second Skill", 17, 8000, 29);
     render(<HomeListingSection initialListing={initialTrending([first, second])} />);
 
     const contentTypeButtons = screen

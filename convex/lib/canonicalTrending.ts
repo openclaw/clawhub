@@ -1,7 +1,7 @@
 import { type Infer, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 
-export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v3";
+export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v4";
 export const CANONICAL_TRENDING_WINDOW_HOURS = 24;
 export const CANONICAL_TRENDING_FIRST_PAGE_SIZE = 20;
 export const CANONICAL_TRENDING_PUBLISHER_CAP = 2;
@@ -152,6 +152,7 @@ export function buildNativeCanonicalTrendingCandidate(
     identity,
     lane: "clawhub-trending",
     publisherKey: String(digest.ownerPublisherId ?? digest.ownerUserId),
+    downloads24h: Math.max(0, usage.downloads),
     installs24h: Math.max(0, usage.installs),
     bookmarks24h: Math.max(0, usage.bookmarks),
     createdAt: digest.createdAt,
@@ -221,6 +222,7 @@ export function buildExternalCanonicalTrendingCandidate(
     identity,
     lane: "skills-sh-trending",
     publisherKey: digest.owner ?? digest.sourceHost ?? digest.externalId,
+    downloads24h: 0,
     installs24h: 0,
     bookmarks24h: 0,
     createdAt: digest.firstObservedAt,
@@ -275,6 +277,7 @@ export type CanonicalTrendingCandidate = {
   identity: string;
   lane: CanonicalTrendingLane;
   publisherKey: string;
+  downloads24h: number;
   installs24h: number;
   bookmarks24h: number;
   createdAt: number;
@@ -327,6 +330,7 @@ function compareCanonicalTrendingLaneCandidates(
     );
   }
   return (
+    compareNumberDesc(left.downloads24h, right.downloads24h) ||
     compareNumberDesc(left.installs24h, right.installs24h) ||
     compareNumberDesc(left.bookmarks24h, right.bookmarks24h) ||
     compareNumberDesc(

@@ -101,6 +101,7 @@ const nativeLaneValidator = v.union(v.literal("clawhub-trending"), v.literal("cl
 const nativePoolItemValidator = v.object({
   identity: v.string(),
   publisherKey: v.string(),
+  downloads24h: v.optional(v.number()),
   installs24h: v.number(),
   bookmarks24h: v.number(),
   createdAt: v.number(),
@@ -771,6 +772,7 @@ export const materializeInternal = internalAction({
                 identity: row.identity,
                 lane: row.lane,
                 publisherKey: row.publisherKey,
+                downloads24h: row.downloads24h ?? row.card.metrics.trending24hDownloads ?? 0,
                 installs24h: row.installs24h,
                 bookmarks24h: row.bookmarks24h,
                 createdAt: row.createdAt,
@@ -903,6 +905,7 @@ export const materializeInternal = internalAction({
                   items: batch.map((candidate) => ({
                     identity: candidate.identity,
                     publisherKey: candidate.publisherKey,
+                    downloads24h: candidate.downloads24h,
                     installs24h: candidate.installs24h,
                     bookmarks24h: candidate.bookmarks24h,
                     createdAt: candidate.createdAt,

@@ -113,8 +113,8 @@ describe("SkillsIndex", () => {
   it("shows canonical Trending download totals without changing API order", async () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(
       canonicalPage([
-        makeTrending("first", "First Skill", 17, 9000, 71),
-        makeTrending("second", "Second Skill", 3, 8000, 29),
+        makeTrending("first", "First Skill", 3, 9000, 71),
+        makeTrending("second", "Second Skill", 17, 8000, 29),
       ]),
     );
 

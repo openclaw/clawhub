@@ -887,6 +887,7 @@ export const getAuditPageInternal = internalQuery({
             identity: candidate.identity,
             lane: candidate.lane,
             publisherKey: candidate.publisherKey,
+            downloads24h: candidate.downloads24h,
             installs24h: candidate.installs24h,
             bookmarks24h: candidate.bookmarks24h,
             createdAt: candidate.createdAt,

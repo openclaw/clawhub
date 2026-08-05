@@ -21,6 +21,7 @@ function candidate(
     identity,
     lane,
     publisherKey: identity,
+    downloads24h: 0,
     installs24h: 0,
     bookmarks24h: 0,
     createdAt: 0,
@@ -139,23 +140,38 @@ describe("canonical Trending ordering", () => {
     expect(result.map((entry) => entry.identity)).toEqual(["alpha-1", "alpha-2", "alpha-3"]);
   });
 
-  it("sorts native metrics and preserves exact skills.sh upstream rank", () => {
+  it("sorts native downloads first and preserves exact skills.sh upstream rank", () => {
     const pools = sortCanonicalTrendingPools({
       clawhubTrending: [
-        candidate("c-low", "clawhub-trending", { installs24h: 2, bookmarks24h: 9 }),
+        candidate("c-most-downloads", "clawhub-trending", {
+          downloads24h: 4,
+          installs24h: 1,
+        }),
+        candidate("c-low", "clawhub-trending", {
+          downloads24h: 3,
+          installs24h: 2,
+          bookmarks24h: 9,
+        }),
         candidate("c-high-bookmarks", "clawhub-trending", {
+          downloads24h: 3,
           installs24h: 3,
           bookmarks24h: 5,
         }),
-        candidate("c-high", "clawhub-trending", { installs24h: 3, bookmarks24h: 1 }),
+        candidate("c-high", "clawhub-trending", {
+          downloads24h: 3,
+          installs24h: 3,
+          bookmarks24h: 1,
+        }),
       ],
       clawhubRising: [
         candidate("r-old", "clawhub-rising", {
+          downloads24h: 2,
           installs24h: 1,
           bookmarks24h: 1,
           createdAt: 10,
         }),
         candidate("r-new", "clawhub-rising", {
+          downloads24h: 2,
           installs24h: 1,
           bookmarks24h: 1,
           createdAt: 20,
@@ -169,6 +185,7 @@ describe("canonical Trending ordering", () => {
     });
 
     expect(pools.clawhubTrending.map((entry) => entry.identity)).toEqual([
+      "c-most-downloads",
       "c-high-bookmarks",
       "c-high",
       "c-low",
@@ -180,9 +197,9 @@ describe("canonical Trending ordering", () => {
   it("retains only the strongest bounded candidates for a lane", () => {
     const retained = retainTopCanonicalTrendingCandidates(
       [
-        candidate("low", "clawhub-trending", { installs24h: 1 }),
-        candidate("high", "clawhub-trending", { installs24h: 9 }),
-        candidate("middle", "clawhub-trending", { installs24h: 4 }),
+        candidate("low", "clawhub-trending", { downloads24h: 1, installs24h: 9 }),
+        candidate("high", "clawhub-trending", { downloads24h: 9, installs24h: 1 }),
+        candidate("middle", "clawhub-trending", { downloads24h: 4, installs24h: 4 }),
       ],
       "clawhub-trending",
       2,

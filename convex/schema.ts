@@ -2812,6 +2812,8 @@ const canonicalTrendingNativePoolItems = defineTable({
   position: v.number(),
   identity: v.string(),
   publisherKey: v.string(),
+  // Optional only for pools materialized before downloads became the native ranking signal.
+  downloads24h: v.optional(v.number()),
   installs24h: v.number(),
   bookmarks24h: v.number(),
   createdAt: v.number(),

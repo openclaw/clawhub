@@ -256,7 +256,7 @@ describe("canonical Trending snapshot storage", () => {
       snapshotId: "skills-1000",
       generatedAt: new Date(now - 1_000).toISOString(),
       windowHours: 24,
-      rankingVersion: "skills-trending-v3",
+      rankingVersion: "skills-trending-v4",
       items: [
         { id: "clawhub:one", rank: 1, lane: "clawhub-trending" },
         { id: "clawhub:two", rank: 2, lane: "clawhub-trending" },
@@ -645,7 +645,7 @@ describe("canonical Trending snapshot storage", () => {
       snapshotId: "skills-native-preflight-ready",
       generatedAt: new Date(now - 1_000).toISOString(),
       windowHours: 24,
-      rankingVersion: "skills-trending-v3",
+      rankingVersion: "skills-trending-v4",
       totalItems: 1,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
