@@ -8,6 +8,7 @@ import { SkillListItem } from "../../components/SkillListItem";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { getSkillBadges } from "../../lib/badges";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { timeAgo } from "../../lib/timeAgo";
@@ -58,8 +59,22 @@ function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
           <p className="skill-list-item-summary">{truncateText(trending.summary, 80)}</p>
         ) : null}
       </div>
-      <div className="skill-list-item-meta" aria-label="24-hour downloads">
-        {typeof trending.metrics.trending24hDownloads === "number" ? (
+      <div
+        className="skill-list-item-meta"
+        aria-label={trending.source === "skills-sh" ? "Source" : "24-hour downloads"}
+      >
+        {trending.source === "skills-sh" ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="compact" size="sm">
+                skills.sh
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center">
+              Synced from skills.sh
+            </TooltipContent>
+          </Tooltip>
+        ) : typeof trending.metrics.trending24hDownloads === "number" ? (
           <span className="skill-list-item-meta-item">
             <Download size={14} aria-hidden="true" />
             {formatCompactStat(trending.metrics.trending24hDownloads)}
@@ -94,7 +109,20 @@ function TrendingSkillCard({ item }: { item: TrendingSkillListEntry }) {
           {trending.summary}
         </p>
       ) : null}
-      {typeof trending.metrics.trending24hDownloads === "number" ? (
+      {trending.source === "skills-sh" ? (
+        <div className="skill-card-grid-meta" aria-label="Source">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="compact" size="sm">
+                skills.sh
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center">
+              Synced from skills.sh
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      ) : typeof trending.metrics.trending24hDownloads === "number" ? (
         <div className="skill-card-grid-meta" aria-label="24-hour downloads">
           <span>
             <Download size={14} aria-hidden="true" />

@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TooltipProvider } from "../components/ui/tooltip";
 import { Route as SkillsRoute, SkillsIndex } from "../routes/skills/index";
 import {
   convexHttpMock,
@@ -151,6 +152,41 @@ describe("SkillsIndex", () => {
     expect(await screen.findByText("First Skill")).toBeTruthy();
     expect(screen.getByLabelText("24-hour downloads").textContent).toContain("17");
     expect(screen.queryByLabelText("24-hour installs")).toBeNull();
+  });
+
+  it("shows skills.sh provenance without presenting lifetime installs as downloads", async () => {
+    fetchCanonicalTrendingPageMock.mockResolvedValue(
+      canonicalPage([makeSkillsShTrending("external", "External Skill", 12_345)]),
+    );
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SkillsIndex />
+      </TooltipProvider>,
+    );
+
+    expect(await screen.findByText("External Skill")).toBeTruthy();
+    expect(screen.getByLabelText("Source").textContent).toBe("skills.sh");
+    expect(screen.queryByLabelText("24-hour downloads")).toBeNull();
+    expect(screen.queryByText("12.3k")).toBeNull();
+  });
+
+  it("keeps skills.sh provenance visible in the Trending grid", async () => {
+    searchMock = { view: "grid" };
+    fetchCanonicalTrendingPageMock.mockResolvedValue(
+      canonicalPage([makeSkillsShTrending("external", "External Skill", 12_345)]),
+    );
+
+    render(
+      <TooltipProvider delayDuration={0}>
+        <SkillsIndex />
+      </TooltipProvider>,
+    );
+
+    expect(await screen.findByText("External Skill")).toBeTruthy();
+    expect(screen.getByLabelText("Source").textContent).toBe("skills.sh");
+    expect(screen.queryByLabelText("24-hour downloads")).toBeNull();
+    expect(screen.queryByText("12.3k")).toBeNull();
   });
 
   it("hides disabled Trending and falls back to the Featured feed", async () => {
@@ -488,6 +524,31 @@ function makeTrending(
     metrics: {
       trending24hDownloads: downloads,
       trending24hInstalls: installs,
+      trending24hBookmarks: null,
+      lifetimeInstalls: lifetime,
+      lifetimeInstallsPeriod: "lifetime" as const,
+      updatedAt: 1,
+    },
+  };
+}
+
+function makeSkillsShTrending(slug: string, displayName: string, lifetime: number) {
+  return {
+    ...makeTrending(slug, displayName, 0, lifetime, 0),
+    id: `skills-sh:example/skills/${slug}`,
+    source: "skills-sh" as const,
+    canonicalUrl: `/skills-sh/example/skills/${slug}`,
+    publisher: null,
+    sourceIdentity: {
+      id: `example/skills/${slug}`,
+      owner: "example",
+      repo: "skills",
+      host: null,
+      lifetimeInstalls: lifetime,
+    },
+    metrics: {
+      trending24hDownloads: null,
+      trending24hInstalls: null,
       trending24hBookmarks: null,
       lifetimeInstalls: lifetime,
       lifetimeInstallsPeriod: "lifetime" as const,

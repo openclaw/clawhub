@@ -130,7 +130,6 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
     const owner = isSkillsSh
       ? (item.sourceIdentity?.owner ?? item.sourceIdentity?.host)
       : item.publisher?.handle;
-    const upstreamInstalls = item.sourceIdentity?.lifetimeInstalls ?? item.metrics.lifetimeInstalls;
     return (
       <Link to={item.canonicalUrl} className="home-v2-listing-row">
         <div className="home-v2-listing-row-body">
@@ -145,7 +144,7 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
           </p>
         </div>
         {isSkillsSh ? (
-          <div className="home-v2-listing-row-stats is-skills-sh" aria-label="Downloads">
+          <div className="home-v2-listing-row-stats is-skills-sh" aria-label="Source">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Badge variant="compact" size="sm">
@@ -156,11 +155,6 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
                 Synced from skills.sh
               </TooltipContent>
             </Tooltip>
-            {typeof upstreamInstalls === "number" ? (
-              <span title={`${upstreamInstalls.toLocaleString()} skills.sh installs`}>
-                {formatCompactStat(upstreamInstalls)}
-              </span>
-            ) : null}
           </div>
         ) : typeof item.metrics.trending24hDownloads === "number" ? (
           <div className="home-v2-listing-row-stats" aria-label="Downloads">

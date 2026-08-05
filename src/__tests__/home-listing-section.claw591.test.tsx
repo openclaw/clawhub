@@ -129,7 +129,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
   });
 
-  it("identifies skills.sh rows by their source owner and upstream install count", async () => {
+  it("identifies skills.sh rows without presenting upstream installs as downloads", async () => {
     const external = {
       ...makeTrending("reddit-automation", "reddit-automation", 0, 12_345, 0),
       id: "skills-sh:doany-skills/skills/reddit-automation",
@@ -161,10 +161,11 @@ describe("HomeListingSection", () => {
 
     expect(screen.getByText("@doany-skills")).toBeTruthy();
     const sourceBadge = screen.getByText("skills.sh");
-    const downloads = screen.getByLabelText("Downloads");
-    expect(downloads.firstElementChild).toBe(sourceBadge);
+    const source = screen.getByLabelText("Source");
+    expect(source.firstElementChild).toBe(sourceBadge);
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(downloads.textContent).toContain("12.3k");
+    expect(source.textContent).toBe("skills.sh");
+    expect(screen.queryByText("12.3k")).toBeNull();
 
     fireEvent.pointerMove(sourceBadge);
     expect((await screen.findByRole("tooltip")).textContent).toBe("Synced from skills.sh");
@@ -202,7 +203,7 @@ describe("HomeListingSection", () => {
 
     const sourceBadge = screen.getByText("skills.sh");
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(screen.getByLabelText("Downloads").textContent).toBe("skills.sh");
+    expect(screen.getByLabelText("Source").textContent).toBe("skills.sh");
   });
 
   it("hides unavailable Trending and falls back to the Featured feed", async () => {
