@@ -333,6 +333,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
         storageId: string;
         sha256: string;
         contentType?: string | undefined;
+        uploadTicket?: string | undefined;
     }[];
 }, {}>;
 export type ServerPackagePublishRequest = (typeof ServerPackagePublishRequestSchema)[inferred];

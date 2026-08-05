@@ -210,4 +210,23 @@ describe("bun http client", () => {
       true,
     );
   });
+
+  it("keeps binary upload bearer tokens out of curl arguments", async () => {
+    const { client, spawnImpl } = createBunClient({
+      spawnImpl: () => ({ status: 0, stdout: '{"storageId":"storage:1"}\n200', stderr: "" }),
+      mkdtempValue: "/tmp/clawhub-binary-upload",
+    });
+
+    await client.uploadBinary({
+      url: "https://upload.example/file",
+      bytes: new Uint8Array([1, 2, 3]),
+      contentType: "application/octet-stream",
+      token: "clh_secret",
+    });
+
+    const [, args, options] = spawnImpl.mock.calls[0] as [string, string[], { input?: string }];
+    expect(args).toContain("@-");
+    expect(args.join(" ")).not.toContain("clh_secret");
+    expect(options.input).toBe("Authorization: Bearer clh_secret\n");
+  });
 });

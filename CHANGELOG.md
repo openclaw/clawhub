@@ -9,6 +9,8 @@
 
 ### Fixes
 
+- CI: authenticate the scheduled project-skill updater's pull request mutations with the Barnacle GitHub App while retaining the workflow token for provenance lookup and branch publication.
+- Workers: materialize zero-byte directory markers without colliding with descendant files, while retaining real empty files and verifying every downloaded artifact digest.
 - Deploy: allow an explicitly confirmed backend-only deploy to pause and reliably restore active external-skill rollouts instead of requiring a manual dashboard toggle.
 - GitHub Actions/CLI: trigger exact pre-publication checks immediately and wait for package publication to finish, so a pending staged upload no longer reports a successful release.
 - API: keep publish-time Plugin Inspector target preparation inside its disposable workspace when hosted runtimes expose an unusable home directory.
@@ -20,6 +22,22 @@
 - API: keep successful rate-limit checks available when retention metadata writes contend, while preserving fail-closed enforcement for authoritative counter conflicts.
 - CLI: accept npm 12's package-keyed `npm pack --json` output when building ClawPacks while retaining compatibility with earlier npm array output.
 - Web/API: preserve JSON, SSR, and OG responses through the Convex proxy after the H3 response-wrapper update.
+
+## 0.23.3 - 2026-08-03
+
+### Fixes
+
+- CLI/API: stage skill files directly in Convex storage before publishing metadata, so bundles within the documented 50MB total limit no longer hit Vercel's smaller request-body limit.
+
+## 0.23.2 - 2026-08-03
+
+### Changes
+
+- CLI/API: add owner-authorized `clawhub skill tag <skill> <version> --yes` so personal owners and organization owner/admin members can safely repoint `latest` to an existing public version.
+
+### Fixes
+
+- API: reject version-bearing requests on the legacy whole-skill delete route instead of silently soft-deleting the entire skill.
 
 ## 0.23.1 - 2026-06-29
 

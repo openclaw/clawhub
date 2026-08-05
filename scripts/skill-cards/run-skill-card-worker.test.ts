@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -160,19 +161,30 @@ describe("run-skill-card-worker Codex skill setup", () => {
   it("keeps the neutral template close to NVIDIA's public card shape", async () => {
     const template = await readFile(neutralTemplatePath(), "utf8");
 
-    expect(template).toContain("## Description: <br>");
+    expect(template).toContain("## Description:");
     expect(template).toContain("## Publisher:");
-    expect(template).toContain("### License/Terms of Use: <br>");
+    expect(template).toContain("### License/Terms of Use:");
     expect(template).toContain("license_identifier is defined");
-    expect(template).toContain("## Use Case: <br>");
-    expect(template).toContain("### Deployment Geography for Use: <br>");
-    expect(template).toContain("## Known Risks and Mitigations: <br>");
-    expect(template).toContain("## Reference(s): <br>");
-    expect(template).toContain("## Skill Output: <br>");
-    expect(template).toContain("## Skill Version(s): <br>");
+    expect(template).toContain("## Use Case:");
+    expect(template).toContain("### Deployment Geography for Use:");
+    expect(template).toContain("## Known Risks and Mitigations:");
+    expect(template).toContain("## Reference(s):");
+    expect(template).toContain("## Skill Output:");
+    expect(template).toContain("## Skill Version(s):");
     expect(template).not.toContain("Third-Party Community Consideration");
     expect(template).not.toContain("Provenance");
     expect(template).not.toContain("For Release on NVIDIA Platforms Only");
+  });
+
+  // skill-card.md ships inside the installed skill bundle and is read as plain
+  // Markdown by agents, the Files tab, the CLI, and the HTTP API. NVIDIA's
+  // upstream template ends every content line with <br> because its cards
+  // render into HTML surfaces; keeping those tags leaked literal markup into
+  // every raw consumer, so the neutral template must stay <br>-free.
+  it("emits plain Markdown with no <br> line-break tags", async () => {
+    const template = await readFile(neutralTemplatePath(), "utf8");
+
+    expect(template).not.toMatch(/<br\s*\/?>/i);
   });
 
   it("rejects NVIDIA-only public-card boilerplate", () => {
@@ -248,6 +260,83 @@ describe("run-skill-card-worker Codex skill setup", () => {
     expect(message).not.toContain("token=secret");
     expect(message).not.toContain("X-Amz-Signature");
     fetchMock.mockRestore();
+  });
+
+  it("materializes directory markers, descendants, and real empty files", async () => {
+    const workspace = await tempDir();
+    const openAiConfig = "provider: openai\n";
+    const emptySha256 = createHash("sha256").update("").digest("hex");
+
+    await writeWorkspace(
+      {
+        job: {
+          _id: "skillCardGenerationJobs:directory-marker",
+          leaseToken: "lease-secret",
+          source: "scan",
+        },
+        target: {
+          evidence: {},
+          files: [
+            {
+              path: "agents",
+              sha256: emptySha256,
+              size: 0,
+              url: "data:application/octet-stream,",
+            },
+            {
+              path: "agents/openai.yaml",
+              sha256: createHash("sha256").update(openAiConfig).digest("hex"),
+              size: Buffer.byteLength(openAiConfig),
+              url: `data:text/plain,${encodeURIComponent(openAiConfig)}`,
+            },
+            {
+              path: "EMPTY",
+              sha256: emptySha256,
+              size: 0,
+              url: "data:application/octet-stream,",
+            },
+          ],
+          skill: { displayName: "Demo Skill", slug: "demo-skill" },
+          version: { version: "1.2.3" },
+        },
+      },
+      workspace,
+    );
+
+    await expect(
+      readFile(join(workspace, "artifact", "agents", "openai.yaml"), "utf8"),
+    ).resolves.toBe(openAiConfig);
+    await expect(readFile(join(workspace, "artifact", "EMPTY"))).resolves.toHaveLength(0);
+  });
+
+  it("rejects downloaded artifact bytes that do not match the stored hash", async () => {
+    const workspace = await tempDir();
+
+    await expect(
+      writeWorkspace(
+        {
+          job: {
+            _id: "skillCardGenerationJobs:hash-mismatch",
+            leaseToken: "lease-secret",
+            source: "scan",
+          },
+          target: {
+            evidence: {},
+            files: [
+              {
+                path: "SKILL.md",
+                sha256: "0".repeat(64),
+                size: 7,
+                url: "data:text/plain,%23%20Skill",
+              },
+            ],
+            skill: { displayName: "Demo Skill", slug: "demo-skill" },
+            version: { version: "1.2.3" },
+          },
+        },
+        workspace,
+      ),
+    ).rejects.toThrow("Downloaded artifact hash mismatch for artifact file SKILL.md");
   });
 
   it("sanitizes download failures before logging or failing the Convex job", async () => {

@@ -58,6 +58,7 @@ type BinaryUploadArgs = {
   url: string;
   bytes: Uint8Array;
   contentType?: string;
+  token?: string;
   retryCount?: number;
 };
 
@@ -310,6 +311,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
 
       const headers: Record<string, string> = {};
       if (args.contentType) headers["Content-Type"] = args.contentType;
+      if (args.token) headers.Authorization = `Bearer ${args.token}`;
       const response = await fetchWithTimeout(
         deps,
         args.url,
@@ -842,6 +844,7 @@ async function uploadBinaryViaCurl(
   >,
   args: BinaryUploadArgs,
 ) {
+  if (args.token && /[\r\n]/.test(args.token)) throw new Error("Invalid API token");
   const tempDir = await deps.mkdtempImpl(join(deps.tmpdirPath, "clawhub-upload-"));
   try {
     const filePath = join(tempDir, "upload.bin");
@@ -858,9 +861,13 @@ async function uploadBinaryViaCurl(
       "POST",
     ];
     if (args.contentType) curlArgs.push("-H", `Content-Type: ${args.contentType}`);
+    if (args.token) curlArgs.push("-H", "@-");
     curlArgs.push("--data-binary", `@${filePath}`, args.url);
 
-    const result = deps.spawnSyncImpl("curl", curlArgs, { encoding: "utf8" });
+    const result = deps.spawnSyncImpl("curl", curlArgs, {
+      encoding: "utf8",
+      input: args.token ? `Authorization: Bearer ${args.token}\n` : undefined,
+    });
     if (result.status !== 0) {
       throw new Error(result.stderr || "curl failed");
     }

@@ -9,7 +9,7 @@ on:
       batch-limit:
         description: "Maximum staged publish attempts to check per worker shard"
         required: true
-        default: "4"
+        default: "2"
       max-jobs:
         description: "Optional total attempts cap per worker shard"
         required: false
@@ -65,7 +65,7 @@ jobs:
         shard: ${{ fromJSON((github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && '[0]' || '[0,1]') }}
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      PREPUBLICATION_CHECK_LIMIT: ${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '4' }}
+      PREPUBLICATION_CHECK_LIMIT: ${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '2' }}
       PREPUBLICATION_CHECK_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '15' }}
       PREPUBLICATION_CHECK_ATTEMPT_ID: ${{ github.event.client_payload.attempt_id || inputs['attempt-id'] || '' }}

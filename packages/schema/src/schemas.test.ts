@@ -508,6 +508,22 @@ describe("clawhub-schema", () => {
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
   });
 
+  it("parses canonical skills.sh download counters", () => {
+    // Search normalizes skills.sh installs into the canonical downloads field,
+    // so already-released clients can parse mixed-source results unchanged.
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          { slug: "humanizer", score: 6_110, version: null, downloads: 2_190, ownerHandle: "acme" },
+        ],
+      },
+      "Search",
+    );
+
+    expect(parsed.results[0]?.downloads).toBe(2_190);
+  });
+
   it("parses flattened skill verification envelopes", () => {
     const parsed = parseArk(
       ApiV1SkillVerifyResponseSchema,

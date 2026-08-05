@@ -336,6 +336,20 @@ const publisherImageUploadTickets = defineTable({
   storageId: v.optional(v.id("_storage")),
 }).index("by_publisher_user", ["publisherId", "userId"]);
 
+const skillPublishUploadTickets = defineTable({
+  userId: v.id("users"),
+  path: v.string(),
+  size: v.number(),
+  sha256: v.string(),
+  contentType: v.optional(v.string()),
+  storageId: v.optional(v.id("_storage")),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  usedAt: v.optional(v.number()),
+})
+  .index("by_user", ["userId"])
+  .index("by_expires_at", ["expiresAt"]);
+
 const officialPublishers = defineTable({
   publisherId: v.id("publishers"),
   reason: v.optional(v.string()),
@@ -4266,6 +4280,7 @@ export default defineSchema({
   publisherMembers,
   publisherInvites,
   publisherImageUploadTickets,
+  skillPublishUploadTickets,
   officialPublishers,
   githubSkillSources,
   githubSkillContents,

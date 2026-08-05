@@ -12,7 +12,7 @@ import {
   cmdUnhideSkill,
 } from "./cli/commands/delete.js";
 import { cmdInspect, cmdVerifySkill } from "./cli/commands/inspect.js";
-import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
+import { cmdMergeSkill, cmdRenameSkill, cmdSetSkillTag } from "./cli/commands/ownership.js";
 import {
   cmdDeletePackage,
   cmdDeletePackageTrustedPublisher,
@@ -526,6 +526,17 @@ registerCommand(skill, ["skill", "verify"])
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdVerifySkill(opts, slug, options);
+  });
+
+registerCommand(skill, ["skill", "tag"])
+  .description("Point a skill tag at an existing version")
+  .argument("<skill>", "Skill ref")
+  .argument("<version>", "Existing version")
+  .option("--tag <tag>", "Tag to move", "latest")
+  .option("--yes", "Skip confirmation")
+  .action(async (skillRef, version, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdSetSkillTag(opts, skillRef, version, options, isInputAllowed());
   });
 
 const publisherCmd = registerCommandGroup(program, ["publisher"])

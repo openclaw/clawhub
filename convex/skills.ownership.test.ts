@@ -1765,8 +1765,17 @@ describe("skills ownership", () => {
                       throw new Error(`unexpected skills index ${name}`);
                     }
                     return {
-                      take: async () =>
-                        name === "by_slug" && constraints.slug === "portable" ? [skill] : [],
+                      take: async () => {
+                        if (name === "by_slug" && constraints.slug === "portable") return [skill];
+                        if (
+                          name === "by_owner_publisher_slug" &&
+                          constraints.slug === "portable" &&
+                          constraints.ownerPublisherId === "publishers:org"
+                        ) {
+                          return [destinationSkill];
+                        }
+                        return [];
+                      },
                       unique: async () => {
                         if (name === "by_slug" && constraints.slug === "portable") return skill;
                         if (

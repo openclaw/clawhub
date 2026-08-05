@@ -265,6 +265,23 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Skills directory supports an optional "Hide suspicious" filter to exclude
   active-but-flagged (`flagged.suspicious`) entries from browse/search results.
 
+## Skill publish upload boundary
+
+- CLI skill publishing stages each file through the direct Convex HTTP surface,
+  keeping file bodies off the Vercel request path. Each file remains capped at
+  10MB and the complete publish remains capped at 50MB.
+- The server creates a short-lived, user-bound ticket before accepting a file.
+  The upload action enforces the declared path, byte size, content type, and
+  SHA-256 before attaching the resulting storage id to that ticket.
+- Storage metadata SHA-256 values may be hex or base64 depending on the Convex
+  runtime. Attachment validation compares the decoded digest bytes while the
+  ticket and public publish contract remain canonical lowercase hex.
+- JSON skill publishes must present the matching ticket for every staged file.
+  Ticket ownership and file metadata are revalidated, and ticket consumption is
+  committed atomically with the new skill version.
+- Unconsumed staged files are deleted when their tickets expire. Failed
+  attachment attempts delete the just-created storage blob immediately.
+
 ## Package publish upload boundary
 
 - Package publish is multipart-only. `POST /api/v1/packages` must reject JSON
@@ -312,6 +329,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
   SkillSpector and static scan evidence as context.
+- In the external Codex security worker, package-release SkillSpector runs scan
+  only normalized bundled-skill roots declared by the stored plugin manifest
+  summary. The plugin package root is never a fallback SkillSpector target;
+  packages with no bundled roots provide ClawScan an explicit not-applicable
+  result. This is not a prepublication-worker contract.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
 - VirusTotal telemetry remains a separate Security audit signal and is not an

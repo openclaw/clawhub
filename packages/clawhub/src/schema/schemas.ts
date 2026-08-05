@@ -71,12 +71,25 @@ export const ApiUploadFileResponseSchema = type({
   storageId: "string",
 });
 
+export const ApiV1SkillUploadUrlRequestSchema = type({
+  path: "string",
+  size: "number",
+  sha256: "string",
+  contentType: "string?",
+});
+
+export const ApiV1SkillUploadUrlResponseSchema = type({
+  uploadUrl: "string",
+  uploadTicket: "string",
+});
+
 export const CliPublishFileSchema = type({
   path: "string",
   size: "number",
   storageId: "string",
   sha256: "string",
   contentType: "string?",
+  uploadTicket: "string?",
 });
 export type CliPublishFile = (typeof CliPublishFileSchema)[inferred];
 
@@ -1021,6 +1034,13 @@ export const ApiV1PublishResponseSchema = type({
 export const ApiV1DeleteResponseSchema = type({
   ok: "true",
   slugReservedUntil: "number?",
+});
+
+export const ApiV1SkillTagResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  tag: "string",
+  version: "string",
 });
 
 export const ApiV1SkillRenameResponseSchema = type({

@@ -1,11 +1,13 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
-import { apiRequest, apiRequestForm, registryUrl } from "../../http.js";
+import { apiRequest, registryUrl, uploadBinary } from "../../http.js";
 import {
   ApiRoutes,
+  ApiUploadFileResponseSchema,
   ApiV1PublishResponseSchema,
   ApiV1SkillResolveResponseSchema,
+  ApiV1SkillUploadUrlResponseSchema,
   ApiV1WhoamiResponseSchema,
 } from "../../schema/index.js";
 import { hashSkillFiles, listSkillFiles } from "../../skills.js";
@@ -168,40 +170,81 @@ export async function cmdPublish(
       options.migrateOwner && publishOwnerHandle
         ? sourceOwnerHandle || explicitSourceOwnerHandle || (await getDefaultOwnerHandle(token))
         : undefined;
-    const form = new FormData();
-    form.set(
-      "payload",
-      JSON.stringify({
-        slug,
-        displayName,
-        ownerHandle: publishOwnerHandle,
-        ...(publishSourceOwnerHandle ? { sourceOwnerHandle: publishSourceOwnerHandle } : {}),
-        ...(options.migrateOwner ? { migrateOwner: true } : {}),
-        version,
-        changelog,
-        acceptLicenseTerms: true,
-        tags,
-        ...(options.categories !== undefined ? { categories } : {}),
-        ...(options.topics !== undefined ? { topics } : {}),
-        ...(source ? { source } : {}),
-        ...(forkOf ? { forkOf } : {}),
-      }),
-    );
+    const fileHashes = new Map(hashed.files.map((file) => [file.path, file]));
+    const uploadedFiles = [] as Array<{
+      path: string;
+      size: number;
+      storageId: string;
+      sha256: string;
+      contentType?: string;
+      uploadTicket: string;
+    }>;
 
     let index = 0;
     for (const file of filesOnDisk) {
       index += 1;
       if (spinner) spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
-      const blob = new Blob([Buffer.from(file.bytes)], {
-        type: file.contentType ?? "application/octet-stream",
+      const hash = fileHashes.get(file.relPath);
+      if (!hash) fail(`Unable to hash ${file.relPath}`);
+      const contentType = file.contentType ?? "application/octet-stream";
+      const { uploadUrl, uploadTicket } = await apiRequest(
+        registry,
+        {
+          method: "POST",
+          path: ApiRoutes.skillUploadUrl,
+          token,
+          body: {
+            path: file.relPath,
+            size: hash.size,
+            sha256: hash.sha256,
+            contentType,
+          },
+        },
+        ApiV1SkillUploadUrlResponseSchema,
+      );
+      const { storageId } = await uploadBinary(
+        {
+          url: uploadUrl,
+          bytes: file.bytes,
+          contentType,
+          token,
+        },
+        ApiUploadFileResponseSchema,
+      );
+      uploadedFiles.push({
+        path: file.relPath,
+        size: hash.size,
+        storageId,
+        sha256: hash.sha256,
+        contentType,
+        uploadTicket,
       });
-      form.append("files", blob, file.relPath);
     }
 
     if (spinner) spinner.text = `Publishing ${slug}@${version}`;
-    const result = await apiRequestForm(
+    const result = await apiRequest(
       registry,
-      { method: "POST", path: ApiRoutes.skills, token, form },
+      {
+        method: "POST",
+        path: ApiRoutes.skills,
+        token,
+        body: {
+          slug,
+          displayName,
+          ownerHandle: publishOwnerHandle,
+          ...(publishSourceOwnerHandle ? { sourceOwnerHandle: publishSourceOwnerHandle } : {}),
+          ...(options.migrateOwner ? { migrateOwner: true } : {}),
+          version,
+          changelog,
+          acceptLicenseTerms: true,
+          tags,
+          ...(options.categories !== undefined ? { categories } : {}),
+          ...(options.topics !== undefined ? { topics } : {}),
+          ...(source ? { source } : {}),
+          ...(forkOf ? { forkOf } : {}),
+          files: uploadedFiles,
+        },
+      },
       ApiV1PublishResponseSchema,
     );
 

@@ -1,64 +1,80 @@
 {#-
 ClawHub Skill Card template.
 
-This intentionally stays close to NVIDIA's public Skill Card template shape
+This intentionally stays close to NVIDIA's public Skill Card section shape
 while replacing NVIDIA-only ownership, review, and platform boilerplate with
 neutral public-card language.
+
+Unlike NVIDIA's template this emits plain Markdown with no trailing HTML
+line-break tags. NVIDIA's cards render into HTML surfaces where soft line
+breaks collapse; ClawHub's skill-card.md ships inside the installed skill
+bundle and is read as Markdown by agents, the Files tab, the CLI, and the HTTP
+API, so blocks are separated with blank lines instead. Keep consecutive field
+lines blank-line separated so they stay distinct paragraphs.
 -#}
 
-## Description: <br>
-{{ description_sentence }} <br>
+## Description:
+
+{{ description_sentence }}
 
 {% if usage_posture == "commercial" -%}
-This skill is ready for commercial/non-commercial use. <br>
+This skill is ready for commercial/non-commercial use.
 {%- elif usage_posture == "research_dev" -%}
-This skill is for research and development only. <br>
+This skill is for research and development only.
 {%- elif usage_posture == "demonstration" -%}
-This skill is for demonstration purposes and not for production usage. <br>
+This skill is for demonstration purposes and not for production usage.
 {%- endif %}
 
-## Publisher: <br>
+## Publisher:
+
 {% if owner.kind == "nvidia" -%}
-NVIDIA <br>
+NVIDIA
 {%- else -%}
-[{{ owner.name }}]({{ owner.card_link }}) <br>
+[{{ owner.name }}]({{ owner.card_link }})
 {%- endif %}
 
-### License/Terms of Use: <br>
-{% if license_identifier is defined and license_identifier -%}
-{{ license_identifier }} <br>
+### License/Terms of Use:
+{% if license_identifier is defined and license_identifier %}
+{{ license_identifier }}
+{%- endif %}
+
+## Use Case:
+
+{{ use_case }}
+
+### Deployment Geography for Use:
+
+{{ deployment_geography }}
+
+## Known Risks and Mitigations:
+{% if risk_mitigations is defined and risk_mitigations %}{% for item in risk_mitigations %}
+Risk: {{ item.risk }}
+
+Mitigation: {{ item.mitigation }}
+{% endfor %}{% else %}
+Risk: Review before execution as proposals could introduce incorrect or misleading guidance into skills.
+
+Mitigation: Review and scan skill before deployment.
 {% endif %}
+## Reference(s):
+{% for ref in references %}
+- [{{ ref.label }}]({{ ref.url }})
+{%- endfor %}
 
-## Use Case: <br>
-{{ use_case }} <br>
+## Skill Output:
 
-### Deployment Geography for Use: <br>
-{{ deployment_geography }} <br>
+**Output Type(s):** [{{ output.types | join(", ") }}]
 
-## Known Risks and Mitigations: <br>
-{% if risk_mitigations is defined and risk_mitigations -%}
-{% for item in risk_mitigations -%}
-Risk: {{ item.risk }} <br>
-Mitigation: {{ item.mitigation }} <br>
-{% endfor -%}
-{%- else -%}
-Risk: Review before execution as proposals could introduce incorrect or misleading guidance into skills. <br>
-Mitigation: Review and scan skill before deployment. <br>
-{%- endif %}
+**Output Format:** [{{ output.format }}]
 
-## Reference(s): <br>
-{% for ref in references -%}
-- [{{ ref.label }}]({{ ref.url }}) <br>
-{% endfor %}
+**Output Parameters:** [{{ output.parameters }}]
 
-## Skill Output: <br>
-**Output Type(s):** [{{ output.types | join(", ") }}] <br>
-**Output Format:** [{{ output.format }}] <br>
-**Output Parameters:** [{{ output.parameters }}] <br>
-**Other Properties Related to Output:** [{{ output.other_properties }}] <br>
+**Other Properties Related to Output:** [{{ output.other_properties }}]
 
-## Skill Version(s): <br>
-{{ skill_version }} <br>
+## Skill Version(s):
 
-## Ethical Considerations: <br>
-Users should evaluate whether this skill is appropriate for their environment, review any generated or modified files before relying on them, and apply their organization's safety, security, and compliance requirements before deployment. <br>
+{{ skill_version }}
+
+## Ethical Considerations:
+
+Users should evaluate whether this skill is appropriate for their environment, review any generated or modified files before relying on them, and apply their organization's safety, security, and compliance requirements before deployment.

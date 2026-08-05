@@ -5,6 +5,7 @@ const retentionRefs = vi.hoisted(() => ({
   pruneExpiredAuthSessionsInternal: Symbol("pruneExpiredAuthSessionsInternal"),
   pruneExpiredAuthRefreshTokensInternal: Symbol("pruneExpiredAuthRefreshTokensInternal"),
   pruneExpiredPublisherInvitesInternal: Symbol("pruneExpiredPublisherInvitesInternal"),
+  pruneExpiredSkillPublishUploadsInternal: Symbol("pruneExpiredSkillPublishUploadsInternal"),
 }));
 
 vi.mock("./_generated/api", () => ({
@@ -17,6 +18,7 @@ const {
   pruneExpiredAuthRefreshTokensInternal,
   pruneExpiredAuthSessionsInternal,
   pruneExpiredPublisherInvitesInternal,
+  pruneExpiredSkillPublishUploadsInternal,
 } = await import("./retention");
 
 type WrappedHandler<TArgs, TResult> = {
@@ -39,6 +41,12 @@ const prunePublisherInvitesHandler = (
   pruneExpiredPublisherInvitesInternal as unknown as WrappedHandler<
     { batchSize?: number },
     { deleted: number; hasMore: boolean }
+  >
+)._handler;
+const pruneSkillUploadsHandler = (
+  pruneExpiredSkillPublishUploadsInternal as unknown as WrappedHandler<
+    { batchSize?: number },
+    { deletedTickets: number; deletedStorage: number; hasMore: boolean }
   >
 )._handler;
 
@@ -232,5 +240,47 @@ describe("auth retention", () => {
     expect(runAfter).toHaveBeenCalledWith(0, retentionRefs.pruneExpiredPublisherInvitesInternal, {
       batchSize: 1,
     });
+  });
+
+  it("deletes expired unconsumed skill upload storage in bounded batches", async () => {
+    const now = 4_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const rows = [
+      {
+        _id: "skillPublishUploadTickets:one",
+        expiresAt: now - 1,
+        storageId: "storage:one",
+      },
+    ];
+    const deleteDoc = vi.fn();
+    const deleteStorage = vi.fn();
+    const runAfter = vi.fn();
+    const lt = vi.fn(() => ({}));
+    const ctx = {
+      db: makeDb({
+        query: vi.fn(() => ({
+          withIndex: vi.fn((indexName: string, build: (q: unknown) => unknown) => {
+            expect(indexName).toBe("by_expires_at");
+            build({ lt });
+            return { take: vi.fn(async () => rows) };
+          }),
+        })),
+        delete: deleteDoc,
+      }),
+      storage: { delete: deleteStorage },
+      scheduler: { runAfter },
+    };
+
+    const result = await pruneSkillUploadsHandler(ctx as never, { batchSize: 1 });
+
+    expect(result).toEqual({ deletedTickets: 1, deletedStorage: 1, hasMore: true });
+    expect(lt).toHaveBeenCalledWith("expiresAt", now);
+    expect(deleteStorage).toHaveBeenCalledWith("storage:one");
+    expect(deleteDoc).toHaveBeenCalledWith("skillPublishUploadTickets:one");
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      retentionRefs.pruneExpiredSkillPublishUploadsInternal,
+      { batchSize: 1 },
+    );
   });
 });

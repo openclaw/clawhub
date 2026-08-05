@@ -173,6 +173,7 @@ import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
+import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
 const MAX_POINTERLESS_VERSION_SURVIVOR_SCAN = 100;
@@ -10588,6 +10589,101 @@ export const resolveVersionByHash = query({
   },
 });
 
+async function updateSkillTagsForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  skill: Doc<"skills">,
+  tags: Array<{ tag: string; versionId: Id<"skillVersions"> }>,
+) {
+  if (actor.role !== "admin" && actor.role !== "moderator") {
+    await assertCanManageOwnedResource(ctx, {
+      actor,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+    });
+  }
+
+  const versionsById = new Map<Id<"skillVersions">, Doc<"skillVersions">>();
+  for (const entry of tags) {
+    let version = versionsById.get(entry.versionId) ?? null;
+    if (!version) {
+      version = await ctx.db.get(entry.versionId);
+      if (version) versionsById.set(entry.versionId, version);
+    }
+    if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) {
+      throw new Error("Version not found");
+    }
+  }
+
+  const nextTags = { ...skill.tags };
+  for (const entry of tags) {
+    nextTags[entry.tag] = entry.versionId;
+  }
+
+  const changedTags = tags.filter((entry) => skill.tags[entry.tag] !== entry.versionId);
+  if (changedTags.length === 0) return { ok: true as const, skillId: skill._id };
+
+  let latestEntry: (typeof tags)[number] | undefined;
+  for (const entry of tags) {
+    if (entry.tag === "latest") latestEntry = entry;
+  }
+  const now = Date.now();
+  const patch: Partial<Doc<"skills">> = {
+    tags: nextTags,
+    latestVersionId: latestEntry ? latestEntry.versionId : skill.latestVersionId,
+    updatedAt: now,
+  };
+
+  // Keep latestVersionSummary in sync when the latest tag is repointed.
+  if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
+    const version = versionsById.get(latestEntry.versionId)!;
+    patch.latestVersionSummary = {
+      version: version.version,
+      createdAt: version.createdAt,
+      changelog: version.changelog,
+      changelogSource: version.changelogSource,
+      description: skillSummaryFromSkillVersion(version),
+      clawdis: version.parsed?.clawdis,
+    };
+  }
+
+  await ctx.db.patch(skill._id, patch);
+
+  if (
+    latestEntry &&
+    latestEntry.versionId !== skill.latestVersionId &&
+    shouldSyncModerationFromLatestVersion(skill)
+  ) {
+    await syncSkillModerationFromLatestVersion(
+      ctx,
+      { ...skill, latestVersionId: latestEntry.versionId },
+      now,
+    );
+  }
+
+  if (latestEntry) {
+    await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
+  }
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "skill.tags.update",
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: {
+      slug: skill.slug,
+      previous: Object.fromEntries(
+        changedTags.map((entry) => [entry.tag, skill.tags[entry.tag] ?? null]),
+      ),
+      next: Object.fromEntries(changedTags.map((entry) => [entry.tag, entry.versionId])),
+    },
+    createdAt: now,
+  });
+
+  return { ok: true as const, skillId: skill._id };
+}
+
 export const updateTags = mutation({
   args: {
     skillId: v.id("skills"),
@@ -10597,65 +10693,56 @@ export const updateTags = mutation({
     const { user } = await requireUser(ctx);
     const skill = await ctx.db.get(args.skillId);
     if (!skill) throw new Error("Skill not found");
-    if (skill.ownerUserId !== user._id) {
-      assertModerator(user);
-    }
+    return await updateSkillTagsForActor(ctx, user, skill, args.tags);
+  },
+});
 
-    const versionsById = new Map<Id<"skillVersions">, Doc<"skillVersions">>();
-    for (const entry of args.tags) {
-      let version = versionsById.get(entry.versionId) ?? null;
-      if (!version) {
-        version = await ctx.db.get(entry.versionId);
-        if (version) versionsById.set(entry.versionId, version);
-      }
-      if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) {
-        throw new Error("Version not found");
-      }
-    }
+export const setSkillTagForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    tag: v.string(),
+    version: v.string(),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
 
-    const nextTags = { ...skill.tags };
-    for (const entry of args.tags) {
-      nextTags[entry.tag] = entry.versionId;
-    }
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const requestedTag = args.tag.trim();
+    const normalizedTag =
+      requestedTag.toLowerCase() === "latest"
+        ? "latest"
+        : (normalizeSkillTags([requestedTag])?.[0] ?? "");
+    if (!normalizedTag) throw new ConvexError("Valid tag required");
+    const versionName = args.version.trim();
+    if (!versionName) throw new ConvexError("Version required");
+    const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
 
-    const latestEntry = args.tags.find((entry) => entry.tag === "latest");
-    const now = Date.now();
-    const patch: Partial<Doc<"skills">> = {
-      tags: nextTags,
-      latestVersionId: latestEntry ? latestEntry.versionId : skill.latestVersionId,
-      updatedAt: now,
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, ownerHandle);
+    if (resolved.ambiguous) {
+      throw new ConvexError("Slug is used by multiple publishers. Pass an owner handle.");
+    }
+    const skill = resolved.skill;
+    if (!skill) throw new ConvexError("Skill not found");
+
+    const version = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", versionName))
+      .unique();
+    if (!version) throw new ConvexError("Skill version not found");
+
+    await updateSkillTagsForActor(ctx, actor, skill, [
+      { tag: normalizedTag, versionId: version._id },
+    ]);
+    return {
+      ok: true as const,
+      slug: skill.slug,
+      tag: normalizedTag,
+      version: version.version,
     };
-
-    // Keep latestVersionSummary in sync when the latest tag is repointed
-    if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
-      const version = versionsById.get(latestEntry.versionId)!;
-      patch.latestVersionSummary = {
-        version: version.version,
-        createdAt: version.createdAt,
-        changelog: version.changelog,
-        changelogSource: version.changelogSource,
-        description: skillSummaryFromSkillVersion(version),
-        clawdis: version.parsed?.clawdis,
-      };
-    }
-
-    await ctx.db.patch(skill._id, patch);
-
-    if (
-      latestEntry &&
-      latestEntry.versionId !== skill.latestVersionId &&
-      shouldSyncModerationFromLatestVersion(skill)
-    ) {
-      await syncSkillModerationFromLatestVersion(
-        ctx,
-        { ...skill, latestVersionId: latestEntry.versionId },
-        now,
-      );
-    }
-
-    if (latestEntry) {
-      await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
-    }
   },
 });
 
@@ -10668,8 +10755,13 @@ export const deleteTags = mutation({
     const { user } = await requireUser(ctx);
     const skill = await ctx.db.get(args.skillId);
     if (!skill) throw new Error("Skill not found");
-    if (skill.ownerUserId !== user._id) {
-      assertModerator(user);
+    if (user.role !== "admin" && user.role !== "moderator") {
+      await assertCanManageOwnedResource(ctx, {
+        actor: user,
+        ownerUserId: skill.ownerUserId,
+        ownerPublisherId: skill.ownerPublisherId,
+        allowedPublisherRoles: ["admin"],
+      });
     }
 
     const nextTags = { ...skill.tags };
@@ -11189,6 +11281,61 @@ export const mergeOwnedSkillIntoCanonicalInternal = internalMutation({
   },
 });
 
+export const mergeSamePublisherDuplicateSkillByIdInternal = internalMutation({
+  args: {
+    sourceSkillId: v.id("skills"),
+    targetSkillId: v.id("skills"),
+    expectedSlug: v.string(),
+    expectedSourceVersionId: v.id("skillVersions"),
+    expectedTargetVersionId: v.id("skillVersions"),
+    expectedTargetVersion: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const source = await ctx.db.get(args.sourceSkillId);
+    const target = await ctx.db.get(args.targetSkillId);
+    if (!source || !target) throw new ConvexError("Duplicate repair skill not found");
+    if (
+      source.softDeletedAt &&
+      source.canonicalSkillId === target._id &&
+      source.forkOf?.skillId === target._id
+    ) {
+      return { ok: true as const, alreadyMerged: true as const };
+    }
+    if (source.softDeletedAt || target.softDeletedAt) {
+      throw new ConvexError("Duplicate repair requires two active skills");
+    }
+    if (
+      !source.ownerPublisherId ||
+      source.ownerPublisherId !== target.ownerPublisherId ||
+      source.slug !== target.slug ||
+      source.slug !== args.expectedSlug
+    ) {
+      throw new ConvexError("Duplicate repair invariant changed before apply");
+    }
+    if (
+      source.latestVersionId !== args.expectedSourceVersionId ||
+      target.latestVersionId !== args.expectedTargetVersionId
+    ) {
+      throw new ConvexError("Duplicate repair lineage changed before apply");
+    }
+    const targetVersion = target.latestVersionId ? await ctx.db.get(target.latestVersionId) : null;
+    if (targetVersion?.version !== args.expectedTargetVersion) {
+      throw new ConvexError("Duplicate repair target version changed before apply");
+    }
+
+    const result = await mergeOwnedSkillIntoCanonicalByActor(
+      ctx,
+      target.ownerUserId,
+      source.slug,
+      target.slug,
+      undefined,
+      undefined,
+      { sourceSkillId: source._id, targetSkillId: target._id },
+    );
+    return { ...result, alreadyMerged: false as const };
+  },
+});
+
 async function canManageSkillOwnerForActor(
   ctx: QueryCtx | MutationCtx,
   actor: Doc<"users">,
@@ -11331,6 +11478,7 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   targetSlugArg: string,
   sourceOwnerHandle?: string,
   targetOwnerHandle?: string,
+  skillIds?: { sourceSkillId: Id<"skills">; targetSkillId: Id<"skills"> },
 ) {
   const user = await ctx.db.get(actorUserId);
   if (!user || user.deletedAt || user.deactivatedAt) {
@@ -11338,31 +11486,33 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   }
 
   const now = Date.now();
-  const sourceSlug = sourceSlugArg.trim().toLowerCase();
-  const targetSlug = targetSlugArg.trim().toLowerCase();
-  if (!sourceSlug || !targetSlug) {
-    throw new ConvexError("Source slug and target slug are required");
-  }
-  const sourceOwnerKey = normalizePublisherHandle(sourceOwnerHandle);
-  const targetOwnerKey = normalizePublisherHandle(targetOwnerHandle);
-  if (sourceSlug === targetSlug && sourceOwnerKey === targetOwnerKey) {
-    throw new ConvexError("Source and target must be different skills");
-  }
+  let source: Doc<"skills"> | null;
+  let target: Doc<"skills"> | null;
+  if (skillIds) {
+    [source, target] = await Promise.all([
+      ctx.db.get(skillIds.sourceSkillId),
+      ctx.db.get(skillIds.targetSkillId),
+    ]);
+  } else {
+    const sourceSlug = sourceSlugArg.trim().toLowerCase();
+    const targetSlug = targetSlugArg.trim().toLowerCase();
+    if (!sourceSlug || !targetSlug) {
+      throw new ConvexError("Source slug and target slug are required");
+    }
+    const sourceOwnerKey = normalizePublisherHandle(sourceOwnerHandle);
+    const targetOwnerKey = normalizePublisherHandle(targetOwnerHandle);
+    if (sourceSlug === targetSlug && sourceOwnerKey === targetOwnerKey) {
+      throw new ConvexError("Source and target must be different skills");
+    }
 
-  const sourceResolved = await resolveSkillBySlugOrAliasForOwner(
-    ctx,
-    sourceSlug,
-    sourceOwnerHandle,
-  );
-  const source = sourceResolved.skill;
+    const [sourceResolved, targetResolved] = await Promise.all([
+      resolveSkillBySlugOrAliasForOwner(ctx, sourceSlug, sourceOwnerHandle),
+      resolveSkillBySlugOrAliasForOwner(ctx, targetSlug, targetOwnerHandle),
+    ]);
+    source = sourceResolved.skill;
+    target = targetResolved.skill;
+  }
   if (!source || source.softDeletedAt) throw new ConvexError("Source skill not found");
-
-  const targetResolved = await resolveSkillBySlugOrAliasForOwner(
-    ctx,
-    targetSlug,
-    targetOwnerHandle,
-  );
-  const target = targetResolved.skill;
   if (!target || target.softDeletedAt) throw new ConvexError("Target skill not found");
   if (source._id === target._id) {
     throw new ConvexError("Source and target must be different skills");
@@ -11432,10 +11582,11 @@ async function mergeOwnedSkillIntoCanonicalByActor(
       addedOwnerAliasSlugs.add(source.slug);
     }
   } else {
-    if (!targetAliasSlugs.has(source.slug)) {
+    const sharedOwnerSlug = sourceOwnerMatchesTargetOwner && source.slug === target.slug;
+    if (!sharedOwnerSlug && !targetAliasSlugs.has(source.slug)) {
       addedSkillAliasSlugs.add(source.slug);
     }
-    addedOwnerAliasSlugs.add(source.slug);
+    if (!sharedOwnerSlug) addedOwnerAliasSlugs.add(source.slug);
   }
 
   if (sourceOwnerMatchesTargetOwner) {
@@ -12363,6 +12514,7 @@ function stripUndefinedForStoredPublication(value: unknown): unknown {
 export const insertVersion = internalMutation({
   args: {
     userId: v.id("users"),
+    skillPublishUploadTickets: v.optional(v.array(v.id("skillPublishUploadTickets"))),
     ownerPublisherId: v.optional(v.id("publishers")),
     sourceOwnerPublisherId: v.optional(v.id("publishers")),
     // Explicit opt-in to owner migration. When an existing skill row already has
@@ -12496,6 +12648,13 @@ export const insertVersion = internalMutation({
     if (!normalizedSlug) throw new ConvexError("Slug is required.");
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+    if (args.skillPublishUploadTickets) {
+      await consumeSkillPublishUploads(ctx, {
+        userId,
+        uploadTickets: args.skillPublishUploadTickets,
+        files: args.files,
+      });
+    }
     const personalPublisher = await ensurePersonalPublisherForUser(ctx, user, {
       actorUserId: userId,
       source: "skill.publish",

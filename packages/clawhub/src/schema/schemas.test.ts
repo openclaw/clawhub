@@ -74,6 +74,12 @@ describe("packages/clawhub skill metadata schema", () => {
             displayName: "Calendar",
             summary: "Calendar workflows",
             score: 6_110,
+            // The canonical downloads field normalizes the source-owned count:
+            // ClawHub downloads for native rows, skills.sh installs for mirrors.
+            version: null,
+            downloads: 99_000,
+            ownerHandle: "acme",
+            updatedAt: 10,
             canonicalUrl: "/skills-sh/acme/skills/calendar",
             official: false,
             featured: false,
@@ -124,6 +130,7 @@ describe("packages/clawhub skill metadata schema", () => {
     ]);
     expect(parsed.results[0]?.install?.reference).toBe("skills-sh:acme/skills/calendar");
     expect(parsed.results[0]?.trust?.sourceFreshness).toBe("observed-only");
+    expect(parsed.results[0]?.downloads).toBe(99_000);
   });
 
   it("parses pending package publish responses with legacy IDs", () => {

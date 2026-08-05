@@ -48,11 +48,15 @@ vi.mock("./_generated/api", () => ({
       inspectSkillLineageCycleInternal: Symbol("inspectSkillLineageCycleInternal"),
       applySkillLineageCycleRepairInternal: Symbol("applySkillLineageCycleRepairInternal"),
       repairSkillLineageCyclesInternal: Symbol("repairSkillLineageCyclesInternal"),
+      inspectHeartflowDuplicateSkillsInternal: Symbol("inspectHeartflowDuplicateSkillsInternal"),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
       getVersionByIdInternal: Symbol("skills.getVersionByIdInternal"),
       getOwnerSkillActivityInternal: Symbol("skills.getOwnerSkillActivityInternal"),
+      mergeSamePublisherDuplicateSkillByIdInternal: Symbol(
+        "skills.mergeSamePublisherDuplicateSkillByIdInternal",
+      ),
     },
     users: {
       getByIdInternal: Symbol("users.getByIdInternal"),
@@ -85,6 +89,7 @@ const {
   nominateEmptySkillSpammersInternalHandler,
   repairLegacyPluginSkillSpectorBatchInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
+  repairHeartflowDuplicateSkillsInternalHandler,
   repairSkillLineageCyclesInternalHandler,
   resyncPluginCatalogMetadataDigestsBatchInternal,
   resyncPluginCatalogMetadataDigestsInternal,
@@ -97,6 +102,47 @@ const { getAuthUserId } = await import("@convex-dev/auth/server");
 beforeEach(() => {
   vi.mocked(getAuthUserId).mockReset();
   vi.mocked(getAuthUserId).mockResolvedValue(null);
+});
+
+describe("maintenance HeartFlow duplicate repair", () => {
+  it("defaults to a zero-write dry run and returns the guarded repair pairs", async () => {
+    const pairs = [
+      {
+        slug: "heartflow",
+        sourceSkillId: "skills:old",
+        targetSkillId: "skills:new",
+        expectedTargetVersion: "6.4.1",
+        status: "ready",
+        source: { version: "6.4.0" },
+        target: { version: "6.4.1" },
+      },
+    ];
+    const runQuery = vi.fn().mockResolvedValue(pairs);
+    const runMutation = vi.fn();
+
+    const result = await repairHeartflowDuplicateSkillsInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      writesApplied: 0,
+      confirmRequired: "merge-heartflow-duplicate-skills-2026-08-04",
+      pairs,
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses an apply without the exact confirmation token", async () => {
+    await expect(
+      repairHeartflowDuplicateSkillsInternalHandler(
+        { runQuery: vi.fn(), runMutation: vi.fn() } as never,
+        { dryRun: false },
+      ),
+    ).rejects.toThrow("merge-heartflow-duplicate-skills-2026-08-04");
+  });
 });
 
 function makeBlob(text: string) {

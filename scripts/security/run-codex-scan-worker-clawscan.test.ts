@@ -7,7 +7,12 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClaimedJob } from "./run-codex-scan-worker";
-import { processJob, runClawScan } from "./run-codex-scan-worker";
+import {
+  aggregateSkillSpectorAnalyses,
+  processJob,
+  resolveBundledSkillSpectorScanInputs,
+  runClawScan,
+} from "./run-codex-scan-worker";
 
 const tempDirs: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -88,7 +93,12 @@ function claimedJob(input: {
     target: {
       ...input.target,
       ...(input.targetKind === "packageRelease"
-        ? { release: { vtAnalysis: input.vtAnalysis ?? null } }
+        ? {
+            release: {
+              ...(input.target.release ?? {}),
+              vtAnalysis: input.vtAnalysis ?? null,
+            },
+          }
         : { version: { vtAnalysis: input.vtAnalysis ?? null } }),
     },
   };
@@ -220,6 +230,216 @@ function clawScanArtifactJson(options?: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it.each([
+    {
+      name: "zero roots",
+      roots: [],
+      expected: [],
+    },
+    {
+      name: "one root",
+      roots: ["skills/alpha"],
+      expected: [{ rootPath: "skills/alpha", scanPath: "artifact/package/skills/alpha" }],
+    },
+    {
+      name: "multiple roots in deterministic order",
+      roots: ["skills/zeta/", "./skills/alpha", "skills/zeta"],
+      expected: [
+        { rootPath: "skills/alpha", scanPath: "artifact/package/skills/alpha" },
+        { rootPath: "skills/zeta", scanPath: "artifact/package/skills/zeta" },
+      ],
+    },
+    {
+      name: "traversal roots rejected",
+      roots: ["../outside", "skills/../../outside", "/absolute", ".", "skills/safe"],
+      expected: [{ rootPath: "skills/safe", scanPath: "artifact/package/skills/safe" }],
+    },
+  ])("selects $name only from the package manifest", async ({ name, roots, expected }) => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact", "package"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "package", "package.json"), "{}\n");
+    const job = claimedJob({
+      jobId: `securityScanJobs:${name.replaceAll(" ", "-")}`,
+      source: "publish",
+      targetKind: "packageRelease",
+      target: {
+        release: {
+          pluginManifestSummary: {
+            bundledSkills: roots.map((rootPath) => ({ rootPath })),
+          },
+        },
+      },
+    });
+
+    await expect(resolveBundledSkillSpectorScanInputs(workspace, job)).resolves.toEqual(expected);
+  });
+
+  it("produces an explicit result when a package has no bundled skills", () => {
+    expect(aggregateSkillSpectorAnalyses([])).toEqual({
+      applicable: false,
+      status: "clean",
+      risk_assessment: {
+        score: 0,
+        severity: "NONE",
+        recommendation: "NOT_APPLICABLE",
+      },
+      issue_count: 0,
+      filtered_findings: [],
+      metadata: { skillspector_version: "skillspector" },
+      summary: "Package declares no bundled skills; SkillSpector was not applicable.",
+    });
+  });
+
+  it("aggregates bundled SkillSpector reports deterministically", () => {
+    const analyses = [
+      {
+        status: "clean",
+        score: 5,
+        severity: "LOW",
+        recommendation: "ALLOW",
+        issueCount: 0,
+        issues: [],
+        scannerVersion: "2.0.0",
+        summary: "alpha clean",
+        checkedAt: 20,
+      },
+      {
+        status: "suspicious",
+        score: 80,
+        severity: "HIGH",
+        recommendation: "REVIEW",
+        issueCount: 1,
+        issues: [
+          {
+            issueId: "SDI-2",
+            severity: "HIGH",
+            explanation: "review beta",
+          },
+        ],
+        scannerVersion: "1.0.0",
+        summary: "beta suspicious",
+        checkedAt: 10,
+      },
+    ];
+
+    expect(aggregateSkillSpectorAnalyses(analyses)).toEqual(
+      aggregateSkillSpectorAnalyses([...analyses].reverse()),
+    );
+    expect(aggregateSkillSpectorAnalyses(analyses)).toMatchObject({
+      applicable: true,
+      status: "suspicious",
+      risk_assessment: {
+        score: 80,
+        severity: "HIGH",
+        recommendation: "ALLOW; REVIEW",
+      },
+      issue_count: 1,
+      metadata: { skillspector_version: "1.0.0, 2.0.0" },
+      summary: "Scanned 2 bundled skills. alpha clean beta suspicious",
+    });
+  });
+
+  it("never passes a package root to SkillSpector", async () => {
+    const workspace = await tempDir();
+    const packageRoot = join(workspace, "artifact", "package");
+    await mkdir(join(packageRoot, "skills", "alpha"), { recursive: true });
+    await mkdir(join(packageRoot, "skills", "beta"), { recursive: true });
+    await writeFile(join(packageRoot, "package.json"), "{}\n");
+    await writeFile(join(packageRoot, "skills", "alpha", "SKILL.md"), "# alpha\n");
+    await writeFile(join(packageRoot, "skills", "beta", "SKILL.md"), "# beta\n");
+
+    const fakeSkillSpector = join(workspace, "skillspector");
+    const skillSpectorTargets = join(workspace, "skillspector-targets.log");
+    await writeFakeClawScanCommand(
+      fakeSkillSpector,
+      `target="$2"
+printf '%s\\n' "$target" >> ${JSON.stringify(skillSpectorTargets)}
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat > "$out" <<JSON
+{"status":"suspicious","risk_score":25,"risk_severity":"MEDIUM","risk_recommendation":"REVIEW","issue_count":1,"issues":[{"id":"same-name","severity":"MEDIUM","file":"SKILL.md","explanation":"review"}],"scanner_version":"test","summary":"$(basename "$target") suspicious"}
+JSON`,
+    );
+
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const copiedFixture = join(workspace, "skillspector-fixture.json");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `out=""
+fixture=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    --scanner-result)
+      fixture="\${2#skillspector=}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cp "$fixture" ${JSON.stringify(copiedFixture)}
+cat > "$out" <<'JSON'
+${clawScanArtifactJson()}
+JSON`,
+    );
+
+    const previousClawScan = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    const previousPath = process.env.PATH;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.PATH = `${workspace}:${previousPath ?? ""}`;
+    try {
+      const job = claimedJob({
+        jobId: "securityScanJobs:bundled-roots-only",
+        source: "publish",
+        targetKind: "packageRelease",
+        target: {
+          release: {
+            pluginManifestSummary: {
+              bundledSkills: [{ rootPath: "skills/beta" }, { rootPath: "skills/alpha" }],
+            },
+          },
+        },
+      });
+
+      await runClawScan(job, workspace, () => {});
+
+      expect((await readFile(skillSpectorTargets, "utf8")).trim().split("\n")).toEqual([
+        "artifact/package/skills/alpha",
+        "artifact/package/skills/beta",
+      ]);
+      expect(JSON.parse(await readFile(copiedFixture, "utf8"))).toMatchObject({
+        applicable: true,
+        status: "suspicious",
+        issue_count: 2,
+        filtered_findings: [{ file: "skills/alpha/SKILL.md" }, { file: "skills/beta/SKILL.md" }],
+        summary: "Scanned 2 bundled skills. alpha suspicious beta suspicious",
+      });
+    } finally {
+      if (previousClawScan === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousClawScan;
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
+  });
+
   it("uses ClawScan as the only skillVersion scan implementation", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
@@ -483,7 +703,12 @@ JSON`,
           expect.arrayContaining(["--profile", "clawhub", "--output"]),
         );
         expect(invocationArgs).not.toContain("--context");
-        expect(invocationArgs).not.toContain("--scanner-result");
+        if (targetKind === "packageRelease") {
+          expect(invocationArgs).toContain("--scanner-result");
+          expect(invocationArgs.some((arg) => arg.startsWith("skillspector="))).toBe(true);
+        } else {
+          expect(invocationArgs).not.toContain("--scanner-result");
+        }
         expect((await readFile(filesLog, "utf8")).trim().split("\n")).toContain(expectedFile);
       } finally {
         if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;

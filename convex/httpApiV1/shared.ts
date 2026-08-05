@@ -537,6 +537,7 @@ export function parsePublishBody(body: unknown) {
     files: parsed.files.map((file) => ({
       ...file,
       storageId: file.storageId as Id<"_storage">,
+      uploadTicket: file.uploadTicket as Id<"skillPublishUploadTickets"> | undefined,
     })),
   };
 }

@@ -251,6 +251,17 @@ async function cliSkillDeleteHandler(ctx: ActionCtx, request: Request, deleted: 
 
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
+    if (
+      body !== null &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      Object.prototype.hasOwnProperty.call(body, "version")
+    ) {
+      return text(
+        "Legacy skill delete does not support versions; use the version-scoped v1 endpoint.",
+        400,
+      );
+    }
     const args = parseArk(CliSkillDeleteRequestSchema, body, "Delete payload");
     await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
       userId,

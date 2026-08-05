@@ -46,6 +46,75 @@ const PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY =
 const PUBLISHER_ABUSE_SIGNAL_SMOKE_CONFIRM =
   "create-publisher-abuse-hermit-digest-smoke-2026-07-03" as const;
 const SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM = "repair-skill-lineage-cycles-2026-07-23" as const;
+const HEARTFLOW_DUPLICATE_REPAIR_CONFIRM = "merge-heartflow-duplicate-skills-2026-08-04" as const;
+const HEARTFLOW_DUPLICATE_PAIRS = [
+  {
+    slug: "heartflow",
+    sourceSkillId: "kd7d384mr4pc7ezmf0apvwmqtn8992b6" as Id<"skills">,
+    targetSkillId: "kd7dmapx3bfr9j5capz3s3errh87hytn" as Id<"skills">,
+    expectedSourceVersionId: "k97bfwtwqvs304xbwz4fb400a58a00fq" as Id<"skillVersions">,
+    expectedTargetVersionId: "k97deresd77zj06xkvk5xxxh1h8bf900" as Id<"skillVersions">,
+    expectedTargetVersion: "6.4.1",
+  },
+  {
+    slug: "mark-heartflow-skill",
+    sourceSkillId: "kd7bhw61fc55a9jd2yb4yfrsg588wmnx" as Id<"skills">,
+    targetSkillId: "kd70mrrjtpgs0cw8vpf0vc0g558a5365" as Id<"skills">,
+    expectedSourceVersionId: "k974gwc5wdwe6mh20veqk4j8e58a2w2m" as Id<"skillVersions">,
+    expectedTargetVersionId: "k976jhrj92aa7fns2j39cm9q1s8b4t7r" as Id<"skillVersions">,
+    expectedTargetVersion: "6.0.66",
+  },
+  {
+    slug: "heartflow-engine",
+    sourceSkillId: "kd78tjvftk71c2xcce7djd2znd88v17h" as Id<"skills">,
+    targetSkillId: "kd72yfs8takacq1d8kefnmsv7h8aq1dg" as Id<"skills">,
+    expectedSourceVersionId: "k970ak5ecrkqya71zf1tj6e1nd89xngx" as Id<"skillVersions">,
+    expectedTargetVersionId: "k975bysehhqb3mzyjcp9s3mxys8arpkj" as Id<"skillVersions">,
+    expectedTargetVersion: "6.0.22",
+  },
+] as const;
+const activePublisherSlugScanRowValidator = v.object({
+  skillId: v.id("skills"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  slug: v.string(),
+  active: v.boolean(),
+  latestVersionId: v.optional(v.id("skillVersions")),
+  latestVersion: v.optional(v.string()),
+  moderationStatus: v.string(),
+  canonicalSkillId: v.optional(v.id("skills")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+type ActivePublisherSlugScanRow = {
+  skillId: Id<"skills">;
+  ownerPublisherId?: Id<"publishers">;
+  slug: string;
+  active: boolean;
+  latestVersionId?: Id<"skillVersions">;
+  latestVersion?: string;
+  moderationStatus: string;
+  canonicalSkillId?: Id<"skills">;
+  createdAt: number;
+  updatedAt: number;
+};
+type HeartflowDuplicateInspection = {
+  slug: string;
+  sourceSkillId: Id<"skills">;
+  targetSkillId: Id<"skills">;
+  expectedSourceVersionId: Id<"skillVersions">;
+  expectedTargetVersionId: Id<"skillVersions">;
+  expectedTargetVersion: string;
+  status: "ready" | "already_repaired" | "blocked";
+  source: unknown;
+  target: unknown;
+};
+type HeartflowDuplicateRepairResult = {
+  ok: true;
+  dryRun: boolean;
+  writesApplied: number;
+  confirmRequired?: typeof HEARTFLOW_DUPLICATE_REPAIR_CONFIRM;
+  pairs: HeartflowDuplicateInspection[];
+};
 const legacyPluginSkillSpectorRepairFamilyValidator = v.union(
   v.literal("code-plugin"),
   v.literal("bundle-plugin"),
@@ -3085,6 +3154,244 @@ export const repairSkillLineageCyclesInternal = internalAction({
     maxBatches: v.optional(v.number()),
   },
   handler: repairSkillLineageCyclesInternalHandler,
+});
+
+export const getActivePublisherSlugInvariantPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_slug")
+      .paginate({ cursor: args.cursor ?? null, numItems: clampInt(args.batchSize, 1, 200) });
+    return {
+      items: page.page.map(
+        (skill): ActivePublisherSlugScanRow => ({
+          skillId: skill._id,
+          ownerPublisherId: skill.ownerPublisherId,
+          slug: skill.slug,
+          active: !skill.softDeletedAt,
+          latestVersionId: skill.latestVersionId,
+          latestVersion: skill.latestVersionSummary?.version,
+          moderationStatus: skill.moderationStatus ?? "unknown",
+          canonicalSkillId: skill.canonicalSkillId,
+          createdAt: skill.createdAt,
+          updatedAt: skill.updatedAt,
+        }),
+      ),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+function activePublisherSlugGroupKey(row: ActivePublisherSlugScanRow) {
+  return row.ownerPublisherId ? `${row.ownerPublisherId}\u0000${row.slug}` : null;
+}
+
+function formatActivePublisherSlugDuplicateGroup(rows: ActivePublisherSlugScanRow[]) {
+  const activeRows = rows.filter((row) => row.active);
+  if (activeRows.length < 2 || !activeRows[0]?.ownerPublisherId) return null;
+  return {
+    ownerPublisherId: activeRows[0].ownerPublisherId,
+    slug: activeRows[0].slug,
+    activeSkillIds: activeRows.map((row) => row.skillId),
+    skills: activeRows.map(({ active: _active, ...row }) => row),
+  };
+}
+
+export const scanActivePublisherSlugDuplicatesInternal = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    continuation: v.optional(
+      v.object({
+        key: v.string(),
+        rows: v.array(activePublisherSlugScanRowValidator),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 200, 1, 200);
+    const maxBatches = clampInt(args.maxBatches ?? 200, 1, 200);
+    const findings: NonNullable<ReturnType<typeof formatActivePublisherSlugDuplicateGroup>>[] = [];
+    let cursor: string | null = args.cursor ?? null;
+    let currentKey = args.continuation?.key ?? null;
+    let currentRows = (args.continuation?.rows ?? []) as ActivePublisherSlugScanRow[];
+    let rowsScanned = 0;
+    let isDone = false;
+
+    const finishCurrentGroup = () => {
+      const finding = formatActivePublisherSlugDuplicateGroup(currentRows);
+      if (finding) findings.push(finding);
+      currentRows = [];
+    };
+
+    for (let batch = 0; batch < maxBatches; batch++) {
+      const page = (await ctx.runQuery(
+        internal.maintenance.getActivePublisherSlugInvariantPageInternal,
+        { cursor: cursor ?? undefined, batchSize },
+      )) as {
+        items: ActivePublisherSlugScanRow[];
+        cursor: string | null;
+        isDone: boolean;
+      };
+      cursor = page.cursor;
+      isDone = page.isDone;
+      rowsScanned += page.items.length;
+
+      for (const row of page.items) {
+        const key = activePublisherSlugGroupKey(row);
+        if (key !== currentKey) {
+          finishCurrentGroup();
+          currentKey = key;
+        }
+        if (key && row.active) currentRows.push(row);
+      }
+      if (isDone) break;
+    }
+
+    if (isDone) finishCurrentGroup();
+    return {
+      ok: true as const,
+      invariant: "one active skill per ownerPublisherId and slug",
+      rowsScanned,
+      duplicateGroupsFound: findings.length,
+      findings,
+      cursor,
+      isDone,
+      ...(!isDone && currentKey ? { continuation: { key: currentKey, rows: currentRows } } : {}),
+    };
+  },
+});
+
+export const inspectHeartflowDuplicateSkillsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await Promise.all(
+      HEARTFLOW_DUPLICATE_PAIRS.map(async (pair) => {
+        const [source, target] = await Promise.all([
+          ctx.db.get(pair.sourceSkillId),
+          ctx.db.get(pair.targetSkillId),
+        ]);
+        const [sourceVersion, targetVersion] = await Promise.all([
+          source?.latestVersionId ? ctx.db.get(source.latestVersionId) : null,
+          target?.latestVersionId ? ctx.db.get(target.latestVersionId) : null,
+        ]);
+        const alreadyRepaired = Boolean(
+          source?.softDeletedAt &&
+          source.canonicalSkillId === target?._id &&
+          source.forkOf?.skillId === target?._id,
+        );
+        const ready = Boolean(
+          source &&
+          target &&
+          !source.softDeletedAt &&
+          !target.softDeletedAt &&
+          source.ownerPublisherId &&
+          source.ownerPublisherId === target.ownerPublisherId &&
+          source.slug === pair.slug &&
+          target.slug === pair.slug &&
+          source.latestVersionId === pair.expectedSourceVersionId &&
+          target.latestVersionId === pair.expectedTargetVersionId &&
+          targetVersion?.version === pair.expectedTargetVersion,
+        );
+        return {
+          ...pair,
+          status: alreadyRepaired
+            ? ("already_repaired" as const)
+            : ready
+              ? ("ready" as const)
+              : ("blocked" as const),
+          source: source
+            ? {
+                skillId: source._id,
+                ownerUserId: source.ownerUserId,
+                ownerPublisherId: source.ownerPublisherId ?? null,
+                slug: source.slug,
+                version: sourceVersion?.version ?? null,
+                softDeletedAt: source.softDeletedAt ?? null,
+                canonicalSkillId: source.canonicalSkillId ?? null,
+                stats: source.stats,
+                statsInstallsAllTime: source.statsInstallsAllTime ?? null,
+                createdAt: source.createdAt,
+                updatedAt: source.updatedAt,
+              }
+            : null,
+          target: target
+            ? {
+                skillId: target._id,
+                ownerUserId: target.ownerUserId,
+                ownerPublisherId: target.ownerPublisherId ?? null,
+                slug: target.slug,
+                version: targetVersion?.version ?? null,
+                softDeletedAt: target.softDeletedAt ?? null,
+                canonicalSkillId: target.canonicalSkillId ?? null,
+                stats: target.stats,
+                statsInstallsAllTime: target.statsInstallsAllTime ?? null,
+                createdAt: target.createdAt,
+                updatedAt: target.updatedAt,
+              }
+            : null,
+        };
+      }),
+    );
+  },
+});
+
+// Incident-specific and temporary: dry-run first, then apply only with the exact token.
+// npx convex run maintenance:repairHeartflowDuplicateSkillsInternal '{}' --prod
+export async function repairHeartflowDuplicateSkillsInternalHandler(
+  ctx: ActionCtx,
+  args: { dryRun?: boolean; confirm?: string },
+): Promise<HeartflowDuplicateRepairResult> {
+  const dryRun = args.dryRun !== false;
+  if (!dryRun && args.confirm !== HEARTFLOW_DUPLICATE_REPAIR_CONFIRM) {
+    throw new ConvexError(`Pass confirm="${HEARTFLOW_DUPLICATE_REPAIR_CONFIRM}" to apply.`);
+  }
+  const pairs = (await ctx.runQuery(
+    internal.maintenance.inspectHeartflowDuplicateSkillsInternal,
+    {},
+  )) as HeartflowDuplicateInspection[];
+  const blocked = pairs.filter((pair) => pair.status === "blocked");
+  if (blocked.length > 0) {
+    throw new ConvexError(`HeartFlow repair preflight blocked for ${blocked.length} pair(s).`);
+  }
+  if (dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      writesApplied: 0,
+      confirmRequired: HEARTFLOW_DUPLICATE_REPAIR_CONFIRM,
+      pairs,
+    };
+  }
+
+  let writesApplied = 0;
+  for (const pair of pairs) {
+    if (pair.status === "already_repaired") continue;
+    await ctx.runMutation(internal.skills.mergeSamePublisherDuplicateSkillByIdInternal, {
+      sourceSkillId: pair.sourceSkillId,
+      targetSkillId: pair.targetSkillId,
+      expectedSlug: pair.slug,
+      expectedSourceVersionId: pair.expectedSourceVersionId,
+      expectedTargetVersionId: pair.expectedTargetVersionId,
+      expectedTargetVersion: pair.expectedTargetVersion,
+    });
+    writesApplied++;
+  }
+  return { ok: true, dryRun: false, writesApplied, pairs };
+}
+
+export const repairHeartflowDuplicateSkillsInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: repairHeartflowDuplicateSkillsInternalHandler,
 });
 
 function isActiveLegacyPublisherRepairUser(

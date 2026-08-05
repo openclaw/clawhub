@@ -154,6 +154,7 @@ export type PublishOptions = {
   // accidentally transfer ownership.
   migrateOwner?: boolean;
   stagePrePublicationChecks?: boolean;
+  skillPublishUploadTickets?: Id<"skillPublishUploadTickets">[];
 };
 
 type InternalPublishOptions = PublishOptions;
@@ -489,6 +490,7 @@ async function publishVersionForUserInternal(
 
   const skillInsertArgs = {
     userId,
+    skillPublishUploadTickets: options.skillPublishUploadTickets,
     ownerPublisherId: options.ownerPublisherId,
     sourceOwnerPublisherId: options.sourceOwnerPublisherId,
     migrateOwner: options.migrateOwner,

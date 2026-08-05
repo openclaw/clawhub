@@ -16,6 +16,7 @@ const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
 const uiMocks = createUiModuleMocks();
+let publishResponse: Record<string, unknown>;
 
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
@@ -78,7 +79,7 @@ describe("cmdPublish", () => {
         match: { version: "1.2.3" },
         latestVersion: { version: "1.2.3" },
       });
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
@@ -114,7 +115,7 @@ describe("cmdPublish", () => {
       httpMocks.apiRequest.mockRejectedValueOnce(
         new Error("Skill not found or unavailable to this account."),
       );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -143,7 +144,7 @@ describe("cmdPublish", () => {
       httpMocks.apiRequest.mockRejectedValueOnce(
         new Error("Skill not found or unavailable to this account."),
       );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_pending",
@@ -179,7 +180,7 @@ describe("cmdPublish", () => {
       httpMocks.apiRequest.mockRejectedValueOnce(
         new Error("Skill not found or unavailable to this account."),
       );
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_pending",
@@ -212,7 +213,7 @@ describe("cmdPublish", () => {
       const folder = join(workdir, "unknown-status-skill");
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -239,7 +240,7 @@ describe("cmdPublish", () => {
         match: null,
         latestVersion: { version: "1.2.3" },
       });
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
@@ -269,7 +270,7 @@ describe("cmdPublish", () => {
         match: { version: "1.2.3" },
         latestVersion: { version: "1.2.3" },
       });
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
@@ -316,6 +317,85 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("uploads each skill file separately before sending the publish metadata", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "staged-skill");
+      await mkdir(join(folder, "assets"), { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Staged skill\n", "utf8");
+      await writeFile(join(folder, "assets", "payload.bin"), Uint8Array.from([0, 1, 2, 255]));
+
+      httpMocks.uploadBinary
+        .mockResolvedValueOnce({ storageId: "storage:skill" })
+        .mockResolvedValueOnce({ storageId: "storage:payload" });
+      mockPublishResponse({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+        publicationStatus: "published",
+      });
+
+      await cmdPublish(makeOpts(workdir), "staged-skill", {
+        version: "1.0.0",
+      });
+
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+      expect(httpMocks.uploadBinary).toHaveBeenCalledTimes(2);
+      const uploadTicketCalls = httpMocks.apiRequest.mock.calls.filter((call) => {
+        const args = call[1] as { method?: string; path?: string };
+        return args.method === "POST" && args.path === "/api/v1/skills/-/upload-url";
+      });
+      expect(uploadTicketCalls).toHaveLength(2);
+      expect(uploadTicketCalls[0]?.[1]).toMatchObject({
+        token: "tkn",
+        body: {
+          path: "SKILL.md",
+          size: 15,
+          sha256: "90b735dd867ee1111738fb1397982e1dbf7e6bda451d60d60fc10623926adcfc",
+        },
+      });
+      expect(httpMocks.uploadBinary).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          url: "https://upload.local/1",
+          token: "tkn",
+        }),
+        expect.anything(),
+      );
+      const publishCall = httpMocks.apiRequest.mock.calls.find((call) => {
+        const args = call[1] as { method?: string; path?: string };
+        return args.method === "POST" && args.path === "/api/v1/skills";
+      });
+      expect(publishCall?.[1]).toMatchObject({
+        method: "POST",
+        path: "/api/v1/skills",
+        token: "tkn",
+        body: {
+          slug: "staged-skill",
+          files: [
+            expect.objectContaining({
+              path: "SKILL.md",
+              size: 15,
+              storageId: "storage:skill",
+              sha256: "90b735dd867ee1111738fb1397982e1dbf7e6bda451d60d60fc10623926adcfc",
+              uploadTicket: "skillPublishUploadTickets:1",
+            }),
+            expect.objectContaining({
+              path: "assets/payload.bin",
+              size: 4,
+              storageId: "storage:payload",
+              sha256: "3d1f57c984978ef98a18378c8166c1cb8ede02c03eeb6aee7e2f121dfeee3e56",
+              contentType: "application/octet-stream",
+              uploadTicket: "skillPublishUploadTickets:2",
+            }),
+          ],
+        },
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("publishes Terraform and opaque files with exact bytes (mocked HTTP)", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -333,7 +413,7 @@ describe("cmdPublish", () => {
       await writeFile(join(folder, "terraform.tfvars"), variablesContent, "utf8");
       await writeFile(join(folder, "assets", "payload.bin"), opaqueBytes);
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -351,15 +431,7 @@ describe("cmdPublish", () => {
 
       await cmdPublish(makeOpts(workdir), "my-skill", options);
 
-      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
-        const req = call[1] as { path?: string } | undefined;
-        return req?.path === "/api/v1/skills";
-      });
-      if (!publishCall) throw new Error("Missing publish call");
-      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
-      const payloadEntry = publishForm.get("payload");
-      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
-      const payload = JSON.parse(payloadEntry);
+      const payload = publishPayload();
       expect(payload.slug).toBe("my-skill");
       expect(payload.displayName).toBe("My Skill");
       expect(payload.ownerHandle).toBe("me");
@@ -369,22 +441,26 @@ describe("cmdPublish", () => {
       expect(payload.tags).toEqual(["latest"]);
       expect(payload.categories).toEqual(["automation", "development"]);
       expect(payload.topics).toEqual(["React", "GPU development"]);
-      const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
-      expect(files.map((file) => file.name ?? "").sort()).toEqual([
+      const files = payload.files as Array<{ path: string }>;
+      expect(files.map((file) => file.path).sort()).toEqual([
         "SKILL.md",
         "assets/payload.bin",
         "main.tf",
         "notes.md",
         "terraform.tfvars",
       ]);
-      const byName = new Map(files.map((file) => [file.name ?? "", file]));
-      expect(await byName.get("main.tf")?.text()).toBe(terraformContent);
-      expect(await byName.get("terraform.tfvars")?.text()).toBe(variablesContent);
-      expect(
-        new Uint8Array(
-          (await byName.get("assets/payload.bin")?.arrayBuffer()) ?? new ArrayBuffer(0),
-        ),
-      ).toEqual(opaqueBytes);
+      const uploadedBytes = new Map(
+        files.map((file, index) => {
+          const uploadCall = httpMocks.uploadBinary.mock.calls[index];
+          if (!uploadCall) throw new Error(`Missing upload call for ${file.path}`);
+          return [file.path, (uploadCall[0] as { bytes: Uint8Array }).bytes] as const;
+        }),
+      );
+      expect(new TextDecoder().decode(uploadedBytes.get("main.tf"))).toBe(terraformContent);
+      expect(new TextDecoder().decode(uploadedBytes.get("terraform.tfvars"))).toBe(
+        variablesContent,
+      );
+      expect(uploadedBytes.get("assets/payload.bin")).toEqual(opaqueBytes);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -397,7 +473,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Clear topics\n", "utf8");
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -418,7 +494,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -432,15 +508,7 @@ describe("cmdPublish", () => {
         forkOf: "@openclaw/demo@1.2.3",
       });
 
-      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
-        const req = call[1] as { path?: string } | undefined;
-        return req?.path === "/api/v1/skills";
-      });
-      if (!publishCall) throw new Error("Missing publish call");
-      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
-      const payloadEntry = publishForm.get("payload");
-      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
-      expect(JSON.parse(payloadEntry).forkOf).toEqual({
+      expect(publishPayload().forkOf).toEqual({
         slug: "demo",
         ownerHandle: "openclaw",
         version: "1.2.3",
@@ -459,7 +527,7 @@ describe("cmdPublish", () => {
       await writeFile(join(folder, "notes.md"), "notes\n", "utf8");
       await writeFile(join(folder, "skill-card.md"), "# Generated card\n", "utf8");
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -473,14 +541,8 @@ describe("cmdPublish", () => {
         tags: "latest",
       });
 
-      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
-        const req = call[1] as { path?: string } | undefined;
-        return req?.path === "/api/v1/skills";
-      });
-      if (!publishCall) throw new Error("Missing publish call");
-      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
-      const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
-      expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
+      const files = publishPayload().files as Array<{ path: string }>;
+      expect(files.map((file) => file.path).sort()).toEqual(["SKILL.md", "notes.md"]);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -493,7 +555,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
@@ -505,11 +567,7 @@ describe("cmdPublish", () => {
         tags: "latest",
       });
 
-      expect(httpMocks.apiRequestForm).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ path: "/api/v1/skills", method: "POST" }),
-        expect.anything(),
-      );
+      expect(publishPayload()).toMatchObject({ changelog: "" });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -524,7 +582,7 @@ describe("cmdPublish", () => {
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
       await writeFile(join(folder, "notes.md"), "ignored notes\n", "utf8");
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -538,14 +596,8 @@ describe("cmdPublish", () => {
         tags: "latest",
       });
 
-      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
-        const req = call[1] as { path?: string } | undefined;
-        return req?.path === "/api/v1/skills";
-      });
-      if (!publishCall) throw new Error("Missing publish call");
-      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
-      const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
-      expect(files.map((file) => file.name ?? "")).toEqual(["SKILL.md"]);
+      const files = publishPayload().files as Array<{ path: string }>;
+      expect(files.map((file) => file.path)).toEqual(["SKILL.md"]);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -558,7 +610,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
@@ -572,15 +624,7 @@ describe("cmdPublish", () => {
         tags: "latest",
       });
 
-      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
-        const req = call[1] as { path?: string } | undefined;
-        return req?.path === "/api/v1/skills";
-      });
-      if (!publishCall) throw new Error("Missing publish call");
-      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
-      const payloadEntry = publishForm.get("payload");
-      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
-      const payload = JSON.parse(payloadEntry);
+      const payload = publishPayload();
       expect(payload.ownerHandle).toBe("openclaw");
       expect(payload.sourceOwnerHandle).toBe("me");
       expect(payload.migrateOwner).toBe(true);
@@ -620,7 +664,7 @@ describe("cmdPublish", () => {
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
       mockDefaultApiRequest("steipete");
-      httpMocks.apiRequestForm.mockResolvedValueOnce({
+      mockPublishResponse({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
@@ -636,15 +680,7 @@ describe("cmdPublish", () => {
         sourcePath: "skills/source-skill",
       });
 
-      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
-        const req = call[1] as { path?: string } | undefined;
-        return req?.path === "/api/v1/skills";
-      });
-      if (!publishCall) throw new Error("Missing publish call");
-      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
-      const payloadEntry = publishForm.get("payload");
-      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
-      const payload = JSON.parse(payloadEntry);
+      const payload = publishPayload();
       expect(payload.source).toEqual({
         kind: "github",
         url: "https://github.com/NVIDIA/skills",
@@ -691,27 +727,56 @@ describe("cmdPublish", () => {
 });
 
 function publishPayload() {
-  const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
-    const request = call[1] as { path?: string } | undefined;
-    return request?.path === "/api/v1/skills";
+  const publishCall = httpMocks.apiRequest.mock.calls.find((call) => {
+    const request = call[1] as { method?: string; path?: string } | undefined;
+    return request?.method === "POST" && request.path === "/api/v1/skills";
   });
   if (!publishCall) throw new Error("Missing publish call");
-  const form = (publishCall[1] as { form?: FormData }).form;
-  const payload = form?.get("payload");
-  if (typeof payload !== "string") throw new Error("Missing publish payload");
-  return JSON.parse(payload) as Record<string, unknown>;
+  const body = (publishCall[1] as { body?: unknown }).body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Missing publish payload");
+  }
+  return body as Record<string, unknown>;
+}
+
+function mockPublishResponse(response: Record<string, unknown>) {
+  publishResponse = response;
 }
 
 function mockDefaultApiRequest(whoamiHandle: string | null = "me") {
+  publishResponse = {
+    ok: true,
+    skillId: "skill_1",
+    versionId: "ver_1",
+    publicationStatus: "published",
+  };
+  let uploadIndex = 0;
   httpMocks.apiRequest.mockReset();
   httpMocks.apiRequest.mockImplementation(async (_registry: unknown, request: unknown) => {
     if (isWhoamiRequest(request)) {
       return { user: { handle: whoamiHandle } };
     }
+    const args = request as { method?: string; path?: string };
+    if (args.method === "POST" && args.path === "/api/v1/skills/-/upload-url") {
+      uploadIndex += 1;
+      return {
+        uploadUrl: `https://upload.local/${uploadIndex}`,
+        uploadTicket: `skillPublishUploadTickets:${uploadIndex}`,
+      };
+    }
+    if (args.method === "POST" && args.path === "/api/v1/skills") {
+      return publishResponse;
+    }
     return {
       match: null,
       latestVersion: null,
     };
+  });
+  let storageIndex = 0;
+  httpMocks.uploadBinary.mockReset();
+  httpMocks.uploadBinary.mockImplementation(async () => {
+    storageIndex += 1;
+    return { storageId: `storage:${storageIndex}` };
   });
 }
 
