@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -383,9 +383,9 @@ describe("SkillDetailTabs evaluation tab", () => {
           onCompareIntent={vi.fn()}
           readmeContent="# Demo"
           readmeError={null}
-          skillCardContent={null}
+          skillCardContent="# Skill Card"
           skillCardError={null}
-          hasSkillCard={false}
+          hasSkillCard={true}
           latestFiles={[]}
           latestVersionId={null}
           skill={
@@ -410,9 +410,16 @@ describe("SkillDetailTabs evaluation tab", () => {
     }
 
     render(<TestTabs />);
-    fireEvent.click(screen.getByRole("tab", { name: "Evaluation" }));
+    const tablist = screen.getByRole("tablist", { name: "Skill detail tabs" });
+    expect(
+      within(tablist)
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual(["SKILL.md", "Evals", "Skill Card"]);
 
-    expect(screen.getByRole("tabpanel", { name: "Evaluation" }).textContent).toContain(
+    fireEvent.click(screen.getByRole("tab", { name: "Evals" }));
+
+    expect(screen.getByRole("tabpanel", { name: "Evals" }).textContent).toContain(
       "Native SkillEvaluator report",
     );
     expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();

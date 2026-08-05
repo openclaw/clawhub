@@ -86,6 +86,11 @@ function formatPoints(value: number) {
   return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pts`;
 }
 
+function formatCaseDelta(withSkill: number, withoutSkill: number) {
+  const delta = withSkill - withoutSkill;
+  return `${delta >= 0 ? "+" : ""}${delta} ${Math.abs(delta) === 1 ? "case" : "cases"}`;
+}
+
 export function SkillEvaluationReport({
   record,
   metrics,
@@ -102,11 +107,10 @@ export function SkillEvaluationReport({
     <div className="skill-evaluation-report">
       <header className="skill-evaluation-header">
         <div>
-          <p className="skill-evaluation-eyebrow">NVIDIA SkillEvaluator · Tier 3</p>
-          <h2>Live agent evaluation</h2>
+          <h2>Evals</h2>
           <p>
-            Metrics come directly from SkillEvaluator&apos;s native result.json for the exact synced
-            source version. ClawHub does not recalculate or reinterpret its scores.
+            Evals compare how well an agent completes the same test cases with and without this
+            skill. These results come directly from NVIDIA SkillEvaluator for this synced version.
           </p>
         </div>
         <div className={`skill-evaluation-state is-${record.state}`} role="status">
@@ -129,85 +133,11 @@ export function SkillEvaluationReport({
         </div>
       ) : null}
 
-      <dl className="skill-evaluation-provenance">
-        <div>
-          <dt>Source</dt>
-          <dd>
-            {record.source.repository} · {record.source.path}
-          </dd>
-        </div>
-        <div>
-          <dt>Evaluated source commit</dt>
-          <dd title={record.source.commit}>{shortCommit(record.source.commit)}</dd>
-        </div>
-        <div>
-          <dt>Eval dataset</dt>
-          <dd>{record.evals.dataset ?? record.evals.directory}</dd>
-        </div>
-        <div>
-          <dt>Eval config</dt>
-          <dd>{record.evals.config ?? "CLI and evaluator defaults"}</dd>
-        </div>
-        <div>
-          <dt>Evaluator</dt>
-          <dd>
-            {record.evaluator.version} · {shortCommit(record.evaluator.commit)}
-          </dd>
-        </div>
-        <div>
-          <dt>Agent model</dt>
-          <dd>{record.evaluator.model}</dd>
-        </div>
-        <div>
-          <dt>Run</dt>
-          <dd>
-            {record.evaluator.agent} · {record.evaluator.environment} · {record.evaluator.attempts}{" "}
-            attempt
-          </dd>
-        </div>
-        <div>
-          <dt>Started</dt>
-          <dd>{formatTimestamp(record.timing.startedAt)}</dd>
-        </div>
-        <div>
-          <dt>Finished</dt>
-          <dd>{formatTimestamp(record.timing.finishedAt)}</dd>
-        </div>
-      </dl>
-
       {record.state === "completed" && metrics ? (
         <section className="skill-evaluation-metrics" aria-label="SkillEvaluator metrics">
-          <dl className="skill-evaluation-summary">
-            <div>
-              <dt>Overall score</dt>
-              <dd>{formatPercent(metrics.overall.withSkill)}</dd>
-              <span>With skill</span>
-            </div>
-            <div>
-              <dt>Baseline score</dt>
-              <dd>{formatPercent(metrics.overall.withoutSkill)}</dd>
-              <span>Without skill</span>
-            </div>
-            <div>
-              <dt>Skill lift</dt>
-              <dd>{formatPoints(metrics.overall.delta)}</dd>
-              <span>With skill minus baseline</span>
-            </div>
-            <div>
-              <dt>Cases passed</dt>
-              <dd>
-                {metrics.passRate.withSkill.passed} / {metrics.passRate.withSkill.total}
-              </dd>
-              <span>
-                Baseline {metrics.passRate.withoutSkill.passed} /{" "}
-                {metrics.passRate.withoutSkill.total}
-              </span>
-            </div>
-          </dl>
-
           <div className="skill-evaluation-table-wrap">
             <table className="skill-evaluation-table">
-              <caption>Metric scores reported by SkillEvaluator</caption>
+              <caption>Results reported by SkillEvaluator</caption>
               <thead>
                 <tr>
                   <th scope="col">Metric</th>
@@ -217,6 +147,35 @@ export function SkillEvaluationReport({
                 </tr>
               </thead>
               <tbody>
+                <tr>
+                  <th scope="row">Overall score</th>
+                  <td>{formatPercent(metrics.overall.withSkill)}</td>
+                  <td>{formatPercent(metrics.overall.withoutSkill)}</td>
+                  <td className={metrics.overall.delta > 0 ? "is-positive" : undefined}>
+                    {formatPoints(metrics.overall.delta)}
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Cases passed</th>
+                  <td>
+                    {metrics.passRate.withSkill.passed} / {metrics.passRate.withSkill.total}
+                  </td>
+                  <td>
+                    {metrics.passRate.withoutSkill.passed} / {metrics.passRate.withoutSkill.total}
+                  </td>
+                  <td
+                    className={
+                      metrics.passRate.withSkill.passed > metrics.passRate.withoutSkill.passed
+                        ? "is-positive"
+                        : undefined
+                    }
+                  >
+                    {formatCaseDelta(
+                      metrics.passRate.withSkill.passed,
+                      metrics.passRate.withoutSkill.passed,
+                    )}
+                  </td>
+                </tr>
                 {metrics.metrics.map((metric) => (
                   <tr key={metric.name}>
                     <th scope="row">{metric.name}</th>
@@ -239,6 +198,55 @@ export function SkillEvaluationReport({
           <span>{metricsError}</span>
         </div>
       ) : null}
+
+      <details className="skill-evaluation-details">
+        <summary>Run details</summary>
+        <dl className="skill-evaluation-provenance">
+          <div>
+            <dt>Source</dt>
+            <dd>
+              {record.source.repository} · {record.source.path}
+            </dd>
+          </div>
+          <div>
+            <dt>Evaluated source commit</dt>
+            <dd title={record.source.commit}>{shortCommit(record.source.commit)}</dd>
+          </div>
+          <div>
+            <dt>Eval dataset</dt>
+            <dd>{record.evals.dataset ?? record.evals.directory}</dd>
+          </div>
+          <div>
+            <dt>Eval config</dt>
+            <dd>{record.evals.config ?? "CLI and evaluator defaults"}</dd>
+          </div>
+          <div>
+            <dt>Evaluator</dt>
+            <dd>
+              {record.evaluator.version} · {shortCommit(record.evaluator.commit)}
+            </dd>
+          </div>
+          <div>
+            <dt>Agent model</dt>
+            <dd>{record.evaluator.model}</dd>
+          </div>
+          <div>
+            <dt>Run</dt>
+            <dd>
+              {record.evaluator.agent} · {record.evaluator.environment} ·{" "}
+              {record.evaluator.attempts} {record.evaluator.attempts === 1 ? "attempt" : "attempts"}
+            </dd>
+          </div>
+          <div>
+            <dt>Started</dt>
+            <dd>{formatTimestamp(record.timing.startedAt)}</dd>
+          </div>
+          <div>
+            <dt>Finished</dt>
+            <dd>{formatTimestamp(record.timing.finishedAt)}</dd>
+          </div>
+        </dl>
+      </details>
 
       {record.state === "completed" && record.artifacts ? (
         <section className="skill-evaluation-artifacts" aria-label="SkillEvaluator artifacts">

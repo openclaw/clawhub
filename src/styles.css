@@ -11002,21 +11002,12 @@ a.skills-sh-security-audit-row:focus-visible {
   font-size: var(--fs-xl);
 }
 
-.skill-evaluation-header p:not(.skill-evaluation-eyebrow) {
+.skill-evaluation-header p {
   max-width: 72ch;
   margin: var(--space-2) 0 0;
   color: var(--ink-soft);
   font-size: var(--fs-sm);
   line-height: 1.55;
-}
-
-.skill-evaluation-eyebrow {
-  margin: 0 0 var(--space-2);
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .skill-evaluation-state {
@@ -11066,11 +11057,10 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .skill-evaluation-provenance {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
   margin: 0;
-  padding: var(--space-4) 0;
-  border-block: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  padding: var(--space-4) 0 0;
 }
 
 .skill-evaluation-provenance div {
@@ -11099,42 +11089,7 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .skill-evaluation-metrics {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.skill-evaluation-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-  margin: 0;
-}
-
-.skill-evaluation-summary > div {
-  display: grid;
-  gap: 5px;
-  padding: var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--surface-muted) 48%, transparent);
-}
-
-.skill-evaluation-summary dt,
-.skill-evaluation-summary span {
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-}
-
-.skill-evaluation-summary dt {
-  font-weight: 650;
-}
-
-.skill-evaluation-summary dd {
-  margin: 0;
-  color: var(--ink);
-  font-size: var(--fs-2xl);
-  font-weight: 720;
-  letter-spacing: -0.025em;
+  min-width: 0;
 }
 
 .skill-evaluation-table-wrap {
@@ -11177,6 +11132,19 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .skill-evaluation-table tbody th {
   color: var(--ink);
+  font-weight: 650;
+}
+
+.skill-evaluation-details {
+  border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  padding-top: var(--space-4);
+}
+
+.skill-evaluation-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
   font-weight: 650;
 }
 
@@ -11240,16 +11208,6 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .skill-evaluation-provenance {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .skill-evaluation-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .skill-evaluation-summary {
-    grid-template-columns: 1fr;
   }
 }
 

@@ -180,6 +180,19 @@ export function SkillDetailTabs({
         >
           SKILL.md
         </button>
+        {evaluationContent ? (
+          <button
+            id="skill-tab-evaluation"
+            className={`tab-button${activeTab === "evaluation" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "evaluation"}
+            aria-controls="skill-tabpanel-evaluation"
+            onClick={() => selectTab("evaluation")}
+          >
+            Evals
+          </button>
+        ) : null}
         {hasSkillCard ? (
           <button
             id="skill-tab-skill-card"
@@ -191,19 +204,6 @@ export function SkillDetailTabs({
             onClick={() => selectTab("skill-card")}
           >
             Skill Card
-          </button>
-        ) : null}
-        {evaluationContent ? (
-          <button
-            id="skill-tab-evaluation"
-            className={`tab-button${activeTab === "evaluation" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "evaluation"}
-            aria-controls="skill-tabpanel-evaluation"
-            onClick={() => selectTab("evaluation")}
-          >
-            Evaluation
           </button>
         ) : null}
         {showArchiveTabs ? (
