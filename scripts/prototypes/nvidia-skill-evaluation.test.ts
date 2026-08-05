@@ -110,6 +110,19 @@ describe("SkillEvaluator eval discovery", () => {
     });
   });
 
+  it("resolves SkillEvaluator's legacy eval/dataset layout", async () => {
+    const { skillPath } = await makeSkill({
+      "eval/dataset.yml": "- question: Demo\n  expected_behavior: Works\n",
+    });
+
+    await expect(discoverSkillEvals(skillPath)).resolves.toMatchObject({
+      status: "ready",
+      taskSource: "evals_json",
+      evalDirectory: join(skillPath, "eval"),
+      datasetPath: join(skillPath, "eval", "dataset.yml"),
+    });
+  });
+
   it("skips clearly when the exact skill directory has no eval source", async () => {
     const { skillPath } = await makeSkill();
 
@@ -193,6 +206,18 @@ describe("SkillEvaluator eval discovery", () => {
       status: "skipped",
       reason: "unsupported-eval-layout",
       candidates: [join(skillPath, "benchmark", "evals.json")],
+    });
+  });
+
+  it("does not guess that arbitrary eval JSON files are Tier 3 datasets", async () => {
+    const { skillPath } = await makeSkill({
+      "eval/h100.json": JSON.stringify([{ id: "one", prompt: "Demo" }]),
+    });
+
+    await expect(discoverSkillEvals(skillPath)).resolves.toMatchObject({
+      status: "skipped",
+      reason: "unsupported-eval-layout",
+      candidates: [join(skillPath, "eval", "h100.json")],
     });
   });
 });

@@ -22,13 +22,12 @@ import { computeGitHubSkillFolderContentHash } from "../../convex/lib/githubSkil
 import type { SkillEvaluationRunRecord } from "../../src/components/SkillEvaluationReport";
 
 const OFFICIAL_SKILL_SOURCES = new Set(["nvidia/skills"]);
-const DATASET_NAMES = [
-  "evals.json",
-  "evals.jsonl",
-  "evals.yaml",
-  "evals.yml",
+const EVALS_DATASET_NAMES = ["evals.json", "evals.jsonl", "evals.yaml", "evals.yml"] as const;
+const LEGACY_DATASET_NAMES = [
   "dataset.json",
   "dataset.jsonl",
+  "dataset.yaml",
+  "dataset.yml",
 ] as const;
 const CONFIG_NAMES = ["config.yml", "config.yaml"] as const;
 const LOCAL_EVALUATION_WEB_ROOT = "public/__skill-evaluator-demo";
@@ -107,8 +106,15 @@ async function configuredTaskSource(configPath: string | undefined) {
 
 export async function discoverSkillEvals(skillDirectory: string): Promise<SkillEvalDiscovery> {
   const evalDirectory = resolve(skillDirectory, "evals");
+  const legacyEvalDirectory = resolve(skillDirectory, "eval");
   const catalogDatasets = await catalogEvalCandidates(skillDirectory);
-  if (!(await isDirectory(evalDirectory))) {
+  const datasets = [
+    ...(await existingChildren(evalDirectory, EVALS_DATASET_NAMES)),
+    ...(await existingChildren(legacyEvalDirectory, LEGACY_DATASET_NAMES)),
+  ];
+  const harborDirectory = resolve(evalDirectory, "harbor");
+  const hasNativeHarbor = await isDirectory(harborDirectory);
+  if (!(await isDirectory(evalDirectory)) && datasets.length === 0 && !hasNativeHarbor) {
     if (catalogDatasets.length > 0) {
       return {
         status: "skipped",
@@ -125,7 +131,6 @@ export async function discoverSkillEvals(skillDirectory: string): Promise<SkillE
     };
   }
 
-  const datasets = await existingChildren(evalDirectory, DATASET_NAMES);
   if (datasets.length > 1) {
     return {
       status: "skipped",
@@ -147,8 +152,6 @@ export async function discoverSkillEvals(skillDirectory: string): Promise<SkillE
 
   const configPath = configs[0];
   const taskSource = await configuredTaskSource(configPath);
-  const harborDirectory = resolve(evalDirectory, "harbor");
-  const hasNativeHarbor = await isDirectory(harborDirectory);
 
   if (taskSource === "evals_json" && !datasets[0]) {
     return {
@@ -180,7 +183,7 @@ export async function discoverSkillEvals(skillDirectory: string): Promise<SkillE
     return {
       status: "ready",
       taskSource: "evals_json",
-      evalDirectory,
+      evalDirectory: dirname(datasets[0]),
       datasetPath: datasets[0],
       ...(configPath ? { configPath } : {}),
     };
@@ -731,11 +734,7 @@ async function main() {
   ]);
   [checkoutPath, evaluatorRepoPath] = await Promise.all([
     materializeOfficialGitHubSnapshot(sourceRepo, sourceCommit, "Skill source"),
-    materializeOfficialGitHubSnapshot(
-      "nvidia/skillevaluator",
-      evaluatorCommit,
-      "SkillEvaluator",
-    ),
+    materializeOfficialGitHubSnapshot("nvidia/skillevaluator", evaluatorCommit, "SkillEvaluator"),
   ]);
   const evaluatorVersion = await capture(
     ["uv", "run", "--project", evaluatorRepoPath, "skillevaluator", "--version"],
@@ -791,7 +790,10 @@ async function main() {
       upstreamVersion: await readSourceVersion(skillDirectory).catch(() => null),
     },
     evals: {
-      directory: `${sourcePath}/evals`,
+      directory:
+        discovery.status === "ready"
+          ? (relativeRepoPath(checkoutPath, discovery.evalDirectory) ?? `${sourcePath}/evals`)
+          : `${sourcePath}/evals`,
       taskSource: discovery.status === "ready" ? discovery.taskSource : null,
       dataset:
         discovery.status === "ready" ? relativeRepoPath(checkoutPath, discovery.datasetPath) : null,
