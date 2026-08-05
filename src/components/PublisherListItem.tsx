@@ -15,6 +15,7 @@ import { OfficialBadge } from "./OfficialBadge";
 type PublisherListItemProps = {
   publisher: PublicPublisherListItem;
   showOfficialBadge?: boolean;
+  showPublishedRail?: boolean;
   variant?: "list" | "grid" | "highlight";
 };
 
@@ -38,6 +39,7 @@ function PublishedRail({ items }: { items: PublicPublisherPublishedItem[] }) {
 export function PublisherListItem({
   publisher,
   showOfficialBadge = true,
+  showPublishedRail = true,
   variant = "list",
 }: PublisherListItemProps) {
   const handle = publisher.handle.trim();
@@ -98,12 +100,17 @@ export function PublisherListItem({
         </div>
       </div>
       {summaryInMain ? null : <p className="publisher-card-summary">{truncateText(summary, 80)}</p>}
-      <div className="publisher-card-stats">
+      <div className={`publisher-card-stats${showPublishedRail ? "" : " is-plain"}`}>
         <span className="publisher-card-stat">
-          <PublishedRail items={publisher.publishedItems} />
+          {showPublishedRail ? <PublishedRail items={publisher.publishedItems} /> : null}
           <strong>{formatCompactStat(publishedCount)}</strong>
           published
         </span>
+        {showPublishedRail ? null : (
+          <span className="publisher-card-stat-separator" aria-hidden="true">
+            ·
+          </span>
+        )}
         <span className="publisher-card-stat is-primary">
           <Download size={14} aria-hidden="true" />
           <strong>{formatCompactStat(publisher.stats.downloads)}</strong>

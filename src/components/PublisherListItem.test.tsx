@@ -39,6 +39,26 @@ describe("PublisherListItem", () => {
     expect(screen.queryByText("34")).toBeNull();
   });
 
+  it("renders plain activity without grouped item icons", () => {
+    const publisher = makePublisher();
+    publisher.publishedItems = [
+      { kind: "skill", displayName: "Example Skill", slug: "example-skill" } as never,
+    ];
+
+    const { container } = render(
+      <PublisherListItem publisher={publisher} showPublishedRail={false} />,
+    );
+
+    expect(container.querySelector(".publisher-published-rail")).toBeNull();
+    expect(container.querySelector(".publisher-card-main > .marketplace-icon")).toBeTruthy();
+    expect(container.querySelector(".publisher-card-stat.is-primary svg")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.getByText("published")).toBeTruthy();
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByText("downloads")).toBeTruthy();
+    expect(container.querySelector(".publisher-card-stat-separator")?.textContent).toBe("·");
+  });
+
   it("renders legacy preview metrics as downloads", () => {
     const publisher = makePublisher();
     publisher.publishedItems = [

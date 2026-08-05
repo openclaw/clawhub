@@ -257,6 +257,7 @@ function OfficialIndex() {
                     publisher={publisher}
                     variant="list"
                     showOfficialBadge={false}
+                    showPublishedRail={false}
                   />
                 ))}
               </div>

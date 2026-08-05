@@ -39,6 +39,7 @@ vi.mock("../components/PublisherListItem", () => ({
   PublisherListItem: (props: {
     publisher: { _id: string };
     showOfficialBadge?: boolean;
+    showPublishedRail?: boolean;
     variant?: string;
   }) => {
     publisherListItemMock(props);
@@ -152,6 +153,7 @@ describe("official route", () => {
     expect(publisherListItemMock).toHaveBeenCalledWith(
       expect.objectContaining({
         showOfficialBadge: false,
+        showPublishedRail: false,
         variant: "list",
       }),
     );

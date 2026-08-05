@@ -18031,6 +18031,19 @@ a.agentic-risk-finding-title:focus-visible {
   color: var(--oc-text-muted);
 }
 
+.publisher-card-list .publisher-card-stats.is-plain {
+  display: flex;
+  gap: var(--oc-space-2);
+}
+
+.publisher-card-list .publisher-card-stats.is-plain .publisher-card-stat.is-primary::before {
+  content: none;
+}
+
+.publisher-card-stat-separator {
+  color: var(--oc-text-muted);
+}
+
 .publisher-card-stat svg {
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
@@ -18240,8 +18253,16 @@ a.agentic-risk-finding-title:focus-visible {
     text-align: right;
   }
 
+  .publisher-card-stats.is-plain {
+    display: grid;
+  }
+
   .publisher-card-list .publisher-card-stat.is-primary::before {
     content: none;
+  }
+
+  .publisher-card-stat-separator {
+    display: none;
   }
 
   .publisher-published-rail {
