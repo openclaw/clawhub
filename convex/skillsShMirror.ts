@@ -8,7 +8,7 @@ import { ConvexError, type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
-import { tokenize } from "./lib/searchText";
+import { getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { assertSkillsShMirrorEnvironmentAllowed } from "./lib/skillsShCatalogEnvironment";
 import { skillsShMirrorFreshObservationFlags } from "./lib/skillsShPublicVisibility";
 
@@ -404,10 +404,6 @@ function normalizedTopicLabel(value: string) {
   return value.normalize("NFKC").trim().replace(/\s+/g, " ");
 }
 
-function firstSearchToken(value: string) {
-  return tokenize(value)[0] ?? normalizedSearchText(value);
-}
-
 function requiredSearchValue(name: string, value: string) {
   const normalized = normalizedSearchText(value);
   if (!normalized) throw new ConvexError(`${name} is required`);
@@ -433,9 +429,9 @@ function searchFields(row: MirrorRow) {
     .slice(0, 512);
   return {
     normalizedSlug,
-    normalizedSlugFirstToken: firstSearchToken(row.slug),
+    normalizedSlugFirstToken: getMirrorFirstSearchToken(row.slug),
     normalizedDisplayName,
-    normalizedDisplayNameFirstToken: firstSearchToken(row.displayName),
+    normalizedDisplayNameFirstToken: getMirrorFirstSearchToken(row.displayName),
     ...(searchSummary ? { searchSummary } : {}),
     searchText: [
       row.displayName,

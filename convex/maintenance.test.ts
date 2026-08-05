@@ -36,6 +36,9 @@ vi.mock("./_generated/api", () => ({
       backfillSkillSearchDigestFirstTokensInternal: Symbol(
         "backfillSkillSearchDigestFirstTokensInternal",
       ),
+      backfillSkillsShMirrorDigestFirstTokensInternal: Symbol(
+        "backfillSkillsShMirrorDigestFirstTokensInternal",
+      ),
       getEmptySkillCleanupPageInternal: Symbol("getEmptySkillCleanupPageInternal"),
       applyEmptySkillCleanupInternal: Symbol("applyEmptySkillCleanupInternal"),
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
@@ -79,6 +82,7 @@ const {
   backfillLatestVersionSummaryInternal,
   backfillSkillSearchDigestModerationVerdictsInternal,
   backfillSkillSearchDigestFirstTokensInternal,
+  backfillSkillsShMirrorDigestFirstTokensInternal,
   backfillPublisherStatsInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
@@ -2129,7 +2133,95 @@ describe("backfillSkillSearchDigestFirstTokensInternal", () => {
       { cursor: "next-page", batchSize: undefined, delayMs: 600_000, dryRun: false },
     );
   });
+});
 
+describe("backfillSkillsShMirrorDigestFirstTokensInternal", () => {
+  const mirrorPage = () => [
+    {
+      _id: "skillsShMirrorDigests:stale",
+      slug: "database",
+      displayName: "データベース管理",
+      normalizedSlugFirstToken: "database",
+      normalizedDisplayNameFirstToken: "デ",
+    },
+    {
+      _id: "skillsShMirrorDigests:fresh",
+      slug: "deploy",
+      displayName: "Deploy helper",
+      normalizedSlugFirstToken: "deploy",
+      normalizedDisplayNameFirstToken: "deploy",
+    },
+  ];
+
+  it("repairs mirrored rows whose stored first tokens predate the tokenizer", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: mirrorPage(),
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { cursor: "start", batchSize: 25 },
+    );
+
+    expect(result).toEqual({
+      scanned: 2,
+      patched: 1,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: false,
+    });
+    expect(query).toHaveBeenCalledWith("skillsShMirrorDigests");
+    expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("skillsShMirrorDigests:stale", {
+      normalizedSlugFirstToken: "database",
+      normalizedDisplayNameFirstToken: "データベース",
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      500,
+      internal.maintenance.backfillSkillsShMirrorDigestFirstTokensInternal,
+      { cursor: "next-page", batchSize: 25, delayMs: undefined, dryRun: false },
+    );
+  });
+
+  it("reports would-be patches without writing or scheduling in dry run mode", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: mirrorPage(),
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { dryRun: true },
+    );
+
+    expect(result.patched).toBe(1);
+    expect(result.dryRun).toBe(true);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+});
+
+describe("backfillSkillSearchDigestFirstTokensInternal dry run", () => {
   it("reports would-be patches without writing or scheduling in dry run mode", async () => {
     const paginate = vi.fn().mockResolvedValue({
       page: [

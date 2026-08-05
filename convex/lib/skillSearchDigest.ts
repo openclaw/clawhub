@@ -146,6 +146,12 @@ export function getFirstSearchToken(value: string) {
   return tokenize(value)[0];
 }
 
+// The skills.sh mirror persists the same tokenizer-derived first tokens, but its columns
+// are required, so it falls back to the normalized text when the tokenizer yields nothing.
+export function getMirrorFirstSearchToken(value: string) {
+  return getFirstSearchToken(value) ?? normalizeSkillSearchText(value);
+}
+
 /**
  * Map a digest row to the HydratableSkill shape expected by toPublicSkill /
  * isPublicSkillDoc / isSkillSuspicious.  Fully type-checked: if

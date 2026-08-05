@@ -30,7 +30,7 @@ import {
 } from "./lib/skillQuality";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
-import { getFirstSearchToken } from "./lib/skillSearchDigest";
+import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -2766,6 +2766,87 @@ export const backfillSkillSearchDigestFirstTokens: ReturnType<typeof action> = a
     assertRole(user, ["admin"]);
     return await ctx.runMutation(
       internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      args,
+    );
+  },
+});
+
+// Recompute the stored first-token fields on skillsShMirrorDigests rows. The skills.sh
+// mirror derives them through the same tokenizer as the native digest above, and external
+// candidate search range-scans them, so a tokenizer change strands mirrored rows the same
+// way. Run once after deploying such a change:
+//   npx convex run maintenance:backfillSkillsShMirrorDigestFirstTokens --prod
+export const backfillSkillsShMirrorDigestFirstTokensInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    // The catalog subscribes to mirrored rows too, so pages are spaced apart here as well.
+    const delayMs = clampInt(args.delayMs ?? 500, 0, 60_000);
+    const dryRun = args.dryRun ?? false;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillsShMirrorDigests")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const digest of page) {
+      const normalizedSlugFirstToken = getMirrorFirstSearchToken(digest.slug);
+      const normalizedDisplayNameFirstToken = getMirrorFirstSearchToken(digest.displayName);
+      if (
+        digest.normalizedSlugFirstToken === normalizedSlugFirstToken &&
+        digest.normalizedDisplayNameFirstToken === normalizedDisplayNameFirstToken
+      ) {
+        continue;
+      }
+
+      patched++;
+      if (!dryRun) {
+        await ctx.db.patch(digest._id, {
+          normalizedSlugFirstToken,
+          normalizedDisplayNameFirstToken,
+        });
+      }
+    }
+
+    if (!dryRun && !isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.backfillSkillsShMirrorDigestFirstTokensInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+          dryRun,
+        },
+      );
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      cursor: continueCursor,
+      isDone,
+      dryRun,
+    };
+  },
+});
+
+export const backfillSkillsShMirrorDigestFirstTokens: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillsShMirrorDigestFirstTokensInternal,
       args,
     );
   },
