@@ -9,6 +9,7 @@ const DEFAULT_BASELINE = "origin/main";
 const DEFAULT_CANDIDATE = "worktree";
 const DEFAULT_MODE = "before-after";
 const DEFAULT_PROVIDER = "hetzner";
+const DEFAULT_RUNNER = "crabbox";
 const DEFAULT_CLASS = "standard";
 const DEFAULT_IDLE_TIMEOUT = "60m";
 const DEFAULT_TTL = "120m";
@@ -37,6 +38,7 @@ export function parseProofUiArgs(argv = []) {
     machineClass: DEFAULT_CLASS,
     mode: DEFAULT_MODE,
     provider: DEFAULT_PROVIDER,
+    runner: DEFAULT_RUNNER,
     scenario: "",
     skipInstall: false,
     ttl: DEFAULT_TTL,
@@ -51,8 +53,14 @@ export function parseProofUiArgs(argv = []) {
     if (arg === "--baseline") {
       opts.baseline = requireValue(arg, next);
       index += 1;
+    } else if (arg === "--baseline-url") {
+      opts.baselineUrl = requireValue(arg, next);
+      index += 1;
     } else if (arg === "--candidate") {
       opts.candidate = requireValue(arg, next);
+      index += 1;
+    } else if (arg === "--candidate-url") {
+      opts.candidateUrl = requireValue(arg, next);
       index += 1;
     } else if (arg === "--class" || arg === "--machine-class") {
       opts.machineClass = requireValue(arg, next);
@@ -88,6 +96,9 @@ export function parseProofUiArgs(argv = []) {
     } else if (arg === "--provider") {
       opts.provider = requireValue(arg, next);
       index += 1;
+    } else if (arg === "--runner") {
+      opts.runner = requireValue(arg, next);
+      index += 1;
     } else if (arg === "--scenario") {
       opts.scenario = requireValue(arg, next);
       index += 1;
@@ -112,6 +123,20 @@ export function parseProofUiArgs(argv = []) {
   if (!["before-after", "feature"].includes(opts.mode)) {
     throw new Error(`Unknown proof:ui mode: ${opts.mode}`);
   }
+  if (!["crabbox", "local"].includes(opts.runner)) {
+    throw new Error(`Unknown proof:ui runner: ${opts.runner}`);
+  }
+  if (opts.runner === "local") {
+    if (!opts.candidateUrl || (opts.mode === "before-after" && !opts.baselineUrl)) {
+      throw new Error(
+        opts.mode === "before-after"
+          ? "local before-after proof requires --baseline-url and --candidate-url"
+          : "local feature proof requires --candidate-url",
+      );
+    }
+    if (opts.baselineUrl) assertLocalProofUrl(opts.baselineUrl, "--baseline-url");
+    assertLocalProofUrl(opts.candidateUrl, "--candidate-url");
+  }
   return opts;
 }
 
@@ -132,6 +157,21 @@ function parseEnvAssignment(raw, flag) {
     throw new Error(`${flag} has invalid environment variable name: ${key}`);
   }
   return [key, raw.slice(separator + 1)];
+}
+
+function assertLocalProofUrl(raw, flag) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`${flag} requires a valid URL`);
+  }
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    !["127.0.0.1", "[::1]", "localhost"].includes(parsed.hostname)
+  ) {
+    throw new Error(`${flag} must use localhost or a loopback address`);
+  }
 }
 
 function timestamp(now) {
@@ -160,15 +200,19 @@ export function buildProofUiPlan({ now = () => new Date(), opts, repoRoot }) {
     outputDir: path.join(outputDir, "candidate"),
     ref: opts.candidate,
   });
+  candidateLane.baseURL = opts.candidateUrl;
   const lanes =
     opts.mode === "feature"
       ? [candidateLane]
       : [
-          buildLane({
-            name: "baseline",
-            outputDir: path.join(outputDir, "baseline"),
-            ref: opts.baseline,
-          }),
+          {
+            ...buildLane({
+              name: "baseline",
+              outputDir: path.join(outputDir, "baseline"),
+              ref: opts.baseline,
+            }),
+            baseURL: opts.baselineUrl,
+          },
           candidateLane,
         ];
   return {
@@ -176,7 +220,8 @@ export function buildProofUiPlan({ now = () => new Date(), opts, repoRoot }) {
     candidate: opts.candidate,
     mode: opts.mode,
     outputDir,
-    provider: opts.provider,
+    provider: opts.runner === "local" ? "local" : opts.provider,
+    runner: opts.runner,
     scenario: path.resolve(repoRoot, opts.scenario),
     lanes,
   };
@@ -485,9 +530,10 @@ function renderReport(summary) {
       ? "Baseline: not run for feature proof."
       : `Baseline: \`${summary.baseline}\``,
     `Candidate: \`${summary.candidate}\``,
+    `Runner: \`${summary.runner}\``,
     `Provider: \`${summary.provider}\``,
     "",
-    summary.status === "dry-run" ? "Dry run: Crabbox was not invoked." : undefined,
+    summary.status === "dry-run" ? "Dry run: no proof runtime was invoked." : undefined,
     "## Artifacts",
     "",
   ].filter(Boolean);
@@ -686,6 +732,45 @@ async function stopLease({ commandRunner, invocation, leaseId, opts, repoRoot })
   });
 }
 
+async function runLocalLane({ commandRunner, lane, plan, repoRoot }) {
+  let error;
+  await fs.mkdir(lane.outputDir, { recursive: true });
+  try {
+    await commandRunner(
+      "bun",
+      [
+        path.join(repoRoot, "scripts", "ui-proof-runtime.mjs"),
+        "run-scenario",
+        "--scenario",
+        plan.scenario,
+        "--base-url",
+        lane.baseURL,
+        "--lane",
+        lane.name,
+        "--output-dir",
+        lane.outputDir,
+      ],
+      { cwd: repoRoot, stdio: "inherit" },
+    );
+  } catch (caught) {
+    error = caught instanceof Error ? caught.message : String(caught);
+  }
+  const manifest = await readLaneManifest(lane.outputDir);
+  const status = manifest.status ?? "fail";
+  const laneError =
+    status === "pass"
+      ? undefined
+      : (manifest.error ?? error ?? "Local Playwright proof did not write a result manifest.");
+  return {
+    error: laneError,
+    localOutputDir: lane.outputDir,
+    name: lane.name,
+    ref: lane.ref,
+    status,
+    steps: manifest.steps ?? [],
+  };
+}
+
 export async function runProofUi({
   args = process.argv.slice(2),
   commandRunner = defaultCommandRunner,
@@ -708,6 +793,7 @@ export async function runProofUi({
     mode: plan.mode,
     outputDir: plan.outputDir,
     provider: plan.provider,
+    runner: plan.runner,
     scenario: plan.scenario,
     status: opts.dryRun ? "dry-run" : "pending",
   };
@@ -716,6 +802,21 @@ export async function runProofUi({
     return {
       outputDir: plan.outputDir,
       status: "dry-run",
+      summaryPath: path.join(plan.outputDir, "summary.json"),
+    };
+  }
+
+  if (opts.runner === "local") {
+    const lanes = [];
+    for (const lane of plan.lanes) {
+      lanes.push(await runLocalLane({ commandRunner, lane, plan, repoRoot }));
+    }
+    summary.lanes = lanes;
+    summary.status = lanes.every((lane) => lane.status === "pass") ? "pass" : "fail";
+    await writeSummaryAndReport({ outputDir: plan.outputDir, summary });
+    return {
+      outputDir: plan.outputDir,
+      status: summary.status,
       summaryPath: path.join(plan.outputDir, "summary.json"),
     };
   }

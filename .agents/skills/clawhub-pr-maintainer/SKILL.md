@@ -120,8 +120,11 @@ Review output must include:
 
 ## Decide UI Proof Mode
 
-Use the `clawhub-ui-proof` skill when the maintainer/agent should generate new
-visual evidence.
+Generate new visual evidence with the best proof runtime available in the
+current session. Use Crabbox through `bun run proof:ui` only when a Crabbox
+skill or working Crabbox capability is available. Otherwise ignore Crabbox and
+run the existing Playwright proof runtime against a real local ClawHub instance;
+missing Crabbox access is not a blocker.
 
 - `before-after`: bug fixes, regressions, changed copy, changed layout, or any
   PR where main-vs-candidate comparison clarifies the change.
@@ -133,6 +136,21 @@ visual evidence.
 Write a temporary Playwright scenario under `.artifacts/proof-scenarios/`; do
 not infer manual clicks. Keep screenshots and videos in `.artifacts/` until
 publishing. Never commit proof artifacts.
+
+For the local fallback, start ClawHub with the relevant local Convex state and
+run the scenario through the local Playwright runner:
+
+```sh
+bun run proof:ui -- --runner local --mode feature \
+  --scenario .artifacts/proof-scenarios/<name>.pw.ts \
+  --candidate-url <local-clawhub-url>
+```
+
+For before/after proof, run the same scenario against an `origin/main` checkout
+and the candidate checkout, then pass both URLs with `--baseline-url` and
+`--candidate-url`. The runner accepts only localhost or loopback URLs and writes
+publishable `baseline/` and `candidate/` artifacts. Use the Codex app browser to
+inspect the running local instances and captured evidence.
 
 ## Final Review Comment With Proof
 

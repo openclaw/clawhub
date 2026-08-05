@@ -21,9 +21,56 @@ describe("ui-proof", () => {
         devAuth: false,
         mode: "before-after",
         provider: "hetzner",
+        runner: "crabbox",
         scenario: ".artifacts/proof-scenarios/demo.pw.ts",
       },
     );
+  });
+
+  it("parses local proof URLs and rejects non-local targets", () => {
+    expect(
+      parseProofUiArgs([
+        "--runner",
+        "local",
+        "--mode",
+        "before-after",
+        "--baseline-url",
+        "http://127.0.0.1:4317",
+        "--candidate-url",
+        "http://localhost:4318",
+        "--scenario",
+        ".artifacts/proof-scenarios/demo.pw.ts",
+      ]),
+    ).toMatchObject({
+      baselineUrl: "http://127.0.0.1:4317",
+      candidateUrl: "http://localhost:4318",
+      runner: "local",
+    });
+
+    expect(() =>
+      parseProofUiArgs([
+        "--runner",
+        "local",
+        "--mode",
+        "feature",
+        "--candidate-url",
+        "https://clawhub.ai",
+        "--scenario",
+        ".artifacts/proof-scenarios/demo.pw.ts",
+      ]),
+    ).toThrow("--candidate-url must use localhost");
+    expect(() =>
+      parseProofUiArgs([
+        "--runner",
+        "local",
+        "--mode",
+        "before-after",
+        "--candidate-url",
+        "http://127.0.0.1:4318",
+        "--scenario",
+        ".artifacts/proof-scenarios/demo.pw.ts",
+      ]),
+    ).toThrow("local before-after proof requires --baseline-url and --candidate-url");
   });
 
   it("parses explicit proof modes and rejects unknown modes", () => {
@@ -175,6 +222,61 @@ describe("ui-proof", () => {
     await expect(
       fs.readFile(path.join(result.outputDir, "summary.json"), "utf8"),
     ).resolves.toContain('"mode": "feature"');
+  });
+
+  it("runs a publishable local Playwright proof without invoking Crabbox", async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "clawhub-proof-"));
+    const scenario = path.join(repoRoot, ".artifacts/proof-scenarios/demo.pw.ts");
+    await fs.mkdir(path.dirname(scenario), { recursive: true });
+    await fs.writeFile(scenario, "export default async function demo() {}\n");
+    const commands = [];
+
+    const result = await runProofUi({
+      args: [
+        "--runner",
+        "local",
+        "--mode",
+        "feature",
+        "--candidate-url",
+        "http://127.0.0.1:4318",
+        "--scenario",
+        scenario,
+      ],
+      commandRunner: async (command, commandArgs) => {
+        commands.push([command, commandArgs]);
+        const outputDir = commandArgs[commandArgs.indexOf("--output-dir") + 1];
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.writeFile(
+          path.join(outputDir, "proof-steps.json"),
+          `${JSON.stringify({
+            lane: "candidate",
+            status: "pass",
+            steps: [
+              {
+                name: "candidate /skills",
+                screenshot: "screenshots/skills.png",
+                status: "pass",
+              },
+            ],
+          })}\n`,
+        );
+        return { stdout: "", stderr: "" };
+      },
+      now: () => new Date("2026-05-12T12:34:56.000Z"),
+      repoRoot,
+    });
+
+    expect(commands).toHaveLength(1);
+    expect(commands[0][0]).toBe("bun");
+    expect(commands[0][1]).toContain("run-scenario");
+    expect(commands[0][1]).toContain("http://127.0.0.1:4318");
+    expect(result.status).toBe("pass");
+    const summary = JSON.parse(await fs.readFile(result.summaryPath, "utf8"));
+    expect(summary).toMatchObject({ runner: "local", status: "pass" });
+    expect(summary.lanes).toHaveLength(1);
+    await expect(fs.readFile(path.join(result.outputDir, "report.md"), "utf8")).resolves.toContain(
+      "Runner: `local`",
+    );
   });
 
   it("treats a passing proof manifest as authoritative after a Crabbox transport error", async () => {
