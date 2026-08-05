@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- CI: authenticate the scheduled project-skill updater's pull request mutations with the Barnacle GitHub App while retaining the workflow token for provenance lookup and branch publication.
 - Workers: materialize zero-byte directory markers without colliding with descendant files, while retaining real empty files and verifying every downloaded artifact digest.
 - Deploy: allow an explicitly confirmed backend-only deploy to pause and reliably restore active external-skill rollouts instead of requiring a manual dashboard toggle.
 - GitHub Actions/CLI: trigger exact pre-publication checks immediately and wait for package publication to finish, so a pending staged upload no longer reports a successful release.
