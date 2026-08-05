@@ -11,7 +11,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { action, internalQuery } from "./functions";
-import { isSkillHighlighted } from "./lib/badges";
+import { isSkillHighlighted, isSkillOfficial } from "./lib/badges";
 import {
   classifyCanonicalSkillSearchMatch,
   compareCanonicalSkillSearchCandidates,
@@ -267,6 +267,16 @@ function matchesCatalogFilters(
   );
 }
 
+function matchesNativeSearchEligibility(
+  skill: Pick<HydratableSkill, "badges" | "createdAt">,
+  args: Pick<SkillSearchArgs, "officialOnly" | "createdAfter">,
+) {
+  return (
+    (!args.officialOnly || isSkillOfficial(skill)) &&
+    (args.createdAfter === undefined || skill.createdAt >= args.createdAfter)
+  );
+}
+
 function toPublicSearchSkill(skill: HydratableSkill) {
   if (shouldExcludeSkillFromPublicBrowse(skill)) return null;
   return toPublicSkill({
@@ -317,6 +327,12 @@ const skillSearchArgs = {
   topic: v.optional(v.string()),
 };
 
+const nativeSkillSearchArgs = {
+  ...skillSearchArgs,
+  officialOnly: v.optional(v.boolean()),
+  createdAfter: v.optional(v.number()),
+};
+
 type SkillSearchArgs = {
   query: string;
   limit?: number;
@@ -326,6 +342,8 @@ type SkillSearchArgs = {
   excludePendingScan?: boolean;
   categorySlug?: string;
   topic?: string;
+  officialOnly?: boolean;
+  createdAfter?: number;
 };
 
 const nativeSkillSearch = {
@@ -349,13 +367,16 @@ const nativeSkillSearch = {
             nonSuspiciousOnly: args.nonSuspiciousOnly,
             categorySlug,
             topic,
+            officialOnly: args.officialOnly,
+            createdAfter: args.createdAfter,
           })) as SkillSearchEntry[])
         : [];
       return exactSlugMatches
         .filter(
           (entry) =>
             (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
+            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
+            matchesNativeSearchEligibility(entry.skill, args),
         )
         .sort(compareSkillTrust)
         .slice(0, exactLimit)
@@ -371,6 +392,8 @@ const nativeSkillSearch = {
           nonSuspiciousOnly: args.nonSuspiciousOnly,
           categorySlug,
           topic,
+          officialOnly: args.officialOnly,
+          createdAfter: args.createdAfter,
         })) as SkillSearchEntry[] | SkillSearchEntry | null)
       : [];
     const exactSlugMatches = (
@@ -382,7 +405,8 @@ const nativeSkillSearch = {
     ).filter(
       (entry) =>
         (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
+        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
+        matchesNativeSearchEligibility(entry.skill, args),
     );
     const directPrefixMatches = (
       (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
@@ -391,8 +415,14 @@ const nativeSkillSearch = {
         nonSuspiciousOnly: args.nonSuspiciousOnly,
         categorySlug,
         topic,
+        officialOnly: args.officialOnly,
+        createdAfter: args.createdAfter,
       })) as SkillSearchEntry[]
-    ).filter((entry) => !args.excludePendingScan || entry.skill.githubScanStatus !== "pending");
+    ).filter(
+      (entry) =>
+        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
+        matchesNativeSearchEligibility(entry.skill, args),
+    );
     let vector: number[] | null;
     try {
       vector = await generateEmbedding(query);
@@ -437,6 +467,8 @@ const nativeSkillSearch = {
             nonSuspiciousOnly: args.nonSuspiciousOnly,
             categorySlug,
             topic,
+            officialOnly: args.officialOnly,
+            createdAfter: args.createdAfter,
           })) as SkillSearchEntry[];
           hydrated = [...hydrated, ...newEntries];
         }
@@ -456,7 +488,8 @@ const nativeSkillSearch = {
         const filtered = hydrated.filter(
           (entry) =>
             (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
+            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
+            matchesNativeSearchEligibility(entry.skill, args),
         );
 
         exactMatches = filtered.filter((entry) =>
@@ -501,11 +534,14 @@ const nativeSkillSearch = {
             skipExactSlugLookup: true,
             categorySlug,
             topic,
+            officialOnly: args.officialOnly,
+            createdAfter: args.createdAfter,
           })) as SkillSearchEntry[]);
     const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches).filter(
       (entry) =>
         matchesCatalogFilters(entry.skill, categorySlug, topic) &&
-        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
+        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
+        matchesNativeSearchEligibility(entry.skill, args),
     );
 
     const rankedMatches = mergedMatches
@@ -554,7 +590,7 @@ const nativeSkillSearch = {
 };
 
 export const searchNativeSkills: ReturnType<typeof action> = action({
-  args: skillSearchArgs,
+  args: nativeSkillSearchArgs,
   handler: async (ctx, args) => nativeSkillSearch.handler(ctx, args),
 });
 
@@ -909,6 +945,8 @@ export const getExactSkillSlugMatch = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
+    officialOnly: v.optional(v.boolean()),
+    createdAfter: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
@@ -927,6 +965,7 @@ export const getExactSkillSlugMatch = internalQuery({
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
         if (args.highlightedOnly && !isSkillHighlighted(skill)) return null;
         if (!matchesCatalogFilters(skill, categorySlug, topic)) return null;
+        if (!matchesNativeSearchEligibility(skill, args)) return null;
         if (!(await hasResolvablePublicBrowseVersionFromState(ctx, skill, undefined))) return null;
 
         const resolved = await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
@@ -1170,6 +1209,8 @@ export const directPrefixSkillMatches = internalQuery({
     nonSuspiciousOnly: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
+    officialOnly: v.optional(v.boolean()),
+    createdAfter: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
@@ -1198,12 +1239,18 @@ export const directPrefixSkillMatches = internalQuery({
       return (
         !shouldExcludeSkillFromPublicBrowse(skill) &&
         (!args.highlightedOnly || isSkillHighlighted(skill)) &&
+        matchesNativeSearchEligibility(skill, args) &&
         passesAllQueryTokens(digest) &&
         matchesCatalogFilters(skill, categorySlug, topic)
       );
     };
     const needsExpandedRecall = Boolean(
-      categorySlug || topic || args.highlightedOnly || queryTokens.length > 1,
+      categorySlug ||
+      topic ||
+      args.highlightedOnly ||
+      args.officialOnly ||
+      args.createdAfter !== undefined ||
+      queryTokens.length > 1,
     );
     const directScanLimit = (candidateLimit: number) =>
       needsExpandedRecall ? MAX_FILTERED_DIRECT_SKILL_SCAN_CANDIDATES : candidateLimit;
@@ -1452,6 +1499,7 @@ export const directPrefixSkillMatches = internalQuery({
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
         if (args.highlightedOnly && !isSkillHighlighted(skill)) return null;
+        if (!matchesNativeSearchEligibility(skill, args)) return null;
         if (!matchesCatalogFilters(skill, categorySlug, topic)) return null;
         if (!(await hasResolvablePublicBrowseVersionFromState(ctx, skill, digest.publicVersion))) {
           return null;
@@ -1481,6 +1529,8 @@ export const hydrateResults = internalQuery({
     nonSuspiciousOnly: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
+    officialOnly: v.optional(v.boolean()),
+    createdAfter: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
@@ -1513,6 +1563,7 @@ export const hydrateResults = internalQuery({
         if (!skill || skill.softDeletedAt) return null;
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
         if (!matchesCatalogFilters(skill, categorySlug, topic)) return null;
+        if (!matchesNativeSearchEligibility(skill, args)) return null;
         // Use pre-resolved owner from digest to avoid reading the users table.
         // Fall back to live lookup when digest owner is null (deactivated/deleted user).
         const preResolved = digest ? digestToOwnerInfo(digest) : null;
@@ -1555,6 +1606,8 @@ export const lexicalFallbackSkills = internalQuery({
     skipExactSlugLookup: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
+    officialOnly: v.optional(v.boolean()),
+    createdAfter: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
     const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
@@ -1588,6 +1641,7 @@ export const lexicalFallbackSkills = internalQuery({
           !shouldExcludeSkillFromPublicBrowse(exactSlugSkill) &&
           (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
           (!args.excludePendingScan || exactSlugSkill.githubScanStatus !== "pending") &&
+          matchesNativeSearchEligibility(exactSlugSkill, args) &&
           matchesCatalogFilters(exactSlugSkill, categorySlug, topic)
         ) {
           seenSkillIds.add(exactSlugSkill._id);
@@ -1625,13 +1679,20 @@ export const lexicalFallbackSkills = internalQuery({
             .order("desc");
 
     const filteredScanLimit =
-      categorySlug || topic || args.highlightedOnly ? FALLBACK_SCAN_LIMIT : scanLimit;
+      categorySlug ||
+      topic ||
+      args.highlightedOnly ||
+      args.officialOnly ||
+      args.createdAfter !== undefined
+        ? FALLBACK_SCAN_LIMIT
+        : scanLimit;
     const matchesFallbackRecallFilters = (digest: Doc<"skillSearchDigest">) => {
       const skill = digestToHydratableSkill(digest);
       return (
         !shouldExcludeSkillFromPublicBrowse(skill) &&
         (!args.highlightedOnly || isSkillHighlighted(skill)) &&
         (!args.excludePendingScan || skill.githubScanStatus !== "pending") &&
+        matchesNativeSearchEligibility(skill, args) &&
         matchesCatalogFilters(skill, categorySlug, topic) &&
         matchesExactTokens(args.queryTokens, [
           skill.displayName,
@@ -1661,6 +1722,7 @@ export const lexicalFallbackSkills = internalQuery({
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
         if (args.excludePendingScan && skill.githubScanStatus === "pending") continue;
+        if (!matchesNativeSearchEligibility(skill, args)) continue;
         if (!matchesCatalogFilters(skill, categorySlug, topic)) continue;
         seenSkillIds.add(digest.skillId);
         candidates.push(skill);
@@ -1715,9 +1777,11 @@ export const lexicalFallbackSkills = internalQuery({
     const validEntries = entries.filter(Boolean) as SkillSearchEntry[];
     if (validEntries.length === 0) return [];
 
-    const filtered = args.highlightedOnly
-      ? validEntries.filter((entry) => isSkillHighlighted(entry.skill))
-      : validEntries;
+    const filtered = validEntries.filter(
+      (entry) =>
+        (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+        matchesNativeSearchEligibility(entry.skill, args),
+    );
     return filtered.slice(0, limit);
   },
 });

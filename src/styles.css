@@ -22333,9 +22333,17 @@ a.search-empty-action {
 .home-v2-listing-toolbar {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   min-height: 44px;
   padding: 0;
+}
+
+.home-v2-listing-primary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .home-v2-listing-kind {
@@ -28690,34 +28698,33 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     margin-bottom: 24px;
   }
   .home-v2-listing-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     min-height: 0;
-    gap: 14px 12px;
+    gap: 14px;
+  }
+  .home-v2-listing-primary {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    width: 100%;
   }
   .home-v2-listing-divider {
     display: none;
   }
   .home-v2-listing-kind {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
+    align-self: flex-start;
   }
   .home-v2-listing-actions {
-    display: contents;
+    width: 100%;
+    margin-left: 0;
   }
   .home-v2-listing-actions .browse-search-trigger {
-    grid-column: 1;
-    grid-row: 1;
-    justify-self: start;
     width: 44px;
     height: 44px;
   }
   .home-v2-listing-actions .browse-category-select {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
+    flex: 1 1 auto;
     max-width: none;
   }
   .home-v2-listing-actions .browse-category-trigger {
@@ -28725,23 +28732,21 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     min-height: 48px;
     padding: 0 16px;
     border: 1px solid var(--hv2-border);
-    border-radius: 18px;
+    border-radius: var(--oc-radius-control);
     background: color-mix(in srgb, var(--hv2-surface) 76%, transparent);
   }
   .home-v2-listing-sort {
-    grid-column: 1 / -1;
-    grid-row: 3;
     align-self: auto;
-    gap: 20px;
+    width: 100%;
     min-height: 36px;
   }
   .home-v2-listing-sort-tabs {
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 16px;
     width: 100%;
   }
   .home-v2-listing-tab {
-    flex: 1 0 0;
+    flex: 1 0 auto;
     justify-content: center;
     min-width: max-content;
   }

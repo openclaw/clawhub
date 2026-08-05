@@ -23,7 +23,6 @@ import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { presentationTitle } from "../lib/presentationTitle";
-import type { PublicSkill, PublicUser } from "../lib/publicUser";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import {
@@ -57,12 +56,6 @@ const PLUGIN_LISTING_TABS: Array<{
 const LISTING_PAGE_SIZE = HOME_LISTING_PAGE_SIZE;
 const LISTING_SEARCH_DEBOUNCE_MS = 220;
 const EMPTY_CATEGORY_SLUGS: string[] = [];
-
-type SkillSearchHit = {
-  skill: PublicSkill;
-  ownerHandle?: string | null;
-  owner?: (PublicUser & { official?: boolean }) | null;
-};
 
 function HomeListingEmptyPanel({
   variant,
@@ -491,21 +484,14 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 query: trimmedSearch,
                 limit: fetchLimit,
                 ...(tab === "featured" ? { highlightedOnly: true } : {}),
+                ...(tab === "official" ? { officialOnly: true } : {}),
+                ...(tab === "new" ? { createdAfter: Date.now() - HOME_NEW_WINDOW_MS } : {}),
                 ...(categorySlug ? { categorySlug } : {}),
               })
               .then((hits) => {
                 if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-                const searchHits = hits as SkillSearchHit[];
-                const newestCutoff = Date.now() - HOME_NEW_WINDOW_MS;
-                const items = searchHits
-                  .filter((hit) => tab !== "official" || Boolean(hit.owner?.official))
-                  .filter((hit) => tab !== "new" || hit.skill.createdAt >= newestCutoff)
-                  .map((hit) => ({
-                    skill: hit.skill,
-                    ownerHandle: hit.ownerHandle,
-                    owner: hit.owner,
-                  }));
-                setSearchSkills(items);
+                const searchHits = hits as HomeNativeSkillListingEntry[];
+                setSearchSkills(searchHits);
                 setListingHasMore(searchHits.length >= fetchLimit);
                 setSearchStatus("idle");
               })
@@ -583,20 +569,49 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     >
       <div className="home-v2-listing-controls">
         <div className="home-v2-listing-toolbar">
-          <div className="home-v2-listing-sort">
-            <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Sort">
-              {visibleTabs.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === item.id}
-                  className={`home-v2-listing-tab${tab === item.id ? " is-active" : ""}`}
-                  onClick={() => handleTabChange(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
+          <div className="home-v2-listing-primary">
+            <div
+              className="home-v2-listing-kind clawhub-segmented oc-segmented"
+              role="group"
+              aria-label="Content type"
+            >
+              <button
+                type="button"
+                className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
+                  kind === "skills" ? " is-active" : ""
+                }`}
+                aria-pressed={kind === "skills"}
+                onClick={() => handleKindChange("skills")}
+              >
+                Skills
+              </button>
+              <button
+                type="button"
+                className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
+                  kind === "plugins" ? " is-active" : ""
+                }`}
+                aria-pressed={kind === "plugins"}
+                onClick={() => handleKindChange("plugins")}
+              >
+                Plugins
+              </button>
+            </div>
+
+            <div className="home-v2-listing-sort">
+              <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Catalog view">
+                {visibleTabs.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === item.id}
+                    className={`home-v2-listing-tab${tab === item.id ? " is-active" : ""}`}
+                    onClick={() => handleTabChange(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -613,33 +628,6 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 onChange={setCategorySlug}
               />
             )}
-          </div>
-
-          <div
-            className="home-v2-listing-kind clawhub-segmented oc-segmented"
-            role="group"
-            aria-label="Content type"
-          >
-            <button
-              type="button"
-              className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
-                kind === "skills" ? " is-active" : ""
-              }`}
-              aria-pressed={kind === "skills"}
-              onClick={() => handleKindChange("skills")}
-            >
-              Skills
-            </button>
-            <button
-              type="button"
-              className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
-                kind === "plugins" ? " is-active" : ""
-              }`}
-              aria-pressed={kind === "plugins"}
-              onClick={() => handleKindChange("plugins")}
-            >
-              Plugins
-            </button>
           </div>
         </div>
         <BrowseSearchPanel open={searchDisclosure.open}>

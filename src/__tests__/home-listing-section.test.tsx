@@ -137,15 +137,18 @@ describe("HomeListingSection", () => {
     });
   });
 
-  it("renders listing tabs left, content tabs right, and only the list presentation", async () => {
+  it("renders kind and its tabs on the left, secondary controls on the right, and only lists", async () => {
     render(<HomeListingSection initialListing={initialPluginListing()} />);
 
     const toolbar = document.querySelector(".home-v2-listing-toolbar");
-    const sortTabs = screen.getByRole("tablist", { name: "Sort" });
+    const primary = document.querySelector(".home-v2-listing-primary");
+    const catalogTabs = screen.getByRole("tablist", { name: "Catalog view" });
     const contentType = screen.getByRole("group", { name: "Content type" });
     const contentTypeButtons = contentType.querySelectorAll("button");
-    expect(toolbar?.firstElementChild?.contains(sortTabs)).toBe(true);
-    expect(toolbar?.lastElementChild).toBe(contentType);
+    expect(toolbar?.firstElementChild).toBe(primary);
+    expect(primary?.firstElementChild).toBe(contentType);
+    expect(primary?.lastElementChild?.contains(catalogTabs)).toBe(true);
+    expect(toolbar?.lastElementChild?.classList.contains("home-v2-listing-actions")).toBe(true);
     expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
       "Skills",
       "Plugins",
@@ -227,6 +230,45 @@ describe("HomeListingSection", () => {
     expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
       "true",
     );
+  });
+
+  it("passes Official and New skill eligibility into native search", async () => {
+    convexActionMock.mockResolvedValue([]);
+    const { unmount } = render(<HomeListingSection initialListing={initialPluginListing()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "official" },
+    });
+
+    await waitFor(() => {
+      expect(convexActionMock).toHaveBeenCalledWith(
+        "search:searchNativeSkills",
+        expect.objectContaining({ query: "official", limit: 20, officialOnly: true }),
+      );
+    });
+
+    unmount();
+    convexActionMock.mockClear();
+    render(<HomeListingSection initialListing={initialPluginListing()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "recent" },
+    });
+
+    await waitFor(() => {
+      expect(convexActionMock).toHaveBeenCalledWith(
+        "search:searchNativeSkills",
+        expect.objectContaining({
+          query: "recent",
+          limit: 20,
+          createdAfter: expect.any(Number),
+        }),
+      );
+    });
   });
 
   it("searches plugins within the selected tab and category", async () => {

@@ -405,11 +405,12 @@ describe("restored UI design contract", () => {
     expect(listingSource).toContain("BrowseSearchTrigger");
     expect(listingSource).toContain("BrowseCategorySelect");
     expect(listingSource).toContain('label="Search catalog"');
+    expect(listingSource).not.toContain("BrowseSort");
+    expect(listingSource.indexOf('className="home-v2-listing-kind')).toBeLessThan(
+      listingSource.indexOf('className="home-v2-listing-sort"'),
+    );
     expect(listingSource.indexOf('className="home-v2-listing-sort"')).toBeLessThan(
       listingSource.indexOf('className="home-v2-listing-actions"'),
-    );
-    expect(listingSource.indexOf('className="home-v2-listing-actions"')).toBeLessThan(
-      listingSource.indexOf('className="home-v2-listing-kind'),
     );
     expect(appsSource).toContain('className="home-v2-apps-tile"');
     expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
@@ -434,7 +435,17 @@ describe("restored UI design contract", () => {
     expect(homeSource).not.toContain("Featured skills");
     expect(homeSource).not.toContain("Trending Now");
     expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
+    expect(cssRule(css, ".home-v2-listing-primary")).toContain("display: flex");
     expect(cssRule(css, ".home-v2-listing-actions")).toContain("margin-left: auto");
+    expect(cssRule(css, ".home-v2-listing-sort-tabs")).toContain("overflow-x: auto");
+    const mobileCatalog = cssMediaContaining(css, "(max-width: 768px)", [
+      ".home-v2-listing-toolbar {",
+      ".home-v2-listing-primary {",
+      ".home-v2-listing-actions {",
+    ]);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-toolbar \{[^}]*flex-direction:\s*column/s);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-primary \{[^}]*flex-direction:\s*column/s);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-actions \{[^}]*width:\s*100%/s);
     expect(cssRule(css, ".home-v2-listing-row::before")).toContain("border-radius: 0");
   });
 
