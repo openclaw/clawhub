@@ -22,6 +22,10 @@ import { computeGitHubSkillFolderContentHash } from "../../convex/lib/githubSkil
 import type { SkillEvaluationRunRecord } from "../../src/components/SkillEvaluationReport";
 
 const OFFICIAL_SKILL_SOURCES = new Set(["nvidia/skills"]);
+const OFFICIAL_GITHUB_BRANCHES = new Map([
+  ["nvidia/skills", "main"],
+  ["nvidia/skillevaluator", "main"],
+]);
 const EVALS_DATASET_NAMES = ["evals.json", "evals.jsonl", "evals.yaml", "evals.yml"] as const;
 const LEGACY_DATASET_NAMES = [
   "dataset.json",
@@ -264,6 +268,8 @@ export function buildTier3EvaluateInvocation({
       skillDirectory,
       "--agents",
       "codex",
+      // Local mode is limited to allowlisted commits merged into the configured official branch.
+      // A production sync must replace this demo boundary with an isolated execution sandbox.
       "--env-mode",
       "local",
       "--agent-model",
@@ -410,6 +416,8 @@ async function materializeOfficialGitHubSnapshot(
   commit: string,
   label: string,
 ) {
+  const approvedBranch = OFFICIAL_GITHUB_BRANCHES.get(repository.toLowerCase());
+  if (!approvedBranch) throw new Error(`No approved branch configured for ${repository}.`);
   const snapshotRoot = await mkdtemp(join(tmpdir(), "clawhub-skill-eval-snapshot-"));
   process.once("exit", () => rmSync(snapshotRoot, { recursive: true, force: true }));
   const snapshotPath = join(snapshotRoot, "checkout");
@@ -418,17 +426,40 @@ async function materializeOfficialGitHubSnapshot(
     "git",
     "-C",
     snapshotPath,
+    "remote",
+    "add",
+    "origin",
+    officialGitHubRemoteUrl(repository),
+  ]);
+  await capture([
+    "git",
+    "-C",
+    snapshotPath,
     "fetch",
     "--quiet",
-    "--depth=1",
-    officialGitHubRemoteUrl(repository),
-    commit,
+    "--filter=blob:none",
+    "--no-tags",
+    "origin",
+    `refs/heads/${approvedBranch}:refs/remotes/origin/${approvedBranch}`,
   ]);
-  const fetchedCommit = await capture(["git", "-C", snapshotPath, "rev-parse", "FETCH_HEAD"]);
-  if (fetchedCommit !== commit) {
-    throw new Error(`${label} remote resolved ${commit} to unexpected commit ${fetchedCommit}.`);
+  const branchRef = `refs/remotes/origin/${approvedBranch}`;
+  const isApprovedCommit = await new Promise<boolean>((resolvePromise, reject) => {
+    const child = spawn(
+      "git",
+      ["-C", snapshotPath, "merge-base", "--is-ancestor", commit, branchRef],
+      { stdio: "ignore" },
+    );
+    child.on("error", reject);
+    child.on("close", (exitCode) => {
+      if (exitCode === 0) resolvePromise(true);
+      else if (exitCode === 1) resolvePromise(false);
+      else reject(new Error(`${label} approved-branch ancestry check failed (${exitCode}).`));
+    });
+  });
+  if (!isApprovedCommit) {
+    throw new Error(`${label} commit must be merged into ${repository}#${approvedBranch}.`);
   }
-  await capture(["git", "-C", snapshotPath, "checkout", "--quiet", "--detach", "FETCH_HEAD"]);
+  await capture(["git", "-C", snapshotPath, "checkout", "--quiet", "--detach", commit]);
   const snapshotCommit = await capture(["git", "-C", snapshotPath, "rev-parse", "HEAD"]);
   if (snapshotCommit !== commit) throw new Error(`${label} snapshot did not resolve to ${commit}.`);
   return snapshotPath;
