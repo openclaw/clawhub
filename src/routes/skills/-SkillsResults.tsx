@@ -231,7 +231,7 @@ export function SkillsResults({
   return (
     <>
       {isLoadingSkills ? (
-        <BrowseResultsSkeleton label="Skill" variant={effectiveView} />
+        <BrowseResultsSkeleton label="Skill" showIcon={false} variant={effectiveView} />
       ) : sorted.length === 0 && listDoneLoading ? (
         <div className="empty-state">
           <p className="empty-state-title">
@@ -339,7 +339,7 @@ export function SkillsResults({
 
       {isLoadingMore ? (
         <div ref={canAutoLoad ? loadMoreRef : null} className="mt-4">
-          <BrowseResultsSkeleton count={2} variant={effectiveView} />
+          <BrowseResultsSkeleton count={2} showIcon={false} variant={effectiveView} />
         </div>
       ) : canLoadMore ? (
         <div ref={canAutoLoad ? loadMoreRef : null} className="card mt-4 flex justify-center">

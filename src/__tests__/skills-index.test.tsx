@@ -410,16 +410,28 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
   });
 
-  it("shows loading state before fetch completes", async () => {
-    // Never resolve the query to keep the component in loading state
-    convexHttpMock.query.mockReturnValue(new Promise(() => {}));
-    render(<SkillsIndex />);
-    await act(async () => {});
-    // Results area shows skeletons while loading, without count copy.
-    expect(screen.queryByText(/\d+ loaded/)).toBeNull();
-    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
-    expect(screen.queryByText("No skills found")).toBeNull();
-  });
+  it.each(["list", "grid"] as const)(
+    "shows an iconless %s loading state before fetch completes",
+    async (view) => {
+      searchMock = { tab: "new", view: view === "grid" ? view : undefined };
+      // Never resolve the query to keep the component in loading state
+      convexHttpMock.query.mockReturnValue(new Promise(() => {}));
+      render(<SkillsIndex />);
+      await act(async () => {});
+      // Results area shows skeletons while loading, without count copy.
+      expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+      const loadingResults = screen.getByRole("status", { name: "Loading results" });
+      expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
+      expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
+      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(
+        view === "grid" ? 6 : 0,
+      );
+      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(
+        view === "list" ? 6 : 0,
+      );
+      expect(screen.queryByText("No skills found")).toBeNull();
+    },
+  );
 
   it("uses grid as the canonical browse view URL value", async () => {
     render(<SkillsIndex />);
@@ -1129,28 +1141,40 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText("No skills found")).toBeNull();
   });
 
-  it("shows skeletons during load-more", async () => {
-    vi.stubGlobal("IntersectionObserver", undefined);
-    convexHttpMock.query
-      .mockResolvedValueOnce({
-        page: [makeListResult("skill-0", "Skill 0")],
-        hasMore: true,
-        nextCursor: "cursor-1",
-      })
-      // Second call (load more) never resolves
-      .mockReturnValueOnce(new Promise(() => {}));
+  it.each(["list", "grid"] as const)(
+    "shows iconless %s skeletons during load-more",
+    async (view) => {
+      vi.stubGlobal("IntersectionObserver", undefined);
+      searchMock = { tab: "new", view: view === "grid" ? view : undefined };
+      convexHttpMock.query
+        .mockResolvedValueOnce({
+          page: [makeListResult("skill-0", "Skill 0")],
+          hasMore: true,
+          nextCursor: "cursor-1",
+        })
+        // Second call (load more) never resolves
+        .mockReturnValueOnce(new Promise(() => {}));
 
-    render(<SkillsIndex />);
-    await act(async () => {});
+      render(<SkillsIndex />);
+      await act(async () => {});
 
-    const loadMoreButton = screen.getByRole("button", { name: "Load more" });
-    await act(async () => {
-      fireEvent.click(loadMoreButton);
-    });
+      const loadMoreButton = screen.getByRole("button", { name: "Load more" });
+      await act(async () => {
+        fireEvent.click(loadMoreButton);
+      });
 
-    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
-    expect(screen.queryByText(/Loading/)).toBeNull();
-  });
+      const loadingResults = screen.getByRole("status", { name: "Loading results" });
+      expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
+      expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
+      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(
+        view === "grid" ? 2 : 0,
+      );
+      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(
+        view === "list" ? 2 : 0,
+      );
+      expect(screen.queryByText(/Loading/)).toBeNull();
+    },
+  );
 });
 
 type NavigateSearchCall = {
