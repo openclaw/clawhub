@@ -2,7 +2,11 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { SkillEvaluationReport, type SkillEvaluationRunRecord } from "./SkillEvaluationReport";
+import {
+  SkillEvaluationReport,
+  type SkillEvaluationMetrics,
+  type SkillEvaluationRunRecord,
+} from "./SkillEvaluationReport";
 
 function record(
   state: SkillEvaluationRunRecord["state"],
@@ -72,7 +76,20 @@ describe("SkillEvaluationReport", () => {
     expect(screen.getByText("gpt-5.4-mini")).toBeTruthy();
   });
 
-  it("embeds the interactive native report in an opaque-origin script sandbox", () => {
+  it("renders the native JSON summary and dimension metrics without embedding the HTML report", () => {
+    const metrics: SkillEvaluationMetrics = {
+      agent: "codex",
+      overall: { withSkill: 0.9587, withoutSkill: 0.6058, delta: 0.3529 },
+      passRate: {
+        withSkill: { passed: 4, total: 4, rate: 1 },
+        withoutSkill: { passed: 2, total: 4, rate: 0.5 },
+      },
+      metrics: [
+        { name: "Security", withSkill: 1, withoutSkill: 1, delta: 0 },
+        { name: "Accuracy", withSkill: 0.9, withoutSkill: 0.45, delta: 0.45 },
+      ],
+    };
+
     render(
       <SkillEvaluationReport
         record={record("completed", {
@@ -86,14 +103,16 @@ describe("SkillEvaluationReport", () => {
             runConfigUrl: "/__skill-evaluator-demo/run_config.json",
           },
         })}
+        metrics={metrics}
       />,
     );
 
-    const frame = screen.getByTitle("SkillEvaluator report");
-    expect(frame.getAttribute("src")).toBe("/__skill-evaluator-demo/report.html");
-    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
-    expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer");
-    expect(screen.queryByRole("link", { name: "Open report" })).toBeNull();
+    expect(screen.getByText("95.9%")).toBeTruthy();
+    expect(screen.getByText("+35.3 pts")).toBeTruthy();
+    expect(screen.getByText("4 / 4")).toBeTruthy();
+    expect(screen.getByRole("rowheader", { name: "Accuracy" })).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "+45.0 pts" })).toBeTruthy();
+    expect(screen.queryByTitle("SkillEvaluator report")).toBeNull();
     expect(screen.getByText("One-attempt smoke run")).toBeTruthy();
   });
 });

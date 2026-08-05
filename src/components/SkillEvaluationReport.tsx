@@ -42,6 +42,25 @@ export type SkillEvaluationRunRecord = {
   };
 };
 
+export type SkillEvaluationMetrics = {
+  agent: string;
+  overall: {
+    withSkill: number;
+    withoutSkill: number;
+    delta: number;
+  };
+  passRate: {
+    withSkill: { passed: number; total: number; rate: number };
+    withoutSkill: { passed: number; total: number; rate: number };
+  };
+  metrics: Array<{
+    name: string;
+    withSkill: number;
+    withoutSkill: number;
+    delta: number;
+  }>;
+};
+
 const STATE_PRESENTATION = {
   pending: { label: "Evaluation in progress", icon: Clock3 },
   skipped: { label: "Evaluation skipped", icon: Ban },
@@ -59,7 +78,23 @@ function formatTimestamp(value: string | undefined) {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
 }
 
-export function SkillEvaluationReport({ record }: { record: SkillEvaluationRunRecord }) {
+function formatPercent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatPoints(value: number) {
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pts`;
+}
+
+export function SkillEvaluationReport({
+  record,
+  metrics,
+  metricsError,
+}: {
+  record: SkillEvaluationRunRecord;
+  metrics?: SkillEvaluationMetrics;
+  metricsError?: string;
+}) {
   const presentation = STATE_PRESENTATION[record.state];
   const StateIcon = presentation.icon;
 
@@ -70,8 +105,8 @@ export function SkillEvaluationReport({ record }: { record: SkillEvaluationRunRe
           <p className="skill-evaluation-eyebrow">NVIDIA SkillEvaluator · Tier 3</p>
           <h2>Live agent evaluation</h2>
           <p>
-            This is the native SkillEvaluator report for the exact synced source version. ClawHub
-            does not recalculate or reinterpret its scores.
+            Metrics come directly from SkillEvaluator&apos;s native result.json for the exact synced
+            source version. ClawHub does not recalculate or reinterpret its scores.
           </p>
         </div>
         <div className={`skill-evaluation-state is-${record.state}`} role="status">
@@ -140,6 +175,71 @@ export function SkillEvaluationReport({ record }: { record: SkillEvaluationRunRe
         </div>
       </dl>
 
+      {record.state === "completed" && metrics ? (
+        <section className="skill-evaluation-metrics" aria-label="SkillEvaluator metrics">
+          <dl className="skill-evaluation-summary">
+            <div>
+              <dt>Overall score</dt>
+              <dd>{formatPercent(metrics.overall.withSkill)}</dd>
+              <span>With skill</span>
+            </div>
+            <div>
+              <dt>Baseline score</dt>
+              <dd>{formatPercent(metrics.overall.withoutSkill)}</dd>
+              <span>Without skill</span>
+            </div>
+            <div>
+              <dt>Skill lift</dt>
+              <dd>{formatPoints(metrics.overall.delta)}</dd>
+              <span>With skill minus baseline</span>
+            </div>
+            <div>
+              <dt>Cases passed</dt>
+              <dd>
+                {metrics.passRate.withSkill.passed} / {metrics.passRate.withSkill.total}
+              </dd>
+              <span>
+                Baseline {metrics.passRate.withoutSkill.passed} /{" "}
+                {metrics.passRate.withoutSkill.total}
+              </span>
+            </div>
+          </dl>
+
+          <div className="skill-evaluation-table-wrap">
+            <table className="skill-evaluation-table">
+              <caption>Metric scores reported by SkillEvaluator</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Metric</th>
+                  <th scope="col">With skill</th>
+                  <th scope="col">Baseline</th>
+                  <th scope="col">Lift</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.metrics.map((metric) => (
+                  <tr key={metric.name}>
+                    <th scope="row">{metric.name}</th>
+                    <td>{formatPercent(metric.withSkill)}</td>
+                    <td>{formatPercent(metric.withoutSkill)}</td>
+                    <td className={metric.delta > 0 ? "is-positive" : undefined}>
+                      {formatPoints(metric.delta)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
+      {record.state === "completed" && metricsError ? (
+        <div className="skill-evaluation-message" role="note">
+          <strong>Metrics unavailable</strong>
+          <span>{metricsError}</span>
+        </div>
+      ) : null}
+
       {record.state === "completed" && record.artifacts ? (
         <section className="skill-evaluation-artifacts" aria-label="SkillEvaluator artifacts">
           <div className="skill-evaluation-artifact-links">
@@ -150,13 +250,6 @@ export function SkillEvaluationReport({ record }: { record: SkillEvaluationRunRe
               run_config.json
             </a>
           </div>
-          <iframe
-            className="skill-evaluation-frame"
-            src={record.artifacts.reportUrl}
-            title="SkillEvaluator report"
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-          />
         </section>
       ) : null}
     </div>

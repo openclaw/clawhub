@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { SkillEvaluationReport, type SkillEvaluationRunRecord } from "./SkillEvaluationReport";
+import {
+  SkillEvaluationReport,
+  type SkillEvaluationMetrics,
+  type SkillEvaluationRunRecord,
+} from "./SkillEvaluationReport";
 
 type LocalSkillEvaluationSource = {
   repository: string;
@@ -56,6 +60,76 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function readNumber(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`SkillEvaluator result.json has an invalid ${key} value`);
+  }
+  return value;
+}
+
+function readRecord(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (!isRecord(value)) throw new Error(`SkillEvaluator result.json is missing ${key}`);
+  return value;
+}
+
+function metricLabel(metric: string) {
+  const label = metric.replaceAll("_", " ");
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
+function parseSkillEvaluatorMetrics(value: unknown, agentName: string): SkillEvaluationMetrics {
+  if (!isRecord(value) || !Array.isArray(value.metrics) || !isRecord(value.agents)) {
+    throw new Error("SkillEvaluator result.json is missing its metric summary");
+  }
+  const metricNames = value.metrics.filter(
+    (metric): metric is string => typeof metric === "string" && metric.length > 0,
+  );
+  if (metricNames.length === 0 || metricNames.length !== value.metrics.length) {
+    throw new Error("SkillEvaluator result.json has an invalid metric list");
+  }
+
+  const agent = readRecord(value.agents, agentName);
+  const withSkill = readRecord(agent, "with_skill");
+  const withoutSkill = readRecord(agent, "without_skill");
+  const lift = readRecord(agent, "lift");
+  const overall = readRecord(lift, "overall");
+  const passAtK = readRecord(agent, "pass_at_k");
+  const passWithSkill = readRecord(passAtK, "with_skill");
+  const passWithoutSkill = readRecord(passAtK, "without_skill");
+
+  return {
+    agent: agentName,
+    overall: {
+      withSkill: readNumber(overall, "with_skill"),
+      withoutSkill: readNumber(overall, "without_skill"),
+      delta: readNumber(overall, "delta"),
+    },
+    passRate: {
+      withSkill: {
+        passed: readNumber(passWithSkill, "passed_cases"),
+        total: readNumber(passWithSkill, "total_cases"),
+        rate: readNumber(passWithSkill, "rate"),
+      },
+      withoutSkill: {
+        passed: readNumber(passWithoutSkill, "passed_cases"),
+        total: readNumber(passWithoutSkill, "total_cases"),
+        rate: readNumber(passWithoutSkill, "rate"),
+      },
+    },
+    metrics: metricNames.map((metric) => {
+      const metricLift = readRecord(lift, metric);
+      return {
+        name: metricLabel(metric),
+        withSkill: readNumber(withSkill, metric),
+        withoutSkill: readNumber(withoutSkill, metric),
+        delta: readNumber(metricLift, "delta"),
+      };
+    }),
+  };
+}
+
 function validateRecord(
   value: unknown,
   source: LocalSkillEvaluationSource,
@@ -96,7 +170,12 @@ type LoadState =
   | { status: "loading" }
   | { status: "absent" }
   | { status: "error"; message: string }
-  | { status: "ready"; record: SkillEvaluationRunRecord };
+  | {
+      status: "ready";
+      record: SkillEvaluationRunRecord;
+      metrics?: SkillEvaluationMetrics;
+      metricsError?: string;
+    };
 
 export function SkillEvaluationReportLoader({
   source,
@@ -150,6 +229,27 @@ export function SkillEvaluationReportLoader({
         if (record.state === "pending") {
           pollTimer = setTimeout(() => void load(), PENDING_EVALUATION_POLL_INTERVAL_MS);
         }
+        if (record.state === "completed" && record.artifacts) {
+          try {
+            const resultResponse = await fetchImpl(record.artifacts.resultUrl, {
+              signal: controller.signal,
+            });
+            if (!resultResponse.ok) {
+              throw new Error(`SkillEvaluator result request failed (${resultResponse.status})`);
+            }
+            const metrics = parseSkillEvaluatorMetrics(
+              await resultResponse.json(),
+              record.evaluator.agent,
+            );
+            if (controller.signal.aborted) return;
+            setState({ status: "ready", record, metrics });
+          } catch (error: unknown) {
+            if (controller.signal.aborted) return;
+            const metricsError =
+              error instanceof Error ? error.message : "Unable to read SkillEvaluator result.json";
+            setState({ status: "ready", record, metricsError });
+          }
+        }
       } catch (error: unknown) {
         if (controller.signal.aborted) return;
         setState({
@@ -189,5 +289,11 @@ export function SkillEvaluationReportLoader({
       </div>
     );
   }
-  return <SkillEvaluationReport record={state.record} />;
+  return (
+    <SkillEvaluationReport
+      record={state.record}
+      metrics={state.metrics}
+      metricsError={state.metricsError}
+    />
+  );
 }

@@ -11098,6 +11098,98 @@ a.skills-sh-security-audit-row:focus-visible {
   gap: var(--space-3);
 }
 
+.skill-evaluation-metrics {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.skill-evaluation-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.skill-evaluation-summary > div {
+  display: grid;
+  gap: 5px;
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-muted) 48%, transparent);
+}
+
+.skill-evaluation-summary dt,
+.skill-evaluation-summary span {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+}
+
+.skill-evaluation-summary dt {
+  font-weight: 650;
+}
+
+.skill-evaluation-summary dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-2xl);
+  font-weight: 720;
+  letter-spacing: -0.025em;
+}
+
+.skill-evaluation-table-wrap {
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--r-md);
+}
+
+.skill-evaluation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.skill-evaluation-table caption {
+  padding: var(--space-3) var(--space-4);
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  text-align: left;
+}
+
+.skill-evaluation-table th,
+.skill-evaluation-table td {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.skill-evaluation-table th:first-child {
+  text-align: left;
+}
+
+.skill-evaluation-table thead th {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+}
+
+.skill-evaluation-table tbody th {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.skill-evaluation-table td {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-evaluation-table td.is-positive {
+  color: var(--status-success-fg);
+  font-weight: 700;
+}
+
 .skill-evaluation-artifact-links {
   display: flex;
   flex-wrap: wrap;
@@ -11114,14 +11206,6 @@ a.skills-sh-security-audit-row:focus-visible {
   color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-
-.skill-evaluation-frame {
-  width: 100%;
-  min-height: 820px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: white;
 }
 
 .skill-evaluation-loading,
@@ -11158,8 +11242,14 @@ a.skills-sh-security-audit-row:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .skill-evaluation-frame {
-    min-height: 680px;
+  .skill-evaluation-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .skill-evaluation-summary {
+    grid-template-columns: 1fr;
   }
 }
 

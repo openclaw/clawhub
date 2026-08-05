@@ -99,6 +99,12 @@ function hasPostPublishSearch(searchStr: string) {
   return isPostPublishSearchValue(new URLSearchParams(searchStr).get("published"));
 }
 
+function localEvaluationDemoCommit(searchStr: string) {
+  if (!import.meta.env.DEV) return null;
+  const commit = new URLSearchParams(searchStr).get("evaluationDemoCommit")?.trim();
+  return commit && /^[a-f0-9]{40}$/i.test(commit) ? commit : null;
+}
+
 function formatReportError(error: unknown) {
   if (error && typeof error === "object" && "data" in error) {
     const data = (error as { data?: unknown }).data;
@@ -263,6 +269,7 @@ export function SkillDetailPage({
   const latestVersionId = latestVersion?._id ?? null;
   const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
   const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
+  const evaluationDemoCommit = localEvaluationDemoCommit(searchStr);
   const localEvaluationSource = useMemo(
     () =>
       import.meta.env.DEV &&
@@ -271,7 +278,7 @@ export function SkillDetailPage({
       githubBackedFields.githubPath
         ? {
             repository: "nvidia/skills",
-            commit: githubBackedFields.githubCurrentCommit,
+            commit: evaluationDemoCommit ?? githubBackedFields.githubCurrentCommit,
             path: githubBackedFields.githubPath,
           }
         : null,
@@ -279,6 +286,7 @@ export function SkillDetailPage({
       githubBackedFields?.githubCurrentCommit,
       githubBackedFields?.githubPath,
       githubBackedFields?.githubSourceRepo,
+      evaluationDemoCommit,
     ],
   );
   const modInfo = result?.moderationInfo ?? null;
