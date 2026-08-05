@@ -38,6 +38,7 @@ import {
   type InstallResolverSource,
   type SkillInstallResolution,
 } from "../lib/installResolver";
+import { normalizePublisherHandle } from "../lib/publishers";
 import { MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { getRuntimeRolloutCapabilities } from "../lib/rolloutCapabilities";
 import type {
@@ -689,6 +690,7 @@ type SkillVersionFingerprintSummary = {
 
 type SecurityVerdictRequestItem = {
   slug: string;
+  ownerHandle?: string;
   version: string;
 };
 
@@ -1012,10 +1014,15 @@ function parseSecurityVerdictItems(
     if (typeof raw.slug !== "string" || typeof raw.version !== "string") {
       return { ok: false, message: `items[${index}] requires slug and version strings` };
     }
+    const rawOwnerHandle = raw.ownerHandle;
+    if (rawOwnerHandle !== undefined && typeof rawOwnerHandle !== "string") {
+      return { ok: false, message: `Invalid ownerHandle at items[${index}]` };
+    }
     if ("tag" in raw) {
       return { ok: false, message: `items[${index}] uses version only; tag is not supported` };
     }
     const slug = raw.slug.trim().toLowerCase();
+    const ownerHandle = normalizePublisherHandle(rawOwnerHandle);
     const version = raw.version.trim();
     if (!validateSlug(slug)) {
       return { ok: false, message: `Invalid slug at items[${index}]` };
@@ -1023,10 +1030,10 @@ function parseSecurityVerdictItems(
     if (!isValidRequestedVersion(version)) {
       return { ok: false, message: `Invalid version at items[${index}]` };
     }
-    const key = `${slug}@${version}`;
+    const key = `${ownerHandle ? `@${ownerHandle}/` : ""}${slug}@${version}`;
     if (seen.has(key)) return { ok: false, message: `Duplicate item: ${key}` };
     seen.add(key);
-    parsed.push({ slug, version });
+    parsed.push({ slug, ...(ownerHandle ? { ownerHandle } : {}), version });
   }
 
   return { ok: true, items: parsed };
@@ -1140,6 +1147,7 @@ function buildSecurityVerdictError(
     decision: "fail",
     reasons: [reason],
     requestedSlug: item.slug,
+    ...(item.ownerHandle ? { requestedOwnerHandle: item.ownerHandle } : {}),
     slug: item.slug,
     requestedVersion: item.version,
     version: null,
@@ -1165,6 +1173,7 @@ async function buildSecurityVerdictItem(
     internalRefs.skills.getSecurityVerdictTargetInternal,
     {
       slug: item.slug,
+      ...(item.ownerHandle ? { ownerHandle: item.ownerHandle } : {}),
       version: item.version,
     },
   );
@@ -1204,6 +1213,7 @@ async function buildSecurityVerdictItem(
     decision: reasons.length === 0 ? "pass" : "fail",
     reasons,
     requestedSlug: item.slug,
+    ...(item.ownerHandle ? { requestedOwnerHandle: item.ownerHandle } : {}),
     slug: result.skill.slug,
     displayName: result.skill.displayName,
     publisherHandle: result.owner?.handle ?? null,

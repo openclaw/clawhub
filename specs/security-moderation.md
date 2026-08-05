@@ -390,6 +390,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   scanner evidence grouped under `security.signals`. Clients should key install
   decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
   re-deriving trust from individual signal payloads.
+- Exact-version security verdict reads preserve the complete skill identity.
+  Batch callers may qualify a request with the publisher handle; owner, slug,
+  and version form the dedupe identity, and qualified success or failure results
+  echo the normalized requested owner. Unqualified reads retain legacy slug
+  resolution, including fail-closed ambiguity, for older clients.
 - ClawScan verdicts treat purpose-aligned notes as user guidance, not a
   suspicious verdict. Medium-only material concerns are visible
   `flagged.review` guidance and must not set `isSuspicious`; high or critical

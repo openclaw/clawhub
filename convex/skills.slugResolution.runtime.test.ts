@@ -72,6 +72,50 @@ async function createPublisherSlugFixture(options: {
   return { t, ...ids };
 }
 
+async function createOwnerCollisionVerdictFixture() {
+  const t = convexTest(schema, modules);
+  const ids = await t.run(async (ctx) => {
+    const owners = [];
+    for (const handle of ["alice", "bob"] as const) {
+      const userId = await ctx.db.insert("users", { handle });
+      const publisherId = await ctx.db.insert("publishers", {
+        kind: "user",
+        handle,
+        displayName: handle,
+        linkedUserId: userId,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.patch(userId, { personalPublisherId: publisherId });
+      const skillId = await ctx.db.insert("skills", {
+        slug: "shared-skill",
+        displayName: `${handle} skill`,
+        ownerUserId: userId,
+        ownerPublisherId: publisherId,
+        tags: {},
+        badges: {},
+        moderationStatus: "active",
+        stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const versionId = await ctx.db.insert("skillVersions", {
+        skillId,
+        version: "1.2.3",
+        changelog: "Initial",
+        files: [],
+        parsed: { frontmatter: {} },
+        createdBy: userId,
+        createdAt: 1,
+      });
+      await ctx.db.patch(skillId, { latestVersionId: versionId });
+      owners.push({ handle, skillId, versionId });
+    }
+    return owners;
+  });
+  return { t, owners: ids };
+}
+
 it("resolves the active skill when retained same-publisher history shares its slug", async () => {
   const fixture = await createPublisherSlugFixture({ activeCount: 1, softDeletedCount: 2 });
 
@@ -111,4 +155,37 @@ it("fails closed when only multiple soft-deleted skills share a publisher slug",
       slug: "same-slug",
     }),
   ).rejects.toThrow(/soft-deleted publisher slug history is ambiguous/i);
+});
+
+it("resolves security verdict targets by owner when slug and version collide", async () => {
+  const fixture = await createOwnerCollisionVerdictFixture();
+
+  for (const owner of fixture.owners) {
+    const verdictTarget = await fixture.t.query(internal.skills.getSecurityVerdictTargetInternal, {
+      slug: "shared-skill",
+      ownerHandle: owner.handle,
+      version: "1.2.3",
+    });
+    const verifyTarget = await fixture.t.query(internal.skills.getVerifyTargetBySlugInternal, {
+      slug: "shared-skill",
+      ownerHandle: owner.handle,
+    });
+
+    expect(verdictTarget).toMatchObject({
+      skill: { _id: owner.skillId },
+      owner: { handle: owner.handle },
+      version: { _id: owner.versionId, version: "1.2.3" },
+    });
+    expect(verifyTarget).toMatchObject({
+      skill: { _id: owner.skillId },
+      owner: { handle: owner.handle },
+    });
+  }
+
+  await expect(
+    fixture.t.query(internal.skills.getSecurityVerdictTargetInternal, {
+      slug: "shared-skill",
+      version: "1.2.3",
+    }),
+  ).resolves.toBeNull();
 });

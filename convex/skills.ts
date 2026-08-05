@@ -3413,9 +3413,9 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
 }
 
 export const getSecurityVerdictTargetInternal = internalQuery({
-  args: { slug: v.string(), version: v.string() },
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()), version: v.string() },
   handler: async (ctx, args) => {
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     const skill = resolved.skill;
     if (!skill) return null;
 

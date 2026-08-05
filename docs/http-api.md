@@ -446,11 +446,13 @@ Returns the Skill Card verification envelope used by `clawhub skill verify`.
 
 Query params:
 
+- `ownerHandle` (optional): publisher handle for owner-qualified resolution. Use this when multiple publishers share the slug.
 - `version` (optional): specific version string.
 - `tag` (optional): resolve a tagged version (for example `latest`).
 
 Notes:
 
+- `ownerHandle` is normalized by trimming whitespace, removing leading `@` characters, and lowercasing.
 - `ok` is `true` only when the selected version has a generated Skill Card, is not malware-blocked by moderation, and ClawScan verification is clean.
 - Skill identity, publisher identity, and selected version metadata are top-level envelope fields (`slug`, `displayName`, `publisherHandle`, `version`, `resolvedFrom`, `tag`, `createdAt`) so shell automation can read them without unpacking nested wrappers.
 - `security` is the top-level ClawScan/security verdict. Automation should key off `ok`, `decision`, `reasons`, and `security.status`.
@@ -468,14 +470,20 @@ Request:
 
 ```json
 {
-  "items": [{ "slug": "gifgrep", "version": "1.2.3" }]
+  "items": [
+    { "slug": "gifgrep", "ownerHandle": "steipete", "version": "1.2.3" },
+    { "slug": "gifgrep", "ownerHandle": "another-publisher", "version": "1.2.3" }
+  ]
 }
 ```
 
 Notes:
 
-- `items` must contain 1-100 unique `{ slug, version }` pairs.
-- Results are per item; one missing skill or version does not fail the whole response.
+- `ownerHandle` is optional. When present, it selects that publisher's skill before exact-version resolution; omitting it preserves legacy unqualified slug resolution.
+- Owner handles are normalized by trimming whitespace, removing leading `@` characters, and lowercasing.
+- `items` must contain 1-100 unique `{ ownerHandle?, slug, version }` combinations. The same slug and version may appear under different owners.
+- Qualified success and failure items echo the normalized owner as `requestedOwnerHandle`; unqualified items omit that field.
+- Results are per item; one missing skill, owner-qualified skill, or version does not fail the whole response.
 - The response is security-only. It does not include Skill Card data, generated card status, artifact file lists, or detailed scanner payloads.
 - `security.signals` contains status-level supporting evidence only; use `/scan` or the ClawHub security-audit page for full scanner details.
 - `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
@@ -493,6 +501,7 @@ Response:
       "decision": "pass",
       "reasons": [],
       "requestedSlug": "gifgrep",
+      "requestedOwnerHandle": "steipete",
       "slug": "gifgrep",
       "displayName": "GifGrep",
       "publisherHandle": "steipete",
@@ -519,6 +528,7 @@ Response:
       "decision": "fail",
       "reasons": ["version.not_found"],
       "requestedSlug": "missing-version",
+      "requestedOwnerHandle": "another-publisher",
       "requestedVersion": "1.0.0",
       "error": { "code": "version_not_found", "message": "Version not found" },
       "security": null

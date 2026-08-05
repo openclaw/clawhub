@@ -6331,6 +6331,67 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery.mock.calls.some(([, args]) => "skillId" in args)).toBe(false);
   });
 
+  it("keeps owner-qualified bulk verdicts distinct for shared slug versions", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      const ownerHandle = args.ownerHandle as string;
+      return {
+        skill: {
+          _id: `skills:${ownerHandle}`,
+          slug: "weather",
+          displayName: `${ownerHandle} Weather`,
+        },
+        owner: {
+          _id: `publishers:${ownerHandle}`,
+          handle: ownerHandle,
+          displayName: ownerHandle,
+        },
+        moderationInfo: null,
+        version: {
+          _id: `skillVersions:${ownerHandle}`,
+          version: "1.2.3",
+          createdAt: 1,
+          llmAnalysis: { status: "clean", verdict: "clean", checkedAt: 2 },
+        },
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillSecurityVerdictsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/security-verdicts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items: [
+            { slug: "weather", ownerHandle: "@Alice", version: "1.2.3" },
+            { slug: "weather", ownerHandle: "bob", version: "1.2.3" },
+          ],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items).toEqual([
+      expect.objectContaining({
+        requestedOwnerHandle: "alice",
+        requestedSlug: "weather",
+        requestedVersion: "1.2.3",
+        publisherHandle: "alice",
+      }),
+      expect.objectContaining({
+        requestedOwnerHandle: "bob",
+        requestedSlug: "weather",
+        requestedVersion: "1.2.3",
+        publisherHandle: "bob",
+      }),
+    ]);
+    expect(runQuery.mock.calls.map(([, args]) => args)).toEqual([
+      { slug: "weather", ownerHandle: "alice", version: "1.2.3" },
+      { slug: "weather", ownerHandle: "bob", version: "1.2.3" },
+    ]);
+  });
+
   it("uses the public site origin for production bulk verdict links", async () => {
     vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
     const runQuery = vi.fn(async () => ({
@@ -6472,7 +6533,7 @@ describe("httpApiV1 handlers", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           items: [
-            { slug: "missing", version: "1.0.0" },
+            { slug: "missing", ownerHandle: "@Missing-Owner", version: "1.0.0" },
             { slug: "no-version", version: "1.0.0" },
             { slug: "soft", version: "2.0.0" },
           ],
@@ -6486,6 +6547,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.items.map((item: { ok: boolean }) => item.ok)).toEqual([false, false, false]);
     expect(json.items[0]).toMatchObject({
       requestedSlug: "missing",
+      requestedOwnerHandle: "missing-owner",
       requestedVersion: "1.0.0",
       decision: "fail",
       reasons: ["skill.not_found"],
@@ -6630,6 +6692,35 @@ describe("httpApiV1 handlers", () => {
     );
     expect(duplicate.status).toBe(400);
     expect(await duplicate.text()).toBe("Duplicate item: demo@1.0.0");
+
+    const qualifiedDuplicate = await __handlers.skillSecurityVerdictsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/security-verdicts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items: [
+            { slug: "demo", ownerHandle: "@Alice", version: "1.0.0" },
+            { slug: "demo", ownerHandle: "alice", version: "1.0.0" },
+          ],
+        }),
+      }),
+    );
+    expect(qualifiedDuplicate.status).toBe(400);
+    expect(await qualifiedDuplicate.text()).toBe("Duplicate item: @alice/demo@1.0.0");
+
+    const invalidOwner = await __handlers.skillSecurityVerdictsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/security-verdicts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          items: [{ slug: "demo", ownerHandle: 42, version: "1.0.0" }],
+        }),
+      }),
+    );
+    expect(invalidOwner.status).toBe(400);
+    expect(await invalidOwner.text()).toBe("Invalid ownerHandle at items[0]");
 
     const ambiguous = await __handlers.skillSecurityVerdictsV1Handler(
       makeCtx({ runQuery, runMutation }),
