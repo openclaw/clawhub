@@ -108,6 +108,14 @@ describe("searchText", () => {
       expect(tokenize("時々")).toEqual(["時々"]);
     });
 
+    it("keeps the marks attached when Intl.Segmenter is unavailable", () => {
+      // segmentCJKByChar is the no-Segmenter fallback. Emitting ー or 々 on their own
+      // would leave one-character tokens that exploratory matching discards.
+      expect(__test.segmentCJKByChar("データベース")).toEqual(["デー", "タ", "ベー", "ス"]);
+      expect(__test.segmentCJKByChar("人々")).toEqual(["人々"]);
+      expect(__test.segmentCJKByChar("時々の記録")).toEqual(["時々", "の", "記", "録"]);
+    });
+
     it("matches Japanese query tokens against Japanese skill names", () => {
       const queryTokens = tokenize("データベース");
       expect(matchesExactTokens(queryTokens, ["データベース管理ツール"])).toBe(true);

@@ -33,6 +33,9 @@ vi.mock("./_generated/api", () => ({
       backfillSkillSearchDigestModerationVerdictsInternal: Symbol(
         "backfillSkillSearchDigestModerationVerdictsInternal",
       ),
+      backfillSkillSearchDigestFirstTokensInternal: Symbol(
+        "backfillSkillSearchDigestFirstTokensInternal",
+      ),
       getEmptySkillCleanupPageInternal: Symbol("getEmptySkillCleanupPageInternal"),
       applyEmptySkillCleanupInternal: Symbol("applyEmptySkillCleanupInternal"),
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
@@ -75,6 +78,7 @@ vi.mock("./lib/skillSummary", () => ({
 const {
   backfillLatestVersionSummaryInternal,
   backfillSkillSearchDigestModerationVerdictsInternal,
+  backfillSkillSearchDigestFirstTokensInternal,
   backfillPublisherStatsInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
@@ -2004,5 +2008,119 @@ describe("maintenance empty skill nominations", () => {
         sampleSlugs: ["spam-a", "spam-b"],
       },
     ]);
+  });
+});
+
+describe("backfillSkillSearchDigestFirstTokensInternal", () => {
+  it("repairs digest rows whose stored first tokens predate the tokenizer", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+        {
+          _id: "skillSearchDigest:fresh",
+          skillId: "skills:fresh",
+          normalizedSlugFirstToken: "deploy",
+          normalizedDisplayNameFirstToken: "deploy",
+        },
+        {
+          _id: "skillSearchDigest:orphan",
+          skillId: "skills:missing",
+          normalizedSlugFirstToken: "gone",
+          normalizedDisplayNameFirstToken: "gone",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "skills:stale",
+        slug: "database",
+        displayName: "データベース管理",
+      })
+      .mockResolvedValueOnce({
+        _id: "skills:fresh",
+        slug: "deploy",
+        displayName: "Deploy helper",
+      })
+      .mockResolvedValueOnce(null);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { cursor: "start", batchSize: 25 },
+    );
+
+    expect(result).toEqual({
+      scanned: 3,
+      patched: 1,
+      missingSkills: 1,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: false,
+    });
+    expect(query).toHaveBeenCalledWith("skillSearchDigest");
+    expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("skillSearchDigest:stale", {
+      normalizedSlugFirstToken: "database",
+      normalizedDisplayNameFirstToken: "データベース",
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      { cursor: "next-page", batchSize: 25, dryRun: false },
+    );
+  });
+
+  it("reports would-be patches without writing or scheduling in dry run mode", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:stale",
+      slug: "database",
+      displayName: "データベース管理",
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { dryRun: true },
+    );
+
+    expect(result.patched).toBe(1);
+    expect(result.dryRun).toBe(true);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 });

@@ -30,6 +30,7 @@ import {
 } from "./lib/skillQuality";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
+import { getFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
 
 const DEFAULT_BATCH_SIZE = 50;
@@ -2675,6 +2676,90 @@ export const backfillSkillSearchDigestModerationVerdicts: ReturnType<typeof acti
     assertRole(user, ["admin"]);
     return await ctx.runMutation(
       internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+      args,
+    );
+  },
+});
+
+// Recompute the stored first-token fields on skillSearchDigest rows. Those values are
+// produced by the search tokenizer, so a tokenizer change leaves already-written rows
+// holding tokens the current search no longer looks for. Run once after deploying such a
+// change:
+//   npx convex run maintenance:backfillSkillSearchDigestFirstTokens --prod
+export const backfillSkillSearchDigestFirstTokensInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const dryRun = args.dryRun ?? false;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    let missingSkills = 0;
+    for (const digest of page) {
+      const skill = await ctx.db.get(digest.skillId);
+      if (!skill) {
+        missingSkills++;
+        continue;
+      }
+
+      const normalizedSlugFirstToken = getFirstSearchToken(skill.slug);
+      const normalizedDisplayNameFirstToken = getFirstSearchToken(skill.displayName);
+      if (
+        digest.normalizedSlugFirstToken === normalizedSlugFirstToken &&
+        digest.normalizedDisplayNameFirstToken === normalizedDisplayNameFirstToken
+      ) {
+        continue;
+      }
+
+      patched++;
+      if (!dryRun) {
+        await ctx.db.patch(digest._id, {
+          normalizedSlugFirstToken,
+          normalizedDisplayNameFirstToken,
+        });
+      }
+    }
+
+    if (!dryRun && !isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          dryRun,
+        },
+      );
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      missingSkills,
+      cursor: continueCursor,
+      isDone,
+      dryRun,
+    };
+  },
+});
+
+export const backfillSkillSearchDigestFirstTokens: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
       args,
     );
   },
