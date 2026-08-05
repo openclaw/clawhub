@@ -17,6 +17,7 @@ type SkillListItemProps = {
   ownerHandle?: string | null;
   owner?: PublicPublisher | null;
   href?: string;
+  showOfficialBadge?: boolean;
 };
 
 export function SkillListItem({
@@ -24,6 +25,7 @@ export function SkillListItem({
   ownerHandle,
   owner,
   href: hrefOverride,
+  showOfficialBadge = true,
 }: SkillListItemProps) {
   const handle = ownerHandle ?? owner?.handle ?? null;
   const ownerSegment = handle?.trim() || String(skill.ownerPublisherId ?? skill.ownerUserId);
@@ -49,7 +51,7 @@ export function SkillListItem({
             </span>
             {handle ? <span className="skill-list-item-owner">@{handle}</span> : null}
           </span>
-          {isOfficial ? <OfficialBadge /> : null}
+          {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
           {badges
             .filter((badge) => badge !== "Official")
             .map((badge) => (

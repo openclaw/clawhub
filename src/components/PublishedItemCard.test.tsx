@@ -102,6 +102,20 @@ describe("PublishedItemCard", () => {
     expect(screen.queryByText("Official")).toBeNull();
   });
 
+  it.each([baseSkill, basePlugin])(
+    "can hide the official mark from publisher catalog rows",
+    (item) => {
+      render(
+        <PublishedItemCard
+          item={{ ...item, icon: null, isOfficial: true }}
+          showOfficialBadge={false}
+        />,
+      );
+
+      expect(screen.queryByLabelText("Official")).toBeNull();
+    },
+  );
+
   it("does not add source-backed chrome to GitHub-backed skill rows", () => {
     render(
       <PublishedItemCard

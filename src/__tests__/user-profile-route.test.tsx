@@ -262,6 +262,37 @@ describe("user profile route", () => {
     expect(screen.queryByRole("searchbox", { name: /catalog search/i })).toBeNull();
   });
 
+  it("hides official marks from skill rows on organization pages", async () => {
+    paginatedQueryMock.mockReturnValue({
+      loadMore: vi.fn(),
+      results: [
+        {
+          _id: "skills:gpu",
+          kind: "skill",
+          displayName: "GPU Helper",
+          summary: "GPU tasks",
+          topics: [],
+          icon: null,
+          href: "/nvidia/gpu-helper",
+          installs: 1,
+          stars: 0,
+          isOfficial: true,
+          updatedAt: 1,
+        },
+      ],
+      status: "Exhausted",
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByText("GPU Helper")).toBeTruthy();
+    expect(
+      within(screen.getByLabelText("Publisher catalog")).queryByLabelText("Official"),
+    ).toBeNull();
+  });
+
   it("uses downloads sort for published catalog pages by default", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;

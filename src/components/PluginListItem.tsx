@@ -15,6 +15,7 @@ type PluginListItemProps = {
   item: PackageListItem;
   variant?: "list" | "card";
   href?: string;
+  showOfficialBadge?: boolean;
 };
 
 const PLUGIN_CATEGORIES_BY_SLUG = new Map(
@@ -41,7 +42,12 @@ function getPluginCategories(item: PackageListItem) {
   });
 }
 
-export function PluginListItem({ item, variant = "list", href }: PluginListItemProps) {
+export function PluginListItem({
+  item,
+  variant = "list",
+  href,
+  showOfficialBadge = true,
+}: PluginListItemProps) {
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
   const categories = getPluginCategories(item);
@@ -76,7 +82,7 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
               <span className="skill-card-owner">
                 {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
               </span>
-              {item.isOfficial ? <OfficialBadge /> : null}
+              {showOfficialBadge && item.isOfficial ? <OfficialBadge /> : null}
             </span>
           </div>
         </div>
@@ -131,7 +137,7 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
               <span className="skill-list-item-owner">@{item.ownerHandle}</span>
             ) : null}
           </span>
-          {item.isOfficial ? <OfficialBadge /> : null}
+          {showOfficialBadge && item.isOfficial ? <OfficialBadge /> : null}
           <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
         </div>
         <p className="skill-list-item-summary">

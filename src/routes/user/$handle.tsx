@@ -918,6 +918,7 @@ export function PublisherProfilePage({
                   groups={catalogGroups}
                   selectedGroup={selectedCatalogGroup}
                   onSelectedGroupChange={setSelectedCatalogGroup}
+                  showOfficialBadge={publisher.kind !== "org"}
                   totalCount={catalogSearch.trim() ? undefined : catalogCount}
                   footer={
                     showCatalogLoadMore ? (
@@ -933,7 +934,10 @@ export function PublisherProfilePage({
                 />
               ) : filteredItems.length > 0 ? (
                 <>
-                  <PublisherCatalogItems items={filteredItems} />
+                  <PublisherCatalogItems
+                    items={filteredItems}
+                    showOfficialBadge={publisher.kind !== "org"}
+                  />
                   {showCatalogLoadMore ? (
                     <div className="publisher-profile-load-more">
                       <Button type="button" onClick={() => activeLoadMore(12)}>
@@ -1119,19 +1123,35 @@ export function shouldShowPublisherCatalogLoadMore({
   );
 }
 
-function PublisherCatalogItems({ items }: { items: PublicPublisherCatalogItem[] }) {
+function PublisherCatalogItems({
+  items,
+  showOfficialBadge = true,
+}: {
+  items: PublicPublisherCatalogItem[];
+  showOfficialBadge?: boolean;
+}) {
   return (
     <div className="browse-list-stack">
       <div className="results-list">
         {items.map((item) => (
-          <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} />
+          <PublishedItemCard
+            key={`${item.kind}:${item._id}`}
+            item={item}
+            showOfficialBadge={showOfficialBadge}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function PublisherCatalogGroupSection({ group }: { group: PublisherCatalogGroup }) {
+function PublisherCatalogGroupSection({
+  group,
+  showOfficialBadge,
+}: {
+  group: PublisherCatalogGroup;
+  showOfficialBadge?: boolean;
+}) {
   return (
     <section
       className="publisher-profile-manifest-section"
@@ -1141,7 +1161,7 @@ function PublisherCatalogGroupSection({ group }: { group: PublisherCatalogGroup 
         <h3 id={`catalog-group-${group.key}`}>{group.title}</h3>
         {group.description ? <p>{group.description}</p> : null}
       </header>
-      <PublisherCatalogItems items={group.items} />
+      <PublisherCatalogItems items={group.items} showOfficialBadge={showOfficialBadge} />
     </section>
   );
 }
@@ -1152,12 +1172,14 @@ export function PublisherGroupedCatalog({
   onSelectedGroupChange,
   footer,
   totalCount,
+  showOfficialBadge,
 }: {
   groups: PublisherCatalogGroup[];
   selectedGroup: string;
   onSelectedGroupChange: (value: string) => void;
   footer?: ReactNode;
   totalCount?: number;
+  showOfficialBadge?: boolean;
 }) {
   const activeGroup =
     selectedGroup === "all" ? null : (groups.find((group) => group.key === selectedGroup) ?? null);
@@ -1179,11 +1201,15 @@ export function PublisherGroupedCatalog({
       {selectedGroup === "all" ? (
         <div className="publisher-profile-catalog-sections">
           {groups.map((group) => (
-            <PublisherCatalogGroupSection key={group.key} group={group} />
+            <PublisherCatalogGroupSection
+              key={group.key}
+              group={group}
+              showOfficialBadge={showOfficialBadge}
+            />
           ))}
         </div>
       ) : activeGroup ? (
-        <PublisherCatalogGroupSection group={activeGroup} />
+        <PublisherCatalogGroupSection group={activeGroup} showOfficialBadge={showOfficialBadge} />
       ) : null}
       {footer}
     </div>
@@ -1365,12 +1391,25 @@ function catalogItemToPackageListItem(item: PublicPublisherCatalogItem): Package
   };
 }
 
-export function PublishedItemCard({ item }: { item: PublicPublisherCatalogItem }) {
+export function PublishedItemCard({
+  item,
+  showOfficialBadge = true,
+}: {
+  item: PublicPublisherCatalogItem;
+  showOfficialBadge?: boolean;
+}) {
   if (item.kind === "plugin") {
     const plugin = catalogItemToPackageListItem(item);
-    return <PluginListItem item={plugin} variant="list" href={item.href} />;
+    return (
+      <PluginListItem
+        item={plugin}
+        variant="list"
+        href={item.href}
+        showOfficialBadge={showOfficialBadge}
+      />
+    );
   }
 
   const skill = catalogItemToPublicSkill(item);
-  return <SkillListItem skill={skill} href={item.href} />;
+  return <SkillListItem skill={skill} href={item.href} showOfficialBadge={showOfficialBadge} />;
 }
