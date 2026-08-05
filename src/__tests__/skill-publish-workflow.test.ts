@@ -24,6 +24,39 @@ describe("skill publish workflow", () => {
     expect(workflow).not.toContain("--bump");
   });
 
+  it("forwards optional catalog metadata through the argument list", () => {
+    const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
+    const parsed = parseYaml(workflow) as {
+      on: {
+        workflow_call: {
+          inputs: Record<string, { type: string; required: boolean; default: string }>;
+        };
+      };
+    };
+    const inputs = parsed.on.workflow_call.inputs;
+
+    for (const name of ["changelog", "categories", "topics"] as const) {
+      const envName = `INPUT_${name.toUpperCase()}`;
+
+      expect(inputs[name]).toMatchObject({ type: "string", required: false, default: "" });
+      expect(workflow).toContain(`          ${envName}: \${{ inputs.${name} }}`);
+      expect(workflow).toContain(`          ${name} = os.environ["${envName}"].strip()`);
+      expect(workflow).toContain(
+        `              if ${name}:\n                  command += ["--${name}", ${name}]`,
+      );
+    }
+  });
+
+  it("logs the resolved command without routing it through a shell", () => {
+    const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
+
+    expect(workflow).toContain(
+      "print(f\"Resolved publish command: {' '.join(shlex.quote(part) for part in command)}\", flush=True)",
+    );
+    expect(workflow).toContain("completed = subprocess.run(command, cwd=workspace");
+    expect(workflow).not.toContain("shell=True");
+  });
+
   it("preserves publish output when a target fails", () => {
     const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
 

@@ -28,6 +28,21 @@ on:
         required: false
         type: string
         default: latest
+      changelog:
+        description: Optional changelog text applied to every skill published by this run.
+        required: false
+        type: string
+        default: ""
+      categories:
+        description: Optional comma-separated category slugs applied to every skill published by this run.
+        required: false
+        type: string
+        default: ""
+      topics:
+        description: Optional comma-separated topics applied to every skill published by this run.
+        required: false
+        type: string
+        default: ""
       registry:
         description: ClawHub registry URL.
         required: false
@@ -175,6 +190,9 @@ jobs:
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_OWNER: ${{ inputs.owner }}
           INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+          INPUT_CATEGORIES: ${{ inputs.categories }}
+          INPUT_TOPICS: ${{ inputs.topics }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
           INPUT_REF: ${{ inputs.ref }}
@@ -184,6 +202,7 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import shlex
           import subprocess
           import sys
           from pathlib import Path
@@ -233,6 +252,9 @@ jobs:
           dry_run = os.environ["INPUT_DRY_RUN"] == "true"
           owner = os.environ["INPUT_OWNER"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
+          changelog = os.environ["INPUT_CHANGELOG"].strip()
+          categories = os.environ["INPUT_CATEGORIES"].strip()
+          topics = os.environ["INPUT_TOPICS"].strip()
 
           results = {"wouldPublish": [], "published": [], "alreadySynced": [], "skipped": [], "failed": []}
           status_keys = {
@@ -260,8 +282,18 @@ jobs:
                   command += ["--owner", owner]
               if tags:
                   command += ["--tags", tags]
+              if changelog:
+                  command += ["--changelog", changelog]
+              if categories:
+                  command += ["--categories", categories]
+              if topics:
+                  command += ["--topics", topics]
               if source_ref:
                   command += ["--source-ref", source_ref]
+
+              # Log-only: the list above is what actually runs, so the quoting here never
+              # reaches a shell. Without it a forwarded flag is invisible in the run logs.
+              print(f"Resolved publish command: {' '.join(shlex.quote(part) for part in command)}", flush=True)
 
               completed = subprocess.run(command, cwd=workspace, capture_output=True, text=True)
               if completed.returncode != 0:
