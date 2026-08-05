@@ -62,6 +62,19 @@ function completedRecord(recordSource: typeof source, recordContentHash: string,
   };
 }
 
+function skippedRecord(
+  recordSource: typeof source,
+  recordContentHash: string,
+  model: string,
+  message: string,
+) {
+  return {
+    ...pendingRecord(recordSource, recordContentHash, model),
+    state: "skipped",
+    reason: { code: "skipped", message },
+  };
+}
+
 describe("local SkillEvaluator report loading", () => {
   it("binds the manifest URL to the exact repository, content hash, and skill path", () => {
     expect(buildLocalSkillEvaluationManifestUrl(source, contentHash)).toBe(
@@ -166,7 +179,7 @@ describe("local SkillEvaluator report loading", () => {
     );
   });
 
-  it("keeps completed provenance visible when result.json metrics are unavailable", async () => {
+  it("shows a metrics error when result.json is unavailable", async () => {
     const index = {
       schemaVersion: 1,
       evaluations: [{ ...source, contentHash }],
@@ -180,14 +193,11 @@ describe("local SkillEvaluator report loading", () => {
 
     render(<SkillEvaluationReportLoader source={source} fetchImpl={fetchImpl} />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Evaluation completed")).toBeTruthy();
-    });
-    expect(screen.getByText("Metrics unavailable")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "result.json" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Metrics unavailable")).toBeTruthy());
+    expect(screen.queryByRole("link", { name: "result.json" })).toBeNull();
   });
 
-  it("shows completed provenance before a slow result.json request finishes", async () => {
+  it("shows the evaluation context before a slow result.json request finishes", async () => {
     const index = {
       schemaVersion: 1,
       evaluations: [{ ...source, contentHash }],
@@ -201,10 +211,9 @@ describe("local SkillEvaluator report loading", () => {
 
     render(<SkillEvaluationReportLoader source={source} fetchImpl={fetchImpl} />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Evaluation completed")).toBeTruthy();
-    });
-    expect(screen.getByRole("link", { name: "result.json" })).toBeTruthy();
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    expect(screen.getByRole("heading", { name: "Evals" })).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("does not let an aborted request replace the next skill's report", async () => {
@@ -230,9 +239,11 @@ describe("local SkillEvaluator report loading", () => {
         });
       }
       if (url.includes(nextContentHash)) {
-        return Response.json(pendingRecord(nextSource, nextContentHash, "new-model"));
+        return Response.json(
+          skippedRecord(nextSource, nextContentHash, "new-model", "New skill report"),
+        );
       }
-      return Response.json(pendingRecord(source, contentHash, "old-model"));
+      return Response.json(skippedRecord(source, contentHash, "old-model", "Old skill report"));
     });
 
     const { rerender } = render(
@@ -240,7 +251,7 @@ describe("local SkillEvaluator report loading", () => {
     );
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
     rerender(<SkillEvaluationReportLoader source={nextSource} fetchImpl={fetchImpl} />);
-    await waitFor(() => expect(screen.getByText("new-model")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("New skill report")).toBeTruthy());
 
     resolveFirstIndex(
       Response.json({
@@ -249,8 +260,8 @@ describe("local SkillEvaluator report loading", () => {
       }),
     );
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
-    expect(screen.getByText("new-model")).toBeTruthy();
-    expect(screen.queryByText("old-model")).toBeNull();
+    expect(screen.getByText("New skill report")).toBeTruthy();
+    expect(screen.queryByText("Old skill report")).toBeNull();
   });
 
   it("refreshes a pending manifest until it reaches a terminal state", async () => {
@@ -283,7 +294,8 @@ describe("local SkillEvaluator report loading", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(PENDING_EVALUATION_POLL_INTERVAL_MS);
       });
-      expect(screen.getByText("Evaluation completed")).toBeTruthy();
+      expect(screen.queryByText("Evaluation in progress")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Evals" })).toBeTruthy();
       expect(fetchImpl).toHaveBeenCalledTimes(4);
     } finally {
       vi.useRealTimers();
