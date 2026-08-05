@@ -451,7 +451,7 @@
 
     "@oozcitak/util": ["@oozcitak/util@10.0.0", "", {}, "sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA=="],
 
-    "@openclaw/carapace": ["@openclaw/carapace@github:openclaw/carapace#3a8bcfb", {}, "openclaw-carapace-3a8bcfb"],
+    "@openclaw/carapace": ["@openclaw/carapace@github:openclaw/carapace#3a8bcfb", {}, "openclaw-carapace-3a8bcfb", "sha512-UD1qbCzSKMlvDGt4VYH41dtSf77vGZCzXkpGzmVevpanBM3flhAHU/TIedvm+eYadts49wt3+ipQK5Jmh70ZDw=="],
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
