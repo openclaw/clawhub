@@ -331,6 +331,13 @@ Notes:
 - Categories and topics are comma-separated and validated server-side, so an
   unknown category slug or a topic over the per-skill limit fails the publish
   after the run has already built and validated the skill.
+- To remove categories or topics already on a skill, set `clear_categories: true`
+  or `clear_topics: true`. A workflow input cannot distinguish `categories: ""`
+  from an omitted `categories`, so the empty string keeps meaning "leave them
+  alone" and the boolean is what sends the CLI's `--categories ""`. Setting a
+  non-empty value and its `clear_` flag together fails the run rather than
+  picking one silently. `changelog` has no such flag: the CLI already reads an
+  omitted `--changelog` as empty.
 - The run logs echo the resolved `skill publish` command for each target, so a
   forwarded flag is visible in CI output. Keep the values non-sensitive.
 - V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
