@@ -69,6 +69,30 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("still skips an unchanged skill when only a changelog is supplied", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "changelog-only");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        match: { version: "1.2.3" },
+        latestVersion: { version: "1.2.3" },
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "changelog-only", {
+        changelog: "Describe the changes in this release.",
+      });
+
+      // changelog is not part of hasExplicitCatalogMetadata, so unlike categories and
+      // topics it does not turn a catalog-wide run into a release of every skill.
+      expect(result).toMatchObject({ status: "unchanged", version: "1.2.3" });
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("publishes explicit catalog metadata when the local skill content is unchanged", async () => {
     const workdir = await makeTmpWorkdir();
     try {

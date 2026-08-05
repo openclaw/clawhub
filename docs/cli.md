@@ -328,6 +328,14 @@ Notes:
   flags and are optional. Omitting them leaves the published metadata untouched.
 - Like `tags`, these three apply to **every** skill the run publishes. Pass
   `skill_path` when the values describe one skill rather than the whole catalog.
+- **`categories` and `topics` suspend the "skips unchanged skills" behavior
+  described above.** The CLI treats supplied catalog metadata as authoritative
+  and bypasses its already-published short-circuit, so a catalog-wide run
+  publishes a **new patch version of every selected skill**, including skills
+  whose files did not change. The `clear_categories` and `clear_topics` flags
+  count as supplied metadata and do the same. `changelog` does not: a run that
+  passes only `changelog` still reports unchanged skills as `alreadySynced`.
+  Use `skill_path` to keep a metadata edit from releasing a whole catalog.
 - Categories and topics are comma-separated and validated server-side, so an
   unknown category slug or a topic over the per-skill limit fails the publish
   after the run has already built and validated the skill.
