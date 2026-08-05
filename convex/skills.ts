@@ -11281,6 +11281,61 @@ export const mergeOwnedSkillIntoCanonicalInternal = internalMutation({
   },
 });
 
+export const mergeSamePublisherDuplicateSkillByIdInternal = internalMutation({
+  args: {
+    sourceSkillId: v.id("skills"),
+    targetSkillId: v.id("skills"),
+    expectedSlug: v.string(),
+    expectedSourceVersionId: v.id("skillVersions"),
+    expectedTargetVersionId: v.id("skillVersions"),
+    expectedTargetVersion: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const source = await ctx.db.get(args.sourceSkillId);
+    const target = await ctx.db.get(args.targetSkillId);
+    if (!source || !target) throw new ConvexError("Duplicate repair skill not found");
+    if (
+      source.softDeletedAt &&
+      source.canonicalSkillId === target._id &&
+      source.forkOf?.skillId === target._id
+    ) {
+      return { ok: true as const, alreadyMerged: true as const };
+    }
+    if (source.softDeletedAt || target.softDeletedAt) {
+      throw new ConvexError("Duplicate repair requires two active skills");
+    }
+    if (
+      !source.ownerPublisherId ||
+      source.ownerPublisherId !== target.ownerPublisherId ||
+      source.slug !== target.slug ||
+      source.slug !== args.expectedSlug
+    ) {
+      throw new ConvexError("Duplicate repair invariant changed before apply");
+    }
+    if (
+      source.latestVersionId !== args.expectedSourceVersionId ||
+      target.latestVersionId !== args.expectedTargetVersionId
+    ) {
+      throw new ConvexError("Duplicate repair lineage changed before apply");
+    }
+    const targetVersion = target.latestVersionId ? await ctx.db.get(target.latestVersionId) : null;
+    if (targetVersion?.version !== args.expectedTargetVersion) {
+      throw new ConvexError("Duplicate repair target version changed before apply");
+    }
+
+    const result = await mergeOwnedSkillIntoCanonicalByActor(
+      ctx,
+      target.ownerUserId,
+      source.slug,
+      target.slug,
+      undefined,
+      undefined,
+      { sourceSkillId: source._id, targetSkillId: target._id },
+    );
+    return { ...result, alreadyMerged: false as const };
+  },
+});
+
 async function canManageSkillOwnerForActor(
   ctx: QueryCtx | MutationCtx,
   actor: Doc<"users">,
@@ -11423,6 +11478,7 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   targetSlugArg: string,
   sourceOwnerHandle?: string,
   targetOwnerHandle?: string,
+  skillIds?: { sourceSkillId: Id<"skills">; targetSkillId: Id<"skills"> },
 ) {
   const user = await ctx.db.get(actorUserId);
   if (!user || user.deletedAt || user.deactivatedAt) {
@@ -11430,31 +11486,33 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   }
 
   const now = Date.now();
-  const sourceSlug = sourceSlugArg.trim().toLowerCase();
-  const targetSlug = targetSlugArg.trim().toLowerCase();
-  if (!sourceSlug || !targetSlug) {
-    throw new ConvexError("Source slug and target slug are required");
-  }
-  const sourceOwnerKey = normalizePublisherHandle(sourceOwnerHandle);
-  const targetOwnerKey = normalizePublisherHandle(targetOwnerHandle);
-  if (sourceSlug === targetSlug && sourceOwnerKey === targetOwnerKey) {
-    throw new ConvexError("Source and target must be different skills");
-  }
+  let source: Doc<"skills"> | null;
+  let target: Doc<"skills"> | null;
+  if (skillIds) {
+    [source, target] = await Promise.all([
+      ctx.db.get(skillIds.sourceSkillId),
+      ctx.db.get(skillIds.targetSkillId),
+    ]);
+  } else {
+    const sourceSlug = sourceSlugArg.trim().toLowerCase();
+    const targetSlug = targetSlugArg.trim().toLowerCase();
+    if (!sourceSlug || !targetSlug) {
+      throw new ConvexError("Source slug and target slug are required");
+    }
+    const sourceOwnerKey = normalizePublisherHandle(sourceOwnerHandle);
+    const targetOwnerKey = normalizePublisherHandle(targetOwnerHandle);
+    if (sourceSlug === targetSlug && sourceOwnerKey === targetOwnerKey) {
+      throw new ConvexError("Source and target must be different skills");
+    }
 
-  const sourceResolved = await resolveSkillBySlugOrAliasForOwner(
-    ctx,
-    sourceSlug,
-    sourceOwnerHandle,
-  );
-  const source = sourceResolved.skill;
+    const [sourceResolved, targetResolved] = await Promise.all([
+      resolveSkillBySlugOrAliasForOwner(ctx, sourceSlug, sourceOwnerHandle),
+      resolveSkillBySlugOrAliasForOwner(ctx, targetSlug, targetOwnerHandle),
+    ]);
+    source = sourceResolved.skill;
+    target = targetResolved.skill;
+  }
   if (!source || source.softDeletedAt) throw new ConvexError("Source skill not found");
-
-  const targetResolved = await resolveSkillBySlugOrAliasForOwner(
-    ctx,
-    targetSlug,
-    targetOwnerHandle,
-  );
-  const target = targetResolved.skill;
   if (!target || target.softDeletedAt) throw new ConvexError("Target skill not found");
   if (source._id === target._id) {
     throw new ConvexError("Source and target must be different skills");
@@ -11524,10 +11582,11 @@ async function mergeOwnedSkillIntoCanonicalByActor(
       addedOwnerAliasSlugs.add(source.slug);
     }
   } else {
-    if (!targetAliasSlugs.has(source.slug)) {
+    const sharedOwnerSlug = sourceOwnerMatchesTargetOwner && source.slug === target.slug;
+    if (!sharedOwnerSlug && !targetAliasSlugs.has(source.slug)) {
       addedSkillAliasSlugs.add(source.slug);
     }
-    addedOwnerAliasSlugs.add(source.slug);
+    if (!sharedOwnerSlug) addedOwnerAliasSlugs.add(source.slug);
   }
 
   if (sourceOwnerMatchesTargetOwner) {

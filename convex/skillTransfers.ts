@@ -42,6 +42,70 @@ async function assertCanRequestSkillTransfer(
   });
 }
 
+async function findTransferDestinationSlugConflict(
+  ctx: MutationCtx,
+  params: {
+    skill: Doc<"skills">;
+    aliases: Doc<"skillSlugAliases">[];
+    destinationUserId: Id<"users">;
+    destinationPublisher: Doc<"publishers">;
+  },
+) {
+  const slugs = new Set([params.skill.slug, ...params.aliases.map((alias) => alias.slug)]);
+
+  for (const slug of slugs) {
+    const [publisherSkills, legacySkills, publisherAliases, legacyAliases] = await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher_slug", (q) =>
+          q.eq("ownerPublisherId", params.destinationPublisher._id).eq("slug", slug),
+        )
+        .collect(),
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_slug", (q) =>
+          q.eq("ownerUserId", params.destinationUserId).eq("slug", slug),
+        )
+        .collect(),
+      ctx.db
+        .query("skillSlugAliases")
+        .withIndex("by_owner_publisher_slug", (q) =>
+          q.eq("ownerPublisherId", params.destinationPublisher._id).eq("slug", slug),
+        )
+        .collect(),
+      ctx.db
+        .query("skillSlugAliases")
+        .withIndex("by_owner_slug", (q) =>
+          q.eq("ownerUserId", params.destinationUserId).eq("slug", slug),
+        )
+        .collect(),
+    ]);
+
+    const conflictingSkill = [...publisherSkills, ...legacySkills].find(
+      (candidate) =>
+        candidate._id !== params.skill._id &&
+        !candidate.softDeletedAt &&
+        (!candidate.ownerPublisherId ||
+          candidate.ownerPublisherId === params.destinationPublisher._id),
+    );
+    if (conflictingSkill) {
+      return `Destination owner @${params.destinationPublisher.handle} already has skill "${slug}". Rename or merge it before accepting this transfer.`;
+    }
+
+    const conflictingAlias = [...publisherAliases, ...legacyAliases].find(
+      (candidate) =>
+        candidate.skillId !== params.skill._id &&
+        (!candidate.ownerPublisherId ||
+          candidate.ownerPublisherId === params.destinationPublisher._id),
+    );
+    if (conflictingAlias) {
+      return `Destination owner @${params.destinationPublisher.handle} already has a redirect for skill "${slug}". Rename or merge it before accepting this transfer.`;
+    }
+  }
+
+  return null;
+}
+
 async function getActivePendingTransferForSkill(ctx: unknown, skillId: Id<"skills">, now: number) {
   const db = (
     ctx as {
@@ -211,16 +275,27 @@ export const acceptTransferInternal = internalMutation({
     });
     if (!newPublisher) throw new Error("Failed to resolve publisher for new owner");
 
+    const aliases = await ctx.db
+      .query("skillSlugAliases")
+      .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+      .collect();
+    const destinationConflict = await findTransferDestinationSlugConflict(ctx, {
+      skill,
+      aliases,
+      destinationUserId: args.actorUserId,
+      destinationPublisher: newPublisher,
+    });
+    if (destinationConflict) {
+      // Keep the request pending so the owners can resolve the namespace collision and retry.
+      return { ok: false as const, error: destinationConflict };
+    }
+
     await ctx.db.patch(skill._id, {
       ownerUserId: args.actorUserId,
       ownerPublisherId: newPublisher._id,
       updatedAt: now,
     });
 
-    const aliases = await ctx.db
-      .query("skillSlugAliases")
-      .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-      .collect();
     for (const alias of aliases) {
       await ctx.db.patch(alias._id, {
         ownerUserId: args.actorUserId,

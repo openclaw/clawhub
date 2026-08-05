@@ -351,12 +351,18 @@ describe("skillTransfers", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: () => ({
+                  collect: async () => [],
+                }),
+              };
+            }
             if (table === "skillSlugAliases") {
               return {
                 withIndex: (indexName: string) => {
-                  expect(indexName).toBe("by_skill");
                   return {
-                    collect: async () => aliases,
+                    collect: async () => (indexName === "by_skill" ? aliases : []),
                   };
                 },
               };
@@ -548,6 +554,13 @@ describe("skillTransfers", () => {
             return null;
           }),
           query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: () => ({
+                  collect: async () => [],
+                }),
+              };
+            }
             if (table === "publisherMembers") {
               return {
                 withIndex: () => ({
