@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildEvaluatorProcessEnvironment,
   buildTier3EvaluateInvocation,
   discoverSkillEvals,
   planOfficialSkillEvaluation,
@@ -196,6 +197,43 @@ describe("SkillEvaluator eval discovery", () => {
 });
 
 describe("canonical SkillEvaluator execution", () => {
+  it("passes only runtime essentials and explicitly scoped evaluator credentials", () => {
+    expect(
+      buildEvaluatorProcessEnvironment(
+        {
+          PATH: "/usr/bin",
+          HOME: "/tmp/evaluator-home",
+          OPENAI_API_KEY: "evaluator-key",
+          GITHUB_TOKEN: "must-not-leak",
+          AWS_SECRET_ACCESS_KEY: "must-not-leak",
+          NODE_OPTIONS: "--require /tmp/inject.js",
+        },
+        {
+          SKILL_EVAL_LLM_MODEL: "gpt-5.4-mini",
+          SKILL_EVAL_LLM_PROVIDER: "openai",
+        },
+        "/tmp/checkout",
+      ),
+    ).toEqual({
+      PATH: "/usr/bin",
+      HOME: "/tmp/evaluator-home",
+      OPENAI_API_KEY: "evaluator-key",
+      PWD: "/tmp/checkout",
+      SKILL_EVAL_LLM_MODEL: "gpt-5.4-mini",
+      SKILL_EVAL_LLM_PROVIDER: "openai",
+    });
+  });
+
+  it("rejects an unscoped invocation environment variable", () => {
+    expect(() =>
+      buildEvaluatorProcessEnvironment(
+        { PATH: "/usr/bin" },
+        { GITHUB_TOKEN: "must-not-leak" },
+        "/tmp/checkout",
+      ),
+    ).toThrow("Unsupported SkillEvaluator environment variable: GITHUB_TOKEN");
+  });
+
   it("pins the evaluator and Codex model for a one-attempt Tier 3 smoke run", () => {
     expect(
       buildTier3EvaluateInvocation({

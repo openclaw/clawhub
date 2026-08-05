@@ -418,13 +418,52 @@ async function materializeGitSnapshot(checkoutPath: string, commit: string, labe
   return snapshotPath;
 }
 
+const EVALUATOR_HOST_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "TMPDIR",
+  "LANG",
+  "LC_ALL",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "SKILLEVALUATOR_RUNTIME_DIR",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "SKILL_EVAL_LLM_API_KEY",
+  "SKILL_EVAL_LLM_BASE_URL",
+] as const;
+
+const EVALUATOR_INVOCATION_ENV_ALLOWLIST = new Set([
+  "SKILL_EVAL_LLM_MODEL",
+  "SKILL_EVAL_LLM_PROVIDER",
+]);
+
+export function buildEvaluatorProcessEnvironment(
+  hostEnvironment: NodeJS.ProcessEnv,
+  invocationEnvironment: Record<string, string>,
+  cwd: string,
+) {
+  const environment: Record<string, string> = { PWD: cwd };
+  for (const key of EVALUATOR_HOST_ENV_ALLOWLIST) {
+    const value = hostEnvironment[key];
+    if (value !== undefined) environment[key] = value;
+  }
+  for (const [key, value] of Object.entries(invocationEnvironment)) {
+    if (!EVALUATOR_INVOCATION_ENV_ALLOWLIST.has(key)) {
+      throw new Error(`Unsupported SkillEvaluator environment variable: ${key}`);
+    }
+    environment[key] = value;
+  }
+  return environment;
+}
+
 async function runVisible(command: string[], environment: Record<string, string>, cwd: string) {
   const [executable, ...args] = command;
   if (!executable) throw new Error("Cannot run an empty command");
   return await new Promise<number>((resolvePromise, reject) => {
     const child = spawn(executable, args, {
       cwd,
-      env: { ...process.env, ...environment, PWD: cwd },
+      env: buildEvaluatorProcessEnvironment(process.env, environment, cwd),
       stdio: "inherit",
     });
     child.on("error", reject);
