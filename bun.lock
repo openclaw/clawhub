@@ -80,7 +80,7 @@
         "@types/node": "26.1.2",
         "@types/react": "19.2.18",
         "@types/react-dom": "19.2.4",
-        "@types/semver": "7.7.1",
+        "@types/semver": "7.8.0",
         "@types/yauzl": "3.4.0",
         "@typescript/native": "npm:typescript@7.0.2",
         "@vitejs/plugin-react": "6.0.5",
@@ -451,7 +451,7 @@
 
     "@oozcitak/util": ["@oozcitak/util@10.0.0", "", {}, "sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA=="],
 
-    "@openclaw/carapace": ["@openclaw/carapace@github:openclaw/carapace#3a8bcfb", {}, "openclaw-carapace-3a8bcfb", "sha512-UD1qbCzSKMlvDGt4VYH41dtSf77vGZCzXkpGzmVevpanBM3flhAHU/TIedvm+eYadts49wt3+ipQK5Jmh70ZDw=="],
+    "@openclaw/carapace": ["@openclaw/carapace@github:openclaw/carapace#3a8bcfb", {}, "openclaw-carapace-3a8bcfb"],
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
@@ -953,7 +953,7 @@
 
     "@types/react-dom": ["@types/react-dom@19.2.4", "", { "peerDependencies": { "@types/react": "^19.2.0" } }, "sha512-Bsc+QHgp+P/F02XDzNCY9jnZNCUuLki36KT7VKrTXXLdHf+vHMNZnW1rVu5DNW/rCK+fya3DATySbLM4yhtKUw=="],
 
-    "@types/semver": ["@types/semver@7.7.1", "", {}, "sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA=="],
+    "@types/semver": ["@types/semver@7.8.0", "", {}, "sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ=="],
 
     "@types/trusted-types": ["@types/trusted-types@2.0.7", "", {}, "sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw=="],
 
