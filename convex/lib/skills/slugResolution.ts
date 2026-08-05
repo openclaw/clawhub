@@ -12,6 +12,7 @@ import { normalizeSkillSlug } from "../skillSlugValidator";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 const MAX_LEGACY_OWNER_MATCHES = 25;
+const MAX_PUBLISHER_SLUG_MATCHES = 25;
 
 type LegacyResultQuery<T> = {
   take?: (limit: number) => Promise<T[]>;
@@ -97,13 +98,37 @@ export async function getSkillBySlugForPublisher(
   slug: string,
   publisher: Doc<"publishers">,
 ) {
-  const scopedSkill = await ctx.db
-    .query("skills")
-    .withIndex("by_owner_publisher_slug", (q) =>
-      q.eq("ownerPublisherId", publisher._id).eq("slug", slug),
-    )
-    .unique();
-  if (scopedSkill) return scopedSkill;
+  const scopedCandidates = await takeQueryResults<Doc<"skills">>(
+    ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_slug", (q) =>
+        q.eq("ownerPublisherId", publisher._id).eq("slug", slug),
+      ),
+    MAX_PUBLISHER_SLUG_MATCHES + 1,
+  );
+  if (scopedCandidates.length > MAX_PUBLISHER_SLUG_MATCHES) {
+    throw new Error(
+      `Publisher slug history exceeds the safe lookup bound for @${publisher.handle}/${slug}`,
+    );
+  }
+  const activeScopedSkills = scopedCandidates.filter(
+    (candidate) => candidate.softDeletedAt === undefined,
+  );
+  if (activeScopedSkills.length > 1) {
+    throw new Error(`Active publisher slug invariant violated for @${publisher.handle}/${slug}`);
+  }
+  if (activeScopedSkills[0]) return activeScopedSkills[0];
+
+  // Retained merge/history rows intentionally share the old owner-scoped slug.
+  // Keep a single row discoverable for restore/reclaim, but never guess between
+  // multiple deleted lineages when no active canonical row exists.
+  const scopedHistory = scopedCandidates;
+  if (scopedHistory.length > 1) {
+    throw new Error(
+      `Soft-deleted publisher slug history is ambiguous for @${publisher.handle}/${slug}`,
+    );
+  }
+  if (scopedHistory[0]) return scopedHistory[0];
 
   const linkedUserId = await getPublisherLegacyOwnerUserId(ctx, publisher);
   if (!linkedUserId) return null;
