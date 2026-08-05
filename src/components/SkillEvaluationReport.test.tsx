@@ -63,7 +63,7 @@ describe("SkillEvaluationReport", () => {
     expect(screen.getByText("No evals were found for this skill version.")).toBeTruthy();
   });
 
-  it("shows failures with provenance", () => {
+  it("shows evaluation failures", () => {
     render(
       <SkillEvaluationReport
         record={record("failed", {
@@ -73,7 +73,6 @@ describe("SkillEvaluationReport", () => {
     );
 
     expect(screen.getByText("SkillEvaluator exited with code 1.")).toBeTruthy();
-    expect(screen.getByText("gpt-5.4-mini")).toBeTruthy();
   });
 
   it("renders the native JSON summary and dimension metrics without embedding the HTML report", () => {
@@ -112,7 +111,14 @@ describe("SkillEvaluationReport", () => {
     expect(screen.getByText("4 / 4")).toBeTruthy();
     expect(screen.getByRole("rowheader", { name: "Accuracy" })).toBeTruthy();
     expect(screen.getByRole("cell", { name: "+45.0 pts" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SkillEvaluator" }).getAttribute("href")).toBe(
+      "https://github.com/NVIDIA/SkillEvaluator",
+    );
     expect(screen.queryByTitle("SkillEvaluator report")).toBeNull();
-    expect(screen.getByText("One-attempt smoke run")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText("One-attempt smoke run")).toBeNull();
+    expect(screen.queryByText("Run details")).toBeNull();
+    expect(screen.queryByText("result.json")).toBeNull();
+    expect(screen.queryByText("run_config.json")).toBeNull();
   });
 });

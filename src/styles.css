@@ -11025,15 +11025,10 @@ a.skills-sh-security-audit-row:focus-visible {
   font-weight: 700;
 }
 
-.skill-evaluation-state.is-completed {
-  color: var(--status-success-fg);
-}
-
 .skill-evaluation-state.is-failed {
   color: var(--status-error-fg);
 }
 
-.skill-evaluation-smoke-note,
 .skill-evaluation-message {
   display: flex;
   align-items: baseline;
@@ -11046,46 +11041,12 @@ a.skills-sh-security-audit-row:focus-visible {
   font-size: var(--fs-sm);
 }
 
-.skill-evaluation-smoke-note strong,
 .skill-evaluation-message strong {
   color: var(--ink);
 }
 
 .skill-evaluation-message.is-failed {
   border-color: color-mix(in srgb, var(--status-error-fg) 30%, var(--line));
-}
-
-.skill-evaluation-provenance {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
-  margin: 0;
-  padding: var(--space-4) 0 0;
-}
-
-.skill-evaluation-provenance div {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.skill-evaluation-provenance dt {
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 650;
-}
-
-.skill-evaluation-provenance dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-}
-
-.skill-evaluation-artifacts {
-  display: grid;
-  gap: var(--space-3);
 }
 
 .skill-evaluation-metrics {
@@ -11112,6 +11073,12 @@ a.skills-sh-security-audit-row:focus-visible {
   text-align: left;
 }
 
+.skill-evaluation-table caption a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .skill-evaluation-table th,
 .skill-evaluation-table td {
   padding: var(--space-3) var(--space-4);
@@ -11135,19 +11102,6 @@ a.skills-sh-security-audit-row:focus-visible {
   font-weight: 650;
 }
 
-.skill-evaluation-details {
-  border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  padding-top: var(--space-4);
-}
-
-.skill-evaluation-details summary {
-  width: fit-content;
-  cursor: pointer;
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-  font-weight: 650;
-}
-
 .skill-evaluation-table td {
   color: var(--ink);
   font-variant-numeric: tabular-nums;
@@ -11156,24 +11110,6 @@ a.skills-sh-security-audit-row:focus-visible {
 .skill-evaluation-table td.is-positive {
   color: var(--status-success-fg);
   font-weight: 700;
-}
-
-.skill-evaluation-artifact-links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: var(--fs-xs);
-  font-weight: 650;
-}
-
-.skill-evaluation-artifact-links a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .skill-evaluation-loading,
@@ -11201,13 +11137,8 @@ a.skills-sh-security-audit-row:focus-visible {
     width: fit-content;
   }
 
-  .skill-evaluation-smoke-note,
   .skill-evaluation-message {
     display: grid;
-  }
-
-  .skill-evaluation-provenance {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
