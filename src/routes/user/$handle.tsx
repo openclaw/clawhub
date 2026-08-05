@@ -741,6 +741,7 @@ export function PublisherProfilePage({
   const hiddenOrgCount = Math.max(0, affiliations.length - VISIBLE_ORG_CHIPS);
   const showOrganizations = publisher.kind === "user" && affiliations.length > 0;
   const showMembers = publisher.kind === "org" && memberEntries.length > 0;
+  const showCatalogOfficialBadge = publisher.kind !== "org" || publisher.official !== true;
   const publisherStatCards = buildPublisherStatCards(publisher);
   const profileBio = publisher.bio?.trim() || DEFAULT_PUBLISHER_BIO;
 
@@ -918,7 +919,7 @@ export function PublisherProfilePage({
                   groups={catalogGroups}
                   selectedGroup={selectedCatalogGroup}
                   onSelectedGroupChange={setSelectedCatalogGroup}
-                  showOfficialBadge={publisher.kind !== "org"}
+                  showOfficialBadge={showCatalogOfficialBadge}
                   totalCount={catalogSearch.trim() ? undefined : catalogCount}
                   footer={
                     showCatalogLoadMore ? (
@@ -936,7 +937,7 @@ export function PublisherProfilePage({
                 <>
                   <PublisherCatalogItems
                     items={filteredItems}
-                    showOfficialBadge={publisher.kind !== "org"}
+                    showOfficialBadge={showCatalogOfficialBadge}
                   />
                   {showCatalogLoadMore ? (
                     <div className="publisher-profile-load-more">

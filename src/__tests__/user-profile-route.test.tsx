@@ -293,6 +293,76 @@ describe("user profile route", () => {
     ).toBeNull();
   });
 
+  it("keeps official marks on skill and plugin rows for unverified organizations", async () => {
+    const unverifiedPublisher = {
+      ...publisher,
+      official: false,
+      stats: {
+        ...publisher.stats,
+        skills: 1,
+        packages: 1,
+      },
+    };
+    loaderDataMock.mockReturnValue({ publisher: unverifiedPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: unverifiedPublisher, members: [] };
+      if ("kind" in args) return null;
+      return unverifiedPublisher;
+    });
+    paginatedQueryMock.mockImplementation((_query, args: Record<string, unknown>) => ({
+      loadMore: vi.fn(),
+      results:
+        args.kind === "plugin"
+          ? [
+              {
+                _id: "packages:diagnostics",
+                kind: "plugin",
+                displayName: "Diagnostics",
+                summary: "Plugin diagnostics",
+                topics: [],
+                icon: null,
+                href: "/nvidia/plugins/diagnostics",
+                installs: 1,
+                stars: 0,
+                isOfficial: true,
+                updatedAt: 1,
+              },
+            ]
+          : args.kind === "skill"
+            ? [
+                {
+                  _id: "skills:gpu",
+                  kind: "skill",
+                  displayName: "GPU Helper",
+                  summary: "GPU tasks",
+                  topics: [],
+                  icon: null,
+                  href: "/nvidia/gpu-helper",
+                  installs: 1,
+                  stars: 0,
+                  isOfficial: true,
+                  updatedAt: 1,
+                },
+              ]
+            : [],
+      status: "Exhausted",
+    }));
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const catalog = screen.getByLabelText("Publisher catalog");
+    expect(within(catalog).getByText("GPU Helper")).toBeTruthy();
+    expect(within(catalog).getByLabelText("Official")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /plugins 1/i }));
+
+    expect(within(catalog).getByText("Diagnostics")).toBeTruthy();
+    expect(within(catalog).getByLabelText("Official")).toBeTruthy();
+  });
+
   it("uses downloads sort for published catalog pages by default", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
