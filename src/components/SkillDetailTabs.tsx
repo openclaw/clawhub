@@ -1,5 +1,5 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { defaultUrlTransform } from "react-markdown";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
@@ -74,6 +74,7 @@ type SkillFile = Doc<"skillVersions">["files"][number];
 export type DetailTab =
   | "readme"
   | "skill-card"
+  | "evaluation"
   | "files"
   | "compare"
   | "versions"
@@ -103,6 +104,7 @@ type SkillDetailTabsProps = {
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
   readmeHrefResolver?: (href: string) => string;
+  evaluationContent?: ReactNode;
 };
 
 export function SkillDetailTabs({
@@ -129,6 +131,7 @@ export function SkillDetailTabs({
   clawdis,
   osLabels,
   readmeHrefResolver,
+  evaluationContent,
 }: SkillDetailTabsProps) {
   const resolveReadmeHref =
     readmeHrefResolver ?? ((href: string) => resolveSkillReadmeHref(href, skill.slug, ownerHandle));
@@ -188,6 +191,19 @@ export function SkillDetailTabs({
             onClick={() => selectTab("skill-card")}
           >
             Skill Card
+          </button>
+        ) : null}
+        {evaluationContent ? (
+          <button
+            id="skill-tab-evaluation"
+            className={`tab-button${activeTab === "evaluation" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "evaluation"}
+            aria-controls="skill-tabpanel-evaluation"
+            onClick={() => selectTab("evaluation")}
+          >
+            Evaluation
           </button>
         ) : null}
         {showArchiveTabs ? (
@@ -331,6 +347,17 @@ export function SkillDetailTabs({
           ) : (
             <div className="stat p-4">Loading Skill Card...</div>
           )}
+        </div>
+      ) : null}
+
+      {evaluationContent && activeTab === "evaluation" ? (
+        <div
+          className="tab-body skill-evaluation-tab-body"
+          role="tabpanel"
+          id="skill-tabpanel-evaluation"
+          aria-labelledby="skill-tab-evaluation"
+        >
+          {evaluationContent}
         </div>
       ) : null}
 

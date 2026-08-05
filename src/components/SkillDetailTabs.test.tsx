@@ -371,3 +371,50 @@ describe("SkillDetailTabs README links", () => {
     expect(screen.queryByText(/<br/i)).toBeNull();
   });
 });
+
+describe("SkillDetailTabs evaluation tab", () => {
+  it("opens a dedicated evaluation panel without replacing the existing tabs", () => {
+    function TestTabs() {
+      const [activeTab, setActiveTab] = useState<DetailTab>("readme");
+      return (
+        <SkillDetailTabs
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onCompareIntent={vi.fn()}
+          readmeContent="# Demo"
+          readmeError={null}
+          skillCardContent={null}
+          skillCardError={null}
+          hasSkillCard={false}
+          latestFiles={[]}
+          latestVersionId={null}
+          skill={
+            {
+              _id: "skills:demo",
+              slug: "demo",
+              displayName: "Demo",
+              tags: {},
+            } as unknown as Doc<"skills">
+          }
+          diffVersions={undefined}
+          versions={undefined}
+          nixPlugin={false}
+          showArchiveTabs={false}
+          suppressVersionScanResults={false}
+          scanResultsSuppressedMessage={null}
+          clawdis={undefined}
+          osLabels={[]}
+          evaluationContent={<div>Native SkillEvaluator report</div>}
+        />
+      );
+    }
+
+    render(<TestTabs />);
+    fireEvent.click(screen.getByRole("tab", { name: "Evaluation" }));
+
+    expect(screen.getByRole("tabpanel", { name: "Evaluation" }).textContent).toContain(
+      "Native SkillEvaluator report",
+    );
+    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+  });
+});
