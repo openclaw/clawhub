@@ -1389,6 +1389,7 @@ function digestMatchesFilters(
   args: {
     category?: string;
     topic?: string;
+    createdAfter?: number;
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
@@ -1404,6 +1405,7 @@ function digestMatchesFilters(
   if (args.topic && !getCatalogTopicSlugs(digest.topics).includes(args.topic)) {
     return false;
   }
+  if (args.createdAfter !== undefined && digest.createdAt < args.createdAfter) return false;
   return true;
 }
 
@@ -1416,6 +1418,7 @@ function digestMatchesSearchFilters(
     isOfficial?: boolean;
     category?: string;
     topic?: string;
+    createdAfter?: number;
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
@@ -4803,6 +4806,7 @@ export const searchPublic = query({
     highlightedOnly: v.optional(v.boolean()),
     category: v.optional(v.string()),
     topic: v.optional(v.string()),
+    createdAfter: v.optional(v.number()),
     excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
   },
   handler: async (ctx, args) => {
@@ -4829,6 +4833,7 @@ export const searchForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     category: v.optional(v.string()),
     topic: v.optional(v.string()),
+    createdAfter: v.optional(v.number()),
     excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
     viewerUserId: v.optional(v.id("users")),
   },
@@ -4848,6 +4853,7 @@ async function searchPackagesImpl(
     highlightedOnly?: boolean;
     category?: string;
     topic?: string;
+    createdAfter?: number;
     excludedScanStatuses?: PackageListScanStatus[];
     viewerUserId?: Id<"users">;
   },
@@ -4872,6 +4878,9 @@ async function searchPackagesImpl(
     });
     const entries = highlightedEntries
       .filter(({ digest }) => isClawFamilyPubliclyVisible(digest.family))
+      .filter(({ digest }) =>
+        args.createdAfter === undefined ? true : digest.createdAt >= args.createdAfter,
+      )
       .filter(
         ({ digest }) =>
           !digest.scanStatus || !args.excludedScanStatuses?.includes(digest.scanStatus),
@@ -4972,7 +4981,7 @@ async function searchPackagesImpl(
       }
     };
 
-    if (topic && category) {
+    if ((topic && category) || args.createdAfter !== undefined) {
       const scanStates = searchFamilies.map((family) => ({
         family,
         cursor: null as string | null,

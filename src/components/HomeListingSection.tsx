@@ -7,6 +7,7 @@ import { PLUGIN_CATEGORIES, SKILL_CATEGORIES } from "../lib/categories";
 import {
   fetchHomePluginListing as fetchPluginListing,
   fetchHomeSkillListing as fetchSkillListing,
+  searchHomeTrendingSkillListing,
   HOME_LISTING_PAGE_SIZE,
   HOME_NEW_WINDOW_MS,
   homeListingCacheKey as listingCacheKey,
@@ -478,41 +479,53 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
 
     const handle = window.setTimeout(() => {
       const load =
-        kind === "skills"
-          ? convexHttp
-              .action(api.search.searchNativeSkills, {
-                query: trimmedSearch,
-                limit: fetchLimit,
-                ...(tab === "featured" ? { highlightedOnly: true } : {}),
-                ...(tab === "official" ? { officialOnly: true } : {}),
-                ...(tab === "new" ? { createdAfter: Date.now() - HOME_NEW_WINDOW_MS } : {}),
-                ...(categorySlug ? { categorySlug } : {}),
-              })
-              .then((hits) => {
+        kind === "skills" && tab === "trending"
+          ? searchHomeTrendingSkillListing(trimmedSearch, fetchLimit, controller.signal).then(
+              (result) => {
                 if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-                const searchHits = hits as HomeNativeSkillListingEntry[];
-                setSearchSkills(searchHits);
-                setListingHasMore(searchHits.length >= fetchLimit);
+                const unavailable = result.trendingState === "unavailable";
+                setCanonicalTrendingUnavailable(unavailable);
+                if (unavailable) {
+                  setTab("featured");
+                  return;
+                }
+                setSearchSkills(result.page);
+                setTrendingState(result.trendingState);
+                setListingHasMore(result.hasMore);
                 setSearchStatus("idle");
-              })
-          : fetchPluginCatalog({
-              q: trimmedSearch,
-              category: categorySlug,
-              featured: tab === "featured" ? true : undefined,
-              isOfficial: tab === "official" ? true : undefined,
-              limit: fetchLimit,
-              signal: controller.signal,
-            }).then((result) => {
-              if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-              const newestCutoff = Date.now() - HOME_NEW_WINDOW_MS;
-              const items =
-                tab === "new"
-                  ? result.items.filter((item) => item.createdAt >= newestCutoff)
-                  : result.items;
-              setSearchPlugins(items);
-              setListingHasMore(result.nextCursor !== null || result.items.length >= fetchLimit);
-              setSearchStatus("idle");
-            });
+              },
+            )
+          : kind === "skills"
+            ? convexHttp
+                .action(api.search.searchNativeSkills, {
+                  query: trimmedSearch,
+                  limit: fetchLimit,
+                  ...(tab === "featured" ? { highlightedOnly: true } : {}),
+                  ...(tab === "official" ? { officialOnly: true } : {}),
+                  ...(tab === "new" ? { createdAfter: Date.now() - HOME_NEW_WINDOW_MS } : {}),
+                  ...(categorySlug ? { categorySlug } : {}),
+                })
+                .then((hits) => {
+                  if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
+                  const searchHits = hits as HomeNativeSkillListingEntry[];
+                  setSearchSkills(searchHits);
+                  setListingHasMore(searchHits.length >= fetchLimit);
+                  setSearchStatus("idle");
+                })
+            : fetchPluginCatalog({
+                q: trimmedSearch,
+                category: categorySlug,
+                featured: tab === "featured" ? true : undefined,
+                isOfficial: tab === "official" ? true : undefined,
+                createdAfter: tab === "new" ? Date.now() - HOME_NEW_WINDOW_MS : undefined,
+                limit: fetchLimit,
+                signal: controller.signal,
+              }).then((result) => {
+                if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
+                setSearchPlugins(result.items);
+                setListingHasMore(result.nextCursor !== null || result.items.length >= fetchLimit);
+                setSearchStatus("idle");
+              });
 
       load
         .catch(() => {

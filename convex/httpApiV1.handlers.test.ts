@@ -11833,6 +11833,22 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins search forwards New eligibility to both plugin families", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/search?q=calendar&createdAfter=123"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledTimes(2);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(expect.objectContaining({ createdAfter: 123 }));
+    }
+  });
+
   it("plugins search maps retired v1 category filters to controlled categories", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());

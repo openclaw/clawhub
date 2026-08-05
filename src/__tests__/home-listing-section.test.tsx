@@ -310,6 +310,25 @@ describe("HomeListingSection", () => {
     );
   });
 
+  it("passes New plugin eligibility into catalog search", async () => {
+    render(<HomeListingSection initialListing={initialPluginListing()} />);
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search plugins" }), {
+      target: { value: "calendar" },
+    });
+
+    await waitFor(() => {
+      expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: "calendar",
+          createdAfter: expect.any(Number),
+          limit: 20,
+        }),
+      );
+    });
+  });
+
   it("clears and hides the category filter when Trending is selected", async () => {
     render(<HomeListingSection initialListing={initialPluginListing()} />);
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));

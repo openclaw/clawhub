@@ -206,6 +206,61 @@ describe("HomeListingSection", () => {
     expect(screen.getByLabelText("Source").textContent).toBe("skills.sh");
   });
 
+  it("searches within the canonical Trending feed without changing source or order", async () => {
+    const unrelated = makeTrending("unrelated", "Unrelated Skill", 5, 100, 5);
+    const external = {
+      ...makeTrending("calendar-external", "Calendar External", 0, 90, 0),
+      id: "skills-sh:example/calendar-external",
+      source: "skills-sh" as const,
+      canonicalUrl: "/skills-sh/example/calendar-external",
+      publisher: null,
+      sourceIdentity: {
+        id: "example/calendar-external",
+        owner: "example",
+        repo: "skills",
+        host: null,
+        lifetimeInstalls: 90,
+      },
+    };
+    const native = makeTrending("calendar-native", "Calendar Native", 3, 80, 3);
+    fetchCanonicalTrendingPageMock
+      .mockResolvedValueOnce(canonicalPage([unrelated], "trending-page-2"))
+      .mockResolvedValueOnce(canonicalPage([external, native]));
+
+    render(
+      <TooltipProvider>
+        <HomeListingSection initialListing={initialTrending([unrelated], true)} />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "calendar" },
+    });
+
+    await waitFor(() => {
+      expect(
+        Array.from(
+          document.querySelectorAll(".home-v2-listing-row-name"),
+          (node) => node.textContent,
+        ),
+      ).toEqual(["Calendar External", "Calendar Native"]);
+    });
+    expect(fetchCanonicalTrendingPageMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ cursor: null }),
+    );
+    expect(fetchCanonicalTrendingPageMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ cursor: "trending-page-2" }),
+    );
+    expect(convexActionMock).not.toHaveBeenCalled();
+    expect(screen.getByText("skills.sh")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Trending" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
+  });
+
   it("hides unavailable Trending and falls back to the Featured feed", async () => {
     render(<HomeListingSection initialListing={initialTrending([], false, "unavailable")} />);
 
