@@ -26,7 +26,7 @@ export function BrowseResultsSkeleton({
           >
             <div className={`skill-card-header${showIcon ? "" : " skill-card-header-no-icon"}`}>
               {showIcon ? (
-                <Skeleton className="h-[34px] w-[34px] rounded-[var(--oc-radius-inset)]" />
+                <Skeleton className="browse-results-skeleton-icon h-[34px] w-[34px] rounded-[var(--oc-radius-inset)]" />
               ) : null}
               <div className="skill-card-identity">
                 <Skeleton className="h-5 w-40 max-w-full" />
@@ -58,7 +58,7 @@ export function BrowseResultsSkeleton({
         >
           {showIcon ? <span className="browse-list-head-icon-spacer" /> : null}
           <span className="browse-list-head-label">{label}</span>
-          <span className="browse-list-head-label">Category</span>
+          <span className="browse-list-head-label browse-list-head-category">Category</span>
           <span className="browse-list-head-label browse-list-head-stat">Popularity</span>
         </div>
       ) : null}

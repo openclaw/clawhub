@@ -911,6 +911,7 @@ describe("plugins route", () => {
 
     render(<Component />);
 
+    expect(screen.getByRole("main").className).toContain("plugins-browse-page");
     expect(screen.getByText("1.2k")).toBeTruthy();
   });
 
@@ -920,6 +921,7 @@ describe("plugins route", () => {
 
     render(<PendingComponent />);
 
+    expect(screen.getByRole("main").className).toContain("plugins-browse-page");
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("Loading results")).toBeNull();

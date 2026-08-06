@@ -20032,12 +20032,16 @@ body:has(.browse-page-borderless-header) .navbar {
     grid-column: 2;
   }
 
-  .browse-page .skill-list-item > .marketplace-icon {
+  .browse-page .skill-list-item > .marketplace-icon,
+  .skills-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
+  .plugins-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
+  .browse-page .browse-results-skeleton-icon {
     display: none;
   }
 
-  .browse-page .browse-results-skeleton-icon {
-    display: none;
+  .skills-browse-page .browse-results-grid .skill-card-header,
+  .plugins-browse-page .browse-results-grid .skill-card-header {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .browse-page .skill-list-item-body {
@@ -28638,21 +28642,42 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   }
   .home-v2-listing-row.home-v2-listing-row-with-icon,
   .home-v2-listing-head.home-v2-listing-head-with-icon {
-    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
   }
-  .home-v2-listing-head-with-icon .home-v2-listing-head-icon-spacer {
-    display: block;
+
+  .home-v2-listing-head-with-icon .home-v2-listing-head-icon-spacer,
+  .home-v2-listing-row-with-icon .home-v2-listing-row-icon,
+  .home-v2-listing .browse-list-head-icon-spacer,
+  .home-v2-listing .browse-results-skeleton-icon {
+    display: none;
   }
-  .home-v2-listing-row-with-icon .home-v2-listing-row-icon {
-    display: flex;
+
+  .home-v2-listing .browse-list-head,
+  .home-v2-listing .browse-results-skeleton-row {
+    --home-v2-listing-copy-max: min(15rem, calc(100vw - 11rem));
+    grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
+    gap: 12px 16px;
   }
+
+  .home-v2-listing .browse-list-head-category,
+  .home-v2-listing .browse-results-skeleton-row .skill-list-item-taxonomy {
+    display: none;
+  }
+
   .home-v2-listing-head-with-icon .home-v2-listing-head-label,
-  .home-v2-listing-row-with-icon .home-v2-listing-row-body {
-    grid-column: 2;
+  .home-v2-listing-row-with-icon .home-v2-listing-row-body,
+  .home-v2-listing
+    .browse-list-head
+    > .browse-list-head-label:not(.browse-list-head-category):not(.browse-list-head-stat),
+  .home-v2-listing .browse-results-skeleton-row .skill-list-item-body {
+    grid-column: 1;
     max-width: none;
   }
+
   .home-v2-listing-head-with-icon .home-v2-listing-head-stat,
-  .home-v2-listing-row-with-icon .home-v2-listing-row-stats {
+  .home-v2-listing-row-with-icon .home-v2-listing-row-stats,
+  .home-v2-listing .browse-list-head-stat,
+  .home-v2-listing .browse-results-skeleton-row .skill-list-item-meta {
     grid-column: 3;
   }
   .home-v2-listing-controls {

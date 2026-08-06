@@ -16,6 +16,7 @@ describe("BrowseResultsSkeleton", () => {
         expect(loadingResults.querySelector(".skill-list-item-no-icon")).toBeNull();
       } else {
         expect(loadingResults.querySelectorAll(".skill-card-header")).toHaveLength(2);
+        expect(loadingResults.querySelectorAll(".browse-results-skeleton-icon")).toHaveLength(2);
         expect(loadingResults.querySelector(".skill-card-header-no-icon")).toBeNull();
         for (const header of loadingResults.querySelectorAll(".skill-card-header")) {
           expect(header.children).toHaveLength(2);

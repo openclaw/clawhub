@@ -177,6 +177,17 @@ describe("HomeListingSection", () => {
     expect(document.querySelector(".home-v2-listing-row-stats svg")).toBeNull();
   });
 
+  it("keeps the initial Skills skeleton iconless", () => {
+    fetchCatalogDiscoveryCapabilitiesMock.mockReturnValue(new Promise(() => {}));
+
+    render(<HomeListingSection />);
+
+    const loadingResults = screen.getByRole("status", { name: "Loading results" });
+    expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
+    expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
+    expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(6);
+  });
+
   it("previews long skill and plugin names while retaining their full labels", async () => {
     const skillName = "S".repeat(71);
     const pluginName = "P".repeat(71);

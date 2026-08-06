@@ -489,7 +489,11 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       ) : null}
 
       {activeStatus === "loading" ? (
-        <BrowseResultsSkeleton label={kind === "skills" ? "Skill" : "Plugin"} variant="list" />
+        <BrowseResultsSkeleton
+          label={kind === "skills" ? "Skill" : "Plugin"}
+          showIcon={kind === "plugins"}
+          variant="list"
+        />
       ) : null}
 
       {activeStatus === "error" ? <HomeListingEmptyPanel variant="error" /> : null}
