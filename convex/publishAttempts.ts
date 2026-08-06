@@ -465,9 +465,9 @@ export const findActiveSkillPublishAttemptInternal = internalQuery({
     skillId: v.id("skills"),
     slug: v.string(),
     version: v.string(),
+    now: v.number(),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
     for (const status of ACTIVE_PUBLISH_ATTEMPT_STATUSES) {
       const attempts = await ctx.db
         .query("publishAttempts")
@@ -481,7 +481,7 @@ export const findActiveSkillPublishAttemptInternal = internalQuery({
         .order("desc")
         .take(10);
       const live = attempts.find(
-        (attempt) => attempt.skillId === args.skillId && isActiveAttemptLive(attempt, now),
+        (attempt) => attempt.skillId === args.skillId && isActiveAttemptLive(attempt, args.now),
       );
       if (live) return { attemptId: live._id, status: live.status };
     }
@@ -500,6 +500,7 @@ export const findActiveSkillPublishAttemptByIdInternal = internalQuery({
   args: {
     attemptId: v.id("publishAttempts"),
     skillId: v.id("skills"),
+    now: v.number(),
   },
   handler: async (ctx, args) => {
     const attempt = await ctx.db.get(args.attemptId);
@@ -507,7 +508,7 @@ export const findActiveSkillPublishAttemptByIdInternal = internalQuery({
     if (!(ACTIVE_PUBLISH_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status)) {
       return null;
     }
-    if (!isActiveAttemptLive(attempt, Date.now())) return null;
+    if (!isActiveAttemptLive(attempt, args.now)) return null;
     return { attemptId: attempt._id, status: attempt.status };
   },
 });
