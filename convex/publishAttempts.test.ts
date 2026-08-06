@@ -1902,6 +1902,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
       createdAt: now - 60_000,
@@ -1934,6 +1935,7 @@ describe("publishAttempts", () => {
       skillId: "skills:other",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
       createdAt: now - 60_000,
@@ -1969,6 +1971,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
       createdAt: now - 60_000,
@@ -2009,6 +2012,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "pending_checks",
+      checks: { trufflehog: { status: "pending" }, clawscan: { status: "pending" } },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       createdAt: now - 60 * 60_000,
@@ -2034,6 +2038,43 @@ describe("publishAttempts", () => {
     });
   });
 
+  it("does not bypass a terminally failed scan for a legacy version", async () => {
+    const now = Date.now();
+    const failedScan = {
+      _id: "publishAttempts:failed-scan",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "failed",
+      checks: {
+        trufflehog: { status: "failed" },
+        clawscan: { status: "pending" },
+      },
+      checkFailureCount: 3,
+      createdAt: now - 2 * 60 * 60_000,
+      updatedAt: now - 2 * 60 * 60_000,
+    };
+    let statusQueryIndex = 0;
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery(statusQueryIndex++ === 5 ? [failedScan] : [])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:failed-scan",
+      status: "failed",
+      repairBlockedReason: "checks-incomplete",
+    });
+  });
+
   it("treats a below-cap finalization failure with recent activity as still active for dispatcher retry (#3401)", async () => {
     const now = Date.now();
     // Created 5 minutes ago with finalizationFailureCount 2 (below
@@ -2049,6 +2090,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       finalizationFailureCount: 2,
@@ -2088,6 +2130,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       finalizationFailureCount: 2,
@@ -2124,6 +2167,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "pending_checks",
+      checks: { trufflehog: { status: "failed" }, clawscan: { status: "failed" } },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       checkFailureCount: 2,
@@ -2157,6 +2201,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       createdAt: now - 5 * 60_000,
@@ -2195,6 +2240,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       createdAt: now - 60 * 60_000,
@@ -2231,6 +2277,7 @@ describe("publishAttempts", () => {
       skillId: "skills:demo",
       skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       createdAt: now - 60 * 60_000,
