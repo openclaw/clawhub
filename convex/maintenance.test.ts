@@ -2594,7 +2594,11 @@ describe("orphaned pending skill version repair (#3349)", () => {
         return pendingRepairContext({ publishAttemptId: "publishAttempts:orphaned" });
       }
       if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
-        return null;
+        return {
+          attemptId: "publishAttempts:orphaned",
+          status: "ready_to_finalize",
+          repairBlockedReason: null,
+        };
       }
       throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
     });
@@ -2644,7 +2648,11 @@ describe("orphaned pending skill version repair (#3349)", () => {
         return pendingRepairContext({ publishAttemptId: "publishAttempts:racing" });
       }
       if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
-        return null;
+        return {
+          attemptId: "publishAttempts:racing",
+          status: "ready_to_finalize",
+          repairBlockedReason: null,
+        };
       }
       throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
     });
@@ -2793,6 +2801,32 @@ describe("orphaned pending skill version repair (#3349)", () => {
     );
 
     expect(result).toEqual({ repaired: false, reason: "attempt-checks-incomplete" });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses a repair when its recorded attempt no longer proves checks completed", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publishAttemptId: "publishAttempts:missing" });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
+        return null;
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "attempt-checks-incomplete",
+      attemptId: "publishAttempts:missing",
+    });
     expect(runMutation).not.toHaveBeenCalled();
   });
 
