@@ -221,8 +221,12 @@ same automatic patch-version behavior.
 Set `dry_run: true` to preview without a token. Real publishes require the
 `clawhub_token` secret.
 
-The workflow has no `categories` or `topics` input, so skills first published
-through it are stored as `other`, the same as `sync`.
+Optional `changelog`, `categories`, and `topics` inputs map to the matching
+`skill publish` flags, and `clear_categories` / `clear_topics` remove metadata a
+skill already carries. A skill first published without `categories` is stored as
+`other`, the same as `sync`. Because catalog metadata applies to every skill the
+run publishes and suspends the unchanged-skill skip described above, see the
+notes under [GitHub Actions](#github-actions-1) before setting it catalog-wide.
 
 ### `sync`
 
