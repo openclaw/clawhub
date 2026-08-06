@@ -42,7 +42,6 @@ type SkippedEvalDiscovery = {
   reason:
     | "no-evals"
     | "unsupported-eval-layout"
-    | "ambiguous-evals"
     | "ambiguous-evals-config"
     | "eval-source-config-mismatch";
   message: string;
@@ -132,15 +131,6 @@ export async function discoverSkillEvals(skillDirectory: string): Promise<SkillE
       status: "skipped",
       reason: "no-evals",
       message: "No SkillEvaluator dataset or native Harbor tasks were found in evals/.",
-    };
-  }
-
-  if (datasets.length > 1) {
-    return {
-      status: "skipped",
-      reason: "ambiguous-evals",
-      message: "Multiple supported SkillEvaluator dataset files were found.",
-      candidates: datasets,
     };
   }
 

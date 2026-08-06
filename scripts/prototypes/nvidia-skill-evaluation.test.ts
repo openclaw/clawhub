@@ -134,16 +134,17 @@ describe("SkillEvaluator eval discovery", () => {
     });
   });
 
-  it("skips rather than choosing between multiple dataset aliases", async () => {
+  it("uses SkillEvaluator's deterministic dataset precedence", async () => {
     const { skillPath } = await makeSkill({
       "evals/evals.json": JSON.stringify({ skill_name: "demo", evals: [{ id: "one" }] }),
       "evals/evals.yaml": "skill_name: demo\nevals:\n  - id: two\n",
+      "eval/dataset.json": JSON.stringify([{ question: "legacy" }]),
     });
 
     await expect(discoverSkillEvals(skillPath)).resolves.toMatchObject({
-      status: "skipped",
-      reason: "ambiguous-evals",
-      candidates: [join(skillPath, "evals", "evals.json"), join(skillPath, "evals", "evals.yaml")],
+      status: "ready",
+      taskSource: "evals_json",
+      datasetPath: join(skillPath, "evals", "evals.json"),
     });
   });
 
