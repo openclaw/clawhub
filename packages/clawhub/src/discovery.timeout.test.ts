@@ -35,6 +35,10 @@ function stubJsonFetch(status: number, body: unknown) {
   );
 }
 
+function stubRejectingFetch(error: Error) {
+  globalStubs.stub("fetch", vi.fn(async () => Promise.reject(error)) as unknown as typeof fetch);
+}
+
 function stubStalledBodyFetch() {
   globalStubs.stub(
     "fetch",
@@ -64,6 +68,7 @@ function stubStalledBodyFetch() {
 
 describe("discoverRegistryFromSite timeout", () => {
   afterEach(() => {
+    vi.useRealTimers();
     globalStubs.restoreAll();
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -79,6 +84,15 @@ describe("discoverRegistryFromSite timeout", () => {
       );
     },
   );
+
+  it("clears the timeout when fetch rejects before returning headers", async () => {
+    vi.useFakeTimers();
+    const error = new Error("connection refused");
+    stubRejectingFetch(error);
+
+    await expect(discoverRegistryFromSite("https://example.com")).rejects.toBe(error);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it(
     "rejects with a timeout error when the response body never completes",

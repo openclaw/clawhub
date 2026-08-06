@@ -17,8 +17,13 @@ async function fetchWithTimeout(
     () => controller.abort(new Error(`Request timed out after ${timeoutSeconds}s`)),
     timeoutMs,
   );
-  const response = await fetch(url, { ...init, signal: controller.signal });
-  return { response, clearTimer: () => clearTimeout(timeout) };
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    return { response, clearTimer: () => clearTimeout(timeout) };
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
 }
 
 export async function discoverRegistryFromSite(siteUrl: string, timeoutMs = DISCOVERY_TIMEOUT_MS) {
