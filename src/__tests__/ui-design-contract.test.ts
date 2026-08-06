@@ -358,6 +358,8 @@ describe("restored UI design contract", () => {
 
     expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
     expect(homeSource).toContain("home-v2-headline oc-hero-title");
+    expect(homeSource).toContain('<span className="home-v2-action-word home-v2-static-headline">');
+    expect(cssRule(css, ".home-v2-headline")).not.toMatch(/(?:cursor: default|user-select: none)/);
     expect(cssRule(css, ".home-v2-static-headline")).toContain("color: var(--oc-accent-primary)");
     expect(css.lastIndexOf(".home-v2-static-headline")).toBeGreaterThan(
       css.lastIndexOf(".home-v2-action-word"),

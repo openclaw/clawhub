@@ -21492,8 +21492,6 @@ a.search-empty-action {
   justify-content: center;
   text-align: center;
   color: var(--hv2-text);
-  cursor: default;
-  user-select: none;
 }
 .home-v2-headline-clear {
   max-width: 960px;
