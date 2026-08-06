@@ -17,6 +17,7 @@ import {
   type SkillAppealListStatus,
   type SkillReportListStatus,
 } from "clawhub-schema";
+import semver from "semver";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -1682,7 +1683,7 @@ async function describeOwnerVisibleSkillVersionState(
   ctx: ActionCtx,
   request: Request,
   skillId: Id<"skills">,
-  versionQuery: { version?: string },
+  versionQuery: { version?: string; requireLatestProjection?: boolean },
 ): Promise<{ status: number; message: string } | null> {
   const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
     skillId,
@@ -1701,6 +1702,17 @@ async function describeOwnerVisibleSkillVersionState(
         skillId: skill._id,
       })) as Doc<"skillVersions"> | null);
   if (!candidate || candidate.softDeletedAt) return null;
+  if (versionQuery.requireLatestProjection) {
+    const previousLatestVersion = skill.latestVersionSummary?.version;
+    if (
+      !semver.valid(candidate.version) ||
+      (previousLatestVersion &&
+        semver.valid(previousLatestVersion) &&
+        !semver.gt(candidate.version, previousLatestVersion))
+    ) {
+      return null;
+    }
+  }
 
   if (candidate.publicationStatus === "pending") {
     // Cap-exhausted finalize leaves the version "pending" while the attempt
@@ -2354,17 +2366,24 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     }
 
     if (!version || !isSkillVersionForSkill(version, result.skill._id)) {
-      // A tag miss (e.g. "latest" not yet projected during staged
-      // finalization) is just as likely to be a stuck pending version as an
-      // explicit version miss (#3349). Fall back to "most recent pending
-      // version" when there is no explicit version param to look up by name.
-      const pendingState = await describeOwnerVisibleSkillVersionState(
-        ctx,
-        request,
-        result.skill._id,
-        versionParam ? { version: versionParam } : {},
-      );
-      if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
+      // Only an exact version lookup or a genuinely missing implicit/latest
+      // projection can be explained by staged finalization. An arbitrary
+      // missing tag (or a broken tag beside an existing latest pointer) is
+      // unrelated and must remain a normal 404.
+      const isLatestProjectionMissing =
+        !versionParam &&
+        (!tagParam || tagParam === "latest") &&
+        !result.skill.latestVersionId &&
+        !result.skill.tags.latest;
+      if (versionParam || isLatestProjectionMissing) {
+        const pendingState = await describeOwnerVisibleSkillVersionState(
+          ctx,
+          request,
+          result.skill._id,
+          versionParam ? { version: versionParam } : { requireLatestProjection: true },
+        );
+        if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
+      }
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);

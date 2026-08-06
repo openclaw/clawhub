@@ -13450,6 +13450,8 @@ const OWNER_VISIBLE_PENDING_LOOKUP_LIMIT = 50;
 export const getLatestPendingSkillVersionInternal = internalQuery({
   args: { skillId: v.id("skills") },
   handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) return null;
     const candidates = await ctx.db
       .query("skillVersions")
       .withIndex("by_skill_active_created", (q) =>
@@ -13457,7 +13459,17 @@ export const getLatestPendingSkillVersionInternal = internalQuery({
       )
       .order("desc")
       .take(OWNER_VISIBLE_PENDING_LOOKUP_LIMIT);
-    return candidates.find((version) => version.publicationStatus === "pending") ?? null;
+    const previousLatestVersion = skill.latestVersionSummary?.version;
+    return (
+      candidates.find(
+        (version) =>
+          version.publicationStatus === "pending" &&
+          semver.valid(version.version) &&
+          (!previousLatestVersion ||
+            !semver.valid(previousLatestVersion) ||
+            semver.gt(version.version, previousLatestVersion)),
+      ) ?? null
+    );
   },
 });
 
