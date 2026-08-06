@@ -2634,7 +2634,7 @@ describe("orphaned pending skill version repair (#3349)", () => {
     );
   });
 
-  it("surfaces a claim-active warning when the attempt can't be force-closed (#3349)", async () => {
+  it("stops when an attempt becomes actively claimed before the repair mutation (#3349)", async () => {
     // The racing finalizer owns follow-up scheduling after it wins the claim,
     // so the repair must return the warning without enqueuing duplicates.
     const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
@@ -2646,12 +2646,6 @@ describe("orphaned pending skill version repair (#3349)", () => {
       }
       throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
     });
-    const publishResult = {
-      skillId: "skills:1",
-      versionId: "skillVersions:1",
-      embeddingId: "skillEmbeddings:1",
-      publicationStatus: "published" as const,
-    };
     const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.skills.publishPendingVersionAndCloseAttemptInternal) {
         return {
