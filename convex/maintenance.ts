@@ -22,6 +22,7 @@ import {
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { isSkillCardPath } from "./lib/skillCards";
+import { prepareSkillInsertArgsForFinalization, type PublishResult } from "./lib/skillPublish";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -3781,6 +3782,299 @@ export const repairLegacyPublisherOwnershipForUser = internalMutation({
     scheduleNext: v.optional(v.boolean()),
   },
   handler: repairLegacyPublisherOwnershipForUserHandler,
+});
+
+// #3349 repair path: a staged skill publish inserts the skillVersion as
+// "pending" up front and only patches the parent skill's latest/tags/index
+// projection once the async publishAttempts finalize step succeeds. If that
+// worker never runs again (crashed action, cron stopped, exhausted the
+// finalization-failure cap in publishAttempts.ts), the version is left
+// orphaned: files exist, but the skill's projection was never updated and
+// public reads 404. This repairs it in place using the exact insert
+// arguments captured on the version at publish time, without bumping the
+// version number.
+const ORPHANED_PENDING_SKILL_VERSION_REPAIR_CONFIRM =
+  "repair-orphaned-pending-skill-version" as const;
+const ORPHANED_PENDING_SKILL_VERSION_SWEEP_CONFIRM =
+  "repair-orphaned-pending-skill-versions-sweep" as const;
+const ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS = 60 * 60 * 1000;
+
+type SkillVersionRepairOutcome =
+  | { repaired: false; reason: "not-found" }
+  | { repaired: false; reason: "soft-deleted" }
+  | { repaired: false; reason: "not-pending"; publicationStatus: string }
+  | { repaired: false; reason: "attempt-active"; attemptId: Id<"publishAttempts">; status: string }
+  | {
+      repaired: false;
+      reason: "attempt-checks-incomplete";
+      attemptId?: Id<"publishAttempts">;
+      status?: string;
+    }
+  | {
+      repaired: false;
+      reason: "attempt-mismatch";
+      attemptId: Id<"publishAttempts">;
+      status: string;
+    }
+  | { repaired: false; reason: "missing-publish-args" }
+  | { repaired: false; reason: "dry-run"; slug: string; version: string }
+  | {
+      repaired: true;
+      slug: string;
+      version: string;
+      result: PublishResult;
+      // Set when the original publishAttempts row could not be force-closed
+      // because a live worker still claims it (see
+      // publishPendingVersionAndCloseAttemptInternal in convex/skills.ts).
+      // The version write is idempotent, but a racing worker owns follow-up
+      // scheduling once its claim is live. The repair returns this warning and
+      // deliberately skips its own follow-ups in that case.
+      attemptCloseWarning?: "claim-active";
+    };
+
+export async function repairOrphanedPendingSkillVersionHandler(
+  ctx: ActionCtx,
+  versionId: Id<"skillVersions">,
+  dryRun: boolean,
+): Promise<SkillVersionRepairOutcome> {
+  const context = await ctx.runQuery(internal.skills.getPendingSkillVersionRepairContextInternal, {
+    versionId,
+  });
+  if (!context) return { repaired: false, reason: "not-found" };
+  if (context.softDeletedAt) return { repaired: false, reason: "soft-deleted" };
+  if (context.publicationStatus !== "pending") {
+    return {
+      repaired: false,
+      reason: "not-pending",
+      publicationStatus: context.publicationStatus,
+    };
+  }
+
+  // Prefer the exact attemptId recorded on the version's own repair context
+  // (#3401): a single direct get is both cheaper and more precise than the
+  // slug/version take(10) scan, which can miss an active attempt if more
+  // than 10 attempts ever shared the same kind+status+slug+version. Fall
+  // back to the scan only when the version predates publishAttemptId being
+  // recorded.
+  const observedAt = Date.now();
+  const attemptInspection = context.publishAttemptId
+    ? await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal, {
+        attemptId: context.publishAttemptId,
+        skillId: context.skillId,
+        versionId,
+        now: observedAt,
+      })
+    : await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptInternal, {
+        skillId: context.skillId,
+        versionId,
+        slug: context.slug,
+        version: context.version,
+        now: observedAt,
+      });
+  // Every repair needs affirmative evidence that its original prepublication
+  // checks completed. A missing recorded attempt is not proof that it was safe:
+  // the row may have been deleted or the stored id may point at a non-skill
+  // attempt. Legacy versions without an id likewise need a matching eligible
+  // attempt from the fallback scan.
+  if (!attemptInspection) {
+    return {
+      repaired: false,
+      reason: "attempt-checks-incomplete",
+      ...(context.publishAttemptId ? { attemptId: context.publishAttemptId } : {}),
+    };
+  }
+  if (attemptInspection?.repairBlockedReason) {
+    return {
+      repaired: false,
+      reason:
+        attemptInspection.repairBlockedReason === "checks-incomplete"
+          ? "attempt-checks-incomplete"
+          : "attempt-active",
+      attemptId: attemptInspection.attemptId,
+      status: attemptInspection.status,
+    };
+  }
+
+  if (!context.skillInsertArgs) {
+    return { repaired: false, reason: "missing-publish-args" };
+  }
+
+  if (dryRun) {
+    return { repaired: false, reason: "dry-run", slug: context.slug, version: context.version };
+  }
+
+  const skillInsertArgs = await prepareSkillInsertArgsForFinalization(ctx, context.skillInsertArgs);
+  // Publish and force-close the orphaned publishAttempts row in the same
+  // mutation transaction (#3401 finding 3). Doing these as two separate
+  // ctx.runMutation calls left a window where a crash or thrown error
+  // between them published the version but left the attempt reclaimable by
+  // the normal finalization dispatcher, which would then re-run followups
+  // (duplicate owner webhook, duplicate scan dispatch) against an
+  // already-published version. This also covers the retry cleanup case: if
+  // a prior repair attempt already published the version but crashed before
+  // closing the attempt, this call is idempotent on the publish side and
+  // still closes the still-open attempt.
+  const publishOutcome = (await ctx.runMutation(
+    internal.skills.publishPendingVersionAndCloseAttemptInternal,
+    {
+      versionId,
+      publishArgs: skillInsertArgs,
+      publishAttemptId: context.publishAttemptId ?? attemptInspection?.attemptId ?? undefined,
+    },
+  )) as
+    | { result: PublishResult; blockedByAttempt: null; attemptCloseWarning?: "claim-active" }
+    | {
+        result: null;
+        blockedByAttempt: {
+          reason: "claim-active" | "checks-incomplete" | "version-mismatch";
+          attemptId: Id<"publishAttempts">;
+          status: string;
+        };
+      };
+
+  if (publishOutcome.blockedByAttempt) {
+    return {
+      repaired: false,
+      reason:
+        publishOutcome.blockedByAttempt.reason === "claim-active"
+          ? "attempt-active"
+          : publishOutcome.blockedByAttempt.reason === "checks-incomplete"
+            ? "attempt-checks-incomplete"
+            : "attempt-mismatch",
+      attemptId: publishOutcome.blockedByAttempt.attemptId,
+      status: publishOutcome.blockedByAttempt.status,
+    };
+  }
+  const { result, attemptCloseWarning } = publishOutcome;
+
+  return {
+    repaired: true,
+    slug: context.slug,
+    version: context.version,
+    result,
+    ...(attemptCloseWarning ? { attemptCloseWarning } : {}),
+  };
+}
+
+// Targeted variant for a single known-stuck version. Example:
+//   npx convex run maintenance:repairOrphanedPendingSkillVersion \
+//     '{"versionId":"<id>","dryRun":false,"confirm":"repair-orphaned-pending-skill-version"}' --prod
+export const repairOrphanedPendingSkillVersionInternal = internalAction({
+  args: {
+    versionId: v.id("skillVersions"),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SkillVersionRepairOutcome> => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== ORPHANED_PENDING_SKILL_VERSION_REPAIR_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${ORPHANED_PENDING_SKILL_VERSION_REPAIR_CONFIRM}" to apply.`,
+      );
+    }
+    return repairOrphanedPendingSkillVersionHandler(ctx, args.versionId, dryRun);
+  },
+});
+
+export const repairOrphanedPendingSkillVersion: ReturnType<typeof action> = action({
+  args: {
+    versionId: v.id("skillVersions"),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SkillVersionRepairOutcome> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return ctx.runAction(
+      internal.maintenance.repairOrphanedPendingSkillVersionInternal,
+      args,
+    ) as Promise<SkillVersionRepairOutcome>;
+  },
+});
+
+type OrphanedPendingSkillVersionSweepStats = {
+  versionsScanned: number;
+  candidatesFound: number;
+  repaired: number;
+  activeAttempt: number;
+  missingPublishArgs: number;
+  skipped: number;
+};
+
+// Discovery + bulk-apply sweep over every orphaned pending skill version in
+// the table, in `ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS`-and-older batches
+// (see convex/skills.ts). Example:
+//   npx convex run maintenance:repairOrphanedPendingSkillVersionsSweep \
+//     '{"dryRun":false,"confirm":"repair-orphaned-pending-skill-versions-sweep"}' --prod
+export const repairOrphanedPendingSkillVersionsSweep = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== ORPHANED_PENDING_SKILL_VERSION_SWEEP_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${ORPHANED_PENDING_SKILL_VERSION_SWEEP_CONFIRM}" to apply.`,
+      );
+    }
+
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+    const stats: OrphanedPendingSkillVersionSweepStats = {
+      versionsScanned: 0,
+      candidatesFound: 0,
+      repaired: 0,
+      activeAttempt: 0,
+      missingPublishArgs: 0,
+      skipped: 0,
+    };
+    const samples: Array<{ versionId: Id<"skillVersions">; outcome: SkillVersionRepairOutcome }> =
+      [];
+    let cursor: string | null = args.cursor ?? null;
+    let isDone = false;
+    const createdBefore = Date.now() - ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS;
+
+    for (let batch = 0; batch < maxBatches; batch++) {
+      const page: {
+        items: Array<{ versionId: Id<"skillVersions">; skillId: Id<"skills"> }>;
+        scanned: number;
+        cursor: string | null;
+        isDone: boolean;
+      } = await ctx.runQuery(internal.skills.getOrphanedPendingSkillVersionCandidatesPageInternal, {
+        cursor: cursor ?? undefined,
+        batchSize,
+        createdBefore,
+      });
+      cursor = page.cursor;
+      isDone = page.isDone;
+      stats.versionsScanned += page.scanned;
+      stats.candidatesFound += page.items.length;
+
+      for (const item of page.items) {
+        const outcome = await repairOrphanedPendingSkillVersionHandler(ctx, item.versionId, dryRun);
+        if (outcome.repaired) stats.repaired++;
+        else if (outcome.reason === "attempt-active") stats.activeAttempt++;
+        else if (outcome.reason === "missing-publish-args") stats.missingPublishArgs++;
+        else stats.skipped++;
+        if (samples.length < 200) samples.push({ versionId: item.versionId, outcome });
+      }
+
+      if (isDone) break;
+    }
+
+    return {
+      dryRun,
+      ...(dryRun ? { confirmRequired: ORPHANED_PENDING_SKILL_VERSION_SWEEP_CONFIRM } : {}),
+      cursor,
+      isDone,
+      stats,
+      samples,
+    };
+  },
 });
 
 function clampInt(value: number, min: number, max: number) {

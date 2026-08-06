@@ -101,7 +101,7 @@ export type PublishResult = {
   createdNewParent?: boolean;
 };
 
-type SkillPublishFollowup = {
+export type SkillPublishFollowup = {
   skipWebhook?: boolean;
   ownerHandle?: string;
   slug: string;
@@ -745,7 +745,11 @@ export async function finalizeSkillPublishAttempt(
   return publishResult;
 }
 
-async function prepareSkillInsertArgsForFinalization(
+// Exported for the #3349 orphaned-pending-version repair path
+// (convex/maintenance.ts), which re-runs the same deferred-enrichment step
+// finalizeSkillPublishAttempt uses, but sourced directly from a versionId
+// instead of a (possibly terminally-failed) publishAttempts claim.
+export async function prepareSkillInsertArgsForFinalization(
   ctx: ActionCtx,
   rawInsertArgs: unknown,
 ): Promise<unknown> {
@@ -876,10 +880,26 @@ async function releaseSkillPublishAttemptFinalizationClaim(
   );
 }
 
-async function scheduleSkillPublishFollowups(
+export async function scheduleSkillPublishFollowups(
   ctx: ActionCtx,
   publishResult: PublishResult,
   followup: SkillPublishFollowup,
+) {
+  await scheduleSkillPublishSecurityFollowups(ctx, publishResult);
+
+  if (!followup.skipWebhook && getWebhookConfig().url) {
+    void schedulePublishWebhook(ctx, {
+      slug: followup.slug,
+      version: followup.version,
+      displayName: followup.displayName,
+      ownerHandle: followup.ownerHandle,
+    });
+  }
+}
+
+export async function scheduleSkillPublishSecurityFollowups(
+  ctx: Pick<MutationCtx, "scheduler">,
+  publishResult: PublishResult,
 ) {
   await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
     versionId: publishResult.versionId,
@@ -905,15 +925,6 @@ async function scheduleSkillPublishFollowups(
       preserveExistingJob: true,
     },
   );
-
-  if (!followup.skipWebhook && getWebhookConfig().url) {
-    void schedulePublishWebhook(ctx, {
-      slug: followup.slug,
-      version: followup.version,
-      displayName: followup.displayName,
-      ownerHandle: followup.ownerHandle,
-    });
-  }
 }
 
 function mergeSourceIntoMetadata(

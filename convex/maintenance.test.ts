@@ -55,6 +55,9 @@ vi.mock("./_generated/api", () => ({
       applySkillLineageCycleRepairInternal: Symbol("applySkillLineageCycleRepairInternal"),
       repairSkillLineageCyclesInternal: Symbol("repairSkillLineageCyclesInternal"),
       inspectHeartflowDuplicateSkillsInternal: Symbol("inspectHeartflowDuplicateSkillsInternal"),
+      repairOrphanedPendingSkillVersionInternal: Symbol(
+        "repairOrphanedPendingSkillVersionInternal",
+      ),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
@@ -62,6 +65,16 @@ vi.mock("./_generated/api", () => ({
       getOwnerSkillActivityInternal: Symbol("skills.getOwnerSkillActivityInternal"),
       mergeSamePublisherDuplicateSkillByIdInternal: Symbol(
         "skills.mergeSamePublisherDuplicateSkillByIdInternal",
+      ),
+      getPendingSkillVersionRepairContextInternal: Symbol(
+        "skills.getPendingSkillVersionRepairContextInternal",
+      ),
+      getOrphanedPendingSkillVersionCandidatesPageInternal: Symbol(
+        "skills.getOrphanedPendingSkillVersionCandidatesPageInternal",
+      ),
+      publishPendingVersionInternal: Symbol("skills.publishPendingVersionInternal"),
+      publishPendingVersionAndCloseAttemptInternal: Symbol(
+        "skills.publishPendingVersionAndCloseAttemptInternal",
       ),
     },
     users: {
@@ -74,6 +87,21 @@ vi.mock("./_generated/api", () => ({
     },
     securityScan: {
       enqueuePackageReleaseScanInternal: Symbol("securityScan.enqueuePackageReleaseScanInternal"),
+      enqueueSkillVersionScanInternal: Symbol("securityScan.enqueueSkillVersionScanInternal"),
+    },
+    publishAttempts: {
+      findActiveSkillPublishAttemptInternal: Symbol(
+        "publishAttempts.findActiveSkillPublishAttemptInternal",
+      ),
+      findActiveSkillPublishAttemptByIdInternal: Symbol(
+        "publishAttempts.findActiveSkillPublishAttemptByIdInternal",
+      ),
+      closeOrphanedSkillPublishAttemptInternal: Symbol(
+        "publishAttempts.closeOrphanedSkillPublishAttemptInternal",
+      ),
+    },
+    vt: {
+      scanWithVirusTotal: Symbol("vt.scanWithVirusTotal"),
     },
   },
 }));
@@ -98,6 +126,8 @@ const {
   repairLegacyPluginSkillSpectorBatchInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
   repairHeartflowDuplicateSkillsInternalHandler,
+  repairOrphanedPendingSkillVersionHandler,
+  repairOrphanedPendingSkillVersionsSweep,
   repairSkillLineageCyclesInternalHandler,
   resyncPluginCatalogMetadataDigestsBatchInternal,
   resyncPluginCatalogMetadataDigestsInternal,
@@ -2474,5 +2504,433 @@ describe("backfillSkillSearchDigestFirstTokensInternal dry run", () => {
     expect(result.dryRun).toBe(true);
     expect(patch).not.toHaveBeenCalled();
     expect(runAfter).not.toHaveBeenCalled();
+  });
+});
+
+// #3349: a staged publish inserts the skillVersion as "pending" before the
+// async finalize step patches the parent skill's latest/tags/index
+// projection. If that worker never runs again, the version is orphaned:
+// files exist, but public reads still 404. This repair path re-runs
+// finalization from the exact insert args captured on the version at
+// publish time, without bumping the version number.
+describe("orphaned pending skill version repair (#3349)", () => {
+  function pendingRepairContext(overrides: Record<string, unknown> = {}) {
+    return {
+      skillId: "skills:1",
+      slug: "demo-skill",
+      version: "1.0.0",
+      displayName: "Demo Skill",
+      publicationStatus: "pending",
+      softDeletedAt: null,
+      skillInsertArgs: {
+        userId: "users:owner",
+        slug: "demo-skill",
+        displayName: "Demo Skill",
+        version: "1.0.0",
+      },
+      ...overrides,
+    };
+  }
+
+  it("repairs an orphaned pending version by re-running finalization", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext();
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
+        return {
+          attemptId: "publishAttempts:legacy",
+          status: "ready_to_finalize",
+          repairBlockedReason: null,
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const publishResult = {
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      embeddingId: "skillEmbeddings:1",
+      publicationStatus: "published" as const,
+    };
+    const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.publishPendingVersionAndCloseAttemptInternal) {
+        return { result: publishResult, attemptCloseWarning: undefined };
+      }
+      throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
+    });
+    const runAfter = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: true,
+      slug: "demo-skill",
+      version: "1.0.0",
+      result: publishResult,
+    });
+    // No publishAttemptId on this fixture: the pre-check falls back to the
+    // slug/version scan (asserted via the mock above), and the matching
+    // eligible legacy attempt is force-closed atomically with publication.
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.skills.publishPendingVersionAndCloseAttemptInternal,
+      {
+        versionId: "skillVersions:1",
+        publishArgs: expect.objectContaining({ slug: "demo-skill", version: "1.0.0" }),
+        publishAttemptId: "publishAttempts:legacy",
+      },
+    );
+    // Follow-ups are scheduled atomically inside the combined mutation, not
+    // by the outer action where a crash could lose them after publication.
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("force-closes the orphaned publish attempt so the dispatcher can't re-run followups (#3349)", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publishAttemptId: "publishAttempts:orphaned" });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
+        return {
+          attemptId: "publishAttempts:orphaned",
+          status: "ready_to_finalize",
+          repairBlockedReason: null,
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const publishResult = {
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      embeddingId: "skillEmbeddings:1",
+      publicationStatus: "published" as const,
+    };
+    const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.publishPendingVersionAndCloseAttemptInternal) {
+        return { result: publishResult, attemptCloseWarning: undefined };
+      }
+      throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
+    });
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: true,
+      slug: "demo-skill",
+      version: "1.0.0",
+      result: publishResult,
+    });
+    // #3401: publish + attempt-close now happen in one mutation instead of
+    // two separate ctx.runMutation calls, closing the race where a crash
+    // between them left the version published but the attempt reclaimable.
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.skills.publishPendingVersionAndCloseAttemptInternal,
+      {
+        versionId: "skillVersions:1",
+        publishArgs: expect.objectContaining({ slug: "demo-skill", version: "1.0.0" }),
+        publishAttemptId: "publishAttempts:orphaned",
+      },
+    );
+  });
+
+  it("stops when an attempt becomes actively claimed before the repair mutation (#3349)", async () => {
+    // The racing finalizer owns follow-up scheduling after it wins the claim,
+    // so the repair must return the warning without enqueuing duplicates.
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publishAttemptId: "publishAttempts:racing" });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
+        return {
+          attemptId: "publishAttempts:racing",
+          status: "ready_to_finalize",
+          repairBlockedReason: null,
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.publishPendingVersionAndCloseAttemptInternal) {
+        return {
+          result: null,
+          blockedByAttempt: {
+            reason: "claim-active" as const,
+            attemptId: "publishAttempts:racing",
+            status: "finalizing",
+          },
+        };
+      }
+      throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
+    });
+    const runAfter = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "attempt-active",
+      attemptId: "publishAttempts:racing",
+      status: "finalizing",
+    });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("refuses to repair a version a live publish attempt still owns", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext();
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
+        return {
+          attemptId: "publishAttempts:live",
+          status: "ready_to_finalize",
+          repairBlockedReason: "claim-active",
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "attempt-active",
+      attemptId: "publishAttempts:live",
+      status: "ready_to_finalize",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses to repair a version whose known publishAttemptId is still live (#3401)", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publishAttemptId: "publishAttempts:live-by-id" });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
+        return {
+          attemptId: "publishAttempts:live-by-id",
+          status: "finalizing",
+          repairBlockedReason: "claim-active",
+        };
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
+        throw new Error("must prefer the direct attemptId lookup when publishAttemptId is known");
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "attempt-active",
+      attemptId: "publishAttempts:live-by-id",
+      status: "finalizing",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses to repair a stale attempt whose prepublication checks never completed", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publishAttemptId: "publishAttempts:unchecked" });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
+        return {
+          attemptId: "publishAttempts:unchecked",
+          status: "pending_checks",
+          repairBlockedReason: "checks-incomplete",
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "attempt-checks-incomplete",
+      attemptId: "publishAttempts:unchecked",
+      status: "pending_checks",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses a legacy repair when no attempt proves checks completed", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext();
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
+        return null;
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({ repaired: false, reason: "attempt-checks-incomplete" });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses a repair when its recorded attempt no longer proves checks completed", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publishAttemptId: "publishAttempts:missing" });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
+        return null;
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "attempt-checks-incomplete",
+      attemptId: "publishAttempts:missing",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("dry run reports the repair without mutating anything", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext();
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
+        return {
+          attemptId: "publishAttempts:legacy",
+          status: "ready_to_finalize",
+          repairBlockedReason: null,
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      true,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "dry-run",
+      slug: "demo-skill",
+      version: "1.0.0",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("does not repair a version that already finished publishing", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publicationStatus: "published" });
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "not-pending",
+      publicationStatus: "published",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("reports missing publish args instead of guessing at a repair", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ skillInsertArgs: null });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
+        return {
+          attemptId: "publishAttempts:legacy",
+          status: "ready_to_finalize",
+          repairBlockedReason: null,
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({ repaired: false, reason: "missing-publish-args" });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+});
+
+describe("orphaned pending skill version sweep (#3349)", () => {
+  it("uses one fixed age cutoff across every page", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(now)
+      .mockReturnValue(now + 5 * 60_000);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [], scanned: 50, cursor: "page-2", isDone: false })
+      .mockResolvedValueOnce({ items: [], scanned: 25, cursor: null, isDone: true });
+
+    const result = await (
+      repairOrphanedPendingSkillVersionsSweep as unknown as { _handler: Function }
+    )._handler({ runQuery } as never, { batchSize: 50, maxBatches: 2 });
+
+    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(runQuery.mock.calls.map(([, args]) => args.createdBefore)).toEqual([
+      now - 60 * 60_000,
+      now - 60 * 60_000,
+    ]);
+    expect(result).toMatchObject({ dryRun: true, isDone: true, cursor: null });
   });
 });

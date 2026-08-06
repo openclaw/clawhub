@@ -4,13 +4,17 @@ import {
   claimPendingPublishAttemptChecksInternal,
   claimPrePublicationChecks,
   claimReadyPublishAttemptFinalizationRetryInternal,
+  closeOrphanedSkillPublishAttemptInternal,
   completePendingPublishAttemptChecksInternal,
   createPackagePublishAttemptInternal,
   createSkillPublishAttemptInternal,
+  findActiveSkillPublishAttemptByIdInternal,
+  findActiveSkillPublishAttemptInternal,
   recordSkillPublishAttemptFinalizedInternal,
   releasePackagePublishAttemptFinalizationClaimInternal,
   releaseSkillPublishAttemptFinalizationClaimInternal,
 } from "./publishAttempts";
+import { publishPendingVersionAndCloseAttemptInternal } from "./skills";
 
 const claimPendingChecksHandler = (
   claimPendingPublishAttemptChecksInternal as unknown as {
@@ -57,6 +61,40 @@ const createPackagePublishAttemptHandler = (
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
+const findActiveSkillPublishAttemptHandler = (
+  findActiveSkillPublishAttemptInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const findActiveSkillPublishAttemptByIdHandler = (
+  findActiveSkillPublishAttemptByIdInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const closeOrphanedSkillPublishAttemptHandler = (
+  closeOrphanedSkillPublishAttemptInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const publishPendingVersionAndCloseAttemptHandler = (
+  publishPendingVersionAndCloseAttemptInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+
+function paginatedAttemptQuery(items: Array<Record<string, unknown>>) {
+  return {
+    withIndex: vi.fn(() => ({
+      order: vi.fn(() => ({
+        paginate: vi.fn(async () => ({
+          page: items,
+          isDone: true,
+          continueCursor: "done",
+        })),
+      })),
+    })),
+  };
+}
 
 describe("publishAttempts", () => {
   it("schedules exact dispatch for fresh skill attempts", async () => {
@@ -1198,6 +1236,175 @@ describe("publishAttempts", () => {
     expect(transientCtx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
   });
 
+  it("caps consecutive transient finalization failures instead of retrying forever (#3349)", async () => {
+    const attemptId = "publishAttempts:looping";
+    const makeCtx = (finalizationFailureCount: number | undefined) => ({
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: attemptId,
+          kind: "skill",
+          status: "finalizing",
+          skillInsertArgs: { slug: "looping-skill", version: "1.0.0" },
+          followup: {},
+          finalizationClaimId: "finalize:claim",
+          finalizationFailureCount,
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    });
+
+    // Four consecutive transient failures stay below the cap and keep the
+    // attempt retriable.
+    for (let previousCount = 0; previousCount < 4; previousCount += 1) {
+      const ctx = makeCtx(previousCount === 0 ? undefined : previousCount);
+      await expect(
+        releaseSkillFinalizationHandler(ctx, {
+          attemptId,
+          claimId: "finalize:claim",
+          error: "Rate limit exceeded",
+        }),
+      ).resolves.toEqual({ attemptId, status: "ready_to_finalize" });
+      expect(ctx.db.patch).toHaveBeenCalledWith(
+        attemptId,
+        expect.objectContaining({
+          status: "ready_to_finalize",
+          finalizationFailureCount: previousCount + 1,
+        }),
+      );
+    }
+
+    // The 5th consecutive transient failure hits
+    // MAX_CONSECUTIVE_FINALIZATION_FAILURES and terminalizes the attempt so it
+    // stops looping forever and surfaces as failed instead of leaving the
+    // skillVersion silently pending (#3349).
+    const cappedCtx = makeCtx(4);
+    await expect(
+      releaseSkillFinalizationHandler(cappedCtx, {
+        attemptId,
+        claimId: "finalize:claim",
+        error: "Rate limit exceeded",
+      }),
+    ).resolves.toEqual({ attemptId, status: "failed" });
+    expect(cappedCtx.db.patch).toHaveBeenCalledWith(
+      attemptId,
+      expect.objectContaining({
+        status: "failed",
+        finalizationClaimId: undefined,
+        finalizationLastError: "Rate limit exceeded",
+        finalizationFailureCount: 5,
+        failedAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("keeps retrying after publication until security followups finalize (#3401)", async () => {
+    const attemptId = "publishAttempts:published-tail";
+    const versionId = "skillVersions:published-tail";
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === attemptId
+            ? {
+                _id: attemptId,
+                kind: "skill",
+                status: "finalizing",
+                skillVersionId: versionId,
+                skillInsertArgs: { slug: "published-tail", version: "1.0.0" },
+                followup: {},
+                finalizationClaimId: "finalize:claim",
+                finalizationFailureCount: 4,
+              }
+            : {
+                _id: versionId,
+                publicationStatus: "published",
+              },
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      releaseSkillFinalizationHandler(ctx, {
+        attemptId,
+        claimId: "finalize:claim",
+        error: "security followup scheduling failed",
+      }),
+    ).resolves.toEqual({ attemptId, status: "ready_to_finalize" });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      attemptId,
+      expect.objectContaining({
+        status: "ready_to_finalize",
+        finalizationClaimId: undefined,
+        finalizationLastError: "security followup scheduling failed",
+        finalizationFailureCount: 5,
+      }),
+    );
+    expect(ctx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
+  });
+
+  it("keeps retrying package finalization past the skill cap since there is no package repair path yet (#3401)", async () => {
+    // Finding 1: releaseFinalizationClaimPatch used to terminalize at
+    // MAX_CONSECUTIVE_FINALIZATION_FAILURES for both kinds, but a
+    // terminalized package attempt has no repair sweep (unlike
+    // repairOrphanedPendingSkillVersion for skills), so it would permanently
+    // orphan the pending package release. Package finalization must stay
+    // retriable past the skill cap until a package repair path exists.
+    const attemptId = "publishAttempts:package-looping";
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: attemptId,
+          kind: "package",
+          status: "finalizing",
+          packageInsertArgs: { name: "@demo/plugin", version: "1.0.0" },
+          packageReleaseId: "packageReleases:demo",
+          finalizationClaimId: "finalize:claim",
+          finalizationFailureCount: 4,
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    // The 5th consecutive transient failure would terminalize a skill
+    // attempt (see the cap test above), but a package attempt must stay
+    // "ready_to_finalize" instead of "failed".
+    await expect(
+      releasePackageFinalizationHandler(ctx, {
+        attemptId,
+        claimId: "finalize:claim",
+        error: "Rate limit exceeded",
+      }),
+    ).resolves.toEqual({ attemptId, status: "ready_to_finalize" });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      attemptId,
+      expect.objectContaining({
+        status: "ready_to_finalize",
+        finalizationClaimId: undefined,
+        finalizationLastError: "Rate limit exceeded",
+        finalizationFailureCount: 5,
+      }),
+    );
+    expect(ctx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
+  });
+
   it("terminalizes deleted package releases instead of retrying finalization", async () => {
     const ctx = {
       db: {
@@ -1737,5 +1944,1033 @@ describe("publishAttempts", () => {
       artifact: { kind: "plugin", name: "@demo/plugin" },
       version: "1.0.0",
     });
+  });
+
+  it("finds a live in-flight attempt so #3349 repair does not race a legitimate publish", async () => {
+    const now = Date.now();
+    const live = {
+      _id: "publishAttempts:live",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([live])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:live",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
+  });
+
+  it("ignores attempts for a different skillId sharing the same slug+version", async () => {
+    const now = Date.now();
+    const otherSkillAttempt = {
+      _id: "publishAttempts:other-owner",
+      skillId: "skills:other",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([otherSkillAttempt])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("paginates past unrelated attempts to find the exact legacy version", async () => {
+    const now = Date.now();
+    const unrelated = Array.from({ length: 100 }, (_, index) => ({
+      _id: `publishAttempts:unrelated-${index}`,
+      skillId: "skills:other",
+      skillVersionId: `skillVersions:other-${index}`,
+      status: "ready_to_finalize",
+      createdAt: now - index,
+    }));
+    const exact = {
+      _id: "publishAttempts:exact-on-page-two",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const paginate = vi
+      .fn()
+      .mockResolvedValueOnce({ page: unrelated, isDone: false, continueCursor: "page-two" })
+      .mockResolvedValueOnce({ page: [exact], isDone: true, continueCursor: "done" });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+        })),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:exact-on-page-two",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
+    expect(paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 100 });
+    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "page-two", numItems: 100 });
+  });
+
+  it("does not bypass checks for an old unclaimed pending_checks attempt", async () => {
+    const now = Date.now();
+    const abandoned = {
+      _id: "publishAttempts:abandoned",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "pending_checks",
+      checks: { trufflehog: { status: "pending" }, clawscan: { status: "pending" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([abandoned])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:abandoned",
+      status: "pending_checks",
+      repairBlockedReason: "checks-incomplete",
+    });
+  });
+
+  it("does not bypass a terminally failed scan for a legacy version", async () => {
+    const now = Date.now();
+    const failedScan = {
+      _id: "publishAttempts:failed-scan",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "failed",
+      checks: {
+        trufflehog: { status: "failed" },
+        clawscan: { status: "pending" },
+      },
+      checkFailureCount: 3,
+      createdAt: now - 2 * 60 * 60_000,
+      updatedAt: now - 2 * 60 * 60_000,
+    };
+    let statusQueryIndex = 0;
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery(statusQueryIndex++ === 5 ? [failedScan] : [])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:failed-scan",
+      status: "failed",
+      repairBlockedReason: "checks-incomplete",
+    });
+  });
+
+  it("treats a below-cap finalization failure with recent activity as still active for dispatcher retry (#3401)", async () => {
+    const now = Date.now();
+    // Created 5 minutes ago with finalizationFailureCount 2 (below
+    // MAX_CONSECUTIVE_FINALIZATION_FAILURES) and updatedAt only 1 minute
+    // ago: releaseFinalizationClaimPatch intentionally handed this back to
+    // "ready_to_finalize" for the dispatcher to retry. A manual repair must
+    // not treat a nonzero failure count alone as abandonment while the
+    // attempt is still fresh relative to its last activity (#3401 finding
+    // 2) — the old behavior abandoned this immediately, racing the
+    // dispatcher's own retry.
+    const retryingFinalizer = {
+      _id: "publishAttempts:retrying-finalizer",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      finalizationFailureCount: 2,
+      createdAt: now - 5 * 60_000,
+      updatedAt: now - 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([retryingFinalizer])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:retrying-finalizer",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
+  });
+
+  it("treats a finalization failure as abandoned once it goes stale past the retry window (#3401)", async () => {
+    const now = Date.now();
+    // Same nonzero finalizationFailureCount as the still-active case above,
+    // but updatedAt is well past ACTIVE_ATTEMPT_RETRYABLE_STALE_MS
+    // (2x FINALIZATION_CLAIM_LEASE_MS = 20 minutes): nothing has touched
+    // this attempt in 25 minutes despite it already failing once, so it is
+    // genuinely stuck and must not block manual repair.
+    const staleFinalizer = {
+      _id: "publishAttempts:stale-finalizer",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      finalizationFailureCount: 2,
+      createdAt: now - 30 * 60_000,
+      updatedAt: now - 25 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([staleFinalizer])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:stale-finalizer",
+      status: "ready_to_finalize",
+      repairBlockedReason: null,
+    });
+  });
+
+  it("allows a freshly cap-exhausted failed attempt on the legacy slug/version scan (#3401)", async () => {
+    const now = Date.now();
+    const capExhausted = {
+      _id: "publishAttempts:legacy-cap-exhausted",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "failed",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      finalizationFailureCount: 5,
+      createdAt: now - 60_000,
+      updatedAt: now,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([capExhausted])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:legacy-cap-exhausted",
+      status: "failed",
+      repairBlockedReason: null,
+    });
+  });
+
+  it("still protects pending_checks between scanner retries with nonzero checkFailureCount (#3349)", async () => {
+    const now = Date.now();
+    // Scanner released the claim and scheduled a retry; checkFailureCount is
+    // nonzero but the attempt is still actively pending_checks within grace.
+    const betweenScannerRetries = {
+      _id: "publishAttempts:scanner-retry",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "pending_checks",
+      checks: { trufflehog: { status: "failed" }, clawscan: { status: "failed" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      checkFailureCount: 2,
+      createdAt: now - 5 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([betweenScannerRetries])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:scanner-retry",
+      status: "pending_checks",
+      repairBlockedReason: "checks-incomplete",
+    });
+  });
+
+  it("still protects a genuinely fresh unclaimed attempt with zero failures", async () => {
+    const now = Date.now();
+    const fresh = {
+      _id: "publishAttempts:fresh",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 5 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([fresh])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:fresh",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
+  });
+
+  it("treats a zero-failure attempt as active when it recently transitioned status, even if created long ago (#3401)", async () => {
+    const now = Date.now();
+    // Created an hour ago (well past ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS from
+    // createdAt alone) but updatedAt is only 2 minutes ago: a long-running
+    // pending_checks phase just moved cleanly to ready_to_finalize with zero
+    // failures. Using createdAt alone here would wrongly call this abandoned
+    // while the dispatcher still actively owns it, racing manual repair
+    // against a live finalize attempt.
+    const recentlyTransitioned = {
+      _id: "publishAttempts:recently-transitioned",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+      updatedAt: now - 2 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([recentlyTransitioned])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:recently-transitioned",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
+  });
+
+  it("treats a zero-failure attempt as abandoned once both createdAt and updatedAt go stale", async () => {
+    const now = Date.now();
+    // Created an hour ago and last updated 45 minutes ago (past
+    // ACTIVE_ATTEMPT_UNCLAIMED_GRACE_MS from updatedAt too): genuinely
+    // abandoned, not merely old, so manual repair must still proceed.
+    const staleTransitioned = {
+      _id: "publishAttempts:stale-transitioned",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+      updatedAt: now - 45 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([staleTransitioned])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:stale-transitioned",
+      status: "ready_to_finalize",
+      repairBlockedReason: null,
+    });
+  });
+});
+
+describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
+  it("returns the attempt when it is live and owned by the given skill", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:by-id",
+      kind: "skill",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:by-id",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now: Date.now(),
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:by-id",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
+  });
+
+  it("returns null when the attempt belongs to a different skill", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:mismatched",
+      kind: "skill",
+      skillId: "skills:other",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:mismatched",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now: Date.now(),
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("blocks a failed attempt that never completed prepublication checks", async () => {
+    const attempt = {
+      _id: "publishAttempts:terminal",
+      kind: "skill",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "failed",
+      checks: {
+        trufflehog: { status: "failed" },
+        clawscan: { status: "pending" },
+      },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: Date.now() - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:terminal",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now: Date.now(),
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:terminal",
+      status: "failed",
+      repairBlockedReason: "checks-incomplete",
+    });
+  });
+
+  it("allows a freshly cap-exhausted failed attempt (dispatcher cannot reclaim it)", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:cap-exhausted",
+      kind: "skill",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "failed",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationFailureCount: 5,
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+      updatedAt: now,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:cap-exhausted",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:cap-exhausted",
+      status: "failed",
+      repairBlockedReason: null,
+    });
+  });
+
+  it("returns null when the attempt is non-terminal but stale (no live claim, past retry window)", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:stale",
+      kind: "skill",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationFailureCount: 3,
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+      updatedAt: now - 60 * 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:stale",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now: Date.now(),
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:stale",
+      status: "ready_to_finalize",
+      repairBlockedReason: null,
+    });
+  });
+
+  it("returns null when the attempt does not exist", async () => {
+    const ctx = { db: { get: vi.fn(async () => null) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:missing",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now: Date.now(),
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("closeOrphanedSkillPublishAttemptInternal (#3349)", () => {
+  const result = {
+    skillId: "skills:1",
+    versionId: "skillVersions:1",
+    embeddingId: "skillEmbeddings:1",
+    publicationStatus: "published" as const,
+  };
+
+  it("force-finalizes a dead non-terminal attempt so the dispatcher can't reclaim it", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:orphaned",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "ready_to_finalize",
+      finalizationFailureCount: 5,
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => attempt),
+        normalizeId: vi.fn(),
+        query: vi.fn(),
+        patch,
+      },
+    };
+
+    await expect(
+      closeOrphanedSkillPublishAttemptHandler(ctx, {
+        attemptId: "publishAttempts:orphaned",
+        result,
+      }),
+    ).resolves.toEqual({ closed: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "publishAttempts:orphaned",
+      expect.objectContaining({ status: "finalized", result }),
+    );
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+  });
+
+  it("does not touch an attempt a live worker still claims", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:live",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "finalizing",
+      finalizationClaimExpiresAt: now + 60_000,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => attempt),
+        normalizeId: vi.fn(),
+        query: vi.fn(),
+        patch,
+      },
+    };
+
+    await expect(
+      closeOrphanedSkillPublishAttemptHandler(ctx, {
+        attemptId: "publishAttempts:live",
+        result,
+      }),
+    ).resolves.toEqual({ closed: false, reason: "claim-active" });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("no-ops on an attempt that already reached a terminal status", async () => {
+    const attempt = {
+      _id: "publishAttempts:done",
+      kind: "skill",
+      status: "finalized",
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => attempt),
+        normalizeId: vi.fn(),
+        query: vi.fn(),
+        patch,
+      },
+    };
+
+    await expect(
+      closeOrphanedSkillPublishAttemptHandler(ctx, {
+        attemptId: "publishAttempts:done",
+        result,
+      }),
+    ).resolves.toEqual({ closed: false, reason: "already-terminal", status: "finalized" });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the attempt no longer exists", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => null),
+        normalizeId: vi.fn(),
+        query: vi.fn(),
+        patch,
+      },
+    };
+
+    await expect(
+      closeOrphanedSkillPublishAttemptHandler(ctx, {
+        attemptId: "publishAttempts:missing",
+        result,
+      }),
+    ).resolves.toEqual({ closed: false, reason: "not-found" });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("refuses to finalize an attempt bound to a different version", async () => {
+    const attempt = {
+      _id: "publishAttempts:other-version",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:other",
+      status: "ready_to_finalize",
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => attempt),
+        normalizeId: vi.fn(),
+        query: vi.fn(),
+        patch,
+      },
+    };
+
+    await expect(
+      closeOrphanedSkillPublishAttemptHandler(ctx, {
+        attemptId: "publishAttempts:other-version",
+        result,
+      }),
+    ).resolves.toEqual({ closed: false, reason: "version-mismatch" });
+    expect(patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
+  function publishedVersionContext(attempt?: Record<string, unknown>) {
+    const version = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      publicationStatus: "published",
+      pendingPublication: { tags: ["latest"] },
+    };
+    const skill = { _id: "skills:1" };
+    const embedding = { _id: "skillEmbeddings:1" };
+    const patch = vi.fn();
+    const runAfter = vi.fn();
+    const get = vi.fn(async (id: string) => {
+      if (id === version._id) return version;
+      if (id === skill._id) return skill;
+      if (id === "publishAttempts:1") return attempt ?? null;
+      return null;
+    });
+    const query = vi.fn(() => ({
+      withIndex: vi.fn(() => ({ unique: vi.fn(async () => embedding) })),
+    }));
+    return {
+      ctx: {
+        db: {
+          delete: vi.fn(),
+          get,
+          insert: vi.fn(),
+          normalizeId: vi.fn(),
+          patch,
+          query,
+          replace: vi.fn(),
+          system: {},
+        },
+        scheduler: { runAfter },
+      },
+      patch,
+      runAfter,
+    };
+  }
+
+  it("clears the staged snapshot when the recovered version has no attempt", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext();
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+      }),
+    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+    expect(runAfter).toHaveBeenCalledTimes(4);
+  });
+
+  it("clears the staged snapshot when the recorded attempt is already terminal", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "finalized",
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("repairs a freshly cap-exhausted failed attempt without treating it as live (#3401)", async () => {
+    // Cap-exhausted failures land as status:"failed" with a fresh updatedAt
+    // and finalizationFailureCount at the terminal cap. isActiveAttemptLive
+    // would treat that as retry activity for ~20m, but the dispatcher cannot
+    // reclaim a terminal failed row — so repair must proceed immediately.
+    const now = Date.now();
+    const { ctx, patch, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "failed",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationFailureCount: 5,
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+      updatedAt: now,
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: expect.objectContaining({
+        versionId: "skillVersions:1",
+        publicationStatus: "published",
+      }),
+      blockedByAttempt: null,
+      attemptCloseWarning: undefined,
+    });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+    // Failed (not finalized): interrupted-repair case — schedule security
+    // follow-ups rather than assuming the normal finalizer already did.
+    expect(runAfter).toHaveBeenCalledTimes(4);
+  });
+
+  it("still schedules scans for an interrupted repair whose attempt remains open", async () => {
+    const { ctx, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "ready_to_finalize",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationFailureCount: 1,
+      createdAt: Date.now() - 2 * 60 * 60_000,
+      updatedAt: Date.now() - 2 * 60 * 60_000,
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+
+    expect(runAfter).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not publish when the recorded attempt row is missing", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext();
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "checks-incomplete",
+        attemptId: "publishAttempts:1",
+        status: "not-found",
+      },
+    });
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not publish when the recorded attempt belongs to another artifact kind", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "package",
+      status: "ready_to_finalize",
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "checks-incomplete",
+        attemptId: "publishAttempts:1",
+        status: "ready_to_finalize",
+      },
+    });
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not publish when the attempt gains a live finalizer claim", async () => {
+    const { ctx, patch } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "finalizing",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationClaimExpiresAt: Date.now() + 60_000,
+      createdAt: Date.now() - 2 * 60 * 60_000,
+      updatedAt: Date.now(),
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "claim-active",
+        attemptId: "publishAttempts:1",
+        status: "finalizing",
+      },
+    });
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not publish a stale pending_checks attempt that never passed scans", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "pending_checks",
+      checks: {
+        trufflehog: { status: "pending" },
+        clawscan: { status: "pending" },
+      },
+      createdAt: Date.now() - 2 * 60 * 60_000,
+      updatedAt: Date.now() - 2 * 60 * 60_000,
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "checks-incomplete",
+        attemptId: "publishAttempts:1",
+        status: "pending_checks",
+      },
+    });
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
   });
 });

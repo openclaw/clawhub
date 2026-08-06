@@ -1323,6 +1323,11 @@ const publishAttempts = defineTable({
   finalizationClaimedAt: v.optional(v.number()),
   finalizationClaimExpiresAt: v.optional(v.number()),
   finalizationLastError: v.optional(v.string()),
+  // Consecutive non-terminal finalize failures for this attempt. Uncapped
+  // retries left a "pending" skillVersion orphaned forever with no visible
+  // failure and no latest/index projection (#3349); see
+  // MAX_CONSECUTIVE_FINALIZATION_FAILURES in publishAttempts.ts.
+  finalizationFailureCount: v.optional(v.number()),
   result: v.optional(v.any()),
   createdAt: v.number(),
   updatedAt: v.number(),

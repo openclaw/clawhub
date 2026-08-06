@@ -17,6 +17,7 @@ import {
   type SkillAppealListStatus,
   type SkillReportListStatus,
 } from "clawhub-schema";
+import semver from "semver";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -1598,6 +1599,25 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
 }
 
+async function isOwnerVisibleSkillCaller(
+  ctx: ActionCtx,
+  skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
+  apiTokenUserId: Id<"users"> | null,
+): Promise<boolean> {
+  if (!apiTokenUserId) return false;
+  // Match canReadSkillVersionFiles / isDirectSkillOwner: personal skills have
+  // no ownerPublisherId; org/publisher-owned skills authorize via publisher scope.
+  if (!skill.ownerPublisherId) {
+    return skill.ownerUserId === apiTokenUserId;
+  }
+  return (await ctx.runQuery(internal.publishers.canAccessOwnerScopeInternal, {
+    publisherId: skill.ownerPublisherId,
+    userId: apiTokenUserId,
+    allowedPublisherRoles: ["publisher"],
+    legacyOwnerUserId: skill.ownerUserId,
+  })) as boolean;
+}
+
 async function describeOwnerVisibleSkillState(
   ctx: ActionCtx,
   request: Request,
@@ -1611,8 +1631,7 @@ async function describeOwnerVisibleSkillState(
   if (!skill) return null;
 
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
-  const isOwner = Boolean(apiTokenUserId && apiTokenUserId === skill.ownerUserId);
-  if (!isOwner) return null;
+  if (!(await isOwnerVisibleSkillCaller(ctx, skill, apiTokenUserId))) return null;
 
   if (skill.softDeletedAt) {
     return {
@@ -1650,6 +1669,76 @@ async function describeOwnerVisibleSkillState(
     return { status: 410, message: "Skill has been removed by moderation." };
   }
 
+  return null;
+}
+
+// #3349: a staged publish inserts the skillVersion as "pending" up front and
+// only becomes publicly visible once async finalization completes. Public
+// version reads correctly 404 while pending (no existence leak), but the
+// *owner* was getting the exact same bare 404 with no way to tell "stuck
+// pending" apart from "typo'd version" or "never existed". Surface the real
+// state to the authenticated owner only; every other caller still falls
+// through to the generic 404.
+async function describeOwnerVisibleSkillVersionState(
+  ctx: ActionCtx,
+  request: Request,
+  skillId: Id<"skills">,
+  versionQuery: { version?: string; requireLatestProjection?: boolean },
+): Promise<{ status: number; message: string } | null> {
+  const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
+    skillId,
+  })) as Doc<"skills"> | null;
+  if (!skill) return null;
+
+  const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
+  if (!(await isOwnerVisibleSkillCaller(ctx, skill, apiTokenUserId))) return null;
+
+  const candidate = versionQuery.version
+    ? ((await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
+        skillId: skill._id,
+        version: versionQuery.version,
+      })) as Doc<"skillVersions"> | null)
+    : ((await ctx.runQuery(internal.skills.getLatestPendingSkillVersionInternal, {
+        skillId: skill._id,
+      })) as Doc<"skillVersions"> | null);
+  if (!candidate || candidate.softDeletedAt) return null;
+  if (versionQuery.requireLatestProjection) {
+    const previousLatestVersion = skill.latestVersionSummary?.version;
+    if (
+      !semver.valid(candidate.version) ||
+      (previousLatestVersion &&
+        semver.valid(previousLatestVersion) &&
+        !semver.gt(candidate.version, previousLatestVersion))
+    ) {
+      return null;
+    }
+  }
+
+  if (candidate.publicationStatus === "pending") {
+    // Cap-exhausted finalize leaves the version "pending" while the attempt
+    // row is terminal "failed" — "re-check shortly" would be wrong.
+    if (candidate.publishAttemptId) {
+      const attempt = (await ctx.runQuery(internal.publishAttempts.getPublishAttemptByIdInternal, {
+        attemptId: candidate.publishAttemptId,
+      })) as { status: string } | null;
+      if (attempt?.status === "failed") {
+        return {
+          status: 409,
+          message: `Version ${candidate.version} is stuck pending after publication finalization failed (owner-only diagnostic; attempt ${candidate.publishAttemptId}). The version exists and blocks republish; an operator can repair it with maintenance:repairOrphanedPendingSkillVersion.`,
+        };
+      }
+    }
+    return {
+      status: 423,
+      message: `Version ${candidate.version} is pending publication (owner-only diagnostic) and is not yet publicly visible. Re-check shortly, or inspect the publish attempt if this persists.`,
+    };
+  }
+  if (candidate.publicationStatus === "blocked") {
+    return {
+      status: 403,
+      message: `Version ${candidate.version} was blocked during publication (owner-only diagnostic) and was not published.`,
+    };
+  }
   return null;
 }
 
@@ -2158,6 +2247,26 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       if (moderationBlock) {
         return text(moderationBlock.message, moderationBlock.status, rate.headers);
       }
+      // #3401 finding 4: a brand-new staged skill has no published version
+      // at all (hidden, moderationReason "pending.publication", no
+      // latest/tags), so the public getBySlug above and
+      // getUnavailableSkillVersionBlock's version lookup both miss entirely.
+      // Fall back to the same owner-only stuck-pending diagnostic used when
+      // the skill exists but the specific version doesn't, so the owner gets
+      // 423/409 instead of a bare 404 immediately after publishing.
+      const internalSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+        slug,
+        ...(ownerHandle ? { ownerHandle } : {}),
+      });
+      if (internalSkill) {
+        const pendingState = await describeOwnerVisibleSkillVersionState(
+          ctx,
+          request,
+          internalSkill._id,
+          { version: third },
+        );
+        if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
+      }
       return skillNotFoundOrAmbiguousResponse(
         request,
         skillResult,
@@ -2171,7 +2280,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       skillId: skillResult.skill._id,
       version: third,
     })) as PublicSkillVersionResponse | null;
-    if (!version) return text("Version not found", 404, rate.headers);
+    if (!version) {
+      const pendingState = await describeOwnerVisibleSkillVersionState(
+        ctx,
+        request,
+        skillResult.skill._id,
+        { version: third },
+      );
+      if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
+      return text("Version not found", 404, rate.headers);
+    }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
     const effectiveLatestVersionId =
       skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
@@ -2248,6 +2366,24 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     }
 
     if (!version || !isSkillVersionForSkill(version, result.skill._id)) {
+      // Only an exact version lookup or a genuinely missing implicit/latest
+      // projection can be explained by staged finalization. An arbitrary
+      // missing tag (or a broken tag beside an existing latest pointer) is
+      // unrelated and must remain a normal 404.
+      const isLatestProjectionMissing =
+        !versionParam &&
+        (!tagParam || tagParam === "latest") &&
+        !result.skill.latestVersionId &&
+        !result.skill.tags.latest;
+      if (versionParam || isLatestProjectionMissing) {
+        const pendingState = await describeOwnerVisibleSkillVersionState(
+          ctx,
+          request,
+          result.skill._id,
+          versionParam ? { version: versionParam } : { requireLatestProjection: true },
+        );
+        if (pendingState) return text(pendingState.message, pendingState.status, rate.headers);
+      }
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);

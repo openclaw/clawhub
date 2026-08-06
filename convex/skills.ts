@@ -141,6 +141,7 @@ import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   fetchText,
   queueHighlightedWebhook,
+  scheduleSkillPublishSecurityFollowups,
   stageSkillPublishAttemptForUser,
   type SkillPublishResult,
 } from "./lib/skillPublish";
@@ -172,6 +173,10 @@ import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
+import {
+  closeOrphanedSkillPublishAttempt,
+  inspectSkillPublishAttemptForOrphanRepair,
+} from "./publishAttempts";
 import schema from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
@@ -13383,6 +13388,101 @@ export const getPendingVersionPublishArgsInternal = internalQuery({
   },
 });
 
+// Context for the #3349 orphaned-pending-version repair path (see
+// convex/maintenance.ts). Self-contained: everything the repair needs to
+// re-run finalization lives on the skillVersion's own `pendingPublication`
+// snapshot, so this never has to trust a possibly-stuck publishAttempts row.
+export const getPendingSkillVersionRepairContextInternal = internalQuery({
+  args: { versionId: v.id("skillVersions") },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version) return null;
+    const skill = await ctx.db.get(version.skillId);
+    if (!skill) return null;
+    const pendingPublication =
+      version.pendingPublication &&
+      typeof version.pendingPublication === "object" &&
+      !Array.isArray(version.pendingPublication)
+        ? (version.pendingPublication as { skillInsertArgs?: unknown })
+        : null;
+    return {
+      skillId: skill._id,
+      slug: skill.slug,
+      version: version.version,
+      displayName: skill.displayName,
+      publicationStatus: version.publicationStatus ?? ("published" as const),
+      softDeletedAt: version.softDeletedAt ?? null,
+      skillInsertArgs: pendingPublication?.skillInsertArgs ?? null,
+      publishAttemptId: version.publishAttemptId ?? null,
+    };
+  },
+});
+
+// Owner-visible read-path fallback (see describeOwnerVisibleSkillVersionState
+// in httpApiV1/skillsV1.ts): when a skill has no published version yet
+// because its only version is stuck pending, report that instead of a bare
+// 404 to the authenticated owner. Bounded to the most recent 50 versions to
+// keep this owner-triggered read cheap; a pending version older than that
+// window still falls through to a bare 404 here, but the #3349 sweep in
+// maintenance.ts finds and repairs it regardless of age via full-table
+// pagination, so this bound only affects diagnostic message quality, not
+// actual repair coverage.
+const OWNER_VISIBLE_PENDING_LOOKUP_LIMIT = 50;
+export const getLatestPendingSkillVersionInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) return null;
+    const candidates = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(OWNER_VISIBLE_PENDING_LOOKUP_LIMIT);
+    const previousLatestVersion = skill.latestVersionSummary?.version;
+    return (
+      candidates.find(
+        (version) =>
+          version.publicationStatus === "pending" &&
+          semver.valid(version.version) &&
+          (!previousLatestVersion ||
+            !semver.valid(previousLatestVersion) ||
+            semver.gt(version.version, previousLatestVersion)),
+      ) ?? null
+    );
+  },
+});
+
+// Batch scan for the #3349 repair sweep (convex/maintenance.ts). Paginates
+// the active skillVersions table rather than adding a publicationStatus
+// index: orphaned pending versions are rare relative to total versions, and
+// this is an operator-triggered maintenance sweep, not a hot path.
+export const getOrphanedPendingSkillVersionCandidatesPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    createdBefore: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.min(Math.max(args.batchSize ?? 50, 1), 200);
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    const items = page
+      .filter(
+        (version) =>
+          version.publicationStatus === "pending" && version.createdAt < args.createdBefore,
+      )
+      .map((version) => ({ versionId: version._id, skillId: version.skillId }));
+
+    return { items, scanned: page.length, cursor: continueCursor, isDone };
+  },
+});
+
 export const discardPendingPublicationInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
@@ -13431,239 +13531,324 @@ export const discardPendingPublicationInternal = internalMutation({
   },
 });
 
+async function publishPendingVersionHandler(
+  ctx: MutationCtx,
+  args: { versionId: Id<"skillVersions">; publishArgs: unknown },
+) {
+  const version = await ctx.db.get(args.versionId);
+  if (!version || version.softDeletedAt) {
+    throw new ConvexError("Pending skill version not found.");
+  }
+  const skill = await ctx.db.get(version.skillId);
+  if (!skill) throw new ConvexError("Skill not found.");
+
+  const existingEmbedding = await ctx.db
+    .query("skillEmbeddings")
+    .withIndex("by_version", (q) => q.eq("versionId", version._id))
+    .unique();
+  if (version.publicationStatus === "published" || version.publicationStatus === undefined) {
+    if (!existingEmbedding) {
+      throw new ConvexError("Published skill version is missing its embedding.");
+    }
+    return {
+      skillId: skill._id,
+      versionId: version._id,
+      embeddingId: existingEmbedding._id,
+      publicationStatus: "published" as const,
+    };
+  }
+  if (version.publicationStatus !== "pending") {
+    throw new ConvexError(`Skill version is ${version.publicationStatus}, not pending.`);
+  }
+
+  const publishArgs = asSkillPendingPublishArgs(args.publishArgs);
+  const user = await ctx.db.get(publishArgs.userId);
+  if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+
+  const now = Date.now();
+  const prevLatestVersion = skill.latestVersionSummary?.version;
+  const isNewLatest =
+    !prevLatestVersion ||
+    !semver.valid(prevLatestVersion) ||
+    semver.gt(version.version, prevLatestVersion);
+  const nextTags: Record<string, Id<"skillVersions">> = { ...skill.tags };
+  if (isNewLatest) {
+    nextTags.latest = version._id;
+  }
+  for (const tag of normalizeSkillTags(publishArgs.tags) ?? []) {
+    if (tag.toLowerCase() === "latest") continue;
+    nextTags[tag] = version._id;
+  }
+
+  const latestBefore = skill.latestVersionId;
+  const derivedSummary =
+    publishArgs.summary ??
+    getFrontmatterValue(publishArgs.parsed.frontmatter, "description") ??
+    skill.summary;
+  const nextSummary = isNewLatest ? derivedSummary : skill.summary;
+  const nextDisplayName = isNewLatest ? publishArgs.displayName : skill.displayName;
+  const qualityAssessment = publishArgs.qualityAssessment;
+  const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
+  const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
+  const initialModerationStatus =
+    isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
+  const moderationReason = isQualityQuarantine
+    ? "quality.low"
+    : isPublisherUnderModeration
+      ? USER_MODERATION_REASON
+      : "pending.scan";
+  const moderationNotes = isQualityQuarantine
+    ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
+    : isPublisherUnderModeration
+      ? (user.requiresModerationReason ?? "Publisher is currently under manual moderation review.")
+      : undefined;
+  const qualityRecord = qualityAssessment
+    ? {
+        score: qualityAssessment.score,
+        decision: qualityAssessment.decision,
+        trustTier: qualityAssessment.trustTier,
+        similarRecentCount: qualityAssessment.similarRecentCount,
+        reason: qualityAssessment.reason,
+        signals: qualityAssessment.signals,
+        evaluatedAt: now,
+      }
+    : undefined;
+
+  const derivedFlags = deriveModerationFlags({
+    skill: {
+      slug: skill.slug,
+      displayName: nextDisplayName,
+      summary: nextSummary ?? undefined,
+    },
+    parsed: publishArgs.parsed,
+    files: publishArgs.files,
+  });
+  const moderationSnapshot = buildModerationSnapshot({ sourceVersionId: version._id });
+  const nextFlags = Array.from(
+    new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
+  );
+  const versionForModeration = {
+    ...version,
+    staticScan: publishArgs.staticScan,
+    llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
+  };
+  const scannerModerationPatch =
+    versionForModeration.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+      ? buildScannerModerationPatchFromVersion({
+          owner: null,
+          version: versionForModeration,
+          now,
+        })
+      : {};
+
+  const basePatch: SkillModerationPatch = {
+    displayName: nextDisplayName,
+    summary: nextSummary ?? undefined,
+    icon: skill.icon,
+    ownerPublisherId: skill.ownerPublisherId ?? publishArgs.ownerPublisherId,
+    latestVersionId: isNewLatest ? version._id : skill.latestVersionId,
+    latestVersionSummary: isNewLatest
+      ? {
+          version: version.version,
+          createdAt: version.createdAt,
+          changelog: publishArgs.changelog,
+          changelogSource: publishArgs.changelogSource,
+          description: getFrontmatterValue(publishArgs.parsed.frontmatter, "description")?.trim(),
+          clawdis: publishArgs.parsed.clawdis,
+        }
+      : skill.latestVersionSummary,
+    tags: nextTags,
+    categories: isNewLatest ? publishArgs.categories : skill.categories,
+    topics: isNewLatest ? publishArgs.topics : skill.topics,
+    ...(isNewLatest
+      ? {
+          inferredCategories: undefined,
+          inferredTopics: undefined,
+          inferredFromVersionId: undefined,
+          inferredCategoryConfidence: undefined,
+          inferredTopicConfidence: undefined,
+          inferredClassifierVersion: undefined,
+          inferredTopicClassifierVersion: undefined,
+          inferredInputHash: undefined,
+          inferredTopicInputHash: undefined,
+          inferredAt: undefined,
+        }
+      : {}),
+    stats: { ...skill.stats, versions: skill.stats.versions + 1 },
+    softDeletedAt: undefined,
+    moderationStatus: initialModerationStatus,
+    moderationReason,
+    moderationNotes,
+    moderationVerdict: moderationSnapshot.verdict,
+    moderationReasonCodes: moderationSnapshot.reasonCodes.length
+      ? moderationSnapshot.reasonCodes
+      : undefined,
+    moderationEvidence: moderationSnapshot.evidence.length
+      ? moderationSnapshot.evidence
+      : undefined,
+    moderationSummary: moderationSnapshot.summary,
+    moderationEngineVersion: moderationSnapshot.engineVersion,
+    moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
+    moderationSourceVersionId: version._id,
+    quality: qualityRecord ?? skill.quality,
+    moderationFlags: nextFlags.length ? nextFlags : undefined,
+    isSuspicious: computeIsSuspicious({
+      moderationFlags: nextFlags.length ? nextFlags : undefined,
+      moderationReason,
+    }),
+    unpublishedSlugReservedUntil: undefined,
+    unpublishedSlugReleasedAt: undefined,
+    unpublishedOriginalSlug: undefined,
+    updatedAt: now,
+    ...scannerModerationPatch,
+  };
+  const patch = applySkillManualOverrideToSkillPatch({
+    skill,
+    basePatch,
+    now,
+  });
+  const nextSkill = { ...skill, ...patch };
+
+  await ctx.db.patch(version._id, {
+    publicationStatus: "published",
+    changelog: publishArgs.changelog,
+    changelogSource: publishArgs.changelogSource,
+    llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
+  });
+  await ctx.db.patch(skill._id, patch);
+  await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+  await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
+
+  const badgeMap = await getSkillBadgeMap(ctx, skill._id);
+  const isApproved = Boolean(badgeMap.redactionApproved);
+  const embeddingId = existingEmbedding
+    ? existingEmbedding._id
+    : await ctx.db.insert("skillEmbeddings", {
+        skillId: skill._id,
+        versionId: version._id,
+        ownerId: publishArgs.userId,
+        embedding: publishArgs.embedding,
+        isLatest: isNewLatest,
+        isApproved,
+        visibility: embeddingVisibilityFor(isNewLatest, isApproved),
+        updatedAt: now,
+      });
+  if (!existingEmbedding) {
+    await ctx.db.insert("embeddingSkillMap", {
+      embeddingId,
+      skillId: skill._id,
+    });
+  }
+
+  if (isNewLatest && latestBefore) {
+    const previousEmbedding = await ctx.db
+      .query("skillEmbeddings")
+      .withIndex("by_version", (q) => q.eq("versionId", latestBefore))
+      .unique();
+    if (previousEmbedding) {
+      await ctx.db.patch(previousEmbedding._id, {
+        isLatest: false,
+        visibility: embeddingVisibilityFor(false, previousEmbedding.isApproved),
+        updatedAt: now,
+      });
+    }
+  }
+
+  return {
+    skillId: skill._id,
+    versionId: version._id,
+    embeddingId,
+    publicationStatus: "published" as const,
+  };
+}
+
 export const publishPendingVersionInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
     publishArgs: v.any(),
+  },
+  handler: publishPendingVersionHandler,
+});
+
+// #3401 finding 3: repairOrphanedPendingSkillVersionHandler used to publish,
+// schedule followups, and only then force-close the orphaned publishAttempts
+// row as three separate steps. If the process crashed (or followups threw)
+// between the publish and the close, the version was already published but
+// the attempt stayed non-terminal and reclaimable, so the normal finalization
+// dispatcher could later re-run followups (owner webhook, duplicate
+// VT/security scans) against an already-published version. Publishing and
+// closing the attempt in the same mutation transaction removes that window:
+// either both happen atomically, or neither does and the repair is retried
+// from the top. Safe to call with an already-published version (idempotent
+// early-return above) plus a still-open attemptId, which is exactly the
+// cleanup path an interrupted repair needs on retry.
+export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    publishArgs: v.any(),
+    publishAttemptId: v.optional(v.id("publishAttempts")),
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
     if (!version || version.softDeletedAt) {
       throw new ConvexError("Pending skill version not found.");
     }
-    const skill = await ctx.db.get(version.skillId);
-    if (!skill) throw new ConvexError("Skill not found.");
-
-    const existingEmbedding = await ctx.db
-      .query("skillEmbeddings")
-      .withIndex("by_version", (q) => q.eq("versionId", version._id))
-      .unique();
-    if (version.publicationStatus === "published" || version.publicationStatus === undefined) {
-      if (!existingEmbedding) {
-        throw new ConvexError("Published skill version is missing its embedding.");
-      }
-      return {
-        skillId: skill._id,
-        versionId: version._id,
-        embeddingId: existingEmbedding._id,
-        publicationStatus: "published" as const,
-      };
-    }
-    if (version.publicationStatus !== "pending") {
-      throw new ConvexError(`Skill version is ${version.publicationStatus}, not pending.`);
-    }
-
-    const publishArgs = asSkillPendingPublishArgs(args.publishArgs);
-    const user = await ctx.db.get(publishArgs.userId);
-    if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
-
-    const now = Date.now();
-    const prevLatestVersion = skill.latestVersionSummary?.version;
-    const isNewLatest =
-      !prevLatestVersion ||
-      !semver.valid(prevLatestVersion) ||
-      semver.gt(version.version, prevLatestVersion);
-    const nextTags: Record<string, Id<"skillVersions">> = { ...skill.tags };
-    if (isNewLatest) {
-      nextTags.latest = version._id;
-    }
-    for (const tag of normalizeSkillTags(publishArgs.tags) ?? []) {
-      if (tag.toLowerCase() === "latest") continue;
-      nextTags[tag] = version._id;
-    }
-
-    const latestBefore = skill.latestVersionId;
-    const derivedSummary =
-      publishArgs.summary ??
-      getFrontmatterValue(publishArgs.parsed.frontmatter, "description") ??
-      skill.summary;
-    const nextSummary = isNewLatest ? derivedSummary : skill.summary;
-    const nextDisplayName = isNewLatest ? publishArgs.displayName : skill.displayName;
-    const qualityAssessment = publishArgs.qualityAssessment;
-    const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
-    const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
-    const initialModerationStatus =
-      isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
-    const moderationReason = isQualityQuarantine
-      ? "quality.low"
-      : isPublisherUnderModeration
-        ? USER_MODERATION_REASON
-        : "pending.scan";
-    const moderationNotes = isQualityQuarantine
-      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
-      : isPublisherUnderModeration
-        ? (user.requiresModerationReason ??
-          "Publisher is currently under manual moderation review.")
-        : undefined;
-    const qualityRecord = qualityAssessment
-      ? {
-          score: qualityAssessment.score,
-          decision: qualityAssessment.decision,
-          trustTier: qualityAssessment.trustTier,
-          similarRecentCount: qualityAssessment.similarRecentCount,
-          reason: qualityAssessment.reason,
-          signals: qualityAssessment.signals,
-          evaluatedAt: now,
-        }
-      : undefined;
-
-    const derivedFlags = deriveModerationFlags({
-      skill: {
-        slug: skill.slug,
-        displayName: nextDisplayName,
-        summary: nextSummary ?? undefined,
-      },
-      parsed: publishArgs.parsed,
-      files: publishArgs.files,
-    });
-    const moderationSnapshot = buildModerationSnapshot({ sourceVersionId: version._id });
-    const nextFlags = Array.from(
-      new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
-    );
-    const versionForModeration = {
-      ...version,
-      staticScan: publishArgs.staticScan,
-      llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
-    };
-    const scannerModerationPatch =
-      versionForModeration.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
-        ? buildScannerModerationPatchFromVersion({
-            owner: null,
-            version: versionForModeration,
-            now,
-          })
-        : {};
-
-    const basePatch: SkillModerationPatch = {
-      displayName: nextDisplayName,
-      summary: nextSummary ?? undefined,
-      icon: skill.icon,
-      ownerPublisherId: skill.ownerPublisherId ?? publishArgs.ownerPublisherId,
-      latestVersionId: isNewLatest ? version._id : skill.latestVersionId,
-      latestVersionSummary: isNewLatest
-        ? {
-            version: version.version,
-            createdAt: version.createdAt,
-            changelog: publishArgs.changelog,
-            changelogSource: publishArgs.changelogSource,
-            description: getFrontmatterValue(publishArgs.parsed.frontmatter, "description")?.trim(),
-            clawdis: publishArgs.parsed.clawdis,
-          }
-        : skill.latestVersionSummary,
-      tags: nextTags,
-      categories: isNewLatest ? publishArgs.categories : skill.categories,
-      topics: isNewLatest ? publishArgs.topics : skill.topics,
-      ...(isNewLatest
-        ? {
-            inferredCategories: undefined,
-            inferredTopics: undefined,
-            inferredFromVersionId: undefined,
-            inferredCategoryConfidence: undefined,
-            inferredTopicConfidence: undefined,
-            inferredClassifierVersion: undefined,
-            inferredTopicClassifierVersion: undefined,
-            inferredInputHash: undefined,
-            inferredTopicInputHash: undefined,
-            inferredAt: undefined,
-          }
-        : {}),
-      stats: { ...skill.stats, versions: skill.stats.versions + 1 },
-      softDeletedAt: undefined,
-      moderationStatus: initialModerationStatus,
-      moderationReason,
-      moderationNotes,
-      moderationVerdict: moderationSnapshot.verdict,
-      moderationReasonCodes: moderationSnapshot.reasonCodes.length
-        ? moderationSnapshot.reasonCodes
-        : undefined,
-      moderationEvidence: moderationSnapshot.evidence.length
-        ? moderationSnapshot.evidence
-        : undefined,
-      moderationSummary: moderationSnapshot.summary,
-      moderationEngineVersion: moderationSnapshot.engineVersion,
-      moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
-      moderationSourceVersionId: version._id,
-      quality: qualityRecord ?? skill.quality,
-      moderationFlags: nextFlags.length ? nextFlags : undefined,
-      isSuspicious: computeIsSuspicious({
-        moderationFlags: nextFlags.length ? nextFlags : undefined,
-        moderationReason,
-      }),
-      unpublishedSlugReservedUntil: undefined,
-      unpublishedSlugReleasedAt: undefined,
-      unpublishedOriginalSlug: undefined,
-      updatedAt: now,
-      ...scannerModerationPatch,
-    };
-    const patch = applySkillManualOverrideToSkillPatch({
-      skill,
-      basePatch,
-      now,
-    });
-    const nextSkill = { ...skill, ...patch };
-
-    await ctx.db.patch(version._id, {
-      publicationStatus: "published",
-      changelog: publishArgs.changelog,
-      changelogSource: publishArgs.changelogSource,
-      llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
-    });
-    await ctx.db.patch(skill._id, patch);
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-    await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
-
-    const badgeMap = await getSkillBadgeMap(ctx, skill._id);
-    const isApproved = Boolean(badgeMap.redactionApproved);
-    const embeddingId = existingEmbedding
-      ? existingEmbedding._id
-      : await ctx.db.insert("skillEmbeddings", {
-          skillId: skill._id,
-          versionId: version._id,
-          ownerId: publishArgs.userId,
-          embedding: publishArgs.embedding,
-          isLatest: isNewLatest,
-          isApproved,
-          visibility: embeddingVisibilityFor(isNewLatest, isApproved),
-          updatedAt: now,
-        });
-    if (!existingEmbedding) {
-      await ctx.db.insert("embeddingSkillMap", {
-        embeddingId,
-        skillId: skill._id,
-      });
-    }
-
-    if (isNewLatest && latestBefore) {
-      const previousEmbedding = await ctx.db
-        .query("skillEmbeddings")
-        .withIndex("by_version", (q) => q.eq("versionId", latestBefore))
-        .unique();
-      if (previousEmbedding) {
-        await ctx.db.patch(previousEmbedding._id, {
-          isLatest: false,
-          visibility: embeddingVisibilityFor(false, previousEmbedding.isApproved),
-          updatedAt: now,
-        });
+    let attemptInspection: Awaited<
+      ReturnType<typeof inspectSkillPublishAttemptForOrphanRepair>
+    > | null = null;
+    if (args.publishAttemptId) {
+      attemptInspection = await inspectSkillPublishAttemptForOrphanRepair(
+        ctx,
+        args.publishAttemptId,
+        { skillId: version.skillId, versionId: version._id },
+      );
+      if (!attemptInspection.allowed) {
+        return { result: null, blockedByAttempt: attemptInspection };
       }
     }
 
-    return {
-      skillId: skill._id,
-      versionId: version._id,
-      embeddingId,
-      publicationStatus: "published" as const,
-    };
+    const result = await publishPendingVersionHandler(ctx, {
+      versionId: args.versionId,
+      publishArgs: args.publishArgs,
+    });
+    // Recovery deliberately skips the owner webhook, but its security work
+    // must be durable before the attempt becomes terminal. Convex commits
+    // scheduler writes atomically with this mutation, so a crash can no
+    // longer leave a published version with no VT/ClawScan follow-ups. If the
+    // ordinary finalizer won the race all the way through `finalized`, it
+    // already scheduled those followups before recording completion; do not
+    // enqueue duplicates. An already-published version with a still-open
+    // attempt remains the interrupted-repair case and must schedule them.
+    const normalFinalizerAlreadyCompleted =
+      version.publicationStatus === "published" && attemptInspection?.status === "finalized";
+    if (!normalFinalizerAlreadyCompleted) {
+      await scheduleSkillPublishSecurityFollowups(ctx, result);
+    }
+    let attemptCloseWarning: "claim-active" | undefined;
+    if (args.publishAttemptId) {
+      const closeOutcome = await closeOrphanedSkillPublishAttempt(
+        ctx,
+        args.publishAttemptId,
+        result,
+      );
+      attemptCloseWarning =
+        !closeOutcome.closed && closeOutcome.reason === "claim-active"
+          ? ("claim-active" as const)
+          : undefined;
+      if (
+        !closeOutcome.closed &&
+        (closeOutcome.reason === "claim-active" || closeOutcome.reason === "version-mismatch")
+      ) {
+        // Throwing rolls back the publish writes in this same transaction.
+        throw new ConvexError(`Publish attempt became unsafe to repair: ${closeOutcome.reason}`);
+      }
+    }
+    // Normal finalization clears the staged snapshot when its attempt closes.
+    // Recovery must do the same for legacy versions without an attempt and for
+    // attempts that already reached a terminal state.
+    await ctx.db.patch(args.versionId, { pendingPublication: undefined });
+    return { result, blockedByAttempt: null, attemptCloseWarning };
   },
 });
 

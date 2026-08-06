@@ -4629,6 +4629,509 @@ describe("httpApiV1 handlers", () => {
     expect(body).toContain("/api/v1/skills/demo/versions/1.0.0?ownerHandle=<owner>");
   });
 
+  // #3349: a staged publish inserts the skillVersion as "pending" before
+  // finalization projects it onto latest/tags/index. The public read must
+  // keep returning a bare 404 (no existence leak), but the authenticated
+  // owner needs a way to tell "still finalizing" apart from "typo'd version".
+  it("surfaces owner-visible pending status for a version stuck in staged finalization (#3349)", async () => {
+    // api.skills.getVersionBySkillAndVersion (public) and
+    // internal.skills.getVersionBySkillAndVersionInternal (owner-only repair
+    // lookup) take the exact same {skillId, version} args shape, so the first
+    // such call is the public miss and the second is the owner-only lookup.
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending publication");
+  });
+
+  it("surfaces owner-visible blocked status for a version rejected during finalization (#3349)", async () => {
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        return {
+          _id: "skillVersions:blocked",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "blocked",
+        };
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("blocked during publication");
+  });
+
+  it("surfaces owner-visible stuck-pending when finalize attempt terminally failed (#3349)", async () => {
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+          publishAttemptId: "publishAttempts:failed",
+        };
+      }
+      if ("attemptId" in args) {
+        return {
+          status: "failed",
+          finalizationLastError: "finalize timed out",
+          finalizationFailureCount: 5,
+        };
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain("stuck pending after publication finalization failed");
+    expect(body).toContain("attempt publishAttempts:failed");
+    expect(body).not.toContain("finalize timed out");
+  });
+
+  it("surfaces owner-visible pending status for org publisher owners (#3349)", async () => {
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:legacy-owner",
+            ownerPublisherId: "publishers:org",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("publisherId" in args && "userId" in args) {
+        expect(args.publisherId).toBe("publishers:org");
+        expect(args.userId).toBe("users:org-admin");
+        return true;
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      if ("skillId" in args) {
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          ownerUserId: "users:legacy-owner",
+          ownerPublisherId: "publishers:org",
+        };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:org-admin" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending publication");
+  });
+
+  // #3401 finding 4: a brand-new staged skill has no published version at
+  // all yet (hidden, moderationReason "pending.publication", no
+  // latestVersionId/tags), so the public api.skills.getBySlug lookup misses
+  // entirely (skillResult.skill is null), not just the specific version.
+  // The exact-version route must still fall back to the owner-only
+  // stuck-pending diagnostic instead of an immediate bare 404.
+  it("surfaces owner-visible pending status when the whole skill is still hidden pending first publish (#3349)", async () => {
+    let slugLookupCount = 0;
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        slugLookupCount += 1;
+        // First call is the public api.skills.getBySlug lookup, which
+        // misses because the skill is hidden pending its first publish.
+        if (slugLookupCount === 1) return null;
+        // Later calls are internal.skills.getSkillBySlugInternal, which can
+        // see the hidden skill regardless of public visibility.
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          softDeletedAt: undefined,
+          latestVersionId: undefined,
+          tags: {},
+          moderationStatus: "hidden",
+          moderationReason: "pending.publication",
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        // First such call is inside getUnavailableSkillVersionBlock, which
+        // misses because the skill has no latest/tagged version yet.
+        if (versionLookupCount === 1) return null;
+        // Second call is the owner-only diagnostic lookup inside
+        // describeOwnerVisibleSkillVersionState.
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("pending publication");
+  });
+
+  it("does not leak owner-visible pending status to non-owner callers (#3349)", async () => {
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        throw new Error("must not fetch pending version details for a non-owner caller");
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+  });
+
+  it("does not substitute a pending version for an unknown scan tag (#3349)", async () => {
+    let skillIdLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("skillId" in args) {
+        skillIdLookupCount += 1;
+        if (skillIdLookupCount === 1) {
+          return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+        }
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "2.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?tag=does-not-exist", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+  });
+
+  it("only diagnoses a pending scan version when the latest projection is missing (#3349)", async () => {
+    let skillIdLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            latestVersionId: "skillVersions:published",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("skillId" in args) {
+        skillIdLookupCount += 1;
+        if (skillIdLookupCount === 1) {
+          return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+        }
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "2.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?tag=latest", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+  });
+
+  it("does not diagnose a pending backport as the missing latest scan projection (#3349)", async () => {
+    let skillIdLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("skillId" in args) {
+        skillIdLookupCount += 1;
+        if (skillIdLookupCount === 1) {
+          return {
+            _id: "skills:1",
+            slug: "demo",
+            ownerUserId: "users:owner",
+            latestVersionSummary: { version: "2.0.0" },
+          };
+        }
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.5.0",
+          publicationStatus: "pending",
+        };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+  });
+
+  it("diagnoses the pending version that will fill a missing latest scan projection (#3349)", async () => {
+    let skillIdLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("skillId" in args) {
+        skillIdLookupCount += 1;
+        if (skillIdLookupCount === 1) {
+          return {
+            _id: "skills:1",
+            slug: "demo",
+            ownerUserId: "users:owner",
+            latestVersionSummary: { version: "1.0.0" },
+          };
+        }
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "2.0.0",
+          publicationStatus: "pending",
+        };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/scan?tag=latest", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("Version 2.0.0 is pending publication");
+  });
+
   it("returns version detail security from vt analysis", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
