@@ -142,7 +142,7 @@ describe("HomeListingSection", () => {
 
     const toolbar = document.querySelector(".home-v2-listing-toolbar");
     const primary = document.querySelector(".home-v2-listing-primary");
-    const divider = document.querySelector(".home-v2-listing-divider");
+    const divider = document.querySelector(".browse-controls-divider");
     const catalogTabs = screen.getByRole("tablist", { name: "Catalog view" });
     const contentType = screen.getByRole("group", { name: "Content type" });
     const contentTypeButtons = contentType.querySelectorAll("button");

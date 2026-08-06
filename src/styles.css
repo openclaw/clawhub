@@ -22350,14 +22350,6 @@ a.search-empty-action {
   margin-left: 0;
 }
 
-.home-v2-listing-divider {
-  width: 1px;
-  align-self: center;
-  height: 18px;
-  flex-shrink: 0;
-  background: var(--hv2-border);
-}
-
 .home-v2-listing-actions {
   display: inline-flex;
   align-items: center;
@@ -28709,7 +28701,7 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     gap: 12px;
     width: 100%;
   }
-  .home-v2-listing-divider {
+  .home-v2-listing-primary > .browse-controls-divider {
     display: none;
   }
   .home-v2-listing-kind {

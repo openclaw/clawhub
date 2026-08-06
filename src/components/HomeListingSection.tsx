@@ -27,6 +27,7 @@ import { presentationTitle } from "../lib/presentationTitle";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import {
+  BrowseControlsDivider,
   BrowseCategorySelect,
   BrowseSearchInput,
   BrowseSearchPanel,
@@ -610,7 +611,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               </button>
             </div>
 
-            <span className="home-v2-listing-divider" aria-hidden="true" />
+            <BrowseControlsDivider />
 
             <div className="home-v2-listing-sort">
               <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Catalog view">
