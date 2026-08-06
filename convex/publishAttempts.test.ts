@@ -1303,6 +1303,57 @@ describe("publishAttempts", () => {
     );
   });
 
+  it("keeps retrying after publication until security followups finalize (#3401)", async () => {
+    const attemptId = "publishAttempts:published-tail";
+    const versionId = "skillVersions:published-tail";
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === attemptId
+            ? {
+                _id: attemptId,
+                kind: "skill",
+                status: "finalizing",
+                skillVersionId: versionId,
+                skillInsertArgs: { slug: "published-tail", version: "1.0.0" },
+                followup: {},
+                finalizationClaimId: "finalize:claim",
+                finalizationFailureCount: 4,
+              }
+            : {
+                _id: versionId,
+                publicationStatus: "published",
+              },
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      releaseSkillFinalizationHandler(ctx, {
+        attemptId,
+        claimId: "finalize:claim",
+        error: "security followup scheduling failed",
+      }),
+    ).resolves.toEqual({ attemptId, status: "ready_to_finalize" });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      attemptId,
+      expect.objectContaining({
+        status: "ready_to_finalize",
+        finalizationClaimId: undefined,
+        finalizationLastError: "security followup scheduling failed",
+        finalizationFailureCount: 5,
+      }),
+    );
+    expect(ctx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
+  });
+
   it("keeps retrying package finalization past the skill cap since there is no package repair path yet (#3401)", async () => {
     // Finding 1: releaseFinalizationClaimPatch used to terminalize at
     // MAX_CONSECUTIVE_FINALIZATION_FAILURES for both kinds, but a
