@@ -172,7 +172,10 @@ import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import { closeOrphanedSkillPublishAttempt } from "./publishAttempts";
+import {
+  closeOrphanedSkillPublishAttempt,
+  inspectSkillPublishAttemptForOrphanRepair,
+} from "./publishAttempts";
 import schema from "./schema";
 import { consumeSkillPublishUploads } from "./skillPublishUploads";
 
@@ -13794,6 +13797,21 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
     publishAttemptId: v.optional(v.id("publishAttempts")),
   },
   handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version || version.softDeletedAt) {
+      throw new ConvexError("Pending skill version not found.");
+    }
+    if (args.publishAttemptId) {
+      const inspection = await inspectSkillPublishAttemptForOrphanRepair(
+        ctx,
+        args.publishAttemptId,
+        { skillId: version.skillId, versionId: version._id },
+      );
+      if (!inspection.allowed) {
+        return { result: null, blockedByAttempt: inspection };
+      }
+    }
+
     const result = await publishPendingVersionHandler(ctx, {
       versionId: args.versionId,
       publishArgs: args.publishArgs,
@@ -13809,12 +13827,19 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
         !closeOutcome.closed && closeOutcome.reason === "claim-active"
           ? ("claim-active" as const)
           : undefined;
+      if (
+        !closeOutcome.closed &&
+        (closeOutcome.reason === "claim-active" || closeOutcome.reason === "version-mismatch")
+      ) {
+        // Throwing rolls back the publish writes in this same transaction.
+        throw new ConvexError(`Publish attempt became unsafe to repair: ${closeOutcome.reason}`);
+      }
     }
     // Normal finalization clears the staged snapshot when its attempt closes.
     // Recovery must do the same for legacy versions without an attempt and for
     // attempts that already reached a terminal state.
     await ctx.db.patch(args.versionId, { pendingPublication: undefined });
-    return { result, attemptCloseWarning };
+    return { result, blockedByAttempt: null, attemptCloseWarning };
   },
 });
 

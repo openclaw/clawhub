@@ -515,8 +515,50 @@ export const findActiveSkillPublishAttemptByIdInternal = internalQuery({
 
 export type OrphanedSkillPublishAttemptCloseOutcome =
   | { closed: true }
-  | { closed: false; reason: "not-found" | "claim-active" }
+  | { closed: false; reason: "not-found" | "claim-active" | "version-mismatch" }
   | { closed: false; reason: "already-terminal"; status: string };
+
+export type OrphanedSkillPublishAttemptRepairInspection =
+  | { allowed: true }
+  | {
+      allowed: false;
+      reason: "claim-active" | "version-mismatch";
+      attemptId: Id<"publishAttempts">;
+      status: string;
+    };
+
+// Read inside the same mutation transaction that will publish the version.
+// If another worker claims or updates the attempt concurrently, Convex OCC
+// retries the whole transaction and this check observes the new claim before
+// any publish writes are committed.
+export async function inspectSkillPublishAttemptForOrphanRepair(
+  ctx: Pick<MutationCtx, "db">,
+  attemptId: Id<"publishAttempts">,
+  target: { skillId: Id<"skills">; versionId: Id<"skillVersions"> },
+): Promise<OrphanedSkillPublishAttemptRepairInspection> {
+  const attempt = await ctx.db.get(attemptId);
+  if (!attempt || attempt.kind !== "skill") return { allowed: true };
+  if (attempt.status === "finalized" || attempt.status === "failed") {
+    return { allowed: true };
+  }
+  if (attempt.skillId !== target.skillId || attempt.skillVersionId !== target.versionId) {
+    return {
+      allowed: false,
+      reason: "version-mismatch",
+      attemptId: attempt._id,
+      status: attempt.status,
+    };
+  }
+  if (isActiveAttemptLive(attempt, Date.now())) {
+    return {
+      allowed: false,
+      reason: "claim-active",
+      attemptId: attempt._id,
+      status: attempt.status,
+    };
+  }
+  return { allowed: true };
+}
 
 // Used by the #3349 orphaned-pending-version repair path once the version has
 // already been (re)published directly. Without this, the original
@@ -548,6 +590,9 @@ export async function closeOrphanedSkillPublishAttempt(
   if (attempt.status === "finalized" || attempt.status === "failed") {
     return { closed: false, reason: "already-terminal", status: attempt.status };
   }
+  if (attempt.skillId !== result.skillId || attempt.skillVersionId !== result.versionId) {
+    return { closed: false, reason: "version-mismatch" };
+  }
   const now = Date.now();
   if (isActiveAttemptLive(attempt, now)) {
     return { closed: false, reason: "claim-active" };
@@ -569,9 +614,7 @@ export async function closeOrphanedSkillPublishAttempt(
     finalizedAt: now,
     updatedAt: now,
   });
-  if (attempt.skillVersionId && attempt.skillVersionId === result.versionId) {
-    await ctx.db.patch(attempt.skillVersionId, { pendingPublication: undefined });
-  }
+  await ctx.db.patch(attempt.skillVersionId, { pendingPublication: undefined });
   return { closed: true };
 }
 

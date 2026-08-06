@@ -1740,13 +1740,11 @@ async function describeOwnerVisibleSkillVersionState(
     if (candidate.publishAttemptId) {
       const attempt = (await ctx.runQuery(internal.publishAttempts.getPublishAttemptByIdInternal, {
         attemptId: candidate.publishAttemptId,
-      })) as { status: string; finalizationLastError?: string | null } | null;
+      })) as { status: string } | null;
       if (attempt?.status === "failed") {
         return {
           status: 409,
-          message: `Version ${candidate.version} is stuck pending after publication finalization failed (owner-only diagnostic)${
-            attempt.finalizationLastError ? `: ${attempt.finalizationLastError}` : ""
-          }. The version exists and blocks republish; an operator can repair it with maintenance:repairOrphanedPendingSkillVersion.`,
+          message: `Version ${candidate.version} is stuck pending after publication finalization failed (owner-only diagnostic; attempt ${candidate.publishAttemptId}). The version exists and blocks republish; an operator can repair it with maintenance:repairOrphanedPendingSkillVersion.`,
         };
       }
     }
