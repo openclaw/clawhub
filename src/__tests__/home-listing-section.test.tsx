@@ -333,6 +333,44 @@ describe("HomeListingSection", () => {
     });
   });
 
+  it("clears a pending search load-more state when search closes", async () => {
+    type PluginResult = {
+      items: (typeof featuredPlugin)[];
+      nextCursor: string | null;
+    };
+    let resolveExpanded!: (result: PluginResult) => void;
+    const expandedResult = new Promise<PluginResult>((resolve) => {
+      resolveExpanded = resolve;
+    });
+    const searchItems = Array.from({ length: 20 }, (_, index) => ({
+      ...featuredPlugin,
+      name: `demo-plugin-${index}`,
+      displayName: `Demo Plugin ${index}`,
+    }));
+    fetchPluginCatalogMock.mockImplementation((args: { limit?: number }) =>
+      args.limit === 40
+        ? expandedResult
+        : Promise.resolve({ items: searchItems, nextCursor: "more" }),
+    );
+
+    render(<HomeListingSection initialListing={{ ...initialPluginListing(), hasMore: true }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search plugins" }), {
+      target: { value: "demo" },
+    });
+
+    const loadMore = await screen.findByRole("button", { name: "Load more" });
+    fireEvent.click(loadMore);
+    await screen.findByRole("button", { name: "Loading…" });
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+
+    const restoredLoadMore = await screen.findByRole("button", { name: "Load more" });
+    expect(restoredLoadMore.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByText("Demo Plugin")).toBeTruthy();
+
+    resolveExpanded({ items: searchItems, nextCursor: null });
+  });
+
   it("clears and hides the category filter when Trending is selected", async () => {
     render(<HomeListingSection initialListing={initialPluginListing()} />);
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));

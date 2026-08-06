@@ -464,6 +464,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       setSearchSkills([]);
       setSearchPlugins([]);
       setSearchStatus("idle");
+      setLoadingMore(false);
       return undefined;
     }
 
