@@ -25,7 +25,6 @@ import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { presentationTitle } from "../lib/presentationTitle";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
-import { MarketplaceIcon } from "./MarketplaceIcon";
 import {
   BrowseControlsDivider,
   BrowseCategorySelect,
@@ -34,6 +33,7 @@ import {
   BrowseSearchTrigger,
   useBrowseSearchDisclosure,
 } from "./BrowseControls";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
 import { Badge } from "./ui/badge";
@@ -567,7 +567,13 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     setKind(nextKind);
     setCategorySlug(undefined);
     setTab(
-      nextKind === "skills" ? (canonicalTrendingUnavailable ? "featured" : "trending") : "new",
+      nextKind === "skills"
+        ? canonicalTrendingUnavailable
+          ? "featured"
+          : "trending"
+        : tab === "trending"
+          ? "featured"
+          : tab,
     );
   };
 

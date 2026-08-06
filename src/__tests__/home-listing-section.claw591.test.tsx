@@ -311,7 +311,9 @@ describe("HomeListingSection", () => {
     render(<HomeListingSection initialListing={initialTrending([], false, "unavailable")} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
-    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));
     expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
@@ -326,12 +328,14 @@ describe("HomeListingSection", () => {
     expect(screen.getByText(/eligible activity in the current 24-hour window/i)).toBeTruthy();
   });
 
-  it("shows Featured, Official, and New for plugins but never plugin Trending", async () => {
+  it("defaults Plugins to Featured, preserves explicit New, and returns to Skills Trending", async () => {
     render(<HomeListingSection initialListing={initialTrending([])} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
 
-    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "Featured",
       "Official",
@@ -340,10 +344,23 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Top" })).toBeNull();
     await waitFor(() =>
+      expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+        expect.objectContaining({ featured: true }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+    await waitFor(() =>
       expect(convexQueryMock).toHaveBeenCalledWith(
         "packages:listPublicNewPluginsPage",
         expect.any(Object),
       ),
+    );
+    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    expect(screen.getByRole("tab", { name: "Trending" }).getAttribute("aria-selected")).toBe(
+      "true",
     );
   });
 
