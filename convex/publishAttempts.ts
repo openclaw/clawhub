@@ -607,7 +607,14 @@ export async function inspectSkillPublishAttemptForOrphanRepair(
   target: { skillId: Id<"skills">; versionId: Id<"skillVersions"> },
 ): Promise<OrphanedSkillPublishAttemptRepairInspection> {
   const attempt = await ctx.db.get(attemptId);
-  if (!attempt || attempt.kind !== "skill") return { allowed: true };
+  if (!attempt || attempt.kind !== "skill") {
+    return {
+      allowed: false,
+      reason: "checks-incomplete",
+      attemptId,
+      status: attempt?.status ?? "not-found",
+    };
+  }
   if (attempt.skillId !== target.skillId || attempt.skillVersionId !== target.versionId) {
     return {
       allowed: false,
