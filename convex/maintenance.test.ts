@@ -2580,10 +2580,9 @@ describe("orphaned pending skill version repair (#3349)", () => {
         publishAttemptId: undefined,
       },
     );
-    // Manual repair happens long after the original publish request; the
-    // owner webhook must stay suppressed while VT/security-scan followups
-    // still run.
-    expect(runAfter).toHaveBeenCalled();
+    // Follow-ups are scheduled atomically inside the combined mutation, not
+    // by the outer action where a crash could lose them after publication.
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("force-closes the orphaned publish attempt so the dispatcher can't re-run followups (#3349)", async () => {
@@ -2682,7 +2681,11 @@ describe("orphaned pending skill version repair (#3349)", () => {
         return pendingRepairContext();
       }
       if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
-        return { attemptId: "publishAttempts:live", status: "ready_to_finalize" };
+        return {
+          attemptId: "publishAttempts:live",
+          status: "ready_to_finalize",
+          repairBlockedReason: "claim-active",
+        };
       }
       throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
     });
@@ -2709,7 +2712,11 @@ describe("orphaned pending skill version repair (#3349)", () => {
         return pendingRepairContext({ publishAttemptId: "publishAttempts:live-by-id" });
       }
       if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
-        return { attemptId: "publishAttempts:live-by-id", status: "finalizing" };
+        return {
+          attemptId: "publishAttempts:live-by-id",
+          status: "finalizing",
+          repairBlockedReason: "claim-active",
+        };
       }
       if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptInternal) {
         throw new Error("must prefer the direct attemptId lookup when publishAttemptId is known");
@@ -2729,6 +2736,37 @@ describe("orphaned pending skill version repair (#3349)", () => {
       reason: "attempt-active",
       attemptId: "publishAttempts:live-by-id",
       status: "finalizing",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses to repair a stale attempt whose prepublication checks never completed", async () => {
+    const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
+      if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
+        return pendingRepairContext({ publishAttemptId: "publishAttempts:unchecked" });
+      }
+      if (endpoint === internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal) {
+        return {
+          attemptId: "publishAttempts:unchecked",
+          status: "pending_checks",
+          repairBlockedReason: "checks-incomplete",
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairOrphanedPendingSkillVersionHandler(
+      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      "skillVersions:1" as never,
+      false,
+    );
+
+    expect(result).toEqual({
+      repaired: false,
+      reason: "attempt-checks-incomplete",
+      attemptId: "publishAttempts:unchecked",
+      status: "pending_checks",
     });
     expect(runMutation).not.toHaveBeenCalled();
   });

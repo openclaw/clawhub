@@ -22,12 +22,7 @@ import {
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { isSkillCardPath } from "./lib/skillCards";
-import {
-  prepareSkillInsertArgsForFinalization,
-  scheduleSkillPublishFollowups,
-  type PublishResult,
-  type SkillPublishFollowup,
-} from "./lib/skillPublish";
+import { prepareSkillInsertArgsForFinalization, type PublishResult } from "./lib/skillPublish";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -3811,6 +3806,12 @@ type SkillVersionRepairOutcome =
   | { repaired: false; reason: "attempt-active"; attemptId: Id<"publishAttempts">; status: string }
   | {
       repaired: false;
+      reason: "attempt-checks-incomplete";
+      attemptId: Id<"publishAttempts">;
+      status: string;
+    }
+  | {
+      repaired: false;
       reason: "attempt-mismatch";
       attemptId: Id<"publishAttempts">;
       status: string;
@@ -3856,24 +3857,29 @@ export async function repairOrphanedPendingSkillVersionHandler(
   // back to the scan only when the version predates publishAttemptId being
   // recorded.
   const observedAt = Date.now();
-  const activeAttempt = context.publishAttemptId
+  const attemptInspection = context.publishAttemptId
     ? await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal, {
         attemptId: context.publishAttemptId,
         skillId: context.skillId,
+        versionId,
         now: observedAt,
       })
     : await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptInternal, {
         skillId: context.skillId,
+        versionId,
         slug: context.slug,
         version: context.version,
         now: observedAt,
       });
-  if (activeAttempt) {
+  if (attemptInspection?.repairBlockedReason) {
     return {
       repaired: false,
-      reason: "attempt-active",
-      attemptId: activeAttempt.attemptId,
-      status: activeAttempt.status,
+      reason:
+        attemptInspection.repairBlockedReason === "checks-incomplete"
+          ? "attempt-checks-incomplete"
+          : "attempt-active",
+      attemptId: attemptInspection.attemptId,
+      status: attemptInspection.status,
     };
   }
 
@@ -3901,14 +3907,14 @@ export async function repairOrphanedPendingSkillVersionHandler(
     {
       versionId,
       publishArgs: skillInsertArgs,
-      publishAttemptId: context.publishAttemptId ?? undefined,
+      publishAttemptId: context.publishAttemptId ?? attemptInspection?.attemptId ?? undefined,
     },
   )) as
     | { result: PublishResult; blockedByAttempt: null; attemptCloseWarning?: "claim-active" }
     | {
         result: null;
         blockedByAttempt: {
-          reason: "claim-active" | "version-mismatch";
+          reason: "claim-active" | "checks-incomplete" | "version-mismatch";
           attemptId: Id<"publishAttempts">;
           status: string;
         };
@@ -3920,24 +3926,14 @@ export async function repairOrphanedPendingSkillVersionHandler(
       reason:
         publishOutcome.blockedByAttempt.reason === "claim-active"
           ? "attempt-active"
-          : "attempt-mismatch",
+          : publishOutcome.blockedByAttempt.reason === "checks-incomplete"
+            ? "attempt-checks-incomplete"
+            : "attempt-mismatch",
       attemptId: publishOutcome.blockedByAttempt.attemptId,
       status: publishOutcome.blockedByAttempt.status,
     };
   }
   const { result, attemptCloseWarning } = publishOutcome;
-
-  if (!attemptCloseWarning) {
-    // A manual repair runs long after the original publish request landed;
-    // skip the owner webhook (still schedules VT/security-scan followups)
-    // since this is recovery, not a fresh publish notification.
-    await scheduleSkillPublishFollowups(ctx, result, {
-      skipWebhook: true,
-      slug: context.slug,
-      version: context.version,
-      displayName: context.displayName,
-    } satisfies SkillPublishFollowup);
-  }
 
   return {
     repaired: true,

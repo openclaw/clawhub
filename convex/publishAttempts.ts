@@ -415,29 +415,64 @@ function isActiveAttemptLive(attempt: Doc<"publishAttempts">, now: number) {
 export const findActiveSkillPublishAttemptInternal = internalQuery({
   args: {
     skillId: v.id("skills"),
+    versionId: v.id("skillVersions"),
     slug: v.string(),
     version: v.string(),
     now: v.number(),
   },
   handler: async (ctx, args) => {
+    let staleFinalizationAttempt: Doc<"publishAttempts"> | null = null;
     for (const status of ACTIVE_PUBLISH_ATTEMPT_STATUSES) {
-      const attempts = await ctx.db
-        .query("publishAttempts")
-        .withIndex("by_kind_status_slug_version_created", (q) =>
-          q
-            .eq("kind", "skill")
-            .eq("status", status)
-            .eq("slug", args.slug)
-            .eq("version", args.version),
-        )
-        .order("desc")
-        .take(10);
-      const live = attempts.find(
-        (attempt) => attempt.skillId === args.skillId && isActiveAttemptLive(attempt, args.now),
-      );
-      if (live) return { attemptId: live._id, status: live.status };
+      let cursor: string | null = null;
+      let isDone = false;
+      while (!isDone) {
+        const page = await ctx.db
+          .query("publishAttempts")
+          .withIndex("by_kind_status_slug_version_created", (q) =>
+            q
+              .eq("kind", "skill")
+              .eq("status", status)
+              .eq("slug", args.slug)
+              .eq("version", args.version),
+          )
+          .order("desc")
+          .paginate({ cursor, numItems: 100 });
+        cursor = page.continueCursor;
+        isDone = page.isDone;
+
+        for (const attempt of page.page) {
+          if (attempt.skillId !== args.skillId || attempt.skillVersionId !== args.versionId) {
+            continue;
+          }
+          // A stale pending_checks row is not evidence that TruffleHog and
+          // ClawScan passed. Recovery must leave it unpublished and let the
+          // normal check worker retry instead of bypassing prepublication
+          // security checks.
+          if (attempt.status === "pending_checks") {
+            return {
+              attemptId: attempt._id,
+              status: attempt.status,
+              repairBlockedReason: "checks-incomplete" as const,
+            };
+          }
+          if (isActiveAttemptLive(attempt, args.now)) {
+            return {
+              attemptId: attempt._id,
+              status: attempt.status,
+              repairBlockedReason: "claim-active" as const,
+            };
+          }
+          staleFinalizationAttempt ??= attempt;
+        }
+      }
     }
-    return null;
+    return staleFinalizationAttempt
+      ? {
+          attemptId: staleFinalizationAttempt._id,
+          status: staleFinalizationAttempt.status,
+          repairBlockedReason: null,
+        }
+      : null;
   },
 });
 
@@ -452,18 +487,54 @@ export const findActiveSkillPublishAttemptByIdInternal = internalQuery({
   args: {
     attemptId: v.id("publishAttempts"),
     skillId: v.id("skills"),
+    versionId: v.id("skillVersions"),
     now: v.number(),
   },
   handler: async (ctx, args) => {
     const attempt = await ctx.db.get(args.attemptId);
-    if (!attempt || attempt.kind !== "skill" || attempt.skillId !== args.skillId) return null;
-    if (!(ACTIVE_PUBLISH_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status)) {
+    if (
+      !attempt ||
+      attempt.kind !== "skill" ||
+      attempt.skillId !== args.skillId ||
+      attempt.skillVersionId !== args.versionId
+    ) {
       return null;
     }
-    if (!isActiveAttemptLive(attempt, args.now)) return null;
-    return { attemptId: attempt._id, status: attempt.status };
+    if (!isAttemptEligibleForOrphanRepair(attempt)) {
+      return {
+        attemptId: attempt._id,
+        status: attempt.status,
+        repairBlockedReason: "checks-incomplete" as const,
+      };
+    }
+    if (
+      (ACTIVE_PUBLISH_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status) &&
+      isActiveAttemptLive(attempt, args.now)
+    ) {
+      return {
+        attemptId: attempt._id,
+        status: attempt.status,
+        repairBlockedReason: "claim-active" as const,
+      };
+    }
+    return {
+      attemptId: attempt._id,
+      status: attempt.status,
+      repairBlockedReason: null,
+    };
   },
 });
+
+function hasCompletedPrepublicationChecks(attempt: Doc<"publishAttempts">) {
+  return attempt.checks.trufflehog.status === "clean" && attempt.checks.clawscan.status === "clean";
+}
+
+function isAttemptEligibleForOrphanRepair(attempt: Doc<"publishAttempts">) {
+  if (attempt.status === "finalized") return true;
+  if (!hasCompletedPrepublicationChecks(attempt)) return false;
+  if (attempt.status === "ready_to_finalize" || attempt.status === "finalizing") return true;
+  return attempt.status === "failed" && (attempt.finalizationFailureCount ?? 0) > 0;
+}
 
 export type OrphanedSkillPublishAttemptCloseOutcome =
   | { closed: true }
@@ -474,7 +545,7 @@ export type OrphanedSkillPublishAttemptRepairInspection =
   | { allowed: true }
   | {
       allowed: false;
-      reason: "claim-active" | "version-mismatch";
+      reason: "checks-incomplete" | "claim-active" | "version-mismatch";
       attemptId: Id<"publishAttempts">;
       status: string;
     };
@@ -490,9 +561,6 @@ export async function inspectSkillPublishAttemptForOrphanRepair(
 ): Promise<OrphanedSkillPublishAttemptRepairInspection> {
   const attempt = await ctx.db.get(attemptId);
   if (!attempt || attempt.kind !== "skill") return { allowed: true };
-  if (attempt.status === "finalized" || attempt.status === "failed") {
-    return { allowed: true };
-  }
   if (attempt.skillId !== target.skillId || attempt.skillVersionId !== target.versionId) {
     return {
       allowed: false,
@@ -501,6 +569,15 @@ export async function inspectSkillPublishAttemptForOrphanRepair(
       status: attempt.status,
     };
   }
+  if (!isAttemptEligibleForOrphanRepair(attempt)) {
+    return {
+      allowed: false,
+      reason: "checks-incomplete",
+      attemptId: attempt._id,
+      status: attempt.status,
+    };
+  }
+  if (attempt.status === "finalized") return { allowed: true };
   if (isActiveAttemptLive(attempt, Date.now())) {
     return {
       allowed: false,
