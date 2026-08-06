@@ -13794,14 +13794,17 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
     if (!version || version.softDeletedAt) {
       throw new ConvexError("Pending skill version not found.");
     }
+    let attemptInspection: Awaited<
+      ReturnType<typeof inspectSkillPublishAttemptForOrphanRepair>
+    > | null = null;
     if (args.publishAttemptId) {
-      const inspection = await inspectSkillPublishAttemptForOrphanRepair(
+      attemptInspection = await inspectSkillPublishAttemptForOrphanRepair(
         ctx,
         args.publishAttemptId,
         { skillId: version.skillId, versionId: version._id },
       );
-      if (!inspection.allowed) {
-        return { result: null, blockedByAttempt: inspection };
+      if (!attemptInspection.allowed) {
+        return { result: null, blockedByAttempt: attemptInspection };
       }
     }
 
@@ -13812,8 +13815,16 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
     // Recovery deliberately skips the owner webhook, but its security work
     // must be durable before the attempt becomes terminal. Convex commits
     // scheduler writes atomically with this mutation, so a crash can no
-    // longer leave a published version with no VT/ClawScan follow-ups.
-    await scheduleSkillPublishSecurityFollowups(ctx, result);
+    // longer leave a published version with no VT/ClawScan follow-ups. If the
+    // ordinary finalizer won the race all the way through `finalized`, it
+    // already scheduled those followups before recording completion; do not
+    // enqueue duplicates. An already-published version with a still-open
+    // attempt remains the interrupted-repair case and must schedule them.
+    const normalFinalizerAlreadyCompleted =
+      version.publicationStatus === "published" && attemptInspection?.status === "finalized";
+    if (!normalFinalizerAlreadyCompleted) {
+      await scheduleSkillPublishSecurityFollowups(ctx, result);
+    }
     let attemptCloseWarning: "claim-active" | undefined;
     if (args.publishAttemptId) {
       const closeOutcome = await closeOrphanedSkillPublishAttempt(

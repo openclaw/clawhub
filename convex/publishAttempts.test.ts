@@ -2698,7 +2698,7 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
   });
 
   it("clears the staged snapshot when the recorded attempt is already terminal", async () => {
-    const { ctx, patch } = publishedVersionContext({
+    const { ctx, patch, runAfter } = publishedVersionContext({
       _id: "publishAttempts:1",
       kind: "skill",
       skillId: "skills:1",
@@ -2715,6 +2715,34 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
     ).resolves.toMatchObject({ attemptCloseWarning: undefined });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("still schedules scans for an interrupted repair whose attempt remains open", async () => {
+    const { ctx, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "ready_to_finalize",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationFailureCount: 1,
+      createdAt: Date.now() - 2 * 60 * 60_000,
+      updatedAt: Date.now() - 2 * 60 * 60_000,
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+
+    expect(runAfter).toHaveBeenCalledTimes(4);
   });
 
   it("does not publish when the recorded attempt row is missing", async () => {

@@ -548,7 +548,7 @@ export type OrphanedSkillPublishAttemptCloseOutcome =
   | { closed: false; reason: "already-terminal"; status: string };
 
 export type OrphanedSkillPublishAttemptRepairInspection =
-  | { allowed: true }
+  | { allowed: true; status: string }
   | {
       allowed: false;
       reason: "checks-incomplete" | "claim-active" | "version-mismatch";
@@ -590,7 +590,7 @@ export async function inspectSkillPublishAttemptForOrphanRepair(
       status: attempt.status,
     };
   }
-  if (attempt.status === "finalized") return { allowed: true };
+  if (attempt.status === "finalized") return { allowed: true, status: attempt.status };
   if (isActiveAttemptLive(attempt, Date.now())) {
     return {
       allowed: false,
@@ -599,7 +599,7 @@ export async function inspectSkillPublishAttemptForOrphanRepair(
       status: attempt.status,
     };
   }
-  return { allowed: true };
+  return { allowed: true, status: attempt.status };
 }
 
 // Used by the #3349 orphaned-pending-version repair path once the version has
