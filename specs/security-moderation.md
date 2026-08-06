@@ -281,6 +281,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   committed atomically with the new skill version.
 - Unconsumed staged files are deleted when their tickets expire. Failed
   attachment attempts delete the just-created storage blob immediately.
+- A staged skill version is not publicly published until finalization updates
+  the parent skill's version index, latest pointer, tags, and search state.
+  Repeated finalization failures become a terminal operator-repair case rather
+  than retrying forever.
+- Orphan repair must refuse versions still owned by a live finalizer. If a
+  finalizer claims the attempt during repair, that worker exclusively owns
+  follow-up scan scheduling. A successful repair atomically publishes the
+  version, closes any unclaimed attempt when possible, and always clears the
+  private staged publication snapshot.
+- Repair sweeps use one action-start cutoff for every page. They are dry-run by
+  default, require an explicit confirmation token to write, and never run
+  automatically in production.
 
 ## Package publish upload boundary
 

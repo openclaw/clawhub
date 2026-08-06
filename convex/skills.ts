@@ -13438,8 +13438,6 @@ export const getLatestPendingSkillVersionInternal = internalQuery({
   },
 });
 
-const ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS = 60 * 60 * 1000;
-
 // Batch scan for the #3349 repair sweep (convex/maintenance.ts). Paginates
 // the active skillVersions table rather than adding a publicationStatus
 // index: orphaned pending versions are rare relative to total versions, and
@@ -13448,10 +13446,10 @@ export const getOrphanedPendingSkillVersionCandidatesPageInternal = internalQuer
   args: {
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
+    createdBefore: v.number(),
   },
   handler: async (ctx, args) => {
     const batchSize = Math.min(Math.max(args.batchSize ?? 50, 1), 200);
-    const cutoff = Date.now() - ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS;
     const { page, continueCursor, isDone } = await ctx.db
       .query("skillVersions")
       .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
@@ -13459,7 +13457,10 @@ export const getOrphanedPendingSkillVersionCandidatesPageInternal = internalQuer
       .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
     const items = page
-      .filter((version) => version.publicationStatus === "pending" && version.createdAt < cutoff)
+      .filter(
+        (version) =>
+          version.publicationStatus === "pending" && version.createdAt < args.createdBefore,
+      )
       .map((version) => ({ versionId: version._id, skillId: version.skillId }));
 
     return { items, scanned: page.length, cursor: continueCursor, isDone };
@@ -13778,17 +13779,22 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
       versionId: args.versionId,
       publishArgs: args.publishArgs,
     });
-    if (!args.publishAttemptId) return { result, attemptCloseWarning: undefined };
-
-    const closeOutcome = await closeOrphanedSkillPublishAttempt(
-      ctx,
-      args.publishAttemptId,
-      result,
-    );
-    const attemptCloseWarning =
-      !closeOutcome.closed && closeOutcome.reason === "claim-active"
-        ? ("claim-active" as const)
-        : undefined;
+    let attemptCloseWarning: "claim-active" | undefined;
+    if (args.publishAttemptId) {
+      const closeOutcome = await closeOrphanedSkillPublishAttempt(
+        ctx,
+        args.publishAttemptId,
+        result,
+      );
+      attemptCloseWarning =
+        !closeOutcome.closed && closeOutcome.reason === "claim-active"
+          ? ("claim-active" as const)
+          : undefined;
+    }
+    // Normal finalization clears the staged snapshot when its attempt closes.
+    // Recovery must do the same for legacy versions without an attempt and for
+    // attempts that already reached a terminal state.
+    await ctx.db.patch(args.versionId, { pendingPublication: undefined });
     return { result, attemptCloseWarning };
   },
 });

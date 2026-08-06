@@ -14,6 +14,7 @@ import {
   releasePackagePublishAttemptFinalizationClaimInternal,
   releaseSkillPublishAttemptFinalizationClaimInternal,
 } from "./publishAttempts";
+import { publishPendingVersionAndCloseAttemptInternal } from "./skills";
 
 const claimPendingChecksHandler = (
   claimPendingPublishAttemptChecksInternal as unknown as {
@@ -72,6 +73,11 @@ const findActiveSkillPublishAttemptByIdHandler = (
 )._handler;
 const closeOrphanedSkillPublishAttemptHandler = (
   closeOrphanedSkillPublishAttemptInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const publishPendingVersionAndCloseAttemptHandler = (
+  publishPendingVersionAndCloseAttemptInternal as unknown as {
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
@@ -1902,6 +1908,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toEqual({ attemptId: "publishAttempts:live", status: "ready_to_finalize" });
   });
@@ -1933,6 +1940,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toBeNull();
   });
@@ -1964,6 +1972,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toBeNull();
   });
@@ -2005,6 +2014,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toEqual({
       attemptId: "publishAttempts:retrying-finalizer",
@@ -2046,6 +2056,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toBeNull();
   });
@@ -2080,6 +2091,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toEqual({
       attemptId: "publishAttempts:scanner-retry",
@@ -2114,6 +2126,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toEqual({ attemptId: "publishAttempts:fresh", status: "ready_to_finalize" });
   });
@@ -2152,6 +2165,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toEqual({
       attemptId: "publishAttempts:recently-transitioned",
@@ -2190,6 +2204,7 @@ describe("publishAttempts", () => {
         skillId: "skills:demo",
         slug: "demo-skill",
         version: "1.0.0",
+        now,
       }),
     ).resolves.toBeNull();
   });
@@ -2213,6 +2228,7 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:by-id",
         skillId: "skills:demo",
+        now: Date.now(),
       }),
     ).resolves.toEqual({ attemptId: "publishAttempts:by-id", status: "ready_to_finalize" });
   });
@@ -2234,6 +2250,7 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:mismatched",
         skillId: "skills:demo",
+        now: Date.now(),
       }),
     ).resolves.toBeNull();
   });
@@ -2254,6 +2271,7 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:terminal",
         skillId: "skills:demo",
+        now: Date.now(),
       }),
     ).resolves.toBeNull();
   });
@@ -2277,6 +2295,7 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:stale",
         skillId: "skills:demo",
+        now: Date.now(),
       }),
     ).resolves.toBeNull();
   });
@@ -2288,6 +2307,7 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:missing",
         skillId: "skills:demo",
+        now: Date.now(),
       }),
     ).resolves.toBeNull();
   });
@@ -2410,5 +2430,74 @@ describe("closeOrphanedSkillPublishAttemptInternal (#3349)", () => {
       }),
     ).resolves.toEqual({ closed: false, reason: "not-found" });
     expect(patch).not.toHaveBeenCalled();
+  });
+});
+
+describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
+  function publishedVersionContext(attempt?: Record<string, unknown>) {
+    const version = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      publicationStatus: "published",
+      pendingPublication: { tags: ["latest"] },
+    };
+    const skill = { _id: "skills:1" };
+    const embedding = { _id: "skillEmbeddings:1" };
+    const patch = vi.fn();
+    const get = vi.fn(async (id: string) => {
+      if (id === version._id) return version;
+      if (id === skill._id) return skill;
+      if (id === "publishAttempts:1") return attempt ?? null;
+      return null;
+    });
+    const query = vi.fn(() => ({
+      withIndex: vi.fn(() => ({ unique: vi.fn(async () => embedding) })),
+    }));
+    return {
+      ctx: {
+        db: {
+          delete: vi.fn(),
+          get,
+          insert: vi.fn(),
+          normalizeId: vi.fn(),
+          patch,
+          query,
+          replace: vi.fn(),
+          system: {},
+        },
+      },
+      patch,
+    };
+  }
+
+  it("clears the staged snapshot when the recovered version has no attempt", async () => {
+    const { ctx, patch } = publishedVersionContext();
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+      }),
+    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+  });
+
+  it("clears the staged snapshot when the recorded attempt is already terminal", async () => {
+    const { ctx, patch } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      status: "finalized",
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
   });
 });
