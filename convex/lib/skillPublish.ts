@@ -885,6 +885,22 @@ export async function scheduleSkillPublishFollowups(
   publishResult: PublishResult,
   followup: SkillPublishFollowup,
 ) {
+  await scheduleSkillPublishSecurityFollowups(ctx, publishResult);
+
+  if (!followup.skipWebhook && getWebhookConfig().url) {
+    void schedulePublishWebhook(ctx, {
+      slug: followup.slug,
+      version: followup.version,
+      displayName: followup.displayName,
+      ownerHandle: followup.ownerHandle,
+    });
+  }
+}
+
+export async function scheduleSkillPublishSecurityFollowups(
+  ctx: Pick<MutationCtx, "scheduler">,
+  publishResult: PublishResult,
+) {
   await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
     versionId: publishResult.versionId,
   });
@@ -909,19 +925,6 @@ export async function scheduleSkillPublishFollowups(
       preserveExistingJob: true,
     },
   );
-
-  if (!followup.skipWebhook && getWebhookConfig().url) {
-    try {
-      await schedulePublishWebhook(ctx, {
-        slug: followup.slug,
-        version: followup.version,
-        displayName: followup.displayName,
-        ownerHandle: followup.ownerHandle,
-      });
-    } catch {
-      // Publication has committed; the Discord notification is best-effort.
-    }
-  }
 }
 
 function mergeSourceIntoMetadata(

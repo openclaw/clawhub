@@ -176,6 +176,20 @@ function makeTargetedClaimAttempt(
   };
 }
 
+function paginatedAttemptQuery(items: Array<Record<string, unknown>>) {
+  return {
+    withIndex: vi.fn(() => ({
+      order: vi.fn(() => ({
+        paginate: vi.fn(async () => ({
+          page: items,
+          isDone: true,
+          continueCursor: "done",
+        })),
+      })),
+    })),
+  };
+}
+
 describe("publishAttempts", () => {
   it("returns a finalized package attempt only for the exact actor, owner, and artifact", async () => {
     const result = {
@@ -2286,6 +2300,7 @@ describe("publishAttempts", () => {
     const live = {
       _id: "publishAttempts:live",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
@@ -2293,24 +2308,23 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [live]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([live])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
       }),
-    ).resolves.toEqual({ attemptId: "publishAttempts:live", status: "ready_to_finalize" });
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:live",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
   });
 
   it("ignores attempts for a different skillId sharing the same slug+version", async () => {
@@ -2318,6 +2332,7 @@ describe("publishAttempts", () => {
     const otherSkillAttempt = {
       _id: "publishAttempts:other-owner",
       skillId: "skills:other",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
@@ -2325,19 +2340,14 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [otherSkillAttempt]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([otherSkillAttempt])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
@@ -2345,24 +2355,32 @@ describe("publishAttempts", () => {
     ).resolves.toBeNull();
   });
 
-  it("treats an old unclaimed attempt as abandoned and does not block repair", async () => {
+  it("paginates past unrelated attempts to find the exact legacy version", async () => {
     const now = Date.now();
-    const abandoned = {
-      _id: "publishAttempts:abandoned",
+    const unrelated = Array.from({ length: 100 }, (_, index) => ({
+      _id: `publishAttempts:unrelated-${index}`,
+      skillId: "skills:other",
+      skillVersionId: `skillVersions:other-${index}`,
+      status: "ready_to_finalize",
+      createdAt: now - index,
+    }));
+    const exact = {
+      _id: "publishAttempts:exact-on-page-two",
       skillId: "skills:demo",
-      status: "pending_checks",
-      finalizationClaimExpiresAt: 0,
+      skillVersionId: "skillVersions:demo",
+      status: "ready_to_finalize",
+      finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
-      createdAt: now - 60 * 60_000,
+      createdAt: now - 60_000,
     };
+    const paginate = vi
+      .fn()
+      .mockResolvedValueOnce({ page: unrelated, isDone: false, continueCursor: "page-two" })
+      .mockResolvedValueOnce({ page: [exact], isDone: true, continueCursor: "done" });
     const ctx = {
       db: {
         query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [abandoned]),
-            })),
-          })),
+          withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
         })),
       },
     };
@@ -2370,11 +2388,50 @@ describe("publishAttempts", () => {
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
       }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:exact-on-page-two",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
+    expect(paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 100 });
+    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "page-two", numItems: 100 });
+  });
+
+  it("does not bypass checks for an old unclaimed pending_checks attempt", async () => {
+    const now = Date.now();
+    const abandoned = {
+      _id: "publishAttempts:abandoned",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "pending_checks",
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60 * 60_000,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([abandoned])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:abandoned",
+      status: "pending_checks",
+      repairBlockedReason: "checks-incomplete",
+    });
   });
 
   it("treats a below-cap finalization failure with recent activity as still active for dispatcher retry (#3401)", async () => {
@@ -2390,6 +2447,7 @@ describe("publishAttempts", () => {
     const retryingFinalizer = {
       _id: "publishAttempts:retrying-finalizer",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
@@ -2399,19 +2457,14 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [retryingFinalizer]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([retryingFinalizer])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
@@ -2419,6 +2472,7 @@ describe("publishAttempts", () => {
     ).resolves.toEqual({
       attemptId: "publishAttempts:retrying-finalizer",
       status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
     });
   });
 
@@ -2432,6 +2486,7 @@ describe("publishAttempts", () => {
     const staleFinalizer = {
       _id: "publishAttempts:stale-finalizer",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
@@ -2441,24 +2496,23 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [staleFinalizer]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([staleFinalizer])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
       }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:stale-finalizer",
+      status: "ready_to_finalize",
+      repairBlockedReason: null,
+    });
   });
 
   it("still protects pending_checks between scanner retries with nonzero checkFailureCount (#3349)", async () => {
@@ -2468,6 +2522,7 @@ describe("publishAttempts", () => {
     const betweenScannerRetries = {
       _id: "publishAttempts:scanner-retry",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "pending_checks",
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
@@ -2476,19 +2531,14 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [betweenScannerRetries]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([betweenScannerRetries])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
@@ -2496,6 +2546,7 @@ describe("publishAttempts", () => {
     ).resolves.toEqual({
       attemptId: "publishAttempts:scanner-retry",
       status: "pending_checks",
+      repairBlockedReason: "checks-incomplete",
     });
   });
 
@@ -2504,6 +2555,7 @@ describe("publishAttempts", () => {
     const fresh = {
       _id: "publishAttempts:fresh",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
@@ -2511,24 +2563,23 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [fresh]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([fresh])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
       }),
-    ).resolves.toEqual({ attemptId: "publishAttempts:fresh", status: "ready_to_finalize" });
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:fresh",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
   });
 
   it("treats a zero-failure attempt as active when it recently transitioned status, even if created long ago (#3401)", async () => {
@@ -2542,6 +2593,7 @@ describe("publishAttempts", () => {
     const recentlyTransitioned = {
       _id: "publishAttempts:recently-transitioned",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
@@ -2550,19 +2602,14 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [recentlyTransitioned]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([recentlyTransitioned])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
@@ -2570,6 +2617,7 @@ describe("publishAttempts", () => {
     ).resolves.toEqual({
       attemptId: "publishAttempts:recently-transitioned",
       status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
     });
   });
 
@@ -2581,6 +2629,7 @@ describe("publishAttempts", () => {
     const staleTransitioned = {
       _id: "publishAttempts:stale-transitioned",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
@@ -2589,24 +2638,23 @@ describe("publishAttempts", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            order: vi.fn(() => ({
-              take: vi.fn(async () => [staleTransitioned]),
-            })),
-          })),
-        })),
+        query: vi.fn(() => paginatedAttemptQuery([staleTransitioned])),
       },
     };
 
     await expect(
       findActiveSkillPublishAttemptHandler(ctx, {
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         slug: "demo-skill",
         version: "1.0.0",
         now,
       }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:stale-transitioned",
+      status: "ready_to_finalize",
+      repairBlockedReason: null,
+    });
   });
 });
 
@@ -2617,7 +2665,12 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       _id: "publishAttempts:by-id",
       kind: "skill",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
       finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
       createdAt: now - 60_000,
@@ -2628,9 +2681,14 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:by-id",
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         now: Date.now(),
       }),
-    ).resolves.toEqual({ attemptId: "publishAttempts:by-id", status: "ready_to_finalize" });
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:by-id",
+      status: "ready_to_finalize",
+      repairBlockedReason: "claim-active",
+    });
   });
 
   it("returns null when the attempt belongs to a different skill", async () => {
@@ -2639,6 +2697,7 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       _id: "publishAttempts:mismatched",
       kind: "skill",
       skillId: "skills:other",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
       finalizationClaimExpiresAt: now + 60_000,
       checkClaimExpiresAt: 0,
@@ -2650,17 +2709,23 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:mismatched",
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         now: Date.now(),
       }),
     ).resolves.toBeNull();
   });
 
-  it("returns null when the attempt is already terminal", async () => {
+  it("blocks a failed attempt that never completed prepublication checks", async () => {
     const attempt = {
       _id: "publishAttempts:terminal",
       kind: "skill",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "failed",
+      checks: {
+        trufflehog: { status: "failed" },
+        clawscan: { status: "pending" },
+      },
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
       createdAt: Date.now() - 60_000,
@@ -2671,9 +2736,14 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:terminal",
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         now: Date.now(),
       }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:terminal",
+      status: "failed",
+      repairBlockedReason: "checks-incomplete",
+    });
   });
 
   it("returns null when the attempt is non-terminal but stale (no live claim, past retry window)", async () => {
@@ -2682,7 +2752,12 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       _id: "publishAttempts:stale",
       kind: "skill",
       skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
       status: "ready_to_finalize",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
       finalizationFailureCount: 3,
       finalizationClaimExpiresAt: 0,
       checkClaimExpiresAt: 0,
@@ -2695,9 +2770,14 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:stale",
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         now: Date.now(),
       }),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:stale",
+      status: "ready_to_finalize",
+      repairBlockedReason: null,
+    });
   });
 
   it("returns null when the attempt does not exist", async () => {
@@ -2707,6 +2787,7 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       findActiveSkillPublishAttemptByIdHandler(ctx, {
         attemptId: "publishAttempts:missing",
         skillId: "skills:demo",
+        versionId: "skillVersions:demo",
         now: Date.now(),
       }),
     ).resolves.toBeNull();
@@ -2875,6 +2956,7 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
     const skill = { _id: "skills:1" };
     const embedding = { _id: "skillEmbeddings:1" };
     const patch = vi.fn();
+    const runAfter = vi.fn();
     const get = vi.fn(async (id: string) => {
       if (id === version._id) return version;
       if (id === skill._id) return skill;
@@ -2896,13 +2978,15 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
           replace: vi.fn(),
           system: {},
         },
+        scheduler: { runAfter },
       },
       patch,
+      runAfter,
     };
   }
 
   it("clears the staged snapshot when the recovered version has no attempt", async () => {
-    const { ctx, patch } = publishedVersionContext();
+    const { ctx, patch, runAfter } = publishedVersionContext();
 
     await expect(
       publishPendingVersionAndCloseAttemptHandler(ctx, {
@@ -2912,12 +2996,15 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
     ).resolves.toMatchObject({ attemptCloseWarning: undefined });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+    expect(runAfter).toHaveBeenCalledTimes(4);
   });
 
   it("clears the staged snapshot when the recorded attempt is already terminal", async () => {
     const { ctx, patch } = publishedVersionContext({
       _id: "publishAttempts:1",
       kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
       status: "finalized",
     });
 
@@ -2939,6 +3026,10 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
       skillId: "skills:1",
       skillVersionId: "skillVersions:1",
       status: "finalizing",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
       finalizationClaimExpiresAt: Date.now() + 60_000,
       createdAt: Date.now() - 2 * 60 * 60_000,
       updatedAt: Date.now(),
@@ -2959,6 +3050,40 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
       },
     });
 
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not publish a stale pending_checks attempt that never passed scans", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "pending_checks",
+      checks: {
+        trufflehog: { status: "pending" },
+        clawscan: { status: "pending" },
+      },
+      createdAt: Date.now() - 2 * 60 * 60_000,
+      updatedAt: Date.now() - 2 * 60 * 60_000,
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "checks-incomplete",
+        attemptId: "publishAttempts:1",
+        status: "pending_checks",
+      },
+    });
+
+    expect(runAfter).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
   });
 });
