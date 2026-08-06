@@ -141,6 +141,7 @@ import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   fetchText,
   queueHighlightedWebhook,
+  scheduleSkillPublishSecurityFollowups,
   stageSkillPublishAttemptForUser,
   type SkillPublishResult,
 } from "./lib/skillPublish";
@@ -13815,6 +13816,11 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
       versionId: args.versionId,
       publishArgs: args.publishArgs,
     });
+    // Recovery deliberately skips the owner webhook, but its security work
+    // must be durable before the attempt becomes terminal. Convex commits
+    // scheduler writes atomically with this mutation, so a crash can no
+    // longer leave a published version with no VT/ClawScan follow-ups.
+    await scheduleSkillPublishSecurityFollowups(ctx, result);
     let attemptCloseWarning: "claim-active" | undefined;
     if (args.publishAttemptId) {
       const closeOutcome = await closeOrphanedSkillPublishAttempt(
