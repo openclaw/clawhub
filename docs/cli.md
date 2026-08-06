@@ -797,11 +797,29 @@ jobs:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
 
+To attach release and catalog metadata, add the matching CLI values to the
+job's existing `with` block. Keep `dry_run: true` on pull-request jobs; use
+`dry_run: false` only on the trusted publish job shown above.
+
+```yaml
+with:
+  changelog: "Describe the changes in this release."
+  categories: "tools"
+  topics: "automation,productivity"
+```
+
 Notes:
 
 - The reusable workflow defaults `source` to the caller repo.
 - For monorepos, pass `source_path` so the workflow publishes the plugin
   package folder, for example `source_path: extensions/codex`.
+- `changelog`, `categories`, and `topics` are optional. When present, the
+  workflow forwards them to the matching package publish CLI flags. Categories
+  and topics use comma-separated values; omitting them preserves the existing
+  workflow behavior.
+- To remove previously declared metadata, set `clear_categories: true` or
+  `clear_topics: true`. A clear input cannot be combined with its matching
+  value input.
 - Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.

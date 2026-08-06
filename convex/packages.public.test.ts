@@ -387,6 +387,7 @@ const searchPublicHandler = (
       capabilityTag?: string;
       category?: string;
       topic?: string;
+      createdAfter?: number;
       excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
     },
     Array<{ package: { name: string } }>
@@ -404,6 +405,7 @@ const searchForViewerInternalHandler = (
       capabilityTag?: string;
       category?: string;
       topic?: string;
+      createdAfter?: number;
       excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
       viewerUserId?: string;
     },
@@ -18891,5 +18893,45 @@ describe("restorePackageInternal", () => {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
     }
+  });
+
+  it("continues past older search hits to find a later eligible New plugin", async () => {
+    const olderMatches = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`matching-old-${index}`, {
+        family: "code-plugin",
+        displayName: `Matching Old ${index}`,
+        createdAt: 10,
+      }),
+    );
+    const { ctx, paginate } = makeDigestCtx({
+      pages: [
+        {
+          page: olderMatches,
+          isDone: false,
+          continueCursor: "after-older",
+        },
+        {
+          page: [
+            makeDigest("matching-new", {
+              family: "code-plugin",
+              displayName: "Matching New",
+              createdAt: 200,
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "matching",
+      family: "code-plugin",
+      limit: 1,
+      createdAfter: 100,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["matching-new"]);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 });

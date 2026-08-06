@@ -1,13 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { Download, ExternalLink, Plus } from "lucide-react";
 import type { RefObject } from "react";
-import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { SkillListItem } from "../../components/SkillListItem";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { getSkillBadges } from "../../lib/badges";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { timeAgo } from "../../lib/timeAgo";
@@ -43,8 +43,10 @@ function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
   const trending = item.trending;
   const owner = trending.publisher?.handle;
   return (
-    <Link to={trending.canonicalUrl} className="skill-list-item skill-list-item-skill">
-      <MarketplaceIcon kind="skill" label={trending.displayName} />
+    <Link
+      to={trending.canonicalUrl}
+      className="skill-list-item skill-list-item-skill skill-list-item-no-icon skill-list-item-simple-no-icon"
+    >
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-identity">
@@ -58,8 +60,22 @@ function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
           <p className="skill-list-item-summary">{truncateText(trending.summary, 80)}</p>
         ) : null}
       </div>
-      <div className="skill-list-item-meta" aria-label="24-hour downloads">
-        {typeof trending.metrics.trending24hDownloads === "number" ? (
+      <div
+        className="skill-list-item-meta"
+        aria-label={trending.source === "skills-sh" ? "Source" : "24-hour downloads"}
+      >
+        {trending.source === "skills-sh" ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="compact" size="sm">
+                skills.sh
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center">
+              Synced from skills.sh
+            </TooltipContent>
+          </Tooltip>
+        ) : typeof trending.metrics.trending24hDownloads === "number" ? (
           <span className="skill-list-item-meta-item">
             <Download size={14} aria-hidden="true" />
             {formatCompactStat(trending.metrics.trending24hDownloads)}
@@ -79,7 +95,6 @@ function TrendingSkillCard({ item }: { item: TrendingSkillListEntry }) {
       className="card flex min-w-0 flex-col gap-3 p-5 transition-colors hover:border-[color:var(--oc-border-strong)]"
     >
       <div className="flex items-start gap-3">
-        <MarketplaceIcon kind="skill" label={trending.displayName} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-semibold text-[color:var(--oc-text-primary)]">
             {trending.displayName}
@@ -94,7 +109,20 @@ function TrendingSkillCard({ item }: { item: TrendingSkillListEntry }) {
           {trending.summary}
         </p>
       ) : null}
-      {typeof trending.metrics.trending24hDownloads === "number" ? (
+      {trending.source === "skills-sh" ? (
+        <div className="skill-card-grid-meta" aria-label="Source">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="compact" size="sm">
+                skills.sh
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center">
+              Synced from skills.sh
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      ) : typeof trending.metrics.trending24hDownloads === "number" ? (
         <div className="skill-card-grid-meta" aria-label="24-hour downloads">
           <span>
             <Download size={14} aria-hidden="true" />
@@ -111,11 +139,10 @@ function ExternalSkillSearchListItem({ result }: { result: SkillSearchEntry }) {
   return (
     <a
       href={result.canonicalUrl}
-      className="skill-list-item skill-list-item-skill skill-list-item-with-taxonomy"
+      className="skill-list-item skill-list-item-skill skill-list-item-with-taxonomy skill-list-item-no-icon"
       target="_blank"
       rel="noreferrer"
     >
-      <MarketplaceIcon kind="skill" label={result.displayName} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-identity">
@@ -161,7 +188,6 @@ function ExternalSkillSearchCard({ result }: { result: SkillSearchEntry }) {
       rel="noreferrer"
     >
       <div className="flex items-start gap-3">
-        <MarketplaceIcon kind="skill" label={result.displayName} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate font-semibold text-[color:var(--oc-text-primary)]">
@@ -205,7 +231,7 @@ export function SkillsResults({
   return (
     <>
       {isLoadingSkills ? (
-        <BrowseResultsSkeleton label="Skill" variant={effectiveView} />
+        <BrowseResultsSkeleton label="Skill" showIcon={false} variant={effectiveView} />
       ) : sorted.length === 0 && listDoneLoading ? (
         <div className="empty-state">
           <p className="empty-state-title">
@@ -264,6 +290,7 @@ export function SkillsResults({
                   </div>
                 }
                 owner={entry.owner}
+                showIcon={false}
               />
             );
           })}
@@ -271,12 +298,15 @@ export function SkillsResults({
       ) : (
         <div className="browse-list-stack">
           <div
-            className={`browse-list-head${showTrendingLayout ? " browse-list-head-trending" : ""}`}
+            className={`browse-list-head${
+              showTrendingLayout ? " browse-list-head-trending" : " browse-list-head-no-icon"
+            }`}
             aria-hidden="true"
           >
-            {showTrendingLayout ? null : <span className="browse-list-head-icon-spacer" />}
             <span className="browse-list-head-label">Skill</span>
-            {showTrendingLayout ? null : <span className="browse-list-head-label">Category</span>}
+            {showTrendingLayout ? null : (
+              <span className="browse-list-head-label browse-list-head-category">Category</span>
+            )}
             <span className="browse-list-head-label browse-list-head-stat">
               {showTrendingLayout ? "24h downloads" : "Popularity"}
             </span>
@@ -299,6 +329,7 @@ export function SkillsResults({
                   skill={skill}
                   ownerHandle={ownerHandle}
                   owner={entry.owner}
+                  showIcon={false}
                 />
               );
             })}
@@ -308,7 +339,7 @@ export function SkillsResults({
 
       {isLoadingMore ? (
         <div ref={canAutoLoad ? loadMoreRef : null} className="mt-4">
-          <BrowseResultsSkeleton count={2} variant={effectiveView} />
+          <BrowseResultsSkeleton count={2} showIcon={false} variant={effectiveView} />
         </div>
       ) : canLoadMore ? (
         <div ref={canAutoLoad ? loadMoreRef : null} className="card mt-4 flex justify-center">

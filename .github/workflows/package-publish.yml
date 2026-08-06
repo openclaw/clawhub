@@ -59,6 +59,28 @@ on:
         required: false
         type: string
         default: latest
+      changelog:
+        description: Optional release changelog shown on ClawHub.
+        required: false
+        type: string
+      categories:
+        description: Optional comma-separated plugin category slugs.
+        required: false
+        type: string
+      clear_categories:
+        description: Clear existing plugin categories. Cannot be combined with categories.
+        required: false
+        type: boolean
+        default: false
+      topics:
+        description: Optional comma-separated catalog topics.
+        required: false
+        type: string
+      clear_topics:
+        description: Clear existing catalog topics. Cannot be combined with topics.
+        required: false
+        type: boolean
+        default: false
       source_repo:
         description: Optional source repo override for local-folder publishes.
         required: false
@@ -312,6 +334,11 @@ jobs:
           INPUT_FAMILY: ${{ inputs.family }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+          INPUT_CATEGORIES: ${{ inputs.categories }}
+          INPUT_CLEAR_CATEGORIES: ${{ inputs.clear_categories }}
+          INPUT_TOPICS: ${{ inputs.topics }}
+          INPUT_CLEAR_TOPICS: ${{ inputs.clear_topics }}
           INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
           INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
@@ -478,6 +505,15 @@ jobs:
           family = os.environ["INPUT_FAMILY"].strip()
           version = os.environ["INPUT_VERSION"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
+          changelog = os.environ["INPUT_CHANGELOG"].strip()
+          categories = os.environ["INPUT_CATEGORIES"].strip()
+          clear_categories = os.environ["INPUT_CLEAR_CATEGORIES"].strip().lower() == "true"
+          topics = os.environ["INPUT_TOPICS"].strip()
+          clear_topics = os.environ["INPUT_CLEAR_TOPICS"].strip().lower() == "true"
+          if categories and clear_categories:
+              raise SystemExit("categories and clear_categories cannot be combined")
+          if topics and clear_topics:
+              raise SystemExit("topics and clear_topics cannot be combined")
           if owner:
               cmd += ["--owner", owner]
           if family:
@@ -491,6 +527,16 @@ jobs:
               cmd += ["--version", version]
           if tags:
               cmd += ["--tags", tags]
+          if changelog:
+              cmd += ["--changelog", changelog]
+          if categories:
+              cmd += ["--categories", categories]
+          elif clear_categories:
+              cmd += ["--categories", ""]
+          if topics:
+              cmd += ["--topics", topics]
+          elif clear_topics:
+              cmd += ["--topics", ""]
           source_repo = os.environ["INPUT_SOURCE_REPO"].strip()
           source_commit = os.environ["INPUT_SOURCE_COMMIT"].strip()
           source_ref = os.environ["INPUT_SOURCE_REF"].strip()

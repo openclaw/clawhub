@@ -29,6 +29,7 @@ vi.mock("./lib/embeddings", () => ({
 vi.mock("./lib/badges", () => ({
   isSkillHighlighted: (skill: { badges?: Record<string, unknown> }) =>
     Boolean(skill.badges?.highlighted),
+  isSkillOfficial: (skill: { badges?: Record<string, unknown> }) => Boolean(skill.badges?.official),
 }));
 
 type WrappedHandler<Result = { skill: { slug: string; _id: string } }> = {
@@ -2993,6 +2994,106 @@ describe("search helpers", () => {
 
     expect(result.map((entry) => entry.skill.slug)).toEqual(["search-term-clean"]);
   });
+
+  it("keeps a later official hit when higher-ranked hits are ineligible", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const matches = [
+      {
+        skill: makePublicSkill({
+          id: "skills:exact-community",
+          slug: "helper",
+          displayName: "Helper",
+        }),
+        version: null,
+        ownerHandle: "community",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:community",
+          slug: "helper-community",
+          displayName: "Helper Community",
+        }),
+        version: null,
+        ownerHandle: "community",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:official",
+          slug: "helper-official",
+          displayName: "Helper Official",
+          official: true,
+        }),
+        version: null,
+        ownerHandle: "official",
+        owner: null,
+      },
+    ];
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(matches)
+      .mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "helper", limit: 1, officialOnly: true },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-official"]);
+  });
+
+  it("keeps a later new hit when higher-ranked hits predate the window", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const matches = [
+      {
+        skill: makePublicSkill({
+          id: "skills:exact-old",
+          slug: "helper",
+          displayName: "Helper",
+          createdAt: 10,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:older",
+          slug: "helper-older",
+          displayName: "Helper Older",
+          createdAt: 20,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:new",
+          slug: "helper-new",
+          displayName: "Helper New",
+          createdAt: 200,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(matches)
+      .mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "helper", limit: 1, createdAfter: 100 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-new"]);
+  });
 });
 
 function makePublicSkill(params: {
@@ -3007,8 +3108,12 @@ function makePublicSkill(params: {
   stars?: number;
   categories?: string[];
   topics?: string[];
+  official?: boolean;
+  createdAt?: number;
   githubScanStatus?: "pending" | "clean" | "suspicious" | "malicious" | "not-run";
 }) {
+  const badges: Record<string, { byUserId: string; at: number }> = {};
+  if (params.official) badges.official = { byUserId: "users:curator", at: 1 };
   return {
     _id: params.id,
     _creationTime: 1,
@@ -3025,7 +3130,7 @@ function makePublicSkill(params: {
     categories: params.categories,
     topics: params.topics,
     githubScanStatus: params.githubScanStatus,
-    badges: {},
+    badges,
     stats: {
       downloads: params.downloads ?? 0,
       installs: params.installs ?? 0,
@@ -3033,7 +3138,7 @@ function makePublicSkill(params: {
       versions: 1,
       comments: 0,
     },
-    createdAt: 1,
+    createdAt: params.createdAt ?? 1,
     updatedAt: 1,
   };
 }

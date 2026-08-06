@@ -129,7 +129,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
   });
 
-  it("identifies skills.sh rows by their source owner and upstream install count", async () => {
+  it("identifies skills.sh rows without presenting upstream installs as downloads", async () => {
     const external = {
       ...makeTrending("reddit-automation", "reddit-automation", 0, 12_345, 0),
       id: "skills-sh:doany-skills/skills/reddit-automation",
@@ -161,10 +161,11 @@ describe("HomeListingSection", () => {
 
     expect(screen.getByText("@doany-skills")).toBeTruthy();
     const sourceBadge = screen.getByText("skills.sh");
-    const downloads = screen.getByLabelText("Downloads");
-    expect(downloads.firstElementChild).toBe(sourceBadge);
+    const source = screen.getByLabelText("Source");
+    expect(source.firstElementChild).toBe(sourceBadge);
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(downloads.textContent).toContain("12.3k");
+    expect(source.textContent).toBe("skills.sh");
+    expect(screen.queryByText("12.3k")).toBeNull();
 
     fireEvent.pointerMove(sourceBadge);
     expect((await screen.findByRole("tooltip")).textContent).toBe("Synced from skills.sh");
@@ -202,7 +203,62 @@ describe("HomeListingSection", () => {
 
     const sourceBadge = screen.getByText("skills.sh");
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(screen.getByLabelText("Downloads").textContent).toBe("skills.sh");
+    expect(screen.getByLabelText("Source").textContent).toBe("skills.sh");
+  });
+
+  it("searches within the canonical Trending feed without changing source or order", async () => {
+    const unrelated = makeTrending("unrelated", "Unrelated Skill", 5, 100, 5);
+    const external = {
+      ...makeTrending("calendar-external", "Calendar External", 0, 90, 0),
+      id: "skills-sh:example/calendar-external",
+      source: "skills-sh" as const,
+      canonicalUrl: "/skills-sh/example/calendar-external",
+      publisher: null,
+      sourceIdentity: {
+        id: "example/calendar-external",
+        owner: "example",
+        repo: "skills",
+        host: null,
+        lifetimeInstalls: 90,
+      },
+    };
+    const native = makeTrending("calendar-native", "Calendar Native", 3, 80, 3);
+    fetchCanonicalTrendingPageMock
+      .mockResolvedValueOnce(canonicalPage([unrelated], "trending-page-2"))
+      .mockResolvedValueOnce(canonicalPage([external, native]));
+
+    render(
+      <TooltipProvider>
+        <HomeListingSection initialListing={initialTrending([unrelated], true)} />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "calendar" },
+    });
+
+    await waitFor(() => {
+      expect(
+        Array.from(
+          document.querySelectorAll(".home-v2-listing-row-name"),
+          (node) => node.textContent,
+        ),
+      ).toEqual(["Calendar External", "Calendar Native"]);
+    });
+    expect(fetchCanonicalTrendingPageMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ cursor: null }),
+    );
+    expect(fetchCanonicalTrendingPageMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ cursor: "trending-page-2" }),
+    );
+    expect(convexActionMock).not.toHaveBeenCalled();
+    expect(screen.getByText("skills.sh")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Trending" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
   });
 
   it("hides unavailable Trending and falls back to the Featured feed", async () => {
@@ -301,7 +357,9 @@ describe("HomeListingSection", () => {
         expect.objectContaining({ sort: "newest", createdAfter: expect.any(Number) }),
       );
     });
-    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+      "All categories",
+    );
 
     fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
     await waitFor(() => {

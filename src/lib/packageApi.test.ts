@@ -741,6 +741,7 @@ describe("fetchPluginCatalog", () => {
     const result = await fetchPluginCatalog({
       q: "demo",
       cursor: "cursor:plugins",
+      createdAfter: 123,
       limit: 10,
     });
 
@@ -751,6 +752,7 @@ describe("fetchPluginCatalog", () => {
     expect(url.pathname).toBe("/api/v1/plugins/search");
     expect(url.searchParams.has("cursor")).toBe(false);
     expect(url.searchParams.has("sort")).toBe(false);
+    expect(url.searchParams.get("createdAfter")).toBe("123");
   });
 
   it("ignores malformed plugin search entries defensively", async () => {

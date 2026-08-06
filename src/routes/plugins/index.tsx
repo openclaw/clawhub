@@ -334,7 +334,7 @@ export const Route = createFileRoute("/plugins/")({
 
 function PluginsIndexPending() {
   return (
-    <main className="browse-page browse-page-borderless-header">
+    <main className="browse-page browse-page-borderless-header plugins-browse-page">
       <div className="browse-page-header">
         <h1 className="browse-title">Plugins</h1>
       </div>
@@ -673,7 +673,7 @@ function PluginsIndex() {
   }, [canLoadMore, loadMore]);
 
   return (
-    <main className="browse-page browse-page-borderless-header">
+    <main className="browse-page browse-page-borderless-header plugins-browse-page">
       <div className="browse-page-header">
         <div className="browse-page-header-main">
           <h1 className="browse-title">

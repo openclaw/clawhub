@@ -4150,6 +4150,10 @@ code {
   min-width: 0;
 }
 
+.browse-page .browse-results-grid .skill-card-header-no-icon {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .browse-page .browse-results-grid .skill-card-header .marketplace-icon {
   --marketplace-icon-accent: var(--ink-soft) !important;
   --marketplace-icon-wash: transparent !important;
@@ -17354,6 +17358,10 @@ a.agentic-risk-finding-title:focus-visible {
   grid-template-columns: minmax(0, 1fr) 180px 190px;
 }
 
+.skill-list-item-simple-no-icon {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .skill-list-item:last-child {
   border-bottom: none;
 }
@@ -17644,6 +17652,23 @@ a.agentic-risk-finding-title:focus-visible {
 
   .browse-page .browse-list-head-stat {
     grid-column: 3;
+  }
+
+  .browse-page .browse-list-head-no-icon {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .browse-page .browse-list-head-no-icon .browse-list-head-category {
+    display: none;
+  }
+
+  .browse-page .browse-list-head-no-icon .browse-list-head-label:first-child {
+    grid-column: 1;
+  }
+
+  .browse-page .browse-list-head-no-icon .browse-list-head-stat {
+    display: initial;
+    grid-column: 2;
   }
 
   .browse-page .skill-list-item-main > .catalog-topics {
@@ -19994,12 +20019,29 @@ body:has(.browse-page-borderless-header) .navbar {
     justify-self: end;
   }
 
-  .browse-page .skill-list-item > .marketplace-icon {
+  .browse-page .browse-list-head-no-icon .browse-list-head-category {
     display: none;
   }
 
+  .browse-page .browse-list-head-no-icon .browse-list-head-label:first-child {
+    grid-column: 1;
+  }
+
+  .browse-page .browse-list-head-no-icon .browse-list-head-stat {
+    display: initial;
+    grid-column: 2;
+  }
+
+  .browse-page .skill-list-item > .marketplace-icon,
+  .skills-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
+  .plugins-browse-page .browse-results-grid .skill-card-header > .marketplace-icon,
   .browse-page .browse-results-skeleton-icon {
     display: none;
+  }
+
+  .skills-browse-page .browse-results-grid .skill-card-header,
+  .plugins-browse-page .browse-results-grid .skill-card-header {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .browse-page .skill-list-item-body {
@@ -22291,31 +22333,36 @@ a.search-empty-action {
 .home-v2-listing-toolbar {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   min-height: 44px;
   padding: 0;
 }
 
-.home-v2-listing-kind {
-  margin-left: auto;
+.home-v2-listing-primary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.home-v2-listing-divider {
-  width: 1px;
-  align-self: center;
-  height: 18px;
-  flex-shrink: 0;
-  background: var(--hv2-border);
+.home-v2-listing-kind {
+  margin-left: 0;
 }
 
 .home-v2-listing-actions {
   display: inline-flex;
   align-items: center;
+  gap: 12px;
   flex-shrink: 0;
   margin-left: auto;
 }
 
-/* Search + category are ghost controls; view toggle stays segmented. */
+.home-v2-listing-actions .browse-category-select {
+  max-width: min(220px, 34vw);
+}
+
+/* Search and category remain ghost controls. */
 .home-v2-listing-actions-rail {
   display: inline-flex;
   align-items: center;
@@ -22855,6 +22902,10 @@ a.search-empty-action {
   grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr;
 }
 
+.home-v2-listing-head-with-icon {
+  grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
+}
+
 .home-v2-listing-head-icon-spacer {
   grid-column: 1;
   width: 34px;
@@ -22868,6 +22919,14 @@ a.search-empty-action {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--hv2-text-tertiary);
+}
+
+.home-v2-listing-head-with-icon .home-v2-listing-head-label {
+  grid-column: 2;
+}
+
+.home-v2-listing-head-with-icon .home-v2-listing-head-stat {
+  grid-column: 4;
 }
 
 .home-v2-listing-head-label {
@@ -23153,6 +23212,10 @@ a.search-empty-action {
   grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr;
 }
 
+.home-v2-listing-row-with-icon {
+  grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
+}
+
 .home-v2-listing-row::before {
   content: "";
   position: absolute;
@@ -23244,6 +23307,10 @@ a.search-empty-action {
   overflow: hidden;
 }
 
+.home-v2-listing-row-with-icon .home-v2-listing-row-body {
+  grid-column: 2;
+}
+
 .home-v2-listing-row-title {
   display: flex;
   align-items: center;
@@ -23325,6 +23392,10 @@ a.search-empty-action {
   font-variant-numeric: tabular-nums;
   color: var(--hv2-text-secondary);
   white-space: nowrap;
+}
+
+.home-v2-listing-row-with-icon .home-v2-listing-row-stats {
+  grid-column: 4;
 }
 
 .home-v2-listing-row-stats.is-skills-sh {
@@ -28574,39 +28645,100 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     min-width: 0;
     font-size: 12px;
   }
+  .home-v2-listing-row.home-v2-listing-row-with-icon,
+  .home-v2-listing-head.home-v2-listing-head-with-icon {
+    grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
+  }
+
+  .home-v2-listing-head-with-icon .home-v2-listing-head-icon-spacer,
+  .home-v2-listing-row-with-icon .home-v2-listing-row-icon,
+  .home-v2-listing .browse-list-head-icon-spacer,
+  .home-v2-listing .browse-results-skeleton-icon {
+    display: none;
+  }
+
+  .home-v2-listing .browse-list-head,
+  .home-v2-listing .browse-results-skeleton-row {
+    --home-v2-listing-copy-max: min(15rem, calc(100vw - 11rem));
+    grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
+    gap: 12px 16px;
+  }
+
+  .home-v2-listing .browse-list-head-category,
+  .home-v2-listing .browse-results-skeleton-row .skill-list-item-taxonomy {
+    display: none;
+  }
+
+  .home-v2-listing-head-with-icon .home-v2-listing-head-label,
+  .home-v2-listing-row-with-icon .home-v2-listing-row-body,
+  .home-v2-listing
+    .browse-list-head
+    > .browse-list-head-label:not(.browse-list-head-category):not(.browse-list-head-stat),
+  .home-v2-listing .browse-results-skeleton-row .skill-list-item-body {
+    grid-column: 1;
+    max-width: none;
+  }
+
+  .home-v2-listing-head-with-icon .home-v2-listing-head-stat,
+  .home-v2-listing-row-with-icon .home-v2-listing-row-stats,
+  .home-v2-listing .browse-list-head-stat,
+  .home-v2-listing .browse-results-skeleton-row .skill-list-item-meta {
+    grid-column: 3;
+  }
   .home-v2-listing-controls {
     gap: 14px;
     margin-bottom: 24px;
   }
   .home-v2-listing-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     min-height: 0;
-    gap: 14px 12px;
+    gap: 14px;
   }
-  .home-v2-listing-divider {
+  .home-v2-listing-primary {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    width: 100%;
+  }
+  .home-v2-listing-primary > .browse-controls-divider {
     display: none;
   }
   .home-v2-listing-kind {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: end;
+    align-self: flex-start;
+  }
+  .home-v2-listing-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+  .home-v2-listing-actions .browse-search-trigger {
+    width: 44px;
+    height: 44px;
+  }
+  .home-v2-listing-actions .browse-category-select {
+    flex: 1 1 auto;
+    max-width: none;
+  }
+  .home-v2-listing-actions .browse-category-trigger {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 16px;
+    border: 1px solid var(--hv2-border);
+    border-radius: var(--oc-radius-control);
+    background: color-mix(in srgb, var(--hv2-surface) 76%, transparent);
   }
   .home-v2-listing-sort {
-    grid-column: 1 / -1;
-    grid-row: 2;
     align-self: auto;
-    gap: 20px;
+    width: 100%;
     min-height: 36px;
   }
   .home-v2-listing-sort-tabs {
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 16px;
     width: 100%;
   }
   .home-v2-listing-tab {
-    flex: 1 0 0;
+    flex: 1 0 auto;
     justify-content: center;
     min-width: max-content;
   }

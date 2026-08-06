@@ -64,6 +64,7 @@ export const HOME_NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1_000;
 
 const PLUGIN_CATALOG_PAGE_LIMIT = 100;
 const LEGACY_NEW_PLUGIN_MAX_REQUESTS = 10;
+const TRENDING_SEARCH_PAGE_LIMIT = 100;
 // Featured is intentionally a finite editorial feed: the latest 40 badge-history rows.
 const FEATURED_SKILL_LIMIT = 40;
 
@@ -106,6 +107,83 @@ function uniqueHomePlugins(items: PackageListItem[]) {
   const byName = new Map<string, PackageListItem>();
   for (const item of items) byName.set(item.name, item);
   return [...byName.values()];
+}
+
+function trendingItemMatchesQuery(item: CanonicalTrendingItem, query: string) {
+  const tokens = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const searchableText = [
+    item.slug,
+    item.displayName,
+    item.summary,
+    item.publisher?.handle,
+    item.publisher?.displayName,
+    item.sourceIdentity?.id,
+    item.sourceIdentity?.owner,
+    item.sourceIdentity?.repo,
+    item.sourceIdentity?.host,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLocaleLowerCase();
+  return tokens.every((token) => searchableText.includes(token));
+}
+
+export async function searchHomeTrendingSkillListing(
+  query: string,
+  numItems: number,
+  signal?: AbortSignal,
+) {
+  let capabilities: Awaited<ReturnType<typeof fetchCatalogDiscoveryCapabilities>>;
+  try {
+    capabilities = await fetchCatalogDiscoveryCapabilities();
+  } catch {
+    return { page: [], hasMore: false, trendingState: "unavailable" as const };
+  }
+  if (!capabilities.canonicalTrendingEnabled) {
+    return { page: [], hasMore: false, trendingState: "unavailable" as const };
+  }
+
+  const items: HomeTrendingSkillListingEntry[] = [];
+  let cursor: string | null = null;
+  let sawFeedItem = false;
+  try {
+    do {
+      // Trending is a ranked cross-source snapshot, so search must filter this
+      // feed in place instead of substituting the native catalog search.
+      const result = await fetchCanonicalTrendingPage({
+        cursor,
+        limit: TRENDING_SEARCH_PAGE_LIMIT,
+        signal,
+      });
+      sawFeedItem ||= result.items.length > 0;
+      items.push(
+        ...result.items
+          .filter((item) => trendingItemMatchesQuery(item, query))
+          .map((trending) => ({ trending })),
+      );
+      const nextCursor = result.nextCursor;
+      if (items.length >= numItems || !nextCursor || nextCursor === cursor) {
+        return {
+          page: items.slice(0, numItems),
+          hasMore:
+            items.length > numItems ||
+            (items.length >= numItems && nextCursor !== null && nextCursor !== cursor),
+          trendingState: sawFeedItem ? ("available" as const) : ("empty" as const),
+        };
+      }
+      cursor = nextCursor;
+    } while (cursor);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (sawFeedItem) throw error;
+    return { page: [], hasMore: false, trendingState: "unavailable" as const };
+  }
+  return {
+    page: items,
+    hasMore: false,
+    trendingState: sawFeedItem ? ("available" as const) : ("empty" as const),
+  };
 }
 
 export async function fetchHomeSkillListing(

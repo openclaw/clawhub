@@ -18,6 +18,7 @@ type SkillListItemProps = {
   owner?: PublicPublisher | null;
   href?: string;
   showOfficialBadge?: boolean;
+  showIcon?: boolean;
 };
 
 export function SkillListItem({
@@ -26,6 +27,7 @@ export function SkillListItem({
   owner,
   href: hrefOverride,
   showOfficialBadge = true,
+  showIcon = true,
 }: SkillListItemProps) {
   const handle = ownerHandle ?? owner?.handle ?? null;
   const ownerSegment = handle?.trim() || String(skill.ownerPublisherId ?? skill.ownerUserId);
@@ -41,8 +43,15 @@ export function SkillListItem({
     .join(", ");
 
   return (
-    <Link to={href} className="skill-list-item skill-list-item-skill skill-list-item-with-taxonomy">
-      <MarketplaceIcon kind="skill" label={displayName} imageUrl={skill.icon} skill={skill} />
+    <Link
+      to={href}
+      className={`skill-list-item skill-list-item-skill skill-list-item-with-taxonomy${
+        showIcon ? "" : " skill-list-item-no-icon"
+      }`}
+    >
+      {showIcon ? (
+        <MarketplaceIcon kind="skill" label={displayName} imageUrl={skill.icon} skill={skill} />
+      ) : null}
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-identity">

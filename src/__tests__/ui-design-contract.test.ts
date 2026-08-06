@@ -141,6 +141,37 @@ describe("restored UI design contract", () => {
     );
   });
 
+  it("removes discovery icon columns on mobile while preserving plugin icons on desktop", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".home-v2-listing-row-with-icon")).toContain("grid-template-columns: auto");
+    expect(cssRule(css, ".browse-page .browse-results-grid .skill-card-header")).toContain(
+      "grid-template-columns: auto",
+    );
+
+    const homeMobile = cssMediaContaining(css, "(max-width: 768px)", [
+      ".home-v2-listing-row.home-v2-listing-row-with-icon",
+      ".home-v2-listing .browse-results-skeleton-icon",
+    ]);
+    expect(homeMobile).toContain(
+      "grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;",
+    );
+    expect(homeMobile).toMatch(
+      /\.home-v2-listing-head-with-icon \.home-v2-listing-head-icon-spacer,\s*\.home-v2-listing-row-with-icon \.home-v2-listing-row-icon,\s*\.home-v2-listing \.browse-list-head-icon-spacer,\s*\.home-v2-listing \.browse-results-skeleton-icon\s*\{\s*display:\s*none;/,
+    );
+
+    const browseMobile = cssMediaContaining(css, "(max-width: 760px)", [
+      ".plugins-browse-page .browse-results-grid .skill-card-header > .marketplace-icon",
+      ".browse-page .browse-results-skeleton-icon",
+    ]);
+    expect(browseMobile).toMatch(
+      /\.browse-page \.skill-list-item > \.marketplace-icon,\s*\.skills-browse-page \.browse-results-grid \.skill-card-header > \.marketplace-icon,\s*\.plugins-browse-page \.browse-results-grid \.skill-card-header > \.marketplace-icon,\s*\.browse-page \.browse-results-skeleton-icon\s*\{\s*display:\s*none;/,
+    );
+    expect(browseMobile).toMatch(
+      /\.skills-browse-page \.browse-results-grid \.skill-card-header,\s*\.plugins-browse-page \.browse-results-grid \.skill-card-header\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+  });
+
   it("keeps dashboard package names inside their rows and attention cards", () => {
     const css = styles();
 
@@ -371,9 +402,15 @@ describe("restored UI design contract", () => {
     );
     expect(listingSource).not.toContain("home-v2-listing-view");
     expect(listingSource).not.toContain("HomeListingCategorySelect");
-    expect(listingSource).not.toContain("Search catalog");
+    expect(listingSource).toContain("BrowseSearchTrigger");
+    expect(listingSource).toContain("BrowseCategorySelect");
+    expect(listingSource).toContain('label="Search catalog"');
+    expect(listingSource).not.toContain("BrowseSort");
+    expect(listingSource.indexOf('className="home-v2-listing-kind')).toBeLessThan(
+      listingSource.indexOf('className="home-v2-listing-sort"'),
+    );
     expect(listingSource.indexOf('className="home-v2-listing-sort"')).toBeLessThan(
-      listingSource.indexOf('className="home-v2-listing-kind'),
+      listingSource.indexOf('className="home-v2-listing-actions"'),
     );
     expect(appsSource).toContain('className="home-v2-apps-tile"');
     expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
@@ -398,7 +435,23 @@ describe("restored UI design contract", () => {
     expect(homeSource).not.toContain("Featured skills");
     expect(homeSource).not.toContain("Trending Now");
     expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
-    expect(cssRule(css, ".home-v2-listing-kind")).toContain("margin-left: auto");
+    expect(cssRule(css, ".home-v2-listing-primary")).toContain("display: flex");
+    expect(cssRule(css, ".browse-controls-divider")).toContain("width: 1px");
+    expect(cssRule(css, ".browse-controls-divider")).toContain("height: 18px");
+    expect(cssRule(css, ".browse-controls-divider")).toContain("background: var(--line)");
+    expect(cssRule(css, ".home-v2-listing-actions")).toContain("margin-left: auto");
+    expect(cssRule(css, ".home-v2-listing-sort-tabs")).toContain("overflow-x: auto");
+    const mobileCatalog = cssMediaContaining(css, "(max-width: 768px)", [
+      ".home-v2-listing-toolbar {",
+      ".home-v2-listing-primary {",
+      ".home-v2-listing-actions {",
+    ]);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-toolbar \{[^}]*flex-direction:\s*column/s);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-primary \{[^}]*flex-direction:\s*column/s);
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-primary > \.browse-controls-divider \{[^}]*display:\s*none/s,
+    );
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-actions \{[^}]*width:\s*100%/s);
     expect(cssRule(css, ".home-v2-listing-row::before")).toContain("border-radius: 0");
   });
 

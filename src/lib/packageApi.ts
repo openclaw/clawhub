@@ -341,6 +341,7 @@ export async function fetchPackages(params: {
   family?: "skill" | "code-plugin" | "bundle-plugin";
   isOfficial?: boolean;
   featured?: boolean;
+  createdAfter?: number;
   category?: string;
   topic?: string;
   officialFirst?: boolean;
@@ -359,6 +360,9 @@ export async function fetchPackages(params: {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
     if (params.featured) url.searchParams.set("featured", "true");
+    if (typeof params.createdAfter === "number") {
+      url.searchParams.set("createdAfter", String(params.createdAfter));
+    }
     if (params.category) url.searchParams.set("category", params.category);
     if (params.topic) url.searchParams.set("topic", params.topic);
     if (params.officialFirst) url.searchParams.set("officialFirst", "true");
@@ -404,6 +408,7 @@ export async function fetchPluginCatalog(params: {
   family?: PluginFamily;
   isOfficial?: boolean;
   featured?: boolean;
+  createdAfter?: number;
   category?: string;
   topic?: string;
   officialFirst?: boolean;
@@ -420,6 +425,7 @@ export async function fetchPluginCatalog(params: {
       family: params.family,
       isOfficial: params.isOfficial,
       featured: params.featured,
+      createdAfter: params.createdAfter,
       category: params.category,
       topic: params.topic,
       officialFirst: params.officialFirst,
@@ -452,6 +458,9 @@ export async function fetchPluginCatalog(params: {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
     if (params.featured) url.searchParams.set("featured", "true");
+    if (typeof params.createdAfter === "number") {
+      url.searchParams.set("createdAfter", String(params.createdAfter));
+    }
     if (params.category) url.searchParams.set("category", params.category);
     if (params.topic) url.searchParams.set("topic", params.topic);
     if (params.excludedScanStatuses?.length) {

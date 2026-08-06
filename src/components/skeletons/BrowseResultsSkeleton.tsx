@@ -3,6 +3,7 @@ import { Skeleton } from "../ui/skeleton";
 type BrowseResultsSkeletonProps = {
   count?: number;
   label?: string;
+  showIcon?: boolean;
   variant?: "list" | "grid";
   showColumnHead?: boolean;
 };
@@ -10,6 +11,7 @@ type BrowseResultsSkeletonProps = {
 export function BrowseResultsSkeleton({
   count = 6,
   label = "Skill",
+  showIcon = true,
   variant = "list",
   showColumnHead = true,
 }: BrowseResultsSkeletonProps) {
@@ -22,8 +24,10 @@ export function BrowseResultsSkeleton({
             key={i}
             className="card skill-card skill-card-spaced-footer"
           >
-            <div className="skill-card-header">
-              <Skeleton className="h-[34px] w-[34px] rounded-[var(--oc-radius-inset)]" />
+            <div className={`skill-card-header${showIcon ? "" : " skill-card-header-no-icon"}`}>
+              {showIcon ? (
+                <Skeleton className="browse-results-skeleton-icon h-[34px] w-[34px] rounded-[var(--oc-radius-inset)]" />
+              ) : null}
               <div className="skill-card-identity">
                 <Skeleton className="h-5 w-40 max-w-full" />
                 <Skeleton className="h-4 w-24 max-w-full" />
@@ -48,10 +52,13 @@ export function BrowseResultsSkeleton({
   return (
     <div className="browse-list-stack" role="status" aria-label="Loading results">
       {showColumnHead ? (
-        <div className="browse-list-head" aria-hidden="true">
-          <span className="browse-list-head-icon-spacer" />
+        <div
+          className={`browse-list-head${showIcon ? "" : " browse-list-head-no-icon"}`}
+          aria-hidden="true"
+        >
+          {showIcon ? <span className="browse-list-head-icon-spacer" /> : null}
           <span className="browse-list-head-label">{label}</span>
-          <span className="browse-list-head-label">Category</span>
+          <span className="browse-list-head-label browse-list-head-category">Category</span>
           <span className="browse-list-head-label browse-list-head-stat">Popularity</span>
         </div>
       ) : null}
@@ -60,9 +67,13 @@ export function BrowseResultsSkeleton({
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
             key={i}
-            className="skill-list-item skill-list-item-has-creator browse-results-skeleton-row"
+            className={`skill-list-item skill-list-item-has-creator browse-results-skeleton-row${
+              showIcon ? "" : " skill-list-item-no-icon"
+            }`}
           >
-            <Skeleton className="browse-results-skeleton-icon h-[27px] w-[27px] shrink-0 rounded-[var(--oc-radius-inset)]" />
+            {showIcon ? (
+              <Skeleton className="browse-results-skeleton-icon h-[27px] w-[27px] shrink-0 rounded-[var(--oc-radius-inset)]" />
+            ) : null}
             <div className="skill-list-item-body">
               <div className="skill-list-item-main">
                 <Skeleton className="h-5 w-32 max-w-[45%]" />

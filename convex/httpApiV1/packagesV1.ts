@@ -1180,6 +1180,7 @@ async function searchPackageCatalog(
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
+    createdAfter?: number;
     category?: string;
     topic?: string;
     excludedScanStatuses?: Array<(typeof PACKAGE_SCAN_STATUS_VALUES)[number]>;
@@ -1196,6 +1197,7 @@ async function searchPackageCatalog(
       channel: args.channel,
       isOfficial: args.isOfficial,
       highlightedOnly: args.highlightedOnly,
+      createdAfter: args.createdAfter,
       category: args.category,
       topic: args.topic,
       excludedScanStatuses: args.excludedScanStatuses,
@@ -3587,6 +3589,14 @@ async function searchPackages(
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const highlightedOnly = featured.value === true || highlightedOnlyParam.value === true;
+  const rawCreatedAfter = url.searchParams.get("createdAfter")?.trim();
+  const createdAfter = rawCreatedAfter ? Number(rawCreatedAfter) : undefined;
+  if (
+    rawCreatedAfter &&
+    (createdAfter === undefined || !Number.isSafeInteger(createdAfter) || createdAfter < 0)
+  ) {
+    return text("Invalid createdAfter", 400, rate.headers);
+  }
   const rawCategory = url.searchParams.get("category")?.trim() || undefined;
   const category = resolvePluginCategoryFilter(rawCategory);
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
@@ -3605,6 +3615,12 @@ async function searchPackages(
       400,
       rate.headers,
     );
+  }
+  if (
+    createdAfter !== undefined &&
+    (family === "skill" || family === "claw" || (!family && includeSkills))
+  ) {
+    return text("createdAfter is only supported for plugin package endpoints", 400, rate.headers);
   }
 
   let results: CatalogSearchEntry[];
@@ -3632,6 +3648,7 @@ async function searchPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
+            createdAfter,
             category,
             topic,
             excludedScanStatuses: excludedScanStatuses.value,
@@ -3658,6 +3675,7 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
+        createdAfter,
         category,
         topic,
         excludedScanStatuses: excludedScanStatuses.value,
@@ -3672,6 +3690,7 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
+        createdAfter,
         category,
         topic,
         excludedScanStatuses: excludedScanStatuses.value,

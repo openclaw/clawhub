@@ -21,6 +21,7 @@ type SkillCardProps = {
   className?: string;
   ownerHandle?: string | null;
   owner?: PublicPublisher | null;
+  showIcon?: boolean;
 };
 
 export function SkillCard({
@@ -34,6 +35,7 @@ export function SkillCard({
   className,
   ownerHandle,
   owner,
+  showIcon = true,
 }: SkillCardProps) {
   const ownerSegment = encodeURIComponent(String(skill.ownerUserId));
   const link = href ?? `/${ownerSegment}/${skill.slug}`;
@@ -53,14 +55,16 @@ export function SkillCard({
 
   return (
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
-      <div className="skill-card-header">
-        <MarketplaceIcon
-          kind="skill"
-          label={displayName}
-          imageUrl={skill.icon}
-          skill={skill}
-          size="md"
-        />
+      <div className={`skill-card-header${showIcon ? "" : " skill-card-header-no-icon"}`}>
+        {showIcon ? (
+          <MarketplaceIcon
+            kind="skill"
+            label={displayName}
+            imageUrl={skill.icon}
+            skill={skill}
+            size="md"
+          />
+        ) : null}
         <div className="skill-card-identity">
           <h3 className="skill-card-title" title={displayName}>
             {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
