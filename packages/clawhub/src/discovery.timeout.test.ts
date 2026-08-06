@@ -55,7 +55,7 @@ function stubStalledBodyFetch() {
           new Promise<unknown>((_resolve, reject) => {
             if (!signal) return; // hangs forever
             signal.addEventListener("abort", () => {
-              reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+              reject(new DOMException("The operation was aborted", "AbortError"));
             });
           }),
       );

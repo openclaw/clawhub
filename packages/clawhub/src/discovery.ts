@@ -10,19 +10,29 @@ async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs: number,
-): Promise<{ response: Response; clearTimer: () => void }> {
+): Promise<{
+  response: Response;
+  clearTimer: () => void;
+  normalizeError: (error: unknown) => unknown;
+}> {
   const controller = new AbortController();
   const timeoutSeconds = Math.ceil(timeoutMs / 1000);
-  const timeout = setTimeout(
-    () => controller.abort(new Error(`Request timed out after ${timeoutSeconds}s`)),
-    timeoutMs,
-  );
+  let timeoutError: Error | null = null;
+  const timeout = setTimeout(() => {
+    timeoutError = new Error(`Request timed out after ${timeoutSeconds}s`);
+    controller.abort(timeoutError);
+  }, timeoutMs);
+  const normalizeError = (error: unknown) => timeoutError ?? error;
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
-    return { response, clearTimer: () => clearTimeout(timeout) };
+    return {
+      response,
+      clearTimer: () => clearTimeout(timeout),
+      normalizeError,
+    };
   } catch (error) {
     clearTimeout(timeout);
-    throw error;
+    throw normalizeError(error);
   }
 }
 
@@ -30,7 +40,7 @@ export async function discoverRegistryFromSite(siteUrl: string, timeoutMs = DISC
   const paths = ["/.well-known/clawhub.json", "/.well-known/clawdhub.json"];
   for (const path of paths) {
     const url = new URL(path, siteUrl);
-    const { response, clearTimer } = await fetchWithTimeout(
+    const { response, clearTimer, normalizeError } = await fetchWithTimeout(
       url.toString(),
       {
         method: "GET",
@@ -54,6 +64,8 @@ export async function discoverRegistryFromSite(siteUrl: string, timeoutMs = DISC
         authBase: parsed.authBase,
         minCliVersion: parsed.minCliVersion,
       };
+    } catch (error) {
+      throw normalizeError(error);
     } finally {
       clearTimer();
     }
