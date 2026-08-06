@@ -3807,8 +3807,8 @@ type SkillVersionRepairOutcome =
   | {
       repaired: false;
       reason: "attempt-checks-incomplete";
-      attemptId: Id<"publishAttempts">;
-      status: string;
+      attemptId?: Id<"publishAttempts">;
+      status?: string;
     }
   | {
       repaired: false;
@@ -3871,6 +3871,13 @@ export async function repairOrphanedPendingSkillVersionHandler(
         version: context.version,
         now: observedAt,
       });
+  // Legacy versions without a recorded attempt id still need affirmative
+  // evidence that their original prepublication checks completed. No matching
+  // attempt means there is nothing trustworthy to prove those checks ran, so
+  // fail closed instead of publishing an unverified staged version.
+  if (!context.publishAttemptId && !attemptInspection) {
+    return { repaired: false, reason: "attempt-checks-incomplete" };
+  }
   if (attemptInspection?.repairBlockedReason) {
     return {
       repaired: false,
