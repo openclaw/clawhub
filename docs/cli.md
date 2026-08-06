@@ -817,6 +817,9 @@ Notes:
   workflow forwards them to the matching package publish CLI flags. Categories
   and topics use comma-separated values; omitting them preserves the existing
   workflow behavior.
+- To remove previously declared metadata, set `clear_categories: true` or
+  `clear_topics: true`. A clear input cannot be combined with its matching
+  value input.
 - Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.

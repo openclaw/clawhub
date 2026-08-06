@@ -213,5 +213,23 @@ describe("package publish workflow", () => {
       expect(resolveStep?.run).toContain(`${name} = os.environ["${envName}"].strip()`);
       expect(resolveStep?.run).toContain(`if ${name}:\n    cmd += ["--${name}", ${name}]`);
     }
+
+    for (const name of ["categories", "topics"]) {
+      const clearName = `clear_${name}`;
+      const envName = `INPUT_CLEAR_${name.toUpperCase()}`;
+      expect(inputs?.[clearName]).toMatchObject({
+        required: false,
+        type: "boolean",
+        default: false,
+      });
+      expect(resolveStep?.env?.[envName]).toBe(`\${{ inputs.${clearName} }}`);
+      expect(resolveStep?.run).toContain(
+        `${clearName} = os.environ["${envName}"].strip().lower() == "true"`,
+      );
+      expect(resolveStep?.run).toContain(
+        `if ${name} and ${clearName}:\n    raise SystemExit("${name} and ${clearName} cannot be combined")`,
+      );
+      expect(resolveStep?.run).toContain(`elif ${clearName}:\n    cmd += ["--${name}", ""]`);
+    }
   });
 });
