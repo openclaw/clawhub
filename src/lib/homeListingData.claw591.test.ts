@@ -42,6 +42,7 @@ import {
   fetchInitialHomeListing,
   HOME_LISTING_PAGE_SIZE,
   HOME_NEW_WINDOW_MS,
+  searchHomeTrendingSkillListing,
 } from "./homeListingData";
 
 describe("homeListingData", () => {
@@ -96,6 +97,21 @@ describe("homeListingData", () => {
       limit: 1,
       signal: undefined,
     });
+  });
+
+  it("limits Trending search pages while preserving buffered matches for See more", async () => {
+    const matches = Array.from({ length: 25 }, (_, index) =>
+      makeTrending(`calendar-${index}`, `Calendar ${index}`, 25 - index),
+    );
+    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage(matches, null));
+
+    const firstPage = await searchHomeTrendingSkillListing("calendar", 20);
+    expect(firstPage.page).toHaveLength(20);
+    expect(firstPage.hasMore).toBe(true);
+
+    const expandedPage = await searchHomeTrendingSkillListing("calendar", 40);
+    expect(expandedPage.page).toHaveLength(25);
+    expect(expandedPage.hasMore).toBe(false);
   });
 
   it("rejects a later canonical page failure instead of replacing loaded results", async () => {

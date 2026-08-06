@@ -165,7 +165,7 @@ export async function searchHomeTrendingSkillListing(
       const nextCursor = result.nextCursor;
       if (items.length >= numItems || !nextCursor || nextCursor === cursor) {
         return {
-          page: items,
+          page: items.slice(0, numItems),
           hasMore:
             items.length > numItems ||
             (items.length >= numItems && nextCursor !== null && nextCursor !== cursor),
