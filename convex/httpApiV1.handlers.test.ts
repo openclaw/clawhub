@@ -4961,7 +4961,8 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(409);
     const body = await response.text();
     expect(body).toContain("stuck pending after publication finalization failed");
-    expect(body).toContain("finalize timed out");
+    expect(body).toContain("attempt publishAttempts:failed");
+    expect(body).not.toContain("finalize timed out");
   });
 
   it("surfaces owner-visible pending status for org publisher owners (#3349)", async () => {

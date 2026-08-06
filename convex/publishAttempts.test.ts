@@ -2520,6 +2520,7 @@ describe("closeOrphanedSkillPublishAttemptInternal (#3349)", () => {
     const attempt = {
       _id: "publishAttempts:orphaned",
       kind: "skill",
+      skillId: "skills:1",
       skillVersionId: "skillVersions:1",
       status: "ready_to_finalize",
       finalizationFailureCount: 5,
@@ -2556,6 +2557,7 @@ describe("closeOrphanedSkillPublishAttemptInternal (#3349)", () => {
     const attempt = {
       _id: "publishAttempts:live",
       kind: "skill",
+      skillId: "skills:1",
       skillVersionId: "skillVersions:1",
       status: "finalizing",
       finalizationClaimExpiresAt: now + 60_000,
@@ -2623,6 +2625,35 @@ describe("closeOrphanedSkillPublishAttemptInternal (#3349)", () => {
         result,
       }),
     ).resolves.toEqual({ closed: false, reason: "not-found" });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("refuses to finalize an attempt bound to a different version", async () => {
+    const attempt = {
+      _id: "publishAttempts:other-version",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:other",
+      status: "ready_to_finalize",
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => attempt),
+        normalizeId: vi.fn(),
+        query: vi.fn(),
+        patch,
+      },
+    };
+
+    await expect(
+      closeOrphanedSkillPublishAttemptHandler(ctx, {
+        attemptId: "publishAttempts:other-version",
+        result,
+      }),
+    ).resolves.toEqual({ closed: false, reason: "version-mismatch" });
     expect(patch).not.toHaveBeenCalled();
   });
 });
@@ -2693,5 +2724,35 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
     ).resolves.toMatchObject({ attemptCloseWarning: undefined });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+  });
+
+  it("does not publish when the attempt gains a live finalizer claim", async () => {
+    const { ctx, patch } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "finalizing",
+      finalizationClaimExpiresAt: Date.now() + 60_000,
+      createdAt: Date.now() - 2 * 60 * 60_000,
+      updatedAt: Date.now(),
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "claim-active",
+        attemptId: "publishAttempts:1",
+        status: "finalizing",
+      },
+    });
+
+    expect(patch).not.toHaveBeenCalled();
   });
 });

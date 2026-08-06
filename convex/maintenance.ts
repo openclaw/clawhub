@@ -3807,6 +3807,12 @@ type SkillVersionRepairOutcome =
   | { repaired: false; reason: "soft-deleted" }
   | { repaired: false; reason: "not-pending"; publicationStatus: string }
   | { repaired: false; reason: "attempt-active"; attemptId: Id<"publishAttempts">; status: string }
+  | {
+      repaired: false;
+      reason: "attempt-mismatch";
+      attemptId: Id<"publishAttempts">;
+      status: string;
+    }
   | { repaired: false; reason: "missing-publish-args" }
   | { repaired: false; reason: "dry-run"; slug: string; version: string }
   | {
@@ -3888,14 +3894,36 @@ export async function repairOrphanedPendingSkillVersionHandler(
   // a prior repair attempt already published the version but crashed before
   // closing the attempt, this call is idempotent on the publish side and
   // still closes the still-open attempt.
-  const { result, attemptCloseWarning } = (await ctx.runMutation(
+  const publishOutcome = (await ctx.runMutation(
     internal.skills.publishPendingVersionAndCloseAttemptInternal,
     {
       versionId,
       publishArgs: skillInsertArgs,
       publishAttemptId: context.publishAttemptId ?? undefined,
     },
-  )) as { result: PublishResult; attemptCloseWarning?: "claim-active" };
+  )) as
+    | { result: PublishResult; blockedByAttempt: null; attemptCloseWarning?: "claim-active" }
+    | {
+        result: null;
+        blockedByAttempt: {
+          reason: "claim-active" | "version-mismatch";
+          attemptId: Id<"publishAttempts">;
+          status: string;
+        };
+      };
+
+  if (publishOutcome.blockedByAttempt) {
+    return {
+      repaired: false,
+      reason:
+        publishOutcome.blockedByAttempt.reason === "claim-active"
+          ? "attempt-active"
+          : "attempt-mismatch",
+      attemptId: publishOutcome.blockedByAttempt.attemptId,
+      status: publishOutcome.blockedByAttempt.status,
+    };
+  }
+  const { result, attemptCloseWarning } = publishOutcome;
 
   if (!attemptCloseWarning) {
     // A manual repair runs long after the original publish request landed;

@@ -2654,7 +2654,14 @@ describe("orphaned pending skill version repair (#3349)", () => {
     };
     const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.skills.publishPendingVersionAndCloseAttemptInternal) {
-        return { result: publishResult, attemptCloseWarning: "claim-active" as const };
+        return {
+          result: null,
+          blockedByAttempt: {
+            reason: "claim-active" as const,
+            attemptId: "publishAttempts:racing",
+            status: "finalizing",
+          },
+        };
       }
       throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
     });
@@ -2667,11 +2674,10 @@ describe("orphaned pending skill version repair (#3349)", () => {
     );
 
     expect(result).toEqual({
-      repaired: true,
-      slug: "demo-skill",
-      version: "1.0.0",
-      result: publishResult,
-      attemptCloseWarning: "claim-active",
+      repaired: false,
+      reason: "attempt-active",
+      attemptId: "publishAttempts:racing",
+      status: "finalizing",
     });
     expect(runAfter).not.toHaveBeenCalled();
   });
