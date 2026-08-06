@@ -2403,6 +2403,41 @@ describe("publishAttempts", () => {
     });
   });
 
+  it("allows a freshly cap-exhausted failed attempt on the legacy slug/version scan (#3401)", async () => {
+    const now = Date.now();
+    const capExhausted = {
+      _id: "publishAttempts:legacy-cap-exhausted",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "failed",
+      checks: { trufflehog: { status: "clean" }, clawscan: { status: "clean" } },
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      finalizationFailureCount: 5,
+      createdAt: now - 60_000,
+      updatedAt: now,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => paginatedAttemptQuery([capExhausted])),
+      },
+    };
+
+    await expect(
+      findActiveSkillPublishAttemptHandler(ctx, {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        slug: "demo-skill",
+        version: "1.0.0",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:legacy-cap-exhausted",
+      status: "failed",
+      repairBlockedReason: null,
+    });
+  });
+
   it("still protects pending_checks between scanner retries with nonzero checkFailureCount (#3349)", async () => {
     const now = Date.now();
     // Scanner released the claim and scheduled a retry; checkFailureCount is
@@ -2635,6 +2670,40 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
       attemptId: "publishAttempts:terminal",
       status: "failed",
       repairBlockedReason: "checks-incomplete",
+    });
+  });
+
+  it("allows a freshly cap-exhausted failed attempt (dispatcher cannot reclaim it)", async () => {
+    const now = Date.now();
+    const attempt = {
+      _id: "publishAttempts:cap-exhausted",
+      kind: "skill",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "failed",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationFailureCount: 5,
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+      updatedAt: now,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:cap-exhausted",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:cap-exhausted",
+      status: "failed",
+      repairBlockedReason: null,
     });
   });
 
@@ -2910,6 +2979,50 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
     expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("repairs a freshly cap-exhausted failed attempt without treating it as live (#3401)", async () => {
+    // Cap-exhausted failures land as status:"failed" with a fresh updatedAt
+    // and finalizationFailureCount at the terminal cap. isActiveAttemptLive
+    // would treat that as retry activity for ~20m, but the dispatcher cannot
+    // reclaim a terminal failed row — so repair must proceed immediately.
+    const now = Date.now();
+    const { ctx, patch, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "failed",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      finalizationFailureCount: 5,
+      finalizationClaimExpiresAt: 0,
+      checkClaimExpiresAt: 0,
+      createdAt: now - 60_000,
+      updatedAt: now,
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: expect.objectContaining({
+        versionId: "skillVersions:1",
+        publicationStatus: "published",
+      }),
+      blockedByAttempt: null,
+      attemptCloseWarning: undefined,
+    });
+
+    expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
+    // Failed (not finalized): interrupted-repair case — schedule security
+    // follow-ups rather than assuming the normal finalizer already did.
+    expect(runAfter).toHaveBeenCalledTimes(4);
   });
 
   it("still schedules scans for an interrupted repair whose attempt remains open", async () => {

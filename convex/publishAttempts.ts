@@ -502,7 +502,13 @@ export const findActiveSkillPublishAttemptInternal = internalQuery({
               repairBlockedReason: "checks-incomplete" as const,
             };
           }
-          if (isActiveAttemptLive(attempt, args.now)) {
+          // Same status gate as the direct-ID precheck / mutation inspect:
+          // terminal failed attempts are not reclaimable, so do not treat
+          // their fresh failure timestamps as live claim activity.
+          if (
+            (ACTIVE_PUBLISH_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status) &&
+            isActiveAttemptLive(attempt, args.now)
+          ) {
             return {
               attemptId: attempt._id,
               status: attempt.status,
@@ -632,7 +638,16 @@ export async function inspectSkillPublishAttemptForOrphanRepair(
     };
   }
   if (attempt.status === "finalized") return { allowed: true, status: attempt.status };
-  if (isActiveAttemptLive(attempt, Date.now())) {
+  // Mirror findActiveSkillPublishAttemptByIdInternal: only non-terminal
+  // statuses can still be claimed by the dispatcher. A cap-exhausted
+  // "failed" attempt is eligible for repair but isActiveAttemptLive would
+  // otherwise treat its fresh finalizationFailureCount/updatedAt as retry
+  // activity for ACTIVE_ATTEMPT_RETRYABLE_STALE_MS (~20m), blocking an
+  // immediate targeted repair that the owner 409 promises is possible.
+  if (
+    (ACTIVE_PUBLISH_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status) &&
+    isActiveAttemptLive(attempt, Date.now())
+  ) {
     return {
       allowed: false,
       reason: "claim-active",
