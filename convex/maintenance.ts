@@ -3869,12 +3869,17 @@ export async function repairOrphanedPendingSkillVersionHandler(
         version: context.version,
         now: observedAt,
       });
-  // Legacy versions without a recorded attempt id still need affirmative
-  // evidence that their original prepublication checks completed. No matching
-  // attempt means there is nothing trustworthy to prove those checks ran, so
-  // fail closed instead of publishing an unverified staged version.
-  if (!context.publishAttemptId && !attemptInspection) {
-    return { repaired: false, reason: "attempt-checks-incomplete" };
+  // Every repair needs affirmative evidence that its original prepublication
+  // checks completed. A missing recorded attempt is not proof that it was safe:
+  // the row may have been deleted or the stored id may point at a non-skill
+  // attempt. Legacy versions without an id likewise need a matching eligible
+  // attempt from the fallback scan.
+  if (!attemptInspection) {
+    return {
+      repaired: false,
+      reason: "attempt-checks-incomplete",
+      ...(context.publishAttemptId ? { attemptId: context.publishAttemptId } : {}),
+    };
   }
   if (attemptInspection?.repairBlockedReason) {
     return {

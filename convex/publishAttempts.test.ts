@@ -3117,6 +3117,54 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
   });
 
+  it("does not publish when the recorded attempt row is missing", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext();
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "checks-incomplete",
+        attemptId: "publishAttempts:1",
+        status: "not-found",
+      },
+    });
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not publish when the recorded attempt belongs to another artifact kind", async () => {
+    const { ctx, patch, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "package",
+      status: "ready_to_finalize",
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "checks-incomplete",
+        attemptId: "publishAttempts:1",
+        status: "ready_to_finalize",
+      },
+    });
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("does not publish when the attempt gains a live finalizer claim", async () => {
     const { ctx, patch } = publishedVersionContext({
       _id: "publishAttempts:1",
