@@ -42,27 +42,25 @@ function stubRejectingFetch(error: Error) {
 function stubStalledBodyFetch() {
   globalStubs.stub(
     "fetch",
-    vi.fn(
-      async (_input: unknown, init?: RequestInit) => {
-        const signal = init?.signal;
-        // Return a response with headers immediately, but body never completes
-        const response = new Response(null, {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-        // Override .json() to hang forever (or abort if signal fires)
-        response.json = vi.fn(
-          () =>
-            new Promise<unknown>((_resolve, reject) => {
-              if (!signal) return; // hangs forever
-              signal.addEventListener("abort", () => {
-                reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
-              });
-            }),
-        );
-        return response;
-      },
-    ) as unknown as typeof fetch,
+    vi.fn(async (_input: unknown, init?: RequestInit) => {
+      const signal = init?.signal;
+      // Return a response with headers immediately, but body never completes
+      const response = new Response(null, {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+      // Override .json() to hang forever (or abort if signal fires)
+      response.json = vi.fn(
+        () =>
+          new Promise<unknown>((_resolve, reject) => {
+            if (!signal) return; // hangs forever
+            signal.addEventListener("abort", () => {
+              reject(signal.reason instanceof Error ? signal.reason : new Error("aborted"));
+            });
+          }),
+      );
+      return response;
+    }) as unknown as typeof fetch,
   );
 }
 
