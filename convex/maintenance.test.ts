@@ -2815,7 +2815,9 @@ describe("orphaned pending skill version repair (#3349)", () => {
 describe("orphaned pending skill version sweep (#3349)", () => {
   it("uses one fixed age cutoff across every page", async () => {
     const now = 1_700_000_000_000;
-    vi.spyOn(Date, "now").mockReturnValueOnce(now).mockReturnValue(now + 5 * 60_000);
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(now)
+      .mockReturnValue(now + 5 * 60_000);
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce({ items: [], scanned: 50, cursor: "page-2", isDone: false })

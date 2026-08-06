@@ -13522,233 +13522,232 @@ async function publishPendingVersionHandler(
   ctx: MutationCtx,
   args: { versionId: Id<"skillVersions">; publishArgs: unknown },
 ) {
-    const version = await ctx.db.get(args.versionId);
-    if (!version || version.softDeletedAt) {
-      throw new ConvexError("Pending skill version not found.");
-    }
-    const skill = await ctx.db.get(version.skillId);
-    if (!skill) throw new ConvexError("Skill not found.");
+  const version = await ctx.db.get(args.versionId);
+  if (!version || version.softDeletedAt) {
+    throw new ConvexError("Pending skill version not found.");
+  }
+  const skill = await ctx.db.get(version.skillId);
+  if (!skill) throw new ConvexError("Skill not found.");
 
-    const existingEmbedding = await ctx.db
-      .query("skillEmbeddings")
-      .withIndex("by_version", (q) => q.eq("versionId", version._id))
-      .unique();
-    if (version.publicationStatus === "published" || version.publicationStatus === undefined) {
-      if (!existingEmbedding) {
-        throw new ConvexError("Published skill version is missing its embedding.");
-      }
-      return {
-        skillId: skill._id,
-        versionId: version._id,
-        embeddingId: existingEmbedding._id,
-        publicationStatus: "published" as const,
-      };
-    }
-    if (version.publicationStatus !== "pending") {
-      throw new ConvexError(`Skill version is ${version.publicationStatus}, not pending.`);
-    }
-
-    const publishArgs = asSkillPendingPublishArgs(args.publishArgs);
-    const user = await ctx.db.get(publishArgs.userId);
-    if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
-
-    const now = Date.now();
-    const prevLatestVersion = skill.latestVersionSummary?.version;
-    const isNewLatest =
-      !prevLatestVersion ||
-      !semver.valid(prevLatestVersion) ||
-      semver.gt(version.version, prevLatestVersion);
-    const nextTags: Record<string, Id<"skillVersions">> = { ...skill.tags };
-    if (isNewLatest) {
-      nextTags.latest = version._id;
-    }
-    for (const tag of normalizeSkillTags(publishArgs.tags) ?? []) {
-      if (tag.toLowerCase() === "latest") continue;
-      nextTags[tag] = version._id;
-    }
-
-    const latestBefore = skill.latestVersionId;
-    const derivedSummary =
-      publishArgs.summary ??
-      getFrontmatterValue(publishArgs.parsed.frontmatter, "description") ??
-      skill.summary;
-    const nextSummary = isNewLatest ? derivedSummary : skill.summary;
-    const nextDisplayName = isNewLatest ? publishArgs.displayName : skill.displayName;
-    const qualityAssessment = publishArgs.qualityAssessment;
-    const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
-    const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
-    const initialModerationStatus =
-      isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
-    const moderationReason = isQualityQuarantine
-      ? "quality.low"
-      : isPublisherUnderModeration
-        ? USER_MODERATION_REASON
-        : "pending.scan";
-    const moderationNotes = isQualityQuarantine
-      ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
-      : isPublisherUnderModeration
-        ? (user.requiresModerationReason ??
-          "Publisher is currently under manual moderation review.")
-        : undefined;
-    const qualityRecord = qualityAssessment
-      ? {
-          score: qualityAssessment.score,
-          decision: qualityAssessment.decision,
-          trustTier: qualityAssessment.trustTier,
-          similarRecentCount: qualityAssessment.similarRecentCount,
-          reason: qualityAssessment.reason,
-          signals: qualityAssessment.signals,
-          evaluatedAt: now,
-        }
-      : undefined;
-
-    const derivedFlags = deriveModerationFlags({
-      skill: {
-        slug: skill.slug,
-        displayName: nextDisplayName,
-        summary: nextSummary ?? undefined,
-      },
-      parsed: publishArgs.parsed,
-      files: publishArgs.files,
-    });
-    const moderationSnapshot = buildModerationSnapshot({ sourceVersionId: version._id });
-    const nextFlags = Array.from(
-      new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
-    );
-    const versionForModeration = {
-      ...version,
-      staticScan: publishArgs.staticScan,
-      llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
-    };
-    const scannerModerationPatch =
-      versionForModeration.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
-        ? buildScannerModerationPatchFromVersion({
-            owner: null,
-            version: versionForModeration,
-            now,
-          })
-        : {};
-
-    const basePatch: SkillModerationPatch = {
-      displayName: nextDisplayName,
-      summary: nextSummary ?? undefined,
-      icon: skill.icon,
-      ownerPublisherId: skill.ownerPublisherId ?? publishArgs.ownerPublisherId,
-      latestVersionId: isNewLatest ? version._id : skill.latestVersionId,
-      latestVersionSummary: isNewLatest
-        ? {
-            version: version.version,
-            createdAt: version.createdAt,
-            changelog: publishArgs.changelog,
-            changelogSource: publishArgs.changelogSource,
-            description: getFrontmatterValue(publishArgs.parsed.frontmatter, "description")?.trim(),
-            clawdis: publishArgs.parsed.clawdis,
-          }
-        : skill.latestVersionSummary,
-      tags: nextTags,
-      categories: isNewLatest ? publishArgs.categories : skill.categories,
-      topics: isNewLatest ? publishArgs.topics : skill.topics,
-      ...(isNewLatest
-        ? {
-            inferredCategories: undefined,
-            inferredTopics: undefined,
-            inferredFromVersionId: undefined,
-            inferredCategoryConfidence: undefined,
-            inferredTopicConfidence: undefined,
-            inferredClassifierVersion: undefined,
-            inferredTopicClassifierVersion: undefined,
-            inferredInputHash: undefined,
-            inferredTopicInputHash: undefined,
-            inferredAt: undefined,
-          }
-        : {}),
-      stats: { ...skill.stats, versions: skill.stats.versions + 1 },
-      softDeletedAt: undefined,
-      moderationStatus: initialModerationStatus,
-      moderationReason,
-      moderationNotes,
-      moderationVerdict: moderationSnapshot.verdict,
-      moderationReasonCodes: moderationSnapshot.reasonCodes.length
-        ? moderationSnapshot.reasonCodes
-        : undefined,
-      moderationEvidence: moderationSnapshot.evidence.length
-        ? moderationSnapshot.evidence
-        : undefined,
-      moderationSummary: moderationSnapshot.summary,
-      moderationEngineVersion: moderationSnapshot.engineVersion,
-      moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
-      moderationSourceVersionId: version._id,
-      quality: qualityRecord ?? skill.quality,
-      moderationFlags: nextFlags.length ? nextFlags : undefined,
-      isSuspicious: computeIsSuspicious({
-        moderationFlags: nextFlags.length ? nextFlags : undefined,
-        moderationReason,
-      }),
-      unpublishedSlugReservedUntil: undefined,
-      unpublishedSlugReleasedAt: undefined,
-      unpublishedOriginalSlug: undefined,
-      updatedAt: now,
-      ...scannerModerationPatch,
-    };
-    const patch = applySkillManualOverrideToSkillPatch({
-      skill,
-      basePatch,
-      now,
-    });
-    const nextSkill = { ...skill, ...patch };
-
-    await ctx.db.patch(version._id, {
-      publicationStatus: "published",
-      changelog: publishArgs.changelog,
-      changelogSource: publishArgs.changelogSource,
-      llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
-    });
-    await ctx.db.patch(skill._id, patch);
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-    await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
-
-    const badgeMap = await getSkillBadgeMap(ctx, skill._id);
-    const isApproved = Boolean(badgeMap.redactionApproved);
-    const embeddingId = existingEmbedding
-      ? existingEmbedding._id
-      : await ctx.db.insert("skillEmbeddings", {
-          skillId: skill._id,
-          versionId: version._id,
-          ownerId: publishArgs.userId,
-          embedding: publishArgs.embedding,
-          isLatest: isNewLatest,
-          isApproved,
-          visibility: embeddingVisibilityFor(isNewLatest, isApproved),
-          updatedAt: now,
-        });
+  const existingEmbedding = await ctx.db
+    .query("skillEmbeddings")
+    .withIndex("by_version", (q) => q.eq("versionId", version._id))
+    .unique();
+  if (version.publicationStatus === "published" || version.publicationStatus === undefined) {
     if (!existingEmbedding) {
-      await ctx.db.insert("embeddingSkillMap", {
-        embeddingId,
-        skillId: skill._id,
-      });
+      throw new ConvexError("Published skill version is missing its embedding.");
     }
-
-    if (isNewLatest && latestBefore) {
-      const previousEmbedding = await ctx.db
-        .query("skillEmbeddings")
-        .withIndex("by_version", (q) => q.eq("versionId", latestBefore))
-        .unique();
-      if (previousEmbedding) {
-        await ctx.db.patch(previousEmbedding._id, {
-          isLatest: false,
-          visibility: embeddingVisibilityFor(false, previousEmbedding.isApproved),
-          updatedAt: now,
-        });
-      }
-    }
-
     return {
       skillId: skill._id,
       versionId: version._id,
-      embeddingId,
+      embeddingId: existingEmbedding._id,
       publicationStatus: "published" as const,
     };
+  }
+  if (version.publicationStatus !== "pending") {
+    throw new ConvexError(`Skill version is ${version.publicationStatus}, not pending.`);
+  }
+
+  const publishArgs = asSkillPendingPublishArgs(args.publishArgs);
+  const user = await ctx.db.get(publishArgs.userId);
+  if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+
+  const now = Date.now();
+  const prevLatestVersion = skill.latestVersionSummary?.version;
+  const isNewLatest =
+    !prevLatestVersion ||
+    !semver.valid(prevLatestVersion) ||
+    semver.gt(version.version, prevLatestVersion);
+  const nextTags: Record<string, Id<"skillVersions">> = { ...skill.tags };
+  if (isNewLatest) {
+    nextTags.latest = version._id;
+  }
+  for (const tag of normalizeSkillTags(publishArgs.tags) ?? []) {
+    if (tag.toLowerCase() === "latest") continue;
+    nextTags[tag] = version._id;
+  }
+
+  const latestBefore = skill.latestVersionId;
+  const derivedSummary =
+    publishArgs.summary ??
+    getFrontmatterValue(publishArgs.parsed.frontmatter, "description") ??
+    skill.summary;
+  const nextSummary = isNewLatest ? derivedSummary : skill.summary;
+  const nextDisplayName = isNewLatest ? publishArgs.displayName : skill.displayName;
+  const qualityAssessment = publishArgs.qualityAssessment;
+  const isQualityQuarantine = qualityAssessment?.decision === "quarantine";
+  const isPublisherUnderModeration = Boolean(user.requiresModerationAt);
+  const initialModerationStatus =
+    isQualityQuarantine || isPublisherUnderModeration ? "hidden" : "active";
+  const moderationReason = isQualityQuarantine
+    ? "quality.low"
+    : isPublisherUnderModeration
+      ? USER_MODERATION_REASON
+      : "pending.scan";
+  const moderationNotes = isQualityQuarantine
+    ? `Auto-quarantined by quality gate (score=${qualityAssessment.score}, tier=${qualityAssessment.trustTier}, similar=${qualityAssessment.similarRecentCount}).`
+    : isPublisherUnderModeration
+      ? (user.requiresModerationReason ?? "Publisher is currently under manual moderation review.")
+      : undefined;
+  const qualityRecord = qualityAssessment
+    ? {
+        score: qualityAssessment.score,
+        decision: qualityAssessment.decision,
+        trustTier: qualityAssessment.trustTier,
+        similarRecentCount: qualityAssessment.similarRecentCount,
+        reason: qualityAssessment.reason,
+        signals: qualityAssessment.signals,
+        evaluatedAt: now,
+      }
+    : undefined;
+
+  const derivedFlags = deriveModerationFlags({
+    skill: {
+      slug: skill.slug,
+      displayName: nextDisplayName,
+      summary: nextSummary ?? undefined,
+    },
+    parsed: publishArgs.parsed,
+    files: publishArgs.files,
+  });
+  const moderationSnapshot = buildModerationSnapshot({ sourceVersionId: version._id });
+  const nextFlags = Array.from(
+    new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
+  );
+  const versionForModeration = {
+    ...version,
+    staticScan: publishArgs.staticScan,
+    llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
+  };
+  const scannerModerationPatch =
+    versionForModeration.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+      ? buildScannerModerationPatchFromVersion({
+          owner: null,
+          version: versionForModeration,
+          now,
+        })
+      : {};
+
+  const basePatch: SkillModerationPatch = {
+    displayName: nextDisplayName,
+    summary: nextSummary ?? undefined,
+    icon: skill.icon,
+    ownerPublisherId: skill.ownerPublisherId ?? publishArgs.ownerPublisherId,
+    latestVersionId: isNewLatest ? version._id : skill.latestVersionId,
+    latestVersionSummary: isNewLatest
+      ? {
+          version: version.version,
+          createdAt: version.createdAt,
+          changelog: publishArgs.changelog,
+          changelogSource: publishArgs.changelogSource,
+          description: getFrontmatterValue(publishArgs.parsed.frontmatter, "description")?.trim(),
+          clawdis: publishArgs.parsed.clawdis,
+        }
+      : skill.latestVersionSummary,
+    tags: nextTags,
+    categories: isNewLatest ? publishArgs.categories : skill.categories,
+    topics: isNewLatest ? publishArgs.topics : skill.topics,
+    ...(isNewLatest
+      ? {
+          inferredCategories: undefined,
+          inferredTopics: undefined,
+          inferredFromVersionId: undefined,
+          inferredCategoryConfidence: undefined,
+          inferredTopicConfidence: undefined,
+          inferredClassifierVersion: undefined,
+          inferredTopicClassifierVersion: undefined,
+          inferredInputHash: undefined,
+          inferredTopicInputHash: undefined,
+          inferredAt: undefined,
+        }
+      : {}),
+    stats: { ...skill.stats, versions: skill.stats.versions + 1 },
+    softDeletedAt: undefined,
+    moderationStatus: initialModerationStatus,
+    moderationReason,
+    moderationNotes,
+    moderationVerdict: moderationSnapshot.verdict,
+    moderationReasonCodes: moderationSnapshot.reasonCodes.length
+      ? moderationSnapshot.reasonCodes
+      : undefined,
+    moderationEvidence: moderationSnapshot.evidence.length
+      ? moderationSnapshot.evidence
+      : undefined,
+    moderationSummary: moderationSnapshot.summary,
+    moderationEngineVersion: moderationSnapshot.engineVersion,
+    moderationEvaluatedAt: moderationSnapshot.evaluatedAt,
+    moderationSourceVersionId: version._id,
+    quality: qualityRecord ?? skill.quality,
+    moderationFlags: nextFlags.length ? nextFlags : undefined,
+    isSuspicious: computeIsSuspicious({
+      moderationFlags: nextFlags.length ? nextFlags : undefined,
+      moderationReason,
+    }),
+    unpublishedSlugReservedUntil: undefined,
+    unpublishedSlugReleasedAt: undefined,
+    unpublishedOriginalSlug: undefined,
+    updatedAt: now,
+    ...scannerModerationPatch,
+  };
+  const patch = applySkillManualOverrideToSkillPatch({
+    skill,
+    basePatch,
+    now,
+  });
+  const nextSkill = { ...skill, ...patch };
+
+  await ctx.db.patch(version._id, {
+    publicationStatus: "published",
+    changelog: publishArgs.changelog,
+    changelogSource: publishArgs.changelogSource,
+    llmAnalysis: publishArgs.llmAnalysis ?? version.llmAnalysis,
+  });
+  await ctx.db.patch(skill._id, patch);
+  await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+  await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
+
+  const badgeMap = await getSkillBadgeMap(ctx, skill._id);
+  const isApproved = Boolean(badgeMap.redactionApproved);
+  const embeddingId = existingEmbedding
+    ? existingEmbedding._id
+    : await ctx.db.insert("skillEmbeddings", {
+        skillId: skill._id,
+        versionId: version._id,
+        ownerId: publishArgs.userId,
+        embedding: publishArgs.embedding,
+        isLatest: isNewLatest,
+        isApproved,
+        visibility: embeddingVisibilityFor(isNewLatest, isApproved),
+        updatedAt: now,
+      });
+  if (!existingEmbedding) {
+    await ctx.db.insert("embeddingSkillMap", {
+      embeddingId,
+      skillId: skill._id,
+    });
+  }
+
+  if (isNewLatest && latestBefore) {
+    const previousEmbedding = await ctx.db
+      .query("skillEmbeddings")
+      .withIndex("by_version", (q) => q.eq("versionId", latestBefore))
+      .unique();
+    if (previousEmbedding) {
+      await ctx.db.patch(previousEmbedding._id, {
+        isLatest: false,
+        visibility: embeddingVisibilityFor(false, previousEmbedding.isApproved),
+        updatedAt: now,
+      });
+    }
+  }
+
+  return {
+    skillId: skill._id,
+    versionId: version._id,
+    embeddingId,
+    publicationStatus: "published" as const,
+  };
 }
 
 export const publishPendingVersionInternal = internalMutation({
