@@ -592,15 +592,17 @@ async function copyFileAtomically(source: string, destination: string) {
   }
 }
 
-async function republishDurableArtifact(
-  durableArtifactDirectory: string,
-  webArtifactDirectory: string,
-) {
+async function reusableDurableArtifactFiles(durableArtifactDirectory: string) {
   const durableRecord = await readJsonFile<SkillEvaluationRunRecord | null>(
     join(durableArtifactDirectory, "evaluation.json"),
     null,
   );
-  if (!durableRecord) return false;
+  if (
+    !durableRecord ||
+    (durableRecord.state !== "completed" && durableRecord.state !== "skipped")
+  ) {
+    return null;
+  }
   const files = [
     "evaluation.json",
     ...(durableRecord.state === "completed"
@@ -610,8 +612,21 @@ async function republishDurableArtifact(
   for (const file of files) {
     const source = join(durableArtifactDirectory, file);
     const sourceEntry = await lstat(source).catch(() => null);
-    if (!sourceEntry?.isFile() || sourceEntry.isSymbolicLink()) return false;
+    if (!sourceEntry?.isFile() || sourceEntry.isSymbolicLink()) return null;
   }
+  return files;
+}
+
+export async function hasReusableDurableArtifact(durableArtifactDirectory: string) {
+  return (await reusableDurableArtifactFiles(durableArtifactDirectory)) !== null;
+}
+
+async function republishDurableArtifact(
+  durableArtifactDirectory: string,
+  webArtifactDirectory: string,
+) {
+  const files = await reusableDurableArtifactFiles(durableArtifactDirectory);
+  if (!files) return false;
   await mkdir(webArtifactDirectory, { recursive: true });
   await Promise.all(
     files.map((file) =>
@@ -788,8 +803,16 @@ async function main() {
   const contentHash = await computeGitHubSkillFolderContentHash(trackedEntries, sourcePath);
   const statePath = join(outputDirectory, "sync-state.json");
   const stateKey = `${sourceRepo}:${sourcePath}`;
+  const relativeArtifactDirectory = artifactRelativeDirectory(sourceRepo, contentHash, sourcePath);
+  const durableArtifactDirectory = join(outputDirectory, "runs", relativeArtifactDirectory);
+  const webArtifactDirectory = join(webRoot, relativeArtifactDirectory);
+  const manifestPath = join(webArtifactDirectory, "evaluation.json");
+  const manifestBaseUrl = buildLocalEvaluationArtifactBaseUrl(sourceRepo, contentHash, sourcePath);
   const syncState = await readJsonFile<SyncState>(statePath, {});
-  const previousContentHash = values.rerun ? null : (syncState[stateKey]?.contentHash ?? null);
+  const previousContentHash =
+    values.rerun || !(await hasReusableDurableArtifact(durableArtifactDirectory))
+      ? null
+      : (syncState[stateKey]?.contentHash ?? null);
   const plan = await planOfficialSkillEvaluation({
     checkoutPath,
     sourceRepo,
@@ -799,11 +822,6 @@ async function main() {
     previousContentHash,
   });
   const now = new Date();
-  const relativeArtifactDirectory = artifactRelativeDirectory(sourceRepo, contentHash, sourcePath);
-  const durableArtifactDirectory = join(outputDirectory, "runs", relativeArtifactDirectory);
-  const webArtifactDirectory = join(webRoot, relativeArtifactDirectory);
-  const manifestPath = join(webArtifactDirectory, "evaluation.json");
-  const manifestBaseUrl = buildLocalEvaluationArtifactBaseUrl(sourceRepo, contentHash, sourcePath);
   if (values.rerun) {
     const existingRecord = await readJsonFile<SkillEvaluationRunRecord | null>(
       join(durableArtifactDirectory, "evaluation.json"),
@@ -937,116 +955,121 @@ async function main() {
   // Codex discovers project config by walking parent directories. Keep Harbor's ephemeral
   // workspaces outside the linked ClawHub worktree so an evaluation cannot inherit its hooks.
   const resultsDirectory = await mkdtemp(join(tmpdir(), "clawhub-skill-eval-results-"));
-  const invocation = buildTier3EvaluateInvocation({
-    evaluatorRepoPath,
-    skillDirectory,
-    resultsDirectory,
-    model,
-  });
-  const pendingRecord: SkillEvaluationRunRecord = { ...recordBase, state: "pending" };
-  await Promise.all([
-    writeJson(join(durableArtifactDirectory, "evaluation.json"), {
-      ...pendingRecord,
-      provenance: {
-        datasetSha256: datasetHash,
-        configSha256: configHash,
-        command: invocation.command,
-      },
-    }),
-    writeJson(manifestPath, pendingRecord),
-  ]);
-  await indexCurrentObservation();
-
-  const validateCommand = [
-    "uv",
-    "run",
-    "--project",
-    evaluatorRepoPath,
-    "skillevaluator",
-    "tier3",
-    "validate",
-    skillDirectory,
-    "--json",
-  ];
-  let validationExitCode: number;
-  let evaluationExitCode: number | null;
   try {
-    validationExitCode = await runVisible(validateCommand, invocation.environment, checkoutPath);
-    evaluationExitCode =
-      validationExitCode === 0
-        ? await runVisible(invocation.command, invocation.environment, checkoutPath)
-        : null;
-  } catch (error) {
-    await recordFailedEvaluation({
-      code: "evaluator-invocation-failed",
-      message:
-        error instanceof Error
-          ? `Unable to launch SkillEvaluator: ${error.message}`
-          : "Unable to launch SkillEvaluator.",
+    const invocation = buildTier3EvaluateInvocation({
+      evaluatorRepoPath,
+      skillDirectory,
+      resultsDirectory,
+      model,
     });
-    return;
-  }
-  const latestRunDirectory = await findLatestRunDirectory(resultsDirectory);
-
-  if (validationExitCode !== 0 || evaluationExitCode !== 0 || !latestRunDirectory) {
-    const failure =
-      validationExitCode !== 0
-        ? {
-            code: "eval-contract-invalid",
-            message: `SkillEvaluator tier3 validate exited with code ${validationExitCode}.`,
-          }
-        : evaluationExitCode !== 0
-          ? {
-              code: "evaluator-failed",
-              message: `SkillEvaluator tier3 evaluate exited with code ${evaluationExitCode ?? "unknown"}.`,
-            }
-          : {
-              code: "evaluator-output-missing",
-              message:
-                "SkillEvaluator exited successfully but produced no renderable result.json run.",
-            };
-    await recordFailedEvaluation(failure);
-    return;
-  }
-
-  let completedRecord: SkillEvaluationRunRecord;
-  try {
-    await mkdir(webArtifactDirectory, { recursive: true });
-    const artifactFiles = ["report.html", "result.json", "run_config.json"] as const;
-    for (const file of artifactFiles) {
-      await copyFileAtomically(join(latestRunDirectory, file), join(webArtifactDirectory, file));
-      await copyFile(join(latestRunDirectory, file), join(durableArtifactDirectory, file));
-    }
-    completedRecord = {
-      ...recordBase,
-      state: "completed",
-      timing: { ...recordBase.timing, finishedAt: new Date().toISOString() },
-      artifacts: {
-        reportUrl: `${manifestBaseUrl}/report.html`,
-        resultUrl: `${manifestBaseUrl}/result.json`,
-        runConfigUrl: `${manifestBaseUrl}/run_config.json`,
-      },
-    };
+    const pendingRecord: SkillEvaluationRunRecord = { ...recordBase, state: "pending" };
     await Promise.all([
       writeJson(join(durableArtifactDirectory, "evaluation.json"), {
-        ...completedRecord,
+        ...pendingRecord,
         provenance: {
           datasetSha256: datasetHash,
           configSha256: configHash,
           command: invocation.command,
         },
       }),
-      writeJson(manifestPath, completedRecord),
+      writeJson(manifestPath, pendingRecord),
     ]);
-  } catch {
-    await recordFailedEvaluation({
-      code: "artifact-publication-failed",
-      message: "SkillEvaluator completed, but its native report artifacts could not be published.",
-    });
-    return;
+    await indexCurrentObservation();
+
+    const validateCommand = [
+      "uv",
+      "run",
+      "--project",
+      evaluatorRepoPath,
+      "skillevaluator",
+      "tier3",
+      "validate",
+      skillDirectory,
+      "--json",
+    ];
+    let validationExitCode: number;
+    let evaluationExitCode: number | null;
+    try {
+      validationExitCode = await runVisible(validateCommand, invocation.environment, checkoutPath);
+      evaluationExitCode =
+        validationExitCode === 0
+          ? await runVisible(invocation.command, invocation.environment, checkoutPath)
+          : null;
+    } catch (error) {
+      await recordFailedEvaluation({
+        code: "evaluator-invocation-failed",
+        message:
+          error instanceof Error
+            ? `Unable to launch SkillEvaluator: ${error.message}`
+            : "Unable to launch SkillEvaluator.",
+      });
+      return;
+    }
+    const latestRunDirectory = await findLatestRunDirectory(resultsDirectory);
+
+    if (validationExitCode !== 0 || evaluationExitCode !== 0 || !latestRunDirectory) {
+      const failure =
+        validationExitCode !== 0
+          ? {
+              code: "eval-contract-invalid",
+              message: `SkillEvaluator tier3 validate exited with code ${validationExitCode}.`,
+            }
+          : evaluationExitCode !== 0
+            ? {
+                code: "evaluator-failed",
+                message: `SkillEvaluator tier3 evaluate exited with code ${evaluationExitCode ?? "unknown"}.`,
+              }
+            : {
+                code: "evaluator-output-missing",
+                message:
+                  "SkillEvaluator exited successfully but produced no renderable result.json run.",
+              };
+      await recordFailedEvaluation(failure);
+      return;
+    }
+
+    let completedRecord: SkillEvaluationRunRecord;
+    try {
+      await mkdir(webArtifactDirectory, { recursive: true });
+      const artifactFiles = ["report.html", "result.json", "run_config.json"] as const;
+      for (const file of artifactFiles) {
+        await copyFileAtomically(join(latestRunDirectory, file), join(webArtifactDirectory, file));
+        await copyFile(join(latestRunDirectory, file), join(durableArtifactDirectory, file));
+      }
+      completedRecord = {
+        ...recordBase,
+        state: "completed",
+        timing: { ...recordBase.timing, finishedAt: new Date().toISOString() },
+        artifacts: {
+          reportUrl: `${manifestBaseUrl}/report.html`,
+          resultUrl: `${manifestBaseUrl}/result.json`,
+          runConfigUrl: `${manifestBaseUrl}/run_config.json`,
+        },
+      };
+      await Promise.all([
+        writeJson(join(durableArtifactDirectory, "evaluation.json"), {
+          ...completedRecord,
+          provenance: {
+            datasetSha256: datasetHash,
+            configSha256: configHash,
+            command: invocation.command,
+          },
+        }),
+        writeJson(manifestPath, completedRecord),
+      ]);
+    } catch {
+      await recordFailedEvaluation({
+        code: "artifact-publication-failed",
+        message:
+          "SkillEvaluator completed, but its native report artifacts could not be published.",
+      });
+      return;
+    }
+    await recordTerminalSyncState();
+    console.log(JSON.stringify(completedRecord, null, 2));
+  } finally {
+    rmSync(resultsDirectory, { recursive: true, force: true });
   }
-  await recordTerminalSyncState();
-  console.log(JSON.stringify(completedRecord, null, 2));
 }
 
 if (import.meta.main) {

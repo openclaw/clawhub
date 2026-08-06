@@ -9,6 +9,7 @@ import {
   buildLocalEvaluationArtifactBaseUrl,
   buildTier3EvaluateInvocation,
   discoverSkillEvals,
+  hasReusableDurableArtifact,
   planOfficialSkillEvaluation,
   updateLocalEvaluationIndex,
   updateLocalEvaluationSyncState,
@@ -363,6 +364,25 @@ describe("local evaluation artifact index", () => {
       evaluations: Array<{ commit: string }>;
     };
     expect(index.evaluations.map((entry) => entry.commit)).toEqual(commits);
+  });
+});
+
+describe("durable evaluation artifacts", () => {
+  it("only reuses terminal records whose required files are complete", async () => {
+    const artifactDirectory = await mkdtemp(join(tmpdir(), "clawhub-skill-eval-artifact-"));
+    const evaluationPath = join(artifactDirectory, "evaluation.json");
+    await writeFile(evaluationPath, JSON.stringify({ state: "failed" }), "utf8");
+    await expect(hasReusableDurableArtifact(artifactDirectory)).resolves.toBe(false);
+
+    await writeFile(evaluationPath, JSON.stringify({ state: "completed" }), "utf8");
+    await expect(hasReusableDurableArtifact(artifactDirectory)).resolves.toBe(false);
+    for (const file of ["report.html", "result.json", "run_config.json"]) {
+      await writeFile(join(artifactDirectory, file), "{}", "utf8");
+    }
+    await expect(hasReusableDurableArtifact(artifactDirectory)).resolves.toBe(true);
+
+    await writeFile(evaluationPath, JSON.stringify({ state: "skipped" }), "utf8");
+    await expect(hasReusableDurableArtifact(artifactDirectory)).resolves.toBe(true);
   });
 });
 
