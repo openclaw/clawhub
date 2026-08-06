@@ -127,6 +127,7 @@ const {
   repairLegacyPublisherOwnershipForUserHandler,
   repairHeartflowDuplicateSkillsInternalHandler,
   repairOrphanedPendingSkillVersionHandler,
+  repairOrphanedPendingSkillVersionsSweep,
   repairSkillLineageCyclesInternalHandler,
   resyncPluginCatalogMetadataDigestsBatchInternal,
   resyncPluginCatalogMetadataDigestsInternal,
@@ -2634,10 +2635,8 @@ describe("orphaned pending skill version repair (#3349)", () => {
   });
 
   it("surfaces a claim-active warning when the attempt can't be force-closed (#3349)", async () => {
-    // The version write is already idempotent, so a racing worker's own
-    // publishPendingVersionInternal call is a safe no-op; this warning only
-    // exists so an operator can tell that its followups (owner webhook,
-    // VT/security scan) may still run a second time.
+    // The racing finalizer owns follow-up scheduling after it wins the claim,
+    // so the repair must return the warning without enqueuing duplicates.
     const runQuery = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.skills.getPendingSkillVersionRepairContextInternal) {
         return pendingRepairContext({ publishAttemptId: "publishAttempts:racing" });
@@ -2659,9 +2658,10 @@ describe("orphaned pending skill version repair (#3349)", () => {
       }
       throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
     });
+    const runAfter = vi.fn();
 
     const result = await repairOrphanedPendingSkillVersionHandler(
-      { runQuery, runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      { runQuery, runMutation, scheduler: { runAfter } } as never,
       "skillVersions:1" as never,
       false,
     );
@@ -2673,6 +2673,7 @@ describe("orphaned pending skill version repair (#3349)", () => {
       result: publishResult,
       attemptCloseWarning: "claim-active",
     });
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("refuses to repair a version a live publish attempt still owns", async () => {
@@ -2802,5 +2803,27 @@ describe("orphaned pending skill version repair (#3349)", () => {
 
     expect(result).toEqual({ repaired: false, reason: "missing-publish-args" });
     expect(runMutation).not.toHaveBeenCalled();
+  });
+});
+
+describe("orphaned pending skill version sweep (#3349)", () => {
+  it("uses one fixed age cutoff across every page", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValueOnce(now).mockReturnValue(now + 5 * 60_000);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ items: [], scanned: 50, cursor: "page-2", isDone: false })
+      .mockResolvedValueOnce({ items: [], scanned: 25, cursor: null, isDone: true });
+
+    const result = await (
+      repairOrphanedPendingSkillVersionsSweep as unknown as { _handler: Function }
+    )._handler({ runQuery } as never, { batchSize: 50, maxBatches: 2 });
+
+    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(runQuery.mock.calls.map(([, args]) => args.createdBefore)).toEqual([
+      now - 60 * 60_000,
+      now - 60 * 60_000,
+    ]);
+    expect(result).toMatchObject({ dryRun: true, isDone: true, cursor: null });
   });
 });

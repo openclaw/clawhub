@@ -3800,6 +3800,7 @@ const ORPHANED_PENDING_SKILL_VERSION_REPAIR_CONFIRM =
   "repair-orphaned-pending-skill-version" as const;
 const ORPHANED_PENDING_SKILL_VERSION_SWEEP_CONFIRM =
   "repair-orphaned-pending-skill-versions-sweep" as const;
+const ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS = 60 * 60 * 1000;
 
 type SkillVersionRepairOutcome =
   | { repaired: false; reason: "not-found" }
@@ -3816,14 +3817,9 @@ type SkillVersionRepairOutcome =
       // Set when the original publishAttempts row could not be force-closed
       // because a live worker still claims it (see
       // publishPendingVersionAndCloseAttemptInternal in convex/skills.ts).
-      // The version write is idempotent, so a racing worker's own
-      // publishPendingVersionInternal call is a safe no-op, but its
-      // followups are not: it will still schedule an owner webhook and a
-      // duplicate VT/security-scan dispatch. Rare (requires a worker to claim
-      // the attempt in the gap between the pre-check above and the combined
-      // publish+close mutation) and left to surface here rather than
-      // engineered away, since this whole path is an admin-triggered
-      // manual/sweep repair, not a request-time flow.
+      // The version write is idempotent, but a racing worker owns follow-up
+      // scheduling once its claim is live. The repair returns this warning and
+      // deliberately skips its own follow-ups in that case.
       attemptCloseWarning?: "claim-active";
     };
 
@@ -3851,15 +3847,18 @@ export async function repairOrphanedPendingSkillVersionHandler(
   // than 10 attempts ever shared the same kind+status+slug+version. Fall
   // back to the scan only when the version predates publishAttemptId being
   // recorded.
+  const observedAt = Date.now();
   const activeAttempt = context.publishAttemptId
     ? await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal, {
         attemptId: context.publishAttemptId,
         skillId: context.skillId,
+        now: observedAt,
       })
     : await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptInternal, {
         skillId: context.skillId,
         slug: context.slug,
         version: context.version,
+        now: observedAt,
       });
   if (activeAttempt) {
     return {
@@ -3898,15 +3897,17 @@ export async function repairOrphanedPendingSkillVersionHandler(
     },
   )) as { result: PublishResult; attemptCloseWarning?: "claim-active" };
 
-  // A manual repair runs long after the original publish request landed;
-  // skip the owner webhook (still schedules VT/security-scan followups)
-  // since this is recovery, not a fresh publish notification.
-  await scheduleSkillPublishFollowups(ctx, result, {
-    skipWebhook: true,
-    slug: context.slug,
-    version: context.version,
-    displayName: context.displayName,
-  } satisfies SkillPublishFollowup);
+  if (!attemptCloseWarning) {
+    // A manual repair runs long after the original publish request landed;
+    // skip the owner webhook (still schedules VT/security-scan followups)
+    // since this is recovery, not a fresh publish notification.
+    await scheduleSkillPublishFollowups(ctx, result, {
+      skipWebhook: true,
+      slug: context.slug,
+      version: context.version,
+      displayName: context.displayName,
+    } satisfies SkillPublishFollowup);
+  }
 
   return {
     repaired: true,
@@ -3997,6 +3998,7 @@ export const repairOrphanedPendingSkillVersionsSweep = internalAction({
       [];
     let cursor: string | null = args.cursor ?? null;
     let isDone = false;
+    const createdBefore = Date.now() - ORPHANED_PENDING_SKILL_VERSION_MIN_AGE_MS;
 
     for (let batch = 0; batch < maxBatches; batch++) {
       const page: {
@@ -4007,6 +4009,7 @@ export const repairOrphanedPendingSkillVersionsSweep = internalAction({
       } = await ctx.runQuery(internal.skills.getOrphanedPendingSkillVersionCandidatesPageInternal, {
         cursor: cursor ?? undefined,
         batchSize,
+        createdBefore,
       });
       cursor = page.cursor;
       isDone = page.isDone;
