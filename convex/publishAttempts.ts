@@ -180,6 +180,7 @@ function releaseFinalizationClaimPatch(
   previousFinalizationFailureCount: number,
   error: string | undefined,
   now: number,
+  canTerminalizeSkill = true,
 ) {
   if (isTerminalFinalizationConflict(error)) {
     return terminalFinalizationFailurePatch(error, now);
@@ -197,7 +198,11 @@ function releaseFinalizationClaimPatch(
   // attempt at the cap would permanently orphan the pending package release
   // with no way back. Keep package finalization retrying uncapped until a
   // package repair path exists; only skill attempts terminalize.
-  if (kind === "skill" && finalizationFailureCount >= MAX_CONSECUTIVE_FINALIZATION_FAILURES) {
+  if (
+    kind === "skill" &&
+    canTerminalizeSkill &&
+    finalizationFailureCount >= MAX_CONSECUTIVE_FINALIZATION_FAILURES
+  ) {
     return { ...terminalFinalizationFailurePatch(error, now), finalizationFailureCount };
   }
   return {
@@ -1512,11 +1517,22 @@ export const releaseSkillPublishAttemptFinalizationClaimInternal = internalMutat
       return { attemptId: attempt._id, status: attempt.status };
     }
 
+    // Once publication has committed, retry failures belong to the durable
+    // security-followup/finalization tail. Terminalizing at the ordinary
+    // pending-version cap would strand a public version without a successful
+    // retry path, because orphan repair intentionally only accepts pending
+    // versions. Keep the attempt retriable until its required followups and
+    // finalized record complete.
+    const stagedVersion = attempt.skillVersionId
+      ? await ctx.db.get(attempt.skillVersionId)
+      : null;
+    const canTerminalizeSkill = stagedVersion?.publicationStatus !== "published";
     const patch = releaseFinalizationClaimPatch(
       "skill",
       attempt.finalizationFailureCount ?? 0,
       args.error,
       Date.now(),
+      canTerminalizeSkill,
     );
     await ctx.db.patch(attempt._id, patch);
     return { attemptId: attempt._id, status: patch.status };
