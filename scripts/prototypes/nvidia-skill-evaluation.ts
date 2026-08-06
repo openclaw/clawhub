@@ -887,7 +887,8 @@ async function main() {
       writeJson(manifestPath, failedRecord),
     ]);
     await indexCurrentObservation();
-    await recordTerminalSyncState();
+    // Invocation and publication failures stay retryable on the next unchanged sync.
+    // Only completed or intentionally skipped observations advance the version gate.
     console.log(JSON.stringify(failedRecord, null, 2));
     process.exitCode = 1;
   };
