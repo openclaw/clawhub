@@ -797,12 +797,12 @@ jobs:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
 
-To attach release and catalog metadata, pass the matching CLI values to either
-job:
+To attach release and catalog metadata, add the matching CLI values to the
+job's existing `with` block. Keep `dry_run: true` on pull-request jobs; use
+`dry_run: false` only on the trusted publish job shown above.
 
 ```yaml
 with:
-  dry_run: false
   changelog: "Describe the changes in this release."
   categories: "tools"
   topics: "automation,productivity"
