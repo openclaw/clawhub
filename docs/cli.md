@@ -221,8 +221,12 @@ same automatic patch-version behavior.
 Set `dry_run: true` to preview without a token. Real publishes require the
 `clawhub_token` secret.
 
-The workflow has no `categories` or `topics` input, so skills first published
-through it are stored as `other`, the same as `sync`.
+Optional `changelog`, `categories`, and `topics` inputs map to the matching
+`skill publish` flags, and `clear_categories` / `clear_topics` remove metadata a
+skill already carries. A skill first published without `categories` is stored as
+`other`, the same as `sync`. Because catalog metadata applies to every skill the
+run publishes and suspends the unchanged-skill skip described above, see the
+notes under [GitHub Actions](#github-actions-1) before setting it catalog-wide.
 
 ### `sync`
 
@@ -312,6 +316,9 @@ jobs:
     with:
       owner: nvidia
       dry_run: false
+      changelog: "Describe the changes in this release."
+      categories: "automation"
+      topics: "code-review,linting"
     secrets:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
@@ -321,6 +328,30 @@ Notes:
 - `root` defaults to `skills` for catalog repos.
 - Pass `skill_path: skills/review-helper` to process one skill folder.
 - `owner` maps to the CLI `--owner` flag; omit it to publish as the authenticated user.
+- `changelog`, `categories`, and `topics` map to the matching `skill publish`
+  flags and are optional. Omitting them leaves the published metadata untouched.
+- Like `tags`, these three apply to **every** skill the run publishes. Pass
+  `skill_path` when the values describe one skill rather than the whole catalog.
+- **`categories` and `topics` suspend the "skips unchanged skills" behavior
+  described above.** The CLI treats supplied catalog metadata as authoritative
+  and bypasses its already-published short-circuit, so a catalog-wide run
+  publishes a **new patch version of every selected skill**, including skills
+  whose files did not change. The `clear_categories` and `clear_topics` flags
+  count as supplied metadata and do the same. `changelog` does not: a run that
+  passes only `changelog` still reports unchanged skills as `alreadySynced`.
+  Use `skill_path` to keep a metadata edit from releasing a whole catalog.
+- Categories and topics are comma-separated and validated server-side, so an
+  unknown category slug or a topic over the per-skill limit fails the publish
+  after the run has already built and validated the skill.
+- To remove categories or topics already on a skill, set `clear_categories: true`
+  or `clear_topics: true`. A workflow input cannot distinguish `categories: ""`
+  from an omitted `categories`, so the empty string keeps meaning "leave them
+  alone" and the boolean is what sends the CLI's `--categories ""`. Setting a
+  non-empty value and its `clear_` flag together fails the run rather than
+  picking one silently. `changelog` has no such flag: the CLI already reads an
+  omitted `--changelog` as empty.
+- The run logs echo the resolved `skill publish` command for each target, so a
+  forwarded flag is visible in CI output. Keep the values non-sensitive.
 - V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
 
 ### `delete <skill>`

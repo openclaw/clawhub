@@ -28,6 +28,35 @@ on:
         required: false
         type: string
         default: latest
+      changelog:
+        description: Optional changelog text applied to every skill published by this run.
+        required: false
+        type: string
+        default: ""
+      categories:
+        description: Optional comma-separated category slugs applied to every skill published by this run.
+        required: false
+        type: string
+        default: ""
+      topics:
+        description: Optional comma-separated topics applied to every skill published by this run.
+        required: false
+        type: string
+        default: ""
+      clear_categories:
+        description: >-
+          Publish an empty category list, clearing the categories already set on every skill
+          published by this run. Cannot be combined with a non-empty categories input.
+        required: false
+        type: boolean
+        default: false
+      clear_topics:
+        description: >-
+          Publish an empty topic list, clearing the topics already set on every skill published
+          by this run. Cannot be combined with a non-empty topics input.
+        required: false
+        type: boolean
+        default: false
       registry:
         description: ClawHub registry URL.
         required: false
@@ -175,6 +204,11 @@ jobs:
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_OWNER: ${{ inputs.owner }}
           INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+          INPUT_CATEGORIES: ${{ inputs.categories }}
+          INPUT_TOPICS: ${{ inputs.topics }}
+          INPUT_CLEAR_CATEGORIES: ${{ inputs.clear_categories }}
+          INPUT_CLEAR_TOPICS: ${{ inputs.clear_topics }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
           INPUT_REF: ${{ inputs.ref }}
@@ -184,6 +218,7 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import shlex
           import subprocess
           import sys
           from pathlib import Path
@@ -233,6 +268,24 @@ jobs:
           dry_run = os.environ["INPUT_DRY_RUN"] == "true"
           owner = os.environ["INPUT_OWNER"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
+          changelog = os.environ["INPUT_CHANGELOG"].strip()
+          categories = os.environ["INPUT_CATEGORIES"].strip()
+          topics = os.environ["INPUT_TOPICS"].strip()
+          # A workflow_call string input cannot tell an omitted value from an explicitly empty
+          # one - both arrive as "". The CLI does distinguish them: --categories "" clears the
+          # stored slugs, while omitting the flag leaves them alone. These two booleans carry
+          # that difference across the workflow boundary.
+          clear_categories = os.environ["INPUT_CLEAR_CATEGORIES"] == "true"
+          clear_topics = os.environ["INPUT_CLEAR_TOPICS"] == "true"
+          for value, clearing, name in (
+              (categories, clear_categories, "categories"),
+              (topics, clear_topics, "topics"),
+          ):
+              if value and clearing:
+                  raise SystemExit(
+                      f"clear_{name} cannot be combined with a non-empty {name} input; "
+                      f"got {name}={value!r}."
+                  )
 
           results = {"wouldPublish": [], "published": [], "alreadySynced": [], "skipped": [], "failed": []}
           status_keys = {
@@ -260,8 +313,22 @@ jobs:
                   command += ["--owner", owner]
               if tags:
                   command += ["--tags", tags]
+              if changelog:
+                  command += ["--changelog", changelog]
+              if categories:
+                  command += ["--categories", categories]
+              elif clear_categories:
+                  command += ["--categories", ""]
+              if topics:
+                  command += ["--topics", topics]
+              elif clear_topics:
+                  command += ["--topics", ""]
               if source_ref:
                   command += ["--source-ref", source_ref]
+
+              # Log-only: the list above is what actually runs, so the quoting here never
+              # reaches a shell. Without it a forwarded flag is invisible in the run logs.
+              print(f"Resolved publish command: {' '.join(shlex.quote(part) for part in command)}", flush=True)
 
               completed = subprocess.run(command, cwd=workspace, capture_output=True, text=True)
               if completed.returncode != 0:

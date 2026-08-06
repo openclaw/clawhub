@@ -119,11 +119,17 @@ jobs:
 
 Use `dry_run: true` to preview new and changed skills without publishing.
 
-The workflow has no `categories` or `topics` input. It calls `skill publish`
-with `--owner` and `--tags` only, so skills first published through it are
-stored as `other`, the same as [`clawhub sync`](./cli.md#sync). Set catalog
-metadata on those skills from the skill's settings page, or publish once from
-the CLI with `--categories`.
+The workflow forwards optional `changelog`, `categories`, and `topics` inputs to
+`skill publish`, plus `clear_categories` and `clear_topics` for removing metadata
+a skill already carries. A skill first published without `categories` is stored
+as `other`, the same as [`clawhub sync`](./cli.md#sync); you can also set catalog
+metadata later from the skill's settings page.
+
+Like `tags`, `categories` and `topics` apply to **every** skill the run
+publishes, and supplying them suspends the unchanged-skill skip — the run
+releases a new patch version of each selected skill, including skills whose files
+did not change. Pass `skill_path` to bound that to one skill. See the
+[workflow notes](./cli.md#github-actions-1) for the full behavior.
 
 ## Plugins
 
