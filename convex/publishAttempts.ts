@@ -463,7 +463,7 @@ export const findActiveSkillPublishAttemptInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     let staleFinalizationAttempt: Doc<"publishAttempts"> | null = null;
-    for (const status of ACTIVE_PUBLISH_ATTEMPT_STATUSES) {
+    for (const status of PUBLISH_ATTEMPT_STATUSES) {
       let cursor: string | null = null;
       let isDone = false;
       while (!isDone) {
@@ -485,11 +485,12 @@ export const findActiveSkillPublishAttemptInternal = internalQuery({
           if (attempt.skillId !== args.skillId || attempt.skillVersionId !== args.versionId) {
             continue;
           }
-          // A stale pending_checks row is not evidence that TruffleHog and
-          // ClawScan passed. Recovery must leave it unpublished and let the
-          // normal check worker retry instead of bypassing prepublication
-          // security checks.
-          if (attempt.status === "pending_checks") {
+          // Stale/terminal rows are not automatically safe: failed scans,
+          // blocked artifacts, expired attempts, and pending checks must all
+          // keep the version unpublished. Apply the same eligibility rule as
+          // the direct-ID path so legacy versions cannot bypass checks merely
+          // because they predate skillVersion.publishAttemptId.
+          if (!isAttemptEligibleForOrphanRepair(attempt)) {
             return {
               attemptId: attempt._id,
               status: attempt.status,
