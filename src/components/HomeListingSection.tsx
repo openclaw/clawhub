@@ -610,6 +610,8 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               </button>
             </div>
 
+            <span className="home-v2-listing-divider" aria-hidden="true" />
+
             <div className="home-v2-listing-sort">
               <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Catalog view">
                 {visibleTabs.map((item) => (

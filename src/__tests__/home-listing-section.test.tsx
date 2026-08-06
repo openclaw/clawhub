@@ -142,11 +142,15 @@ describe("HomeListingSection", () => {
 
     const toolbar = document.querySelector(".home-v2-listing-toolbar");
     const primary = document.querySelector(".home-v2-listing-primary");
+    const divider = document.querySelector(".home-v2-listing-divider");
     const catalogTabs = screen.getByRole("tablist", { name: "Catalog view" });
     const contentType = screen.getByRole("group", { name: "Content type" });
     const contentTypeButtons = contentType.querySelectorAll("button");
     expect(toolbar?.firstElementChild).toBe(primary);
     expect(primary?.firstElementChild).toBe(contentType);
+    expect(contentType.nextElementSibling).toBe(divider);
+    expect(divider?.getAttribute("aria-hidden")).toBe("true");
+    expect(divider?.nextElementSibling?.contains(catalogTabs)).toBe(true);
     expect(primary?.lastElementChild?.contains(catalogTabs)).toBe(true);
     expect(toolbar?.lastElementChild?.classList.contains("home-v2-listing-actions")).toBe(true);
     expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
