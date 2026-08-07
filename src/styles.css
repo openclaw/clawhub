@@ -461,12 +461,12 @@ code {
 }
 
 .app-shell:has(
-    .skill-detail-page,
-    .plugin-detail-page,
-    .security-audit-page,
-    .publisher-profile-route,
-    .dashboard-route
-  )::before {
+  .skill-detail-page,
+  .plugin-detail-page,
+  .security-audit-page,
+  .publisher-profile-route,
+  .dashboard-route
+)::before {
   position: absolute;
   top: 0;
   right: 0;
@@ -10974,6 +10974,172 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .skill-card-tab-body {
   gap: var(--space-5);
+}
+
+.skill-evaluation-tab-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.skill-evaluation-report {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: var(--space-5);
+}
+
+.skill-evaluation-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.skill-evaluation-header h2,
+.skill-evaluation-empty h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-xl);
+}
+
+.skill-evaluation-header p {
+  max-width: 72ch;
+  margin: var(--space-2) 0 0;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.skill-evaluation-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.skill-evaluation-state.is-failed {
+  color: var(--status-error-fg);
+}
+
+.skill-evaluation-message {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-muted) 68%, transparent);
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+.skill-evaluation-message strong {
+  color: var(--ink);
+}
+
+.skill-evaluation-message.is-failed {
+  border-color: color-mix(in srgb, var(--status-error-fg) 30%, var(--line));
+}
+
+.skill-evaluation-metrics {
+  min-width: 0;
+}
+
+.skill-evaluation-table-wrap {
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--r-md);
+}
+
+.skill-evaluation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.skill-evaluation-table caption {
+  padding: var(--space-3) var(--space-4);
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  text-align: left;
+}
+
+.skill-evaluation-table caption a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.skill-evaluation-table th,
+.skill-evaluation-table td {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.skill-evaluation-table th:first-child {
+  text-align: left;
+}
+
+.skill-evaluation-table thead th {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+}
+
+.skill-evaluation-table tbody th {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.skill-evaluation-table td {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-evaluation-table td.is-positive {
+  color: var(--status-success-fg);
+  font-weight: 700;
+}
+
+.skill-evaluation-loading,
+.skill-evaluation-empty {
+  padding: var(--space-7) var(--space-5);
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.skill-evaluation-empty p {
+  margin: var(--space-2) auto 0;
+  max-width: 60ch;
+}
+
+@media (max-width: 900px) {
+  .skill-evaluation-report {
+    padding: 0;
+  }
+
+  .skill-evaluation-header {
+    display: grid;
+  }
+
+  .skill-evaluation-state {
+    width: fit-content;
+  }
+
+  .skill-evaluation-message {
+    display: grid;
+  }
 }
 
 .skill-card-document {

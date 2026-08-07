@@ -307,6 +307,55 @@ describe("SkillDetailPage", () => {
     expect(versionCalls.every(([, args]) => args === "skip")).toBe(true);
   });
 
+  it("shows NVIDIA evals for the staff query skill shape", () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:staff", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: skillId,
+            _creationTime: 0,
+            slug: "doca-dpa",
+            displayName: "DOCA DPA",
+            summary: "Build NVIDIA DOCA DPA applications.",
+            ownerUserId: ownerId,
+            ownerPublisherId,
+            installKind: "github",
+            githubCurrentRepo: "NVIDIA/skills",
+            githubCurrentCommit: "0a78f333a1d67c837fbf4288efe6488169dc7140",
+            githubPath: "skills/doca-dpa",
+            tags: {},
+            badges: {},
+            stats: { stars: 0, downloads: 0, installs: 0, versions: 0, comments: 0 },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: ownerPublisherId,
+            _creationTime: 0,
+            kind: "user",
+            handle: "nvidia",
+            displayName: "NVIDIA",
+            linkedUserId: ownerId,
+          },
+          latestVersion: null,
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="doca-dpa" canonicalOwner="nvidia" />);
+
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
+  });
+
   it("keeps loader-backed skill content visible while staff live query resolves", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,

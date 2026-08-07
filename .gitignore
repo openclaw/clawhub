@@ -35,6 +35,7 @@ playwright-report
 test-results
 .playwright
 /public/llms.txt
+/public/__skill-evaluator-demo/
 convex/_generated/*
 !convex/_generated/ai/
 convex/_generated/ai/*
