@@ -8472,11 +8472,40 @@ async function publishPackageImpl(
   if (family !== "claw" && !pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
   }
+  const clawTextByPath = new Map<string, string>();
+  if (clawManifestEntry) {
+    clawTextByPath.set(clawManifestEntry.file.path, clawManifestEntry.text);
+  }
+  if (family === "claw") {
+    const bootstrapEntry = await readOptionalTextFile(
+      ctx,
+      files,
+      (path) => path === "BOOTSTRAP.md",
+      {
+        exactPath: true,
+        maxBytes: 2 * 1024 * 1024,
+        label: "Claw BOOTSTRAP.md",
+        strictUtf8: true,
+      },
+    );
+    if (bootstrapEntry) {
+      clawTextByPath.set(bootstrapEntry.file.path, bootstrapEntry.text);
+    }
+    for (const profileFile of files.filter((file) => /^profiles\/.*\.ya?ml$/i.test(file.path))) {
+      const profileText = await readStorageText(ctx, profileFile.storageId, {
+        maxBytes: 256 * 1024,
+        label:
+          profileFile.path === "profiles/openclaw.yml" ? "OpenClaw profile" : "Harness profile",
+        strictUtf8: true,
+      });
+      clawTextByPath.set(profileFile.path, profileText);
+    }
+  }
   const clawValidationFiles = files.map((file) => ({
     path: file.path,
-    ...(clawManifestEntry?.file.path === file.path ? { text: clawManifestEntry.text } : {}),
+    ...(clawTextByPath.has(file.path) ? { text: clawTextByPath.get(file.path) } : {}),
   }));
-  let clawPackage =
+  const clawPackage =
     family === "claw"
       ? validateClawPackageContents({
           packageName: name,
@@ -8485,29 +8514,6 @@ async function publishPackageImpl(
           files: clawValidationFiles,
         })
       : null;
-  if (clawPackage && !clawPackage.ok) {
-    const profilePath = clawPackage.issues.find(
-      (entry) => entry.code === "missing_openclaw_profile",
-    )?.path;
-    if (profilePath) {
-      const profileEntry = await readOptionalTextFile(ctx, files, (path) => path === profilePath, {
-        exactPath: true,
-        maxBytes: 256 * 1024,
-        label: "OpenClaw profile",
-        strictUtf8: true,
-      });
-      if (profileEntry) {
-        clawPackage = validateClawPackageContents({
-          packageName: name,
-          version,
-          packageJson,
-          files: clawValidationFiles.map((file) =>
-            file.path === profileEntry.file.path ? { ...file, text: profileEntry.text } : file,
-          ),
-        });
-      }
-    }
-  }
   if (clawPackage && !clawPackage.ok) {
     throw new ConvexError(
       `Invalid Claw package: ${clawPackage.issues

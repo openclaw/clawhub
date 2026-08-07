@@ -3198,13 +3198,18 @@ describe("package commands", () => {
           "agent:",
           "  id: github-triage",
           "  name: GitHub Triage",
-          "metadata:",
-          "  openclaw.config: profiles/openclaw.yml",
+          "workspace:",
+          "  files:",
+          "    - source: assets/triage.schema.json",
+          "      path: assets/triage.schema.json",
           "---",
           "Be precise.",
         ].join("\n"),
         "utf8",
       );
+      await mkdir(join(folder, "assets"), { recursive: true });
+      await writeFile(join(folder, "BOOTSTRAP.md"), "Ask which repositories to triage.\n", "utf8");
+      await writeFile(join(folder, "assets", "triage.schema.json"), "{}\n", "utf8");
       await writeFile(
         join(folder, "profiles", "openclaw.yml"),
         [

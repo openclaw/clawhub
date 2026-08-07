@@ -86,20 +86,31 @@ describe("Claw manifest contract", () => {
     }
   });
 
-  it("accepts opaque string metadata for namespaced harness profile pointers", () => {
+  it("accepts unrelated opaque namespaced metadata", () => {
     const result = validateClawManifest({
       ...fixture,
-      metadata: {
-        "openclaw.config": "profiles/openclaw.yml",
-        "example.hint": "opaque-value",
-      },
+      metadata: { "example.hint": "opaque-value" },
     });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.manifest.metadata).toEqual({
-      "openclaw.config": "profiles/openclaw.yml",
-      "example.hint": "opaque-value",
+    expect(result.manifest.metadata).toEqual({ "example.hint": "opaque-value" });
+  });
+
+  it("fails closed on the retired OpenClaw profile pointer", () => {
+    const result = validateClawManifest({
+      ...fixture,
+      metadata: { "openclaw.config": "profiles/openclaw.yml" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toContainEqual({
+      code: CLAW_MANIFEST_VALIDATION_CODES.legacyProfilePointer,
+      phase: "schema",
+      path: "$.metadata.openclaw.config",
+      message:
+        "metadata.openclaw.config is no longer supported; move the profile to profiles/openclaw.yml and remove the metadata entry.",
     });
   });
 
@@ -118,7 +129,7 @@ describe("Claw manifest contract", () => {
     expect(
       validateClawManifest({
         ...fixture,
-        metadata: { "openclaw.config": { path: "profiles/openclaw.yml" } },
+        metadata: { "example.hint": { path: "profiles/example.yml" } },
       }).ok,
     ).toBe(false);
 
@@ -143,18 +154,26 @@ describe("Claw manifest contract", () => {
     ).toBe(false);
   });
 
-  it.each([
-    "../openclaw.yml",
-    "/profiles/openclaw.yml",
-    "profiles/openclaw.json",
-    "profiles\\openclaw.yml",
-  ])("rejects unsafe or non-YAML OpenClaw profile pointer %s", (profilePath) => {
+  it("reserves root BOOTSTRAP.md for package-root seed-once setup", () => {
     const result = validateClawManifest({
       ...fixture,
-      metadata: { "openclaw.config": profilePath },
+      workspace: {
+        ...fixture.workspace,
+        files: [
+          ...fixture.workspace.files,
+          { source: "workspace/first-run.md", path: "BOOTSTRAP.md" },
+        ],
+      },
     });
 
     expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues).toContainEqual({
+      code: CLAW_MANIFEST_VALIDATION_CODES.reservedWorkspaceTarget,
+      phase: "schema",
+      path: "$.workspace.files.1.path",
+      message: "Root BOOTSTRAP.md is reserved for the package-root seed-once bootstrap file.",
+    });
   });
 
   it("fails closed on unknown fields", () => {

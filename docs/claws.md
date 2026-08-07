@@ -68,9 +68,61 @@ Do not combine a non-empty `CLAW.md` body with an explicit workspace file whose
 portable destination is `SOUL.md`. ClawHub rejects that ambiguous dual source.
 Headings and task lists in the body are prompt text, not package-time commands.
 
-Every `workspace.*.source` must name a file in the same package. Package names
-and versions must match `package.json`, dependency versions must be exact, and
-MCP environment values must remain unresolved `${ENV_VAR}` references.
+Every `workspace.*.source` must name a file in the same package. Assets such as
+schemas, templates, examples, and images are portable ordinary workspace files;
+place them under paths such as `assets/`, `schemas/`, or `templates/` and declare
+them in `workspace.files`. Package names and versions must match `package.json`,
+dependency versions must be exact, and MCP environment values must remain
+unresolved `${ENV_VAR}` references.
+
+## Bootstrap and harness profiles
+
+An optional package-root `BOOTSTRAP.md` contains first-run instructions. It is
+seeded once by a supporting harness and remains separate from the reusable
+portable prompt in the `CLAW.md` body. Do not declare root `BOOTSTRAP.md` as a
+workspace destination; that path is reserved for the package-root file. ClawHub
+includes bootstrap presence, but never its contents, in the bounded catalog
+summary.
+
+Harness-specific tuning uses conventional package paths:
+
+```text
+profiles/openclaw.yml
+profiles/hermes.yml
+profiles/codex.yml
+```
+
+The `profiles/` namespace is reserved for these lowercase, single-file `.yml`
+paths. Each profile is a JSON-compatible YAML mapping. ClawHub validates the common
+shape and fully validates `profiles/openclaw.yml`; it does not interpret foreign
+profiles. A harness discovers only its own profile and ignores the others when
+applying the package. The exact published artifact and its digest still cover
+every profile, bootstrap instruction, and asset.
+
+The retired `metadata.openclaw.config` pointer is rejected. Move that file to
+`profiles/openclaw.yml` and remove the metadata entry.
+
+OpenClaw-native extension packages belong in `profiles/openclaw.yml`, while
+portable MCP servers remain in `CLAW.md`:
+
+```yaml
+schemaVersion: 1
+agent:
+  tools:
+    profile: coding
+extensions:
+  - id: issue-tools
+    kind: plugin
+    format: openclaw
+    source: clawhub
+    ref: "@acme/issue-tools"
+    version: 2.3.4
+```
+
+Extension ids and package references must be unique, and versions must be
+exact. Other harnesses may bind the same application needs using their own
+native profile model; the portable manifest does not impose a capability-name
+registry.
 
 ## Validate and publish
 
@@ -97,6 +149,8 @@ Publication rejects:
 - malformed `CLAW.md` frontmatter or manifest fields;
 - a non-empty `CLAW.md` body combined with an explicit `SOUL.md` destination;
 - missing workspace source files or portable path collisions;
+- invalid package-root bootstrap instructions or conventional harness profiles;
+- the retired `metadata.openclaw.config` pointer;
 - floating skill/plugin versions and resolved MCP credentials.
 
 Accepted packages continue through ClawHub's existing ownership, moderation,
