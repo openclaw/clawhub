@@ -68,6 +68,7 @@ type GitHubBackedSkillFields = {
   githubHasSkillCard?: boolean;
   githubScanStatus?: string | null;
   githubSourceRepo?: string;
+  githubCurrentRepo?: string;
   githubCurrentCommit?: string;
   githubPath?: string;
 };
@@ -270,10 +271,12 @@ export function SkillDetailPage({
   const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
   const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
   const evaluationDemoCommit = localEvaluationDemoCommit(searchStr);
+  const evaluationSourceRepo =
+    githubBackedFields?.githubSourceRepo ?? githubBackedFields?.githubCurrentRepo;
   const localEvaluationSource = useMemo(
     () =>
       import.meta.env.DEV &&
-      githubBackedFields?.githubSourceRepo?.toLowerCase() === "nvidia/skills" &&
+      evaluationSourceRepo?.toLowerCase() === "nvidia/skills" &&
       githubBackedFields.githubCurrentCommit &&
       githubBackedFields.githubPath
         ? {
@@ -285,7 +288,7 @@ export function SkillDetailPage({
     [
       githubBackedFields?.githubCurrentCommit,
       githubBackedFields?.githubPath,
-      githubBackedFields?.githubSourceRepo,
+      evaluationSourceRepo,
       evaluationDemoCommit,
     ],
   );
