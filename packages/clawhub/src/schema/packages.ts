@@ -325,6 +325,7 @@ const PackagePublishMetadataFields = {
   family: PackageFamilySchema,
   version: "string",
   changelog: "string",
+  expectedArtifactSha256: "string?",
   manualOverrideReason: "string?",
   channel: PackageChannelSchema.optional(),
   tags: "string[]?",
@@ -935,6 +936,7 @@ export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",
   packageId: "string",
   releaseId: "string",
+  artifactSha256: "string?",
   publicationStatus: '"pending"|"published"?',
   attemptId: "string?",
   inspectorFindings: type({
@@ -976,6 +978,7 @@ export const ApiV1PackagePublishAttemptResponseSchema = type({
   attemptId: "string",
   packageId: "string",
   releaseId: "string",
+  artifactSha256: "string?",
   name: "string",
   version: "string",
   status: PackagePublishAttemptStatusSchema,

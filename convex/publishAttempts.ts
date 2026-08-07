@@ -426,11 +426,13 @@ export const getPackagePublishAttemptStatusInternal = internalQuery({
     if (!attempt || attempt.kind !== "package" || !attempt.packageId || !attempt.packageReleaseId) {
       return null;
     }
+    const release = await ctx.db.get(attempt.packageReleaseId);
     return {
       attemptId: attempt._id,
       userId: attempt.userId,
       packageId: attempt.packageId,
       releaseId: attempt.packageReleaseId,
+      ...(release?.clawpackSha256 ? { artifactSha256: release.clawpackSha256 } : {}),
       name: attempt.slug,
       version: attempt.version,
       status: attempt.status,
@@ -890,7 +892,10 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         }
       } else if (attempt.kind === "package" && attempt.packageReleaseId) {
         const release = await ctx.db.get(attempt.packageReleaseId);
-        if (release?.integritySha256 === attempt.artifactFingerprint) {
+        const releaseFingerprint = release?.clawManifestSummary
+          ? release.clawpackSha256
+          : release?.integritySha256;
+        if (release && releaseFingerprint === attempt.artifactFingerprint) {
           existingClawscanAnalysis = reusableClawscanAnalysis(release.llmAnalysis);
         }
       }

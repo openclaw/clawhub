@@ -37,6 +37,7 @@ const {
 const { fetchGitHubRepositoryIdentity, verifyGitHubActionsTrustedPublishJwt } =
   await import("./lib/githubActionsOidc");
 const { buildBundleFingerprint } = await import("./lib/skillCards");
+const { sha256Hex } = await import("./lib/clawpack");
 const { publishVersionForUser } = await import("./skills");
 const { __handlers } = await import("./httpApiV1");
 
@@ -14385,6 +14386,8 @@ describe("httpApiV1 handlers", () => {
 
   it("npm mirror tarball downloads record package installs and download metrics", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
+    const tarballBytes = new TextEncoder().encode("tarball");
+    const artifactSha256 = await sha256Hex(tarballBytes);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("paginationOpts" in args)) {
         return {
@@ -14418,6 +14421,7 @@ describe("httpApiV1 handlers", () => {
               files: [],
               artifactKind: "npm-pack",
               clawpackStorageId: "storage:clawpack",
+              clawpackSha256: artifactSha256,
               npmIntegrity: "sha512-demo",
               npmShasum: "d".repeat(40),
               npmTarballName: "demo-plugin-1.0.0.tgz",
@@ -14436,7 +14440,7 @@ describe("httpApiV1 handlers", () => {
         runQuery,
         runMutation,
         storage: {
-          get: vi.fn(async () => new Blob(["tarball"], { type: "application/octet-stream" })),
+          get: vi.fn(async () => new Blob([tarballBytes], { type: "application/octet-stream" })),
         },
       }),
       new Request("https://example.com/api/npm/demo-plugin/-/demo-plugin-1.0.0.tgz", {
@@ -14445,6 +14449,9 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(tarballBytes);
+    expect(response.headers.get("X-ClawHub-Artifact-Sha256")).toBe(artifactSha256);
+    expect(response.headers.get("ETag")).toBe(`"sha256:${artifactSha256}"`);
     expect(runMutation).toHaveBeenCalledWith(
       internal.packages.recordPackageInstallInternal,
       expect.objectContaining({
@@ -15708,6 +15715,40 @@ describe("httpApiV1 handlers", () => {
     },
   );
 
+  it("rejects loose Claw files before multipart storage when the experiment is enabled", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const form = packagePublishForm(packagePublishMetadata({ family: "claw" }));
+    form.append("files", new File(["manifest"], "CLAW.md", { type: "text/markdown" }));
+    const storageStore = vi.fn();
+    const runAction = vi.fn();
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation: vi.fn().mockResolvedValue(okRate()),
+        storage: { store: storageStore },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe(
+      "Claw publication requires an already-built package tarball (.tgz)",
+    );
+    expect(storageStore).not.toHaveBeenCalled();
+    expect(runAction).not.toHaveBeenCalled();
+  });
+
   it("package publish rejects browser session auth when token auth is not an API token", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:session" as never);
     vi.mocked(requirePackagePublishAuth).mockRejectedValue(new Error("Unauthorized"));
@@ -15888,10 +15929,7 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:1", handle: "p" },
     } as never);
     const runMutation = vi.fn().mockResolvedValue(okRate());
-    const runAction = vi
-      .fn()
-      .mockResolvedValue({ ok: true, packageId: "pkg:claw", releaseId: "rel:claw" });
-    const storageStore = vi.fn(async () => `storage:${storageStore.mock.calls.length}`);
+    const storageStore = vi.fn(async (_blob: Blob) => `storage:${storageStore.mock.calls.length}`);
     const pack = npmPackFixture({
       "package/package.json": JSON.stringify({
         name: "demo-claw",
@@ -15901,6 +15939,13 @@ describe("httpApiV1 handlers", () => {
       "package/CLAW.md":
         "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\nYou are a focused demo agent.\n",
     });
+    const artifactSha256 = await sha256Hex(pack);
+    const runAction = vi.fn().mockResolvedValue({
+      ok: true,
+      packageId: "pkg:claw",
+      releaseId: "rel:claw",
+      artifactSha256,
+    });
     const form = new FormData();
     form.set(
       "payload",
@@ -15909,6 +15954,7 @@ describe("httpApiV1 handlers", () => {
         family: "claw",
         version: "1.0.0",
         changelog: "init",
+        expectedArtifactSha256: artifactSha256,
       }),
     );
     form.append(
@@ -15928,12 +15974,17 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ artifactSha256 });
     expect(storageStore).toHaveBeenCalledTimes(3);
+    const storedArtifact = storageStore.mock.calls[0]?.[0];
+    expect(storedArtifact).toBeInstanceOf(Blob);
+    expect(new Uint8Array(await (storedArtifact as Blob).arrayBuffer())).toEqual(pack);
     expect(runAction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         payload: expect.objectContaining({
           family: "claw",
+          expectedArtifactSha256: artifactSha256,
           artifact: expect.objectContaining({ kind: "npm-pack", npmFileCount: 2 }),
           files: [
             expect.objectContaining({ path: "package.json" }),
@@ -15942,6 +15993,79 @@ describe("httpApiV1 handlers", () => {
         }),
       }),
     );
+  });
+
+  it.each([
+    {
+      label: "package name",
+      metadata: { name: "other-claw", version: "1.0.0" },
+      digest: "actual",
+      message: "Claw package name mismatch",
+    },
+    {
+      label: "package version",
+      metadata: { name: "demo-claw", version: "2.0.0" },
+      digest: "actual",
+      message: "Claw package version mismatch",
+    },
+    {
+      label: "artifact digest",
+      metadata: { name: "demo-claw", version: "1.0.0" },
+      digest: "0".repeat(64),
+      message: "Claw artifact SHA-256 mismatch",
+    },
+  ])("rejects a Claw tarball with mismatched $label before storing it", async (testCase) => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({
+        name: "demo-claw",
+        version: "1.0.0",
+        openclaw: { claw: "CLAW.md" },
+      }),
+      "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\nDemo.\n",
+    });
+    const expectedArtifactSha256 =
+      testCase.digest === "actual" ? await sha256Hex(pack) : testCase.digest;
+    const form = packagePublishForm({
+      ...packagePublishMetadata({
+        family: "claw",
+        name: testCase.metadata.name,
+        version: testCase.metadata.version,
+      }),
+      expectedArtifactSha256,
+    });
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+    const storageStore = vi.fn();
+    const runAction = vi.fn();
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({
+        runAction,
+        runMutation: vi.fn().mockResolvedValue(okRate()),
+        storage: { store: storageStore },
+      }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain(testCase.message);
+    expect(storageStore).not.toHaveBeenCalled();
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("staged ClawPack publish derives artifact metadata from stored bytes", async () => {
@@ -16237,6 +16361,7 @@ describe("httpApiV1 handlers", () => {
         userId: "users:publisher",
         packageId: "packages:demo",
         releaseId: "packageReleases:demo",
+        artifactSha256: "a".repeat(64),
         name: "@openclaw/demo",
         version: "1.0.0",
         status: "finalized",
@@ -16259,6 +16384,7 @@ describe("httpApiV1 handlers", () => {
       attemptId: "publishAttempts:demo",
       packageId: "packages:demo",
       releaseId: "packageReleases:demo",
+      artifactSha256: "a".repeat(64),
       name: "@openclaw/demo",
       version: "1.0.0",
       status: "finalized",
