@@ -47,7 +47,12 @@
 # specific entity name (service, host, device) to find which metrics carry it.
 # To list metric names, use the `metrics` subcommand instead.
 #
-# --start and --end default to the last 24 hours if omitted.
+# --start and --end accept RFC3339 (offsets allowed, e.g. 2025-06-01T00:00:00+02:00)
+# or relative now / now-<N><unit> with <unit> in s/m/h/d/w, resolved to RFC3339 UTC
+# client-side because the info endpoints only parse RFC3339. This is narrower than
+# metrics-query, which forwards times to the server unparsed and also accepts forms
+# like now-1y; here anything outside now / now-<N>[smhdw] must already be RFC3339.
+# Defaults: last 24 hours.
 # For sparse metrics (sensors, batch jobs), try --start with a wider range (e.g. 7 days).
 #
 # Examples:
@@ -67,6 +72,53 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Percent-encode one URL component (path segment or query value). Dataset,
+# metric, and tag names are user/OTel-controlled and may contain characters
+# that are reserved in URLs (/ % + space); times may carry a `+02:00` offset
+# whose `+` would otherwise decode as a space server-side.
+urlencode() {
+    jq -rn --arg v "$1" '$v|@uri'
+}
+
+# Normalize a time argument to RFC3339 UTC. RFC3339 input passes through
+# verbatim; the relative forms `now` and `now-<N><unit>` (unit in s/m/h/d/w)
+# are resolved client-side because the info endpoints only parse RFC3339.
+# Note: metrics-query forwards times to the server unparsed, so it accepts a
+# broader set (e.g. now-1y); those forms are NOT handled here and, if passed,
+# fall through to the RFC3339-only endpoint and fail.
+normalize_time() {
+    local t="$1"
+    if [[ "$t" == "now" ]]; then
+        date -u '+%Y-%m-%dT%H:%M:%SZ'
+    elif [[ "$t" =~ ^now-([0-9]+)([smhdw])$ ]]; then
+        local n="${BASH_REMATCH[1]}" u="${BASH_REMATCH[2]}"
+        if date --version &>/dev/null; then
+            local word
+            case "$u" in
+                s) word="seconds" ;;
+                m) word="minutes" ;;
+                h) word="hours" ;;
+                d) word="days" ;;
+                w) word="weeks" ;;
+            esac
+            date -u -d "$n $word ago" '+%Y-%m-%dT%H:%M:%SZ'
+        else
+            # BSD date: -v units are case-sensitive (M = minute, m = month).
+            local unit
+            case "$u" in
+                s) unit="S" ;;
+                m) unit="M" ;;
+                h) unit="H" ;;
+                d) unit="d" ;;
+                w) unit="w" ;;
+            esac
+            date -u -v "-${n}${unit}" '+%Y-%m-%dT%H:%M:%SZ'
+        fi
+    else
+        printf '%s\n' "$t"
+    fi
+}
+
 show_usage() {
     echo "Usage:" >&2
     echo "  metrics-info <deploy> <dataset> metrics [--by-type] [--type T]..." >&2
@@ -80,8 +132,8 @@ show_usage() {
     echo "  metrics-info <deploy> <dataset> find-metrics <search-value>  (searches tag values, not metric names)" >&2
     echo "" >&2
     echo "Options:" >&2
-    echo "  --start T          Start time (RFC3339). Default: 24h ago" >&2
-    echo "  --end T            End time (RFC3339). Default: now" >&2
+    echo "  --start T          Start time (RFC3339 or relative, e.g. now-7d). Default: 24h ago" >&2
+    echo "  --end T            End time (RFC3339 or relative, e.g. now). Default: now" >&2
     echo "  --by-type          (metrics listing) Group entries by metric type" >&2
     echo "  --type T           (metrics listing) Filter to type T. Repeatable." >&2
     echo "  --no-values        (describe) Return tag names only" >&2
@@ -118,20 +170,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Default time range: last 24 hours
-if [[ -z "$START" ]]; then
-    if date --version &>/dev/null 2>&1; then
-        START=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
-    else
-        START=$(date -u -v-24H '+%Y-%m-%dT%H:%M:%SZ')
-    fi
-fi
-if [[ -z "$END" ]]; then
-    END=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-fi
+# Default time range: last 24 hours. Relative forms are resolved to RFC3339 UTC.
+START=$(normalize_time "${START:-now-24h}")
+END=$(normalize_time "${END:-now}")
 
-TIME_PARAMS="start=${START}&end=${END}"
-BASE="/v1/query/metrics/info/datasets/${DATASET}"
+TIME_PARAMS="start=$(urlencode "$START")&end=$(urlencode "$END")"
+BASE="/v1/query/metrics/info/datasets/$(urlencode "$DATASET")"
 
 # Resolve the regional edge URL for this dataset
 RESOLVED_URL=$("$SCRIPT_DIR/resolve-url" "$DEPLOYMENT" "$DATASET" 2>/dev/null || true)
@@ -185,34 +229,62 @@ case "${POSITIONAL[0]}" in
             # the typical 1+1+N round trips an agent would make to characterise
             # an unfamiliar metric.
             METRIC="${POSITIONAL[1]}"
+            METRIC_ENC=$(urlencode "$METRIC")
             RAW=$(fetch_metrics_listing)
             META=$(printf '%s' "$RAW" | jq -e --arg m "$METRIC" '.[$m] // error("metric not found in listing for the given time range: " + $m)')
-            TAGS_JSON=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags?${TIME_PARAMS}")
+            TAGS_JSON=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC_ENC}/tags?${TIME_PARAMS}")
             if [[ "$NO_VALUES" -eq 1 ]]; then
                 # tags as flat array of names
                 jq -n --argjson m "$META" --argjson tags "$TAGS_JSON" '$m + {tags: $tags}'
             else
-                # tags as object: { tag_name: [values…] }
-                VALUES_OBJ='{}'
+                # tags as object: { tag_name: [values…] }. Per-tag value fetches
+                # are independent, so run them concurrently; tag counts are small
+                # (rarely more than a few dozen), so no concurrency cap is needed.
+                TAG_NAMES=()
                 while IFS= read -r tag; do
                     [[ -z "$tag" ]] && continue
-                    VALUES=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags/${tag}/values?${TIME_PARAMS}")
-                    if [[ "$VALUES_LIMIT" -gt 0 ]]; then
-                        VALUES=$(printf '%s' "$VALUES" | jq --argjson n "$VALUES_LIMIT" '.[:$n]')
-                    fi
-                    VALUES_OBJ=$(jq -n --argjson o "$VALUES_OBJ" --arg t "$tag" --argjson v "$VALUES" '$o + {($t): $v}')
+                    TAG_NAMES+=("$tag")
                 done < <(printf '%s' "$TAGS_JSON" | jq -r '.[]?')
+                VALUES_OBJ='{}'
+                if [[ ${#TAG_NAMES[@]} -gt 0 ]]; then
+                    TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/metrics-info.XXXXXX")
+                    trap 'rm -rf "$TMP_DIR"' EXIT
+                    PIDS=()
+                    for i in "${!TAG_NAMES[@]}"; do
+                        "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET \
+                            "${BASE}/metrics/${METRIC_ENC}/tags/$(urlencode "${TAG_NAMES[$i]}")/values?${TIME_PARAMS}" \
+                            > "$TMP_DIR/$i.json" &
+                        PIDS+=($!)
+                    done
+                    FETCH_FAILED=0
+                    for i in "${!PIDS[@]}"; do
+                        if ! wait "${PIDS[$i]}"; then
+                            echo "Error: failed to fetch values for tag '${TAG_NAMES[$i]}'" >&2
+                            FETCH_FAILED=1
+                        fi
+                    done
+                    if [[ "$FETCH_FAILED" -eq 1 ]]; then
+                        exit 1
+                    fi
+                    for i in "${!TAG_NAMES[@]}"; do
+                        VALUES=$(cat "$TMP_DIR/$i.json")
+                        if [[ "$VALUES_LIMIT" -gt 0 ]]; then
+                            VALUES=$(printf '%s' "$VALUES" | jq --argjson n "$VALUES_LIMIT" '.[:$n]')
+                        fi
+                        VALUES_OBJ=$(jq -n --argjson o "$VALUES_OBJ" --arg t "${TAG_NAMES[$i]}" --argjson v "$VALUES" '$o + {($t): $v}')
+                    done
+                fi
                 jq -n --argjson m "$META" --argjson tags "$VALUES_OBJ" '$m + {tags: $tags}'
             fi
         elif [[ ${#POSITIONAL[@]} -eq 3 && "${POSITIONAL[2]}" == "tags" ]]; then
             # List tags for a metric
             METRIC="${POSITIONAL[1]}"
-            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags?${TIME_PARAMS}"
+            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/$(urlencode "$METRIC")/tags?${TIME_PARAMS}"
         elif [[ ${#POSITIONAL[@]} -eq 5 && "${POSITIONAL[2]}" == "tags" && "${POSITIONAL[4]}" == "values" ]]; then
             # List tag values for a metric+tag
             METRIC="${POSITIONAL[1]}"
             TAG="${POSITIONAL[3]}"
-            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags/${TAG}/values?${TIME_PARAMS}"
+            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/$(urlencode "$METRIC")/tags/$(urlencode "$TAG")/values?${TIME_PARAMS}"
         elif [[ ${#POSITIONAL[@]} -eq 5 && "${POSITIONAL[2]}" == "tags" && "${POSITIONAL[4]}" == "type" ]]; then
             # Probe the typing of a metric+tag by running `metrics-query` with
             # `filter <tag> is <T>` for each candidate type. The type(s) that
@@ -226,8 +298,15 @@ case "${POSITIONAL[0]}" in
                 #   `<dataset>`:`<metric>` | filter `<tag>` is <T> | align to 5m using sum
                 # If <tag> is <T> matches no rows, the response has empty `series`.
                 PROBE_QUERY='`'"$DATASET"'`:`'"$METRIC"'` | filter `'"$TAG"'` is '"$t"' | align to 5m using sum'
-                RESPONSE=$("$SCRIPT_DIR/metrics-query" "$DEPLOYMENT" "$PROBE_QUERY" "$START" "$END" 2>/dev/null || echo '{}')
-                COUNT=$(printf '%s' "$RESPONSE" | jq -r '(.series // []) | length' 2>/dev/null || echo 0)
+                # Propagate probe failures instead of swallowing them: a failed
+                # query (bad dataset, auth, network) must not be reported as the
+                # tag being "absent" — that would be a confident wrong answer.
+                if ! RESPONSE=$("$SCRIPT_DIR/metrics-query" "$DEPLOYMENT" "$PROBE_QUERY" "$START" "$END" 2>&1); then
+                    echo "Error: type probe query failed (tag '$TAG' is $t):" >&2
+                    printf '%s\n' "$RESPONSE" >&2
+                    exit 1
+                fi
+                COUNT=$(printf '%s' "$RESPONSE" | jq -r '(.series // []) | length')
                 if [[ "$COUNT" -gt 0 ]]; then
                     PRESENT_JSON=$(printf '%s' "$PRESENT_JSON" | jq --arg t "$t" '. + [$t]')
                 fi
@@ -253,7 +332,7 @@ case "${POSITIONAL[0]}" in
         elif [[ ${#POSITIONAL[@]} -eq 3 && "${POSITIONAL[2]}" == "values" ]]; then
             # List values for a tag
             TAG="${POSITIONAL[1]}"
-            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/tags/${TAG}/values?${TIME_PARAMS}"
+            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/tags/$(urlencode "$TAG")/values?${TIME_PARAMS}"
         else
             show_usage
         fi

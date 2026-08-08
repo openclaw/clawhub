@@ -17,7 +17,7 @@
       "source": "axiomhq/skills",
       "sourceType": "github",
       "skillPath": "skills/building-dashboards/SKILL.md",
-      "computedHash": "331e80b2aa6d7a8a9d5ec69c50d5a843f125534ed01d93b9cc916a5a92ca9552"
+      "computedHash": "84a130aab324297fe3fe1203b56743359732d4386dff6f0d065726d175b6e413"
     },
     "controlling-costs": {
       "source": "axiomhq/skills",
@@ -65,7 +65,7 @@
       "source": "axiomhq/skills",
       "sourceType": "github",
       "skillPath": "skills/query-metrics/SKILL.md",
-      "computedHash": "3da9845936d9cb99f8fa6fdcdced06cc25eb9f16aa401e4838991d7f039fc177"
+      "computedHash": "955a35d22ca2244c14abafe10c57b8314ddbbc5e9ce1040ddc91edf6cfb05f8e"
     },
     "sentry-fix-issues": {
       "source": "getsentry/sentry-for-ai",
