@@ -3215,7 +3215,11 @@ export const listVersionsForViewerInternal = internalQuery({
     const result = await paginatePublishedPackageReleases(ctx, pkg._id, args.paginationOpts);
     return {
       ...result,
-      page: result.page.map((release) => toPublicPackageRelease(release, pkg.family)),
+      page: result.page.map((release) => ({
+        ...toPublicPackageRelease(release, pkg.family),
+        // Internal HTTP handlers need the opaque storage id to stream exact ClawPack bytes.
+        ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
+      })),
     };
   },
 });
@@ -3319,7 +3323,11 @@ export const getVersionByNameForViewerInternal = internalQuery({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: toPublicPackageRelease(release, pkg.family),
+      version: {
+        ...toPublicPackageRelease(release, pkg.family),
+        // Internal HTTP handlers need the opaque storage id to stream exact ClawPack bytes.
+        ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
+      },
     };
   },
 });

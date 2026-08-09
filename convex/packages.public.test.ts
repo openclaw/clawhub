@@ -43,6 +43,7 @@ import {
   resolvePackageAppealForUserInternal,
   upsertOfficialPluginMigrationForUserInternal,
   getVersionByName,
+  getVersionByNameForViewerInternal,
   getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
   cleanupReassignedPackageReleaseTagsInternal,
@@ -57,6 +58,7 @@ import {
   listPublicNewPluginsPage,
   listPageForViewerInternal,
   listVersions,
+  listVersionsForViewerInternal,
   listVersionsForManager,
   updateReleaseLlmAnalysisInternal,
   updateReleaseStaticScanInternal,
@@ -134,6 +136,12 @@ const getVersionByNameHandler = (
   getVersionByName as unknown as WrappedHandler<
     { name: string; version: string },
     { package: { name: string; scanStatus?: string }; version: { version: string } } | null
+  >
+)._handler;
+const getVersionByNameForViewerInternalHandler = (
+  getVersionByNameForViewerInternal as unknown as WrappedHandler<
+    { name: string; version: string; viewerUserId?: string },
+    { package: { name: string }; version: { version: string; clawpackStorageId?: string } } | null
   >
 )._handler;
 const getVersionSecurityByNameForViewerInternalHandler = (
@@ -242,6 +250,20 @@ const listVersionsHandler = (
     },
     {
       page: Array<{ version: string }>;
+      isDone: boolean;
+      continueCursor: string;
+    }
+  >
+)._handler;
+const listVersionsForViewerInternalHandler = (
+  listVersionsForViewerInternal as unknown as WrappedHandler<
+    {
+      name: string;
+      viewerUserId?: string;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      page: Array<{ version: string; clawpackStorageId?: string }>;
       isDone: boolean;
       continueCursor: string;
     }
@@ -7125,6 +7147,51 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.version)).toEqual(["1.0.0"]);
     expect(result.page[0]).not.toHaveProperty("capabilities");
     expect(releaseIndexNames).toContain("by_package_active_created");
+  });
+
+  it("keeps ClawPack storage ids on internal downloadable version projections", async () => {
+    const release = makeReleaseDoc({
+      files: [],
+      artifactKind: "npm-pack",
+      clawpackStorageId: "storage:clawpack",
+      clawpackSha256: "a".repeat(64),
+    });
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({ family: "claw" }),
+      latestRelease: release,
+      versionRelease: release,
+      versionsPage: {
+        page: [
+          release,
+          makeReleaseDoc({
+            _id: "packageReleases:legacy",
+            version: "0.9.0",
+            files: [],
+          }),
+        ],
+        isDone: true,
+        continueCursor: "",
+      },
+    });
+
+    const listed = await listVersionsForViewerInternalHandler(ctx, {
+      name: "demo-plugin",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    const exact = await getVersionByNameForViewerInternalHandler(ctx, {
+      name: "demo-plugin",
+      version: "1.0.0",
+    });
+
+    expect(listed.page[0]).toMatchObject({
+      version: "1.0.0",
+      clawpackStorageId: "storage:clawpack",
+    });
+    expect(exact?.version).toMatchObject({
+      version: "1.0.0",
+      clawpackStorageId: "storage:clawpack",
+    });
+    expect(listed.page[1]).not.toHaveProperty("clawpackStorageId");
   });
 
   it("fills public package version pages after skipping pending releases", async () => {
