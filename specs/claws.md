@@ -118,3 +118,23 @@ Convex storage. The server rejects
 `family: claw` before mutation when the experimental gate is disabled; the gate
 does not bypass ownership, moderation, scanning, or release invariants when
 enabled.
+
+Experimental Claw publication is exact-artifact-only:
+
+- The publisher must submit an already-built npm-pack `.tgz`; source folders,
+  GitHub checkouts, extracted-file payloads, and the legacy public-action path
+  cannot publish a Claw release.
+- The publisher supplies the canonical lowercase SHA-256 of that tarball.
+  ClawHub recomputes the digest from the uploaded bytes before mutation and
+  rejects a missing or mismatched digest.
+- The verified tarball digest remains the artifact identity through staged
+  scanning, finalization, publication status responses, and exact-byte
+  download.
+- Staged retry identity includes the actor, owner, package name, version, and
+  verified artifact digest. Only an exact retry may reuse the same active
+  pending attempt or active published release. A different actor, owner, or
+  digest, a terminal attempt, or a deleted, blocked, quarantined, revoked, or
+  malicious release remains a version conflict.
+- Retry compatibility is scoped to Claws. Existing non-Claw package behavior
+  and historical attempt recovery remain unchanged unless they already carry
+  the exact artifact metadata required by their own contract.
