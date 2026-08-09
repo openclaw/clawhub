@@ -7,6 +7,7 @@ import {
   completePendingPublishAttemptChecksInternal,
   createPackagePublishAttemptInternal,
   createSkillPublishAttemptInternal,
+  findExistingPublishAttemptForArtifactInternal,
   getPackagePublishAttemptStatusInternal,
   recordSkillPublishAttemptFinalizedInternal,
   releasePackagePublishAttemptFinalizationClaimInternal,
@@ -64,7 +65,124 @@ const getPackagePublishAttemptStatusHandler = (
   }
 )._handler;
 
+const findExistingPublishAttemptForArtifactHandler = (
+  findExistingPublishAttemptForArtifactInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+
+function makeAttemptLookupCtx(attempts: Array<Record<string, unknown>>) {
+  let requestedStatus = "";
+  const indexQuery = {
+    eq: vi.fn((field: string, value: unknown) => {
+      if (field === "status") requestedStatus = String(value);
+      return indexQuery;
+    }),
+  };
+  return {
+    db: {
+      query: vi.fn(() => ({
+        withIndex: vi.fn(
+          (_indexName: string, buildQuery: (query: typeof indexQuery) => unknown) => {
+            requestedStatus = "";
+            buildQuery(indexQuery);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn(async () =>
+                  attempts.filter((attempt) => attempt.status === requestedStatus),
+                ),
+              })),
+            };
+          },
+        ),
+      })),
+    },
+  };
+}
+
 describe("publishAttempts", () => {
+  it("returns a finalized package attempt only for the exact actor, owner, and artifact", async () => {
+    const result = {
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo",
+    };
+    const attempt = {
+      _id: "publishAttempts:demo",
+      kind: "package",
+      status: "finalized",
+      userId: "users:publisher",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:owner",
+      packageId: result.packageId,
+      packageReleaseId: result.releaseId,
+      slug: "demo-claw",
+      version: "1.0.0",
+      artifactFingerprint: "exact-fingerprint",
+      result,
+    };
+    const ctx = makeAttemptLookupCtx([attempt]);
+    const args = {
+      kind: "package",
+      slug: "demo-claw",
+      version: "1.0.0",
+      userId: "users:publisher",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:owner",
+      artifactFingerprint: "exact-fingerprint",
+    };
+
+    await expect(findExistingPublishAttemptForArtifactHandler(ctx, args)).resolves.toMatchObject({
+      attemptId: attempt._id,
+      status: "finalized",
+      reusable: true,
+      packageId: result.packageId,
+      releaseId: result.releaseId,
+      result,
+    });
+
+    for (const mismatch of [
+      { artifactFingerprint: "different-fingerprint" },
+      { userId: "users:different" },
+      { ownerUserId: "users:different" },
+      { ownerPublisherId: "publishers:different" },
+    ]) {
+      await expect(
+        findExistingPublishAttemptForArtifactHandler(ctx, { ...args, ...mismatch }),
+      ).resolves.toBeNull();
+    }
+  });
+
+  it("reports an exact terminal package attempt as non-reusable", async () => {
+    const attempt = {
+      _id: "publishAttempts:blocked",
+      kind: "package",
+      status: "blocked",
+      userId: "users:owner",
+      ownerUserId: "users:owner",
+      packageId: "packages:demo",
+      packageReleaseId: "packageReleases:demo",
+      slug: "demo-claw",
+      version: "1.0.0",
+      artifactFingerprint: "exact-fingerprint",
+    };
+
+    await expect(
+      findExistingPublishAttemptForArtifactHandler(makeAttemptLookupCtx([attempt]), {
+        kind: "package",
+        slug: "demo-claw",
+        version: "1.0.0",
+        userId: "users:owner",
+        ownerUserId: "users:owner",
+        artifactFingerprint: "exact-fingerprint",
+      }),
+    ).resolves.toMatchObject({
+      attemptId: attempt._id,
+      status: "blocked",
+      reusable: false,
+    });
+  });
+
   it("returns the stored package artifact digest while publication is pending", async () => {
     const get = vi
       .fn()

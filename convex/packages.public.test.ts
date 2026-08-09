@@ -9859,7 +9859,7 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
   });
 
-  it("treats an exact Claw artifact retry as idempotent", async () => {
+  it("treats an ordinary-user exact Claw artifact retry as idempotent", async () => {
     const artifactSha256 = "a".repeat(64);
     const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "claw" }), [
       makeReleaseDoc({
@@ -9884,7 +9884,6 @@ describe("packages public queries", () => {
         files: [],
         integritySha256: "same-extracted-files",
         clawpackSha256: artifactSha256,
-        allowExistingRelease: true,
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -9892,6 +9891,41 @@ describe("packages public queries", () => {
       releaseId: "packageReleases:existing",
     });
   });
+
+  it.each(["pending", "blocked"] as const)(
+    "does not report a %s exact Claw release as published",
+    async (publicationStatus) => {
+      const artifactSha256 = "a".repeat(64);
+      const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "claw" }), [
+        makeReleaseDoc({
+          _id: "packageReleases:pending",
+          version: "1.0.0",
+          publicationStatus,
+          integritySha256: "same-extracted-files",
+          clawpackSha256: artifactSha256,
+        }),
+      ]);
+
+      await expect(
+        insertReleaseInternalHandler(ctx, {
+          actorUserId: "users:owner",
+          ownerUserId: "users:owner",
+          name: "demo-claw",
+          displayName: "Demo Claw",
+          family: "claw",
+          version: "1.0.0",
+          changelog: "retry",
+          tags: ["latest"],
+          summary: "demo",
+          files: [],
+          integritySha256: "same-extracted-files",
+          clawpackSha256: artifactSha256,
+        }),
+      ).rejects.toThrow(
+        "Version 1.0.0 already exists. Increment the version number and try again.",
+      );
+    },
+  );
 
   it("keeps an initial beta-only package publish off latest", async () => {
     const ctx = makeInsertReleaseCtx(
@@ -10195,6 +10229,243 @@ describe("packages public queries", () => {
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("reuses an in-flight staged Claw publish for the same user and artifact", async () => {
+    const previousStage = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
+    const artifactSha256 = "a".repeat(64);
+    const storedFiles = new Map<string, string>([
+      [
+        "storage:package",
+        JSON.stringify({
+          name: "demo-claw",
+          version: "1.0.0",
+          openclaw: { claw: "manifests/CLAW.md" },
+        }),
+      ],
+      [
+        "storage:claw",
+        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n---\nRun the demo workflow precisely.\n",
+      ],
+      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
+    ]);
+    const existingPackage = makePackageDoc({
+      family: "claw",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:owner",
+    });
+    const existingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      packageId: "packages:demo",
+      publicationStatus: "pending",
+      clawpackSha256: artifactSha256,
+    });
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.minimumRole === "publisher") {
+        return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+      }
+      throw new Error("retry should not create another release or publish attempt");
+    });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(existingPackage)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce({
+        _id: "users:owner",
+        role: "user",
+        githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+      })
+      .mockResolvedValueOnce({
+        _id: "publishers:owner",
+        kind: "user",
+        handle: "owner",
+        linkedUserId: "users:owner",
+      })
+      .mockResolvedValueOnce(existingRelease)
+      .mockResolvedValueOnce({
+        attemptId: "publishAttempts:pending",
+        status: "pending_checks",
+        reusable: true,
+        packageId: "packages:demo",
+        releaseId: "packageReleases:pending",
+        artifactFingerprint: artifactSha256,
+      });
+    const ctx = {
+      runQuery,
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+        store: vi.fn(async () => "storage:legacy-zip"),
+      },
+    };
+
+    try {
+      await expect(
+        publishPackageForUserInternalHandler(ctx as never, {
+          actorUserId: "users:owner",
+          payload: {
+            name: "demo-claw",
+            displayName: "Demo Claw",
+            family: "claw",
+            version: "1.0.0",
+            changelog: "retry",
+            ownerHandle: "owner",
+            expectedArtifactSha256: artifactSha256,
+            files: [
+              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+              {
+                path: "manifests/CLAW.md",
+                size: 1,
+                storageId: "storage:claw",
+                sha256: "claw",
+              },
+              {
+                path: "profiles/openclaw.yml",
+                size: 1,
+                storageId: "storage:profile",
+                sha256: "profile",
+              },
+            ],
+            artifact: {
+              kind: "npm-pack",
+              storageId: "storage:archive",
+              sha256: artifactSha256,
+              size: 3,
+              format: "tgz",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "b".repeat(40),
+              npmTarballName: "demo-claw-1.0.0.tgz",
+              npmUnpackedSize: 3,
+              npmFileCount: 3,
+            },
+          },
+        }),
+      ).resolves.toMatchObject({
+        ok: true,
+        status: "pending",
+        packageId: "packages:demo",
+        releaseId: "packageReleases:pending",
+        artifactSha256,
+        publicationStatus: "pending",
+        attemptId: "publishAttempts:pending",
+      });
+
+      expect(runMutation).toHaveBeenCalledTimes(1);
+      expect(runQuery).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          kind: "package",
+          slug: "demo-claw",
+          version: "1.0.0",
+          userId: "users:owner",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:owner",
+          artifactFingerprint: artifactSha256,
+        }),
+      );
+
+      runQuery
+        .mockResolvedValueOnce(existingPackage)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "publishers:owner",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        })
+        .mockResolvedValueOnce(existingRelease)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          attemptId: "publishAttempts:different-artifact",
+        });
+
+      await expect(
+        publishPackageForUserInternalHandler(ctx as never, {
+          actorUserId: "users:owner",
+          payload: {
+            name: "demo-claw",
+            displayName: "Demo Claw",
+            family: "claw",
+            version: "1.0.0",
+            changelog: "different artifact",
+            ownerHandle: "owner",
+            expectedArtifactSha256: "c".repeat(64),
+            files: [
+              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+              {
+                path: "manifests/CLAW.md",
+                size: 1,
+                storageId: "storage:claw",
+                sha256: "claw",
+              },
+              {
+                path: "profiles/openclaw.yml",
+                size: 1,
+                storageId: "storage:profile",
+                sha256: "profile",
+              },
+            ],
+            artifact: {
+              kind: "npm-pack",
+              storageId: "storage:archive",
+              sha256: "c".repeat(64),
+              size: 3,
+              format: "tgz",
+              npmIntegrity: "sha512-different",
+              npmShasum: "d".repeat(40),
+              npmTarballName: "demo-claw-1.0.0.tgz",
+              npmUnpackedSize: 3,
+              npmFileCount: 3,
+            },
+          },
+        }),
+      ).rejects.toThrow(
+        "Version 1.0.0 already exists. Increment the version number and try again.",
+      );
+
+      expect(runQuery).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          kind: "package",
+          slug: "demo-claw",
+          version: "1.0.0",
+        }),
+      );
+      expect(runQuery.mock.calls.at(-1)?.[1]).not.toHaveProperty("artifactFingerprint");
+      expect(runMutation).toHaveBeenCalledTimes(2);
+      expect(runMutation).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          packageId: existingPackage._id,
+          releaseId: existingRelease._id,
+          createdNewParent: expect.anything(),
+        }),
+      );
+    } finally {
+      if (previousStage === undefined) {
+        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+      } else {
+        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousStage;
+      }
     }
   });
 

@@ -8751,6 +8751,7 @@ async function publishPackageImpl(
     source: effectiveSource,
   };
   const publishedArtifactSha256 = family === "claw" ? packageInsertArgs.clawpackSha256 : undefined;
+  const attemptArtifactFingerprint = publishedArtifactSha256 ?? integritySha256;
 
   const inspectorFindings =
     inspectorResult?.warnings.map((finding) =>
@@ -8766,19 +8767,105 @@ async function publishPackageImpl(
         { packageId: existingPackage._id, version },
       );
     }
-    const existingAttempt = await runQueryRef<null | { attemptId: Id<"publishAttempts"> }>(
-      ctx,
-      internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal,
-      {
-        kind: "package",
-        slug: name,
-        version,
-      },
-    );
+    const existingAttempt = await runQueryRef<null | {
+      attemptId: Id<"publishAttempts">;
+      status: string;
+      reusable: boolean;
+      packageId?: Id<"packages">;
+      releaseId?: Id<"packageReleases">;
+      result?: {
+        ok: true;
+        packageId: Id<"packages">;
+        releaseId: Id<"packageReleases">;
+      };
+    }>(ctx, internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal, {
+      kind: "package",
+      slug: name,
+      version,
+      ...(family === "claw"
+        ? {
+            userId: actorUserId,
+            ownerUserId,
+            ownerPublisherId,
+            artifactFingerprint: attemptArtifactFingerprint,
+          }
+        : {}),
+    });
     if (existingAttempt) {
+      const reusableClawAttempt =
+        family === "claw" &&
+        existingAttempt.reusable &&
+        existingPackage !== null &&
+        !existingPackage.softDeletedAt &&
+        existingAttempt.packageId !== undefined &&
+        existingAttempt.packageId === existingPackage._id &&
+        existingAttempt.releaseId !== undefined &&
+        existingRelease !== null &&
+        existingAttempt.releaseId === existingRelease._id &&
+        !existingRelease.softDeletedAt &&
+        existingRelease.ownerDeletedAt === undefined &&
+        existingRelease.manualModeration?.state !== "quarantined" &&
+        existingRelease.manualModeration?.state !== "revoked" &&
+        resolvePackageReleaseScanStatus(existingRelease) !== "malicious" &&
+        (existingAttempt.status === "finalized"
+          ? isPublishedPackageRelease(existingRelease)
+          : existingRelease.publicationStatus === "pending");
+      if (reusableClawAttempt) {
+        if (existingAttempt.status === "finalized") {
+          if (!existingAttempt.result) {
+            throw new ConvexError("Finalized publish attempt is missing its package result.");
+          }
+          if (auth.kind === "github-actions") {
+            await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
+              tokenId: auth.publishToken._id,
+            });
+          }
+          const finalizedResult = {
+            ...existingAttempt.result,
+            publicationStatus: "published" as const,
+            artifactSha256: publishedArtifactSha256,
+          };
+          return inspectorFindings.length > 0
+            ? { ...finalizedResult, inspectorFindings }
+            : finalizedResult;
+        }
+        if (auth.kind === "github-actions") {
+          await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
+            tokenId: auth.publishToken._id,
+          });
+        }
+        return {
+          ok: true as const,
+          status: "pending" as const,
+          packageId: existingAttempt.packageId,
+          releaseId: existingAttempt.releaseId,
+          artifactSha256: publishedArtifactSha256,
+          publicationStatus: "pending" as const,
+          attemptId: existingAttempt.attemptId,
+          packageName: name,
+          version,
+          ...(inspectorFindings.length > 0 ? { inspectorFindings } : {}),
+        };
+      }
       throw new ConvexError(
         `Version ${version} already exists. Increment the version number and try again.`,
       );
+    }
+    if (family === "claw") {
+      const conflictingAttempt = await runQueryRef<null | { attemptId: Id<"publishAttempts"> }>(
+        ctx,
+        internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal,
+        {
+          kind: "package",
+          slug: name,
+          version,
+        },
+      );
+      if (conflictingAttempt) {
+        throw new ConvexError(
+          `Version ${version} already exists. Increment the version number and try again.`,
+        );
+      }
     }
     if (existingPackage && existingRelease) {
       if (!existingRelease.softDeletedAt && existingRelease.publicationStatus === "pending") {
@@ -8827,9 +8914,9 @@ async function publishPackageImpl(
         ownerUserId,
         name,
         version,
-        artifactFingerprint: publishedArtifactSha256 ?? integritySha256,
+        artifactFingerprint: attemptArtifactFingerprint,
       }),
-      artifactFingerprint: publishedArtifactSha256 ?? integritySha256,
+      artifactFingerprint: attemptArtifactFingerprint,
       files,
       clawpackStorageId: packageInsertArgs.clawpackStorageId,
       scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
@@ -11234,8 +11321,21 @@ export const insertReleaseInternal = internalMutation({
           args.family !== "claw" ||
           (typeof args.clawpackSha256 === "string" &&
             releaseExists.clawpackSha256 === args.clawpackSha256);
+        const matchesExistingOwner =
+          args.ownerPublisherId !== undefined
+            ? existing.ownerPublisherId === args.ownerPublisherId
+            : existing.ownerPublisherId === undefined && existing.ownerUserId === args.ownerUserId;
+        const allowExactClawRetry =
+          args.family === "claw" && matchesExistingOwner && matchesExactClawArtifact;
+        const canReuseExistingRelease =
+          args.allowExistingRelease ||
+          (allowExactClawRetry &&
+            isPublishedPackageRelease(releaseExists) &&
+            releaseExists.manualModeration?.state !== "quarantined" &&
+            releaseExists.manualModeration?.state !== "revoked" &&
+            resolvePackageReleaseScanStatus(releaseExists) !== "malicious");
         if (
-          args.allowExistingRelease &&
+          canReuseExistingRelease &&
           !releaseExists.softDeletedAt &&
           releaseExists.integritySha256 === args.integritySha256 &&
           matchesExactClawArtifact

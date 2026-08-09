@@ -289,7 +289,9 @@ export const findExistingPublishAttemptForArtifactInternal = internalQuery({
     slug: v.string(),
     version: v.string(),
     userId: v.optional(v.id("users")),
+    ownerUserId: v.optional(v.id("users")),
     ownerPublisherId: v.optional(v.id("publishers")),
+    artifactFingerprint: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     for (const status of PUBLISH_ATTEMPT_STATUSES) {
@@ -305,7 +307,22 @@ export const findExistingPublishAttemptForArtifactInternal = internalQuery({
         .order("desc")
         .take(25);
       const match = attempts.find((attempt) => {
-        if (args.kind === "package") return true;
+        if (args.kind === "package") {
+          if (args.artifactFingerprint === undefined) return true;
+          if (attempt.artifactFingerprint !== args.artifactFingerprint) return false;
+          if (args.ownerPublisherId !== undefined) {
+            return (
+              attempt.ownerPublisherId === args.ownerPublisherId &&
+              attempt.userId === args.userId &&
+              attempt.ownerUserId === args.ownerUserId
+            );
+          }
+          return (
+            attempt.ownerPublisherId === undefined &&
+            attempt.userId === args.userId &&
+            attempt.ownerUserId === args.ownerUserId
+          );
+        }
         if (args.ownerPublisherId !== undefined) {
           return attempt.ownerPublisherId === args.ownerPublisherId;
         }
@@ -318,6 +335,11 @@ export const findExistingPublishAttemptForArtifactInternal = internalQuery({
           kind: match.kind,
           slug: match.slug,
           version: match.version,
+          reusable: !isTerminalRetriableAttemptStatus(match.status),
+          packageId: match.packageId,
+          releaseId: match.packageReleaseId,
+          artifactFingerprint: match.artifactFingerprint,
+          result: match.result,
         };
       }
     }
