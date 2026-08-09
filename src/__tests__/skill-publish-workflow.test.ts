@@ -89,10 +89,25 @@ describe("skill publish workflow", () => {
     const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
 
     expect(workflow).toContain(
-      "print(f\"Resolved publish command: {' '.join(shlex.quote(part) for part in command)}\", flush=True)",
+      "print(f\"Resolved publish command: {' '.join(quote_for_log(part) for part in command)}\", flush=True)",
     );
     expect(workflow).toContain("completed = subprocess.run(command, cwd=workspace");
     expect(workflow).not.toContain("shell=True");
+  });
+
+  it("keeps a metadata value carrying CR or LF from opening a second log line", () => {
+    const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
+
+    // shlex.quote is shell quoting, not output escaping: it wraps a value in single quotes
+    // and leaves an embedded line break intact, so a changelog, categories or topics value
+    // holding "\n::error::" would reach the runner as its own ::workflow-command line.
+    expect(workflow).toContain(
+      [
+        "              quoted = shlex.quote(part)",
+        "              return quoted if quoted.isprintable() else json.dumps(part)",
+      ].join("\n"),
+    );
+    expect(workflow).not.toContain("' '.join(shlex.quote(part) for part in command)");
   });
 
   it("preserves publish output when a target fails", () => {

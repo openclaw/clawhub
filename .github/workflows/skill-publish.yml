@@ -239,6 +239,15 @@ jobs:
           def is_skill_folder(path):
               return path.is_dir() and any((path / name).is_file() for name in ("SKILL.md", "skill.md"))
 
+          def quote_for_log(part):
+              # shlex.quote is shell quoting, not output escaping: it wraps a value holding a
+              # line break in single quotes and leaves the break itself intact. One newline in
+              # a caller's metadata would then open a second log line, which the runner reads
+              # as a ::workflow-command. json.dumps escapes every control character, so one
+              # publish stays one line however the caller fills changelog, categories or topics.
+              quoted = shlex.quote(part)
+              return quoted if quoted.isprintable() else json.dumps(part)
+
           skill_path = os.environ["INPUT_SKILL_PATH"].strip()
           root_input = os.environ["INPUT_ROOT"].strip() or "skills"
           if skill_path:
@@ -328,7 +337,7 @@ jobs:
 
               # Log-only: the list above is what actually runs, so the quoting here never
               # reaches a shell. Without it a forwarded flag is invisible in the run logs.
-              print(f"Resolved publish command: {' '.join(shlex.quote(part) for part in command)}", flush=True)
+              print(f"Resolved publish command: {' '.join(quote_for_log(part) for part in command)}", flush=True)
 
               completed = subprocess.run(command, cwd=workspace, capture_output=True, text=True)
               if completed.returncode != 0:
