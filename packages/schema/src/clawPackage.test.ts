@@ -284,7 +284,7 @@ describe("validateClawPackageContents", () => {
     });
   });
 
-  it("accepts native extensions in the conventional OpenClaw profile", () => {
+  it("requires agent settings in the conventional OpenClaw profile", () => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
@@ -307,8 +307,15 @@ describe("validateClawPackageContents", () => {
       ],
     });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).not.toHaveProperty("profile");
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        expect.objectContaining({
+          code: "invalid_openclaw_profile",
+          path: "profiles/openclaw.yml.agent",
+        }),
+      ],
+    });
   });
 
   it.each([
@@ -392,6 +399,23 @@ describe("validateClawPackageContents", () => {
       expect(result.value.summary.workspace.bootstrapFiles).toEqual(["BOOTSTRAP.md"]);
     }
   });
+
+  it.each(["bootstrap.md", "Bootstrap.md"])(
+    "rejects noncanonical package-root bootstrap path %s",
+    (bootstrapPath) => {
+      const result = validateClawPackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: [...files(), { path: bootstrapPath, text: "Unvalidated instructions.\n" }],
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        issues: [expect.objectContaining({ code: "invalid_package_path", path: bootstrapPath })],
+      });
+    },
+  );
 
   it.each([
     ["non-UTF-8", undefined, "package_bootstrap_invalid"],

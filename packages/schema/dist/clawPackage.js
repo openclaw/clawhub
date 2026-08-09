@@ -76,7 +76,7 @@ const OpenClawProfileSchema = type({
             minMs: "number?",
             maxMs: "number?",
         }).optional(),
-    }).optional(),
+    }),
     extensions: OpenClawExtensionSchema.array().optional(),
 });
 function isRecord(value) {
@@ -469,8 +469,11 @@ export function validateClawPackageContents(input) {
     if (hasClawMarkdownBody && hasImplicitSoulConflict) {
         issues.push(issue("claw_body_soul_conflict", "$.workspace", "CLAW.md body content and an explicit SOUL.md workspace declaration cannot both be present."));
     }
-    const packageBootstrap = fileByPath.get("BOOTSTRAP.md");
-    if (packageBootstrap) {
+    const packageBootstrap = [...fileByPath.values()].find((file) => portablePathKey(file.path) === portablePathKey("BOOTSTRAP.md"));
+    if (packageBootstrap && packageBootstrap.path !== "BOOTSTRAP.md") {
+        issues.push(issue("invalid_package_path", packageBootstrap.path, "Package-root bootstrap files must use the exact path BOOTSTRAP.md."));
+    }
+    else if (packageBootstrap) {
         if (packageBootstrap.text === undefined) {
             issues.push(issue("package_bootstrap_invalid", "BOOTSTRAP.md", "Package-root BOOTSTRAP.md must be UTF-8 text."));
         }

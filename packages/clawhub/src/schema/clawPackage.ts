@@ -96,7 +96,7 @@ const OpenClawProfileSchema = type({
       minMs: "number?",
       maxMs: "number?",
     }).optional(),
-  }).optional(),
+  }),
   extensions: OpenClawExtensionSchema.array().optional(),
 });
 
@@ -611,8 +611,18 @@ export function validateClawPackageContents(input: {
     );
   }
 
-  const packageBootstrap = fileByPath.get("BOOTSTRAP.md");
-  if (packageBootstrap) {
+  const packageBootstrap = [...fileByPath.values()].find(
+    (file) => portablePathKey(file.path) === portablePathKey("BOOTSTRAP.md"),
+  );
+  if (packageBootstrap && packageBootstrap.path !== "BOOTSTRAP.md") {
+    issues.push(
+      issue(
+        "invalid_package_path",
+        packageBootstrap.path,
+        "Package-root bootstrap files must use the exact path BOOTSTRAP.md.",
+      ),
+    );
+  } else if (packageBootstrap) {
     if (packageBootstrap.text === undefined) {
       issues.push(
         issue(
