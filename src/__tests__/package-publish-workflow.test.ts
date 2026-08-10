@@ -232,4 +232,23 @@ describe("package publish workflow", () => {
       expect(resolveStep?.run).toContain(`elif ${clearName}:\n    cmd += ["--${name}", ""]`);
     }
   });
+
+  it("keeps a metadata value carrying CR or LF from opening a second log line", () => {
+    const workflow = readFileSync(resolve(".github/workflows/package-publish.yml"), "utf8");
+
+    // shlex.quote is shell quoting, not output escaping: it wraps a value in single quotes
+    // and leaves an embedded line break intact, so a changelog, categories or topics value
+    // carrying one would reach the runner as its own ::workflow-command line.
+    expect(workflow).toContain(
+      [
+        "              quoted = shlex.quote(part)",
+        "              return quoted if quoted.isprintable() else json.dumps(part)",
+      ].join("\n"),
+    );
+    expect(workflow).toContain('print(" ".join(quote_for_log(part) for part in cmd))');
+    expect(workflow).not.toContain("print(shell_line)");
+
+    // The re-runnable .sh file is a real shell script, so it keeps plain shell quoting.
+    expect(workflow).toContain('shell_line = " ".join(shlex.quote(part) for part in cmd)');
+  });
 });

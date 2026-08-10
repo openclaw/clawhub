@@ -363,6 +363,15 @@ jobs:
           from urllib.parse import quote, urlparse
           from urllib.request import Request, urlopen
 
+          def quote_for_log(part):
+              # shlex.quote is shell quoting, not output escaping: it wraps a value holding a
+              # line break in single quotes and leaves the break itself intact. One newline in
+              # a caller's metadata would then open a second log line, which the runner reads
+              # as a ::workflow-command. json.dumps escapes every control character, so one
+              # publish stays one line however the caller fills changelog, categories or topics.
+              quoted = shlex.quote(part)
+              return quoted if quoted.isprintable() else json.dumps(part)
+
           def split_ref_path(value):
               if not value:
                   return "", ""
@@ -572,7 +581,9 @@ jobs:
           shell_line = " ".join(shlex.quote(part) for part in cmd)
           path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + shell_line + "\n", encoding="utf-8")
           path.chmod(0o755)
-          print(shell_line)
+          # Log-only: the file above is what a maintainer re-runs, so it keeps plain shell
+          # quoting. This echo does not, because the runner parses each stdout line.
+          print(" ".join(quote_for_log(part) for part in cmd))
 
           def write_output(fh, name, value):
               delimiter = f"ghadelimiter_{uuid.uuid4().hex}"
