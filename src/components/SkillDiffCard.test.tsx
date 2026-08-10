@@ -1,13 +1,19 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillDiffCard } from "./SkillDiffCard";
 
 const getFilePreviewMock = vi.fn();
 let diffEditorMounts = 0;
 let diffEditorUnmounts = 0;
+let monacoMock: {
+  editor: {
+    defineTheme: ReturnType<typeof vi.fn>;
+    setTheme: ReturnType<typeof vi.fn>;
+  };
+} | null = null;
 
 vi.mock("convex/react", () => ({
   useAction: () => getFilePreviewMock,
@@ -23,9 +29,12 @@ vi.mock("@monaco-editor/react", () => ({
     options,
   }: {
     className?: string;
-    options?: { renderSideBySide?: boolean; useInlineViewWhenSpaceIsLimited?: boolean };
+    options?: {
+      renderSideBySide?: boolean;
+      useInlineViewWhenSpaceIsLimited?: boolean;
+    };
   }) => <MockDiffEditor className={className} options={options} />,
-  useMonaco: () => null,
+  useMonaco: () => monacoMock,
 }));
 
 function MockDiffEditor({
@@ -33,7 +42,10 @@ function MockDiffEditor({
   options,
 }: {
   className?: string;
-  options?: { renderSideBySide?: boolean; useInlineViewWhenSpaceIsLimited?: boolean };
+  options?: {
+    renderSideBySide?: boolean;
+    useInlineViewWhenSpaceIsLimited?: boolean;
+  };
 }) {
   useEffect(() => {
     diffEditorMounts += 1;
@@ -91,6 +103,49 @@ describe("SkillDiffCard", () => {
     getFilePreviewMock.mockResolvedValue({ text: "content" });
     diffEditorMounts = 0;
     diffEditorUnmounts = 0;
+    monacoMock = null;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.documentElement.removeAttribute("data-theme-resolved");
+  });
+
+  it("does not pass modern CSS colors to Monaco", async () => {
+    installMatchMedia(false);
+    const defineTheme = vi.fn();
+    monacoMock = {
+      editor: {
+        defineTheme,
+        setTheme: vi.fn(),
+      },
+    };
+    document.documentElement.setAttribute("data-theme-resolved", "dark");
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({
+      getPropertyValue: () => "lab(70% 0 0)",
+    } as CSSStyleDeclaration);
+
+    render(
+      <SkillDiffCard
+        skill={skill}
+        versions={[
+          makeVersion("skillVersions:1", "1.0.1"),
+          makeVersion("skillVersions:2", "1.0.2"),
+        ]}
+      />,
+    );
+
+    await waitFor(() => expect(defineTheme).toHaveBeenCalled());
+    const theme = defineTheme.mock.calls[0]?.[1] as {
+      rules: Array<{ foreground: string }>;
+      colors: Record<string, string>;
+    };
+    expect(theme.rules.map((rule) => rule.foreground)).toEqual(["#f4f4f5", "#a1a1aa"]);
+    expect(
+      [...theme.rules.map((rule) => rule.foreground), ...Object.values(theme.colors)].filter(
+        (color) => /^(?:lab|lch|oklab|oklch|color|color-mix)\(/i.test(color),
+      ),
+    ).toEqual([]);
   });
 
   it("defaults to inline mode on narrow screens", async () => {

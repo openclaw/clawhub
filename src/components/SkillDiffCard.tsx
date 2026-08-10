@@ -744,28 +744,44 @@ function buildDiffOptions(
 
 function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const styles = getComputedStyle(document.documentElement);
-  const surface = normalizeHex(styles.getPropertyValue("--oc-bg-elevated").trim() || "#ffffff");
-  const surfaceMuted = styles.getPropertyValue("--oc-bg-surface").trim() || "#f6f1ec";
-  const ink = styles.getPropertyValue("--oc-text-primary").trim() || "#1d1a17";
-  const inkSoft = styles.getPropertyValue("--oc-text-secondary").trim() || "#4c463f";
-  const line = styles.getPropertyValue("--oc-border-subtle").trim() || "rgba(29, 26, 23, 0.12)";
-  const accent = styles.getPropertyValue("--oc-accent-primary").trim() || "#e65c46";
-  const seafoam = styles.getPropertyValue("--oc-accent-secondary").trim() || "#2bc6a4";
-  const diffAdded = styles.getPropertyValue("--oc-diff-added").trim() || "#9bb955";
-  const diffAddedStrong = styles.getPropertyValue("--oc-diff-added-strong").trim() || seafoam;
-  const diffRemoved = styles.getPropertyValue("--oc-diff-removed").trim() || "#e47866";
-  const diffRemovedStrong = styles.getPropertyValue("--oc-diff-removed-strong").trim() || accent;
-  const diffDiagonal = toMonacoColor(
-    styles.getPropertyValue("--diff-diagonal").trim() || "#22222233",
-  );
-  const diffBorder = toMonacoColor(styles.getPropertyValue("--diff-border").trim() || line);
-  const lineNumber =
+  const isDark = isDarkThemeResolved();
+  const fallback = isDark
+    ? {
+        surface: "#18181b",
+        surfaceMuted: "#101012",
+        ink: "#f4f4f5",
+        inkSoft: "#a1a1aa",
+        line: "#ffffff1a",
+      }
+    : {
+        surface: "#ffffff",
+        surfaceMuted: "#f6f1ec",
+        ink: "#1d1a17",
+        inkSoft: "#4c463f",
+        line: "#1d1a171f",
+      };
+  const readColor = (name: string, fallbackColor: string) =>
+    toMonacoColor(styles.getPropertyValue(name).trim(), fallbackColor);
+  const surface = readColor("--oc-bg-elevated", fallback.surface);
+  const surfaceMuted = readColor("--oc-bg-surface", fallback.surfaceMuted);
+  const ink = readColor("--oc-text-primary", fallback.ink);
+  const inkSoft = readColor("--oc-text-secondary", fallback.inkSoft);
+  const line = readColor("--oc-border-subtle", fallback.line);
+  const accent = readColor("--oc-accent-primary", "#e65c46");
+  const seafoam = readColor("--oc-accent-secondary", "#2bc6a4");
+  const diffAdded = readColor("--oc-diff-added", "#9bb955");
+  const diffAddedStrong = readColor("--oc-diff-added-strong", seafoam);
+  const diffRemoved = readColor("--oc-diff-removed", "#e47866");
+  const diffRemovedStrong = readColor("--oc-diff-removed-strong", accent);
+  const diffDiagonal = readColor("--diff-diagonal", "#22222233");
+  const diffBorder = readColor("--diff-border", line);
+  const lineNumber = toMonacoColor(
     styles.getPropertyValue("--diff-line-number").trim() ||
-    styles.getPropertyValue("--ink-soft").trim() ||
-    "#4c463f";
+      styles.getPropertyValue("--ink-soft").trim(),
+    fallback.inkSoft,
+  );
   const background = surface;
   const gutter = surfaceMuted;
-  const isDark = isDarkThemeResolved();
   const base = isDark ? "vs-dark" : "vs";
 
   const diffInserted = withAlpha(diffAdded, isDark ? 0.26 : 0.14);
@@ -781,8 +797,8 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
     base,
     inherit: true,
     rules: [
-      { token: "", foreground: normalizeHex(ink) },
-      { token: "comment", foreground: normalizeHex(inkSoft) },
+      { token: "", foreground: ink },
+      { token: "comment", foreground: inkSoft },
     ],
     colors: {
       "editor.background": background,
@@ -821,11 +837,14 @@ function normalizeHex(value: string) {
   if (value.length === 4) {
     return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`;
   }
+  if (value.length === 5) {
+    return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}${value[4]}${value[4]}`;
+  }
   return value;
 }
 
 function toRgba(color: string, alpha: number) {
-  const hex = normalizeHex(color).replace("#", "");
+  const hex = normalizeHex(color).replace("#", "").slice(0, 6);
   if (hex.length !== 6) return color;
   const r = Number.parseInt(hex.slice(0, 2), 16);
   const g = Number.parseInt(hex.slice(2, 4), 16);
@@ -836,7 +855,7 @@ function toRgba(color: string, alpha: number) {
 function withAlpha(color: string, alpha: number) {
   const hex = normalizeHex(color);
   if (!hex.startsWith("#")) return color;
-  const value = hex.slice(1);
+  const value = hex.slice(1, 7);
   if (value.length !== 6) return color;
   const channel = Math.round(alpha * 255)
     .toString(16)
@@ -844,20 +863,25 @@ function withAlpha(color: string, alpha: number) {
   return `#${value}${channel}`;
 }
 
-function toMonacoColor(color: string) {
+function toMonacoColor(color: string, fallback: string) {
   const trimmed = color.trim();
-  if (trimmed.startsWith("#")) return trimmed;
+  const hex = normalizeHex(trimmed);
+  if (/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(hex)) return hex;
   const rgbaMatch = /^rgba?\(([^)]+)\)$/i.exec(trimmed);
-  if (!rgbaMatch) return trimmed;
+  if (!rgbaMatch) return normalizeHex(fallback);
   const parts = rgbaMatch[1].split(",").map((part) => part.trim());
-  if (parts.length < 3) return trimmed;
+  if (parts.length < 3) return normalizeHex(fallback);
   const [r, g, b] = parts.map((part) => Number.parseFloat(part));
   const alpha = parts.length >= 4 ? Number.parseFloat(parts[3]) : 1;
-  if ([r, g, b, alpha].some((value) => Number.isNaN(value))) return trimmed;
-  const channel = Math.round(alpha * 255)
+  if ([r, g, b, alpha].some((value) => !Number.isFinite(value))) return normalizeHex(fallback);
+  const channel = Math.round(Math.min(1, Math.max(0, alpha)) * 255)
     .toString(16)
     .padStart(2, "0");
   return `#${[r, g, b]
-    .map((value) => Math.round(value).toString(16).padStart(2, "0"))
+    .map((value) =>
+      Math.round(Math.min(255, Math.max(0, value)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
     .join("")}${channel}`;
 }
