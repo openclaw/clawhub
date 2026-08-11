@@ -1,5 +1,5 @@
 import { findClawPackagePathHierarchyCollision, isSafeClawPackagePath } from "clawhub-schema";
-import { zipSync } from "fflate";
+import { Zip, ZipDeflate, zipSync } from "fflate";
 
 type ZipEntry = {
   path: string;
@@ -8,7 +8,7 @@ type ZipEntry = {
 
 export type AsyncZipEntry = {
   path: string;
-  loadBytes: () => Promise<Uint8Array>;
+  openStream: () => Promise<ReadableStream<Uint8Array> | null>;
 };
 
 export type SkillZipMeta = {
@@ -75,41 +75,84 @@ export function buildDeterministicZip(entries: ZipEntry[], meta?: SkillZipMeta) 
 
 export function buildDeterministicZipStream(entries: AsyncZipEntry[], meta?: SkillZipMeta) {
   const orderedEntries = orderZipEntries(entries, meta);
-  const centralDirectory: Uint8Array[] = [];
+  const output: Uint8Array[] = [];
   let entryIndex = 0;
-  let centralIndex = 0;
-  let localBytes = 0;
-  let centralBytes = 0;
+  let current:
+    | {
+        reader: ReadableStreamDefaultReader<Uint8Array>;
+        zipEntry: ZipDeflate;
+      }
+    | undefined;
+  let archiveEnded = false;
+  let archiveDone = false;
+  let archiveError: unknown;
+
+  const archive = new Zip((error, chunk, final) => {
+    if (error) archiveError = error;
+    if (chunk?.length) output.push(chunk);
+    if (final) archiveDone = true;
+  });
+
+  const advance = async () => {
+    if (archiveError) throw archiveError;
+
+    if (current) {
+      const next = await current.reader.read();
+      if (next.done) {
+        current.zipEntry.push(new Uint8Array(0), true);
+        current.reader.releaseLock();
+        current = undefined;
+      } else {
+        current.zipEntry.push(next.value);
+      }
+      if (archiveError) throw archiveError;
+      return;
+    }
+
+    while (entryIndex < orderedEntries.length) {
+      const entry = orderedEntries[entryIndex++];
+      const stream = await entry.openStream();
+      // A storage reference can become stale after the version document was read.
+      // Do not commit a ZIP header until the Blob is known to still exist.
+      if (!stream) continue;
+
+      const zipEntry = new ZipDeflate(entry.path, { level: 6 });
+      zipEntry.mtime = FIXED_ZIP_DATE;
+      archive.add(zipEntry);
+      current = {
+        reader: stream.getReader(),
+        zipEntry,
+      };
+      return;
+    }
+
+    if (!archiveEnded) {
+      archiveEnded = true;
+      archive.end();
+      if (archiveError) throw archiveError;
+    }
+  };
 
   return new ReadableStream<Uint8Array>(
     {
       async pull(controller) {
         try {
-          if (entryIndex < orderedEntries.length) {
-            const entry = orderedEntries[entryIndex++];
-            const bytes = await entry.loadBytes();
-            const singleEntryZip = zipSync(
-              { [entry.path]: [bytes, { mtime: FIXED_ZIP_DATE }] },
-              { level: 6 },
-            );
-            const parts = splitSingleEntryZip(singleEntryZip, localBytes);
-            centralDirectory.push(parts.centralDirectory);
-            localBytes += parts.localFile.length;
-            centralBytes += parts.centralDirectory.length;
-            controller.enqueue(parts.localFile);
-            return;
+          for (;;) {
+            if (output.length > 0 || archiveDone) break;
+            await advance();
           }
-
-          if (centralIndex < centralDirectory.length) {
-            controller.enqueue(centralDirectory[centralIndex++]);
-            return;
-          }
-
-          controller.enqueue(buildZipFooter(orderedEntries.length, centralBytes, localBytes));
-          controller.close();
+          const chunk = output.shift();
+          if (chunk) controller.enqueue(chunk);
+          else controller.close();
         } catch (error) {
+          archive.terminate();
+          await current?.reader.cancel(error);
           controller.error(error);
         }
+      },
+      async cancel(reason) {
+        archive.terminate();
+        await current?.reader.cancel(reason);
       },
     },
     { highWaterMark: 0 },
@@ -126,65 +169,18 @@ function orderZipEntries(entries: AsyncZipEntry[], meta?: SkillZipMeta) {
     const metaBytes = new TextEncoder().encode(JSON.stringify(buildSkillMeta(meta), null, 2));
     byPath.set("_meta.json", {
       path: "_meta.json",
-      loadBytes: async () => metaBytes,
+      openStream: async () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(metaBytes);
+            controller.close();
+          },
+        }),
     });
     zipDataOrder["_meta.json"] = true;
   }
 
   return Object.keys(zipDataOrder).map((path) => byPath.get(path)!);
-}
-
-function splitSingleEntryZip(zip: Uint8Array, localOffset: number) {
-  // A one-entry zip preserves fflate's exact compression bytes. Only its central-directory
-  // offset changes when the local record is appended to the full streamed archive.
-  const endOfCentralDirectory = zip.length - 22;
-  if (readUint32(zip, endOfCentralDirectory) !== 0x06054b50) {
-    throw new Error("Invalid single-entry ZIP footer");
-  }
-  const centralSize = readUint32(zip, endOfCentralDirectory + 12);
-  const centralOffset = readUint32(zip, endOfCentralDirectory + 16);
-  if (centralOffset + centralSize !== endOfCentralDirectory) {
-    throw new Error("Invalid single-entry ZIP directory");
-  }
-
-  const centralDirectory = zip.slice(centralOffset, endOfCentralDirectory);
-  writeUint32(centralDirectory, 42, localOffset);
-  return {
-    localFile: zip.subarray(0, centralOffset),
-    centralDirectory,
-  };
-}
-
-function buildZipFooter(entryCount: number, centralSize: number, centralOffset: number) {
-  const footer = new Uint8Array(22);
-  writeUint32(footer, 0, 0x06054b50);
-  writeUint16(footer, 8, entryCount);
-  writeUint16(footer, 10, entryCount);
-  writeUint32(footer, 12, centralSize);
-  writeUint32(footer, 16, centralOffset);
-  return footer;
-}
-
-function readUint32(bytes: Uint8Array, offset: number) {
-  return (
-    (bytes[offset] |
-      (bytes[offset + 1] << 8) |
-      (bytes[offset + 2] << 16) |
-      (bytes[offset + 3] << 24)) >>>
-    0
-  );
-}
-
-function writeUint16(bytes: Uint8Array, offset: number, value: number) {
-  bytes[offset] = value;
-  bytes[offset + 1] = value >>> 8;
-}
-
-function writeUint32(bytes: Uint8Array, offset: number, value: number) {
-  bytes[offset] = value;
-  bytes[offset + 1] = value >>> 8;
-  bytes[offset + 2] = value >>> 16;
-  bytes[offset + 3] = value >>> 24;
 }
 
 export function buildDeterministicPackageZip(entries: ZipEntry[]) {

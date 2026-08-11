@@ -117,17 +117,9 @@ export async function downloadZipHandler(ctx: DownloadCtx, request: Request) {
     });
   }
 
-  const availableFiles = [];
-  for (const file of version.files) {
-    if (await ctx.storage.getMetadata(file.storageId)) availableFiles.push(file);
-  }
-  const entries = availableFiles.map((file) => ({
+  const entries = version.files.map((file) => ({
     path: file.path,
-    loadBytes: async () => {
-      const blob = await ctx.storage.get(file.storageId);
-      if (!blob) throw new Error(`Skill archive file disappeared from storage: ${file.path}`);
-      return new Uint8Array(await blob.arrayBuffer());
-    },
+    openStream: async () => (await ctx.storage.get(file.storageId))?.stream() ?? null,
   }));
   const zipStream = buildDeterministicZipStream(entries, {
     ownerId: String(skill.ownerUserId),

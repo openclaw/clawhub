@@ -1,8 +1,8 @@
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
+import { unzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import { __test, downloadZipHandler } from "./downloads";
-import { buildDeterministicZip } from "./lib/skillZip";
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
@@ -42,6 +42,19 @@ function deferred<T>() {
     resolve = resolvePromise;
   });
   return { promise, resolve };
+}
+
+function streamingBlob(text: string) {
+  const bytes = new TextEncoder().encode(text);
+  return {
+    stream: () =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+  } as Blob;
 }
 
 describe("downloads helpers", () => {
@@ -119,7 +132,7 @@ describe("downloads helpers", () => {
       return { mutation, args };
     });
     const runAfter = vi.fn();
-    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+    const storageGet = vi.fn().mockResolvedValue(streamingBlob("hello"));
 
     const response = await downloadZipHandler(
       {
@@ -161,22 +174,39 @@ describe("downloads helpers", () => {
     });
   });
 
-  it("streams a byte-identical archive while reading one stored file at a time", async () => {
-    const firstBytes = new TextEncoder().encode("# Demo\n");
-    const secondBytes = new TextEncoder().encode("supporting notes\n");
-    const firstRead = deferred<ArrayBuffer>();
-    const secondRead = deferred<ArrayBuffer>();
-    const firstArrayBuffer = vi.fn(() => firstRead.promise);
-    const secondArrayBuffer = vi.fn(() => secondRead.promise);
-    const storageGetMetadata = vi.fn(async (storageId: string) =>
-      storageId === "_storage:missing" ? null : { storageId },
+  it("streams stored file chunks, stays deterministic, and skips a Blob that vanishes", async () => {
+    const firstChunk = new Uint8Array(16 * 1024).fill(0x61);
+    const secondChunk = new TextEncoder().encode("streamed body\n");
+    const releaseSecondChunk = deferred<void>();
+    const arrayBuffer = vi.fn(() => Promise.reject(new Error("whole Blob read")));
+    const stream = vi.fn(
+      () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(firstChunk);
+          },
+          async pull(controller) {
+            await releaseSecondChunk.promise;
+            controller.enqueue(secondChunk);
+            controller.close();
+          },
+        }),
     );
+    const storageGetMetadata = vi.fn().mockResolvedValue({});
     const storageGet = vi.fn(async (storageId: string) => {
       if (storageId === "_storage:skill") {
-        return { arrayBuffer: firstArrayBuffer } as unknown as Blob;
+        return { arrayBuffer, stream } as unknown as Blob;
       }
       if (storageId === "_storage:notes") {
-        return { arrayBuffer: secondArrayBuffer } as unknown as Blob;
+        return {
+          stream: () =>
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode("supporting notes\n"));
+                controller.close();
+              },
+            }),
+        } as Blob;
       }
       return null;
     });
@@ -233,36 +263,67 @@ describe("downloads helpers", () => {
     ]);
 
     expect(response.status).toBe(200);
-    expect(storageGetMetadata).toHaveBeenCalledTimes(3);
+    expect(storageGetMetadata).not.toHaveBeenCalled();
     expect(storageGet).not.toHaveBeenCalled();
-    expect(firstArrayBuffer).not.toHaveBeenCalled();
-    expect(secondArrayBuffer).not.toHaveBeenCalled();
 
-    const responseBytesPromise = response.arrayBuffer();
-    await vi.waitFor(() => expect(storageGet).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(firstArrayBuffer).toHaveBeenCalledTimes(1));
-    expect(secondArrayBuffer).not.toHaveBeenCalled();
+    const reader = response.body!.getReader();
+    const firstArchiveChunk = await reader.read();
+    expect(firstArchiveChunk.done).toBe(false);
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    releaseSecondChunk.resolve();
 
-    firstRead.resolve(firstBytes.slice().buffer);
-    await vi.waitFor(() => expect(storageGet).toHaveBeenCalledTimes(2));
-    expect(storageGet).not.toHaveBeenCalledWith("_storage:missing");
-    await vi.waitFor(() => expect(secondArrayBuffer).toHaveBeenCalledTimes(1));
-    secondRead.resolve(secondBytes.slice().buffer);
+    const archiveChunks = [firstArchiveChunk.value!];
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      archiveChunks.push(chunk.value);
+    }
+    const responseBytes = Uint8Array.from(archiveChunks.flatMap((chunk) => [...chunk]));
+    const unzipped = unzipSync(responseBytes);
+    expect(Object.keys(unzipped).sort()).toEqual(["_meta.json", "a.txt", "b.txt"]);
+    expect(unzipped["a.txt"]).toEqual(Uint8Array.from([...firstChunk, ...secondChunk]));
+    expect(new TextDecoder().decode(unzipped["b.txt"])).toBe("supporting notes\n");
+    expect(storageGet).toHaveBeenCalledWith("_storage:missing");
 
-    const responseBytes = new Uint8Array(await responseBytesPromise);
-    const expectedBytes = buildDeterministicZip(
-      [
-        { path: "a.txt", bytes: firstBytes },
-        { path: "b.txt", bytes: secondBytes },
-      ],
+    const repeatResponse = await downloadZipHandler(
       {
-        ownerId: "users:1",
-        slug: "demo",
-        version: "1.0.0",
-        publishedAt: 3,
-      },
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            if (storageId === "_storage:skill") {
+              return {
+                stream: () =>
+                  new ReadableStream<Uint8Array>({
+                    start(controller) {
+                      controller.enqueue(firstChunk);
+                      controller.enqueue(secondChunk);
+                      controller.close();
+                    },
+                  }),
+              } as Blob;
+            }
+            if (storageId === "_storage:notes") {
+              return {
+                stream: () =>
+                  new ReadableStream<Uint8Array>({
+                    start(controller) {
+                      controller.enqueue(new TextEncoder().encode("supporting notes\n"));
+                      controller.close();
+                    },
+                  }),
+              } as Blob;
+            }
+            return null;
+          }),
+          getMetadata: storageGetMetadata,
+        },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo"),
     );
-    expect(responseBytes).toEqual(expectedBytes);
+    expect(new Uint8Array(await repeatResponse.arrayBuffer())).toEqual(responseBytes);
   });
 
   it("returns 410 for an explicitly requested revoked version", async () => {
@@ -355,7 +416,7 @@ describe("downloads helpers", () => {
         runMutation,
         scheduler: { runAfter: vi.fn() },
         storage: {
-          get: vi.fn().mockResolvedValue(new Blob(["hello"])),
+          get: vi.fn().mockResolvedValue(streamingBlob("hello")),
           getMetadata: vi.fn().mockResolvedValue({}),
         },
       } as unknown as ActionCtx,
@@ -572,7 +633,7 @@ describe("downloads helpers", () => {
       return { tokenTouched: "tokenId" in args };
     });
     const runAfter = vi.fn();
-    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+    const storageGet = vi.fn().mockResolvedValue(streamingBlob("hello"));
 
     const response = await downloadZipHandler(
       {
@@ -635,7 +696,7 @@ describe("downloads helpers", () => {
       return { mutationRecorded: true };
     });
     const runAfter = vi.fn();
-    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+    const storageGet = vi.fn().mockResolvedValue(streamingBlob("hello"));
 
     const response = await downloadZipHandler(
       {
