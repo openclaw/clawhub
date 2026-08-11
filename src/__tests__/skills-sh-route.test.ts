@@ -22,15 +22,32 @@ async function loadRoute() {
   };
 }
 
-async function runLoader() {
+async function runLoader(params = { owner: "patrick-erichsen", repo: "skills", slug: "html" }) {
   const route = await loadRoute();
   try {
-    return await route.__config.loader({
-      params: { owner: "patrick-erichsen", repo: "skills", slug: "html" },
-    });
+    return await route.__config.loader({ params });
   } catch (error) {
     return error;
   }
+}
+
+async function getFuzzyMatchParams() {
+  const { createMemoryHistory, createRootRoute, createRoute, createRouter } =
+    await vi.importActual<typeof import("@tanstack/react-router")>("@tanstack/react-router");
+  const rootRoute = createRootRoute();
+  const detailRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/skills-sh/$owner/$repo/$slug",
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([detailRoute]),
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+  });
+  const match = router
+    .matchRoutes("/skills-sh/patrick-erichsen/skills/html/extra")
+    .find((candidate) => candidate.routeId === "/skills-sh/$owner/$repo/$slug");
+  if (!match) throw new Error("Expected TanStack Router to fuzzy-match the skills.sh detail route");
+  return match.params;
 }
 
 describe("skills.sh detail route", () => {
@@ -41,6 +58,25 @@ describe("skills.sh detail route", () => {
     queryMock.mockResolvedValue({ kind: "external", entry });
 
     expect(await runLoader()).toEqual(entry);
+    expect(queryMock.mock.calls[0]?.[1]).toEqual({
+      owner: "patrick-erichsen",
+      repo: "skills",
+      slug: "html",
+    });
+  });
+
+  it("omits TanStack fuzzy-match metadata from the Convex query", async () => {
+    const entry = { displayName: "HTML Artifact Chooser" };
+    queryMock.mockResolvedValue({ kind: "external", entry });
+    const params = await getFuzzyMatchParams();
+
+    expect(params).toEqual({
+      owner: "patrick-erichsen",
+      repo: "skills",
+      slug: "html",
+      "**": "extra",
+    });
+    expect(await runLoader(params)).toEqual(entry);
     expect(queryMock.mock.calls[0]?.[1]).toEqual({
       owner: "patrick-erichsen",
       repo: "skills",

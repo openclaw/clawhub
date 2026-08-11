@@ -5,7 +5,11 @@ import { convexHttp } from "../../../../convex/client";
 
 export const Route = createFileRoute("/skills-sh/$owner/$repo/$slug")({
   loader: async ({ params }) => {
-    const result = await convexHttp.query(api.skillsShMirrorPublic.getByRoute, params);
+    const result = await convexHttp.query(api.skillsShMirrorPublic.getByRoute, {
+      owner: params.owner,
+      repo: params.repo,
+      slug: params.slug,
+    });
     if (!result) throw notFound();
     if (result.kind === "redirect") throw redirect({ href: result.canonicalRoute });
     return result.entry;
