@@ -8,11 +8,11 @@ export const ARCHIVE_REQUEST_IDENTITY_HEADER = "x-clawhub-vercel-oidc-token";
 
 const VERCEL_OIDC_ISSUER = `https://oidc.vercel.com/${CLAWHUB_VERCEL_TEAM}`;
 const VERCEL_OIDC_AUDIENCE = `https://vercel.com/${CLAWHUB_VERCEL_TEAM}`;
-const VERCEL_OIDC_JWKS = createRemoteJWKSet(new URL("https://oidc.vercel.com/.well-known/jwks"));
+const VERCEL_OIDC_JWKS = createRemoteJWKSet(new URL(`${VERCEL_OIDC_ISSUER}/.well-known/jwks`));
 const CLAWHUB_PRODUCTION_CONVEX_SITE = "wry-manatee-359.convex.site";
 const CLAWHUB_TEST_CONVEX_SITE = "academic-chihuahua-392.convex.site";
 
-export type ClawHubVercelEnvironment = "development" | "preview" | "test" | "production";
+export type ClawHubVercelEnvironment = "development" | "preview" | "production";
 
 export function expectedVercelEnvironmentForConvexSite(
   requestUrl: string,
@@ -28,7 +28,8 @@ export function expectedVercelEnvironmentForConvexSite(
   }
   if (url.protocol !== "https:" || !url.hostname.endsWith(".convex.site")) return null;
   if (url.hostname === CLAWHUB_PRODUCTION_CONVEX_SITE) return "production";
-  if (url.hostname === CLAWHUB_TEST_CONVEX_SITE) return "test";
+  // ClawHub Test is an app-level label on a Vercel preview-target deployment.
+  if (url.hostname === CLAWHUB_TEST_CONVEX_SITE) return "preview";
   return "preview";
 }
 

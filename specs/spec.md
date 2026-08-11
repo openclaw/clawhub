@@ -173,7 +173,10 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
   Nitro overwrites the internal request headers and authenticates to Convex with
   its Vercel OIDC identity; Convex verifies the Vercel signature plus the exact
   ClawHub team, project, subject, audience, and target environment before
-  returning any storage URL. Nitro never accepts a client-supplied manifest and
+  returning any storage URL. The permanent ClawHub Test frontend is a Vercel
+  preview-target deployment, so its OIDC environment and subject use `preview`;
+  the app-level `test` label is not an OIDC trust claim. Nitro never accepts a
+  client-supplied manifest and
   accepts Convex's response only as a short-lived RS256 JWS signed by the
   selected Convex deployment's existing auth key and verified from that
   deployment's JWKS endpoint. The signed issuer, audience, type, and time bounds

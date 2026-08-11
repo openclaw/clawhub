@@ -20,7 +20,7 @@ describe("ClawHub Vercel OIDC", () => {
       expectedVercelEnvironmentForConvexSite(
         "https://academic-chihuahua-392.convex.site/api/v1/download",
       ),
-    ).toBe("test");
+    ).toBe("preview");
     expect(
       expectedVercelEnvironmentForConvexSite(
         "https://preview-branch-123.convex.site/api/v1/download",
