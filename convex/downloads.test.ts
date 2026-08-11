@@ -2,6 +2,7 @@ import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import { __test, downloadZipHandler } from "./downloads";
+import { buildDeterministicZip } from "./lib/skillZip";
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
@@ -33,6 +34,14 @@ function stubZipResponse() {
     }
   }
   vi.stubGlobal("Response", MockResponse as unknown as typeof Response);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 describe("downloads helpers", () => {
@@ -79,7 +88,6 @@ describe("downloads helpers", () => {
 
   it("schedules zip download stats outside the response path", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
-    stubZipResponse();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
@@ -118,7 +126,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
@@ -127,6 +135,7 @@ describe("downloads helpers", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("application/zip");
+    await response.arrayBuffer();
     expect(storageGet).toHaveBeenCalledWith("_storage:1");
 
     const recordCalls = runAfter.mock.calls.filter(([, , args]) => {
@@ -150,6 +159,110 @@ describe("downloads helpers", () => {
       dayStart: expect.any(Number),
       occurredAt: expect.any(Number),
     });
+  });
+
+  it("streams a byte-identical archive while reading one stored file at a time", async () => {
+    const firstBytes = new TextEncoder().encode("# Demo\n");
+    const secondBytes = new TextEncoder().encode("supporting notes\n");
+    const firstRead = deferred<ArrayBuffer>();
+    const secondRead = deferred<ArrayBuffer>();
+    const firstArrayBuffer = vi.fn(() => firstRead.promise);
+    const secondArrayBuffer = vi.fn(() => secondRead.promise);
+    const storageGetMetadata = vi.fn(async (storageId: string) =>
+      storageId === "_storage:missing" ? null : { storageId },
+    );
+    const storageGet = vi.fn(async (storageId: string) => {
+      if (storageId === "_storage:skill") {
+        return { arrayBuffer: firstArrayBuffer } as unknown as Blob;
+      }
+      if (storageId === "_storage:notes") {
+        return { arrayBuffer: secondArrayBuffer } as unknown as Blob;
+      }
+      return null;
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [
+            { path: "a.txt", storageId: "_storage:skill" },
+            { path: "b.txt", storageId: "_storage:notes" },
+            { path: "missing.txt", storageId: "_storage:missing" },
+          ],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const response = await Promise.race([
+      downloadZipHandler(
+        {
+          runQuery,
+          runMutation,
+          scheduler: { runAfter: vi.fn() },
+          storage: { get: storageGet, getMetadata: storageGetMetadata },
+        } as unknown as ActionCtx,
+        new Request("https://example.com/api/v1/download?slug=demo"),
+      ),
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error("download handler read archive bodies before responding")),
+          1_000,
+        );
+      }),
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(storageGetMetadata).toHaveBeenCalledTimes(3);
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(firstArrayBuffer).not.toHaveBeenCalled();
+    expect(secondArrayBuffer).not.toHaveBeenCalled();
+
+    const responseBytesPromise = response.arrayBuffer();
+    await vi.waitFor(() => expect(storageGet).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(firstArrayBuffer).toHaveBeenCalledTimes(1));
+    expect(secondArrayBuffer).not.toHaveBeenCalled();
+
+    firstRead.resolve(firstBytes.slice().buffer);
+    await vi.waitFor(() => expect(storageGet).toHaveBeenCalledTimes(2));
+    expect(storageGet).not.toHaveBeenCalledWith("_storage:missing");
+    await vi.waitFor(() => expect(secondArrayBuffer).toHaveBeenCalledTimes(1));
+    secondRead.resolve(secondBytes.slice().buffer);
+
+    const responseBytes = new Uint8Array(await responseBytesPromise);
+    const expectedBytes = buildDeterministicZip(
+      [
+        { path: "a.txt", bytes: firstBytes },
+        { path: "b.txt", bytes: secondBytes },
+      ],
+      {
+        ownerId: "users:1",
+        slug: "demo",
+        version: "1.0.0",
+        publishedAt: 3,
+      },
+    );
+    expect(responseBytes).toEqual(expectedBytes);
   });
 
   it("returns 410 for an explicitly requested revoked version", async () => {
@@ -195,7 +308,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&version=1.0.0"),
     );
@@ -241,7 +354,10 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter: vi.fn() },
-        storage: { get: vi.fn().mockResolvedValue(new Blob(["hello"])) },
+        storage: {
+          get: vi.fn().mockResolvedValue(new Blob(["hello"])),
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&ownerHandle=clawkit"),
     );
@@ -302,7 +418,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter: vi.fn() },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&tag=old", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
@@ -403,7 +519,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter: vi.fn() },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&version=1.0.0", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
@@ -463,7 +579,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: {
@@ -526,7 +642,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: { "cf-connecting-ip": "1.2.3.4" },

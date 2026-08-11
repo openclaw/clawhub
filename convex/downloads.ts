@@ -18,7 +18,7 @@ import {
   getPublicSkillVersionDownloadBlock,
   isSkillVersionForSkill,
 } from "./lib/skillFileAccess";
-import { buildDeterministicZip } from "./lib/skillZip";
+import { buildDeterministicZipStream } from "./lib/skillZip";
 
 const HOUR_MS = 3_600_000;
 const DOWNLOAD_STAT_JITTER_MS = 60_000;
@@ -117,24 +117,28 @@ export async function downloadZipHandler(ctx: DownloadCtx, request: Request) {
     });
   }
 
-  const entries: Array<{ path: string; bytes: Uint8Array }> = [];
+  const availableFiles = [];
   for (const file of version.files) {
-    const blob = await ctx.storage.get(file.storageId);
-    if (!blob) continue;
-    const buffer = new Uint8Array(await blob.arrayBuffer());
-    entries.push({ path: file.path, bytes: buffer });
+    if (await ctx.storage.getMetadata(file.storageId)) availableFiles.push(file);
   }
-  const zipArray = buildDeterministicZip(entries, {
+  const entries = availableFiles.map((file) => ({
+    path: file.path,
+    loadBytes: async () => {
+      const blob = await ctx.storage.get(file.storageId);
+      if (!blob) throw new Error(`Skill archive file disappeared from storage: ${file.path}`);
+      return new Uint8Array(await blob.arrayBuffer());
+    },
+  }));
+  const zipStream = buildDeterministicZipStream(entries, {
     ownerId: String(skill.ownerUserId),
     slug: skill.slug,
     version: version.version,
     publishedAt: version.createdAt,
   });
-  const zipBlob = new Blob([zipArray], { type: "application/zip" });
 
   await scheduleSkillDownloadMetric(ctx, request, skill._id);
 
-  return new Response(zipBlob, {
+  return new Response(zipStream, {
     status: 200,
     headers: mergeHeaders(
       rate.headers,

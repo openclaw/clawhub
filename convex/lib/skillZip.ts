@@ -6,6 +6,11 @@ type ZipEntry = {
   bytes: Uint8Array;
 };
 
+export type AsyncZipEntry = {
+  path: string;
+  loadBytes: () => Promise<Uint8Array>;
+};
+
 export type SkillZipMeta = {
   ownerId: string;
   slug: string;
@@ -66,6 +71,120 @@ export function buildDeterministicZip(entries: ZipEntry[], meta?: SkillZipMeta) 
   }
 
   return Uint8Array.from(zipSync(zipData, { level: 6 }));
+}
+
+export function buildDeterministicZipStream(entries: AsyncZipEntry[], meta?: SkillZipMeta) {
+  const orderedEntries = orderZipEntries(entries, meta);
+  const centralDirectory: Uint8Array[] = [];
+  let entryIndex = 0;
+  let centralIndex = 0;
+  let localBytes = 0;
+  let centralBytes = 0;
+
+  return new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        try {
+          if (entryIndex < orderedEntries.length) {
+            const entry = orderedEntries[entryIndex++];
+            const bytes = await entry.loadBytes();
+            const singleEntryZip = zipSync(
+              { [entry.path]: [bytes, { mtime: FIXED_ZIP_DATE }] },
+              { level: 6 },
+            );
+            const parts = splitSingleEntryZip(singleEntryZip, localBytes);
+            centralDirectory.push(parts.centralDirectory);
+            localBytes += parts.localFile.length;
+            centralBytes += parts.centralDirectory.length;
+            controller.enqueue(parts.localFile);
+            return;
+          }
+
+          if (centralIndex < centralDirectory.length) {
+            controller.enqueue(centralDirectory[centralIndex++]);
+            return;
+          }
+
+          controller.enqueue(buildZipFooter(orderedEntries.length, centralBytes, localBytes));
+          controller.close();
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+    },
+    { highWaterMark: 0 },
+  );
+}
+
+function orderZipEntries(entries: AsyncZipEntry[], meta?: SkillZipMeta) {
+  const sorted = [...entries].sort((a, b) => a.path.localeCompare(b.path));
+  const byPath = new Map(sorted.map((entry) => [entry.path, entry]));
+  const zipDataOrder: Record<string, true> = {};
+  for (const entry of sorted) zipDataOrder[entry.path] = true;
+
+  if (meta) {
+    const metaBytes = new TextEncoder().encode(JSON.stringify(buildSkillMeta(meta), null, 2));
+    byPath.set("_meta.json", {
+      path: "_meta.json",
+      loadBytes: async () => metaBytes,
+    });
+    zipDataOrder["_meta.json"] = true;
+  }
+
+  return Object.keys(zipDataOrder).map((path) => byPath.get(path)!);
+}
+
+function splitSingleEntryZip(zip: Uint8Array, localOffset: number) {
+  // A one-entry zip preserves fflate's exact compression bytes. Only its central-directory
+  // offset changes when the local record is appended to the full streamed archive.
+  const endOfCentralDirectory = zip.length - 22;
+  if (readUint32(zip, endOfCentralDirectory) !== 0x06054b50) {
+    throw new Error("Invalid single-entry ZIP footer");
+  }
+  const centralSize = readUint32(zip, endOfCentralDirectory + 12);
+  const centralOffset = readUint32(zip, endOfCentralDirectory + 16);
+  if (centralOffset + centralSize !== endOfCentralDirectory) {
+    throw new Error("Invalid single-entry ZIP directory");
+  }
+
+  const centralDirectory = zip.slice(centralOffset, endOfCentralDirectory);
+  writeUint32(centralDirectory, 42, localOffset);
+  return {
+    localFile: zip.subarray(0, centralOffset),
+    centralDirectory,
+  };
+}
+
+function buildZipFooter(entryCount: number, centralSize: number, centralOffset: number) {
+  const footer = new Uint8Array(22);
+  writeUint32(footer, 0, 0x06054b50);
+  writeUint16(footer, 8, entryCount);
+  writeUint16(footer, 10, entryCount);
+  writeUint32(footer, 12, centralSize);
+  writeUint32(footer, 16, centralOffset);
+  return footer;
+}
+
+function readUint32(bytes: Uint8Array, offset: number) {
+  return (
+    (bytes[offset] |
+      (bytes[offset + 1] << 8) |
+      (bytes[offset + 2] << 16) |
+      (bytes[offset + 3] << 24)) >>>
+    0
+  );
+}
+
+function writeUint16(bytes: Uint8Array, offset: number, value: number) {
+  bytes[offset] = value;
+  bytes[offset + 1] = value >>> 8;
+}
+
+function writeUint32(bytes: Uint8Array, offset: number, value: number) {
+  bytes[offset] = value;
+  bytes[offset + 1] = value >>> 8;
+  bytes[offset + 2] = value >>> 16;
+  bytes[offset + 3] = value >>> 24;
 }
 
 export function buildDeterministicPackageZip(entries: ZipEntry[]) {
