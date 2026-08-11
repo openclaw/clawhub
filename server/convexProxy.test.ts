@@ -21,6 +21,7 @@ import {
 } from "./convexProxy";
 
 const TEST_ARCHIVE_DEPENDENCIES = {
+  getArchiveRequestToken: async () => "verified-vercel-oidc",
   verifyArchiveManifest: async (token: string) => ({
     ...(JSON.parse(token) as Record<string, unknown>),
     issuer: "https://preview-branch-123.convex.site",
@@ -138,11 +139,11 @@ describe("Convex HTTP proxy", () => {
             schema: "clawhub.skill-archive-manifest.v1",
             issuedAt: 1_000,
             expiresAt: 31_000,
-            filename: "demo-1.0.0.zip",
+            filename: "demo-1.0.0+build.zip",
             meta: {
               ownerId: "users:1",
               slug: "demo",
-              version: "1.0.0",
+              version: "1.0.0+build",
               publishedAt: 3,
             },
             entries: [
@@ -179,7 +180,9 @@ describe("Convex HTTP proxy", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(Date, "now").mockReturnValue(2_000);
-    const event = mockEvent("https://preview.example/api/v1/download?slug=demo");
+    const event = mockEvent("https://preview.example/api/v1/download?slug=demo", {
+      headers: { "x-clawhub-vercel-oidc-token": "client-forgery" },
+    });
 
     const response = await proxyConvexRequest(
       event,
@@ -194,7 +197,7 @@ describe("Convex HTTP proxy", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("application/zip");
     expect(response.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="demo-1.0.0.zip"',
+      'attachment; filename="demo-1.0.0+build.zip"',
     );
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     expect(response.headers.get("X-RateLimit-Remaining")).toBe("49");
@@ -208,6 +211,9 @@ describe("Convex HTTP proxy", () => {
     expect(
       new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-clawhub-archive-manifest"),
     ).toBe("v1");
+    expect(
+      new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-clawhub-vercel-oidc-token"),
+    ).toBe("verified-vercel-oidc");
     const metricCall = fetchMock.mock.calls.find(
       ([input]) =>
         input.toString() ===

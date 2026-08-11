@@ -170,13 +170,16 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
   and owns the public response headers. Archive bytes must not pass through a
   Convex HTTP action because those responses are capped at 20 MiB.
 - The manifest is an internal server-to-server capability, not a client token.
-  Nitro overwrites the internal request header, never accepts a client-supplied
-  manifest, and accepts it only as a short-lived RS256 JWS signed by the selected
-  Convex deployment's existing auth key and verified from that deployment's
-  JWKS endpoint. The signed issuer, audience, type, and time bounds must match
-  the request, and source URLs are allowed only on the single build-paired
-  Convex deployment's `/api/storage/` surface. Convex storage URLs are reusable
-  bearer URLs, so they must never appear in the public response.
+  Nitro overwrites the internal request headers and authenticates to Convex with
+  its Vercel OIDC identity; Convex verifies the Vercel signature plus the exact
+  ClawHub team, project, subject, audience, and target environment before
+  returning any storage URL. Nitro never accepts a client-supplied manifest and
+  accepts Convex's response only as a short-lived RS256 JWS signed by the
+  selected Convex deployment's existing auth key and verified from that
+  deployment's JWKS endpoint. The signed issuer, audience, type, and time bounds
+  must match the request, and source URLs are allowed only on the single
+  build-paired Convex deployment's `/api/storage/` surface. Convex storage URLs
+  are reusable bearer URLs, so they must never appear in the public response.
 - Download metering is also a signed, short-lived capability. It contains only
   the existing pre-hashed identity and metric arguments, stays inside the
   Convex-to-Nitro boundary, and is returned to Convex only after Nitro opens the

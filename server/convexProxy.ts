@@ -1,3 +1,4 @@
+import { getVercelOidcToken } from "@vercel/oidc";
 import { defineEventHandler, getRequestURL, proxyRequest, type H3Event } from "h3";
 import { compactVerify, type CompactVerifyGetKey, createRemoteJWKSet } from "jose";
 import {
@@ -6,6 +7,11 @@ import {
   ARCHIVE_MANIFEST_JWS_TYPE,
   type SkillArchiveManifest,
 } from "../convex/lib/archiveManifest";
+import {
+  ARCHIVE_REQUEST_IDENTITY_HEADER,
+  CLAWHUB_VERCEL_PROJECT,
+  CLAWHUB_VERCEL_TEAM,
+} from "../convex/lib/clawhubVercelOidc";
 import {
   buildDeterministicZipStream,
   type SkillZipMeta,
@@ -20,7 +26,7 @@ const ARCHIVE_MANIFEST_CLOCK_SKEW_MS = 5_000;
 const MAX_ARCHIVE_MANIFEST_ENTRIES = 8_192;
 const MAX_ARCHIVE_ENTRY_URL_LENGTH = 4_096;
 const MAX_ARCHIVE_MANIFEST_BYTES = 4 * 1024 * 1024;
-const ARCHIVE_FILENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,499}\.zip$/;
+const ARCHIVE_FILENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,499}\.zip$/;
 
 type ProxyEnv = {
   CONVEX_URL?: string;
@@ -32,10 +38,13 @@ type ProxyEnv = {
 };
 
 type ProxyDependencies = {
+  getArchiveRequestToken: () => Promise<string>;
   verifyArchiveManifest: (token: string, target: string) => Promise<unknown>;
 };
 
 const DEFAULT_PROXY_DEPENDENCIES: ProxyDependencies = {
+  getArchiveRequestToken: () =>
+    getVercelOidcToken({ team: CLAWHUB_VERCEL_TEAM, project: CLAWHUB_VERCEL_PROJECT }),
   verifyArchiveManifest: verifySignedArchiveManifest,
 };
 const archiveJwksByOrigin = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
@@ -107,9 +116,28 @@ export async function proxyConvexRequest(
 
   const requestUrl = getRequestURL(event);
   const target = buildConvexProxyTarget(`${requestUrl.pathname}${requestUrl.search}`, env);
+  const isArchiveRequest = isSkillDownloadPath(new URL(target).pathname);
+  let archiveRequestToken: string | undefined;
+  if (isArchiveRequest) {
+    try {
+      archiveRequestToken = await dependencies.getArchiveRequestToken();
+    } catch {
+      return new Response("Archive streaming identity unavailable", {
+        status: 503,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+  }
   const proxied = await proxyRequest(event, target, {
-    ...(isSkillDownloadPath(new URL(target).pathname)
-      ? { fetchOptions: { headers: { [ARCHIVE_MANIFEST_REQUEST_HEADER]: "v1" } } }
+    ...(isArchiveRequest
+      ? {
+          fetchOptions: {
+            headers: {
+              [ARCHIVE_MANIFEST_REQUEST_HEADER]: "v1",
+              [ARCHIVE_REQUEST_IDENTITY_HEADER]: archiveRequestToken!,
+            },
+          },
+        }
       : {}),
   });
   // H3's HTTPResponse is not guaranteed to share Nitro's bundled class identity.

@@ -18,6 +18,12 @@ import {
   verifyArchivePayloadWithLocalJwks,
 } from "./lib/archiveManifest";
 import {
+  ARCHIVE_REQUEST_IDENTITY_HEADER,
+  expectedVercelEnvironmentForConvexSite,
+  type ClawHubVercelEnvironment,
+  verifyClawHubVercelOidcToken,
+} from "./lib/clawhubVercelOidc";
+import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
   isReadyGitHubHandoffTarget,
@@ -43,7 +49,22 @@ const MAX_ARCHIVE_METRIC_TOKEN_BYTES = 16 * 1024;
 
 type DownloadCtx = Parameters<Parameters<typeof httpAction>[0]>[0];
 
-export async function downloadZipHandler(ctx: DownloadCtx, request: Request) {
+type DownloadDependencies = {
+  verifyArchiveRequester: (
+    token: string,
+    expectedEnvironment: ClawHubVercelEnvironment,
+  ) => Promise<unknown>;
+};
+
+const DEFAULT_DOWNLOAD_DEPENDENCIES: DownloadDependencies = {
+  verifyArchiveRequester: verifyClawHubVercelOidcToken,
+};
+
+export async function downloadZipHandler(
+  ctx: DownloadCtx,
+  request: Request,
+  dependencies: DownloadDependencies = DEFAULT_DOWNLOAD_DEPENDENCIES,
+) {
   const url = new URL(request.url);
   const slug = url.searchParams.get("slug")?.trim().toLowerCase();
   const ownerHandle =
@@ -58,6 +79,20 @@ export async function downloadZipHandler(ctx: DownloadCtx, request: Request) {
       status: 400,
       headers: corsHeaders(),
     });
+  }
+
+  const manifestRequested = request.headers.get(ARCHIVE_MANIFEST_REQUEST_HEADER) === "v1";
+  if (manifestRequested) {
+    const token = request.headers.get(ARCHIVE_REQUEST_IDENTITY_HEADER)?.trim();
+    const expectedEnvironment = expectedVercelEnvironmentForConvexSite(request.url);
+    if (!token || !expectedEnvironment) {
+      return unauthorizedArchiveManifestResponse();
+    }
+    try {
+      await dependencies.verifyArchiveRequester(token, expectedEnvironment);
+    } catch {
+      return unauthorizedArchiveManifestResponse();
+    }
   }
 
   const rate = await applyRateLimit(ctx, request, "download");
@@ -142,7 +177,7 @@ export async function downloadZipHandler(ctx: DownloadCtx, request: Request) {
     publishedAt: version.createdAt,
   };
 
-  if (request.headers.get(ARCHIVE_MANIFEST_REQUEST_HEADER) === "v1") {
+  if (manifestRequested) {
     if (version.files.length > MAX_ARCHIVE_MANIFEST_FILES) {
       return new Response("Skill archive contains too many files", {
         status: 413,
@@ -220,6 +255,13 @@ export async function downloadZipHandler(ctx: DownloadCtx, request: Request) {
 }
 
 export const downloadZip = httpAction(downloadZipHandler);
+
+function unauthorizedArchiveManifestResponse() {
+  return new Response("Unauthorized archive manifest request", {
+    status: 401,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
 
 export async function recordArchiveDownloadMetricHandler(ctx: DownloadCtx, request: Request) {
   const token = await readBoundedRequestText(request, MAX_ARCHIVE_METRIC_TOKEN_BYTES);

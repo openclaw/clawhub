@@ -157,7 +157,7 @@ describe("downloads helpers", () => {
           getMetadata: vi.fn().mockResolvedValue({}),
         },
       } as unknown as ActionCtx,
-      new Request("https://example.com/api/v1/download?slug=demo", {
+      new Request("https://preview-branch-123.convex.site/api/v1/download?slug=demo", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
       }),
     );
@@ -217,7 +217,7 @@ describe("downloads helpers", () => {
         return {
           _id: "skillVersions:1",
           skillId: "skills:1",
-          version: "1.0.0",
+          version: "1.0.0+build",
           createdAt: 3,
           files: [
             { path: "SKILL.md", storageId: "_storage:1" },
@@ -251,12 +251,14 @@ describe("downloads helpers", () => {
           getMetadata: vi.fn(),
         },
       } as unknown as ActionCtx,
-      new Request("https://example.com/api/v1/download?slug=demo", {
+      new Request("https://preview-branch-123.convex.site/api/v1/download?slug=demo", {
         headers: {
           "cf-connecting-ip": "1.2.3.4",
           "x-clawhub-archive-manifest": "v1",
+          "x-clawhub-vercel-oidc-token": "vercel-oidc",
         },
       }),
+      { verifyArchiveRequester: vi.fn(async () => undefined) },
     );
 
     expect(response.status).toBe(200);
@@ -269,15 +271,15 @@ describe("downloads helpers", () => {
     )) as SkillArchiveManifest;
     expect(manifest).toEqual({
       schema: "clawhub.skill-archive-manifest.v1",
-      issuer: "https://example.com",
+      issuer: "https://preview-branch-123.convex.site",
       audience: ARCHIVE_MANIFEST_AUDIENCE,
       issuedAt: 10_000,
       expiresAt: 40_000,
-      filename: "demo-1.0.0.zip",
+      filename: "demo-1.0.0+build.zip",
       meta: {
         ownerId: "users:1",
         slug: "demo",
-        version: "1.0.0",
+        version: "1.0.0+build",
         publishedAt: 3,
       },
       entries: [
@@ -295,7 +297,7 @@ describe("downloads helpers", () => {
     )) as ArchiveMetricPayload;
     expect(metricPayload).toMatchObject({
       schema: "clawhub.archive-download-metric.v1",
-      issuer: "https://example.com",
+      issuer: "https://preview-branch-123.convex.site",
       audience: ARCHIVE_METRIC_AUDIENCE,
       issuedAt: 10_000,
       expiresAt: 40_000,
@@ -310,6 +312,33 @@ describe("downloads helpers", () => {
     expect(storageGet).not.toHaveBeenCalled();
     expect(storageGetUrl).toHaveBeenCalledTimes(2);
     expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rejects a direct manifest request without the Nitro Vercel identity", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const verifyArchiveRequester = vi.fn(async () => {
+      throw new Error("invalid Vercel identity");
+    });
+    const response = await downloadZipHandler(
+      { runQuery, runMutation } as unknown as ActionCtx,
+      new Request("https://preview-branch-123.convex.site/api/v1/download?slug=demo", {
+        headers: {
+          "x-clawhub-archive-manifest": "v1",
+          "x-clawhub-vercel-oidc-token": "client-forgery",
+        },
+      }),
+      { verifyArchiveRequester },
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(verifyArchiveRequester).toHaveBeenCalledWith("client-forgery", "preview");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("records only a valid, unexpired archive metric capability", async () => {
