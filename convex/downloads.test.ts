@@ -1,8 +1,20 @@
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { unzipSync } from "fflate";
+import { exportJWK, exportPKCS8, generateKeyPair } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
-import { __test, downloadZipHandler } from "./downloads";
+import { __test, downloadZipHandler, recordArchiveDownloadMetricHandler } from "./downloads";
+import {
+  ARCHIVE_MANIFEST_AUDIENCE,
+  ARCHIVE_MANIFEST_CONTENT_TYPE,
+  ARCHIVE_MANIFEST_JWS_TYPE,
+  ARCHIVE_METRIC_AUDIENCE,
+  ARCHIVE_METRIC_JWS_TYPE,
+  type ArchiveMetricPayload,
+  signArchivePayload,
+  type SkillArchiveManifest,
+  verifyArchivePayloadWithLocalJwks,
+} from "./lib/archiveManifest";
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
@@ -182,6 +194,12 @@ describe("downloads helpers", () => {
   it("returns a bounded archive manifest to the Nitro streaming owner", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const keyPair = await generateKeyPair("RS256", { extractable: true });
+    const privateKey = await exportPKCS8(keyPair.privateKey);
+    const publicKey = await exportJWK(keyPair.publicKey);
+    const jwks = JSON.stringify({ keys: [{ use: "sig", ...publicKey }] });
+    vi.stubEnv("JWT_PRIVATE_KEY", privateKey);
+    vi.stubEnv("JWKS", jwks);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
         return {
@@ -242,12 +260,17 @@ describe("downloads helpers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Type")).toBe(
-      "application/vnd.clawhub.skill-archive-manifest+json",
-    );
+    expect(response.headers.get("Content-Type")).toBe(ARCHIVE_MANIFEST_CONTENT_TYPE);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-    await expect(response.json()).resolves.toEqual({
+    const manifest = (await verifyArchivePayloadWithLocalJwks(
+      await response.text(),
+      ARCHIVE_MANIFEST_JWS_TYPE,
+      jwks,
+    )) as SkillArchiveManifest;
+    expect(manifest).toEqual({
       schema: "clawhub.skill-archive-manifest.v1",
+      issuer: "https://example.com",
+      audience: ARCHIVE_MANIFEST_AUDIENCE,
       issuedAt: 10_000,
       expiresAt: 40_000,
       filename: "demo-1.0.0.zip",
@@ -263,9 +286,92 @@ describe("downloads helpers", () => {
           url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
         },
       ],
+      metricToken: expect.any(String),
+    });
+    const metricPayload = (await verifyArchivePayloadWithLocalJwks(
+      manifest.metricToken!,
+      ARCHIVE_METRIC_JWS_TYPE,
+      jwks,
+    )) as ArchiveMetricPayload;
+    expect(metricPayload).toMatchObject({
+      schema: "clawhub.archive-download-metric.v1",
+      issuer: "https://example.com",
+      audience: ARCHIVE_METRIC_AUDIENCE,
+      issuedAt: 10_000,
+      expiresAt: 40_000,
+      metric: {
+        target: { kind: "skill", id: "skills:1" },
+        identityKind: "ip",
+        identityHash: expect.any(String),
+        dayStart: 0,
+        occurredAt: 10_000,
+      },
     });
     expect(storageGet).not.toHaveBeenCalled();
     expect(storageGetUrl).toHaveBeenCalledTimes(2);
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("records only a valid, unexpired archive metric capability", async () => {
+    const keyPair = await generateKeyPair("RS256", { extractable: true });
+    const privateKey = await exportPKCS8(keyPair.privateKey);
+    const publicKey = await exportJWK(keyPair.publicKey);
+    const jwks = JSON.stringify({ keys: [{ use: "sig", ...publicKey }] });
+    vi.stubEnv("JWKS", jwks);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const payload: ArchiveMetricPayload = {
+      schema: "clawhub.archive-download-metric.v1",
+      issuer: "https://example.com",
+      audience: ARCHIVE_METRIC_AUDIENCE,
+      issuedAt: 1_000,
+      expiresAt: 31_000,
+      metric: {
+        target: { kind: "skill", id: "skills:1" },
+        identityKind: "ip",
+        identityHash: "identity-hash",
+        dayStart: 0,
+        occurredAt: 1_000,
+      },
+    };
+    const token = await signArchivePayload(payload, ARCHIVE_METRIC_JWS_TYPE, privateKey);
+    const runAfter = vi.fn();
+    const ctx = { scheduler: { runAfter } } as unknown as ActionCtx;
+
+    const response = await recordArchiveDownloadMetricHandler(
+      ctx,
+      new Request("https://example.com/api/internal/archive-download-metric", {
+        method: "POST",
+        body: token,
+      }),
+    );
+    expect(response.status).toBe(204);
+    expect(runAfter).toHaveBeenCalledWith(expect.any(Number), expect.anything(), payload.metric);
+
+    const [header, body, signature] = token.split(".");
+    const modifiedBody = `${body!.slice(0, -1)}${body!.endsWith("A") ? "B" : "A"}`;
+    const modifiedToken = `${header}.${modifiedBody}.${signature}`;
+    const modifiedResponse = await recordArchiveDownloadMetricHandler(
+      ctx,
+      new Request("https://example.com/api/internal/archive-download-metric", {
+        method: "POST",
+        body: modifiedToken,
+      }),
+    );
+    expect(modifiedResponse.status).toBe(401);
+
+    const expiredToken = await signArchivePayload(
+      { ...payload, expiresAt: 1_500 },
+      ARCHIVE_METRIC_JWS_TYPE,
+      privateKey,
+    );
+    const expiredResponse = await recordArchiveDownloadMetricHandler(
+      ctx,
+      new Request("https://example.com/api/internal/archive-download-metric", {
+        method: "POST",
+        body: expiredToken,
+      }),
+    );
+    expect(expiredResponse.status).toBe(401);
     expect(runAfter).toHaveBeenCalledTimes(1);
   });
 

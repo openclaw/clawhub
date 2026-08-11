@@ -1,4 +1,11 @@
 import { defineEventHandler, getRequestURL, proxyRequest, type H3Event } from "h3";
+import { compactVerify, type CompactVerifyGetKey, createRemoteJWKSet } from "jose";
+import {
+  ARCHIVE_MANIFEST_AUDIENCE,
+  ARCHIVE_MANIFEST_CONTENT_TYPE,
+  ARCHIVE_MANIFEST_JWS_TYPE,
+  type SkillArchiveManifest,
+} from "../convex/lib/archiveManifest";
 import {
   buildDeterministicZipStream,
   type SkillZipMeta,
@@ -7,7 +14,6 @@ import {
 } from "../convex/lib/skillZip";
 import { convexDeploymentName, resolveConvexSiteUrl } from "../src/lib/convexDeploymentUrl";
 
-const ARCHIVE_MANIFEST_CONTENT_TYPE = "application/vnd.clawhub.skill-archive-manifest+json";
 const ARCHIVE_MANIFEST_REQUEST_HEADER = "x-clawhub-archive-manifest";
 const ARCHIVE_MANIFEST_MAX_AGE_MS = 60_000;
 const ARCHIVE_MANIFEST_CLOCK_SKEW_MS = 5_000;
@@ -15,15 +21,6 @@ const MAX_ARCHIVE_MANIFEST_ENTRIES = 8_192;
 const MAX_ARCHIVE_ENTRY_URL_LENGTH = 4_096;
 const MAX_ARCHIVE_MANIFEST_BYTES = 4 * 1024 * 1024;
 const ARCHIVE_FILENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,499}\.zip$/;
-
-type SkillArchiveManifest = {
-  schema: "clawhub.skill-archive-manifest.v1";
-  issuedAt: number;
-  expiresAt: number;
-  filename: string;
-  meta: SkillZipMeta;
-  entries: Array<{ path: string; url: string }>;
-};
 
 type ProxyEnv = {
   CONVEX_URL?: string;
@@ -33,6 +30,15 @@ type ProxyEnv = {
   VITE_CONVEX_SITE_URL?: string;
   VITE_CONVEX_URL?: string;
 };
+
+type ProxyDependencies = {
+  verifyArchiveManifest: (token: string, target: string) => Promise<unknown>;
+};
+
+const DEFAULT_PROXY_DEPENDENCIES: ProxyDependencies = {
+  verifyArchiveManifest: verifySignedArchiveManifest,
+};
+const archiveJwksByOrigin = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 const BUNDLED_PROXY_ENV: ProxyEnv = {
   VITE_CLAWHUB_DEPLOY_ENV: import.meta.env.VITE_CLAWHUB_DEPLOY_ENV,
@@ -86,6 +92,7 @@ export function buildConvexProxyTarget(pathAndQuery: string, env: ProxyEnv) {
 export async function proxyConvexRequest(
   event: H3Event,
   env: ProxyEnv = resolveConvexProxyEnv(process.env),
+  dependencies: ProxyDependencies = DEFAULT_PROXY_DEPENDENCIES,
 ): Promise<Response> {
   if (!isConvexProxyMethodAllowed(event.req.method, env)) {
     return new Response("Disposable previews are read-only.", {
@@ -112,10 +119,21 @@ export async function proxyConvexRequest(
     statusText: proxied.statusText,
     headers: proxied.headers,
   });
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+  if (contentType === ARCHIVE_MANIFEST_CONTENT_TYPE) {
+    return streamSkillArchive(
+      response,
+      env,
+      target,
+      event.req.signal,
+      dependencies.verifyArchiveManifest,
+    );
+  }
   if (
-    response.headers.get("content-type")?.split(";", 1)[0]?.trim() === ARCHIVE_MANIFEST_CONTENT_TYPE
+    isSkillDownloadPath(new URL(target).pathname) &&
+    contentType?.startsWith("application/vnd.clawhub.skill-archive-manifest")
   ) {
-    return streamSkillArchive(response, env, target, event.req.signal);
+    return new Response("Invalid or expired archive manifest", { status: 502 });
   }
   if (isPreviewFrontend(env) || isTestFrontend(env)) {
     const deployment = convexDeploymentName(target);
@@ -138,15 +156,41 @@ async function streamSkillArchive(
   env: ProxyEnv,
   target: string,
   signal: AbortSignal,
+  verifyArchiveManifest: ProxyDependencies["verifyArchiveManifest"],
 ) {
+  let value: unknown;
+  try {
+    const token = await readBoundedArchiveManifest(manifestResponse);
+    if (!token) return new Response("Invalid or expired archive manifest", { status: 502 });
+    value = await verifyArchiveManifest(token, target);
+  } catch {
+    return new Response("Invalid or expired archive manifest", { status: 502 });
+  }
+  const expectedStorageOrigin = resolveConvexStorageOrigin(target, env);
   const manifest = parseSkillArchiveManifest(
-    await readBoundedArchiveManifest(manifestResponse),
-    env,
+    value,
+    new URL(target).origin,
+    expectedStorageOrigin,
     Date.now(),
   );
   if (!manifest) {
     return new Response("Invalid or expired archive manifest", { status: 502 });
   }
+
+  let metricRecorded = false;
+  const recordMetric = async () => {
+    if (metricRecorded || !manifest.metricToken) return;
+    metricRecorded = true;
+    try {
+      await fetch(new URL("/api/internal/archive-download-metric", target), {
+        method: "POST",
+        headers: { "content-type": "application/jose" },
+        body: manifest.metricToken,
+      });
+    } catch {
+      // Download metrics remain best-effort and never interrupt archive bytes.
+    }
+  };
 
   const stream = buildDeterministicZipStream(
     manifest.entries.map((entry) => ({
@@ -157,6 +201,7 @@ async function streamSkillArchive(
         if (!response.ok || !response.body) {
           throw new Error(`Failed to fetch archive entry: ${response.status}`);
         }
+        await recordMetric();
         return response.body;
       },
     })),
@@ -179,7 +224,7 @@ async function streamSkillArchive(
   return response;
 }
 
-async function readBoundedArchiveManifest(response: Response): Promise<unknown> {
+async function readBoundedArchiveManifest(response: Response) {
   const contentLength = response.headers.get("content-length");
   if (contentLength) {
     const declaredBytes = Number.parseInt(contentLength, 10);
@@ -209,21 +254,25 @@ async function readBoundedArchiveManifest(response: Response): Promise<unknown> 
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  } catch {
-    return null;
-  }
+  return new TextDecoder().decode(bytes);
 }
 
 function parseSkillArchiveManifest(
   value: unknown,
-  env: ProxyEnv,
+  expectedIssuer: string,
+  expectedStorageOrigin: string | null,
   now: number,
 ): SkillArchiveManifest | null {
   if (!value || typeof value !== "object") return null;
   const manifest = value as Partial<SkillArchiveManifest>;
   if (manifest.schema !== "clawhub.skill-archive-manifest.v1") return null;
+  if (
+    manifest.issuer !== expectedIssuer ||
+    manifest.audience !== ARCHIVE_MANIFEST_AUDIENCE ||
+    !expectedStorageOrigin
+  ) {
+    return null;
+  }
   if (!Number.isFinite(manifest.issuedAt) || !Number.isFinite(manifest.expiresAt)) return null;
   const issuedAt = manifest.issuedAt as number;
   const expiresAt = manifest.expiresAt as number;
@@ -236,8 +285,13 @@ function parseSkillArchiveManifest(
   if (!Array.isArray(manifest.entries) || manifest.entries.length > MAX_ARCHIVE_MANIFEST_ENTRIES) {
     return null;
   }
+  if (
+    manifest.metricToken !== undefined &&
+    (typeof manifest.metricToken !== "string" || manifest.metricToken.length > 16 * 1024)
+  ) {
+    return null;
+  }
 
-  const allowedOrigins = getConvexStorageOrigins(env);
   const seenPaths = new Set<string>();
   for (const entry of manifest.entries) {
     if (!entry || typeof entry !== "object") return null;
@@ -253,7 +307,7 @@ function parseSkillArchiveManifest(
     } catch {
       return null;
     }
-    if (url.username || url.password || !allowedOrigins.has(url.origin)) return null;
+    if (url.username || url.password || url.origin !== expectedStorageOrigin) return null;
     if (!url.pathname.startsWith("/api/storage/")) return null;
   }
   return manifest as SkillArchiveManifest;
@@ -274,22 +328,50 @@ function isSkillZipMeta(value: unknown): value is SkillZipMeta {
   );
 }
 
-function getConvexStorageOrigins(env: ProxyEnv) {
-  const origins = new Set<string>();
-  for (const candidate of [
-    env.VITE_CONVEX_URL,
-    env.CONVEX_URL,
-    env.VITE_CONVEX_SITE_URL,
-    resolveConvexSiteUrl(env),
-  ]) {
-    if (!candidate) continue;
-    try {
-      origins.add(new URL(candidate).origin);
-    } catch {
-      // Invalid environment candidates are ignored; resolveConvexSiteUrl owns the hard failure.
-    }
+export async function verifySignedArchiveManifest(
+  token: string,
+  target: string,
+  jwksOverride?: CompactVerifyGetKey,
+) {
+  const targetOrigin = new URL(target).origin;
+  let jwks = jwksOverride ?? archiveJwksByOrigin.get(targetOrigin);
+  if (!jwks) {
+    const remoteJwks = createRemoteJWKSet(new URL("/.well-known/jwks.json", targetOrigin));
+    archiveJwksByOrigin.set(targetOrigin, remoteJwks);
+    jwks = remoteJwks;
   }
-  return origins;
+  const verified = await compactVerify(token, jwks, { algorithms: ["RS256"] });
+  if (verified.protectedHeader.typ !== ARCHIVE_MANIFEST_JWS_TYPE) {
+    throw new Error("Unexpected archive manifest signature type");
+  }
+  return JSON.parse(new TextDecoder().decode(verified.payload)) as unknown;
+}
+
+export function resolveConvexStorageOrigin(target: string, env: ProxyEnv) {
+  let targetOrigin: string;
+  let selectedSiteOrigin: string;
+  let cloudUrl: URL;
+  try {
+    targetOrigin = new URL(target).origin;
+    selectedSiteOrigin = resolveConvexSiteUrl(env);
+    cloudUrl = new URL(env.VITE_CONVEX_URL ?? env.CONVEX_URL ?? "");
+  } catch {
+    return null;
+  }
+  if (targetOrigin !== selectedSiteOrigin) return null;
+
+  const isLocalCloud =
+    cloudUrl.protocol === "http:" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(cloudUrl.hostname);
+  if (isLocalCloud) return cloudUrl.origin;
+  if (cloudUrl.protocol !== "https:" || !cloudUrl.hostname.endsWith(".convex.cloud")) {
+    return null;
+  }
+
+  const targetDeployment = convexDeploymentName(target);
+  const cloudDeployment = cloudUrl.hostname.slice(0, -".convex.cloud".length);
+  if (targetDeployment && targetDeployment !== cloudDeployment) return null;
+  return cloudUrl.origin;
 }
 
 export default defineEventHandler((event) => proxyConvexRequest(event));
