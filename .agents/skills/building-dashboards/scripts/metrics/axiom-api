@@ -8,6 +8,8 @@
 #
 # Reads credentials from ~/.axiom.toml (shared with axiom-sre)
 # Set AXIOM_URL_OVERRIDE to route requests to a specific edge deployment endpoint.
+# Set AXIOM_CONNECT_TIMEOUT / AXIOM_MAX_TIME (seconds) to override the default
+# connection (10s) and total request (120s) timeouts.
 #
 # Examples:
 #   axiom-api prod GET /v1/datasets
@@ -54,6 +56,8 @@ fi
 
 CURL_ARGS=(
     -s
+    --connect-timeout "${AXIOM_CONNECT_TIMEOUT:-10}"
+    --max-time "${AXIOM_MAX_TIME:-120}"
     -w '\n%{http_code}'
     -X "$METHOD"
     -H "Authorization: Bearer $TOKEN"

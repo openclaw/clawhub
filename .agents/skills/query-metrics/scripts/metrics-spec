@@ -1,31 +1,18 @@
 #!/usr/bin/env bash
-# metrics-spec: Fetch the metrics query specification from Axiom
+# metrics-spec: Fetch the MPL metrics query specification from Axiom
 #
-# Usage: metrics-spec <deployment> <dataset>
+# Usage: metrics-spec
 #
-# Calls OPTIONS /v1/query/_mpl to retrieve the complete metrics query
-# spec with syntax, operators, and examples. Read this before composing queries.
-#
-# The dataset is needed to resolve the correct edge deployment URL.
-#
-# Example:
-#   metrics-spec prod my-metrics-dataset
+# Retrieves the complete MPL query spec with syntax, operators, and examples.
+# Read this before composing queries.
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SPEC_URL="https://us-east-1.aws.edge.axiom.co/v1/query/_mpl"
 
-DEPLOYMENT="${1:-}"
-DATASET="${2:-}"
-
-if [[ -z "$DEPLOYMENT" || -z "$DATASET" ]]; then
-    echo "Usage: metrics-spec <deployment> <dataset>" >&2
-    exit 1
-fi
-
-RESOLVED_URL=$("$SCRIPT_DIR/resolve-url" "$DEPLOYMENT" "$DATASET" 2>/dev/null || true)
-if [[ -n "$RESOLVED_URL" ]]; then
-    export AXIOM_URL_OVERRIDE="$RESOLVED_URL"
-fi
-
-AXIOM_ACCEPT="text/markdown" "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" OPTIONS "/v1/query/_mpl"
+# Match the timeout convention used by axiom-api so a stalled edge can't hang
+# the caller indefinitely. Override via AXIOM_CONNECT_TIMEOUT / AXIOM_MAX_TIME.
+curl -sS -X OPTIONS -H "Accept: text/markdown" \
+    --connect-timeout "${AXIOM_CONNECT_TIMEOUT:-10}" \
+    --max-time "${AXIOM_MAX_TIME:-120}" \
+    "$SPEC_URL"

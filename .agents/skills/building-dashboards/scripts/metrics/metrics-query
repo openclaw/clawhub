@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
 # metrics-query: Execute a metrics query against Axiom MetricsDB
 #
-# Usage: metrics-query [-p name=value]... <deployment> <mpl> <startTime> <endTime>
+# Usage: metrics-query [-p name=value]... [-w pixels] [--pixel-per-point n] \
+#        <deployment> <mpl> <startTime> <endTime>
 #
 # Times: RFC3339 (e.g. 2025-01-01T00:00:00Z) or relative (e.g. now-1h, now-1d).
+#
+# Adaptive resolution ($__interval):
+#   Reference $__interval anywhere a Duration is expected (e.g.
+#   `align to $__interval using avg`, `bucket to $__interval ...`) and the
+#   server resolves it to a "nice" step computed from the query time range and
+#   the target chart width. No `param $__interval` declaration is needed -- the
+#   metrics service registers it automatically. Tune the density with:
+#     -w / --chart-width <pixels>   target chart width; the server aims for
+#                                   ~chart-width/pixel-per-point buckets
+#                                   (default ~500 buckets when -w is omitted).
+#     --pixel-per-point <n>         pixels per data point (server default 10).
+#   Both are forwarded under the request body's queryOptions object.
 #
 # Parameter values (-p / --param name=value, repeatable):
 #   For each MPL parameter declared in the query (e.g. `param $svc: string;`),
@@ -32,6 +45,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PARAMS=()
 POSITIONAL=()
+CHART_WIDTH=""
+PIXEL_PER_POINT=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -p|--param)
@@ -44,6 +59,30 @@ while [[ $# -gt 0 ]]; do
             ;;
         --param=*)
             PARAMS+=("${1#--param=}")
+            shift
+            ;;
+        -w|--chart-width)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires a pixel-width argument" >&2
+                exit 1
+            fi
+            CHART_WIDTH="$2"
+            shift 2
+            ;;
+        --chart-width=*)
+            CHART_WIDTH="${1#--chart-width=}"
+            shift
+            ;;
+        --pixel-per-point)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires an integer argument" >&2
+                exit 1
+            fi
+            PIXEL_PER_POINT="$2"
+            shift 2
+            ;;
+        --pixel-per-point=*)
+            PIXEL_PER_POINT="${1#--pixel-per-point=}"
             shift
             ;;
         --)
@@ -63,13 +102,17 @@ START_TIME="${POSITIONAL[2]:-}"
 END_TIME="${POSITIONAL[3]:-}"
 
 if [[ -z "$DEPLOYMENT" || -z "$MPL" || -z "$START_TIME" || -z "$END_TIME" ]]; then
-    echo "Usage: metrics-query [-p name=value]... <deployment> <mpl> <startTime> <endTime>" >&2
+    echo "Usage: metrics-query [-p name=value]... [-w pixels] [--pixel-per-point n] <deployment> <mpl> <startTime> <endTime>" >&2
     echo "" >&2
     echo "Times: RFC3339 (e.g. 2025-01-01T00:00:00Z) or relative (e.g. now-1h, now-1d)." >&2
     echo "" >&2
     echo "-p / --param name=value (repeatable): supply an MPL parameter value." >&2
     echo "  name  - variable name without the leading \$ (e.g. 'svc' for \$svc)." >&2
     echo "  value - MPL literal, forwarded verbatim under params.param__<name>." >&2
+    echo "" >&2
+    echo "-w / --chart-width <pixels>   target chart width; lets the server resolve" >&2
+    echo "                              \$__interval to a nice step (queryOptions)." >&2
+    echo "--pixel-per-point <n>         pixels per data point (server default 10)." >&2
     exit 1
 fi
 
@@ -95,6 +138,17 @@ if [[ ${#PARAMS[@]} -gt 0 ]]; then
         PARAM_NAMES+=("$name")
         PARAM_VALUES+=("$value")
     done
+fi
+
+# Validate the optional chart-sizing options. They must be positive integers;
+# they are forwarded under queryOptions so the server can resolve $__interval.
+if [[ -n "$CHART_WIDTH" && ! "$CHART_WIDTH" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: --chart-width must be a positive integer (got: $CHART_WIDTH)" >&2
+    exit 1
+fi
+if [[ -n "$PIXEL_PER_POINT" && ! "$PIXEL_PER_POINT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: --pixel-per-point must be a positive integer (got: $PIXEL_PER_POINT)" >&2
+    exit 1
 fi
 
 # Extract dataset name from MPL: `dataset`:`metric` ... or dataset:`metric` ...
@@ -139,6 +193,23 @@ if [[ ${#PARAM_NAMES[@]} -gt 0 ]]; then
         PARAMS_EXPR+="{(\"param__\" + \$pn$i): \$pv$i}"
     done
     JQ_EXPR="$JQ_EXPR + {params: ($PARAMS_EXPR)}"
+fi
+
+# Forward chart-sizing hints under queryOptions. The edge translates these into
+# the x-axiom-chart-width / x-axiom-pixel-per-point headers, which the metrics
+# service uses to resolve $__interval. Values are JSON numbers (--argjson).
+if [[ -n "$CHART_WIDTH" || -n "$PIXEL_PER_POINT" ]]; then
+    QO_EXPR=""
+    if [[ -n "$CHART_WIDTH" ]]; then
+        JQ_ARGS+=(--argjson chartWidth "$CHART_WIDTH")
+        QO_EXPR="{\"chart-width\": \$chartWidth}"
+    fi
+    if [[ -n "$PIXEL_PER_POINT" ]]; then
+        JQ_ARGS+=(--argjson pixelPerPoint "$PIXEL_PER_POINT")
+        if [[ -n "$QO_EXPR" ]]; then QO_EXPR+=" + "; fi
+        QO_EXPR+="{\"pixel-per-point\": \$pixelPerPoint}"
+    fi
+    JQ_EXPR="$JQ_EXPR + {queryOptions: ($QO_EXPR)}"
 fi
 
 BODY=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
