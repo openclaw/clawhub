@@ -376,7 +376,9 @@ describe("Convex HTTP proxy", () => {
   });
 
   it("produces identical archive bytes when storage streams use different chunk boundaries", async () => {
-    const storedBody = new Uint8Array(2 * 1024 * 1024);
+    // Cross many normalization boundaries without making full-suite coverage
+    // instrumentation dominate the repository's 15-second test timeout.
+    const storedBody = new Uint8Array(512 * 1024);
     let randomState = 0x3451cafe;
     for (let index = 0; index < storedBody.length; index += 1) {
       randomState ^= randomState << 13;
