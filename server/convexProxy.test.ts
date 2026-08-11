@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { unzipSync } from "fflate";
 import { mockEvent } from "h3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,6 +12,7 @@ import {
 
 describe("Convex HTTP proxy", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -90,6 +92,218 @@ describe("Convex HTTP proxy", () => {
       expect.objectContaining({ method: "GET" }),
     );
     expect(response.headers.get("X-ClawHub-Preview-Backend")).toBe("preview-branch-123");
+  });
+
+  it("streams hosted downloads from a Convex manifest with the final attachment filename", async () => {
+    const storedBody = new TextEncoder().encode("# streamed skill\n");
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.startsWith("https://preview-branch-123.convex.site/api/v1/download")) {
+        return Response.json(
+          {
+            schema: "clawhub.skill-archive-manifest.v1",
+            issuedAt: 1_000,
+            expiresAt: 31_000,
+            filename: "demo-1.0.0.zip",
+            meta: {
+              ownerId: "users:1",
+              slug: "demo",
+              version: "1.0.0",
+              publishedAt: 3,
+            },
+            entries: [
+              {
+                path: "SKILL.md",
+                url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+              },
+              {
+                path: "stale.txt",
+                url: "https://preview-branch-123.convex.cloud/api/storage/storage-missing",
+              },
+            ],
+          },
+          {
+            headers: {
+              "cache-control": "private, no-store",
+              "content-type": "application/vnd.clawhub.skill-archive-manifest+json",
+              "x-ratelimit-remaining": "49",
+            },
+          },
+        );
+      }
+      if (url === "https://preview-branch-123.convex.cloud/api/storage/storage-1") {
+        return new Response(storedBody, { status: 200 });
+      }
+      if (url === "https://preview-branch-123.convex.cloud/api/storage/storage-missing") {
+        return new Response("missing", { status: 404 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const event = mockEvent("https://preview.example/api/v1/download?slug=demo");
+
+    const response = await proxyConvexRequest(event, {
+      VERCEL_ENV: "preview",
+      VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+      VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/zip");
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="demo-1.0.0.zip"',
+    );
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("X-RateLimit-Remaining")).toBe("49");
+    expect(response.headers.get("X-ClawHub-Preview-Backend")).toBe("preview-branch-123");
+    const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(archive["SKILL.md"]).toEqual(storedBody);
+    expect(Object.keys(archive).sort()).toEqual(["SKILL.md", "_meta.json"]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://preview-branch-123.convex.site/api/v1/download?slug=demo",
+    );
+    expect(
+      new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-clawhub-archive-manifest"),
+    ).toBe("v1");
+  });
+
+  it("rejects archive manifests that point outside the paired Convex storage origin", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.startsWith("https://preview-branch-123.convex.site/api/v1/download")) {
+        return Response.json(
+          {
+            schema: "clawhub.skill-archive-manifest.v1",
+            issuedAt: 1_000,
+            expiresAt: 31_000,
+            filename: "demo-1.0.0.zip",
+            meta: {
+              ownerId: "users:1",
+              slug: "demo",
+              version: "1.0.0",
+              publishedAt: 3,
+            },
+            entries: [{ path: "SKILL.md", url: "https://attacker.example/private" }],
+          },
+          { headers: { "content-type": "application/vnd.clawhub.skill-archive-manifest+json" } },
+        );
+      }
+      throw new Error(`Security boundary crossed: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const event = mockEvent("https://preview.example/api/v1/download?slug=demo");
+
+    const response = await proxyConvexRequest(event, {
+      VERCEL_ENV: "preview",
+      VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+      VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+    });
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe("Invalid or expired archive manifest");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an expired archive manifest before fetching any stored file", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        {
+          schema: "clawhub.skill-archive-manifest.v1",
+          issuedAt: 1_000,
+          expiresAt: 2_000,
+          filename: "demo-1.0.0.zip",
+          meta: {
+            ownerId: "users:1",
+            slug: "demo",
+            version: "1.0.0",
+            publishedAt: 3,
+          },
+          entries: [
+            {
+              path: "SKILL.md",
+              url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+            },
+          ],
+        },
+        { headers: { "content-type": "application/vnd.clawhub.skill-archive-manifest+json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_001);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/download?slug=demo"),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+    );
+
+    expect(response.status).toBe(502);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not accept a client-supplied manifest replay", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response("Skill not found", { status: 404 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const event = mockEvent("https://preview.example/api/v1/download?slug=demo&manifest=replayed", {
+      headers: { "x-clawhub-archive-manifest": "replayed-v0" },
+    });
+
+    const response = await proxyConvexRequest(event, {
+      VERCEL_ENV: "preview",
+      VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+      VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+    });
+
+    expect(response.status).toBe(404);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://preview-branch-123.convex.site/api/v1/download?slug=demo&manifest=replayed",
+    );
+    expect(
+      new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-clawhub-archive-manifest"),
+    ).toBe("v1");
+  });
+
+  it("rejects an oversized manifest body", async () => {
+    const bodyRead = vi.fn();
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              bodyRead();
+              controller.enqueue(new Uint8Array(1024 * 1024));
+            },
+          }),
+          {
+            headers: {
+              "content-length": String(4 * 1024 * 1024 + 1),
+              "content-type": "application/vnd.clawhub.skill-archive-manifest+json",
+            },
+          },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/download?slug=demo"),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+    );
+
+    expect(response.status).toBe(502);
+    expect(bodyRead.mock.calls.length).toBeGreaterThanOrEqual(5);
+    expect(bodyRead.mock.calls.length).toBeLessThanOrEqual(6);
   });
 
   it("exposes the permanent Test backend name for deployment proof", async () => {

@@ -163,7 +163,17 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 ## Download API
 
 - JSON API for skill metadata + versions.
-- Download endpoint returns zip of a version (HTTP action).
+- Convex remains the download control plane: it resolves the version, applies
+  moderation and rate limits, preserves auth-derived metering, and returns the
+  Nitro API owner a bounded, no-store manifest of Convex File Storage URLs.
+- Nitro streams those source files into the deterministic ZIP with backpressure
+  and owns the public response headers. Archive bytes must not pass through a
+  Convex HTTP action because those responses are capped at 20 MiB.
+- The manifest is an internal server-to-server capability, not a client token.
+  Nitro overwrites the internal request header, never accepts a client-supplied
+  manifest, rejects expired or overlong manifests, and permits source URLs only
+  on the paired Convex deployment's `/api/storage/` surface. Convex storage URLs
+  are reusable bearer URLs, so they must never appear in the public response.
 - Soft-delete versions; downloads remain for non-deleted versions only.
 
 ## UI (SPA)
@@ -187,5 +197,6 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 ## Open questions (carry forward)
 
 - Embeddings provider key + rate limits.
-- Zip generation memory limits (optimize with streaming if needed).
+- ZIP generation must remain backpressured; never buffer a whole stored entry
+  or completed archive in either Convex or Nitro.
 - GitHub App repo sync (phase 2).

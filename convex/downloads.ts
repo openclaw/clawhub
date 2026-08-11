@@ -22,6 +22,11 @@ import { buildDeterministicZipStream } from "./lib/skillZip";
 
 const HOUR_MS = 3_600_000;
 const DOWNLOAD_STAT_JITTER_MS = 60_000;
+const ARCHIVE_MANIFEST_REQUEST_HEADER = "x-clawhub-archive-manifest";
+const ARCHIVE_MANIFEST_CONTENT_TYPE = "application/vnd.clawhub.skill-archive-manifest+json";
+const ARCHIVE_MANIFEST_TTL_MS = 30_000;
+const MAX_ARCHIVE_MANIFEST_FILES = 8_192;
+const MAX_ARCHIVE_MANIFEST_BYTES = 4 * 1024 * 1024;
 
 type DownloadCtx = Parameters<Parameters<typeof httpAction>[0]>[0];
 
@@ -117,16 +122,60 @@ export async function downloadZipHandler(ctx: DownloadCtx, request: Request) {
     });
   }
 
-  const entries = version.files.map((file) => ({
-    path: file.path,
-    openStream: async () => (await ctx.storage.get(file.storageId))?.stream() ?? null,
-  }));
-  const zipStream = buildDeterministicZipStream(entries, {
+  const meta = {
     ownerId: String(skill.ownerUserId),
     slug: skill.slug,
     version: version.version,
     publishedAt: version.createdAt,
-  });
+  };
+
+  if (request.headers.get(ARCHIVE_MANIFEST_REQUEST_HEADER) === "v1") {
+    if (version.files.length > MAX_ARCHIVE_MANIFEST_FILES) {
+      return new Response("Skill archive contains too many files", {
+        status: 413,
+        headers: mergeHeaders(rate.headers, corsHeaders()),
+      });
+    }
+    const entries: Array<{ path: string; url: string }> = [];
+    for (const file of version.files) {
+      const fileUrl = await ctx.storage.getUrl(file.storageId);
+      if (fileUrl) entries.push({ path: file.path, url: fileUrl });
+    }
+    const issuedAt = Date.now();
+    const manifestJson = JSON.stringify({
+      schema: "clawhub.skill-archive-manifest.v1",
+      issuedAt,
+      expiresAt: issuedAt + ARCHIVE_MANIFEST_TTL_MS,
+      filename: `${slug}-${version.version}.zip`,
+      meta,
+      entries,
+    });
+    if (new TextEncoder().encode(manifestJson).byteLength > MAX_ARCHIVE_MANIFEST_BYTES) {
+      return new Response("Skill archive manifest is too large", {
+        status: 413,
+        headers: mergeHeaders(rate.headers, corsHeaders()),
+      });
+    }
+
+    await scheduleSkillDownloadMetric(ctx, request, skill._id);
+    return new Response(manifestJson, {
+      status: 200,
+      headers: mergeHeaders(
+        rate.headers,
+        {
+          "Content-Type": ARCHIVE_MANIFEST_CONTENT_TYPE,
+          "Cache-Control": "private, no-store",
+        },
+        corsHeaders(),
+      ),
+    });
+  }
+
+  const entries = version.files.map((file) => ({
+    path: file.path,
+    openStream: async () => (await ctx.storage.get(file.storageId))?.stream() ?? null,
+  }));
+  const zipStream = buildDeterministicZipStream(entries, meta);
 
   await scheduleSkillDownloadMetric(ctx, request, skill._id);
 

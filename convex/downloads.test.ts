@@ -59,6 +59,7 @@ function streamingBlob(text: string) {
 
 describe("downloads helpers", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
@@ -139,7 +140,10 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
+        storage: {
+          get: storageGet,
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
@@ -148,8 +152,9 @@ describe("downloads helpers", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("application/zip");
-    await response.arrayBuffer();
+    const archive = new Uint8Array(await response.arrayBuffer());
     expect(storageGet).toHaveBeenCalledWith("_storage:1");
+    expect(new TextDecoder().decode(unzipSync(archive)["SKILL.md"])).toBe("hello");
 
     const recordCalls = runAfter.mock.calls.filter(([, , args]) => {
       if (!args || typeof args !== "object") return false;
@@ -172,6 +177,96 @@ describe("downloads helpers", () => {
       dayStart: expect.any(Number),
       occurredAt: expect.any(Number),
     });
+  });
+
+  it("returns a bounded archive manifest to the Nitro streaming owner", async () => {
+    vi.stubEnv("TRUST_FORWARDED_IPS", "true");
+    vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [
+            { path: "SKILL.md", storageId: "_storage:1" },
+            { path: "missing.txt", storageId: "_storage:missing" },
+          ],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+    const runAfter = vi.fn();
+    const storageGet = vi.fn();
+    const storageGetUrl = vi.fn(async (storageId: string) =>
+      storageId === "_storage:1"
+        ? "https://preview-branch-123.convex.cloud/api/storage/storage-1"
+        : null,
+    );
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter },
+        storage: {
+          get: storageGet,
+          getUrl: storageGetUrl,
+          getMetadata: vi.fn(),
+        },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo", {
+        headers: {
+          "cf-connecting-ip": "1.2.3.4",
+          "x-clawhub-archive-manifest": "v1",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(
+      "application/vnd.clawhub.skill-archive-manifest+json",
+    );
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toEqual({
+      schema: "clawhub.skill-archive-manifest.v1",
+      issuedAt: 10_000,
+      expiresAt: 40_000,
+      filename: "demo-1.0.0.zip",
+      meta: {
+        ownerId: "users:1",
+        slug: "demo",
+        version: "1.0.0",
+        publishedAt: 3,
+      },
+      entries: [
+        {
+          path: "SKILL.md",
+          url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+        },
+      ],
+    });
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(storageGetUrl).toHaveBeenCalledTimes(2);
+    expect(runAfter).toHaveBeenCalledTimes(1);
   });
 
   it("streams stored file chunks, stays deterministic, and skips a Blob that vanishes", async () => {
@@ -630,6 +725,7 @@ describe("downloads helpers", () => {
     });
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
+      if (Object.keys(args).length === 0) return "https://upload.example";
       return { tokenTouched: "tokenId" in args };
     });
     const runAfter = vi.fn();
@@ -640,7 +736,10 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
+        storage: {
+          get: storageGet,
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: {
@@ -693,6 +792,7 @@ describe("downloads helpers", () => {
     });
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
+      if (Object.keys(args).length === 0) return "https://upload.example";
       return { mutationRecorded: true };
     });
     const runAfter = vi.fn();
@@ -703,7 +803,10 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
+        storage: {
+          get: storageGet,
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: { "cf-connecting-ip": "1.2.3.4" },

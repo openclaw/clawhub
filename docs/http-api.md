@@ -1315,6 +1315,9 @@ Notes:
 
 - If neither `version` nor `tag` is provided, the latest version is used.
 - Soft-deleted versions return `410`.
+- Hosted skill versions return a streamed deterministic ZIP with
+  `Content-Disposition: attachment; filename="<slug>-<version>.zip"`. ClawHub
+  applies moderation, rate limiting, and download metering before streaming.
 - GitHub-backed skill handoffs do not proxy or mirror bytes. The JSON response
   includes `sourceRef: "public-github"`, `repo`, `commit`, `path`, `contentHash`,
   and `archiveUrl`; scan/current state is a gate and is not included as success
