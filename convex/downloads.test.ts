@@ -270,7 +270,7 @@ describe("downloads helpers", () => {
   });
 
   it("streams stored file chunks, stays deterministic, and skips a Blob that vanishes", async () => {
-    const firstChunk = new Uint8Array(16 * 1024).fill(0x61);
+    const firstChunk = new Uint8Array(64 * 1024).fill(0x61);
     const secondChunk = new TextEncoder().encode("streamed body\n");
     const releaseSecondChunk = deferred<void>();
     const arrayBuffer = vi.fn(() => Promise.reject(new Error("whole Blob read")));

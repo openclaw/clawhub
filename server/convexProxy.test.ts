@@ -168,6 +168,85 @@ describe("Convex HTTP proxy", () => {
     ).toBe("v1");
   });
 
+  it("produces identical archive bytes when storage streams use different chunk boundaries", async () => {
+    const storedBody = new Uint8Array(2 * 1024 * 1024);
+    let randomState = 0x3451cafe;
+    for (let index = 0; index < storedBody.length; index += 1) {
+      randomState ^= randomState << 13;
+      randomState ^= randomState >>> 17;
+      randomState ^= randomState << 5;
+      storedBody[index] = randomState;
+    }
+
+    let storageRequest = 0;
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.startsWith("https://preview-branch-123.convex.site/api/v1/download")) {
+        return Response.json(
+          {
+            schema: "clawhub.skill-archive-manifest.v1",
+            issuedAt: 1_000,
+            expiresAt: 31_000,
+            filename: "demo-1.0.0.zip",
+            meta: {
+              ownerId: "users:1",
+              slug: "demo",
+              version: "1.0.0",
+              publishedAt: 3,
+            },
+            entries: [
+              {
+                path: "SKILL.md",
+                url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+              },
+            ],
+          },
+          { headers: { "content-type": "application/vnd.clawhub.skill-archive-manifest+json" } },
+        );
+      }
+      if (url === "https://preview-branch-123.convex.cloud/api/storage/storage-1") {
+        const chunkSize = storageRequest++ === 0 ? 16_381 : 65_521;
+        let offset = 0;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (offset >= storedBody.length) {
+                controller.close();
+                return;
+              }
+              const nextOffset = Math.min(offset + chunkSize, storedBody.length);
+              controller.enqueue(storedBody.slice(offset, nextOffset));
+              offset = nextOffset;
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const env = {
+      VERCEL_ENV: "preview",
+      VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+      VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+    };
+
+    const firstResponse = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/download?slug=demo"),
+      env,
+    );
+    const firstArchive = new Uint8Array(await firstResponse.arrayBuffer());
+    const secondResponse = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/download?slug=demo"),
+      env,
+    );
+    const secondArchive = new Uint8Array(await secondResponse.arrayBuffer());
+
+    expect(secondArchive.byteLength).toBe(firstArchive.byteLength);
+    expect(secondArchive.every((byte, index) => byte === firstArchive[index])).toBe(true);
+    expect(unzipSync(secondArchive)["SKILL.md"]).toEqual(storedBody);
+  });
+
   it("rejects archive manifests that point outside the paired Convex storage origin", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString();

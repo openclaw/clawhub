@@ -21,6 +21,9 @@ export type SkillZipMeta = {
 type ZipInput = Record<string, Uint8Array | [Uint8Array, { mtime?: Date }]>;
 
 const FIXED_ZIP_DATE = new Date(1980, 0, 1, 0, 0, 0);
+// Storage response chunk boundaries vary with transport backpressure; normalize
+// them so identical files still produce byte-for-byte identical archives.
+const ZIP_INPUT_CHUNK_BYTES = 64 * 1024;
 
 // ==================== Zip Slip Protection ====================
 
@@ -81,6 +84,11 @@ export function buildDeterministicZipStream(entries: AsyncZipEntry[], meta?: Ski
     | {
         reader: ReadableStreamDefaultReader<Uint8Array>;
         zipEntry: ZipDeflate;
+        inputBuffer: Uint8Array;
+        inputBufferLength: number;
+        sourceChunk?: Uint8Array;
+        sourceOffset: number;
+        sourceDone: boolean;
       }
     | undefined;
   let archiveEnded = false;
@@ -97,13 +105,42 @@ export function buildDeterministicZipStream(entries: AsyncZipEntry[], meta?: Ski
     if (archiveError) throw archiveError;
 
     if (current) {
-      const next = await current.reader.read();
-      if (next.done) {
+      while (current.inputBufferLength < ZIP_INPUT_CHUNK_BYTES && !current.sourceDone) {
+        if (!current.sourceChunk || current.sourceOffset === current.sourceChunk.byteLength) {
+          const next = await current.reader.read();
+          if (next.done) {
+            current.sourceDone = true;
+            break;
+          }
+          current.sourceChunk = next.value;
+          current.sourceOffset = 0;
+          if (next.value.byteLength === 0) continue;
+        }
+
+        const sourceBytesRemaining = current.sourceChunk.byteLength - current.sourceOffset;
+        const outputBytesRemaining = ZIP_INPUT_CHUNK_BYTES - current.inputBufferLength;
+        const bytesToCopy = Math.min(sourceBytesRemaining, outputBytesRemaining);
+        current.inputBuffer.set(
+          current.sourceChunk.subarray(current.sourceOffset, current.sourceOffset + bytesToCopy),
+          current.inputBufferLength,
+        );
+        current.sourceOffset += bytesToCopy;
+        current.inputBufferLength += bytesToCopy;
+      }
+
+      if (current.inputBufferLength > 0) {
+        current.zipEntry.push(
+          current.inputBuffer.subarray(0, current.inputBufferLength),
+          current.sourceDone,
+        );
+        current.inputBuffer = new Uint8Array(ZIP_INPUT_CHUNK_BYTES);
+        current.inputBufferLength = 0;
+      } else if (current.sourceDone) {
         current.zipEntry.push(new Uint8Array(0), true);
+      }
+      if (current.sourceDone) {
         current.reader.releaseLock();
         current = undefined;
-      } else {
-        current.zipEntry.push(next.value);
       }
       if (archiveError) throw archiveError;
       return;
@@ -122,6 +159,10 @@ export function buildDeterministicZipStream(entries: AsyncZipEntry[], meta?: Ski
       current = {
         reader: stream.getReader(),
         zipEntry,
+        inputBuffer: new Uint8Array(ZIP_INPUT_CHUNK_BYTES),
+        inputBufferLength: 0,
+        sourceOffset: 0,
+        sourceDone: false,
       };
       return;
     }
