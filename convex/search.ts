@@ -664,8 +664,8 @@ type CanonicalSkillSearchResult = {
 const CANONICAL_NATIVE_CANDIDATE_LIMIT = CANONICAL_SKILL_SEARCH_BOUNDS.nativeCandidateLimit;
 const CANONICAL_RESULT_LIMIT_MAX = CANONICAL_SKILL_SEARCH_BOUNDS.resultLimit;
 const ROLLING_ADOPTION_DAYS = CANONICAL_SKILL_SEARCH_BOUNDS.rollingAdoptionDays;
-// Forty candidates can read at most 2,400 daily rows, leaving headroom below
-// Convex's per-transaction document/byte limits for imported production-shaped data.
+// Twenty candidates read at most 1,200 daily rows. Keep this well below the
+// query CPU ceiling: production-shaped 40-skill batches had intermittent 1s timeouts.
 const ROLLING_USAGE_QUERY_BATCH_SIZE = CANONICAL_SKILL_SEARCH_BOUNDS.rollingUsageBatchSize;
 
 function chunkValues<T>(values: T[], size: number) {

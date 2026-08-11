@@ -342,8 +342,9 @@ describe("clawhub e2e", () => {
     const response = await fetchWithTimeout(url.toString(), {
       headers: { Accept: "application/json" },
     });
-    expect(response.ok).toBe(true);
-    const json = (await response.json()) as unknown;
+    const body = await response.text();
+    expect(response.ok, `search failed with ${response.status}: ${body}`).toBe(true);
+    const json = JSON.parse(body) as unknown;
     const parsed = parseArk(ApiV1SearchResponseSchema, json, "API response");
     expect(Array.isArray(parsed.results)).toBe(true);
   });

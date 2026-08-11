@@ -1295,12 +1295,12 @@ describe("search helpers", () => {
       getRollingSkillSearchUsageHandler(
         { db: { query: vi.fn() } },
         {
-          skillIds: Array.from({ length: 41 }, (_, index) => `skills:${index}`),
+          skillIds: Array.from({ length: 21 }, (_, index) => `skills:${index}`),
           startDay: 100,
           endDay: 159,
         },
       ),
-    ).rejects.toThrow("skillIds exceeds 40");
+    ).rejects.toThrow("skillIds exceeds 20");
   });
 
   it("returns one ordered native and external contract with canonical routes and install refs", async () => {
@@ -1367,6 +1367,56 @@ describe("search helpers", () => {
       icon: null,
       sourceIdentity: { lifetimeInstalls: 10_000_000 },
       downloads: 10_000_000,
+    });
+  });
+
+  it("preserves rolling adoption ranking when usage reads require smaller transactions", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const native = Array.from({ length: 100 }, (_, index) => ({
+      skill: makePublicSkill({
+        id: `skills:calendar-${index}`,
+        slug: `calendar-${index}`,
+        displayName: `Calendar ${index}`,
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: null,
+    }));
+    const runQuery = vi.fn(
+      async (ref: Parameters<typeof getFunctionName>[0], args?: { skillIds?: string[] }) => {
+        switch (getFunctionName(ref)) {
+          case "search:getExactSkillSlugMatch":
+          case "search:lexicalFallbackSkills":
+          case "search:getExternalSkillSearchCandidates":
+            return [];
+          case "search:directPrefixSkillMatches":
+            return native;
+          case "search:getRollingSkillSearchUsage": {
+            const skillIds = args?.skillIds ?? [];
+            if (skillIds.length > 20) {
+              throw new Error("Function execution timed out (maximum duration: 1s)");
+            }
+            return skillIds.map((skillId) => ({
+              skillId,
+              installs: skillId === "skills:calendar-99" ? 10_000 : 1,
+              bookmarks: 0,
+            }));
+          }
+          default:
+            throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+        }
+      },
+    );
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "calendar", limit: 100 },
+    );
+
+    expect(result).toHaveLength(100);
+    expect(result[0]).toMatchObject({
+      id: "clawhub:skills:calendar-99",
+      metrics: { rolling60DayInstalls: 10_000 },
     });
   });
 

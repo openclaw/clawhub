@@ -5,5 +5,5 @@ export const CANONICAL_SKILL_SEARCH_BOUNDS = {
   externalCandidateLimitPerIndex: 50,
   externalIndexedReadCount: 6,
   rollingAdoptionDays: 60,
-  rollingUsageBatchSize: 40,
+  rollingUsageBatchSize: 20,
 } as const;
