@@ -9,6 +9,7 @@ import { SkillDiffCard, cssColor4ToHex } from "./SkillDiffCard";
 const getFilePreviewMock = vi.fn();
 let diffEditorMounts = 0;
 let diffEditorUnmounts = 0;
+// oxlint-disable-next-line typescript/no-redundant-type-constituents -- Monaco resolves to any via @monaco-editor/react types
 let monacoInstanceMock: Monaco | null = null;
 
 vi.mock("convex/react", () => ({
@@ -95,11 +96,7 @@ describe("SkillDiffCard", () => {
     diffEditorUnmounts = 0;
     monacoInstanceMock = null;
     document.documentElement.removeAttribute("data-theme-resolved");
-    for (const property of [
-      "--oc-bg-elevated",
-      "--oc-text-primary",
-      "--oc-text-secondary",
-    ]) {
+    for (const property of ["--oc-bg-elevated", "--oc-text-primary", "--oc-text-secondary"]) {
       document.documentElement.style.removeProperty(property);
     }
   });
@@ -216,7 +213,10 @@ describe("SkillDiffCard", () => {
     render(
       <SkillDiffCard
         skill={skill}
-        versions={[makeVersion("skillVersions:1", "1.0.1"), makeVersion("skillVersions:2", "1.0.2")]}
+        versions={[
+          makeVersion("skillVersions:1", "1.0.1"),
+          makeVersion("skillVersions:2", "1.0.2"),
+        ]}
       />,
     );
 
@@ -232,7 +232,7 @@ describe("SkillDiffCard", () => {
     }
     expect(themeData.rules[0].foreground).toBe("#fafafa");
     expect(themeData.rules[1].foreground).toBe("#fafafa");
-    expect(themeData.colors["editor.background"]).toBe("#262626");
+    expect(themeData.colors["editor.background"]).toBe("#171717");
     expect(themeData.colors["editor.foreground"]).toBe("#fafafa");
   });
 
@@ -249,7 +249,10 @@ describe("SkillDiffCard", () => {
     render(
       <SkillDiffCard
         skill={skill}
-        versions={[makeVersion("skillVersions:1", "1.0.1"), makeVersion("skillVersions:2", "1.0.2")]}
+        versions={[
+          makeVersion("skillVersions:1", "1.0.1"),
+          makeVersion("skillVersions:2", "1.0.2"),
+        ]}
       />,
     );
 

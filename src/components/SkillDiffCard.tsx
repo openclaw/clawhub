@@ -755,23 +755,22 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
     styles.getPropertyValue("--oc-text-secondary"),
     isDark ? "#d4d4d4" : "#4c463f",
   );
-  const line = monacoColor(
-    styles.getPropertyValue("--oc-border-subtle"),
-    "rgba(29, 26, 23, 0.12)",
-  );
+  const line = monacoColor(styles.getPropertyValue("--oc-border-subtle"), "rgba(29, 26, 23, 0.12)");
   const accent = monacoColor(styles.getPropertyValue("--oc-accent-primary"), "#e65c46");
   const seafoam = monacoColor(styles.getPropertyValue("--oc-accent-secondary"), "#2bc6a4");
   const diffAdded = monacoColor(styles.getPropertyValue("--oc-diff-added"), "#9bb955");
   const diffAddedStrong = monacoColor(styles.getPropertyValue("--oc-diff-added-strong"), seafoam);
   const diffRemoved = monacoColor(styles.getPropertyValue("--oc-diff-removed"), "#e47866");
-  const diffRemovedStrong = monacoColor(styles.getPropertyValue("--oc-diff-removed-strong"), accent);
+  const diffRemovedStrong = monacoColor(
+    styles.getPropertyValue("--oc-diff-removed-strong"),
+    accent,
+  );
   const diffDiagonal = toMonacoColor(
     monacoColor(styles.getPropertyValue("--diff-diagonal"), "#22222233"),
   );
   const diffBorder = toMonacoColor(monacoColor(styles.getPropertyValue("--diff-border"), line));
   const lineNumber = monacoColor(
-    styles.getPropertyValue("--diff-line-number").trim() ||
-      styles.getPropertyValue("--ink-soft"),
+    styles.getPropertyValue("--diff-line-number").trim() || styles.getPropertyValue("--ink-soft"),
     "#4c463f",
   );
   const background = surface;
@@ -929,9 +928,7 @@ export function cssColor4ToHex(value: string): string | null {
     alpha = Math.min(1, Math.max(0, parsedAlpha));
   }
 
-  const rgb = isOk
-    ? oklabToLinearSrgb(lightness, a, b)
-    : labToLinearSrgb(lightness, a, b);
+  const rgb = isOk ? oklabToLinearSrgb(lightness, a, b) : labToLinearSrgb(lightness, a, b);
   const hex = `#${linearToSrgbHex(rgb.r)}${linearToSrgbHex(rgb.g)}${linearToSrgbHex(rgb.b)}`;
   if (alpha >= 1) return hex;
   return `${hex}${Math.round(alpha * 255)
@@ -997,8 +994,7 @@ function labToLinearSrgb(lightness: number, a: number, b: number): LinearSrgb {
 
 function linearToSrgbHex(channel: number): string {
   const clamped = Math.min(1, Math.max(0, channel));
-  const srgb =
-    clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055;
+  const srgb = clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055;
   return Math.round(srgb * 255)
     .toString(16)
     .padStart(2, "0");
