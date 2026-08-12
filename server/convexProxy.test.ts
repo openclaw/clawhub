@@ -590,7 +590,6 @@ describe("Convex HTTP proxy", () => {
           }),
           {
             headers: {
-              "content-length": String(4 * 1024 * 1024 + 1),
               "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE,
             },
           },
