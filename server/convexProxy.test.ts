@@ -330,6 +330,7 @@ describe("Convex HTTP proxy", () => {
         VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
         VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
       },
+      TEST_ARCHIVE_DEPENDENCIES,
     );
 
     expect(response.status).toBe(502);
@@ -557,11 +558,15 @@ describe("Convex HTTP proxy", () => {
       headers: { "x-clawhub-archive-manifest": "replayed-v0" },
     });
 
-    const response = await proxyConvexRequest(event, {
-      VERCEL_ENV: "preview",
-      VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
-      VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
-    });
+    const response = await proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
 
     expect(response.status).toBe(404);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
