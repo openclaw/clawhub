@@ -294,10 +294,10 @@ export function useSkillsBrowseModel({
           setListResults([]);
           setTrendingState("unavailable");
         }
-        // Reset to idle so the user can retry via "Load more"
+        // Keep canonical Trending's dedicated unavailable state; other pages remain retryable.
         setListCursor(pageCursor);
         setListAutoLoadPaused(Boolean(pageCursor));
-        setListStatus(pageCursor ? "idle" : "done");
+        setListStatus(catalogTab === "trending" && !pageCursor ? "done" : "idle");
       }
     },
     [
