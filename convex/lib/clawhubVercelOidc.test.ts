@@ -14,23 +14,36 @@ import {
 describe("ClawHub Vercel OIDC", () => {
   it("binds each Convex site class to its Vercel environment", () => {
     expect(
-      expectedVercelEnvironmentForConvexSite("https://wry-manatee-359.convex.site/api/v1/download"),
+      expectedVercelEnvironmentForConvexSite(
+        "https://migrated-production.convex.site/api/v1/download",
+        { CLAWHUB_ENV: "production" },
+      ),
     ).toBe("production");
     expect(
       expectedVercelEnvironmentForConvexSite(
         "https://academic-chihuahua-392.convex.site/api/v1/download",
+        { CLAWHUB_ENV: "test" },
       ),
     ).toBe("preview");
     expect(
       expectedVercelEnvironmentForConvexSite(
         "https://preview-branch-123.convex.site/api/v1/download",
+        { CLAWHUB_PREVIEW: "1" },
       ),
     ).toBe("preview");
     expect(expectedVercelEnvironmentForConvexSite("http://127.0.0.1:3211/api/v1/download")).toBe(
       "development",
     );
     expect(
-      expectedVercelEnvironmentForConvexSite("https://attacker.example/api/v1/download"),
+      expectedVercelEnvironmentForConvexSite("https://attacker.example/api/v1/download", {
+        CLAWHUB_ENV: "production",
+      }),
+    ).toBeNull();
+    expect(
+      expectedVercelEnvironmentForConvexSite(
+        "https://unclassified.convex.site/api/v1/download",
+        {},
+      ),
     ).toBeNull();
   });
 

@@ -192,6 +192,7 @@ describe("downloads helpers", () => {
   });
 
   it("returns a bounded archive manifest to the Nitro streaming owner", async () => {
+    vi.stubEnv("CLAWHUB_PREVIEW", "1");
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     vi.spyOn(Date, "now").mockReturnValue(10_000);
     const keyPair = await generateKeyPair("RS256", { extractable: true });
@@ -315,6 +316,7 @@ describe("downloads helpers", () => {
   });
 
   it("rejects a direct manifest request without the Nitro Vercel identity", async () => {
+    vi.stubEnv("CLAWHUB_PREVIEW", "1");
     const runQuery = vi.fn();
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();

@@ -175,7 +175,10 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
   ClawHub team, project, subject, audience, and target environment before
   returning any storage URL. The permanent ClawHub Test frontend is a Vercel
   preview-target deployment, so its OIDC environment and subject use `preview`;
-  the app-level `test` label is not an OIDC trust claim. Nitro never accepts a
+  the app-level `test` label is not an OIDC trust claim. Convex derives this
+  expected target from its explicit runtime environment markers, not a fixed
+  deployment hostname, and fails closed when a remote runtime is unclassified.
+  Nitro never accepts a
   client-supplied manifest and
   accepts Convex's response only as a short-lived RS256 JWS signed by the
   selected Convex deployment's existing auth key and verified from that
@@ -183,6 +186,8 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
   must match the request, and source URLs are allowed only on the single
   build-paired Convex deployment's `/api/storage/` surface. Convex storage URLs
   are reusable bearer URLs, so they must never appear in the public response.
+  Nitro preserves control-plane headers such as rate-limit state but discards
+  manifest representation metadata before emitting the generated ZIP headers.
 - Download metering is also a signed, short-lived capability. It contains only
   the existing pre-hashed identity and metric arguments, stays inside the
   Convex-to-Nitro boundary, and is returned to Convex only after Nitro opens the

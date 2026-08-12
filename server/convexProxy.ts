@@ -27,6 +27,17 @@ const MAX_ARCHIVE_MANIFEST_ENTRIES = 8_192;
 const MAX_ARCHIVE_ENTRY_URL_LENGTH = 4_096;
 const MAX_ARCHIVE_MANIFEST_BYTES = 4 * 1024 * 1024;
 const ARCHIVE_FILENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,499}\.zip$/;
+const ARCHIVE_REPRESENTATION_HEADERS = [
+  "accept-ranges",
+  "content-digest",
+  "content-encoding",
+  "content-length",
+  "content-md5",
+  "content-range",
+  "digest",
+  "etag",
+  "last-modified",
+] as const;
 
 type ProxyEnv = {
   CONVEX_URL?: string;
@@ -236,7 +247,7 @@ async function streamSkillArchive(
     manifest.meta,
   );
   const headers = new Headers(manifestResponse.headers);
-  headers.delete("content-length");
+  for (const name of ARCHIVE_REPRESENTATION_HEADERS) headers.delete(name);
   headers.set("content-type", "application/zip");
   headers.set("content-disposition", `attachment; filename="${manifest.filename}"`);
   const response = new Response(stream, { status: 200, headers });

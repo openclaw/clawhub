@@ -9,13 +9,17 @@ export const ARCHIVE_REQUEST_IDENTITY_HEADER = "x-clawhub-vercel-oidc-token";
 const VERCEL_OIDC_ISSUER = `https://oidc.vercel.com/${CLAWHUB_VERCEL_TEAM}`;
 const VERCEL_OIDC_AUDIENCE = `https://vercel.com/${CLAWHUB_VERCEL_TEAM}`;
 const VERCEL_OIDC_JWKS = createRemoteJWKSet(new URL(`${VERCEL_OIDC_ISSUER}/.well-known/jwks`));
-const CLAWHUB_PRODUCTION_CONVEX_SITE = "wry-manatee-359.convex.site";
-const CLAWHUB_TEST_CONVEX_SITE = "academic-chihuahua-392.convex.site";
+
+type ClawHubArchiveRuntimeEnvironment = {
+  CLAWHUB_ENV?: string;
+  CLAWHUB_PREVIEW?: string;
+};
 
 export type ClawHubVercelEnvironment = "development" | "preview" | "production";
 
 export function expectedVercelEnvironmentForConvexSite(
   requestUrl: string,
+  env: ClawHubArchiveRuntimeEnvironment = process.env,
 ): ClawHubVercelEnvironment | null {
   let url: URL;
   try {
@@ -27,10 +31,15 @@ export function expectedVercelEnvironmentForConvexSite(
     return "development";
   }
   if (url.protocol !== "https:" || !url.hostname.endsWith(".convex.site")) return null;
-  if (url.hostname === CLAWHUB_PRODUCTION_CONVEX_SITE) return "production";
+
+  const runtimeEnvironment = env.CLAWHUB_ENV?.trim();
+  if (env.CLAWHUB_PREVIEW === "1") {
+    return runtimeEnvironment && runtimeEnvironment !== "preview" ? null : "preview";
+  }
+  if (runtimeEnvironment === "production") return "production";
   // ClawHub Test is an app-level label on a Vercel preview-target deployment.
-  if (url.hostname === CLAWHUB_TEST_CONVEX_SITE) return "preview";
-  return "preview";
+  if (runtimeEnvironment === "test") return "preview";
+  return null;
 }
 
 export async function verifyClawHubVercelOidcToken(

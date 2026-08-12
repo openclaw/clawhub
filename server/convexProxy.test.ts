@@ -161,7 +161,10 @@ describe("Convex HTTP proxy", () => {
           {
             headers: {
               "cache-control": "private, no-store",
+              "content-digest": "sha-256=:manifest-digest:",
+              "content-encoding": "gzip",
               "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE,
+              etag: '"manifest-etag"',
               "x-ratelimit-remaining": "49",
             },
           },
@@ -200,6 +203,9 @@ describe("Convex HTTP proxy", () => {
       'attachment; filename="demo-1.0.0+build.zip"',
     );
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.get("Content-Digest")).toBeNull();
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+    expect(response.headers.get("ETag")).toBeNull();
     expect(response.headers.get("X-RateLimit-Remaining")).toBe("49");
     expect(response.headers.get("X-ClawHub-Preview-Backend")).toBe("preview-branch-123");
     const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
