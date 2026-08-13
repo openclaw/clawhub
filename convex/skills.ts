@@ -13844,22 +13844,21 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
     if (!normalFinalizerAlreadyCompleted) {
       await scheduleSkillPublishSecurityFollowups(ctx, result);
     }
-    let attemptCloseWarning: "claim-active" | undefined;
     if (args.publishAttemptId) {
       const closeOutcome = await closeOrphanedSkillPublishAttempt(
         ctx,
         args.publishAttemptId,
         result,
       );
-      attemptCloseWarning =
-        !closeOutcome.closed && closeOutcome.reason === "claim-active"
-          ? ("claim-active" as const)
-          : undefined;
       if (
         !closeOutcome.closed &&
         (closeOutcome.reason === "claim-active" || closeOutcome.reason === "version-mismatch")
       ) {
         // Throwing rolls back the publish writes in this same transaction.
+        // Live claims and mismatches therefore never surface as a successful
+        // repair with a warning — the outer action only sees attempt-active /
+        // attempt-mismatch via the pre-publish inspection path, or a thrown
+        // OCC/retry after this mutation races.
         throw new ConvexError(`Publish attempt became unsafe to repair: ${closeOutcome.reason}`);
       }
     }
@@ -13867,7 +13866,7 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
     // Recovery must do the same for legacy versions without an attempt and for
     // attempts that already reached a terminal state.
     await ctx.db.patch(args.versionId, { pendingPublication: undefined });
-    return { result, blockedByAttempt: null, attemptCloseWarning };
+    return { result, blockedByAttempt: null };
   },
 });
 

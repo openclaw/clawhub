@@ -3821,13 +3821,6 @@ type SkillVersionRepairOutcome =
       slug: string;
       version: string;
       result: PublishResult;
-      // Set when the original publishAttempts row could not be force-closed
-      // because a live worker still claims it (see
-      // publishPendingVersionAndCloseAttemptInternal in convex/skills.ts).
-      // The version write is idempotent, but a racing worker owns follow-up
-      // scheduling once its claim is live. The repair returns this warning and
-      // deliberately skips its own follow-ups in that case.
-      attemptCloseWarning?: "claim-active";
     };
 
 export async function repairOrphanedPendingSkillVersionHandler(
@@ -3849,11 +3842,9 @@ export async function repairOrphanedPendingSkillVersionHandler(
   }
 
   // Prefer the exact attemptId recorded on the version's own repair context
-  // (#3401): a single direct get is both cheaper and more precise than the
-  // slug/version take(10) scan, which can miss an active attempt if more
-  // than 10 attempts ever shared the same kind+status+slug+version. Fall
-  // back to the scan only when the version predates publishAttemptId being
-  // recorded.
+  // (#3401): a single direct get is cheaper and more precise than the
+  // slug/version paginated fallback. Fall back to that scan only when the
+  // version predates publishAttemptId being recorded.
   const observedAt = Date.now();
   const attemptInspection = context.publishAttemptId
     ? await ctx.runQuery(internal.publishAttempts.findActiveSkillPublishAttemptByIdInternal, {
@@ -3920,7 +3911,7 @@ export async function repairOrphanedPendingSkillVersionHandler(
       publishAttemptId: context.publishAttemptId ?? attemptInspection?.attemptId ?? undefined,
     },
   )) as
-    | { result: PublishResult; blockedByAttempt: null; attemptCloseWarning?: "claim-active" }
+    | { result: PublishResult; blockedByAttempt: null }
     | {
         result: null;
         blockedByAttempt: {
@@ -3943,14 +3934,12 @@ export async function repairOrphanedPendingSkillVersionHandler(
       status: publishOutcome.blockedByAttempt.status,
     };
   }
-  const { result, attemptCloseWarning } = publishOutcome;
 
   return {
     repaired: true,
     slug: context.slug,
     version: context.version,
-    result,
-    ...(attemptCloseWarning ? { attemptCloseWarning } : {}),
+    result: publishOutcome.result,
   };
 }
 
