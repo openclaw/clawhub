@@ -1,7 +1,20 @@
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
+import { unzipSync } from "fflate";
+import { exportJWK, exportPKCS8, generateKeyPair } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
-import { __test, downloadZipHandler } from "./downloads";
+import { __test, downloadZipHandler, recordArchiveDownloadMetricHandler } from "./downloads";
+import {
+  ARCHIVE_MANIFEST_AUDIENCE,
+  ARCHIVE_MANIFEST_CONTENT_TYPE,
+  ARCHIVE_MANIFEST_JWS_TYPE,
+  ARCHIVE_METRIC_AUDIENCE,
+  ARCHIVE_METRIC_JWS_TYPE,
+  type ArchiveMetricPayload,
+  signArchivePayload,
+  type SkillArchiveManifest,
+  verifyArchivePayloadWithLocalJwks,
+} from "./lib/archiveManifest";
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
@@ -35,8 +48,30 @@ function stubZipResponse() {
   vi.stubGlobal("Response", MockResponse as unknown as typeof Response);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function streamingBlob(text: string) {
+  const bytes = new TextEncoder().encode(text);
+  return {
+    stream: () =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+  } as Blob;
+}
+
 describe("downloads helpers", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
@@ -79,7 +114,6 @@ describe("downloads helpers", () => {
 
   it("schedules zip download stats outside the response path", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
-    stubZipResponse();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
@@ -111,23 +145,28 @@ describe("downloads helpers", () => {
       return { mutation, args };
     });
     const runAfter = vi.fn();
-    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+    const storageGet = vi.fn().mockResolvedValue(streamingBlob("hello"));
 
     const response = await downloadZipHandler(
       {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: {
+          get: storageGet,
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
-      new Request("https://example.com/api/v1/download?slug=demo", {
+      new Request("https://preview-branch-123.convex.site/api/v1/download?slug=demo", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
       }),
     );
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe("application/zip");
+    const archive = new Uint8Array(await response.arrayBuffer());
     expect(storageGet).toHaveBeenCalledWith("_storage:1");
+    expect(new TextDecoder().decode(unzipSync(archive)["SKILL.md"])).toBe("hello");
 
     const recordCalls = runAfter.mock.calls.filter(([, , args]) => {
       if (!args || typeof args !== "object") return false;
@@ -150,6 +189,373 @@ describe("downloads helpers", () => {
       dayStart: expect.any(Number),
       occurredAt: expect.any(Number),
     });
+  });
+
+  it("returns a bounded archive manifest to the Nitro streaming owner", async () => {
+    vi.stubEnv("CLAWHUB_PREVIEW", "1");
+    vi.stubEnv("TRUST_FORWARDED_IPS", "true");
+    vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const keyPair = await generateKeyPair("RS256", { extractable: true });
+    const privateKey = await exportPKCS8(keyPair.privateKey);
+    const publicKey = await exportJWK(keyPair.publicKey);
+    const jwks = JSON.stringify({ keys: [{ use: "sig", ...publicKey }] });
+    vi.stubEnv("JWT_PRIVATE_KEY", privateKey);
+    vi.stubEnv("JWKS", jwks);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0+build",
+          createdAt: 3,
+          files: [
+            { path: "SKILL.md", storageId: "_storage:1" },
+            { path: "missing.txt", storageId: "_storage:missing" },
+          ],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+    const runAfter = vi.fn();
+    const storageGet = vi.fn();
+    const storageGetUrl = vi.fn(async (storageId: string) =>
+      storageId === "_storage:1"
+        ? "https://preview-branch-123.convex.cloud/api/storage/storage-1"
+        : null,
+    );
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter },
+        storage: {
+          get: storageGet,
+          getUrl: storageGetUrl,
+          getMetadata: vi.fn(),
+        },
+      } as unknown as ActionCtx,
+      new Request("https://preview-branch-123.convex.site/api/v1/download?slug=demo", {
+        headers: {
+          "cf-connecting-ip": "1.2.3.4",
+          "x-clawhub-archive-manifest": "v1",
+          "x-clawhub-vercel-oidc-token": "vercel-oidc",
+        },
+      }),
+      { verifyArchiveRequester: vi.fn(async () => undefined) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(ARCHIVE_MANIFEST_CONTENT_TYPE);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    const manifest = (await verifyArchivePayloadWithLocalJwks(
+      await response.text(),
+      ARCHIVE_MANIFEST_JWS_TYPE,
+      jwks,
+    )) as SkillArchiveManifest;
+    expect(manifest).toEqual({
+      schema: "clawhub.skill-archive-manifest.v1",
+      issuer: "https://preview-branch-123.convex.site",
+      audience: ARCHIVE_MANIFEST_AUDIENCE,
+      issuedAt: 10_000,
+      expiresAt: 40_000,
+      filename: "demo-1.0.0+build.zip",
+      meta: {
+        ownerId: "users:1",
+        slug: "demo",
+        version: "1.0.0+build",
+        publishedAt: 3,
+      },
+      entries: [
+        {
+          path: "SKILL.md",
+          url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+        },
+      ],
+      metricToken: expect.any(String),
+    });
+    const metricPayload = (await verifyArchivePayloadWithLocalJwks(
+      manifest.metricToken!,
+      ARCHIVE_METRIC_JWS_TYPE,
+      jwks,
+    )) as ArchiveMetricPayload;
+    expect(metricPayload).toMatchObject({
+      schema: "clawhub.archive-download-metric.v1",
+      issuer: "https://preview-branch-123.convex.site",
+      audience: ARCHIVE_METRIC_AUDIENCE,
+      issuedAt: 10_000,
+      expiresAt: 40_000,
+      metric: {
+        target: { kind: "skill", id: "skills:1" },
+        identityKind: "ip",
+        identityHash: expect.any(String),
+        dayStart: 0,
+        occurredAt: 10_000,
+      },
+    });
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(storageGetUrl).toHaveBeenCalledTimes(2);
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rejects a direct manifest request without the Nitro Vercel identity", async () => {
+    vi.stubEnv("CLAWHUB_PREVIEW", "1");
+    const runQuery = vi.fn();
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const verifyArchiveRequester = vi.fn(async () => {
+      throw new Error("invalid Vercel identity");
+    });
+    const response = await downloadZipHandler(
+      { runQuery, runMutation } as unknown as ActionCtx,
+      new Request("https://preview-branch-123.convex.site/api/v1/download?slug=demo", {
+        headers: {
+          "x-clawhub-archive-manifest": "v1",
+          "x-clawhub-vercel-oidc-token": "client-forgery",
+        },
+      }),
+      { verifyArchiveRequester },
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(verifyArchiveRequester).toHaveBeenCalledWith("client-forgery", "preview");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("records only a valid, unexpired archive metric capability", async () => {
+    const keyPair = await generateKeyPair("RS256", { extractable: true });
+    const privateKey = await exportPKCS8(keyPair.privateKey);
+    const publicKey = await exportJWK(keyPair.publicKey);
+    const jwks = JSON.stringify({ keys: [{ use: "sig", ...publicKey }] });
+    vi.stubEnv("JWKS", jwks);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const payload: ArchiveMetricPayload = {
+      schema: "clawhub.archive-download-metric.v1",
+      issuer: "https://example.com",
+      audience: ARCHIVE_METRIC_AUDIENCE,
+      issuedAt: 1_000,
+      expiresAt: 31_000,
+      metric: {
+        target: { kind: "skill", id: "skills:1" },
+        identityKind: "ip",
+        identityHash: "identity-hash",
+        dayStart: 0,
+        occurredAt: 1_000,
+      },
+    };
+    const token = await signArchivePayload(payload, ARCHIVE_METRIC_JWS_TYPE, privateKey);
+    const runAfter = vi.fn();
+    const ctx = { scheduler: { runAfter } } as unknown as ActionCtx;
+
+    const response = await recordArchiveDownloadMetricHandler(
+      ctx,
+      new Request("https://example.com/api/internal/archive-download-metric", {
+        method: "POST",
+        body: token,
+      }),
+    );
+    expect(response.status).toBe(204);
+    expect(runAfter).toHaveBeenCalledWith(expect.any(Number), expect.anything(), payload.metric);
+
+    const [header, body, signature] = token.split(".");
+    const modifiedBody = `${body!.slice(0, -1)}${body!.endsWith("A") ? "B" : "A"}`;
+    const modifiedToken = `${header}.${modifiedBody}.${signature}`;
+    const modifiedResponse = await recordArchiveDownloadMetricHandler(
+      ctx,
+      new Request("https://example.com/api/internal/archive-download-metric", {
+        method: "POST",
+        body: modifiedToken,
+      }),
+    );
+    expect(modifiedResponse.status).toBe(401);
+
+    const expiredToken = await signArchivePayload(
+      { ...payload, expiresAt: 1_500 },
+      ARCHIVE_METRIC_JWS_TYPE,
+      privateKey,
+    );
+    const expiredResponse = await recordArchiveDownloadMetricHandler(
+      ctx,
+      new Request("https://example.com/api/internal/archive-download-metric", {
+        method: "POST",
+        body: expiredToken,
+      }),
+    );
+    expect(expiredResponse.status).toBe(401);
+    expect(runAfter).toHaveBeenCalledTimes(1);
+  });
+
+  it("streams stored file chunks, stays deterministic, and skips a Blob that vanishes", async () => {
+    const firstChunk = new Uint8Array(64 * 1024).fill(0x61);
+    const secondChunk = new TextEncoder().encode("streamed body\n");
+    const releaseSecondChunk = deferred<void>();
+    const arrayBuffer = vi.fn(() => Promise.reject(new Error("whole Blob read")));
+    const stream = vi.fn(
+      () =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(firstChunk);
+          },
+          async pull(controller) {
+            await releaseSecondChunk.promise;
+            controller.enqueue(secondChunk);
+            controller.close();
+          },
+        }),
+    );
+    const storageGetMetadata = vi.fn().mockResolvedValue({});
+    const storageGet = vi.fn(async (storageId: string) => {
+      if (storageId === "_storage:skill") {
+        return { arrayBuffer, stream } as unknown as Blob;
+      }
+      if (storageId === "_storage:notes") {
+        return {
+          stream: () =>
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode("supporting notes\n"));
+                controller.close();
+              },
+            }),
+        } as Blob;
+      }
+      return null;
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [
+            { path: "a.txt", storageId: "_storage:skill" },
+            { path: "b.txt", storageId: "_storage:notes" },
+            { path: "missing.txt", storageId: "_storage:missing" },
+          ],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const response = await Promise.race([
+      downloadZipHandler(
+        {
+          runQuery,
+          runMutation,
+          scheduler: { runAfter: vi.fn() },
+          storage: { get: storageGet, getMetadata: storageGetMetadata },
+        } as unknown as ActionCtx,
+        new Request("https://example.com/api/v1/download?slug=demo"),
+      ),
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error("download handler read archive bodies before responding")),
+          1_000,
+        );
+      }),
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(storageGetMetadata).not.toHaveBeenCalled();
+    expect(storageGet).not.toHaveBeenCalled();
+
+    const reader = response.body!.getReader();
+    const firstArchiveChunk = await reader.read();
+    expect(firstArchiveChunk.done).toBe(false);
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    releaseSecondChunk.resolve();
+
+    const archiveChunks = [firstArchiveChunk.value!];
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      archiveChunks.push(chunk.value);
+    }
+    const responseBytes = Uint8Array.from(archiveChunks.flatMap((chunk) => [...chunk]));
+    const unzipped = unzipSync(responseBytes);
+    expect(Object.keys(unzipped).sort()).toEqual(["_meta.json", "a.txt", "b.txt"]);
+    expect(unzipped["a.txt"]).toEqual(Uint8Array.from([...firstChunk, ...secondChunk]));
+    expect(new TextDecoder().decode(unzipped["b.txt"])).toBe("supporting notes\n");
+    expect(storageGet).toHaveBeenCalledWith("_storage:missing");
+
+    const repeatResponse = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            if (storageId === "_storage:skill") {
+              return {
+                stream: () =>
+                  new ReadableStream<Uint8Array>({
+                    start(controller) {
+                      controller.enqueue(firstChunk);
+                      controller.enqueue(secondChunk);
+                      controller.close();
+                    },
+                  }),
+              } as Blob;
+            }
+            if (storageId === "_storage:notes") {
+              return {
+                stream: () =>
+                  new ReadableStream<Uint8Array>({
+                    start(controller) {
+                      controller.enqueue(new TextEncoder().encode("supporting notes\n"));
+                      controller.close();
+                    },
+                  }),
+              } as Blob;
+            }
+            return null;
+          }),
+          getMetadata: storageGetMetadata,
+        },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo"),
+    );
+    expect(new Uint8Array(await repeatResponse.arrayBuffer())).toEqual(responseBytes);
   });
 
   it("returns 410 for an explicitly requested revoked version", async () => {
@@ -195,7 +601,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&version=1.0.0"),
     );
@@ -241,7 +647,10 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter: vi.fn() },
-        storage: { get: vi.fn().mockResolvedValue(new Blob(["hello"])) },
+        storage: {
+          get: vi.fn().mockResolvedValue(streamingBlob("hello")),
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&ownerHandle=clawkit"),
     );
@@ -302,7 +711,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter: vi.fn() },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&tag=old", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
@@ -403,7 +812,7 @@ describe("downloads helpers", () => {
         runQuery,
         runMutation,
         scheduler: { runAfter: vi.fn() },
-        storage: { get: storageGet },
+        storage: { get: storageGet, getMetadata: vi.fn().mockResolvedValue({}) },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo&version=1.0.0", {
         headers: { "cf-connecting-ip": "1.2.3.4" },
@@ -453,17 +862,21 @@ describe("downloads helpers", () => {
     });
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
+      if (Object.keys(args).length === 0) return "https://upload.example";
       return { tokenTouched: "tokenId" in args };
     });
     const runAfter = vi.fn();
-    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+    const storageGet = vi.fn().mockResolvedValue(streamingBlob("hello"));
 
     const response = await downloadZipHandler(
       {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: {
+          get: storageGet,
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: {
@@ -516,17 +929,21 @@ describe("downloads helpers", () => {
     });
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
+      if (Object.keys(args).length === 0) return "https://upload.example";
       return { mutationRecorded: true };
     });
     const runAfter = vi.fn();
-    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+    const storageGet = vi.fn().mockResolvedValue(streamingBlob("hello"));
 
     const response = await downloadZipHandler(
       {
         runQuery,
         runMutation,
         scheduler: { runAfter },
-        storage: { get: storageGet },
+        storage: {
+          get: storageGet,
+          getMetadata: vi.fn().mockResolvedValue({}),
+        },
       } as unknown as ActionCtx,
       new Request("https://example.com/api/v1/download?slug=demo", {
         headers: { "cf-connecting-ip": "1.2.3.4" },

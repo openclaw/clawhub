@@ -1682,24 +1682,24 @@
             }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "Hosted ZIP bytes or a GitHub-backed source handoff descriptor.",
-            "content": {
-              "application/zip": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GitHubSkillDownloadHandoff"
-                }
+      "responses": {
+        "200": {
+          "description": "Hosted ZIP bytes or a GitHub-backed source handoff descriptor.",
+          "content": {
+            "application/zip": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubSkillDownloadHandoff"
               }
             }
           }
         }
+      }
       }
     },
     "/api/v1/packages": {

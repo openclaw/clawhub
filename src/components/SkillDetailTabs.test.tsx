@@ -215,7 +215,7 @@ describe("SkillDetailTabs README links", () => {
     );
 
     const href = screen.getByRole("link", { name: "Download version v1.0.0" }).getAttribute("href");
-    const url = new URL(href ?? "");
+    const url = new URL(href ?? "", "https://clawhub.ai");
     expect(url.pathname).toBe("/api/v1/download");
     expect(url.searchParams.get("slug")).toBe("api-gateway");
     expect(url.searchParams.get("ownerHandle")).toBe("clawkit");

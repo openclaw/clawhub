@@ -6,7 +6,6 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
@@ -39,7 +38,6 @@ function mergeSkillVersions(...groups: Doc<"skillVersions">[][]) {
 }
 
 function buildVersionDownloadHref(
-  convexSiteUrl: string,
   skillSlug: string,
   ownerHandle: string | null | undefined,
   version: string,
@@ -48,7 +46,7 @@ function buildVersionDownloadHref(
   const normalizedOwner = ownerHandle?.trim().replace(/^@+/, "");
   if (normalizedOwner) params.set("ownerHandle", normalizedOwner);
   params.set("version", version);
-  return `${convexSiteUrl}/api/v1/download?${params.toString()}`;
+  return `/api/v1/download?${params.toString()}`;
 }
 
 export function SkillVersionsPanel({
@@ -62,7 +60,6 @@ export function SkillVersionsPanel({
   ownerHandle,
   suppressedMessage,
 }: SkillVersionsPanelProps) {
-  const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
   const deleteOwnedVersion = useMutation(api.skills.deleteOwnedVersion);
   const restoreOwnedVersion = useMutation(api.skills.restoreOwnedVersion);
   const {
@@ -222,12 +219,8 @@ export function SkillVersionsPanel({
                     <>
                       {!nixPlugin && isAvailable ? (
                         <a
-                          href={buildVersionDownloadHref(
-                            convexSiteUrl,
-                            skillSlug,
-                            ownerHandle,
-                            version.version,
-                          )}
+                          href={buildVersionDownloadHref(skillSlug, ownerHandle, version.version)}
+                          download={`${skillSlug}-${version.version}.zip`}
                           className="skill-version-release-download skill-version-release-download-labeled"
                           aria-label={`Download version v${version.version}`}
                         >

@@ -2,7 +2,7 @@ import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 import { httpRouter } from "convex/server";
 import { agentSkillsHttp } from "./agentSkillsHttp";
 import { auth } from "./auth";
-import { downloadZip } from "./downloads";
+import { downloadZip, recordArchiveDownloadMetric } from "./downloads";
 import {
   cliPublishHttp,
   cliDeviceCodeHttp,
@@ -98,6 +98,12 @@ http.route({
   path: ApiRoutes.download,
   method: "GET",
   handler: downloadZip,
+});
+
+http.route({
+  path: "/api/internal/archive-download-metric",
+  method: "POST",
+  handler: recordArchiveDownloadMetric,
 });
 
 http.route({
