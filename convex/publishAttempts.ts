@@ -537,11 +537,10 @@ export const findActiveSkillPublishAttemptInternal = internalQuery({
 
 // Direct-attemptId variant of findActiveSkillPublishAttemptInternal, used by
 // the #3349 repair pre-check when the skillVersion already records its own
-// publishAttemptId. Avoids the slug/version take(10) scan (and its blind
-// spot if more than 10 attempts ever share the same kind+status+slug+version)
-// by going straight to the known attempt. Still scoped to skillId so a stale
-// or mismatched publishAttemptId can never block repair of a different
-// skill's version.
+// publishAttemptId. Avoids the slug/version status paginated fallback by going
+// straight to the known attempt. Still scoped to skillId so a stale or
+// mismatched publishAttemptId can never block repair of a different skill's
+// version.
 export const findActiveSkillPublishAttemptByIdInternal = internalQuery({
   args: {
     attemptId: v.id("publishAttempts"),
@@ -1540,9 +1539,7 @@ export const releaseSkillPublishAttemptFinalizationClaimInternal = internalMutat
     // retry path, because orphan repair intentionally only accepts pending
     // versions. Keep the attempt retriable until its required followups and
     // finalized record complete.
-    const stagedVersion = attempt.skillVersionId
-      ? await ctx.db.get(attempt.skillVersionId)
-      : null;
+    const stagedVersion = attempt.skillVersionId ? await ctx.db.get(attempt.skillVersionId) : null;
     const canTerminalizeSkill = stagedVersion?.publicationStatus !== "published";
     const patch = releaseFinalizationClaimPatch(
       "skill",

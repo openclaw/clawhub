@@ -3160,7 +3160,7 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
         versionId: "skillVersions:1",
         publishArgs: {},
       }),
-    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+    ).resolves.toMatchObject({ blockedByAttempt: null });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
     expect(runAfter).toHaveBeenCalledTimes(4);
@@ -3181,7 +3181,7 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
         publishArgs: {},
         publishAttemptId: "publishAttempts:1",
       }),
-    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+    ).resolves.toMatchObject({ blockedByAttempt: null });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
     expect(runAfter).not.toHaveBeenCalled();
@@ -3222,7 +3222,6 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
         publicationStatus: "published",
       }),
       blockedByAttempt: null,
-      attemptCloseWarning: undefined,
     });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
@@ -3253,7 +3252,7 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
         publishArgs: {},
         publishAttemptId: "publishAttempts:1",
       }),
-    ).resolves.toMatchObject({ attemptCloseWarning: undefined });
+    ).resolves.toMatchObject({ blockedByAttempt: null });
 
     expect(runAfter).toHaveBeenCalledTimes(4);
   });

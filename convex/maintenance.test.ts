@@ -2554,7 +2554,7 @@ describe("orphaned pending skill version repair (#3349)", () => {
     };
     const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.skills.publishPendingVersionAndCloseAttemptInternal) {
-        return { result: publishResult, attemptCloseWarning: undefined };
+        return { result: publishResult };
       }
       throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
     });
@@ -2610,7 +2610,7 @@ describe("orphaned pending skill version repair (#3349)", () => {
     };
     const runMutation = vi.fn().mockImplementation(async (endpoint: unknown) => {
       if (endpoint === internal.skills.publishPendingVersionAndCloseAttemptInternal) {
-        return { result: publishResult, attemptCloseWarning: undefined };
+        return { result: publishResult };
       }
       throw new Error(`Unexpected mutation endpoint: ${String(endpoint)}`);
     });
