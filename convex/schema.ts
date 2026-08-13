@@ -730,6 +730,7 @@ const clawManifestSummaryValidator = createClawManifestSummarySchema<GenericVali
   literalOne: v.literal(1),
   string: v.string(),
   number: v.number(),
+  boolean: v.boolean(),
   stringArray: v.array(v.string()),
   // Convex validators cannot express string lengths; publication must validate with the shared schema.
   boundedString: () => v.string(),

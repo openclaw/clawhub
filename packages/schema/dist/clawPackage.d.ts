@@ -14,6 +14,15 @@ export type ValidatedClawPackage = {
     summary: ClawManifestSummary;
     hasClawMarkdownBody: boolean;
 };
+export declare const OPENCLAW_CLAW_PROFILE_POLICY_V1: {
+    readonly contractVersion: 1;
+    readonly source: {
+        readonly repository: "openclaw/openclaw";
+        readonly commit: "f8c0e1b8325b1fc36e039cf357a2c4602f76d5aa";
+        readonly path: "src/claws/schema.ts";
+    };
+    readonly profiles: readonly ["minimal", "coding", "messaging", "full"];
+};
 export declare function isSafeClawPackagePath(value: string): boolean;
 export declare function findClawPackagePathHierarchyCollision(paths: readonly string[]): {
     ancestor: string;

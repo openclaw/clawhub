@@ -396,7 +396,9 @@ export async function cmdExplorePackages(
           : ApiRoutes.packages;
     const url = registryUrl(route, registry);
     url.searchParams.set("limit", String(limit));
-    if (options.family === "skill") url.searchParams.set("family", "skill");
+    if (options.family === "skill" || options.family === "claw") {
+      url.searchParams.set("family", options.family);
+    }
     if (options.official) url.searchParams.set("isOfficial", "true");
     const result = await apiRequest(
       registry,
@@ -2209,6 +2211,8 @@ function familyLabel(family: PackageFamily) {
       return "Code Plugin";
     case "bundle-plugin":
       return "Bundle Plugin";
+    case "claw":
+      return "Claw";
     default:
       return "Skill";
   }

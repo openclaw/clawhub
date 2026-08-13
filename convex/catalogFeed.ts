@@ -127,6 +127,8 @@ const clawFeedEntryValidator = v.object({
       fileCount: v.number(),
     }),
     packages: v.object({ skillCount: v.number(), pluginCount: v.number() }),
+    profiles: v.optional(v.object({ count: v.number(), hasOpenClaw: v.boolean() })),
+    extensions: v.optional(v.object({ count: v.number() })),
     mcpServerCount: v.number(),
     cronJobCount: v.number(),
   }),

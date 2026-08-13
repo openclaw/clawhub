@@ -738,6 +738,31 @@ describe("package commands", () => {
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
+  it("supports Claw family package browse requests", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          name: "@openclaw/hosted",
+          displayName: "Hosted Claw",
+          family: "claw",
+          channel: "official",
+          isOfficial: true,
+          latestVersion: "1.0.0",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    await cmdExplorePackages(makeOpts(), "", { family: "claw", limit: 7 });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages");
+    expect(url.searchParams.get("family")).toBe("claw");
+    expect(url.searchParams.get("limit")).toBe("7");
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[Claw, official]"));
+  });
+
   it("uses tag param when fetching a package file", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({

@@ -105,6 +105,13 @@ export type ClawManifestSummary = {
         skillCount: number;
         pluginCount: number;
     };
+    profiles?: {
+        count: number;
+        hasOpenClaw: boolean;
+    };
+    extensions?: {
+        count: number;
+    };
     mcpServerCount: number;
     cronJobCount: number;
 };
@@ -112,6 +119,7 @@ export type ClawManifestSummarySchemaAdapter<TValue, TOptional = TValue> = {
     literalOne: TValue;
     string: TValue;
     number: TValue;
+    boolean: TValue;
     stringArray: TValue;
     boundedString: (maxCharacters: number) => TValue;
     optional: (schema: TValue) => TOptional;
