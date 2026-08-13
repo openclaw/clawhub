@@ -130,7 +130,8 @@ export async function discoverSkillEvals(skillDirectory: string): Promise<SkillE
     return {
       status: "skipped",
       reason: "no-evals",
-      message: "No SkillEvaluator dataset or native Harbor tasks were found in evals/.",
+      message:
+        "No SkillEvaluator dataset or native Harbor tasks were found. Add evals/evals.json or native Harbor tasks under evals/.",
     };
   }
 
@@ -205,7 +206,8 @@ export async function discoverSkillEvals(skillDirectory: string): Promise<SkillE
   return {
     status: "skipped",
     reason: "no-evals",
-    message: "No SkillEvaluator dataset or native Harbor tasks were found in evals/.",
+    message:
+      "No SkillEvaluator dataset or native Harbor tasks were found. Add evals/evals.json or native Harbor tasks under evals/.",
   };
 }
 
@@ -239,12 +241,16 @@ export function buildTier3EvaluateInvocation({
   evaluatorRepoPath,
   skillDirectory,
   resultsDirectory,
-  model,
+  agentModel,
+  judgeModel,
+  attempts,
 }: {
   evaluatorRepoPath: string;
   skillDirectory: string;
   resultsDirectory: string;
-  model: string;
+  agentModel: string;
+  judgeModel: string;
+  attempts: number;
 }) {
   return {
     command: [
@@ -252,6 +258,8 @@ export function buildTier3EvaluateInvocation({
       "run",
       "--project",
       evaluatorRepoPath,
+      "--extra",
+      "tier3",
       "skillevaluator",
       "tier3",
       "evaluate",
@@ -263,9 +271,9 @@ export function buildTier3EvaluateInvocation({
       "--env-mode",
       "local",
       "--agent-model",
-      `codex=${model}`,
+      `codex=${agentModel}`,
       "--n-attempts",
-      "1",
+      String(attempts),
       "--n-concurrent",
       "1",
       "--max-agents",
@@ -276,7 +284,7 @@ export function buildTier3EvaluateInvocation({
       resultsDirectory,
     ],
     environment: {
-      SKILL_EVAL_LLM_MODEL: model,
+      SKILL_EVAL_LLM_MODEL: judgeModel,
       SKILL_EVAL_LLM_PROVIDER: "openai",
     },
   };
@@ -759,7 +767,9 @@ async function main() {
       "skill-path": { type: "string" },
       "source-repo": { type: "string", default: "nvidia/skills" },
       "output-dir": { type: "string", default: ".artifacts/skill-evaluator-demo" },
-      model: { type: "string", default: "gpt-5.4-mini" },
+      "agent-model": { type: "string", default: "gpt-5.4-mini" },
+      "judge-model": { type: "string", default: "gpt-5.4" },
+      "n-attempts": { type: "string", default: "1" },
       rerun: { type: "boolean", default: false },
     },
     strict: true,
@@ -779,7 +789,12 @@ async function main() {
   }
   const outputDirectory = resolve(values["output-dir"]);
   const webRoot = resolve(LOCAL_EVALUATION_WEB_ROOT);
-  const model = values.model;
+  const agentModel = values["agent-model"];
+  const judgeModel = values["judge-model"];
+  const attempts = Number(values["n-attempts"]);
+  if (!Number.isSafeInteger(attempts) || attempts < 1) {
+    throw new Error("--n-attempts must be a positive integer");
+  }
   const sourceCommit = await capture(["git", "-C", checkoutPath, "rev-parse", "HEAD"]);
   const evaluatorCommit = await capture(["git", "-C", evaluatorRepoPath, "rev-parse", "HEAD"]);
   await Promise.all([
@@ -839,7 +854,7 @@ async function main() {
   const skillDirectory = resolve(checkoutPath, sourcePath);
   const discovery = plan.action === "run" ? plan.evals : await discoverSkillEvals(skillDirectory);
   const recordBase = {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     smokeRun: true,
     source: {
       repository: sourceRepo,
@@ -864,10 +879,11 @@ async function main() {
       commit: evaluatorCommit,
       version: evaluatorVersion.replace(/^skillevaluator(?:,\s*version)?\s+/i, ""),
       agent: "codex",
-      model,
-      provider: "openai",
+      agentModel,
+      judgeModel,
+      judgeProvider: "openai",
       environment: "local",
-      attempts: 1,
+      attempts,
     },
     timing: { startedAt: now.toISOString() },
   };
@@ -960,7 +976,9 @@ async function main() {
       evaluatorRepoPath,
       skillDirectory,
       resultsDirectory,
-      model,
+      agentModel,
+      judgeModel,
+      attempts,
     });
     const pendingRecord: SkillEvaluationRunRecord = { ...recordBase, state: "pending" };
     await Promise.all([
@@ -981,6 +999,8 @@ async function main() {
       "run",
       "--project",
       evaluatorRepoPath,
+      "--extra",
+      "tier3",
       "skillevaluator",
       "tier3",
       "validate",

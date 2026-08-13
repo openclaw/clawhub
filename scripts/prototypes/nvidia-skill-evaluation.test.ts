@@ -131,7 +131,8 @@ describe("SkillEvaluator eval discovery", () => {
     await expect(discoverSkillEvals(skillPath)).resolves.toEqual({
       status: "skipped",
       reason: "no-evals",
-      message: "No SkillEvaluator dataset or native Harbor tasks were found in evals/.",
+      message:
+        "No SkillEvaluator dataset or native Harbor tasks were found. Add evals/evals.json or native Harbor tasks under evals/.",
     });
   });
 
@@ -263,13 +264,15 @@ describe("canonical SkillEvaluator execution", () => {
     ).toThrow("Unsupported SkillEvaluator environment variable: GITHUB_TOKEN");
   });
 
-  it("pins the evaluator and Codex model for a one-attempt Tier 3 smoke run", () => {
+  it("pins distinct judge and Codex models for a labeled Tier 3 smoke run", () => {
     expect(
       buildTier3EvaluateInvocation({
         evaluatorRepoPath: "/tmp/SkillEvaluator",
         skillDirectory: "/tmp/skills/skills/doca-dpa",
         resultsDirectory: "/tmp/results",
-        model: "gpt-5.4-mini",
+        agentModel: "gpt-5.4-mini",
+        judgeModel: "gpt-5.4",
+        attempts: 1,
       }),
     ).toEqual({
       command: [
@@ -277,6 +280,8 @@ describe("canonical SkillEvaluator execution", () => {
         "run",
         "--project",
         "/tmp/SkillEvaluator",
+        "--extra",
+        "tier3",
         "skillevaluator",
         "tier3",
         "evaluate",
@@ -299,7 +304,7 @@ describe("canonical SkillEvaluator execution", () => {
         "/tmp/results",
       ],
       environment: {
-        SKILL_EVAL_LLM_MODEL: "gpt-5.4-mini",
+        SKILL_EVAL_LLM_MODEL: "gpt-5.4",
         SKILL_EVAL_LLM_PROVIDER: "openai",
       },
     });

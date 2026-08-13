@@ -461,12 +461,12 @@ code {
 }
 
 .app-shell:has(
-  .skill-detail-page,
-  .plugin-detail-page,
-  .security-audit-page,
-  .publisher-profile-route,
-  .dashboard-route
-)::before {
+    .skill-detail-page,
+    .plugin-detail-page,
+    .security-audit-page,
+    .publisher-profile-route,
+    .dashboard-route
+  )::before {
   position: absolute;
   top: 0;
   right: 0;
@@ -11050,7 +11050,21 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .skill-evaluation-metrics {
+  display: grid;
+  gap: var(--space-3);
   min-width: 0;
+}
+
+.skill-evaluation-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+}
+
+.skill-evaluation-context strong {
+  color: var(--ink);
 }
 
 .skill-evaluation-table-wrap {

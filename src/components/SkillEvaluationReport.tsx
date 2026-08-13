@@ -1,7 +1,7 @@
 import { Ban, CircleCheck, CircleX, Clock3 } from "lucide-react";
 
 export type SkillEvaluationRunRecord = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   state: "pending" | "skipped" | "failed" | "completed";
   smokeRun: boolean;
   source: {
@@ -22,8 +22,9 @@ export type SkillEvaluationRunRecord = {
     commit: string;
     version: string;
     agent: string;
-    model: string;
-    provider: string;
+    agentModel: string;
+    judgeModel: string;
+    judgeProvider: string;
     environment: string;
     attempts: number;
   };
@@ -69,12 +70,41 @@ const STATE_PRESENTATION = {
 } as const;
 
 function formatPercent(value: number) {
-  return `${(value * 100).toFixed(1)}%`;
+  return `${Math.round(value * 100)}%`;
 }
 
 function formatPoints(value: number) {
-  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pts`;
+  return `${value >= 0 ? "+" : ""}${Math.round(value * 100)} pts`;
 }
+
+function formatAgent(agent: string) {
+  const labels: Record<string, string> = {
+    "claude-code": "Claude Code",
+    codex: "Codex",
+    opencode: "OpenCode",
+  };
+  return labels[agent] ?? agent;
+}
+
+function formatRunDate(record: SkillEvaluationRunRecord) {
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(new Date(record.timing.finishedAt ?? record.timing.startedAt));
+}
+
+function formatAttempts(attempts: number) {
+  return attempts === 1 ? "Single-run result" : `${attempts} attempts per case`;
+}
+
+const REASON_LABELS: Record<string, string> = {
+  "ambiguous-evals-config": "Eval configuration is ambiguous",
+  "eval-source-config-mismatch": "Eval configuration does not match its files",
+  "no-evals": "No evals attached",
+  "unsupported-eval-layout": "Eval layout is not supported",
+};
 
 function formatCaseDelta(withSkill: number, withoutSkill: number) {
   const delta = withSkill - withoutSkill;
@@ -113,13 +143,22 @@ export function SkillEvaluationReport({
 
       {record.reason ? (
         <div className={`skill-evaluation-message is-${record.state}`}>
-          <strong>{record.reason.code}</strong>
+          <strong>{REASON_LABELS[record.reason.code] ?? record.reason.code}</strong>
           <span>{record.reason.message}</span>
         </div>
       ) : null}
 
       {record.state === "completed" && metrics ? (
         <section className="skill-evaluation-metrics" aria-label="SkillEvaluator metrics">
+          <div className="skill-evaluation-context" aria-label="Evaluation context">
+            <strong>{formatAttempts(record.evaluator.attempts)}</strong>
+            <span>
+              Agent: {formatAgent(record.evaluator.agent)} ({record.evaluator.agentModel})
+            </span>
+            <span>Judge: {record.evaluator.judgeModel}</span>
+            <span>SkillEvaluator {record.evaluator.version}</span>
+            <span>Run: {formatRunDate(record)}</span>
+          </div>
           <div className="skill-evaluation-table-wrap">
             <table className="skill-evaluation-table">
               <caption>

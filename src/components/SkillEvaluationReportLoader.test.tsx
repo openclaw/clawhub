@@ -17,7 +17,7 @@ const contentHash = "b".repeat(64);
 
 function pendingRecord(recordSource: typeof source, recordContentHash: string, model: string) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     state: "pending",
     smokeRun: true,
     source: {
@@ -36,8 +36,9 @@ function pendingRecord(recordSource: typeof source, recordContentHash: string, m
       commit: "d".repeat(40),
       version: "0.1.0",
       agent: "codex",
-      model,
-      provider: "openai",
+      agentModel: model,
+      judgeModel: "gpt-5.4",
+      judgeProvider: "openai",
       environment: "local",
       attempts: 1,
     },
@@ -169,7 +170,7 @@ describe("local SkillEvaluator report loading", () => {
     render(<SkillEvaluationReportLoader source={source} fetchImpl={fetchImpl} />);
 
     await waitFor(() => {
-      expect(screen.getByText("95.9%")).toBeTruthy();
+      expect(screen.getByText("96%")).toBeTruthy();
     });
     expect(screen.getByRole("rowheader", { name: "Accuracy" })).toBeTruthy();
     expect(fetchImpl).toHaveBeenNthCalledWith(

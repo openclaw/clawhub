@@ -136,7 +136,7 @@ function validateRecord(
   contentHash: string,
   manifestUrl: string,
 ): SkillEvaluationRunRecord {
-  if (!isRecord(value) || value.schemaVersion !== 1) {
+  if (!isRecord(value) || value.schemaVersion !== 2) {
     throw new Error("Unsupported evaluation record");
   }
   if (!new Set(["pending", "skipped", "failed", "completed"]).has(String(value.state))) {

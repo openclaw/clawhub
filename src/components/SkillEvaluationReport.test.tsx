@@ -13,7 +13,7 @@ function record(
   overrides: Partial<SkillEvaluationRunRecord> = {},
 ): SkillEvaluationRunRecord {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     state,
     smokeRun: true,
     source: {
@@ -34,8 +34,9 @@ function record(
       commit: "b".repeat(40),
       version: "0.1.0",
       agent: "codex",
-      model: "gpt-5.4-mini",
-      provider: "openai",
+      agentModel: "gpt-5.4-mini",
+      judgeModel: "gpt-5.4",
+      judgeProvider: "openai",
       environment: "local",
       attempts: 1,
     },
@@ -106,11 +107,16 @@ describe("SkillEvaluationReport", () => {
       />,
     );
 
-    expect(screen.getByText("95.9%")).toBeTruthy();
-    expect(screen.getByText("+35.3 pts")).toBeTruthy();
+    expect(screen.getByText("96%")).toBeTruthy();
+    expect(screen.getByText("+35 pts")).toBeTruthy();
     expect(screen.getByText("4 / 4")).toBeTruthy();
     expect(screen.getByRole("rowheader", { name: "Accuracy" })).toBeTruthy();
-    expect(screen.getByRole("cell", { name: "+45.0 pts" })).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "+45 pts" })).toBeTruthy();
+    expect(screen.getByText("Single-run result")).toBeTruthy();
+    expect(screen.getByText("Agent: Codex (gpt-5.4-mini)")).toBeTruthy();
+    expect(screen.getByText("Judge: gpt-5.4")).toBeTruthy();
+    expect(screen.getByText("SkillEvaluator 0.1.0")).toBeTruthy();
+    expect(screen.getByText("Run: Aug 4, 2026")).toBeTruthy();
     expect(screen.getByRole("link", { name: "SkillEvaluator" }).getAttribute("href")).toBe(
       "https://github.com/NVIDIA/SkillEvaluator",
     );
@@ -120,5 +126,21 @@ describe("SkillEvaluationReport", () => {
     expect(screen.queryByText("Run details")).toBeNull();
     expect(screen.queryByText("result.json")).toBeNull();
     expect(screen.queryByText("run_config.json")).toBeNull();
+  });
+
+  it("gives a skipped no-evals run an actionable reason", () => {
+    render(
+      <SkillEvaluationReport
+        record={record("skipped", {
+          reason: {
+            code: "no-evals",
+            message: "Add evals/evals.json to evaluate this skill version.",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("No evals attached")).toBeTruthy();
+    expect(screen.getByText("Add evals/evals.json to evaluate this skill version.")).toBeTruthy();
   });
 });

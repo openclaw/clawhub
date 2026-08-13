@@ -273,24 +273,21 @@ export function SkillDetailPage({
   const evaluationDemoCommit = localEvaluationDemoCommit(searchStr);
   const evaluationSourceRepo =
     githubBackedFields?.githubSourceRepo ?? githubBackedFields?.githubCurrentRepo;
+  const evaluationCurrentCommit = githubBackedFields?.githubCurrentCommit;
+  const evaluationSkillPath = githubBackedFields?.githubPath;
   const localEvaluationSource = useMemo(
     () =>
       import.meta.env.DEV &&
       evaluationSourceRepo?.toLowerCase() === "nvidia/skills" &&
-      githubBackedFields.githubCurrentCommit &&
-      githubBackedFields.githubPath
+      evaluationCurrentCommit &&
+      evaluationSkillPath
         ? {
             repository: "nvidia/skills",
-            commit: evaluationDemoCommit ?? githubBackedFields.githubCurrentCommit,
-            path: githubBackedFields.githubPath,
+            commit: evaluationDemoCommit ?? evaluationCurrentCommit,
+            path: evaluationSkillPath,
           }
         : null,
-    [
-      githubBackedFields?.githubCurrentCommit,
-      githubBackedFields?.githubPath,
-      evaluationSourceRepo,
-      evaluationDemoCommit,
-    ],
+    [evaluationCurrentCommit, evaluationDemoCommit, evaluationSkillPath, evaluationSourceRepo],
   );
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
