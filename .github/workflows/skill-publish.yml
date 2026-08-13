@@ -277,7 +277,11 @@ jobs:
           dry_run = os.environ["INPUT_DRY_RUN"] == "true"
           owner = os.environ["INPUT_OWNER"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
-          changelog = os.environ["INPUT_CHANGELOG"].strip()
+          # changelog is Markdown prose, not a structured value: leading indentation and
+          # trailing double spaces are meaningful there, and `skill publish --changelog`
+          # stores what it is given. It is forwarded verbatim; only the decision to forward
+          # at all looks past surrounding whitespace, so a blank input stays a no-op.
+          changelog = os.environ["INPUT_CHANGELOG"]
           categories = os.environ["INPUT_CATEGORIES"].strip()
           topics = os.environ["INPUT_TOPICS"].strip()
           # A workflow_call string input cannot tell an omitted value from an explicitly empty
@@ -322,7 +326,7 @@ jobs:
                   command += ["--owner", owner]
               if tags:
                   command += ["--tags", tags]
-              if changelog:
+              if changelog.strip():
                   command += ["--changelog", changelog]
               if categories:
                   command += ["--categories", categories]

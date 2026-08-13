@@ -40,11 +40,31 @@ describe("skill publish workflow", () => {
 
       expect(inputs[name]).toMatchObject({ type: "string", required: false, default: "" });
       expect(workflow).toContain(`          ${envName}: \${{ inputs.${name} }}`);
-      expect(workflow).toContain(`          ${name} = os.environ["${envName}"].strip()`);
+    }
+
+    // categories and topics are slug lists, where surrounding whitespace is noise.
+    for (const name of ["categories", "topics"] as const) {
+      expect(workflow).toContain(
+        `          ${name} = os.environ["INPUT_${name.toUpperCase()}"].strip()`,
+      );
       expect(workflow).toContain(
         `              if ${name}:\n                  command += ["--${name}", ${name}]`,
       );
     }
+  });
+
+  it("forwards changelog Markdown exactly as the caller wrote it", () => {
+    const workflow = readFileSync(resolve(".github/workflows/skill-publish.yml"), "utf8");
+
+    // `skill publish --changelog` stores its argument untouched, and in Markdown both
+    // leading indentation and a trailing double space carry meaning, so the workflow
+    // must not trim the value on its way to that same CLI.
+    expect(workflow).toContain('          changelog = os.environ["INPUT_CHANGELOG"]\n');
+    expect(workflow).not.toContain('os.environ["INPUT_CHANGELOG"].strip()');
+    // Only the decision to forward looks past whitespace: a blank input stays a no-op.
+    expect(workflow).toContain(
+      '              if changelog.strip():\n                  command += ["--changelog", changelog]',
+    );
   });
 
   it("can clear catalog metadata the CLI already treats as an explicit empty value", () => {

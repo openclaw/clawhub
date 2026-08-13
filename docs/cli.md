@@ -340,6 +340,10 @@ Notes:
   count as supplied metadata and do the same. `changelog` does not: a run that
   passes only `changelog` still reports unchanged skills as `alreadySynced`.
   Use `skill_path` to keep a metadata edit from releasing a whole catalog.
+- `changelog` reaches the CLI verbatim, the way `skill publish --changelog`
+  stores it, so Markdown indentation and trailing hard-break spaces survive the
+  workflow; a value that is only whitespace counts as omitted. `categories` and
+  `topics` are trimmed instead, being slug lists.
 - Categories and topics are comma-separated and validated server-side, so an
   unknown category slug or a topic over the per-skill limit fails the publish
   after the run has already built and validated the skill.
