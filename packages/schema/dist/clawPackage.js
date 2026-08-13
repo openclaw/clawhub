@@ -12,7 +12,7 @@ const MAX_HARNESS_PROFILE_BYTES = 256 * 1024;
 const HARNESS_PROFILE_PATH_PATTERN = /^profiles\/[a-z][a-z0-9_-]{0,63}\.yml$/;
 const AGENT_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
-const BOUNDED_TOOL_GRANT_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*(?:__[A-Za-z][A-Za-z0-9_-]*)?$/;
+const CONCRETE_MCP_TOOL_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*__[A-Za-z][A-Za-z0-9_-]*$/;
 export const OPENCLAW_CLAW_PROFILE_POLICY_V1 = {
     contractVersion: 1,
     source: {
@@ -83,6 +83,90 @@ const OPENCLAW_PROFILE_TOOL_ALLOW = {
         "ask_user",
     ]),
     full: null,
+};
+const OPENCLAW_STATIC_TOOL_GROUPS = {
+    "group:openclaw": new Set([
+        "code_execution",
+        "web_search",
+        "web_fetch",
+        "x_search",
+        "memory_search",
+        "memory_get",
+        "sessions",
+        "sessions_list",
+        "sessions_history",
+        "sessions_search",
+        "conversations_list",
+        "conversations_send",
+        "conversations_turn",
+        "sessions_send",
+        "sessions_spawn",
+        "agents_wait",
+        "sessions_yield",
+        "subagents",
+        "session_status",
+        "suggest_task",
+        "dismiss_task",
+        "browser",
+        "screen",
+        "dashboard",
+        "terminal",
+        "show_widget",
+        "message",
+        "heartbeat_respond",
+        "automations",
+        "gateway",
+        "nodes",
+        "computer",
+        "mobile_ui",
+        "agents_list",
+        "get_goal",
+        "create_goal",
+        "update_goal",
+        "update_plan",
+        "ask_user",
+        "skill_workshop",
+        "image",
+        "image_generate",
+        "music_generate",
+        "video_generate",
+        "tts",
+    ]),
+    "group:fs": new Set(["read", "write", "edit", "apply_patch"]),
+    "group:runtime": new Set(["exec", "process", "code_execution"]),
+    "group:web": new Set(["web_search", "web_fetch", "x_search"]),
+    "group:memory": new Set(["memory_search", "memory_get"]),
+    "group:sessions": new Set([
+        "sessions",
+        "sessions_list",
+        "sessions_history",
+        "sessions_search",
+        "conversations_list",
+        "conversations_send",
+        "conversations_turn",
+        "sessions_send",
+        "sessions_spawn",
+        "agents_wait",
+        "sessions_yield",
+        "subagents",
+        "session_status",
+        "suggest_task",
+        "dismiss_task",
+    ]),
+    "group:ui": new Set(["browser", "screen", "dashboard", "terminal", "canvas", "show_widget"]),
+    "group:messaging": new Set(["message"]),
+    "group:automation": new Set(["heartbeat_respond", "automations", "gateway"]),
+    "group:nodes": new Set(["nodes", "computer", "mobile_ui"]),
+    "group:agents": new Set([
+        "agents_list",
+        "get_goal",
+        "create_goal",
+        "update_goal",
+        "update_plan",
+        "ask_user",
+        "skill_workshop",
+    ]),
+    "group:media": new Set(["image", "image_generate", "music_generate", "video_generate", "tts"]),
 };
 const StrictStringArraySchema = type("string[]");
 const OpenClawExtensionSchema = type({
@@ -288,7 +372,21 @@ function normalizeOpenClawToolGrant(value) {
     return normalized;
 }
 function isBoundedOpenClawToolGrant(value) {
-    return isStrictNonEmpty(value) && BOUNDED_TOOL_GRANT_PATTERN.test(value);
+    if (!isStrictNonEmpty(value))
+        return false;
+    const normalized = normalizeOpenClawToolGrant(value);
+    if (/[*?[\]{}]/u.test(normalized) ||
+        normalized === "bundle-mcp" ||
+        normalized === "group:plugins") {
+        return false;
+    }
+    if (normalized.startsWith("group:")) {
+        return Object.hasOwn(OPENCLAW_STATIC_TOOL_GROUPS, normalized);
+    }
+    return !normalized.includes("__") || isConcreteOpenClawMcpToolName(value);
+}
+function isConcreteOpenClawMcpToolName(value) {
+    return value.length <= 64 && CONCRETE_MCP_TOOL_PATTERN.test(value);
 }
 function isOpenClawBuiltinProfile(value) {
     return Object.hasOwn(OPENCLAW_PROFILE_TOOL_ALLOW, value);
@@ -297,8 +395,12 @@ function toolGrantOverlapsProfile(value, profile) {
     if (profile === "full")
         return true;
     const normalized = normalizeOpenClawToolGrant(value);
+    const group = OPENCLAW_STATIC_TOOL_GROUPS[normalized];
     return (OPENCLAW_PROFILE_TOOL_ALLOW[profile].has(normalized) ||
-        ((profile === "coding" || profile === "messaging") && normalized.includes("__")));
+        (group !== undefined &&
+            Array.from(group).some((tool) => OPENCLAW_PROFILE_TOOL_ALLOW[profile].has(tool))) ||
+        ((profile === "coding" || profile === "messaging") &&
+            isConcreteOpenClawMcpToolName(value)));
 }
 function isValidDuration(value) {
     if (!isStrictNonEmpty(value))

@@ -18,6 +18,24 @@
       "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [read]\n"
     },
     {
+      "name": "bounded static group",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: ['group:fs']\n"
+    },
+    {
+      "name": "dynamic MCP bundle",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: full\n    allow: [bundle-mcp]\n"
+    },
+    {
+      "name": "overlong concrete MCP tool",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [server_abcdefghijklmnopqrstuvwxyz0123456789__tool_abcdefghijklmnopqrstuvwxyz0123456789]\n"
+    },
+    {
       "name": "unknown profile",
       "consumerAccepted": false,
       "registryAccepted": false,

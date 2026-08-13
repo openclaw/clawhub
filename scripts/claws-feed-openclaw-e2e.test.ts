@@ -22,6 +22,7 @@ import {
 const execFileAsync = promisify(execFile);
 const openclawRepo = process.env.OPENCLAW_CLAWS_CHECKOUT;
 const fixtureRoot = resolve("fixtures/claws/hosted-e2e");
+const conformanceFixture = resolve("fixtures/claws/conformance-v1/cases.json");
 let tempRoot = "";
 let archiveBytes = new Uint8Array();
 let integrity = "";
@@ -209,6 +210,32 @@ function feedValue() {
   );
 }
 
+async function runOpenClawProfileConformance(openclawCheckout: string) {
+  const runner = `
+    import { readFileSync } from "node:fs";
+    import { parse } from "yaml";
+    import { parseClawOpenClawProfile } from "./src/claws/schema.ts";
+    const cases = JSON.parse(readFileSync(process.env.CLAWHUB_CONFORMANCE_CASES, "utf8"));
+    const vectors = [
+      ...cases.profileCases,
+      ...cases.heartbeatCases,
+      ...cases.extensionCases,
+    ];
+    const mismatches = vectors
+      .filter((vector) => parseClawOpenClawProfile(parse(vector.yaml)).ok !== vector.consumerAccepted)
+      .map((vector) => vector.name);
+    process.stdout.write(JSON.stringify(mismatches));
+  `;
+  const { stdout } = await execFileAsync("pnpm", ["exec", "tsx", "--eval", runner], {
+    cwd: openclawCheckout,
+    env: {
+      ...process.env,
+      CLAWHUB_CONFORMANCE_CASES: conformanceFixture,
+    },
+  });
+  return JSON.parse(stdout) as string[];
+}
+
 describe("published Claw to OpenClaw dry-run proof", () => {
   beforeAll(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-fixture-"));
@@ -322,6 +349,13 @@ describe("published Claw to OpenClaw dry-run proof", () => {
   });
 
   it.skipIf(!openclawRepo)(
+    "executes profile conformance vectors against the pinned OpenClaw parser",
+    async () => {
+      await expect(runOpenClawProfileConformance(openclawRepo!)).resolves.toEqual([]);
+    },
+  );
+
+  it.skipIf(!openclawRepo)(
     "runs the downloaded package through OpenClaw dry-run",
     async () => {
       const origin = `http://127.0.0.1:${serverPort}`;
@@ -344,7 +378,10 @@ describe("published Claw to OpenClaw dry-run proof", () => {
             kind: "agent",
             id: "hosted-e2e",
             details: expect.objectContaining({
-              tools: expect.objectContaining({ profile: "minimal" }),
+              tools: expect.objectContaining({
+                profile: "full",
+                allow: ["session_status"],
+              }),
             }),
           }),
           expect.objectContaining({
