@@ -3321,7 +3321,7 @@ describe("package commands", () => {
           "agent:",
           "  tools:",
           "    profile: coding",
-          "    alsoAllow: [cron]",
+          "    allow: [read]",
           "    fs:",
           "      workspaceOnly: true",
           "  memory:",
