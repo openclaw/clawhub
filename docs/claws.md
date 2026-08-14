@@ -115,6 +115,7 @@ schemaVersion: 1
 agent:
   tools:
     profile: coding
+    allow: [read]
 extensions:
   - id: issue-tools
     kind: plugin

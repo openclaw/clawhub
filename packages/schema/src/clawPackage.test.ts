@@ -334,7 +334,7 @@ describe("validateClawPackageContents", () => {
     });
   });
 
-  it("accepts a bounded coding profile like shipped OpenClaw", () => {
+  it("accepts the documented bounded coding profile like shipped OpenClaw", () => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
