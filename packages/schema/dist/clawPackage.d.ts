@@ -14,6 +14,7 @@ export type ValidatedClawPackage = {
     summary: ClawManifestSummary;
     hasClawMarkdownBody: boolean;
 };
+export type OpenClawProfilePolicy = "current" | "publication-compatible";
 export declare const OPENCLAW_CLAW_PROFILE_POLICY_V1: {
     readonly contractVersion: 1;
     readonly source: {
@@ -33,6 +34,7 @@ export declare function validateClawPackageContents(input: {
     version: string;
     packageJson: unknown;
     files: readonly ClawPackageTextFile[];
+    openClawProfilePolicy?: OpenClawProfilePolicy;
 }): {
     ok: true;
     value: ValidatedClawPackage;

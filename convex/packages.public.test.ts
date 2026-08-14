@@ -10316,7 +10316,7 @@ describe("packages public queries", () => {
         "storage:claw",
         "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n---\nRun the demo workflow precisely.\n",
       ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
+      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n"],
     ]);
     const existingPackage = makePackageDoc({
       family: "claw",

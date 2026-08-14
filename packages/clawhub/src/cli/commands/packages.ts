@@ -2555,6 +2555,7 @@ async function preparePackagePublishPlan(
       packageName: name,
       version,
       packageJson,
+      openClawProfilePolicy: "publication-compatible",
       files: filesOnDisk.map((file) => ({
         path: file.relPath,
         text: decodeUtf8Text(file.bytes) ?? undefined,

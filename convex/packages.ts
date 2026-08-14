@@ -8549,6 +8549,10 @@ async function publishPackageImpl(
           packageName: name,
           version,
           packageJson,
+          openClawProfilePolicy:
+            existingPackage && !hasNoPublishedPackageVersions(existingPackage)
+              ? "publication-compatible"
+              : "current",
           files: clawValidationFiles,
         })
       : null;

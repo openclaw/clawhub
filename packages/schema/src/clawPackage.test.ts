@@ -307,6 +307,30 @@ describe("validateClawPackageContents", () => {
   });
 
   it.each([
+    ["a custom profile", "profile: future-profile"],
+    ["unbounded coding", "profile: coding"],
+    ["unbounded messaging", "profile: messaging"],
+    ["unbounded full", "profile: full"],
+    ["a legacy wildcard allowlist", "profile: full\n    allow: ['*']"],
+  ])("preserves publication compatibility for %s", (_label, tools) => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      openClawProfilePolicy: "publication-compatible",
+      files: [
+        ...files(),
+        {
+          path: "profiles/openclaw.yml",
+          text: `schemaVersion: 1\nagent:\n  tools:\n    ${tools}`,
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([
     ["coding without a bounded allowlist", "profile: coding"],
     ["messaging without a bounded allowlist", "profile: messaging"],
     ["full without a bounded allowlist", "profile: full"],

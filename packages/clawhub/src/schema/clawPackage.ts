@@ -20,6 +20,8 @@ export type ValidatedClawPackage = {
   summary: ClawManifestSummary;
   hasClawMarkdownBody: boolean;
 };
+// Existing experimental packages retain the publication contract they were accepted under.
+export type OpenClawProfilePolicy = "current" | "publication-compatible";
 
 const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -479,6 +481,7 @@ function isValidDuration(value: string): boolean {
 function validateOpenClawProfile(
   value: unknown,
   profilePath: string,
+  profilePolicy: OpenClawProfilePolicy,
 ): { issues: ClawPackageValidationIssue[]; extensionCount: number } {
   const parsed = OpenClawProfileSchema(value);
   if (parsed instanceof ArkErrors) {
@@ -508,16 +511,18 @@ function validateOpenClawProfile(
   requireNonEmpty("agent.groupChat.mentionPatterns", parsed.agent?.groupChat?.mentionPatterns);
   const tools = parsed.agent?.tools;
   const profile = tools?.profile;
-  if (profile !== undefined && !isOpenClawBuiltinProfile(profile)) {
+  if (profilePolicy === "current" && profile !== undefined && !isOpenClawBuiltinProfile(profile)) {
     add("agent.tools.profile", "Must name a registered OpenClaw built-in profile.");
   }
   requireNonEmpty("agent.tools.allow", parsed.agent?.tools?.allow);
   requireNonEmpty("agent.tools.alsoAllow", parsed.agent?.tools?.alsoAllow);
   requireNonEmpty("agent.tools.deny", parsed.agent?.tools?.deny);
-  for (const field of ["allow", "alsoAllow"] as const) {
-    for (const [index, grant] of (tools?.[field] ?? []).entries()) {
-      if (!isBoundedOpenClawToolGrant(grant)) {
-        add(`agent.tools.${field}.${index}`, "Tool grants must be bounded concrete names.");
+  if (profilePolicy === "current") {
+    for (const field of ["allow", "alsoAllow"] as const) {
+      for (const [index, grant] of (tools?.[field] ?? []).entries()) {
+        if (!isBoundedOpenClawToolGrant(grant)) {
+          add(`agent.tools.${field}.${index}`, "Tool grants must be bounded concrete names.");
+        }
       }
     }
   }
@@ -527,7 +532,7 @@ function validateOpenClawProfile(
   if (tools?.allow && tools.alsoAllow) {
     add("agent.tools.alsoAllow", "Must not be combined with tools.allow.");
   }
-  if (profile && isOpenClawBuiltinProfile(profile)) {
+  if (profilePolicy === "current" && profile && isOpenClawBuiltinProfile(profile)) {
     if (profile === "full" && !tools?.allow) {
       add("agent.tools.profile", "The full profile requires a bounded explicit allowlist.");
     }
@@ -708,6 +713,7 @@ export function validateClawPackageContents(input: {
   version: string;
   packageJson: unknown;
   files: readonly ClawPackageTextFile[];
+  openClawProfilePolicy?: OpenClawProfilePolicy;
 }):
   | { ok: true; value: ValidatedClawPackage }
   | { ok: false; issues: ClawPackageValidationIssue[] } {
@@ -919,7 +925,11 @@ export function validateClawPackageContents(input: {
       const profile = parseJsonCompatibleYaml(profileFile.text, profileFile.path);
       if (profile.issues) issues.push(...profile.issues);
       else {
-        const validatedProfile = validateOpenClawProfile(profile.value, profileFile.path);
+        const validatedProfile = validateOpenClawProfile(
+          profile.value,
+          profileFile.path,
+          input.openClawProfilePolicy ?? "current",
+        );
         issues.push(...validatedProfile.issues);
         openClawExtensionCount = validatedProfile.extensionCount;
       }
