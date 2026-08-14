@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   OPENCLAW_CLAW_PROFILE_POLICY_V1,
@@ -29,12 +28,9 @@ type ConformanceCases = {
   projectArtifact: { path: string; consumerAccepted: boolean; registryAccepted: boolean };
 };
 
-const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const repositoryRoot = process.cwd();
 const cases = JSON.parse(
-  readFileSync(
-    new URL("../../../fixtures/claws/conformance-v1/cases.json", import.meta.url),
-    "utf8",
-  ),
+  readFileSync(resolve(repositoryRoot, "fixtures/claws/conformance-v1/cases.json"), "utf8"),
 ) as ConformanceCases;
 
 const baseManifest = {

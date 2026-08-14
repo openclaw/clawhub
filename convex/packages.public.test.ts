@@ -10163,7 +10163,7 @@ describe("packages public queries", () => {
         "storage:claw",
         `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
       ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
+      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
       ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
       ["storage:bootstrap", "Ask which repositories the user owns.\n"],
     ]);
@@ -10316,7 +10316,7 @@ describe("packages public queries", () => {
         "storage:claw",
         "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n---\nRun the demo workflow precisely.\n",
       ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
+      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
     ]);
     const existingPackage = makePackageDoc({
       family: "claw",
