@@ -327,6 +327,38 @@ function assertClawPublishArtifactDigest(
   }
 }
 
+async function validateClawPublishProfilePolicy(
+  plan: PackagePublishPlan,
+  registry: string,
+  token: string,
+) {
+  if (plan.payload.family !== "claw") return;
+  const { validateClawPackageContents } = await import("../../schema/clawPackage.js");
+  const validationInput = {
+    packageName: plan.payload.name,
+    version: plan.payload.version,
+    packageJson: plan.packageJson,
+    files: plan.filesOnDisk.map((file) => ({
+      path: file.relPath,
+      text: decodeUtf8Text(file.bytes) ?? undefined,
+    })),
+  };
+  const currentValidation = validateClawPackageContents({
+    ...validationInput,
+    openClawProfilePolicy: "current",
+  });
+  if (currentValidation.ok) return;
+
+  const packageDetail = await apiRequestPackageDetail(registry, plan.payload.name, token);
+  if (
+    packageDetail?.package?.family === "claw" &&
+    packageDetail.package.clawProfilePolicyVersion === undefined
+  ) {
+    return;
+  }
+  fail(currentValidation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
+}
+
 type PackedClawPack = {
   path: string;
   file: PackageFile;
@@ -971,6 +1003,7 @@ export async function cmdPublishPackage(
         manualOverrideReason: plan.payload.manualOverrideReason,
         spinner,
       });
+      await validateClawPublishProfilePolicy(plan, registry, publishToken);
       const form = new FormData();
       const payloadJson = JSON.stringify(plan.payload);
       form.set("payload", payloadJson);
