@@ -9203,6 +9203,80 @@ describe("packages public queries", () => {
     );
   });
 
+  it("pins a reserved package when its first published release is a Claw", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const reservation = makePackageDoc({
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const ctx = makeInsertReleaseCtx(reservation);
+
+    try {
+      await insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        family: "claw",
+        clawProfilePolicyVersion: 1,
+      }),
+    );
+  });
+
+  it("pins a reserved package when its pending first Claw release is published", async () => {
+    const reservation = makePackageDoc({
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      packageId: "packages:demo",
+      publicationStatus: "pending",
+      pendingPublication: {
+        family: "claw",
+        displayName: "Demo Claw",
+        tags: ["latest"],
+      },
+    });
+    const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
+      "packages:demo": reservation,
+      "packageReleases:pending": pendingRelease,
+    });
+
+    await publishPendingReleaseInternalHandler(ctx, {
+      releaseId: "packageReleases:pending",
+    });
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        family: "claw",
+        clawProfilePolicyVersion: 1,
+      }),
+    );
+  });
+
   it("preserves trusted GitHub Actions package publishes without org membership", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
