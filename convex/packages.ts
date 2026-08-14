@@ -160,6 +160,7 @@ const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
+const CURRENT_OPENCLAW_PROFILE_POLICY_VERSION = 1;
 const REAL_BUNDLE_MANIFESTS = [
   { path: ".codex-plugin/plugin.json", format: "codex" },
   { path: ".claude-plugin/plugin.json", format: "claude" },
@@ -8550,7 +8551,8 @@ async function publishPackageImpl(
           version,
           packageJson,
           openClawProfilePolicy:
-            existingPackage && !hasNoPublishedPackageVersions(existingPackage)
+            existingPackage &&
+            existingPackage.clawProfilePolicyVersion !== CURRENT_OPENCLAW_PROFILE_POLICY_VERSION
               ? "publication-compatible"
               : "current",
           files: clawValidationFiles,
@@ -11293,6 +11295,8 @@ export const insertReleaseInternal = internalMutation({
         ownerUserId: args.ownerUserId,
         ownerPublisherId: args.ownerPublisherId,
         family: args.family,
+        clawProfilePolicyVersion:
+          args.family === "claw" ? CURRENT_OPENCLAW_PROFILE_POLICY_VERSION : undefined,
         channel: nextChannel,
         isOfficial: nextIsOfficial,
         runtimeId: args.runtimeId,

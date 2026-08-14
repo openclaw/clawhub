@@ -1688,6 +1688,7 @@ const packages = defineTable({
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   family: packageFamilyValidator,
+  clawProfilePolicyVersion: v.optional(v.literal(1)),
   channel: packageChannelValidator,
   isOfficial: v.boolean(),
   runtimeId: v.optional(v.string()),
