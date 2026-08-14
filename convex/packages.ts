@@ -689,7 +689,6 @@ type PackageModerationQueueItem = {
   name: string;
   displayName: string;
   family: PackageFamily;
-  clawProfilePolicyVersion?: 1;
   channel: PackageChannel;
   isOfficial: boolean;
   version: string;
@@ -887,7 +886,6 @@ function toPackageModerationQueueItem(
     name: pkg.name,
     displayName: pkg.displayName,
     family: pkg.family,
-    clawProfilePolicyVersion: pkg.clawProfilePolicyVersion,
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     version: release.version,
@@ -1005,6 +1003,7 @@ type PublicPackageDoc = {
   name: string;
   displayName: string;
   family: PackageFamily;
+  clawProfilePolicyVersion?: 1;
   channel: PackageChannel;
   isOfficial: boolean;
   runtimeId?: string;
@@ -1207,6 +1206,7 @@ function toPublicPackage(
     name: pkg.name,
     displayName: pkg.displayName,
     family: pkg.family,
+    clawProfilePolicyVersion: pkg.clawProfilePolicyVersion,
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     runtimeId: pkg.runtimeId,

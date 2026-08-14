@@ -19185,6 +19185,7 @@ describe("restorePackageInternal", () => {
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({
         family: "claw",
+        clawProfilePolicyVersion: 1,
         latestReleaseId: "packageReleases:demo-latest",
         latestVersionSummary: { version: "2.0.0" },
       }),
@@ -19227,7 +19228,11 @@ describe("restorePackageInternal", () => {
       process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
       const detail = await getByNameHandler(ctx, { name: "demo-plugin" });
       expect(detail).toMatchObject({
-        package: { family: "claw", clawManifestSummary: latestClawManifestSummary },
+        package: {
+          family: "claw",
+          clawProfilePolicyVersion: 1,
+          clawManifestSummary: latestClawManifestSummary,
+        },
         latestRelease: { clawManifestSummary: latestClawManifestSummary },
       });
       expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");
