@@ -511,7 +511,13 @@ function validateOpenClawProfile(
   requireNonEmpty("agent.groupChat.mentionPatterns", parsed.agent?.groupChat?.mentionPatterns);
   const tools = parsed.agent?.tools;
   const profile = tools?.profile;
-  if (profilePolicy === "current" && profile !== undefined && !isOpenClawBuiltinProfile(profile)) {
+  if (profile !== undefined && !isStrictNonEmpty(profile)) {
+    add("agent.tools.profile", "Must be non-empty without leading or trailing whitespace.");
+  } else if (
+    profilePolicy === "current" &&
+    profile !== undefined &&
+    !isOpenClawBuiltinProfile(profile)
+  ) {
     add("agent.tools.profile", "Must name a registered OpenClaw built-in profile.");
   }
   requireNonEmpty("agent.tools.allow", parsed.agent?.tools?.allow);
@@ -526,7 +532,7 @@ function validateOpenClawProfile(
       }
     }
   }
-  if (tools?.alsoAllow && !profile) {
+  if (profilePolicy === "current" && tools?.alsoAllow && !profile) {
     add("agent.tools.alsoAllow", "May be set only when a built-in profile is selected.");
   }
   if (tools?.allow && tools.alsoAllow) {

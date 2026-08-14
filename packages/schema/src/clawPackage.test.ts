@@ -312,6 +312,7 @@ describe("validateClawPackageContents", () => {
     ["unbounded messaging", "profile: messaging"],
     ["unbounded full", "profile: full"],
     ["a legacy wildcard allowlist", "profile: full\n    allow: ['*']"],
+    ["alsoAllow without a profile", "alsoAllow: [read]"],
   ])("preserves publication compatibility for %s", (_label, tools) => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
@@ -328,6 +329,32 @@ describe("validateClawPackageContents", () => {
     });
 
     expect(result.ok).toBe(true);
+  });
+
+  it("retains legacy non-empty profile validation in publication compatibility mode", () => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      openClawProfilePolicy: "publication-compatible",
+      files: [
+        ...files(),
+        {
+          path: "profiles/openclaw.yml",
+          text: "schemaVersion: 1\nagent:\n  tools:\n    profile: ' '",
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        expect.objectContaining({
+          code: "invalid_openclaw_profile",
+          path: "profiles/openclaw.yml.agent.tools.profile",
+        }),
+      ],
+    });
   });
 
   it.each([
