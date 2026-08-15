@@ -14,6 +14,10 @@ OpenClaw owns local preview, consent, apply, update, and removal.
 
 Claw publication is experimental. The ClawHub deployment must set
 `CLAWHUB_EXPERIMENTAL_CLAWS=1`; otherwise the server rejects publication.
+This registry gate is independent from OpenClaw's
+`OPENCLAW_EXPERIMENTAL_CLAWS=1` consumer gate. Hosting does not enable local
+preview or installation, and enabling the OpenClaw CLI does not enable ClawHub
+publication or hosted discovery.
 
 ## Package shape
 
@@ -93,11 +97,12 @@ profiles/codex.yml
 ```
 
 The `profiles/` namespace is reserved for these lowercase, single-file `.yml`
-paths. Each profile is a JSON-compatible YAML mapping. ClawHub validates the common
-shape and fully validates `profiles/openclaw.yml`; it does not interpret foreign
-profiles. A harness discovers only its own profile and ignores the others when
-applying the package. The exact published artifact and its digest still cover
-every profile, bootstrap instruction, and asset.
+paths. Each profile is a JSON-compatible YAML mapping. ClawHub validates the common shape and validates `profiles/openclaw.yml` against
+the shipped OpenClaw v1 consumer contract, including registered built-in tool
+profiles and bounded tool grants; it does not interpret foreign profiles. A
+harness discovers only its own profile and ignores the others when applying the
+package. The exact published artifact and its digest still cover every profile,
+bootstrap instruction, and asset.
 
 The retired `metadata.openclaw.config` pointer is rejected. Move that file to
 `profiles/openclaw.yml` and remove the metadata entry.
@@ -110,6 +115,7 @@ schemaVersion: 1
 agent:
   tools:
     profile: coding
+    allow: [read]
 extensions:
   - id: issue-tools
     kind: plugin
@@ -181,7 +187,9 @@ curl "https://clawhub.ai/api/v1/packages/@acme%2Fgithub-triage"
 
 List and search results use the normal package summary fields. Package and
 version detail responses may also include `clawManifestSummary`, which reports
-the agent identity and resource counts without exposing the full manifest.
+the agent identity, portable resource counts, harness-profile count,
+OpenClaw-profile count, and native extension count without exposing the full
+manifest or profile contents.
 
 When `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled, explicit `family=claw` filters
 are rejected, unscoped list and search results omit Claws, and named Claw reads

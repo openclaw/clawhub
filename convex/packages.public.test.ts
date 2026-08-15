@@ -9170,6 +9170,113 @@ describe("packages public queries", () => {
     expect(ctx.insert).toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
+  it("pins newly created Claw packages to the current profile policy", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const ctx = makeInsertReleaseCtx(null);
+
+    try {
+      await insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({
+        family: "claw",
+        clawProfilePolicyVersion: 1,
+      }),
+    );
+  });
+
+  it("pins a reserved package when its first published release is a Claw", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const reservation = makePackageDoc({
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const ctx = makeInsertReleaseCtx(reservation);
+
+    try {
+      await insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      });
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        family: "claw",
+        clawProfilePolicyVersion: 1,
+      }),
+    );
+  });
+
+  it("pins a reserved package when its pending first Claw release is published", async () => {
+    const reservation = makePackageDoc({
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      packageId: "packages:demo",
+      publicationStatus: "pending",
+      pendingPublication: {
+        family: "claw",
+        displayName: "Demo Claw",
+        tags: ["latest"],
+      },
+    });
+    const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
+      "packages:demo": reservation,
+      "packageReleases:pending": pendingRelease,
+    });
+
+    await publishPendingReleaseInternalHandler(ctx, {
+      releaseId: "packageReleases:pending",
+    });
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        family: "claw",
+        clawProfilePolicyVersion: 1,
+      }),
+    );
+  });
+
   it("preserves trusted GitHub Actions package publishes without org membership", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
@@ -10163,7 +10270,7 @@ describe("packages public queries", () => {
         "storage:claw",
         `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
       ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
+      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
       ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
       ["storage:bootstrap", "Ask which repositories the user owns.\n"],
     ]);
@@ -10316,13 +10423,17 @@ describe("packages public queries", () => {
         "storage:claw",
         "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n---\nRun the demo workflow precisely.\n",
       ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
+      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n"],
     ]);
     const existingPackage = makePackageDoc({
       family: "claw",
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:owner",
     });
+    const currentPolicyPackage = {
+      ...existingPackage,
+      clawProfilePolicyVersion: 1,
+    };
     const existingRelease = makeReleaseDoc({
       _id: "packageReleases:pending",
       packageId: "packages:demo",
@@ -10442,6 +10553,71 @@ describe("packages public queries", () => {
       );
 
       runQuery
+        .mockResolvedValueOnce(currentPolicyPackage)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "publishers:owner",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        });
+
+      await expect(
+        publishPackageForUserInternalHandler(ctx as never, {
+          actorUserId: "users:owner",
+          payload: {
+            name: "demo-claw",
+            displayName: "Demo Claw",
+            family: "claw",
+            version: "1.0.0",
+            changelog: "retry",
+            ownerHandle: "owner",
+            expectedArtifactSha256: artifactSha256,
+            files: [
+              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+              {
+                path: "manifests/CLAW.md",
+                size: 1,
+                storageId: "storage:claw",
+                sha256: "claw",
+              },
+              {
+                path: "profiles/openclaw.yml",
+                size: 1,
+                storageId: "storage:profile",
+                sha256: "profile",
+              },
+            ],
+            artifact: {
+              kind: "npm-pack",
+              storageId: "storage:archive",
+              sha256: artifactSha256,
+              size: 3,
+              format: "tgz",
+              npmIntegrity: "sha512-demo",
+              npmShasum: "b".repeat(40),
+              npmTarballName: "demo-claw-1.0.0.tgz",
+              npmUnpackedSize: 3,
+              npmFileCount: 3,
+            },
+          },
+        }),
+      ).rejects.toThrow(
+        "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
+      );
+      expect(runMutation).toHaveBeenCalledTimes(2);
+
+      runQuery.mockReset();
+      runQuery
         .mockResolvedValueOnce(existingPackage)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
@@ -10518,7 +10694,7 @@ describe("packages public queries", () => {
         }),
       );
       expect(runQuery.mock.calls.at(-1)?.[1]).not.toHaveProperty("artifactFingerprint");
-      expect(runMutation).toHaveBeenCalledTimes(2);
+      expect(runMutation).toHaveBeenCalledTimes(3);
       expect(runMutation).not.toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
@@ -19083,6 +19259,7 @@ describe("restorePackageInternal", () => {
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({
         family: "claw",
+        clawProfilePolicyVersion: 1,
         latestReleaseId: "packageReleases:demo-latest",
         latestVersionSummary: { version: "2.0.0" },
       }),
@@ -19125,7 +19302,11 @@ describe("restorePackageInternal", () => {
       process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
       const detail = await getByNameHandler(ctx, { name: "demo-plugin" });
       expect(detail).toMatchObject({
-        package: { family: "claw", clawManifestSummary: latestClawManifestSummary },
+        package: {
+          family: "claw",
+          clawProfilePolicyVersion: 1,
+          clawManifestSummary: latestClawManifestSummary,
+        },
         latestRelease: { clawManifestSummary: latestClawManifestSummary },
       });
       expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");

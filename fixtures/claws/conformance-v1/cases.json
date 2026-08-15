@@ -1,0 +1,106 @@
+{
+  "contract": "openclaw-claw-v1",
+  "consumer": {
+    "repository": "openclaw/openclaw",
+    "commit": "f8c0e1b8325b1fc36e039cf357a2c4602f76d5aa"
+  },
+  "profileCases": [
+    {
+      "name": "minimal",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"
+    },
+    {
+      "name": "bounded coding",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [read]\n"
+    },
+    {
+      "name": "bounded static group",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: ['group:fs']\n"
+    },
+    {
+      "name": "dynamic MCP bundle",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: full\n    allow: [bundle-mcp]\n"
+    },
+    {
+      "name": "overlong concrete MCP tool",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [server_abcdefghijklmnopqrstuvwxyz0123456789__tool_abcdefghijklmnopqrstuvwxyz0123456789]\n"
+    },
+    {
+      "name": "unknown profile",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n"
+    },
+    {
+      "name": "unbounded coding",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"
+    },
+    {
+      "name": "unbounded full",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: full\n"
+    }
+  ],
+  "heartbeatCases": [
+    {
+      "name": "bounded heartbeat",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  heartbeat:\n    every: 30m\n    activeHours: { start: '09:00', end: '24:00', timezone: UTC }\n    timeoutSeconds: 30\n"
+    },
+    {
+      "name": "retired skipWhenBusy",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  heartbeat:\n    every: 30m\n    skipWhenBusy: true\n"
+    }
+  ],
+  "extensionCases": [
+    {
+      "name": "exact OpenClaw extension",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\nextensions:\n  - id: issue-tools\n    kind: plugin\n    format: openclaw\n    source: clawhub\n    ref: '@acme/issue-tools'\n    version: 2.3.4\n"
+    },
+    {
+      "name": "floating OpenClaw extension",
+      "consumerAccepted": false,
+      "registryAccepted": false,
+      "yaml": "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\nextensions:\n  - id: issue-tools\n    kind: plugin\n    format: openclaw\n    source: clawhub\n    ref: '@acme/issue-tools'\n    version: latest\n"
+    }
+  ],
+  "metadataCases": [
+    {
+      "name": "no profile pointer",
+      "consumerAccepted": true,
+      "registryAccepted": true,
+      "metadata": {}
+    },
+    {
+      "name": "retired profile pointer",
+      "consumerAccepted": true,
+      "registryAccepted": false,
+      "metadata": {
+        "openclaw.config": "profiles/openclaw.yml"
+      }
+    }
+  ],
+  "projectArtifact": {
+    "path": "fixtures/claws/hosted-e2e/package",
+    "consumerAccepted": true,
+    "registryAccepted": true
+  }
+}

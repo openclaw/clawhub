@@ -22,8 +22,7 @@ const openClawProfile = [
   "    mentionPatterns: ['@triage']",
   "  sandbox: { mode: non-main, scope: agent, workspaceAccess: rw }",
   "  tools:",
-  "    profile: coding",
-  "    alsoAllow: [cron]",
+  "    profile: minimal",
   "    deny: [gateway]",
   "    fs: { workspaceOnly: true }",
   "  memory:",
@@ -92,6 +91,8 @@ describe("validateClawPackageContents", () => {
             description: "Reviews issues.",
           },
           packages: { skillCount: 1, pluginCount: 0 },
+          profiles: { count: 0, hasOpenClaw: false },
+          extensions: { count: 0 },
           workspace: { bootstrapFiles: [], fileCount: 1 },
         }),
       }),
@@ -241,10 +242,46 @@ describe("validateClawPackageContents", () => {
     if (result.ok) {
       expect(result.value).not.toHaveProperty("profile");
       expect(result.value.manifest.agent).toEqual(manifest.agent);
+      expect(result.value.summary.profiles).toEqual({ count: 1, hasOpenClaw: true });
+      expect(result.value.summary.extensions).toEqual({ count: 0 });
     }
   });
 
-  it("accepts an applying harness profile that ClawHub does not yet know", () => {
+  it("summarizes the public profile and extension footprint without exposing contents", () => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(),
+        {
+          path: "profiles/openclaw.yml",
+          text: [
+            "schemaVersion: 1",
+            "agent:",
+            "  tools:",
+            "    profile: minimal",
+            "extensions:",
+            "  - id: issue-tools",
+            "    kind: plugin",
+            "    format: openclaw",
+            "    source: clawhub",
+            "    ref: '@acme/issue-tools'",
+            "    version: 2.3.4",
+          ].join("\n"),
+        },
+        { path: "profiles/codex.yml", text: "version: 1" },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.summary.profiles).toEqual({ count: 2, hasOpenClaw: true });
+      expect(result.value.summary.extensions).toEqual({ count: 1 });
+    }
+  });
+
+  it("rejects an applying harness profile that shipped OpenClaw does not know", () => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
@@ -258,8 +295,111 @@ describe("validateClawPackageContents", () => {
       ],
     });
 
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        expect.objectContaining({
+          code: "invalid_openclaw_profile",
+          path: "profiles/openclaw.yml.agent.tools.profile",
+        }),
+      ],
+    });
+  });
+
+  it.each([
+    ["a custom profile", "profile: future-profile"],
+    ["unbounded coding", "profile: coding"],
+    ["unbounded messaging", "profile: messaging"],
+    ["unbounded full", "profile: full"],
+    ["a legacy wildcard allowlist", "profile: full\n    allow: ['*']"],
+    ["alsoAllow without a profile", "alsoAllow: [read]"],
+  ])("preserves publication compatibility for %s", (_label, tools) => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      openClawProfilePolicy: "publication-compatible",
+      files: [
+        ...files(),
+        {
+          path: "profiles/openclaw.yml",
+          text: `schemaVersion: 1\nagent:\n  tools:\n    ${tools}`,
+        },
+      ],
+    });
+
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value).not.toHaveProperty("profile");
+  });
+
+  it("retains legacy non-empty profile validation in publication compatibility mode", () => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      openClawProfilePolicy: "publication-compatible",
+      files: [
+        ...files(),
+        {
+          path: "profiles/openclaw.yml",
+          text: "schemaVersion: 1\nagent:\n  tools:\n    profile: ' '",
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        expect.objectContaining({
+          code: "invalid_openclaw_profile",
+          path: "profiles/openclaw.yml.agent.tools.profile",
+        }),
+      ],
+    });
+  });
+
+  it.each([
+    ["coding without a bounded allowlist", "profile: coding"],
+    ["messaging without a bounded allowlist", "profile: messaging"],
+    ["full without a bounded allowlist", "profile: full"],
+    ["an unbounded allow grant", "profile: full\n    allow: ['*']"],
+    ["an allow grant outside the selected profile", "profile: minimal\n    allow: [read]"],
+  ])("rejects %s like shipped OpenClaw", (_label, tools) => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(),
+        {
+          path: "profiles/openclaw.yml",
+          text: `schemaVersion: 1\nagent:\n  tools:\n    ${tools}`,
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_openclaw_profile" }),
+      ]),
+    });
+  });
+
+  it("accepts the documented bounded coding profile like shipped OpenClaw", () => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [
+        ...files(),
+        {
+          path: "profiles/openclaw.yml",
+          text: "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n    allow: [read]",
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
   });
 
   it.each([
@@ -570,7 +710,9 @@ describe("validateClawPackageContents", () => {
 
     expect(result).toEqual({
       ok: false,
-      issues: [expect.objectContaining({ code: "invalid_openclaw_profile" })],
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_openclaw_profile" }),
+      ]),
     });
   });
 

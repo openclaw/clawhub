@@ -104,6 +104,8 @@ export type ClawManifestSummary = {
   agent: { id: string; name?: string; description?: string };
   workspace: { bootstrapFiles: string[]; fileCount: number };
   packages: { skillCount: number; pluginCount: number };
+  profiles?: { count: number; hasOpenClaw: boolean };
+  extensions?: { count: number };
   mcpServerCount: number;
   cronJobCount: number;
 };
@@ -112,6 +114,7 @@ export type ClawManifestSummarySchemaAdapter<TValue, TOptional = TValue> = {
   literalOne: TValue;
   string: TValue;
   number: TValue;
+  boolean: TValue;
   stringArray: TValue;
   boundedString: (maxCharacters: number) => TValue;
   optional: (schema: TValue) => TOptional;
@@ -139,6 +142,17 @@ export function createClawManifestSummarySchema<TValue, TOptional = TValue>(
       skillCount: adapter.number,
       pluginCount: adapter.number,
     }),
+    profiles: adapter.optional(
+      adapter.object({
+        count: adapter.number,
+        hasOpenClaw: adapter.boolean,
+      }),
+    ),
+    extensions: adapter.optional(
+      adapter.object({
+        count: adapter.number,
+      }),
+    ),
     mcpServerCount: adapter.number,
     cronJobCount: adapter.number,
   });
@@ -149,6 +163,7 @@ export const ClawManifestSummarySchema = createClawManifestSummarySchema<BaseTyp
     literalOne: type("1"),
     string: type("string"),
     number: type("number"),
+    boolean: type("boolean"),
     stringArray: type("string[]"),
     boundedString: (maxCharacters) =>
       type("string").narrow((value) => Array.from(value).length <= maxCharacters),

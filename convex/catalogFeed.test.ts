@@ -278,6 +278,8 @@ describe("catalog feed projection", () => {
       agent: { id: "triage", name: "Triage" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
       packages: { skillCount: 1, pluginCount: 0 },
+      profiles: { count: 1, hasOpenClaw: true },
+      extensions: { count: 1 },
       mcpServerCount: 0,
       cronJobCount: 1,
     };

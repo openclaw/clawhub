@@ -738,6 +738,31 @@ describe("package commands", () => {
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
+  it("supports Claw family package browse requests", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          name: "@openclaw/hosted",
+          displayName: "Hosted Claw",
+          family: "claw",
+          channel: "official",
+          isOfficial: true,
+          latestVersion: "1.0.0",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    await cmdExplorePackages(makeOpts(), "", { family: "claw", limit: 7 });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages");
+    expect(url.searchParams.get("family")).toBe("claw");
+    expect(url.searchParams.get("limit")).toBe("7");
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[Claw, official]"));
+  });
+
   it("uses tag param when fetching a package file", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({
@@ -2626,6 +2651,84 @@ describe("package commands", () => {
     }
   });
 
+  it("rejects a legacy-only profile for a first Claw publish before upload", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.0",
+            openclaw: { claw: "CLAW.md" },
+          }),
+          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/profiles/openclaw.yml":
+            "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
+        }),
+      );
+      httpMocks.apiRequest.mockResolvedValueOnce({ package: null, owner: null });
+
+      await expect(cmdPublishPackage(makeOpts(workdir), packName)).rejects.toThrow(
+        "profiles/openclaw.yml.agent.tools.profile: Must name a registered OpenClaw built-in profile.",
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves a legacy-only profile for a grandfathered Claw package", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "demo-claw-1.0.1.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": JSON.stringify({
+            name: "demo-claw",
+            version: "1.0.1",
+            openclaw: { claw: "CLAW.md" },
+          }),
+          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
+          "package/profiles/openclaw.yml":
+            "schemaVersion: 1\nagent:\n  tools:\n    profile: future-profile\n",
+        }),
+      );
+      const packBytes = new Uint8Array(await readFile(join(workdir, packName)));
+      const artifactSha256 = artifactIdentity(packBytes).sha256;
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        package: {
+          name: "demo-claw",
+          displayName: "Demo Claw",
+          family: "claw",
+        },
+        owner: null,
+      });
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_claw",
+        releaseId: "rel_claw",
+        artifactSha256,
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), packName);
+
+      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: "GET",
+          path: "/api/v1/packages/demo-claw",
+        }),
+        expect.anything(),
+      );
+      expect(httpMocks.apiRequestForm).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed when ClawHub does not confirm the submitted Claw digest", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -3296,7 +3399,7 @@ describe("package commands", () => {
           "agent:",
           "  tools:",
           "    profile: coding",
-          "    alsoAllow: [cron]",
+          "    allow: [read]",
           "    fs:",
           "      workspaceOnly: true",
           "  memory:",

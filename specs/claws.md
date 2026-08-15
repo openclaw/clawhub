@@ -28,15 +28,18 @@ Profiles exist only inside the Claw package. ClawHub reserves the `profiles/`
 namespace for lowercase, single-file harness profiles, requires each profile to
 be a bounded UTF-8 JSON-compatible YAML mapping, and rejects aliases, anchors,
 tags, merge keys, non-string mapping keys, and non-finite values. It validates
-the strict profile-v1 structure of `profiles/openclaw.yml` without resolving
-built-in profile names, installing extensions, or claiming compatibility with
-a particular applying OpenClaw release. Foreign profiles remain structurally
-validated but uninterpreted. Applying harnesses discover only their own profile.
+the strict profile-v1 structure of `profiles/openclaw.yml`, including the
+built-in profile registry pinned by the conformance artifact, without
+installing extensions or claiming compatibility beyond that pinned consumer.
+Foreign profiles remain structurally validated but uninterpreted. Applying
+harnesses discover only their own profile.
 
-ClawHub validates profile shape but treats `agent.tools.profile` as an opaque,
-non-empty applying-harness identifier. It does not freeze OpenClaw's evolving
-built-in profile registry; OpenClaw resolves the identifier against its current
-registry during preview and application.
+ClawHub validates `profiles/openclaw.yml` no more permissively than the pinned
+shipped OpenClaw v1 consumer contract. Registered built-in profiles, bounded
+tool grants, extension references, heartbeat settings, and their cross-field
+rules must pass before publication. The representative vectors in
+`fixtures/claws/conformance-v1/cases.json` record the consumer commit and keep
+observable accepted/rejected behavior aligned across repository boundaries.
 
 An optional package-root `BOOTSTRAP.md` carries reviewed first-run instructions.
 It must be bounded, nonempty UTF-8 text and cannot also be targeted through the
@@ -50,6 +53,9 @@ artifact digest.
 
 - Backend Claw publication and read surfaces require
   `CLAWHUB_EXPERIMENTAL_CLAWS=1`.
+- This hosting gate is independent from OpenClaw's
+  `OPENCLAW_EXPERIMENTAL_CLAWS=1` local consumer gate; neither enables the
+  other side of the boundary.
 - The gate is not user consent and must not bypass validation, moderation,
   ownership, or scanner checks.
 - Disabled deployments must not accept Claw publication or expose Claws through
@@ -103,6 +109,9 @@ field structure is built from `createClawManifestSummarySchema` in both the
 public ArkType contract and the Convex storage validator. Convex cannot express
 the summary text-length caps, so publication must validate or derive summaries
 through the shared schema before storage.
+New summaries also expose only the profile/extension footprint: total harness
+profiles, conventional OpenClaw profiles, and OpenClaw-native extension count.
+They never expose profile contents.
 
 Claws use the existing package publication pipeline. `package.json` declares
 the package identity, version, and package-relative `openclaw.claw` manifest

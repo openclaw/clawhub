@@ -111,6 +111,13 @@ export function createClawManifestSummarySchema(adapter) {
             skillCount: adapter.number,
             pluginCount: adapter.number,
         }),
+        profiles: adapter.optional(adapter.object({
+            count: adapter.number,
+            hasOpenClaw: adapter.boolean,
+        })),
+        extensions: adapter.optional(adapter.object({
+            count: adapter.number,
+        })),
         mcpServerCount: adapter.number,
         cronJobCount: adapter.number,
     });
@@ -119,6 +126,7 @@ export const ClawManifestSummarySchema = createClawManifestSummarySchema({
     literalOne: type("1"),
     string: type("string"),
     number: type("number"),
+    boolean: type("boolean"),
     stringArray: type("string[]"),
     boundedString: (maxCharacters) => type("string").narrow((value) => Array.from(value).length <= maxCharacters),
     optional: (schema) => schema.optional(),

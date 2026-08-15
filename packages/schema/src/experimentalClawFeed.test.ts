@@ -27,6 +27,8 @@ function makeFeed(): ExperimentalClawFeed {
           agent: { id: "triage", name: "Triage" },
           workspace: { bootstrapFiles: ["SOUL.md", "AGENTS.md"], fileCount: 2 },
           packages: { skillCount: 1, pluginCount: 0 },
+          profiles: { count: 2, hasOpenClaw: true },
+          extensions: { count: 1 },
           mcpServerCount: 0,
           cronJobCount: 1,
         },
@@ -54,7 +56,14 @@ describe("experimental Claw feed schema", () => {
     expect(serializeExperimentalClawFeed(first)).toBe(serializeExperimentalClawFeed(second));
     expect(
       parseExperimentalClawFeed(JSON.parse(serializeExperimentalClawFeed(first))).entries[0],
-    ).toMatchObject({ type: "claw", clawManifestSummary: { agent: { id: "triage" } } });
+    ).toMatchObject({
+      type: "claw",
+      clawManifestSummary: {
+        agent: { id: "triage" },
+        profiles: { count: 2, hasOpenClaw: true },
+        extensions: { count: 1 },
+      },
+    });
   });
 
   it("rejects generic feed ids and non-Claw entries", () => {

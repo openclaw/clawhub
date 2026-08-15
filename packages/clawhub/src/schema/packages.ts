@@ -434,6 +434,7 @@ export const ApiV1PackageResponseSchema = type({
     name: "string",
     displayName: "string",
     family: PackageFamilySchema,
+    clawProfilePolicyVersion: "1?",
     runtimeId: "string|null?",
     channel: PackageChannelSchema,
     isOfficial: "boolean",

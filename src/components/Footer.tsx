@@ -10,7 +10,6 @@ import {
   OPENCLAW_CLAWHUB_DOCS_URL,
   OPENCLAW_ECOSYSTEM_URL,
   OPENCLAW_LOGO_URL,
-  OPENCLAW_SITE_URL,
 } from "../lib/nav-items";
 
 const FOOTER_BRAND_MARK_SRC = "/logo-transparent.png";
@@ -199,7 +198,6 @@ export function Footer() {
     });
   };
 
-  const year = new Date().getFullYear();
   const ecosystemProjects = FOOTER_ECOSYSTEM_PROJECTS.filter(
     (project) => project.label !== "ClawHub",
   );
@@ -350,26 +348,7 @@ export function Footer() {
         </div>
 
         <div className="footer-v2-bottom">
-          <p className="footer-v2-copy">
-            © {year}{" "}
-            <Link to="/" className="footer-v2-copy-link">
-              ClawHub
-            </Link>
-            {" / "}
-            <a
-              className="footer-v2-copy-link"
-              href={OPENCLAW_SITE_URL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              an OpenClaw project
-              <ArrowUpRight
-                className="footer-col-link-external-icon footer-v2-copy-link-icon"
-                size={12}
-                aria-hidden="true"
-              />
-            </a>
-          </p>
+          <p className="footer-v2-copy">© OpenClaw Foundation</p>
           <p className="footer-v2-meta">
             {FOOTER_PLATFORM_LINKS.map((link, index) => (
               <span key={link.label}>

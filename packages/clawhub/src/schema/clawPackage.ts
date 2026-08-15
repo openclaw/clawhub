@@ -20,6 +20,8 @@ export type ValidatedClawPackage = {
   summary: ClawManifestSummary;
   hasClawMarkdownBody: boolean;
 };
+// Existing experimental packages retain the publication contract they were accepted under.
+export type OpenClawProfilePolicy = "current" | "publication-compatible";
 
 const EXACT_VERSION_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -32,6 +34,163 @@ const MAX_HARNESS_PROFILE_BYTES = 256 * 1024;
 const HARNESS_PROFILE_PATH_PATTERN = /^profiles\/[a-z][a-z0-9_-]{0,63}\.yml$/;
 const AGENT_ID_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+const CONCRETE_MCP_TOOL_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*__[A-Za-z][A-Za-z0-9_-]*$/;
+export const OPENCLAW_CLAW_PROFILE_POLICY_V1 = {
+  contractVersion: 1,
+  source: {
+    repository: "openclaw/openclaw",
+    commit: "f8c0e1b8325b1fc36e039cf357a2c4602f76d5aa",
+    path: "src/claws/schema.ts",
+  },
+  profiles: ["minimal", "coding", "messaging", "full"],
+} as const;
+type OpenClawBuiltinProfile = (typeof OPENCLAW_CLAW_PROFILE_POLICY_V1.profiles)[number];
+const OPENCLAW_PROFILE_TOOL_ALLOW = {
+  minimal: new Set(["session_status"]),
+  coding: new Set([
+    "read",
+    "write",
+    "edit",
+    "apply_patch",
+    "exec",
+    "process",
+    "code_execution",
+    "web_search",
+    "web_fetch",
+    "x_search",
+    "memory_search",
+    "memory_get",
+    "sessions",
+    "sessions_list",
+    "sessions_history",
+    "sessions_search",
+    "conversations_list",
+    "conversations_send",
+    "conversations_turn",
+    "sessions_send",
+    "sessions_spawn",
+    "agents_wait",
+    "sessions_yield",
+    "subagents",
+    "session_status",
+    "suggest_task",
+    "dismiss_task",
+    "screen",
+    "dashboard",
+    "terminal",
+    "get_goal",
+    "create_goal",
+    "update_goal",
+    "update_plan",
+    "ask_user",
+    "skill_workshop",
+    "image",
+    "image_generate",
+    "music_generate",
+    "video_generate",
+  ]),
+  messaging: new Set([
+    "sessions",
+    "sessions_list",
+    "sessions_history",
+    "sessions_search",
+    "conversations_list",
+    "conversations_send",
+    "conversations_turn",
+    "sessions_send",
+    "sessions_spawn",
+    "sessions_yield",
+    "subagents",
+    "session_status",
+    "message",
+    "ask_user",
+  ]),
+  full: null,
+} as const;
+const OPENCLAW_STATIC_TOOL_GROUPS: Record<string, ReadonlySet<string>> = {
+  "group:openclaw": new Set([
+    "code_execution",
+    "web_search",
+    "web_fetch",
+    "x_search",
+    "memory_search",
+    "memory_get",
+    "sessions",
+    "sessions_list",
+    "sessions_history",
+    "sessions_search",
+    "conversations_list",
+    "conversations_send",
+    "conversations_turn",
+    "sessions_send",
+    "sessions_spawn",
+    "agents_wait",
+    "sessions_yield",
+    "subagents",
+    "session_status",
+    "suggest_task",
+    "dismiss_task",
+    "browser",
+    "screen",
+    "dashboard",
+    "terminal",
+    "show_widget",
+    "message",
+    "heartbeat_respond",
+    "automations",
+    "gateway",
+    "nodes",
+    "computer",
+    "mobile_ui",
+    "agents_list",
+    "get_goal",
+    "create_goal",
+    "update_goal",
+    "update_plan",
+    "ask_user",
+    "skill_workshop",
+    "image",
+    "image_generate",
+    "music_generate",
+    "video_generate",
+    "tts",
+  ]),
+  "group:fs": new Set(["read", "write", "edit", "apply_patch"]),
+  "group:runtime": new Set(["exec", "process", "code_execution"]),
+  "group:web": new Set(["web_search", "web_fetch", "x_search"]),
+  "group:memory": new Set(["memory_search", "memory_get"]),
+  "group:sessions": new Set([
+    "sessions",
+    "sessions_list",
+    "sessions_history",
+    "sessions_search",
+    "conversations_list",
+    "conversations_send",
+    "conversations_turn",
+    "sessions_send",
+    "sessions_spawn",
+    "agents_wait",
+    "sessions_yield",
+    "subagents",
+    "session_status",
+    "suggest_task",
+    "dismiss_task",
+  ]),
+  "group:ui": new Set(["browser", "screen", "dashboard", "terminal", "canvas", "show_widget"]),
+  "group:messaging": new Set(["message"]),
+  "group:automation": new Set(["heartbeat_respond", "automations", "gateway"]),
+  "group:nodes": new Set(["nodes", "computer", "mobile_ui"]),
+  "group:agents": new Set([
+    "agents_list",
+    "get_goal",
+    "create_goal",
+    "update_goal",
+    "update_plan",
+    "ask_user",
+    "skill_workshop",
+  ]),
+  "group:media": new Set(["image", "image_generate", "music_generate", "video_generate", "tts"]),
+};
 const StrictStringArraySchema = type("string[]");
 const OpenClawExtensionSchema = type({
   "+": "reject",
@@ -249,6 +408,50 @@ function isStrictNonEmpty(value: string): boolean {
   return value.length > 0 && value === value.trim();
 }
 
+function normalizeOpenClawToolGrant(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized === "bash") return "exec";
+  if (normalized === "apply-patch") return "apply_patch";
+  if (normalized === "cron") return "automations";
+  return normalized;
+}
+
+function isBoundedOpenClawToolGrant(value: string): boolean {
+  if (!isStrictNonEmpty(value)) return false;
+  const normalized = normalizeOpenClawToolGrant(value);
+  if (
+    /[*?[\]{}]/u.test(normalized) ||
+    normalized === "bundle-mcp" ||
+    normalized === "group:plugins"
+  ) {
+    return false;
+  }
+  if (normalized.startsWith("group:")) {
+    return Object.hasOwn(OPENCLAW_STATIC_TOOL_GROUPS, normalized);
+  }
+  return !normalized.includes("__") || isConcreteOpenClawMcpToolName(value);
+}
+
+function isConcreteOpenClawMcpToolName(value: string): boolean {
+  return value.length <= 64 && CONCRETE_MCP_TOOL_PATTERN.test(value);
+}
+
+function isOpenClawBuiltinProfile(value: string): value is OpenClawBuiltinProfile {
+  return Object.hasOwn(OPENCLAW_PROFILE_TOOL_ALLOW, value);
+}
+
+function toolGrantOverlapsProfile(value: string, profile: OpenClawBuiltinProfile): boolean {
+  if (profile === "full") return true;
+  const normalized = normalizeOpenClawToolGrant(value);
+  const group = OPENCLAW_STATIC_TOOL_GROUPS[normalized];
+  return (
+    OPENCLAW_PROFILE_TOOL_ALLOW[profile].has(normalized) ||
+    (group !== undefined &&
+      Array.from(group).some((tool) => OPENCLAW_PROFILE_TOOL_ALLOW[profile].has(tool))) ||
+    ((profile === "coding" || profile === "messaging") && isConcreteOpenClawMcpToolName(value))
+  );
+}
+
 function isValidDuration(value: string): boolean {
   if (!isStrictNonEmpty(value)) return false;
   const multipliers: Record<string, number> = {
@@ -278,16 +481,20 @@ function isValidDuration(value: string): boolean {
 function validateOpenClawProfile(
   value: unknown,
   profilePath: string,
-): ClawPackageValidationIssue[] {
+  profilePolicy: OpenClawProfilePolicy,
+): { issues: ClawPackageValidationIssue[]; extensionCount: number } {
   const parsed = OpenClawProfileSchema(value);
   if (parsed instanceof ArkErrors) {
-    return Array.from(parsed, (error) =>
-      issue(
-        "invalid_openclaw_profile",
-        `${profilePath}${error.path.length > 0 ? `.${error.path.join(".")}` : ""}`,
-        error.description ?? "Invalid value.",
+    return {
+      issues: Array.from(parsed, (error) =>
+        issue(
+          "invalid_openclaw_profile",
+          `${profilePath}${error.path.length > 0 ? `.${error.path.join(".")}` : ""}`,
+          error.description ?? "Invalid value.",
+        ),
       ),
-    );
+      extensionCount: 0,
+    };
   }
   const issues: ClawPackageValidationIssue[] = [];
   const add = (path: string, message: string) =>
@@ -302,17 +509,50 @@ function validateOpenClawProfile(
   };
 
   requireNonEmpty("agent.groupChat.mentionPatterns", parsed.agent?.groupChat?.mentionPatterns);
-  if (
-    parsed.agent?.tools?.profile !== undefined &&
-    !isStrictNonEmpty(parsed.agent?.tools.profile)
-  ) {
+  const tools = parsed.agent?.tools;
+  const profile = tools?.profile;
+  if (profile !== undefined && !isStrictNonEmpty(profile)) {
     add("agent.tools.profile", "Must be non-empty without leading or trailing whitespace.");
+  } else if (
+    profilePolicy === "current" &&
+    profile !== undefined &&
+    !isOpenClawBuiltinProfile(profile)
+  ) {
+    add("agent.tools.profile", "Must name a registered OpenClaw built-in profile.");
   }
   requireNonEmpty("agent.tools.allow", parsed.agent?.tools?.allow);
   requireNonEmpty("agent.tools.alsoAllow", parsed.agent?.tools?.alsoAllow);
   requireNonEmpty("agent.tools.deny", parsed.agent?.tools?.deny);
-  if (parsed.agent?.tools?.allow && parsed.agent?.tools.alsoAllow) {
+  if (profilePolicy === "current") {
+    for (const field of ["allow", "alsoAllow"] as const) {
+      for (const [index, grant] of (tools?.[field] ?? []).entries()) {
+        if (!isBoundedOpenClawToolGrant(grant)) {
+          add(`agent.tools.${field}.${index}`, "Tool grants must be bounded concrete names.");
+        }
+      }
+    }
+  }
+  if (profilePolicy === "current" && tools?.alsoAllow && !profile) {
+    add("agent.tools.alsoAllow", "May be set only when a built-in profile is selected.");
+  }
+  if (tools?.allow && tools.alsoAllow) {
     add("agent.tools.alsoAllow", "Must not be combined with tools.allow.");
+  }
+  if (profilePolicy === "current" && profile && isOpenClawBuiltinProfile(profile)) {
+    if (profile === "full" && !tools?.allow) {
+      add("agent.tools.profile", "The full profile requires a bounded explicit allowlist.");
+    }
+    if ((profile === "coding" || profile === "messaging") && !tools?.allow) {
+      add(
+        "agent.tools.allow",
+        "Profiles containing bundle MCP tools require a bounded explicit allowlist.",
+      );
+    }
+    for (const [index, grant] of (tools?.allow ?? []).entries()) {
+      if (isBoundedOpenClawToolGrant(grant) && !toolGrantOverlapsProfile(grant, profile)) {
+        add(`agent.tools.allow.${index}`, "Must overlap the selected built-in profile.");
+      }
+    }
   }
   if (parsed.agent?.memory?.search?.sources?.length === 0) {
     add("agent.memory.search.sources", "Must contain at least one source.");
@@ -381,7 +621,7 @@ function validateOpenClawProfile(
     extensionIds.add(extension.id);
     extensionRefs.add(extension.ref.toLowerCase());
   }
-  return issues;
+  return { issues, extensionCount: parsed.extensions?.length ?? 0 };
 }
 
 function parseManifestDocument(
@@ -479,6 +719,7 @@ export function validateClawPackageContents(input: {
   version: string;
   packageJson: unknown;
   files: readonly ClawPackageTextFile[];
+  openClawProfilePolicy?: OpenClawProfilePolicy;
 }):
   | { ok: true; value: ValidatedClawPackage }
   | { ok: false; issues: ClawPackageValidationIssue[] } {
@@ -655,6 +896,7 @@ export function validateClawPackageContents(input: {
   const profileFiles = [...fileByPath.values()].filter((file) =>
     portablePathKey(file.path).startsWith("profiles/"),
   );
+  let openClawExtensionCount = 0;
   for (const profileFile of profileFiles) {
     if (!HARNESS_PROFILE_PATH_PATTERN.test(profileFile.path)) {
       issues.push(
@@ -688,7 +930,15 @@ export function validateClawPackageContents(input: {
     if (profileFile.path === "profiles/openclaw.yml") {
       const profile = parseJsonCompatibleYaml(profileFile.text, profileFile.path);
       if (profile.issues) issues.push(...profile.issues);
-      else issues.push(...validateOpenClawProfile(profile.value, profileFile.path));
+      else {
+        const validatedProfile = validateOpenClawProfile(
+          profile.value,
+          profileFile.path,
+          input.openClawProfilePolicy ?? "current",
+        );
+        issues.push(...validatedProfile.issues);
+        openClawExtensionCount = validatedProfile.extensionCount;
+      }
     } else {
       const profile = parseGenericHarnessProfile(profileFile.text, profileFile.path);
       if (profile.issues) issues.push(...profile.issues);
@@ -716,6 +966,11 @@ export function validateClawPackageContents(input: {
   const summary = summarizeClawManifest(validated.manifest, {
     clawMarkdownBody: hasClawMarkdownBody,
   });
+  summary.profiles = {
+    count: profileFiles.length,
+    hasOpenClaw: profileFiles.some((file) => file.path === "profiles/openclaw.yml"),
+  };
+  summary.extensions = { count: openClawExtensionCount };
   if (packageBootstrap) {
     summary.workspace.bootstrapFiles = [...summary.workspace.bootstrapFiles, "BOOTSTRAP.md"].sort();
   }

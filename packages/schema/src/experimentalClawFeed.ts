@@ -125,6 +125,17 @@ export function serializeExperimentalClawFeed(feed: ExperimentalClawFeed): strin
           skillCount: entry.clawManifestSummary.packages.skillCount,
           pluginCount: entry.clawManifestSummary.packages.pluginCount,
         },
+        ...(entry.clawManifestSummary.profiles === undefined
+          ? {}
+          : {
+              profiles: {
+                count: entry.clawManifestSummary.profiles.count,
+                hasOpenClaw: entry.clawManifestSummary.profiles.hasOpenClaw,
+              },
+            }),
+        ...(entry.clawManifestSummary.extensions === undefined
+          ? {}
+          : { extensions: { count: entry.clawManifestSummary.extensions.count } }),
         mcpServerCount: entry.clawManifestSummary.mcpServerCount,
         cronJobCount: entry.clawManifestSummary.cronJobCount,
       },

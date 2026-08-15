@@ -81,7 +81,7 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
 // Footer sections
 // ---------------------------------------------------------------------------
 
-export const OPENCLAW_SITE_URL = "https://openclaw.ai";
+const OPENCLAW_SITE_URL = "https://openclaw.ai";
 export const OPENCLAW_ECOSYSTEM_URL = `${OPENCLAW_SITE_URL}/ecosystem`;
 const OPENCLAW_BLOG_CLAWHUB_URL = `${OPENCLAW_SITE_URL}/blog#clawhub`;
 export const OPENCLAW_CLAWHUB_DOCS_URL = CLAWHUB_DOCS_URL;

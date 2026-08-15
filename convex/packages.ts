@@ -160,6 +160,7 @@ const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
 const MAX_OFFICIAL_MIGRATION_NOTES_LENGTH = 2_000;
 const MAX_STORED_PACKAGE_METADATA_DEPTH = 10;
+const CURRENT_OPENCLAW_PROFILE_POLICY_VERSION = 1;
 const REAL_BUNDLE_MANIFESTS = [
   { path: ".codex-plugin/plugin.json", format: "codex" },
   { path: ".claude-plugin/plugin.json", format: "claude" },
@@ -1002,6 +1003,7 @@ type PublicPackageDoc = {
   name: string;
   displayName: string;
   family: PackageFamily;
+  clawProfilePolicyVersion?: 1;
   channel: PackageChannel;
   isOfficial: boolean;
   runtimeId?: string;
@@ -1204,6 +1206,7 @@ function toPublicPackage(
     name: pkg.name,
     displayName: pkg.displayName,
     family: pkg.family,
+    clawProfilePolicyVersion: pkg.clawProfilePolicyVersion,
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     runtimeId: pkg.runtimeId,
@@ -8549,6 +8552,12 @@ async function publishPackageImpl(
           packageName: name,
           version,
           packageJson,
+          openClawProfilePolicy:
+            existingPackage &&
+            !hasNoPublishedPackageVersions(existingPackage) &&
+            existingPackage.clawProfilePolicyVersion !== CURRENT_OPENCLAW_PROFILE_POLICY_VERSION
+              ? "publication-compatible"
+              : "current",
           files: clawValidationFiles,
         })
       : null;
@@ -10994,9 +11003,12 @@ export const publishPendingReleaseInternal = internalMutation({
 
     const now = Date.now();
     const metadata = pendingPackagePublicationMetadata(release);
+    const firstPublishedRelease = hasNoPublishedPackageVersions(pkg);
+    const pendingFamily = stringPendingField(metadata, "family", pkg.family) as PackageFamily;
+    const packageFamily = firstPublishedRelease ? pendingFamily : pkg.family;
     const currentLatest = await resolvePackageCurrentLatestForPublish(ctx, pkg);
     const { effectiveTags, shouldPromoteLatest } = resolvePackageReleaseTagsForPublish({
-      family: pkg.family,
+      family: packageFamily,
       currentLatestExists: currentLatest.exists,
       currentLatestVersion: currentLatest.version,
       candidateVersion: release.version,
@@ -11031,7 +11043,11 @@ export const publishPendingReleaseInternal = internalMutation({
       displayName: stringPendingField(metadata, "displayName", pkg.displayName),
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
-      family: pkg.family,
+      family: packageFamily,
+      clawProfilePolicyVersion:
+        firstPublishedRelease && packageFamily === "claw"
+          ? CURRENT_OPENCLAW_PROFILE_POLICY_VERSION
+          : pkg.clawProfilePolicyVersion,
       summary: shouldPromoteLatest ? release.summary : pkg.summary,
       icon: shouldPromoteLatest ? release.icon : pkg.icon,
       categories: shouldPromoteLatest
@@ -11289,6 +11305,8 @@ export const insertReleaseInternal = internalMutation({
         ownerUserId: args.ownerUserId,
         ownerPublisherId: args.ownerPublisherId,
         family: args.family,
+        clawProfilePolicyVersion:
+          args.family === "claw" ? CURRENT_OPENCLAW_PROFILE_POLICY_VERSION : undefined,
         channel: nextChannel,
         isOfficial: nextIsOfficial,
         runtimeId: args.runtimeId,
@@ -11448,6 +11466,10 @@ export const insertReleaseInternal = internalMutation({
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId ?? pkg.ownerPublisherId,
       family: existingIsReservation ? args.family : pkg.family,
+      clawProfilePolicyVersion:
+        existingIsReservation && args.family === "claw"
+          ? CURRENT_OPENCLAW_PROFILE_POLICY_VERSION
+          : pkg.clawProfilePolicyVersion,
       summary: shouldPromoteLatest ? args.summary : pkg.summary,
       icon: shouldPromoteLatest ? args.icon : pkg.icon,
       categories: shouldPromoteLatest ? args.categories : pkg.categories,

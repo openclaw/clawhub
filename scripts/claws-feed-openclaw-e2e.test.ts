@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { crc32, createDeflateRaw } from "node:zlib";
 import { EXPERIMENTAL_CLAW_FEED_ID, serializeExperimentalClawFeed } from "clawhub-schema";
@@ -22,6 +22,7 @@ import {
 const execFileAsync = promisify(execFile);
 const openclawRepo = process.env.OPENCLAW_CLAWS_CHECKOUT;
 const fixtureRoot = resolve("fixtures/claws/hosted-e2e");
+const conformanceFixture = resolve("fixtures/claws/conformance-v1/cases.json");
 let tempRoot = "";
 let archiveBytes = new Uint8Array();
 let integrity = "";
@@ -137,9 +138,14 @@ async function compactZipOfZeros(path: string, unpackedSize: number) {
 }
 
 async function npmPackFixture(destination: string) {
+  const npmArgs =
+    process.platform === "win32"
+      ? [join(dirname(process.execPath), "node_modules/npm/bin/npm-cli.js")]
+      : [];
   const { stdout } = await execFileAsync(
-    "npm",
+    process.platform === "win32" ? process.execPath : "npm",
     [
+      ...npmArgs,
       "pack",
       join(fixtureRoot, "package"),
       "--json",
@@ -178,8 +184,13 @@ function feedValue() {
           clawManifestSummary: {
             schemaVersion: 1,
             agent: { id: "hosted-e2e", name: "Hosted E2E" },
-            workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 0 },
+            workspace: {
+              bootstrapFiles: ["BOOTSTRAP.md", "HEARTBEAT.md", "SOUL.md"],
+              fileCount: 1,
+            },
             packages: { skillCount: 0, pluginCount: 0 },
+            profiles: { count: 1, hasOpenClaw: true },
+            extensions: { count: 0 },
             mcpServerCount: 0,
             cronJobCount: 0,
           },
@@ -197,6 +208,32 @@ function feedValue() {
       ],
     }),
   );
+}
+
+async function runOpenClawProfileConformance(openclawCheckout: string) {
+  const runner = `
+    import { readFileSync } from "node:fs";
+    import { parse } from "yaml";
+    import { parseClawOpenClawProfile } from "./src/claws/schema.ts";
+    const cases = JSON.parse(readFileSync(process.env.CLAWHUB_CONFORMANCE_CASES, "utf8"));
+    const vectors = [
+      ...cases.profileCases,
+      ...cases.heartbeatCases,
+      ...cases.extensionCases,
+    ];
+    const mismatches = vectors
+      .filter((vector) => parseClawOpenClawProfile(parse(vector.yaml)).ok !== vector.consumerAccepted)
+      .map((vector) => vector.name);
+    process.stdout.write(JSON.stringify(mismatches));
+  `;
+  const { stdout } = await execFileAsync("pnpm", ["exec", "tsx", "--eval", runner], {
+    cwd: openclawCheckout,
+    env: {
+      ...process.env,
+      CLAWHUB_CONFORMANCE_CASES: conformanceFixture,
+    },
+  });
+  return JSON.parse(stdout) as string[];
 }
 
 describe("published Claw to OpenClaw dry-run proof", () => {
@@ -242,7 +279,7 @@ describe("published Claw to OpenClaw dry-run proof", () => {
   afterAll(async () => {
     if (server) await new Promise<void>((resolveClose) => server!.close(() => resolveClose()));
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true });
-  });
+  }, 30_000);
 
   it("selects only the exact public ClawHub candidate", () => {
     const selected = selectPublishedClaw(feedValue(), "@openclaw/hosted-e2e");
@@ -312,6 +349,13 @@ describe("published Claw to OpenClaw dry-run proof", () => {
   });
 
   it.skipIf(!openclawRepo)(
+    "executes profile conformance vectors against the pinned OpenClaw parser",
+    async () => {
+      await expect(runOpenClawProfileConformance(openclawRepo!)).resolves.toEqual([]);
+    },
+  );
+
+  it.skipIf(!openclawRepo)(
     "runs the downloaded package through OpenClaw dry-run",
     async () => {
       const origin = `http://127.0.0.1:${serverPort}`;
@@ -334,7 +378,10 @@ describe("published Claw to OpenClaw dry-run proof", () => {
             kind: "agent",
             id: "hosted-e2e",
             details: expect.objectContaining({
-              tools: expect.objectContaining({ profile: "coding" }),
+              tools: expect.objectContaining({
+                profile: "full",
+                allow: ["session_status"],
+              }),
             }),
           }),
           expect.objectContaining({
@@ -354,12 +401,17 @@ describe("published Claw to OpenClaw dry-run proof", () => {
             id: "assets/incident.schema.json",
             blocked: false,
           }),
+          expect.objectContaining({
+            kind: "workspaceFile",
+            id: "HEARTBEAT.md",
+            blocked: false,
+          }),
         ]),
       );
       expect(JSON.stringify(result.plan)).not.toContain(
         "Use the published Claw package without mutating local state during proof.",
       );
     },
-    30_000,
+    120_000,
   );
 });
