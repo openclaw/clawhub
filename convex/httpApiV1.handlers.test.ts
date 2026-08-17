@@ -942,7 +942,7 @@ describe("httpApiV1 handlers", () => {
     expect(Object.keys(zipEntries).some((path) => path.endsWith("/SKILL.md"))).toBe(false);
   });
 
-  it("skills export logs generation failure context", async () => {
+  it("skills export skips duplicate legacy file paths without failing the page", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
       user: { _id: "users:actor", role: "user" },
@@ -951,8 +951,6 @@ describe("httpApiV1 handlers", () => {
       userId: "users:actor",
       user: { _id: "users:actor", role: "user" },
     } as never);
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("startDate" in args) {
         return {
@@ -979,50 +977,37 @@ describe("httpApiV1 handlers", () => {
           skillId: "skills:demo",
           version: "1.0.0",
           files: [
-            { storageId: "storage:one", path: "SKILL.md" },
-            { storageId: "storage:two", path: "SKILL.md" },
+            { storageId: "storage:one", path: "skills/humanizer/_skillhub_meta.json" },
+            { storageId: "storage:two", path: "skills/humanizer/_skillhub_meta.json" },
           ],
         };
       }
       return null;
     });
 
-    try {
-      await expect(
-        __handlers.exportSkillsV1Handler(
-          makeCtx({
-            runQuery,
-            storage: { get: vi.fn(async () => new Blob(["content"])) },
-          }),
-          new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=5", {
-            headers: { authorization: "Bearer user-token" },
-          }),
-        ),
-      ).rejects.toThrow(/Duplicate ZIP path/);
+    const storageGet = vi.fn(async (storageId: string) => new Blob([storageId]));
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
 
-      expect(consoleError).toHaveBeenCalledWith(
-        "skills_export_failed",
-        expect.objectContaining({
-          phase: "build_zip",
-          startDate: 1,
-          endDate: 5,
-          limit: 250,
-          cursorPresent: false,
-          pageLength: 1,
-          versionCount: 1,
-          blobTaskCount: 2,
-          blobCount: 2,
-          zipEntryCount: 3,
-          manifestCount: 1,
-          exportErrorCount: 0,
-          totalExportBytes: 14,
-          errorName: "Error",
-        }),
-      );
-      expect(JSON.stringify(consoleError.mock.calls)).not.toContain("user-token");
-    } finally {
-      consoleError.mockRestore();
-    }
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Export-Errors")).toBe("1");
+    expect(storageGet).toHaveBeenCalledTimes(1);
+    expect(storageGet).toHaveBeenCalledWith("storage:one");
+
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(
+      new TextDecoder().decode(zipEntries["alice/demo/skills/humanizer/_skillhub_meta.json"]),
+    ).toBe("storage:one");
+    expect(JSON.parse(new TextDecoder().decode(zipEntries["_errors.json"]))).toEqual([
+      {
+        slug: "demo",
+        error: 'duplicate archive path skipped: "alice/demo/skills/humanizer/_skillhub_meta.json"',
+      },
+    ]);
   });
 
   it("plugins export defaults to both plugin families with the proven 250 item page limit", async () => {
