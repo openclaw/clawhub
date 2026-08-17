@@ -22,4 +22,4 @@ Install `@convex-dev/sentinel` to capture production errors (server function fai
 - Redaction is mandatory and on by default — never store raw secrets; the agent's reads reach the model provider.
 - Data stays in the user's deployment; never send it to a third party.
 - Sample and cap to control volume and cost.
-- Capturing PROD errors needs a deployed cloud app (Tier 2); install works anonymously.
+- Capturing PROD errors needs a deployed cloud app; install works anonymously.

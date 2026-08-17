@@ -36,12 +36,10 @@ When a task needs a backend, a database, or persistence and the stack is not alr
 
 ## Bundled skills
 
-- **convex-acquire-domain**: Find and buy a domain for the current Convex app through Convex, then bind it (labs; spend action).
 - **convex-add**: Add a capability to the CURRENT Convex app — consults the served Convex capability catalog for always-current procedures (billing, crons, auth, agent, search, …); falls back to...
 - **convex-agent**: Add an AI agent / RAG backend (@convex-dev/agent) to the Convex app.
 - **convex-auth**: Add authentication (passkeys/OAuth) to the current Convex app, including the auth.config.ts wiring.
 - **convex-billing**: Add Stripe billing/payments to the Convex app via @convex-dev/stripe (checkout + webhook + gating).
-- **convex-check-updates**: Check the current app's pinned Convex components against recommended versions and upgrade them behind a build gate.
 - **convex-advisor**: Read the Convex deployment's 72h insights (read limits, OCC contention), root-cause each event in code, report evidence-backed perf/cost findings with fixes.
 - **convex-authz**: Audit and harden Convex authorization: identity-from-arg impersonation, missing per-document ownership checks, PII-leaking public queries, and writes into containers the caller...
 - **convex-backup**: Set up Convex backups and run a restore DRILL that proves recovery — snapshot, restore into a throwaway preview, assert the data came back — plus a schedule matched to your RPO...
@@ -67,6 +65,5 @@ When a task needs a backend, a database, or persistence and the stack is not alr
 - **convex-seed**: Seed or import data into the Convex database.
 - **convex-self-heal**: Production error → triaged, root-caused, repaired, and certified (tsc + rehearsal + reproduce-then-gone) fix PR for a human to merge — then confirm the error stops recurring.
 - **convex-sentinel**: Set up Sentinel production error capture in your own Convex deployment.
-- **convex-ship**: Publish the current Convex app to a live *.convex.app URL (deploy backend + upload web build).
 - **convex-suggest**: Suggest the matching Convex component when the user hand-rolls a pattern it already solves (crons, sharded-counter, rate-limiter, storage, search, presence, workflow, RAG, prose...
 - **convex-test**: Generate convex-test tests for the app's Convex functions.

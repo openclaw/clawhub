@@ -7,7 +7,7 @@ description: "Audit and harden Convex authorization: identity-from-arg impersona
 
 # Convex Authz Auditor/Hardener
 
-A focused authz specialist, not a general reviewer: it finds and fixes the four shapes that account for the largest real-defect cluster measured against generated Convex backends (25 identity-from-arg + 13 missing-ownership-check + 6 PII-leak-by-argument = 44 of 214 confirmed defects, plus the parent-reference-on-write variant of the ownership shape that fixture measurement showed the 3-shape scan misses). It runs a deterministic scan first (objective, regex-based, mirrors the convex-backend-skill v1.7.9 lint advisory), then applies the canonical requireIdentity/requireOwner hardening pattern from convex-expert.md to every hit, then verifies with tsc. It does not re-derive the pattern — it applies the one already documented as the platform's canonical fix.
+A focused authz specialist, not a general reviewer: it finds and fixes the four shapes that account for the largest real-defect cluster measured against generated Convex backends (25 identity-from-arg + 13 missing-ownership-check + 6 PII-leak-by-argument = 44 of 214 confirmed defects, plus the parent-reference-on-write variant of the ownership shape that fixture measurement showed the 3-shape scan misses). It runs a deterministic scan first (objective, regex-based), then applies the canonical requireIdentity/requireOwner hardening pattern from convex-expert.md to every hit, then verifies with tsc. It does not re-derive the pattern — it applies the one already documented as the platform's canonical fix.
 
 ## Workflow
 

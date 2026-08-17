@@ -24,4 +24,3 @@ Walk the user's own registrar through pointing their domain at the Convex app: i
 - DNS changes on a live domain are user-visible: show the exact commands and confirm before running them; verify afterwards with dig.
 - Always include the TXT verification record, not just the CNAME.
 - Rebinding the domain changes the auth origin — re-publish after, or sign-in breaks.
-- If the user wants Convex to find/buy a domain for them, hand off to `labs-acquire-domain`.
