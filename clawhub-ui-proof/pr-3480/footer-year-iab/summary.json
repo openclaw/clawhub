@@ -1,0 +1,26 @@
+{
+  "baseline": "not run",
+  "candidate": "f3d0262327",
+  "generatedAt": "2026-08-18T05:46:14Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "f3d0262327",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Footer attribution on mobile",
+          "screenshot": "screenshots/footer-mobile.png",
+          "slug": "footer-attribution-mobile",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "provider": "Codex in-app browser",
+  "runner": "local",
+  "scenario": "local home page footer at http://127.0.0.1:49741/",
+  "status": "pass"
+}
