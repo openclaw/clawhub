@@ -312,9 +312,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - A Claw staged-attempt key binds actor, owner, normalized package name,
   version, and verified tarball digest. Only that exact tuple may reuse an
   active pending attempt or active published release. Different artifacts or
-  owners and terminal, deleted, blocked, quarantined, revoked, or malicious
-  state must preserve the version conflict rather than being reused or
-  discarded.
+  owners and terminal, soft-deleted, blocked, quarantined, revoked, or
+  malicious state whose target still exists must preserve the version conflict
+  rather than being reused or discarded. Hard deletion removes package and
+  release rows but retains the publish attempt as audit history; an attempt
+  whose referenced package or release no longer exists is audit-only and must
+  neither reserve that package version nor be reused.
 - Claw pending and final publication responses expose the verified artifact
   SHA-256. Polling must preserve the same digest, and the package artifact
   download must serve the exact stored tarball bytes whose SHA-256 matches that
