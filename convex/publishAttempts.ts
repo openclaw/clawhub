@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
@@ -283,6 +283,20 @@ function isTerminalRetriableAttemptStatus(status: string) {
   return status === "blocked" || status === "failed" || status === "expired";
 }
 
+async function isOrphanedPackagePublishAttempt(
+  ctx: Pick<QueryCtx, "db">,
+  attempt: Doc<"publishAttempts">,
+) {
+  if (attempt.kind !== "package" || !attempt.packageId || !attempt.packageReleaseId) {
+    return false;
+  }
+  const [pkg, release] = await Promise.all([
+    ctx.db.get(attempt.packageId),
+    ctx.db.get(attempt.packageReleaseId),
+  ]);
+  return !pkg || !release;
+}
+
 export const findExistingPublishAttemptForArtifactInternal = internalQuery({
   args: {
     kind: v.union(v.literal("skill"), v.literal("package")),
@@ -306,29 +320,34 @@ export const findExistingPublishAttemptForArtifactInternal = internalQuery({
         )
         .order("desc")
         .take(25);
-      const match = attempts.find((attempt) => {
+      for (const match of attempts) {
+        let matchesLookup: boolean;
         if (args.kind === "package") {
-          if (args.artifactFingerprint === undefined) return true;
-          if (attempt.artifactFingerprint !== args.artifactFingerprint) return false;
-          if (args.ownerPublisherId !== undefined) {
-            return (
-              attempt.ownerPublisherId === args.ownerPublisherId &&
-              attempt.userId === args.userId &&
-              attempt.ownerUserId === args.ownerUserId
-            );
+          if (args.artifactFingerprint === undefined) {
+            matchesLookup = true;
+          } else if (match.artifactFingerprint !== args.artifactFingerprint) {
+            matchesLookup = false;
+          } else if (args.ownerPublisherId !== undefined) {
+            matchesLookup =
+              match.ownerPublisherId === args.ownerPublisherId &&
+              match.userId === args.userId &&
+              match.ownerUserId === args.ownerUserId;
+          } else {
+            matchesLookup =
+              match.ownerPublisherId === undefined &&
+              match.userId === args.userId &&
+              match.ownerUserId === args.ownerUserId;
           }
-          return (
-            attempt.ownerPublisherId === undefined &&
-            attempt.userId === args.userId &&
-            attempt.ownerUserId === args.ownerUserId
-          );
+        } else if (args.ownerPublisherId !== undefined) {
+          matchesLookup = match.ownerPublisherId === args.ownerPublisherId;
+        } else {
+          matchesLookup = match.ownerPublisherId === undefined && match.userId === args.userId;
         }
-        if (args.ownerPublisherId !== undefined) {
-          return attempt.ownerPublisherId === args.ownerPublisherId;
-        }
-        return attempt.ownerPublisherId === undefined && attempt.userId === args.userId;
-      });
-      if (match) {
+
+        if (!matchesLookup) continue;
+        // Hard deletion removes the package and release but intentionally retains audit attempts.
+        // Those audit rows must not reserve the deleted package version forever.
+        if (await isOrphanedPackagePublishAttempt(ctx, match)) continue;
         return {
           attemptId: match._id,
           status: match.status,

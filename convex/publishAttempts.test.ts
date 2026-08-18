@@ -71,7 +71,10 @@ const findExistingPublishAttemptForArtifactHandler = (
   }
 )._handler;
 
-function makeAttemptLookupCtx(attempts: Array<Record<string, unknown>>) {
+function makeAttemptLookupCtx(
+  attempts: Array<Record<string, unknown>>,
+  options: { missingIds?: string[] } = {},
+) {
   let requestedStatus = "";
   const indexQuery = {
     eq: vi.fn((field: string, value: unknown) => {
@@ -81,6 +84,7 @@ function makeAttemptLookupCtx(attempts: Array<Record<string, unknown>>) {
   };
   return {
     db: {
+      get: vi.fn(async (id: string) => (options.missingIds?.includes(id) ? null : { _id: id })),
       query: vi.fn(() => ({
         withIndex: vi.fn(
           (_indexName: string, buildQuery: (query: typeof indexQuery) => unknown) => {
@@ -181,6 +185,35 @@ describe("publishAttempts", () => {
       status: "blocked",
       reusable: false,
     });
+  });
+
+  it("does not reserve a package version for a hard-deleted publish target", async () => {
+    const attempt = {
+      _id: "publishAttempts:orphaned",
+      kind: "package",
+      status: "finalized",
+      userId: "users:owner",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:deleted",
+      packageId: "packages:deleted",
+      packageReleaseId: "packageReleases:deleted",
+      slug: "@example/deleted-plugin",
+      version: "1.0.0",
+      artifactFingerprint: "old-fingerprint",
+    };
+
+    await expect(
+      findExistingPublishAttemptForArtifactHandler(
+        makeAttemptLookupCtx([attempt], {
+          missingIds: ["packages:deleted", "packageReleases:deleted"],
+        }),
+        {
+          kind: "package",
+          slug: "@example/deleted-plugin",
+          version: "1.0.0",
+        },
+      ),
+    ).resolves.toBeNull();
   });
 
   it("returns the stored package artifact digest while publication is pending", async () => {
