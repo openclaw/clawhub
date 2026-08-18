@@ -109,6 +109,81 @@ const baseArgs = {
 };
 
 describe("hardDeleteForAdminInternal", () => {
+  it("resolves a banned legacy owner whose stored handle uses mixed case", async () => {
+    const legacySkill = {
+      _id: "skills:legacy",
+      slug: "legacy-demo",
+      displayName: "Legacy Demo",
+      ownerUserId: "users:legacy-owner",
+      softDeletedAt: 1_000,
+      moderationStatus: "hidden",
+      moderationReason: "user.banned",
+    };
+    const legacyOwner = {
+      _id: "users:legacy-owner",
+      handle: "Cybercentry",
+      deletedAt: 1_000,
+    };
+    const insert = vi.fn();
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return {
+              _id: "users:admin",
+              role: "admin",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          if (id === legacyOwner._id) return legacyOwner;
+          if (id === legacySkill._id) return legacySkill;
+          return null;
+        }),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn((table: string) => ({
+          withIndex: (indexName: string) => {
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: async () => null };
+            }
+            if (table === "users" && indexName === "handle") {
+              return { unique: async () => null };
+            }
+            if (table === "skills" && indexName === "by_slug") {
+              return { take: async () => [legacySkill] };
+            }
+            if (table === "skillSlugAliases" && indexName === "by_slug") {
+              return { take: async () => [] };
+            }
+            throw new Error(`Unexpected query ${table}.${indexName}`);
+          },
+        })),
+        normalizeId: vi.fn(),
+      },
+      scheduler,
+    } as never;
+
+    const result = await hardDeleteForAdminHandler(ctx, {
+      ...baseArgs,
+      slug: legacySkill.slug,
+      ownerHandle: "cybercentry",
+    });
+
+    expect(result).toMatchObject({
+      skillId: legacySkill._id,
+      slug: legacySkill.slug,
+      ownerHandle: "cybercentry",
+      dryRun: true,
+      scheduled: false,
+    });
+    expect(insert).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
   it("returns an exact confirmation token without mutating during dry-run", async () => {
     const generated_token_reference = "hard-delete-skill:@openclaw/demo:skills:demo";
     const { ctx, insert, scheduler } = makeCtx();

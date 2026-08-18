@@ -216,7 +216,7 @@ export async function getSkillSlugAliasBySlugScoped(
 export async function resolveLegacySkillBySlugOrAlias(
   ctx: DbCtx,
   slug: string,
-  options: { includeSoftDeleted?: boolean } = {},
+  options: { includeSoftDeleted?: boolean; ownerHandle?: string } = {},
 ) {
   const normalizedSlug = normalizeSkillSlugKey(slug);
   const emptyResult = {
@@ -252,9 +252,13 @@ export async function resolveLegacySkillBySlugOrAlias(
   ).filter(
     (entry): entry is { alias: Doc<"skillSlugAliases">; skill: Doc<"skills"> } => entry !== null,
   );
-  const candidateSkills = options.includeSoftDeleted
-    ? uniqueSkills([...directSkills, ...aliasMatches.map((entry) => entry.skill)])
-    : uniqueSkills([...directSkills, ...aliasMatches.map((entry) => entry.skill)]);
+  const unscopedCandidateSkills = uniqueSkills([
+    ...directSkills,
+    ...aliasMatches.map((entry) => entry.skill),
+  ]);
+  const candidateSkills = options.ownerHandle
+    ? await filterLegacySkillsByOwnerHandle(ctx, unscopedCandidateSkills, options.ownerHandle)
+    : unscopedCandidateSkills;
   const selectedSkill = await selectLegacySkillMatch(ctx, candidateSkills, options);
   if (selectedSkill === "ambiguous") {
     const ambiguousMatches = await buildLegacyAmbiguousSkillMatches(ctx, candidateSkills);
@@ -288,6 +292,30 @@ export async function resolveLegacySkillBySlugOrAlias(
     ambiguous: false,
     ambiguousMatches: [] as LegacyAmbiguousSkillMatch[],
   };
+}
+
+async function filterLegacySkillsByOwnerHandle(
+  ctx: DbCtx,
+  skills: Doc<"skills">[],
+  ownerHandle: string,
+) {
+  const normalizedOwnerHandle = normalizePublisherHandle(ownerHandle);
+  if (!normalizedOwnerHandle) return [];
+
+  const matches = await Promise.all(
+    skills.map(async (skill) => {
+      if (skill.ownerPublisherId) {
+        const publisher = await ctx.db.get(skill.ownerPublisherId);
+        return normalizePublisherHandle(publisher?.handle) === normalizedOwnerHandle ? skill : null;
+      }
+
+      // Legacy personal skills may outlive a banned user and predate materialized publishers.
+      // Compare normalized stored casing without requiring the owner to be active.
+      const user = await ctx.db.get(skill.ownerUserId);
+      return normalizePublisherHandle(user?.handle) === normalizedOwnerHandle ? skill : null;
+    }),
+  );
+  return matches.filter((skill): skill is Doc<"skills"> => skill !== null);
 }
 
 function uniqueSkills(skills: Doc<"skills">[]) {

@@ -2501,7 +2501,7 @@ async function resolveSkillBySlugOrAliasForOwner(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   slug: string,
   ownerHandle?: string,
-  options: { includeSoftDeleted?: boolean } = {},
+  options: { includeSoftDeleted?: boolean; includeInactiveOwnerFallback?: boolean } = {},
 ) {
   let skill: Doc<"skills"> | null = null;
   let requestedSlug = normalizeSkillSlugKey(slug);
@@ -2526,6 +2526,24 @@ async function resolveSkillBySlugOrAliasForOwner(
         }
       }
       resolvedSlug = skill?.slug ?? null;
+    }
+    if (!skill && options.includeInactiveOwnerFallback) {
+      const legacyResolved = await resolveLegacySkillBySlugOrAlias(ctx, requestedSlug, {
+        includeSoftDeleted: options.includeSoftDeleted,
+        ownerHandle,
+      });
+      if (legacyResolved.ambiguous) {
+        return {
+          requestedSlug,
+          resolvedSlug,
+          skill: null,
+          ambiguous: true as const,
+          ambiguousMatches: legacyResolved.ambiguousMatches,
+        };
+      }
+      skill = legacyResolved.skill;
+      requestedSlug = legacyResolved.requestedSlug;
+      resolvedSlug = legacyResolved.resolvedSlug;
     }
   } else {
     const resolved = await resolveSkillBySlugOrAlias(ctx, slug, options);
@@ -12358,6 +12376,7 @@ export const hardDeleteForAdminInternal = internalMutation({
 
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, ownerHandle, {
       includeSoftDeleted: true,
+      includeInactiveOwnerFallback: true,
     });
     const skill = resolved.skill;
     if (!skill) throw new ConvexError("Skill not found");
