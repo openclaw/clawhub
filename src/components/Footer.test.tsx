@@ -85,6 +85,7 @@ describe("Footer", () => {
     expect(screen.getByRole("link", { name: "Powered by Convex" }).getAttribute("href")).toBe(
       "https://www.convex.dev",
     );
+    expect(screen.getByText("© 2026 OpenClaw Foundation")).toBeTruthy();
   });
 
   it("keeps offscreen imagery lazy and dimensioned", () => {

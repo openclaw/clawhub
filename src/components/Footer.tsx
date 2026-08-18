@@ -348,7 +348,7 @@ export function Footer() {
         </div>
 
         <div className="footer-v2-bottom">
-          <p className="footer-v2-copy">© OpenClaw Foundation</p>
+          <p className="footer-v2-copy">© 2026 OpenClaw Foundation</p>
           <p className="footer-v2-meta">
             {FOOTER_PLATFORM_LINKS.map((link, index) => (
               <span key={link.label}>
