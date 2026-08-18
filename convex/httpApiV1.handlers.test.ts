@@ -1010,6 +1010,105 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("skills export logs build failures without authorization token material", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              skillId: "skills:first",
+              slug: "demo",
+              displayName: "First Demo",
+              latestVersionId: "skillVersions:first",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: {},
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+            {
+              skillId: "skills:second",
+              slug: "demo",
+              displayName: "Second Demo",
+              latestVersionId: "skillVersions:second",
+              createdAt: 1,
+              updatedAt: 3,
+              stats: {},
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.versionId === "skillVersions:first") {
+        return {
+          skillId: "skills:first",
+          version: "1.0.0",
+          files: [{ storageId: "storage:first", path: "SKILL.md" }],
+        };
+      }
+      if (args.versionId === "skillVersions:second") {
+        return {
+          skillId: "skills:second",
+          version: "1.0.0",
+          files: [{ storageId: "storage:second", path: "SKILL.md" }],
+        };
+      }
+      return null;
+    });
+
+    try {
+      await expect(
+        __handlers.exportSkillsV1Handler(
+          makeCtx({
+            runQuery,
+            storage: { get: vi.fn(async (storageId: string) => new Blob([storageId])) },
+          }),
+          new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=5", {
+            headers: { authorization: "Bearer user-token" },
+          }),
+        ),
+      ).rejects.toThrow(/Duplicate ZIP path/);
+
+      expect(consoleError).toHaveBeenCalledWith(
+        "skills_export_failed",
+        expect.objectContaining({
+          phase: "build_zip",
+          startDate: 1,
+          endDate: 5,
+          limit: 250,
+          cursorPresent: false,
+          pageLength: 2,
+          versionCount: 2,
+          blobTaskCount: 2,
+          blobCount: 2,
+          totalExportBytes: 27,
+          zipEntryCount: 4,
+          manifestCount: 2,
+          exportErrorCount: 0,
+          errorName: "Error",
+        }),
+      );
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain("user-token");
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("plugins export defaults to both plugin families with the proven 250 item page limit", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
@@ -1202,6 +1301,100 @@ describe("httpApiV1 handlers", () => {
       "_manifest.json",
       "bundle-plugin/demo-bundle/openclaw.bundle.json",
       "code-plugin/@scope/demo-plugin/package.json",
+    ]);
+  });
+
+  it("plugins export skips duplicate legacy release paths and preserves the first file", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              packageId: "packages:bundle",
+              name: "demo-bundle",
+              displayName: "Demo Bundle",
+              family: "bundle-plugin",
+              latestReleaseId: "packageReleases:bundle",
+              latestVersion: "1.0.0",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.releaseId === "packageReleases:bundle") {
+        return {
+          packageId: "packages:bundle",
+          version: "1.0.0",
+          changelog: "Legacy bundle",
+          createdAt: 2,
+          files: [
+            {
+              storageId: "storage:first",
+              path: "plugins/humanizer/_skillhub_meta.json",
+              size: 13,
+              sha256: "sha-first",
+              contentType: "application/json",
+            },
+            {
+              storageId: "storage:second",
+              path: "plugins/humanizer/_skillhub_meta.json",
+              size: 14,
+              sha256: "sha-second",
+              contentType: "application/json",
+            },
+          ],
+          artifactKind: "legacy-zip",
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async (storageId: string) => new Blob([storageId]));
+
+    const response = await __handlers.exportPluginsV1Handler(
+      makeCtx({ runQuery, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/plugins/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Total-Returned")).toBe("1");
+    expect(response.headers.get("X-Export-Errors")).toBe("1");
+    expect(storageGet).toHaveBeenCalledTimes(1);
+    expect(storageGet).toHaveBeenCalledWith("storage:first");
+
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(
+      new TextDecoder().decode(
+        zipEntries["bundle-plugin/demo-bundle/plugins/humanizer/_skillhub_meta.json"],
+      ),
+    ).toBe("storage:first");
+    expect(JSON.parse(new TextDecoder().decode(zipEntries["_errors.json"]))).toEqual([
+      {
+        package: "demo-bundle",
+        error:
+          'duplicate archive path skipped: "bundle-plugin/demo-bundle/plugins/humanizer/_skillhub_meta.json"',
+      },
+    ]);
+    expect(JSON.parse(new TextDecoder().decode(zipEntries["_manifest.json"]))).toEqual([
+      expect.objectContaining({ packageName: "demo-bundle", fileCount: 1 }),
     ]);
   });
 

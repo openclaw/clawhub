@@ -2200,7 +2200,12 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
       () => null,
     );
 
-    type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
+    type BlobTask = {
+      digestIndex: number;
+      fileIndex: number;
+      storageId: Id<"_storage">;
+      archivePath: string;
+    };
     const blobTasks: BlobTask[] = [];
 
     logContext.phase = "plan_blobs";
@@ -2253,6 +2258,9 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
       }
       exportableReleases[i] = release;
 
+      const exportRoot = pluginExportRoot(digest);
+      const archivePaths = new Set<string>();
+
       for (let j = 0; j < release.files.length; j++) {
         if (blobTasks.length >= MAX_PLUGIN_EXPORT_FILE_COUNT) {
           exportErrors.push({
@@ -2261,10 +2269,20 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
           });
           break;
         }
+        const archivePath = `${exportRoot}/${release.files[j].path}`;
+        if (archivePaths.has(archivePath)) {
+          exportErrors.push({
+            package: digest.name,
+            error: `duplicate archive path skipped: "${archivePath}"`,
+          });
+          continue;
+        }
+        archivePaths.add(archivePath);
         blobTasks.push({
           digestIndex: i,
           fileIndex: j,
           storageId: release.files[j].storageId,
+          archivePath,
         });
       }
     }
@@ -2286,13 +2304,19 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
     > = [];
     let totalExportBytes = 0;
 
-    const blobsByDigest = new Map<number, Map<number, Blob | null>>();
+    const blobsByDigest = new Map<
+      number,
+      Map<number, { blob: Blob | null; archivePath: string }>
+    >();
     for (let k = 0; k < blobTasks.length; k++) {
       const task = blobTasks[k];
       if (!blobsByDigest.has(task.digestIndex)) {
         blobsByDigest.set(task.digestIndex, new Map());
       }
-      blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
+      blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, {
+        blob: blobs[k],
+        archivePath: task.archivePath,
+      });
     }
 
     logContext.phase = "assemble_entries";
@@ -2317,8 +2341,9 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
           continue;
         }
 
-        const blob = digestBlobs.get(j);
-        if (!blob) {
+        const plannedFile = digestBlobs.get(j);
+        if (!plannedFile) continue;
+        if (!plannedFile.blob) {
           exportErrors.push({
             package: digest.name,
             error: `blob not found for file "${filePath}" (storageId: ${release.files[j].storageId})`,
@@ -2326,7 +2351,7 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
           continue;
         }
 
-        const buffer = new Uint8Array(await blob.arrayBuffer());
+        const buffer = new Uint8Array(await plannedFile.blob.arrayBuffer());
         if (totalExportBytes + buffer.byteLength > MAX_PLUGIN_EXPORT_TOTAL_BYTES) {
           exportErrors.push({
             package: digest.name,
@@ -2335,7 +2360,7 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
           continue;
         }
         totalExportBytes += buffer.byteLength;
-        zipEntries.push({ path: `${exportRoot}/${filePath}`, bytes: buffer });
+        zipEntries.push({ path: plannedFile.archivePath, bytes: buffer });
         fileCount++;
       }
 
