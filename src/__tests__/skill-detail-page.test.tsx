@@ -38,6 +38,11 @@ vi.mock("@convex-dev/auth/react", () => ({
 }));
 
 const useQueryMock = vi.fn();
+const useQueriesMock = vi.fn((queries: Record<string, { query: unknown; args: unknown }>) =>
+  Object.fromEntries(
+    Object.entries(queries).map(([key, value]) => [key, useQueryMock(value.query, value.args)]),
+  ),
+);
 const useMutationMock = vi.fn();
 const convexQueryMock = vi.fn();
 const convexClientMock = { query: convexQueryMock };
@@ -51,6 +56,8 @@ vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
+  useQueries: (queries: Record<string, { query: unknown; args: unknown }>) =>
+    useQueriesMock(queries),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
   usePaginatedQuery: () => ({
     results: [],
@@ -129,6 +136,7 @@ describe("SkillDetailPage", () => {
   beforeEach(() => {
     window.location.hash = "";
     useQueryMock.mockReset();
+    useQueriesMock.mockClear();
     useMutationMock.mockReset();
     convexQueryMock.mockReset();
     getReadmeMock.mockReset();
@@ -391,6 +399,15 @@ describe("SkillDetailPage", () => {
     render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
 
     expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+  });
+
+  it("hides Evals when the optional evaluation query fails", () => {
+    useQueriesMock.mockReturnValueOnce({ skillEvaluation: new Error("evaluation unavailable") });
+
+    render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
+
+    expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+    expect(screen.queryByText("Something went wrong")).toBeNull();
   });
 
   it("opens an evaluation deep link after its result finishes loading", async () => {

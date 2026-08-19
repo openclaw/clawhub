@@ -5,7 +5,7 @@ import {
   resolveSkillCategories,
   type ClawdisSkillMetadata,
 } from "clawhub-schema";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQueries, useQuery } from "convex/react";
 import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -20,7 +20,6 @@ import {
 import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
-import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -261,11 +260,17 @@ export function SkillDetailPage({
   const latestVersionId = latestVersion?._id ?? null;
   const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
   const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
-  const skillEvaluationUiEnabled = getRuntimeEnv("VITE_ENABLE_SKILL_EVALUATIONS") === "1";
-  const skillEvaluation = useQuery(
-    api.skillEvaluations.getCurrentForSkill,
-    skillEvaluationUiEnabled && skill ? { skillId: skill._id } : "skip",
-  ) as SkillEvaluationResult | null | undefined;
+  const skillEvaluationResult = useQueries(
+    skill
+      ? {
+          skillEvaluation: {
+            query: api.skillEvaluations.getCurrentForSkill,
+            args: { skillId: skill._id },
+          },
+        }
+      : {},
+  ).skillEvaluation as SkillEvaluationResult | null | Error | undefined;
+  const skillEvaluation = skillEvaluationResult instanceof Error ? null : skillEvaluationResult;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
   const relatedCategories = useMemo(

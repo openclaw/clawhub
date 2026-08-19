@@ -128,47 +128,52 @@ export async function enqueueNvidiaSkillEvaluation(
 export const getCurrentForSkill = query({
   args: { skillId: v.id("skills") },
   handler: async (ctx, args) => {
-    const skill = await ctx.db.get(args.skillId);
-    if (
-      !isPublicSkillDoc(skill) ||
-      skill.installKind !== "github" ||
-      skill.githubCurrentStatus !== "present" ||
-      skill.githubCurrentRepo?.trim().toLowerCase() !== NVIDIA_SKILL_EVALUATION_CONFIG.sourceRepo ||
-      !skill.githubCurrentContentHash
-    ) {
+    try {
+      const skill = await ctx.db.get(args.skillId);
+      if (
+        !isPublicSkillDoc(skill) ||
+        skill.installKind !== "github" ||
+        skill.githubCurrentStatus !== "present" ||
+        skill.githubCurrentRepo?.trim().toLowerCase() !==
+          NVIDIA_SKILL_EVALUATION_CONFIG.sourceRepo ||
+        !skill.githubCurrentContentHash
+      ) {
+        return null;
+      }
+      const run = await ctx.db
+        .query("skillEvaluationRuns")
+        .withIndex("by_skill_content_hash_config_key", (q) =>
+          q
+            .eq("skillId", skill._id)
+            .eq("contentHash", skill.githubCurrentContentHash as string)
+            .eq("configKey", NVIDIA_SKILL_EVALUATION_CONFIG_KEY),
+        )
+        .unique();
+      if (run?.status !== "succeeded" || !run.metrics || !run.completedAt) return null;
+      return {
+        source: {
+          repository: run.sourceRepo,
+          commit: run.sourceCommit,
+          path: run.sourcePath,
+          contentHash: run.contentHash,
+        },
+        evaluator: {
+          repository: run.evaluatorRepository,
+          release: run.evaluatorRelease,
+          commit: run.evaluatorCommit,
+          agent: run.agent,
+          agentModel: run.agentModel,
+          judgeProvider: run.judgeProvider,
+          judgeModel: run.judgeModel,
+          environment: run.environment,
+          attempts: run.attemptsPerCase,
+        },
+        metrics: run.metrics,
+        completedAt: run.completedAt,
+      };
+    } catch {
       return null;
     }
-    const run = await ctx.db
-      .query("skillEvaluationRuns")
-      .withIndex("by_skill_content_hash_config_key", (q) =>
-        q
-          .eq("skillId", skill._id)
-          .eq("contentHash", skill.githubCurrentContentHash as string)
-          .eq("configKey", NVIDIA_SKILL_EVALUATION_CONFIG_KEY),
-      )
-      .unique();
-    if (run?.status !== "succeeded" || !run.metrics || !run.completedAt) return null;
-    return {
-      source: {
-        repository: run.sourceRepo,
-        commit: run.sourceCommit,
-        path: run.sourcePath,
-        contentHash: run.contentHash,
-      },
-      evaluator: {
-        repository: run.evaluatorRepository,
-        release: run.evaluatorRelease,
-        commit: run.evaluatorCommit,
-        agent: run.agent,
-        agentModel: run.agentModel,
-        judgeProvider: run.judgeProvider,
-        judgeModel: run.judgeModel,
-        environment: run.environment,
-        attempts: run.attemptsPerCase,
-      },
-      metrics: run.metrics,
-      completedAt: run.completedAt,
-    };
   },
 });
 
