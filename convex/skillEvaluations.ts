@@ -542,6 +542,28 @@ export const startNvidiaSkillEvaluationBackfill = mutation({
   },
 });
 
+export const prioritizeDocaDpaSkillEvaluation = mutation({
+  args: {
+    confirm: v.literal("prioritize-doca-dpa-skill-evaluation"),
+    sourcePath: v.literal("skills/doca-dpa"),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const rows = await ctx.db
+      .query("skillEvaluationRuns")
+      .withIndex("by_status_source_next_run_at", (q) =>
+        q.eq("status", "queued").eq("source", "backfill"),
+      )
+      .order("asc")
+      .filter((q) => q.eq(q.field("sourcePath"), args.sourcePath))
+      .take(2);
+    if (rows.length !== 1) return { prioritized: false as const, reason: "not-unique" as const };
+    await ctx.db.patch(rows[0]._id, { nextRunAt: 0, updatedAt: now });
+    await requestSkillEvaluationDispatch(ctx);
+    return { prioritized: true as const, runId: rows[0]._id };
+  },
+});
+
 export const backfillNvidiaSkillEvaluationsPageInternal = internalMutation({
   args: {
     sourceId: v.id("githubSkillSources"),
