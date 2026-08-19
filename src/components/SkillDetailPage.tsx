@@ -269,17 +269,17 @@ export function SkillDetailPage({
   const skillEvaluationQueries = useMemo(
     () =>
       skill
-      ? {
-          skillEvaluation: {
-            query: api.skillEvaluations.getCurrentForSkill,
-            args: {
-              skillId: skill._id,
-              ...(skillEvaluationSourceRepo ? { sourceRepo: skillEvaluationSourceRepo } : {}),
-              ...(skillEvaluationSourcePath ? { sourcePath: skillEvaluationSourcePath } : {}),
+        ? {
+            skillEvaluation: {
+              query: api.skillEvaluations.getCurrentForSkill,
+              args: {
+                skillId: skill._id,
+                ...(skillEvaluationSourceRepo ? { sourceRepo: skillEvaluationSourceRepo } : {}),
+                ...(skillEvaluationSourcePath ? { sourcePath: skillEvaluationSourcePath } : {}),
+              },
             },
-          },
-        }
-      : {},
+          }
+        : {},
     [skill?._id, skillEvaluationSourcePath, skillEvaluationSourceRepo],
   );
   const skillEvaluationResult = useQueries(skillEvaluationQueries).skillEvaluation as
