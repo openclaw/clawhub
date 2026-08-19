@@ -20,6 +20,7 @@ import {
 import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
+import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -260,9 +261,10 @@ export function SkillDetailPage({
   const latestVersionId = latestVersion?._id ?? null;
   const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
   const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
+  const skillEvaluationUiEnabled = getRuntimeEnv("VITE_ENABLE_SKILL_EVALUATIONS") === "1";
   const skillEvaluation = useQuery(
     api.skillEvaluations.getCurrentForSkill,
-    skill ? { skillId: skill._id } : "skip",
+    skillEvaluationUiEnabled && skill ? { skillId: skill._id } : "skip",
   ) as SkillEvaluationResult | null | undefined;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
