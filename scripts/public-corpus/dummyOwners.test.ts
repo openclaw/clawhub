@@ -5,18 +5,18 @@ describe("public corpus dummy owners", () => {
   it("generates deterministic dummy local accounts", () => {
     expect(buildDummyOwnerPool(3)).toEqual([
       {
-        handle: "local-corpus-electa-pfeffer",
-        displayName: "Electa Pfeffer",
+        handle: "local-corpus-elody-pfeffer",
+        displayName: "Elody Pfeffer",
         image: expect.stringContaining("api.dicebear.com"),
       },
       {
-        handle: "local-corpus-angelo-marvin",
-        displayName: "Angelo Marvin",
+        handle: "local-corpus-arch-marvin",
+        displayName: "Arch Marvin",
         image: expect.stringContaining("api.dicebear.com"),
       },
       {
-        handle: "local-corpus-cedrick-rowe",
-        displayName: "Cedrick Rowe",
+        handle: "local-corpus-clinton-rowe",
+        displayName: "Clinton Rowe",
         image: expect.stringContaining("api.dicebear.com"),
       },
     ]);

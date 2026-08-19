@@ -74,7 +74,6 @@ describe("skills.sh detail route", () => {
       owner: "patrick-erichsen",
       repo: "skills",
       slug: "html",
-      "**": "extra",
     });
     expect(await runLoader(params)).toEqual(entry);
     expect(queryMock.mock.calls[0]?.[1]).toEqual({

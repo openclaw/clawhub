@@ -426,17 +426,16 @@ export function useSkillsBrowseModel({
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
-      return searchResults.map(
-        (entry): SkillListEntry =>
-          entry.native
-            ? {
-                skill: entry.native.skill,
-                latestVersion: entry.native.version,
-                ownerHandle: entry.native.ownerHandle,
-                owner: entry.native.owner,
-                searchScore: entry.score,
-              }
-            : { external: entry, searchScore: entry.score },
+      return searchResults.map((entry): SkillListEntry =>
+        entry.native
+          ? {
+              skill: entry.native.skill,
+              latestVersion: entry.native.version,
+              ownerHandle: entry.native.ownerHandle,
+              owner: entry.native.owner,
+              searchScore: entry.score,
+            }
+          : { external: entry, searchScore: entry.score },
       );
     }
     return listResults;

@@ -3370,20 +3370,18 @@ export const getActivePublisherSlugInvariantPageInternal = internalQuery({
       .withIndex("by_owner_publisher_slug")
       .paginate({ cursor: args.cursor ?? null, numItems: clampInt(args.batchSize, 1, 200) });
     return {
-      items: page.page.map(
-        (skill): ActivePublisherSlugScanRow => ({
-          skillId: skill._id,
-          ownerPublisherId: skill.ownerPublisherId,
-          slug: skill.slug,
-          active: !skill.softDeletedAt,
-          latestVersionId: skill.latestVersionId,
-          latestVersion: skill.latestVersionSummary?.version,
-          moderationStatus: skill.moderationStatus ?? "unknown",
-          canonicalSkillId: skill.canonicalSkillId,
-          createdAt: skill.createdAt,
-          updatedAt: skill.updatedAt,
-        }),
-      ),
+      items: page.page.map((skill): ActivePublisherSlugScanRow => ({
+        skillId: skill._id,
+        ownerPublisherId: skill.ownerPublisherId,
+        slug: skill.slug,
+        active: !skill.softDeletedAt,
+        latestVersionId: skill.latestVersionId,
+        latestVersion: skill.latestVersionSummary?.version,
+        moderationStatus: skill.moderationStatus ?? "unknown",
+        canonicalSkillId: skill.canonicalSkillId,
+        createdAt: skill.createdAt,
+        updatedAt: skill.updatedAt,
+      })),
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
