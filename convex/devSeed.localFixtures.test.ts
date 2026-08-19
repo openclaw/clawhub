@@ -1142,6 +1142,7 @@ describe("devSeed local fixtures", () => {
           slug: "nemoclaw-user-configure-security",
           installKind: "github",
           githubSourceId: tables.githubSkillSources?.[0]?._id,
+          githubCurrentRepo: "NVIDIA/skills",
           githubPath: "skills/nemoclaw-user-configure-security",
           githubCurrentContentHash: "hash-nemoclaw",
           githubRemovedAt: 900,

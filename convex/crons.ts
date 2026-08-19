@@ -211,6 +211,20 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "skill-evaluation-dispatch-watchdog",
+    { minutes: 5 },
+    internal.skillEvaluationDispatch.requestSkillEvaluationDispatchInternal,
+    {},
+  );
+
+  crons.interval(
+    "skill-evaluation-expired-lease-recovery",
+    { minutes: 5 },
+    internal.skillEvaluations.requeueExpiredSkillEvaluationLeasesInternal,
+    {},
+  );
+
+  crons.interval(
     "download-metric-dedupe-prune",
     { hours: 24 },
     internal.downloadMetrics.pruneDownloadMetricDedupesInternal,

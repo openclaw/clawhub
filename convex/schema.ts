@@ -806,6 +806,14 @@ const securityScanJobStatusValidator = v.union(
   v.literal("succeeded"),
   v.literal("failed"),
 );
+const skillEvaluationRunStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("succeeded"),
+  v.literal("skipped"),
+  v.literal("failed"),
+);
+const skillEvaluationRunSourceValidator = v.union(v.literal("sync"), v.literal("backfill"));
 const securityScanJobSourceValidator = v.union(
   v.literal("publish"),
   v.literal("vt-update"),
@@ -2064,6 +2072,73 @@ const securityScanDispatchState = defineTable({
   lastError: v.optional(v.string()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
+
+const skillEvaluationRuns = defineTable({
+  skillId: v.id("skills"),
+  sourceRepo: v.string(),
+  sourceCommit: v.string(),
+  sourcePath: v.string(),
+  contentHash: v.string(),
+  scanStatus: v.union(v.literal("clean"), v.literal("suspicious")),
+  configKey: v.string(),
+  evaluatorRepository: v.string(),
+  evaluatorRelease: v.string(),
+  evaluatorCommit: v.string(),
+  agent: v.string(),
+  agentModel: v.string(),
+  judgeProvider: v.string(),
+  judgeModel: v.string(),
+  environment: v.string(),
+  attemptsPerCase: v.number(),
+  status: skillEvaluationRunStatusValidator,
+  source: skillEvaluationRunSourceValidator,
+  nextRunAt: v.number(),
+  attempts: v.number(),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  workerId: v.optional(v.string()),
+  lastError: v.optional(v.string()),
+  skipReason: v.optional(v.string()),
+  runId: v.optional(v.string()),
+  durationMs: v.optional(v.number()),
+  taskSource: v.optional(v.union(v.literal("evals_json"), v.literal("native_harbor"))),
+  evalDirectory: v.optional(v.string()),
+  evalDatasetPath: v.optional(v.string()),
+  evalConfigPath: v.optional(v.string()),
+  nativeResultStorageId: v.optional(v.id("_storage")),
+  metrics: v.optional(
+    v.object({
+      sampleCount: v.number(),
+      overall: v.object({
+        withSkill: v.number(),
+        withoutSkill: v.number(),
+        delta: v.number(),
+      }),
+      cases: v.object({
+        withSkillPassed: v.number(),
+        withSkillTotal: v.number(),
+        withoutSkillPassed: v.number(),
+        withoutSkillTotal: v.number(),
+      }),
+      dimensions: v.array(
+        v.object({
+          id: v.string(),
+          withSkill: v.number(),
+          withoutSkill: v.number(),
+          delta: v.number(),
+        }),
+      ),
+    }),
+  ),
+  startedAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill_content_hash_config_key", ["skillId", "contentHash", "configKey"])
+  .index("by_status_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
+  .index("by_status_lease_expires_at", ["status", "leaseExpiresAt"]);
 
 const skillScanRequests = defineTable({
   actorUserId: v.id("users"),
@@ -4301,6 +4376,7 @@ export default defineSchema({
   packageInspectorScanStates,
   securityScanJobs,
   securityScanDispatchState,
+  skillEvaluationRuns,
   skillScanRequests,
   skillScanRequestFileChunks,
   skillCardGenerationJobs,

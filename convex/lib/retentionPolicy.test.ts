@@ -74,6 +74,12 @@ describe("retention policies", () => {
     });
   });
 
+  it("keeps exact-version skill evaluations as durable provenance", () => {
+    expect(getRetentionPolicy("skillEvaluationRuns")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
   it("documents publisher abuse signals as durable review evidence", () => {
     expect(getRetentionPolicy("publisherAbuseSignals")).toMatchObject({
       classification: "permanent",

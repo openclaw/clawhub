@@ -45,6 +45,7 @@ import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
 import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
+import { enqueueNvidiaSkillEvaluation } from "./skillEvaluations";
 import {
   isDecodableSkillPresentationRaster,
   storeSkillPresentationAsset,
@@ -2388,6 +2389,16 @@ export async function applyGitHubSkillVerificationResultHandler(
       promotedAt: now,
       updatedAt: now,
     });
+    await enqueueNvidiaSkillEvaluation(ctx, {
+      skillId: skill._id,
+      sourceRepo: candidateRepo,
+      sourceCommit: candidate.githubCommit,
+      sourcePath: candidate.githubPath,
+      contentHash: candidate.githubContentHash,
+      scanStatus: args.scanStatus,
+      source: "sync",
+      now,
+    });
     return { ok: true as const, promoted: true };
   }
   if (skill.installKind !== "github") {
@@ -2432,6 +2443,25 @@ export async function applyGitHubSkillVerificationResultHandler(
   const nextSkill = { ...previousSkill, ...patch };
   await syncSkillSearchDigestForSkill(ctx, nextSkill);
   await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, now);
+
+  if (
+    (args.scanStatus === "clean" || args.scanStatus === "suspicious") &&
+    skill.githubCurrentRepo &&
+    skill.githubPath &&
+    skill.githubCurrentCommit &&
+    skill.githubCurrentContentHash
+  ) {
+    await enqueueNvidiaSkillEvaluation(ctx, {
+      skillId: skill._id,
+      sourceRepo: skill.githubCurrentRepo,
+      sourceCommit: skill.githubCurrentCommit,
+      sourcePath: skill.githubPath,
+      contentHash: skill.githubCurrentContentHash,
+      scanStatus: args.scanStatus,
+      source: "sync",
+      now,
+    });
+  }
 
   return { ok: true as const, promoted: promote };
 }

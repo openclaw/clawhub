@@ -4751,6 +4751,52 @@ description: Build HTML artifacts.
 });
 
 describe("applyGitHubSkillVerificationResultHandler", () => {
+  it("queues NVIDIA evaluation after a suspicious current-version scan resolves", async () => {
+    const { db, tables } = createDb({
+      skills: [
+        {
+          _id: "skills:doca-dpa",
+          slug: "doca-dpa",
+          displayName: "DOCA DPA",
+          ownerUserId: "users:nvidia",
+          ownerPublisherId: "publishers:nvidia",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubCurrentRepo: "NVIDIA/skills",
+          githubPath: "skills/doca-dpa",
+          githubCurrentCommit: "2".repeat(40),
+          githubCurrentContentHash: "current-hash",
+          githubCurrentStatus: "present",
+          githubScanStatus: "pending",
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 0 },
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    const result = await applyGitHubSkillVerificationResultHandler({ db } as never, {
+      skillId: "skills:doca-dpa" as never,
+      contentHash: "current-hash",
+      scanStatus: "suspicious",
+      now: 123,
+    });
+
+    expect(result).toEqual({ ok: true, promoted: false });
+    expect(tables.skillEvaluationRuns).toEqual([
+      expect.objectContaining({
+        skillId: "skills:doca-dpa",
+        sourceRepo: "nvidia/skills",
+        scanStatus: "suspicious",
+        source: "sync",
+        status: "queued",
+      }),
+    ]);
+  });
+
   it("applies scan results only to the exact current content hash", async () => {
     const { db, tables } = createDb({
       skills: [

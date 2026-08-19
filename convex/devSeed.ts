@@ -3995,6 +3995,7 @@ export async function seedGitHubBackedSkillSourceHandler(
       ownerPublisherId: publisherId,
       installKind: "github",
       githubSourceId: sourceId,
+      githubCurrentRepo: args.repo,
       githubPath: spec.githubPath,
       githubCurrentCommit: spec.githubCurrentCommit,
       githubCurrentContentHash: spec.githubCurrentContentHash,

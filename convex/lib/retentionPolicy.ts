@@ -150,6 +150,9 @@ export const RETENTION_POLICIES = {
   ),
   securityScanJobs: permanent("Security scan job history and current processing state."),
   securityScanDispatchState: permanent("Security scan worker dispatch coordination state."),
+  skillEvaluationRuns: permanent(
+    "Exact-version SkillEvaluator results and provenance are durable evaluation history.",
+  ),
   skillScanRequests: ephemeral(
     "Uploaded or GitHub scan requests expire and delete temporary blobs.",
     {

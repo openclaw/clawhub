@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => {
   const prepublicationQueueHealthRef = Symbol("prepublication-queue-health");
   const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
   const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
+  const skillEvaluationExpiredLeaseRecoveryRef = Symbol("skill-evaluation-expired-lease-recovery");
+  const skillEvaluationDispatchWatchdogRef = Symbol("skill-evaluation-dispatch-watchdog");
   return {
     interval,
     githubSkillSyncRef,
@@ -45,6 +47,8 @@ const mocks = vi.hoisted(() => {
     prepublicationQueueHealthRef,
     securityScanExpiredLeaseRecoveryRef,
     securityScanDispatchWatchdogRef,
+    skillEvaluationExpiredLeaseRecoveryRef,
+    skillEvaluationDispatchWatchdogRef,
   };
 });
 
@@ -108,6 +112,12 @@ vi.mock("./_generated/api", () => ({
     },
     securityScanDispatch: {
       requestSecurityScanDispatchInternal: mocks.securityScanDispatchWatchdogRef,
+    },
+    skillEvaluationDispatch: {
+      requestSkillEvaluationDispatchInternal: mocks.skillEvaluationDispatchWatchdogRef,
+    },
+    skillEvaluations: {
+      requeueExpiredSkillEvaluationLeasesInternal: mocks.skillEvaluationExpiredLeaseRecoveryRef,
     },
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
@@ -250,6 +260,28 @@ describe("crons", () => {
       "codex-scan-expired-lease-recovery",
       { minutes: 5 },
       mocks.securityScanExpiredLeaseRecoveryRef,
+      {},
+    );
+  });
+
+  it("runs the skill evaluation dispatch watchdog every five minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-evaluation-dispatch-watchdog",
+      { minutes: 5 },
+      mocks.skillEvaluationDispatchWatchdogRef,
+      {},
+    );
+  });
+
+  it("recovers expired skill evaluation leases outside the claim hot path", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-evaluation-expired-lease-recovery",
+      { minutes: 5 },
+      mocks.skillEvaluationExpiredLeaseRecoveryRef,
       {},
     );
   });
