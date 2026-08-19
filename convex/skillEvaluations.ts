@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, requireUser } from "./lib/access";
 import { isPublicSkillDoc } from "./lib/globalStats";
@@ -125,11 +126,44 @@ export async function enqueueNvidiaSkillEvaluation(
   return { queued: true as const, runId };
 }
 
+async function resolveEvaluationSkill(
+  ctx: QueryCtx,
+  args: {
+    skillId?: string;
+    sourceRepo?: string;
+    sourcePath?: string;
+  },
+) {
+  const normalizedSkillId = args.skillId ? ctx.db.normalizeId("skills", args.skillId) : null;
+  if (normalizedSkillId) return await ctx.db.get(normalizedSkillId);
+
+  const sourceRepo = args.sourceRepo?.trim().toLowerCase();
+  const sourcePath = args.sourcePath?.trim();
+  if (sourceRepo !== NVIDIA_SKILL_EVALUATION_CONFIG.sourceRepo || !sourcePath) return null;
+
+  const source = await ctx.db
+    .query("githubSkillSources")
+    .withIndex("by_repo", (q) => q.eq("repo", "NVIDIA/skills"))
+    .unique();
+  if (!source) return null;
+
+  const matches = await ctx.db
+    .query("skills")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+    .filter((q) => q.eq(q.field("githubPath"), sourcePath))
+    .take(2);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export const getCurrentForSkill = query({
-  args: { skillId: v.id("skills") },
+  args: {
+    skillId: v.optional(v.string()),
+    sourceRepo: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     try {
-      const skill = await ctx.db.get(args.skillId);
+      const skill = await resolveEvaluationSkill(ctx, args);
       if (
         !isPublicSkillDoc(skill) ||
         skill.installKind !== "github" ||

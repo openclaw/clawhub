@@ -395,6 +395,90 @@ describe("SkillDetailPage", () => {
     expect(getDesktopSkillTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
   });
 
+  it("looks up Evals from the canonical skill when detail data uses a projected id", () => {
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (getFunctionName(query as never) === "skillEvaluations:getCurrentForSkill") {
+        return {
+          source: {
+            repository: "nvidia/skills",
+            commit: "0a78f333a1d67c837fbf4288efe6488169dc7140",
+            path: "skills/doca-dpa",
+            contentHash: "content-hash",
+          },
+          evaluator: {
+            repository: "NVIDIA/SkillEvaluator",
+            release: "v0.1.0",
+            commit: "4975c97d49e3623eeab739248e52d83c4aa8f582",
+            agent: "codex",
+            agentModel: "gpt-5.6",
+            judgeProvider: "openai",
+            judgeModel: "gpt-5.4",
+            environment: "docker",
+            attempts: 2,
+          },
+          metrics: {
+            sampleCount: 8,
+            overall: { withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+            cases: {
+              withSkillPassed: 4,
+              withSkillTotal: 4,
+              withoutSkillPassed: 2,
+              withoutSkillTotal: 4,
+            },
+            dimensions: [],
+          },
+          completedAt: Date.parse("2026-08-18T00:00:00Z"),
+        };
+      }
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="doca-dpa"
+        canonicalOwner="nvidia"
+        initialData={{
+          result: {
+            skill: {
+              _id: "canonicalTrendingNativePools:doca-dpa" as Id<"skills">,
+              _creationTime: 0,
+              slug: "doca-dpa",
+              displayName: "DOCA DPA",
+              summary: "Build NVIDIA DOCA DPA applications.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubSourceRepo: "NVIDIA/skills",
+              githubPath: "skills/doca-dpa",
+              tags: {},
+              badges: {},
+              stats: { stars: 0, downloads: 0, installs: 0, versions: 0, comments: 0 },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: null,
+            latestVersion: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(useQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "canonicalTrendingNativePools:doca-dpa",
+        sourceRepo: "NVIDIA/skills",
+        sourcePath: "skills/doca-dpa",
+      }),
+    );
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
+  });
+
   it("hides Evals when the current skill version has no completed result", () => {
     render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
 

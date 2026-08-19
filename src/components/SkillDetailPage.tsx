@@ -66,6 +66,9 @@ type SkillDetailVersion = NonNullable<NonNullable<SkillBySlugResult>["latestVers
 type GitHubBackedSkillFields = {
   installKind?: "github";
   githubHasSkillCard?: boolean;
+  githubCurrentRepo?: string | null;
+  githubSourceRepo?: string | null;
+  githubPath?: string | null;
   githubScanStatus?: string | null;
 };
 
@@ -260,17 +263,24 @@ export function SkillDetailPage({
   const latestVersionId = latestVersion?._id ?? null;
   const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
   const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
+  const skillEvaluationSourceRepo =
+    githubBackedFields?.githubCurrentRepo ?? githubBackedFields?.githubSourceRepo ?? undefined;
+  const skillEvaluationSourcePath = githubBackedFields?.githubPath ?? undefined;
   const skillEvaluationQueries = useMemo(
     () =>
       skill
       ? {
           skillEvaluation: {
             query: api.skillEvaluations.getCurrentForSkill,
-            args: { skillId: skill._id },
+            args: {
+              skillId: skill._id,
+              ...(skillEvaluationSourceRepo ? { sourceRepo: skillEvaluationSourceRepo } : {}),
+              ...(skillEvaluationSourcePath ? { sourcePath: skillEvaluationSourcePath } : {}),
+            },
           },
         }
       : {},
-    [skill?._id],
+    [skill?._id, skillEvaluationSourcePath, skillEvaluationSourceRepo],
   );
   const skillEvaluationResult = useQueries(skillEvaluationQueries).skillEvaluation as
     | SkillEvaluationResult
