@@ -51,6 +51,10 @@ describe("skill evaluation workflow", () => {
     expect(install?.run).toContain("4975c97d49e3623eeab739248e52d83c4aa8f582");
     expect(install?.run).toContain("uv sync");
     expect(install?.run).toContain("--extra tier3 --frozen");
+    expect(job.env).not.toHaveProperty("SKILL_EVALUATOR_DIR");
+    expect(install?.env).toEqual({
+      SKILL_EVALUATOR_DIR: "${{ runner.temp }}/SkillEvaluator",
+    });
     expect(installCodex?.run).toContain("npm install -g @openai/codex@0.148.0");
     expect(installCodex?.run).toContain("codex --version");
     expect(installCodex?.run).not.toContain("@latest");
@@ -59,6 +63,7 @@ describe("skill evaluation workflow", () => {
     expect(run?.env).toEqual({
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
+      SKILL_EVALUATOR_DIR: "${{ runner.temp }}/SkillEvaluator",
     });
     expect(run?.run).toBe("bun scripts/evaluations/run-skill-evaluation-worker.ts");
   });

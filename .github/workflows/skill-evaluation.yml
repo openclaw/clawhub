@@ -19,7 +19,6 @@ jobs:
       cancel-in-progress: false
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
       SKILL_EVALUATION_WORKER_ID: github-actions:${{ github.run_id }}:${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -35,6 +34,8 @@ jobs:
           version: "0.10.11"
 
       - name: Install pinned SkillEvaluator release
+        env:
+          SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
         run: |
           set -euo pipefail
           git clone --quiet --filter=blob:none --branch v0.1.0 --depth 1 \
@@ -57,4 +58,5 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
         run: bun scripts/evaluations/run-skill-evaluation-worker.ts
