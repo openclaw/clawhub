@@ -158,6 +158,50 @@ describe("skill evaluation runtime queue", () => {
     await expect(t.query(api.skillEvaluations.getCurrentForSkill, { skillId })).resolves.toBeNull();
   });
 
+  it("publishes current results for skills whose repo comes from the GitHub source row", async () => {
+    const t = convexTest(schema, modules);
+    const contentHash = "hash-v1";
+    const skillId = await insertNvidiaSkill(t, { hash: contentHash, slug: "doca-dpa" });
+    await t.run(async (ctx) => {
+      const sourceId = await ctx.db.insert("githubSkillSources", {
+        repo: "NVIDIA/skills",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.patch(skillId, {
+        githubCurrentRepo: undefined,
+        githubSourceId: sourceId,
+      });
+      await ctx.db.insert("skillEvaluationRuns", {
+        ...evaluationRow({ skillId, contentHash, scanStatus: "suspicious", source: "backfill" }),
+        status: "succeeded",
+        metrics: {
+          sampleCount: 8,
+          overall: { withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+          cases: {
+            withSkillPassed: 4,
+            withSkillTotal: 4,
+            withoutSkillPassed: 2,
+            withoutSkillTotal: 4,
+          },
+          dimensions: [{ id: "correctness", withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 }],
+        },
+        completedAt: 100,
+      });
+    });
+
+    await expect(
+      t.query(api.skillEvaluations.getCurrentForSkill, {
+        skillId,
+        sourceRepo: "NVIDIA/skills",
+        sourcePath: "skills/doca-dpa",
+      }),
+    ).resolves.toMatchObject({
+      source: { repository: "nvidia/skills", path: "skills/demo" },
+      metrics: { overall: { delta: 0.3 } },
+    });
+  });
+
   it("does not publish results for a skill hidden from public view", async () => {
     const t = convexTest(schema, modules);
     const contentHash = "hash-v1";

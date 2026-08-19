@@ -164,12 +164,13 @@ export const getCurrentForSkill = query({
   handler: async (ctx, args) => {
     try {
       const skill = await resolveEvaluationSkill(ctx, args);
+      const source = skill?.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+      const skillSourceRepo = (skill?.githubCurrentRepo ?? source?.repo)?.trim().toLowerCase();
       if (
         !isPublicSkillDoc(skill) ||
         skill.installKind !== "github" ||
         skill.githubCurrentStatus !== "present" ||
-        skill.githubCurrentRepo?.trim().toLowerCase() !==
-          NVIDIA_SKILL_EVALUATION_CONFIG.sourceRepo ||
+        skillSourceRepo !== NVIDIA_SKILL_EVALUATION_CONFIG.sourceRepo ||
         !skill.githubCurrentContentHash
       ) {
         return null;
