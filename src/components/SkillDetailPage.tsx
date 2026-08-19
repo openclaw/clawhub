@@ -260,8 +260,9 @@ export function SkillDetailPage({
   const latestVersionId = latestVersion?._id ?? null;
   const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
   const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
-  const skillEvaluationResult = useQueries(
-    skill
+  const skillEvaluationQueries = useMemo(
+    () =>
+      skill
       ? {
           skillEvaluation: {
             query: api.skillEvaluations.getCurrentForSkill,
@@ -269,7 +270,13 @@ export function SkillDetailPage({
           },
         }
       : {},
-  ).skillEvaluation as SkillEvaluationResult | null | Error | undefined;
+    [skill?._id],
+  );
+  const skillEvaluationResult = useQueries(skillEvaluationQueries).skillEvaluation as
+    | SkillEvaluationResult
+    | null
+    | Error
+    | undefined;
   const skillEvaluation = skillEvaluationResult instanceof Error ? null : skillEvaluationResult;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
