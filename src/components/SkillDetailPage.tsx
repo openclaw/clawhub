@@ -5,7 +5,7 @@ import {
   resolveSkillCategories,
   type ClawdisSkillMetadata,
 } from "clawhub-schema";
-import { useAction, useMutation, useQueries, useQuery } from "convex/react";
+import { useAction, useMutation, useQueries, useQuery, type RequestForQueries } from "convex/react";
 import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -266,22 +266,19 @@ export function SkillDetailPage({
   const skillEvaluationSourceRepo =
     githubBackedFields?.githubCurrentRepo ?? githubBackedFields?.githubSourceRepo ?? undefined;
   const skillEvaluationSourcePath = githubBackedFields?.githubPath ?? undefined;
-  const skillEvaluationQueries = useMemo(
-    () =>
-      skill
-        ? {
-            skillEvaluation: {
-              query: api.skillEvaluations.getCurrentForSkill,
-              args: {
-                skillId: skill._id,
-                ...(skillEvaluationSourceRepo ? { sourceRepo: skillEvaluationSourceRepo } : {}),
-                ...(skillEvaluationSourcePath ? { sourcePath: skillEvaluationSourcePath } : {}),
-              },
-            },
-          }
-        : {},
-    [skill?._id, skillEvaluationSourcePath, skillEvaluationSourceRepo],
-  );
+  const skillEvaluationQueries = useMemo<RequestForQueries>(() => {
+    const queries: RequestForQueries = {};
+    if (!skill) return queries;
+    queries.skillEvaluation = {
+      query: api.skillEvaluations.getCurrentForSkill,
+      args: {
+        skillId: skill._id,
+        ...(skillEvaluationSourceRepo ? { sourceRepo: skillEvaluationSourceRepo } : {}),
+        ...(skillEvaluationSourcePath ? { sourcePath: skillEvaluationSourcePath } : {}),
+      },
+    };
+    return queries;
+  }, [skill?._id, skillEvaluationSourcePath, skillEvaluationSourceRepo]);
   const skillEvaluationResult = useQueries(skillEvaluationQueries).skillEvaluation as
     | SkillEvaluationResult
     | null

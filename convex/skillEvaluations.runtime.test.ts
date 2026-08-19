@@ -103,7 +103,7 @@ describe("skill evaluation runtime queue", () => {
     const runs = await t.run(async (ctx) => await ctx.db.query("skillEvaluationRuns").collect());
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
-      agentModel: "gpt-5.6",
+      agentModel: "gpt-5.4-mini",
       attemptsPerCase: 2,
       judgeModel: "gpt-5.4",
       scanStatus: "suspicious",
@@ -147,7 +147,7 @@ describe("skill evaluation runtime queue", () => {
     await expect(
       t.query(api.skillEvaluations.getCurrentForSkill, { skillId }),
     ).resolves.toMatchObject({
-      evaluator: { agentModel: "gpt-5.6", attempts: 2, judgeModel: "gpt-5.4" },
+      evaluator: { agentModel: "gpt-5.4-mini", attempts: 2, judgeModel: "gpt-5.4" },
       metrics: { overall: { delta: 0.3 } },
       completedAt: 100,
     });

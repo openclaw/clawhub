@@ -16,7 +16,7 @@ const result: SkillEvaluationResult = {
     release: "v0.1.0",
     commit: "b".repeat(40),
     agent: "codex",
-    agentModel: "gpt-5.6",
+    agentModel: "gpt-5.4-mini",
     judgeModel: "gpt-5.4",
     judgeProvider: "openai",
     environment: "docker",
@@ -52,7 +52,7 @@ describe("SkillEvaluationReport", () => {
     expect(screen.getByText("Results")).toBeTruthy();
     expect(screen.getByText("Num attempts")).toBeTruthy();
     expect(screen.getByText("2 per case")).toBeTruthy();
-    expect(screen.getByText("Codex (gpt-5.6)")).toBeTruthy();
+    expect(screen.getByText("Codex (gpt-5.4-mini)")).toBeTruthy();
     expect(screen.getByText("OpenAI (gpt-5.4)")).toBeTruthy();
     expect(screen.queryByText("SkillEvaluator v0.1.0")).toBeNull();
     expect(screen.queryByText("Aug 18, 2026")).toBeNull();

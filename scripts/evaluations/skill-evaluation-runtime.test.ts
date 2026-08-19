@@ -128,7 +128,7 @@ describe("SkillEvaluator worker command contract", () => {
       skillDirectory: "/checkout/skills/demo",
       resultsDirectory: "/results",
       agent: "codex",
-      agentModel: "gpt-5.6",
+      agentModel: "gpt-5.4-mini",
       attempts: 2,
       environment: "docker",
     });
@@ -153,7 +153,7 @@ describe("SkillEvaluator worker command contract", () => {
         "--env-mode",
         "docker",
         "--agent-model",
-        "codex=gpt-5.6",
+        "codex=gpt-5.4-mini",
         "--n-attempts",
         "2",
         "--no-stop-on-pass",

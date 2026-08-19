@@ -571,6 +571,43 @@ export const prioritizeDocaDpaSkillEvaluation = mutation({
       ...queuedRows,
       ...skippedRows.filter((row) => row.skipReason === "stale-version"),
     ];
+    if (rows.length === 0) {
+      const source = await ctx.db
+        .query("githubSkillSources")
+        .withIndex("by_repo", (q) => q.eq("repo", "NVIDIA/skills"))
+        .unique();
+      if (!source) return { prioritized: false as const, reason: "source-missing" as const };
+      const skills = await ctx.db
+        .query("skills")
+        .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+        .filter((q) => q.eq(q.field("githubPath"), args.sourcePath))
+        .take(2);
+      const skill = skills.length === 1 ? skills[0] : null;
+      if (
+        !skill ||
+        skill.installKind !== "github" ||
+        skill.githubCurrentStatus !== "present" ||
+        !skill.githubCurrentCommit ||
+        !skill.githubCurrentContentHash ||
+        !skill.githubPath ||
+        (skill.githubScanStatus !== "clean" && skill.githubScanStatus !== "suspicious")
+      ) {
+        return { prioritized: false as const, reason: "current-skill-missing" as const };
+      }
+      const result = await enqueueNvidiaSkillEvaluation(ctx, {
+        skillId: skill._id,
+        sourceRepo: NVIDIA_SKILL_EVALUATION_CONFIG.sourceRepo,
+        sourceCommit: skill.githubCurrentCommit,
+        sourcePath: skill.githubPath,
+        contentHash: skill.githubCurrentContentHash,
+        scanStatus: skill.githubScanStatus,
+        source: "backfill",
+        now: 0,
+      });
+      return result.queued
+        ? { prioritized: true as const, runId: result.runId }
+        : { prioritized: false as const, reason: result.reason };
+    }
     if (rows.length !== 1) return { prioritized: false as const, reason: "not-unique" as const };
     await ctx.db.patch(rows[0]._id, {
       status: "queued",
