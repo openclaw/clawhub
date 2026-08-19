@@ -10995,8 +10995,7 @@ a.skills-sh-security-audit-row:focus-visible {
   gap: var(--space-5);
 }
 
-.skill-evaluation-header h2,
-.skill-evaluation-empty h2 {
+.skill-evaluation-header h2 {
   margin: 0;
   color: var(--ink);
   font-size: var(--fs-xl);
@@ -11010,61 +11009,97 @@ a.skills-sh-security-audit-row:focus-visible {
   line-height: 1.55;
 }
 
-.skill-evaluation-state {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-pill);
-  background: var(--surface);
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-}
-
-.skill-evaluation-state.is-failed {
-  color: var(--status-error-fg);
-}
-
-.skill-evaluation-message {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--surface-muted) 68%, transparent);
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-}
-
-.skill-evaluation-message strong {
-  color: var(--ink);
-}
-
-.skill-evaluation-message.is-failed {
-  border-color: color-mix(in srgb, var(--status-error-fg) 30%, var(--line));
-}
-
+.skill-evaluation-overview,
 .skill-evaluation-metrics {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
 }
 
-.skill-evaluation-context {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
+.skill-evaluation-overview h3,
+.skill-evaluation-section-heading h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-md);
 }
 
-.skill-evaluation-context strong {
+.skill-evaluation-overview-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
   color: var(--ink);
+  font-size: var(--fs-sm);
+  list-style: none;
+}
+
+.skill-evaluation-overview-list > div {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.2fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.skill-evaluation-overview-list dt {
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+
+.skill-evaluation-overview-list dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.skill-evaluation-overview-list a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.skill-tab-skeleton {
+  display: grid;
+  gap: var(--space-5);
+  min-height: 320px;
+  padding: var(--space-2) 0;
+}
+
+.skill-tab-skeleton-title {
+  width: min(220px, 42%);
+  height: 28px;
+}
+
+.skill-tab-skeleton-copy {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.skill-tab-skeleton-copy > span {
+  width: 100%;
+  height: 14px;
+}
+
+.skill-tab-skeleton-copy > span:nth-child(2) {
+  width: 92%;
+}
+
+.skill-tab-skeleton-copy > span:nth-child(3) {
+  width: 76%;
+}
+
+.skill-tab-skeleton-copy > span:nth-child(4) {
+  width: 88%;
+}
+
+.skill-tab-skeleton-copy > span:nth-child(5) {
+  width: 64%;
+}
+
+.skill-evaluation-section-heading p {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
 }
 
 .skill-evaluation-table-wrap {
@@ -11077,20 +11112,6 @@ a.skills-sh-security-audit-row:focus-visible {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--fs-sm);
-}
-
-.skill-evaluation-table caption {
-  padding: var(--space-3) var(--space-4);
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 650;
-  text-align: left;
-}
-
-.skill-evaluation-table caption a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .skill-evaluation-table th,
@@ -11126,32 +11147,12 @@ a.skills-sh-security-audit-row:focus-visible {
   font-weight: 700;
 }
 
-.skill-evaluation-loading,
-.skill-evaluation-empty {
-  padding: var(--space-7) var(--space-5);
-  color: var(--ink-soft);
-  text-align: center;
-}
-
-.skill-evaluation-empty p {
-  margin: var(--space-2) auto 0;
-  max-width: 60ch;
-}
-
 @media (max-width: 900px) {
   .skill-evaluation-report {
     padding: 0;
   }
 
   .skill-evaluation-header {
-    display: grid;
-  }
-
-  .skill-evaluation-state {
-    width: fit-content;
-  }
-
-  .skill-evaluation-message {
     display: grid;
   }
 }

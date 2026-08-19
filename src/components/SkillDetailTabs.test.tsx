@@ -75,6 +75,60 @@ function renderReadmeForOwner(readmeContent: string) {
 }
 
 describe("SkillDetailTabs README links", () => {
+  it("uses the shared skeleton while tab content loads", () => {
+    const { rerender } = render(
+      <SkillDetailTabs
+        activeTab="readme"
+        setActiveTab={vi.fn()}
+        readmeContent={null}
+        readmeError={null}
+        skillCardContent={null}
+        skillCardError={null}
+        hasSkillCard={true}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "Loading tab content" })).toBeTruthy();
+    expect(screen.queryByText(/Loading README/i)).toBeNull();
+
+    rerender(
+      <SkillDetailTabs
+        activeTab="skill-card"
+        setActiveTab={vi.fn()}
+        readmeContent={null}
+        readmeError={null}
+        skillCardContent={null}
+        skillCardError={null}
+        hasSkillCard={true}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "Loading tab content" })).toBeTruthy();
+    expect(screen.queryByText(/Loading Skill Card/i)).toBeNull();
+  });
+
   it("renders files and version history tabs before install metadata tabs", () => {
     renderReadme("# API Gateway");
 

@@ -2,145 +2,81 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import {
-  SkillEvaluationReport,
-  type SkillEvaluationMetrics,
-  type SkillEvaluationRunRecord,
-} from "./SkillEvaluationReport";
+import { SkillEvaluationReport, type SkillEvaluationResult } from "./SkillEvaluationReport";
 
-function record(
-  state: SkillEvaluationRunRecord["state"],
-  overrides: Partial<SkillEvaluationRunRecord> = {},
-): SkillEvaluationRunRecord {
-  return {
-    schemaVersion: 2,
-    state,
-    smokeRun: true,
-    source: {
-      repository: "nvidia/skills",
-      commit: "a".repeat(40),
-      path: "skills/doca-dpa",
-      contentHash: "content-hash",
-      upstreamVersion: null,
+const result: SkillEvaluationResult = {
+  source: {
+    repository: "nvidia/skills",
+    commit: "a".repeat(40),
+    path: "skills/doca-dpa",
+    contentHash: "content-hash",
+  },
+  evaluator: {
+    repository: "NVIDIA/SkillEvaluator",
+    release: "v0.1.0",
+    commit: "b".repeat(40),
+    agent: "codex",
+    agentModel: "gpt-5.6",
+    judgeModel: "gpt-5.4",
+    judgeProvider: "openai",
+    environment: "docker",
+    attempts: 2,
+  },
+  metrics: {
+    sampleCount: 8,
+    overall: { withSkill: 0.9587, withoutSkill: 0.6058, delta: 0.3529 },
+    cases: {
+      withSkillPassed: 4,
+      withSkillTotal: 4,
+      withoutSkillPassed: 2,
+      withoutSkillTotal: 4,
     },
-    evals: {
-      directory: "skills/doca-dpa/evals",
-      taskSource: "evals_json",
-      dataset: "skills/doca-dpa/evals/evals.json",
-      config: null,
-    },
-    evaluator: {
-      repository: "NVIDIA/SkillEvaluator",
-      commit: "b".repeat(40),
-      version: "0.1.0",
-      agent: "codex",
-      agentModel: "gpt-5.4-mini",
-      judgeModel: "gpt-5.4",
-      judgeProvider: "openai",
-      environment: "local",
-      attempts: 1,
-    },
-    timing: { startedAt: "2026-08-04T00:00:00.000Z" },
-    ...overrides,
-  };
-}
+    dimensions: [
+      { id: "security", withSkill: 1, withoutSkill: 1, delta: 0 },
+      { id: "correctness", withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+      { id: "discoverability", withSkill: 0.92, withoutSkill: 0.67, delta: 0.25 },
+      { id: "effectiveness", withSkill: 0.79, withoutSkill: 0.7, delta: 0.09 },
+      { id: "efficiency", withSkill: 0.75, withoutSkill: 0.69, delta: 0.06 },
+    ],
+  },
+  completedAt: Date.parse("2026-08-18T19:05:00.000Z"),
+};
 
 describe("SkillEvaluationReport", () => {
-  it("shows an in-progress evaluation without inventing a score", () => {
-    render(<SkillEvaluationReport record={record("pending")} />);
-
-    expect(screen.getByRole("status").textContent).toContain("Evaluation in progress");
-  });
-
-  it("shows the upstream skip reason when no evals exist", () => {
-    render(
-      <SkillEvaluationReport
-        record={record("skipped", {
-          reason: { code: "no-evals", message: "No evals were found for this skill version." },
-        })}
-      />,
-    );
-
-    expect(screen.getByText("No evals were found for this skill version.")).toBeTruthy();
-  });
-
-  it("shows evaluation failures", () => {
-    render(
-      <SkillEvaluationReport
-        record={record("failed", {
-          reason: { code: "evaluator-failed", message: "SkillEvaluator exited with code 1." },
-        })}
-      />,
-    );
-
-    expect(screen.getByText("SkillEvaluator exited with code 1.")).toBeTruthy();
-  });
-
-  it("renders the native JSON summary and dimension metrics without embedding the HTML report", () => {
-    const metrics: SkillEvaluationMetrics = {
-      agent: "codex",
-      overall: { withSkill: 0.9587, withoutSkill: 0.6058, delta: 0.3529 },
-      passRate: {
-        withSkill: { passed: 4, total: 4, rate: 1 },
-        withoutSkill: { passed: 2, total: 4, rate: 0.5 },
-      },
-      metrics: [
-        { name: "Security", withSkill: 1, withoutSkill: 1, delta: 0 },
-        { name: "Accuracy", withSkill: 0.9, withoutSkill: 0.45, delta: 0.45 },
-      ],
-    };
-
-    render(
-      <SkillEvaluationReport
-        record={record("completed", {
-          timing: {
-            startedAt: "2026-08-04T00:00:00.000Z",
-            finishedAt: "2026-08-04T00:05:00.000Z",
-          },
-          artifacts: {
-            reportUrl: "/__skill-evaluator-demo/report.html",
-            resultUrl: "/__skill-evaluator-demo/result.json",
-            runConfigUrl: "/__skill-evaluator-demo/run_config.json",
-          },
-        })}
-        metrics={metrics}
-      />,
-    );
+  it("renders the completed current-version summary without overstating precision", () => {
+    render(<SkillEvaluationReport result={result} />);
 
     expect(screen.getByText("96%")).toBeTruthy();
     expect(screen.getByText("+35 pts")).toBeTruthy();
-    expect(screen.getByText("4 / 4")).toBeTruthy();
-    expect(screen.getByRole("rowheader", { name: "Accuracy" })).toBeTruthy();
-    expect(screen.getByRole("cell", { name: "+45 pts" })).toBeTruthy();
-    expect(screen.getByText("Single-run result")).toBeTruthy();
-    expect(screen.getByText("Agent: Codex (gpt-5.4-mini)")).toBeTruthy();
-    expect(screen.getByText("Judge: gpt-5.4")).toBeTruthy();
-    expect(screen.getByText("SkillEvaluator 0.1.0")).toBeTruthy();
-    expect(screen.getByText("Run: Aug 4, 2026")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "SkillEvaluator" }).getAttribute("href")).toBe(
-      "https://github.com/NVIDIA/SkillEvaluator",
+    expect(screen.getByText("Overview")).toBeTruthy();
+    expect(screen.getByText("Results")).toBeTruthy();
+    expect(screen.getByText("Num attempts")).toBeTruthy();
+    expect(screen.getByText("2 per case")).toBeTruthy();
+    expect(screen.getByText("Codex (gpt-5.6)")).toBeTruthy();
+    expect(screen.getByText("OpenAI (gpt-5.4)")).toBeTruthy();
+    expect(screen.queryByText("SkillEvaluator v0.1.0")).toBeNull();
+    expect(screen.queryByText("Aug 18, 2026")).toBeNull();
+    expect(screen.getByText("Security")).toBeTruthy();
+    expect(screen.getByText("Correctness")).toBeTruthy();
+    expect(screen.getByText("Discoverability")).toBeTruthy();
+    expect(screen.getByText("Effectiveness")).toBeTruthy();
+    expect(screen.getByText("Efficiency")).toBeTruthy();
+    expect(screen.getAllByText("8")).toHaveLength(6);
+    expect(screen.getByRole("link", { name: "nvidia/skills@aaaaaaa" }).getAttribute("href")).toBe(
+      `https://github.com/nvidia/skills/commit/${"a".repeat(40)}`,
     );
-    expect(screen.queryByTitle("SkillEvaluator report")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.queryByText("One-attempt smoke run")).toBeNull();
-    expect(screen.queryByText("Run details")).toBeNull();
     expect(screen.queryByText("result.json")).toBeNull();
     expect(screen.queryByText("run_config.json")).toBeNull();
   });
 
-  it("gives a skipped no-evals run an actionable reason", () => {
+  it("shows a one-attempt result in the overview", () => {
     render(
       <SkillEvaluationReport
-        record={record("skipped", {
-          reason: {
-            code: "no-evals",
-            message: "Add evals/evals.json to evaluate this skill version.",
-          },
-        })}
+        result={{ ...result, evaluator: { ...result.evaluator, attempts: 1 } }}
       />,
     );
 
-    expect(screen.getByText("No evals attached")).toBeTruthy();
-    expect(screen.getByText("Add evals/evals.json to evaluate this skill version.")).toBeTruthy();
+    expect(screen.getByText("1 per case")).toBeTruthy();
   });
 });
