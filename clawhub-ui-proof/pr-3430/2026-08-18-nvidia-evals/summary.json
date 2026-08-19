@@ -1,0 +1,33 @@
+{
+  "baseline": "origin/main",
+  "candidate": "cf8698c056",
+  "generatedAt": "2026-08-18T20:27:00.000Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "cf8698c056",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Evals overview and provenance",
+          "screenshot": "screenshots/evals-overview.png",
+          "slug": "evals-overview",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillEvaluator result dimensions",
+          "screenshot": "screenshots/evals-results.png",
+          "slug": "evals-results",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": ".artifacts/clawhub-ui-proof/2026-08-18-nvidia-evals",
+  "provider": "codex-in-app-browser",
+  "scenario": "manual://local/skills/doca-dpa#evaluation",
+  "status": "pass"
+}
