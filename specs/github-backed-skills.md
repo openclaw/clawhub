@@ -464,8 +464,9 @@ source-processing command. Tier 3 validation receives no model credential.
 During evaluation, a short-lived local broker keeps the long-lived OpenAI key
 in the parent and gives SkillEvaluator only a random capability limited to the
 pinned subject/judge models, required OpenAI endpoints, a bounded request count,
-and the lifetime of that one run. SkillEvaluator still runs the agent in its
-secure Docker mode; the capability is closed when the evaluator exits.
+disabled provider-side background work, and the lifetime of that one run.
+SkillEvaluator still runs the agent in its secure Docker mode; the capability
+is closed when the evaluator exits.
 
 ## UI
 

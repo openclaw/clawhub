@@ -138,4 +138,32 @@ describe("OpenAI evaluation capability broker", () => {
     expect((await request()).status).toBe(200);
     expect((await request()).status).toBe(429);
   });
+
+  it("rejects background Responses work without calling the provider", async () => {
+    let upstreamRequests = 0;
+    const upstreamBaseUrl = await listen(
+      createServer((_request, response) => {
+        upstreamRequests += 1;
+        response.end("unexpected");
+      }),
+    );
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: ["gpt-subject"],
+      apiKey: "long-lived-provider-key",
+      upstreamBaseUrl,
+    });
+    brokers.push(broker);
+
+    const response = await fetch(`http://127.0.0.1:${broker.port}/v1/responses`, {
+      body: JSON.stringify({ background: true, model: "gpt-subject" }),
+      headers: {
+        authorization: `Bearer ${broker.capabilityToken}`,
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(400);
+    expect(upstreamRequests).toBe(0);
+  });
 });

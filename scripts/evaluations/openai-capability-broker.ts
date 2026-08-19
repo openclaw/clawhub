@@ -88,12 +88,21 @@ export async function startOpenAiCapabilityBroker(args: {
         reject(response, 400, "evaluation request must be JSON");
         return;
       }
-      const model =
+      const requestBody =
         parsed && typeof parsed === "object" && !Array.isArray(parsed)
-          ? (parsed as { model?: unknown }).model
+          ? (parsed as { background?: unknown; model?: unknown })
           : undefined;
+      const model = requestBody?.model;
       if (typeof model !== "string" || !allowedModels.has(model)) {
         reject(response, 403, "model is outside this evaluation capability");
+        return;
+      }
+      if (
+        url.pathname.startsWith("/v1/responses") &&
+        requestBody?.background !== undefined &&
+        requestBody.background !== false
+      ) {
+        reject(response, 400, "background evaluation requests are not supported");
         return;
       }
 
