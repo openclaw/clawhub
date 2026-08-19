@@ -1,11 +1,11 @@
 {
   "baseline": "origin/main",
-  "candidate": "cf8698c056",
+  "candidate": "edb418a296",
   "generatedAt": "2026-08-18T20:27:00.000Z",
   "lanes": [
     {
       "name": "candidate",
-      "ref": "cf8698c056",
+      "ref": "edb418a296",
       "status": "pass",
       "steps": [
         {
