@@ -241,13 +241,15 @@ export const claimQueuedSkillEvaluationsInternal = internalMutation({
     const claimed: Array<Doc<"skillEvaluationRuns"> & { leaseToken: string }> = [];
     for (const row of rows) {
       const skill = await ctx.db.get(row.skillId);
+      const source = skill?.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+      const skillSourceRepo = (skill?.githubCurrentRepo ?? source?.repo)?.trim().toLowerCase();
       if (
         !skill ||
         Boolean(skill.softDeletedAt) ||
         skill.moderationStatus === "removed" ||
         skill.githubCurrentStatus !== "present" ||
         skill.githubCurrentContentHash !== row.contentHash ||
-        skill.githubCurrentRepo?.trim().toLowerCase() !== row.sourceRepo
+        skillSourceRepo !== row.sourceRepo
       ) {
         await ctx.db.patch(row._id, {
           status: "skipped",
@@ -549,7 +551,7 @@ export const prioritizeDocaDpaSkillEvaluation = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const rows = await ctx.db
+    const queuedRows = await ctx.db
       .query("skillEvaluationRuns")
       .withIndex("by_status_source_next_run_at", (q) =>
         q.eq("status", "queued").eq("source", "backfill"),
@@ -557,8 +559,26 @@ export const prioritizeDocaDpaSkillEvaluation = mutation({
       .order("asc")
       .filter((q) => q.eq(q.field("sourcePath"), args.sourcePath))
       .take(2);
+    const skippedRows = await ctx.db
+      .query("skillEvaluationRuns")
+      .withIndex("by_status_source_next_run_at", (q) =>
+        q.eq("status", "skipped").eq("source", "backfill"),
+      )
+      .order("asc")
+      .filter((q) => q.eq(q.field("sourcePath"), args.sourcePath))
+      .take(2);
+    const rows = [
+      ...queuedRows,
+      ...skippedRows.filter((row) => row.skipReason === "stale-version"),
+    ];
     if (rows.length !== 1) return { prioritized: false as const, reason: "not-unique" as const };
-    await ctx.db.patch(rows[0]._id, { nextRunAt: 0, updatedAt: now });
+    await ctx.db.patch(rows[0]._id, {
+      status: "queued",
+      skipReason: undefined,
+      completedAt: undefined,
+      nextRunAt: 0,
+      updatedAt: now,
+    });
     await requestSkillEvaluationDispatch(ctx);
     return { prioritized: true as const, runId: rows[0]._id };
   },
