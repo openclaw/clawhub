@@ -9,6 +9,7 @@ import {
 } from "../../convex/lib/skillEvaluationConfig";
 import { createWorkerLogger } from "../lib/workerLogger";
 import { maskKnownWorkerSecrets, redactWorkerPublicText } from "../lib/workerRedaction";
+import { startOpenAiCapabilityBroker } from "./openai-capability-broker";
 import {
   buildTier3Commands,
   discoverSkillEvals,
@@ -38,29 +39,50 @@ function workerId(env: NodeJS.ProcessEnv = process.env) {
   );
 }
 
-function evaluationEnvironment(run: ClaimedEvaluation) {
+export function commandEnvironment(source: NodeJS.ProcessEnv = process.env) {
   const forwardedNames = [
     "DOCKER_HOST",
     "HOME",
     "LANG",
     "LC_ALL",
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
     "PATH",
     "TMPDIR",
     "XDG_RUNTIME_DIR",
   ];
   const env: Record<string, string> = {};
   for (const name of forwardedNames) {
-    const value = process.env[name];
+    const value = source[name];
     if (value) env[name] = value;
   }
   env.NO_COLOR = "1";
+  return env;
+}
+
+export function evaluationEnvironment(
+  run: Pick<ClaimedEvaluation, "judgeModel" | "judgeProvider">,
+  capability: { baseUrl: string; token: string },
+  source: NodeJS.ProcessEnv = process.env,
+) {
+  const env = commandEnvironment(source);
+  env.OPENAI_API_KEY = capability.token;
+  env.OPENAI_BASE_URL = capability.baseUrl;
   env.SKILL_EVAL_LLM_PROVIDER = run.judgeProvider;
   env.SKILL_EVAL_LLM_MODEL = run.judgeModel;
   env.SKILL_EVAL_JUDGE_MODEL = run.judgeModel;
   env.LLM_JUDGE_MODEL = run.judgeModel;
   return env;
+}
+
+async function dockerBridgeGateway() {
+  const result = await runCommand(
+    ["docker", "network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}"],
+    { env: commandEnvironment() },
+  );
+  const gateway = result.stdout.trim();
+  if (result.exitCode !== 0 || !gateway) {
+    throw new Error("Docker bridge gateway is unavailable for the evaluation credential broker");
+  }
+  return gateway;
 }
 
 function pinnedConfigurationMatches(run: ClaimedEvaluation) {
@@ -142,10 +164,11 @@ async function failRun(
 export async function processClaimedEvaluation(args: {
   client: WorkerClient;
   evaluatorProject: string;
+  openAiApiKey: string;
   run: ClaimedEvaluation;
   token: string;
 }) {
-  const { client, evaluatorProject, run, token } = args;
+  const { client, evaluatorProject, openAiApiKey, run, token } = args;
   const startedAt = Date.now();
   let snapshotRoot: string | undefined;
   try {
@@ -173,10 +196,9 @@ export async function processClaimedEvaluation(args: {
       attempts: run.attemptsPerCase,
       environment: run.environment,
     });
-    const env = evaluationEnvironment(run);
     const validation = await runCommand(commands.validate, {
       cwd: snapshot.checkout,
-      env,
+      env: commandEnvironment(),
       timeoutMs: VALIDATION_TIMEOUT_MS,
     });
     if (validation.exitCode !== 0) {
@@ -193,11 +215,24 @@ export async function processClaimedEvaluation(args: {
       { event: "skill_evaluation_started", runId: run._id },
       "SkillEvaluator Tier 3 run started",
     );
-    const evaluation = await runCommand(commands.evaluate, {
-      cwd: snapshot.checkout,
-      env,
-      timeoutMs: EVALUATION_TIMEOUT_MS,
+    const gateway = await dockerBridgeGateway();
+    const broker = await startOpenAiCapabilityBroker({
+      allowedModels: [run.agentModel, run.judgeModel],
+      apiKey: openAiApiKey,
     });
+    let evaluation;
+    try {
+      evaluation = await runCommand(commands.evaluate, {
+        cwd: snapshot.checkout,
+        env: evaluationEnvironment(run, {
+          baseUrl: `http://${gateway}:${broker.port}/v1`,
+          token: broker.capabilityToken,
+        }),
+        timeoutMs: EVALUATION_TIMEOUT_MS,
+      });
+    } finally {
+      await broker.close();
+    }
     if (evaluation.exitCode !== 0) {
       throw new Error(commandFailure("SkillEvaluator Tier 3 evaluation failed", evaluation));
     }
@@ -235,6 +270,7 @@ export async function processClaimedEvaluation(args: {
 export async function runSkillEvaluationWorker(options?: {
   client?: WorkerClient;
   evaluatorProject?: string;
+  openAiApiKey?: string;
   token?: string;
   workerId?: string;
 }) {
@@ -243,6 +279,18 @@ export async function runSkillEvaluationWorker(options?: {
   if (!options?.client && !convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const client = options?.client ?? new ConvexHttpClient(convexUrl as string);
   const token = options?.token ?? requireEnv("SECURITY_SCAN_WORKER_TOKEN");
+  const openAiApiKey = options?.openAiApiKey ?? requireEnv("OPENAI_API_KEY");
+  // Only this trusted parent retains the long-lived provider key. Every child
+  // receives a short-lived, model-scoped broker token instead.
+  for (const name of [
+    "CONVEX_DEPLOY_KEY",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "OPENAI_API_KEY",
+    "SECURITY_SCAN_WORKER_TOKEN",
+  ]) {
+    delete process.env[name];
+  }
   const evaluatorProject = resolve(options?.evaluatorProject ?? requireEnv("SKILL_EVALUATOR_DIR"));
   await verifyEvaluatorCheckout(evaluatorProject);
   const claimed = await client.action(api.skillEvaluations.claimSkillEvaluationJobs, {
@@ -256,7 +304,13 @@ export async function runSkillEvaluationWorker(options?: {
     logger.info({ event: "skill_evaluation_queue_empty" }, "no skill evaluation jobs available");
     return { claimed: 0, failed: 0 };
   }
-  const result = await processClaimedEvaluation({ client, evaluatorProject, run, token });
+  const result = await processClaimedEvaluation({
+    client,
+    evaluatorProject,
+    openAiApiKey,
+    run,
+    token,
+  });
   return { claimed: 1, failed: result.outcome === "failed" ? 1 : 0 };
 }
 

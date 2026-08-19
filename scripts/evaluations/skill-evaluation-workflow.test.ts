@@ -9,6 +9,7 @@ type WorkflowStep = {
   name?: string;
   run?: string;
   uses?: string;
+  with?: Record<string, unknown>;
 };
 
 describe("skill evaluation workflow", () => {
@@ -40,6 +41,10 @@ describe("skill evaluation workflow", () => {
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-skill-evaluation"]);
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.schedule).toBeUndefined();
+    expect(job.steps[0]).toMatchObject({
+      uses: "actions/checkout@v7.0.1",
+      with: { "persist-credentials": false },
+    });
     expect(job["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
     expect(job.environment).toBe("Production");
     expect(job["timeout-minutes"]).toBe(180);

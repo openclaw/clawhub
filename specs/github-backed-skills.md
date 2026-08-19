@@ -445,6 +445,28 @@ to preserve or verify upstream OMS signatures in v1. Signature verification can
 be added later as an additional verification input, but it must not require
 ClawHub to republish transformed skill bytes.
 
+## NVIDIA Skill Evaluations
+
+After a new `NVIDIA/skills` version reaches a completed `clean` or `suspicious`
+security verdict, ClawHub may enqueue that exact commit, path, and content hash
+for a pinned SkillEvaluator Tier 3 run. Evaluation is asynchronous and never
+blocks promotion or installation. Unchanged syncs do not enqueue another run.
+
+The worker discovers only SkillEvaluator's supported upstream `evals/` layout.
+Missing, conflicting, or unsupported eval inputs produce a durable skipped
+reason instead of a guessed mapping. A completed result is published only while
+its content hash still matches the current visible skill; pending, skipped,
+failed, stale, hidden, and deleted results do not add an Evals tab.
+
+The production credential boundary is capability-based. The trusted worker
+parent removes GitHub, Convex, and worker control-plane credentials before any
+source-processing command. Tier 3 validation receives no model credential.
+During evaluation, a short-lived local broker keeps the long-lived OpenAI key
+in the parent and gives SkillEvaluator only a random capability limited to the
+pinned subject/judge models, required OpenAI endpoints, a bounded request count,
+and the lifetime of that one run. SkillEvaluator still runs the agent in its
+secure Docker mode; the capability is closed when the evaluator exits.
+
 ## UI
 
 Publisher profiles may group GitHub-backed skills by the parsed `skills.sh.json`
