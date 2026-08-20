@@ -665,7 +665,13 @@ Response:
 - Each skill includes `_export_skill_meta.json`.
 - `_manifest.json` is always included at the ZIP root.
 - `_errors.json` is included when individual skills or files could not be
-  exported.
+  exported before the archive manifest is sealed. `X-Export-Errors` reports
+  those same pre-stream errors.
+- Once streaming starts, every hosted file is bound to the signed archive
+  manifest by path, size, and SHA-256. If a signed file disappears or fails an
+  integrity check, the stream terminates and the client must discard the
+  partial ZIP and retry; the proxy never emits a completed archive whose
+  `_manifest.json` or `X-Export-Errors` misstates its contents.
 
 Headers:
 

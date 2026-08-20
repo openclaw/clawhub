@@ -178,6 +178,16 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
   the app-level `test` label is not an OIDC trust claim. Convex derives this
   expected target from its explicit runtime environment markers, not a fixed
   deployment hostname, and fails closed when a remote runtime is unclassified.
+- Bulk skill export uses the same signed-manifest boundary. Convex records
+  recoverable missing-skill, missing-version, missing-file, invalid-path, and
+  duplicate-path errors before signing, and those errors remain represented by
+  `_errors.json` plus `X-Export-Errors`. The signed manifest then becomes the
+  complete archive contract: Nitro must not omit or rewrite a signed entry,
+  because doing so would make the embedded `_manifest.json` and response error
+  count false. A post-signing storage failure, size mismatch, or digest mismatch
+  therefore terminates the stream; clients discard the partial ZIP and retry.
+  This integrity rule applies while file reads, compression, and response output
+  remain bounded and backpressured.
   Nitro never accepts a
   client-supplied manifest and
   accepts Convex's response only as a short-lived RS256 JWS signed by the
