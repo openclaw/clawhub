@@ -1,4 +1,5 @@
 import { CompactSign, compactVerify, createLocalJWKSet, importPKCS8 } from "jose";
+import type { MergedExportManifestEntry } from "./skillZip";
 
 export const ARCHIVE_MANIFEST_CONTENT_TYPE = "application/vnd.clawhub.skill-archive-manifest+jws";
 export const ARCHIVE_MANIFEST_AUDIENCE = "clawhub.nitro-skill-archive";
@@ -31,6 +32,31 @@ export type SkillArchiveManifest = {
   metricToken?: string;
 };
 
+export type SkillExportArchiveManifestEntry =
+  | {
+      kind: "storage";
+      path: string;
+      url: string;
+      size: number;
+      sha256: string;
+    }
+  | {
+      kind: "inline";
+      path: string;
+      text: string;
+    };
+
+export type SkillExportArchiveManifest = {
+  schema: "clawhub.skill-export-archive-manifest.v1";
+  issuer: string;
+  audience: typeof ARCHIVE_MANIFEST_AUDIENCE;
+  issuedAt: number;
+  expiresAt: number;
+  filename: string;
+  entries: SkillExportArchiveManifestEntry[];
+  exportManifest: MergedExportManifestEntry[];
+};
+
 export type ArchiveMetricPayload = {
   schema: "clawhub.archive-download-metric.v1";
   issuer: string;
@@ -41,7 +67,7 @@ export type ArchiveMetricPayload = {
 };
 
 export async function signArchivePayload(
-  payload: SkillArchiveManifest | ArchiveMetricPayload,
+  payload: SkillArchiveManifest | SkillExportArchiveManifest | ArchiveMetricPayload,
   type: typeof ARCHIVE_MANIFEST_JWS_TYPE | typeof ARCHIVE_METRIC_JWS_TYPE,
   privateKeyPem = process.env.JWT_PRIVATE_KEY,
 ) {

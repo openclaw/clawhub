@@ -617,6 +617,28 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("skills export does not expose storage manifests to direct clients", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const runQuery = vi.fn();
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=2", {
+        headers: {
+          authorization: "Bearer user-token",
+          "x-clawhub-archive-manifest": "v1",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
   it("skills export preserves pagination headers for empty filtered pages", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
@@ -728,6 +750,118 @@ describe("httpApiV1 handlers", () => {
       "bob/demo/SKILL.md",
       "bob/demo/_export_skill_meta.json",
     ]);
+  });
+
+  it("skills export hands Nitro a signed storage manifest without loading Blob bodies", async () => {
+    vi.stubEnv("CLAWHUB_PREVIEW", "1");
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              skillId: "skills:demo",
+              slug: "demo",
+              displayName: "Demo",
+              latestVersionId: "skillVersions:demo",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: { downloads: 4 },
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+          ],
+          nextCursor: "next-page",
+          hasMore: true,
+        };
+      }
+      if (args.versionId === "skillVersions:demo") {
+        return {
+          skillId: "skills:demo",
+          version: "1.0.0",
+          files: [
+            {
+              storageId: "storage:demo",
+              path: "SKILL.md",
+              size: 64 * 1024 * 1024,
+              sha256: "a".repeat(64),
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn();
+    const storageGetUrl = vi.fn(
+      async () => "https://preview-branch-123.convex.cloud/api/storage/storage-demo",
+    );
+    const verifyArchiveRequester = vi.fn(async () => undefined);
+    const signArchiveManifest = vi.fn(async (manifest: unknown) => JSON.stringify(manifest));
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({
+        runQuery,
+        storage: { get: storageGet, getUrl: storageGetUrl },
+      }),
+      new Request(
+        "https://preview-branch-123.convex.site/api/v1/skills/export?startDate=1&endDate=5",
+        {
+          headers: {
+            authorization: "Bearer user-token",
+            "x-clawhub-archive-manifest": "v1",
+            "x-clawhub-vercel-oidc-token": "vercel-oidc",
+          },
+        },
+      ),
+      { verifyArchiveRequester, signArchiveManifest },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(
+      "application/vnd.clawhub.skill-archive-manifest+jws",
+    );
+    expect(response.headers.get("X-Next-Cursor")).toBe("next-page");
+    expect(response.headers.get("X-Has-More")).toBe("true");
+    expect(response.headers.get("X-Total-Returned")).toBe("1");
+    expect(response.headers.get("X-Export-Errors")).toBe("0");
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(storageGetUrl).toHaveBeenCalledWith("storage:demo");
+    expect(verifyArchiveRequester).toHaveBeenCalledWith("vercel-oidc", "preview");
+    const manifest = JSON.parse(await response.text());
+    expect(manifest).toMatchObject({
+      schema: "clawhub.skill-export-archive-manifest.v1",
+      issuer: "https://preview-branch-123.convex.site",
+      filename: "skills-export-1-5.zip",
+      entries: [
+        {
+          kind: "storage",
+          path: "alice/demo/SKILL.md",
+          url: "https://preview-branch-123.convex.cloud/api/storage/storage-demo",
+          size: 64 * 1024 * 1024,
+          sha256: "a".repeat(64),
+        },
+        {
+          kind: "inline",
+          path: "alice/demo/_export_skill_meta.json",
+        },
+      ],
+      exportManifest: [
+        expect.objectContaining({
+          publisher: "alice",
+          slug: "demo",
+          sourceRef: "public-clawhub",
+          fileCount: 1,
+        }),
+      ],
+    });
   });
 
   it("skills export includes GitHub-backed skills as public GitHub handoff descriptors", async () => {

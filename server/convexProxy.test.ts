@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { createHash } from "node:crypto";
 import { unzipSync } from "fflate";
 import { mockEvent } from "h3";
 import { createLocalJWKSet, exportJWK, exportPKCS8, generateKeyPair } from "jose";
@@ -239,6 +240,308 @@ describe("Convex HTTP proxy", () => {
     ).toBeGreaterThan(
       fetchedUrls.indexOf("https://preview-branch-123.convex.cloud/api/storage/storage-1"),
     );
+  });
+
+  it("streams bulk skill exports before a stored entry finishes", async () => {
+    const firstStorageChunk = new Uint8Array(64 * 1024).fill(0x61);
+    let releaseStorage: (() => void) | undefined;
+    const storageReleased = new Promise<void>((resolve) => {
+      releaseStorage = resolve;
+    });
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
+      const url = input.toString();
+      if (url.startsWith("https://preview-branch-123.convex.site/api/v1/skills/export")) {
+        return Response.json(
+          {
+            schema: "clawhub.skill-export-archive-manifest.v1",
+            issuedAt: 1_000,
+            expiresAt: 31_000,
+            filename: "skills-export-1-5.zip",
+            entries: [
+              {
+                kind: "storage",
+                path: "alice/demo/SKILL.md",
+                url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+                size: firstStorageChunk.byteLength + 1,
+                sha256: createHash("sha256")
+                  .update(firstStorageChunk)
+                  .update(Uint8Array.of(0x62))
+                  .digest("hex"),
+              },
+              {
+                kind: "inline",
+                path: "alice/demo/_export_skill_meta.json",
+                text: '{"slug":"demo"}',
+              },
+              {
+                kind: "inline",
+                path: "_errors.json",
+                text: '[{"slug":"missing","error":"version not found"}]',
+              },
+            ],
+            exportManifest: [
+              {
+                publisher: "alice",
+                slug: "demo",
+                sourceRef: "public-clawhub",
+                version: "1.0.0",
+                displayName: "Demo",
+                createdAt: 1,
+                updatedAt: 2,
+                stats: {},
+                fileCount: 1,
+              },
+            ],
+          },
+          {
+            headers: {
+              "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE,
+              "x-export-errors": "1",
+              "x-total-returned": "1",
+            },
+          },
+        );
+      }
+      if (url === "https://preview-branch-123.convex.cloud/api/storage/storage-1") {
+        let sentFirstChunk = false;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              if (!sentFirstChunk) {
+                sentFirstChunk = true;
+                controller.enqueue(firstStorageChunk);
+                return;
+              }
+              await storageReleased;
+              controller.enqueue(Uint8Array.of(0x62));
+              controller.close();
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/skills/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/zip");
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="skills-export-1-5.zip"',
+    );
+    expect(response.headers.get("X-Export-Errors")).toBe("1");
+    const reader = response.body!.getReader();
+    const firstZipChunk = await reader.read();
+    expect(firstZipChunk.done).toBe(false);
+    expect(firstZipChunk.value?.byteLength).toBeGreaterThan(0);
+    expect(
+      new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("x-clawhub-archive-manifest"),
+    ).toBe("v1");
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization")).toBe(
+      "Bearer user-token",
+    );
+
+    releaseStorage?.();
+    const chunks = [firstZipChunk.value!];
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      chunks.push(chunk.value);
+    }
+    const archiveBytes = new Uint8Array(
+      chunks.reduce((total, chunk) => total + chunk.byteLength, 0),
+    );
+    let offset = 0;
+    for (const chunk of chunks) {
+      archiveBytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const archive = unzipSync(archiveBytes);
+    expect(Object.keys(archive).sort()).toEqual([
+      "_errors.json",
+      "_manifest.json",
+      "alice/demo/SKILL.md",
+      "alice/demo/_export_skill_meta.json",
+    ]);
+    expect(JSON.parse(new TextDecoder().decode(archive["_errors.json"]))).toEqual([
+      { slug: "missing", error: "version not found" },
+    ]);
+    expect(JSON.parse(new TextDecoder().decode(archive["_manifest.json"]))).toEqual([
+      expect.objectContaining({
+        publisher: "alice",
+        slug: "demo",
+        sourceRef: "public-clawhub",
+        fileCount: 1,
+      }),
+    ]);
+  });
+
+  it("rejects bulk export manifests that point outside paired Convex storage", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        {
+          schema: "clawhub.skill-export-archive-manifest.v1",
+          issuedAt: 1_000,
+          expiresAt: 31_000,
+          filename: "skills-export-1-5.zip",
+          entries: [
+            {
+              kind: "storage",
+              path: "alice/demo/SKILL.md",
+              url: "https://attacker.example/private",
+              size: 1,
+              sha256: "a".repeat(64),
+            },
+          ],
+          exportManifest: [],
+        },
+        { headers: { "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/skills/export?startDate=1&endDate=5"),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.text()).toBe("Invalid or expired archive manifest");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails a bulk export stream when stored bytes miss the signed digest", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.startsWith("https://preview-branch-123.convex.site/api/v1/skills/export")) {
+        return Response.json(
+          {
+            schema: "clawhub.skill-export-archive-manifest.v1",
+            issuedAt: 1_000,
+            expiresAt: 31_000,
+            filename: "skills-export-1-5.zip",
+            entries: [
+              {
+                kind: "storage",
+                path: "alice/demo/SKILL.md",
+                url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+                size: 5,
+                sha256: createHash("sha256").update("right").digest("hex"),
+              },
+            ],
+            exportManifest: [],
+          },
+          { headers: { "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE } },
+        );
+      }
+      if (url === "https://preview-branch-123.convex.cloud/api/storage/storage-1") {
+        return new Response("wrong");
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/skills/export?startDate=1&endDate=5"),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.arrayBuffer()).rejects.toThrow(
+      "Archive entry did not match its signed manifest",
+    );
+  });
+
+  it("prefetches only a bounded window of bulk export storage responses", async () => {
+    const publisher = "p".repeat(200);
+    const slug = "s".repeat(200);
+    const entries = Array.from({ length: 10 }, (_, index) => ({
+      kind: "storage" as const,
+      path: `${publisher}/${slug}/${"f".repeat(120)}-${String(index).padStart(2, "0")}.txt`,
+      url: `https://preview-branch-123.convex.cloud/api/storage/storage-${index}`,
+      size: 1,
+      sha256: "a".repeat(64),
+    }));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.startsWith("https://preview-branch-123.convex.site/api/v1/skills/export")) {
+        return Response.json(
+          {
+            schema: "clawhub.skill-export-archive-manifest.v1",
+            issuedAt: 1_000,
+            expiresAt: 31_000,
+            filename: "skills-export-1-5.zip",
+            entries,
+            exportManifest: [
+              {
+                publisher,
+                slug,
+                sourceRef: "public-clawhub",
+                version: "1.0.0",
+                displayName: "Demo",
+                createdAt: 1,
+                updatedAt: 2,
+                stats: {},
+                fileCount: entries.length,
+              },
+            ],
+          },
+          { headers: { "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE } },
+        );
+      }
+      if (url.startsWith("https://preview-branch-123.convex.cloud/api/storage/")) {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start() {
+              // Keep each prefetched response open so the test observes the live window.
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/skills/export?startDate=1&endDate=5"),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    const storageCalls = fetchMock.mock.calls.filter(([input]) =>
+      input.toString().startsWith("https://preview-branch-123.convex.cloud/api/storage/"),
+    );
+    expect(storageCalls).toHaveLength(8);
+    await response.body?.cancel();
   });
 
   it("does not record a download when every source Blob has vanished", async () => {
@@ -610,8 +913,8 @@ describe("Convex HTTP proxy", () => {
     );
 
     expect(response.status).toBe(502);
-    expect(bodyRead.mock.calls.length).toBeGreaterThanOrEqual(5);
-    expect(bodyRead.mock.calls.length).toBeLessThanOrEqual(6);
+    expect(bodyRead.mock.calls.length).toBeGreaterThanOrEqual(17);
+    expect(bodyRead.mock.calls.length).toBeLessThanOrEqual(18);
   });
 
   it("exposes the permanent Test backend name for deployment proof", async () => {

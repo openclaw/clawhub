@@ -21,7 +21,20 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import {
+  ARCHIVE_MANIFEST_AUDIENCE,
+  ARCHIVE_MANIFEST_CONTENT_TYPE,
+  ARCHIVE_MANIFEST_JWS_TYPE,
+  signArchivePayload,
+  type SkillExportArchiveManifest,
+} from "../lib/archiveManifest";
 import { serializeCanonicalSkillSearchResults } from "../lib/canonicalSkillSearchResponse";
+import {
+  ARCHIVE_REQUEST_IDENTITY_HEADER,
+  expectedVercelEnvironmentForConvexSite,
+  type ClawHubVercelEnvironment,
+  verifyClawHubVercelOidcToken,
+} from "../lib/clawhubVercelOidc";
 import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
@@ -95,7 +108,25 @@ const MAX_EXPORT_FILE_COUNT = 10_000;
 const MAX_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_EXPORT_PAGE_LIMIT = 250;
 const MAX_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
+const ARCHIVE_MANIFEST_REQUEST_HEADER = "x-clawhub-archive-manifest";
+const ARCHIVE_MANIFEST_TTL_MS = 30_000;
+// Covers the 10,000-file export contract (including long paths and JWS
+// expansion) while keeping the trusted Nitro handoff materially bounded.
+const MAX_ARCHIVE_MANIFEST_BYTES = 16 * 1024 * 1024;
 const MAX_SECURITY_VERDICT_ITEMS = 100;
+
+type SkillsExportDependencies = {
+  verifyArchiveRequester: (
+    token: string,
+    expectedEnvironment: ClawHubVercelEnvironment,
+  ) => Promise<unknown>;
+  signArchiveManifest: (manifest: SkillExportArchiveManifest) => Promise<string>;
+};
+
+const DEFAULT_SKILLS_EXPORT_DEPENDENCIES: SkillsExportDependencies = {
+  verifyArchiveRequester: verifyClawHubVercelOidcToken,
+  signArchiveManifest: (manifest) => signArchivePayload(manifest, ARCHIVE_MANIFEST_JWS_TYPE),
+};
 
 async function readRequestBodyWithinLimit(request: Request, maxBytes: number) {
   if (!request.body) return new Uint8Array();
@@ -3729,6 +3760,7 @@ type SkillsExportPhase =
   | "build_empty_zip"
   | "load_versions"
   | "plan_blobs"
+  | "load_blob_urls"
   | "load_blobs"
   | "assemble_entries"
   | "build_zip";
@@ -3760,11 +3792,27 @@ function logSkillsExportFailure(context: SkillsExportLogContext, error: unknown)
   });
 }
 
-export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
+export async function exportSkillsV1Handler(
+  ctx: ActionCtx,
+  request: Request,
+  dependencies: SkillsExportDependencies = DEFAULT_SKILLS_EXPORT_DEPENDENCIES,
+) {
   try {
     await requireApiTokenUser(ctx, request);
   } catch (err) {
     return text(err instanceof Error ? err.message : "Unauthorized", 401);
+  }
+
+  const manifestRequested = request.headers.get(ARCHIVE_MANIFEST_REQUEST_HEADER) === "v1";
+  if (manifestRequested) {
+    const token = request.headers.get(ARCHIVE_REQUEST_IDENTITY_HEADER)?.trim();
+    const expectedEnvironment = expectedVercelEnvironmentForConvexSite(request.url);
+    if (!token || !expectedEnvironment) return unauthorizedSkillsExportManifestResponse();
+    try {
+      await dependencies.verifyArchiveRequester(token, expectedEnvironment);
+    } catch {
+      return unauthorizedSkillsExportManifestResponse();
+    }
   }
 
   const rate = await applyRateLimit(ctx, request, "export");
@@ -3847,12 +3895,29 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
   if (result.page.length === 0) {
     try {
       logContext.phase = "build_empty_zip";
+      const filename = `skills-export-${startDate}-${endDate}-empty.zip`;
+      if (manifestRequested) {
+        return await buildSignedSkillsExportManifestResponse(
+          request,
+          dependencies,
+          filename,
+          [],
+          [],
+          mergeHeaders(rate.headers, {
+            "X-Next-Cursor": result.nextCursor ?? "",
+            "X-Has-More": String(result.hasMore),
+            "X-Total-Returned": "0",
+            "X-Date-Range": `${startDate}-${endDate}`,
+            "X-Export-Errors": "0",
+          }),
+        );
+      }
       const emptyZip = buildMergedExportZip([], []);
       return new Response(emptyZip as unknown as BodyInit, {
         status: 200,
         headers: mergeHeaders(rate.headers, {
           "Content-Type": "application/zip",
-          "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}-empty.zip"`,
+          "Content-Disposition": `attachment; filename="${filename}"`,
           "X-Next-Cursor": result.nextCursor ?? "",
           "X-Has-More": String(result.hasMore),
           "X-Total-Returned": "0",
@@ -3898,6 +3963,8 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
       fileIndex: number;
       storageId: Id<"_storage">;
       archivePath: string;
+      size: number;
+      sha256: string;
     };
     const blobTasks: BlobTask[] = [];
 
@@ -3991,23 +4058,40 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
           fileIndex: j,
           storageId: version.files[j].storageId,
           archivePath,
+          size: version.files[j].size,
+          sha256: version.files[j].sha256,
         });
       }
     }
     logContext.blobTaskCount = blobTasks.length;
     logContext.exportErrorCount = exportErrors.length;
 
-    logContext.phase = "load_blobs";
-    const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
+    logContext.phase = manifestRequested ? "load_blob_urls" : "load_blobs";
+    const blobs = await chunkedParallel(blobTasks, 50, async (task) =>
+      manifestRequested
+        ? { kind: "storage" as const, url: await ctx.storage.getUrl(task.storageId) }
+        : { kind: "blob" as const, blob: await ctx.storage.get(task.storageId) },
+    );
     logContext.blobCount = blobs.length;
 
-    const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
+    type PreparedExportEntry =
+      | { path: string; bytes: Uint8Array }
+      | { path: string; url: string; size: number; sha256: string };
+    const zipEntries: PreparedExportEntry[] = [];
     const manifest: MergedExportManifestEntry[] = [];
     let totalExportBytes = 0;
 
     const blobsByDigest = new Map<
       number,
-      Map<number, { blob: Blob | null; archivePath: string }>
+      Map<
+        number,
+        {
+          source: { kind: "blob"; blob: Blob | null } | { kind: "storage"; url: string | null };
+          archivePath: string;
+          size: number;
+          sha256: string;
+        }
+      >
     >();
     for (let k = 0; k < blobTasks.length; k++) {
       const task = blobTasks[k];
@@ -4015,8 +4099,10 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         blobsByDigest.set(task.digestIndex, new Map());
       }
       blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, {
-        blob: blobs[k],
+        source: blobs[k],
         archivePath: task.archivePath,
+        size: task.size,
+        sha256: task.sha256,
       });
     }
 
@@ -4087,7 +4173,11 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
 
         const plannedFile = digestBlobs.get(j);
         if (!plannedFile) continue;
-        if (!plannedFile.blob) {
+        const sourceAvailable =
+          plannedFile.source.kind === "storage"
+            ? Boolean(plannedFile.source.url)
+            : Boolean(plannedFile.source.blob);
+        if (!sourceAvailable) {
           exportErrors.push({
             slug: digest.slug,
             error: `blob not found for file "${filePath}" (storageId: ${version.files[j].storageId})`,
@@ -4095,16 +4185,29 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
           continue;
         }
 
-        const buffer = new Uint8Array(await plannedFile.blob.arrayBuffer());
-        if (totalExportBytes + buffer.byteLength > MAX_EXPORT_TOTAL_BYTES) {
+        const fileBytes =
+          plannedFile.source.kind === "storage" ? plannedFile.size : plannedFile.source.blob!.size;
+        if (totalExportBytes + fileBytes > MAX_EXPORT_TOTAL_BYTES) {
           exportErrors.push({
             slug: digest.slug,
             error: `byte cap exceeded (${MAX_EXPORT_TOTAL_BYTES}) at file "${filePath}"`,
           });
           continue;
         }
-        totalExportBytes += buffer.byteLength;
-        zipEntries.push({ path: plannedFile.archivePath, bytes: buffer });
+        totalExportBytes += fileBytes;
+        if (plannedFile.source.kind === "storage") {
+          zipEntries.push({
+            path: plannedFile.archivePath,
+            url: plannedFile.source.url!,
+            size: plannedFile.size,
+            sha256: plannedFile.sha256,
+          });
+        } else {
+          zipEntries.push({
+            path: plannedFile.archivePath,
+            bytes: new Uint8Array(await plannedFile.source.blob!.arrayBuffer()),
+          });
+        }
         fileCount++;
       }
 
@@ -4142,13 +4245,33 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
     logContext.totalExportBytes = totalExportBytes;
 
     logContext.phase = "build_zip";
-    const zipBytes = buildMergedExportZip(zipEntries, manifest);
+    const filename = `skills-export-${startDate}-${endDate}.zip`;
+    if (manifestRequested) {
+      return await buildSignedSkillsExportManifestResponse(
+        request,
+        dependencies,
+        filename,
+        zipEntries,
+        manifest,
+        mergeHeaders(rate.headers, {
+          "X-Next-Cursor": result.nextCursor ?? "",
+          "X-Has-More": String(result.hasMore),
+          "X-Total-Returned": String(manifest.length),
+          "X-Date-Range": `${startDate}-${endDate}`,
+          "X-Export-Errors": String(exportErrors.length),
+        }),
+      );
+    }
+    const zipBytes = buildMergedExportZip(
+      zipEntries.filter((entry): entry is { path: string; bytes: Uint8Array } => "bytes" in entry),
+      manifest,
+    );
 
     return new Response(zipBytes as unknown as BodyInit, {
       status: 200,
       headers: mergeHeaders(rate.headers, {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="skills-export-${startDate}-${endDate}.zip"`,
+        "Content-Disposition": `attachment; filename="${filename}"`,
         "X-Next-Cursor": result.nextCursor ?? "",
         "X-Has-More": String(result.hasMore),
         "X-Total-Returned": String(manifest.length),
@@ -4160,6 +4283,65 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
     logSkillsExportFailure(logContext, err);
     throw err;
   }
+}
+
+function unauthorizedSkillsExportManifestResponse() {
+  return new Response("Unauthorized archive manifest request", {
+    status: 401,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+async function buildSignedSkillsExportManifestResponse(
+  request: Request,
+  dependencies: SkillsExportDependencies,
+  filename: string,
+  entries: Array<
+    | { path: string; bytes: Uint8Array }
+    | { path: string; url: string; size: number; sha256: string }
+  >,
+  exportManifest: MergedExportManifestEntry[],
+  headers: HeadersInit,
+) {
+  const issuedAt = Date.now();
+  const manifest: SkillExportArchiveManifest = {
+    schema: "clawhub.skill-export-archive-manifest.v1",
+    issuer: new URL(request.url).origin,
+    audience: ARCHIVE_MANIFEST_AUDIENCE,
+    issuedAt,
+    expiresAt: issuedAt + ARCHIVE_MANIFEST_TTL_MS,
+    filename,
+    entries: entries.map((entry) =>
+      "bytes" in entry
+        ? {
+            kind: "inline" as const,
+            path: entry.path,
+            text: new TextDecoder().decode(entry.bytes),
+          }
+        : {
+            kind: "storage" as const,
+            path: entry.path,
+            url: entry.url,
+            size: entry.size,
+            sha256: entry.sha256,
+          },
+    ),
+    exportManifest,
+  };
+  const signedManifest = await dependencies.signArchiveManifest(manifest);
+  if (new TextEncoder().encode(signedManifest).byteLength > MAX_ARCHIVE_MANIFEST_BYTES) {
+    return new Response("Skill export archive manifest is too large", {
+      status: 413,
+      headers,
+    });
+  }
+  return new Response(signedManifest, {
+    status: 200,
+    headers: mergeHeaders(headers, {
+      "Content-Type": ARCHIVE_MANIFEST_CONTENT_TYPE,
+      "Cache-Control": "private, no-store",
+    }),
+  });
 }
 
 function getExportPublisherSegment(digest: {

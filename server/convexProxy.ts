@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { defineEventHandler, getRequestURL, proxyRequest, type H3Event } from "h3";
 import { compactVerify, type CompactVerifyGetKey, createRemoteJWKSet } from "jose";
@@ -6,6 +7,8 @@ import {
   ARCHIVE_MANIFEST_CONTENT_TYPE,
   ARCHIVE_MANIFEST_JWS_TYPE,
   type SkillArchiveManifest,
+  type SkillExportArchiveManifest,
+  type SkillExportArchiveManifestEntry,
 } from "../convex/lib/archiveManifest";
 import {
   ARCHIVE_REQUEST_IDENTITY_HEADER,
@@ -14,7 +17,9 @@ import {
 } from "../convex/lib/clawhubVercelOidc";
 import {
   buildDeterministicZipStream,
+  buildMergedExportZipStream,
   type SkillZipMeta,
+  validateExportArchivePath,
   validateFilePath,
   validateSlug,
 } from "../convex/lib/skillZip";
@@ -24,8 +29,13 @@ const ARCHIVE_MANIFEST_REQUEST_HEADER = "x-clawhub-archive-manifest";
 const ARCHIVE_MANIFEST_MAX_AGE_MS = 60_000;
 const ARCHIVE_MANIFEST_CLOCK_SKEW_MS = 5_000;
 const MAX_ARCHIVE_MANIFEST_ENTRIES = 8_192;
+const MAX_SKILL_EXPORT_ARCHIVE_ENTRIES = 10_501;
+const MAX_SKILL_EXPORT_MANIFEST_ENTRIES = 250;
+const MAX_SKILL_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRY_URL_LENGTH = 4_096;
-const MAX_ARCHIVE_MANIFEST_BYTES = 4 * 1024 * 1024;
+// Mirrors the Convex signer bound for the 10,000-file bulk export contract.
+const MAX_ARCHIVE_MANIFEST_BYTES = 16 * 1024 * 1024;
+const SKILL_EXPORT_STORAGE_PREFETCH = 8;
 const ARCHIVE_FILENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,499}\.zip$/;
 const ARCHIVE_METRIC_FETCH_TIMEOUT_MS = 1_500;
 const ARCHIVE_REPRESENTATION_HEADERS = [
@@ -128,7 +138,7 @@ export async function proxyConvexRequest(
 
   const requestUrl = getRequestURL(event);
   const target = buildConvexProxyTarget(`${requestUrl.pathname}${requestUrl.search}`, env);
-  const isArchiveRequest = isSkillDownloadPath(new URL(target).pathname);
+  const isArchiveRequest = isArchivePath(new URL(target).pathname);
   let archiveRequestToken: string | undefined;
   if (isArchiveRequest) {
     try {
@@ -161,7 +171,7 @@ export async function proxyConvexRequest(
   });
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
   if (contentType === ARCHIVE_MANIFEST_CONTENT_TYPE) {
-    return streamSkillArchive(
+    return streamArchive(
       response,
       env,
       target,
@@ -170,7 +180,7 @@ export async function proxyConvexRequest(
     );
   }
   if (
-    isSkillDownloadPath(new URL(target).pathname) &&
+    isArchivePath(new URL(target).pathname) &&
     contentType?.startsWith("application/vnd.clawhub.skill-archive-manifest")
   ) {
     return new Response("Invalid or expired archive manifest", { status: 502 });
@@ -187,11 +197,15 @@ export async function proxyConvexRequest(
   return response;
 }
 
-function isSkillDownloadPath(pathname: string) {
-  return pathname === "/api/v1/download" || pathname === "/api/download";
+function isArchivePath(pathname: string) {
+  return (
+    pathname === "/api/v1/download" ||
+    pathname === "/api/download" ||
+    pathname === "/api/v1/skills/export"
+  );
 }
 
-async function streamSkillArchive(
+async function streamArchive(
   manifestResponse: Response,
   env: ProxyEnv,
   target: string,
@@ -207,15 +221,29 @@ async function streamSkillArchive(
     return new Response("Invalid or expired archive manifest", { status: 502 });
   }
   const expectedStorageOrigin = resolveConvexStorageOrigin(target, env);
-  const manifest = parseSkillArchiveManifest(
+  const expectedIssuer = new URL(target).origin;
+  const now = Date.now();
+  const skillManifest = parseSkillArchiveManifest(
     value,
-    new URL(target).origin,
+    expectedIssuer,
     expectedStorageOrigin,
-    Date.now(),
+    now,
   );
-  if (!manifest) {
+  const exportManifest = parseSkillExportArchiveManifest(
+    value,
+    expectedIssuer,
+    expectedStorageOrigin,
+    now,
+  );
+  if (!skillManifest && !exportManifest) {
     return new Response("Invalid or expired archive manifest", { status: 502 });
   }
+
+  if (exportManifest) {
+    return streamSkillExportArchive(exportManifest, manifestResponse, env, target, signal);
+  }
+
+  const manifest = skillManifest!;
 
   let metricRecorded = false;
   const recordMetric = () => {
@@ -267,6 +295,141 @@ async function streamSkillArchive(
     }
   }
   return response;
+}
+
+function streamSkillExportArchive(
+  manifest: SkillExportArchiveManifest,
+  manifestResponse: Response,
+  env: ProxyEnv,
+  target: string,
+  signal: AbortSignal,
+) {
+  const archiveEntries = prefetchSkillExportEntries(manifest.entries, signal);
+  const stream = buildMergedExportZipStream(archiveEntries, manifest.exportManifest);
+  const headers = archiveResponseHeaders(manifestResponse, manifest.filename);
+  const response = new Response(stream, { status: 200, headers });
+  addDeploymentProofHeader(response, env, target);
+  return response;
+}
+
+function prefetchSkillExportEntries(
+  entries: SkillExportArchiveManifestEntry[],
+  signal: AbortSignal,
+) {
+  const ordered = [...entries].sort((a, b) => a.path.localeCompare(b.path));
+  const storageEntries = ordered.filter(
+    (entry): entry is Extract<SkillExportArchiveManifestEntry, { kind: "storage" }> =>
+      entry.kind === "storage",
+  );
+  type PrefetchResult =
+    | { ok: true; stream: ReadableStream<Uint8Array> }
+    | { ok: false; error: unknown };
+  const pending = new Map<
+    Extract<SkillExportArchiveManifestEntry, { kind: "storage" }>,
+    Promise<PrefetchResult>
+  >();
+  let nextStorageIndex = 0;
+
+  const fetchEntry = async (
+    entry: Extract<SkillExportArchiveManifestEntry, { kind: "storage" }>,
+  ): Promise<PrefetchResult> => {
+    try {
+      const response = await fetch(entry.url, { redirect: "error", signal });
+      if (!response.ok || !response.body) {
+        throw new Error(`Failed to fetch archive entry: ${response.status}`);
+      }
+      return {
+        ok: true,
+        stream: enforceStreamIntegrity(response.body, entry.size, entry.sha256),
+      };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  };
+  const fillPrefetchWindow = () => {
+    while (
+      pending.size < SKILL_EXPORT_STORAGE_PREFETCH &&
+      nextStorageIndex < storageEntries.length
+    ) {
+      const entry = storageEntries[nextStorageIndex++];
+      pending.set(entry, fetchEntry(entry));
+    }
+  };
+  fillPrefetchWindow();
+
+  return ordered.map((entry) => ({
+    path: entry.path,
+    openStream: async () => {
+      if (entry.kind === "inline") {
+        const bytes = new TextEncoder().encode(entry.text);
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+          },
+        });
+      }
+      const result = await (pending.get(entry) ?? fetchEntry(entry));
+      pending.delete(entry);
+      fillPrefetchWindow();
+      if (!result.ok) throw result.error;
+      return result.stream;
+    },
+  }));
+}
+
+function enforceStreamIntegrity(
+  stream: ReadableStream<Uint8Array>,
+  expectedBytes: number,
+  expectedSha256: string,
+) {
+  const reader = stream.getReader();
+  const hash = createHash("sha256");
+  let receivedBytes = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        const digestMatches = hash.digest("hex") === expectedSha256.toLowerCase();
+        if (receivedBytes !== expectedBytes || !digestMatches) {
+          controller.error(new Error("Archive entry did not match its signed manifest"));
+        } else {
+          controller.close();
+        }
+        reader.releaseLock();
+        return;
+      }
+      receivedBytes += chunk.value.byteLength;
+      if (receivedBytes > expectedBytes) {
+        await reader.cancel("Archive entry exceeded its signed size").catch(() => undefined);
+        controller.error(new Error("Archive entry exceeded its signed size"));
+        return;
+      }
+      hash.update(chunk.value);
+      controller.enqueue(chunk.value);
+    },
+    async cancel(reason) {
+      await reader.cancel(reason);
+    },
+  });
+}
+
+function archiveResponseHeaders(manifestResponse: Response, filename: string) {
+  const headers = new Headers(manifestResponse.headers);
+  for (const name of ARCHIVE_REPRESENTATION_HEADERS) headers.delete(name);
+  headers.set("content-type", "application/zip");
+  headers.set("content-disposition", `attachment; filename="${filename}"`);
+  return headers;
+}
+
+function addDeploymentProofHeader(response: Response, env: ProxyEnv, target: string) {
+  if (!isPreviewFrontend(env) && !isTestFrontend(env)) return;
+  const deployment = convexDeploymentName(target);
+  if (!deployment) return;
+  response.headers.set(
+    isTestFrontend(env) ? "X-ClawHub-Test-Backend" : "X-ClawHub-Preview-Backend",
+    deployment,
+  );
 }
 
 async function readBoundedArchiveManifest(response: Response) {
@@ -356,6 +519,110 @@ function parseSkillArchiveManifest(
     if (!url.pathname.startsWith("/api/storage/")) return null;
   }
   return manifest as SkillArchiveManifest;
+}
+
+function parseSkillExportArchiveManifest(
+  value: unknown,
+  expectedIssuer: string,
+  expectedStorageOrigin: string | null,
+  now: number,
+): SkillExportArchiveManifest | null {
+  if (!value || typeof value !== "object") return null;
+  const manifest = value as Partial<SkillExportArchiveManifest>;
+  if (manifest.schema !== "clawhub.skill-export-archive-manifest.v1") return null;
+  if (
+    manifest.issuer !== expectedIssuer ||
+    manifest.audience !== ARCHIVE_MANIFEST_AUDIENCE ||
+    !expectedStorageOrigin ||
+    !isFreshArchiveManifest(manifest, now) ||
+    typeof manifest.filename !== "string" ||
+    !ARCHIVE_FILENAME_PATTERN.test(manifest.filename) ||
+    !Array.isArray(manifest.entries) ||
+    manifest.entries.length > MAX_SKILL_EXPORT_ARCHIVE_ENTRIES ||
+    !Array.isArray(manifest.exportManifest) ||
+    manifest.exportManifest.length > MAX_SKILL_EXPORT_MANIFEST_ENTRIES
+  ) {
+    return null;
+  }
+
+  const seenPaths = new Set<string>();
+  let totalStorageBytes = 0;
+  for (const entry of manifest.entries) {
+    if (!isSkillExportArchiveEntry(entry, expectedStorageOrigin)) return null;
+    if (entry.path === "_manifest.json" || seenPaths.has(entry.path)) return null;
+    seenPaths.add(entry.path);
+    if (entry.kind === "storage") {
+      totalStorageBytes += entry.size;
+      if (totalStorageBytes > MAX_SKILL_EXPORT_TOTAL_BYTES) return null;
+    }
+  }
+  if (!manifest.exportManifest.every(isMergedExportManifestEntry)) return null;
+  return manifest as SkillExportArchiveManifest;
+}
+
+function isFreshArchiveManifest(manifest: { issuedAt?: number; expiresAt?: number }, now: number) {
+  if (!Number.isFinite(manifest.issuedAt) || !Number.isFinite(manifest.expiresAt)) return false;
+  const issuedAt = manifest.issuedAt as number;
+  const expiresAt = manifest.expiresAt as number;
+  return (
+    issuedAt <= now + ARCHIVE_MANIFEST_CLOCK_SKEW_MS &&
+    expiresAt > now &&
+    expiresAt > issuedAt &&
+    expiresAt - issuedAt <= ARCHIVE_MANIFEST_MAX_AGE_MS
+  );
+}
+
+function isSkillExportArchiveEntry(
+  value: unknown,
+  expectedStorageOrigin: string,
+): value is SkillExportArchiveManifestEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Partial<SkillExportArchiveManifestEntry>;
+  if (typeof entry.path !== "string" || !validateExportArchivePath(entry.path)) return false;
+  if (entry.kind === "inline") return typeof entry.text === "string";
+  if (
+    entry.kind !== "storage" ||
+    typeof entry.url !== "string" ||
+    entry.url.length > MAX_ARCHIVE_ENTRY_URL_LENGTH ||
+    !Number.isSafeInteger(entry.size) ||
+    (entry.size as number) < 0 ||
+    typeof entry.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/i.test(entry.sha256)
+  ) {
+    return false;
+  }
+  let url: URL;
+  try {
+    url = new URL(entry.url);
+  } catch {
+    return false;
+  }
+  return (
+    !url.username &&
+    !url.password &&
+    url.origin === expectedStorageOrigin &&
+    url.pathname.startsWith("/api/storage/")
+  );
+}
+
+function isMergedExportManifestEntry(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.publisher === "string" &&
+    validateSlug(entry.publisher) &&
+    typeof entry.slug === "string" &&
+    validateSlug(entry.slug) &&
+    (entry.sourceRef === "public-clawhub" || entry.sourceRef === "public-github") &&
+    (entry.version === null || typeof entry.version === "string") &&
+    typeof entry.displayName === "string" &&
+    Number.isFinite(entry.createdAt) &&
+    Number.isFinite(entry.updatedAt) &&
+    (entry.stats === null ||
+      (!!entry.stats && typeof entry.stats === "object" && !Array.isArray(entry.stats))) &&
+    Number.isSafeInteger(entry.fileCount) &&
+    (entry.fileCount as number) >= 0
+  );
 }
 
 function isSkillZipMeta(value: unknown): value is SkillZipMeta {
