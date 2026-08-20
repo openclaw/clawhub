@@ -576,13 +576,18 @@ export const findActiveSkillPublishAttemptByIdInternal = internalQuery({
   },
 });
 
-function hasCompletedPrepublicationChecks(attempt: Doc<"publishAttempts">) {
+// Affirmative TruffleHog + ClawScan evidence is required for every repairable
+// status (#3401 / Patrick): a finalized row associated with a retained pending
+// version must not bypass the security gate merely because status is terminal.
+export function hasCompletedPrepublicationChecks(attempt: Pick<Doc<"publishAttempts">, "checks">) {
   return attempt.checks.trufflehog.status === "clean" && attempt.checks.clawscan.status === "clean";
 }
 
-function isAttemptEligibleForOrphanRepair(attempt: Doc<"publishAttempts">) {
-  if (attempt.status === "finalized") return true;
+export function isAttemptEligibleForOrphanRepair(
+  attempt: Pick<Doc<"publishAttempts">, "status" | "checks" | "finalizationFailureCount">,
+) {
   if (!hasCompletedPrepublicationChecks(attempt)) return false;
+  if (attempt.status === "finalized") return true;
   if (attempt.status === "ready_to_finalize" || attempt.status === "finalizing") return true;
   return attempt.status === "failed" && (attempt.finalizationFailureCount ?? 0) > 0;
 }
@@ -679,14 +684,17 @@ export async function closeOrphanedSkillPublishAttempt(
   if (!attempt || attempt.kind !== "skill") {
     return { closed: false, reason: "not-found" };
   }
-  if (attempt.status === "finalized" || attempt.status === "failed") {
+  if (attempt.status === "finalized") {
     return { closed: false, reason: "already-terminal", status: attempt.status };
   }
   if (attempt.skillId !== result.skillId || attempt.skillVersionId !== result.versionId) {
     return { closed: false, reason: "version-mismatch" };
   }
   const now = Date.now();
-  if (isActiveAttemptLive(attempt, now)) {
+  // Cap-exhausted `failed` rows are terminal for the dispatcher but still need
+  // a coherent close during repair: force-finalize with the repair result so
+  // the attempt is not left failed while the version is published.
+  if (attempt.status !== "failed" && isActiveAttemptLive(attempt, now)) {
     return { closed: false, reason: "claim-active" };
   }
 
@@ -821,6 +829,13 @@ export const getPublishAttemptByIdInternal = internalQuery({
       status: attempt.status,
       finalizationLastError: attempt.finalizationLastError ?? null,
       finalizationFailureCount: attempt.finalizationFailureCount ?? 0,
+      checks: {
+        trufflehog: { status: attempt.checks.trufflehog.status },
+        clawscan: { status: attempt.checks.clawscan.status },
+      },
+      // Shared with owner HTTP diagnostics so "operator can repair" never
+      // drifts from the maintenance eligibility gate (#3401 P2).
+      repairEligible: isAttemptEligibleForOrphanRepair(attempt),
     };
   },
 });

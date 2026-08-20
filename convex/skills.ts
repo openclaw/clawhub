@@ -13807,16 +13807,29 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
     versionId: v.id("skillVersions"),
     publishArgs: v.any(),
     publishAttemptId: v.optional(v.id("publishAttempts")),
+    // Authenticated admin from the public repair action. Optional for the
+    // internal sweep / convex-run path; still write an audit row so recovery
+    // is durable even without an interactive actor.
+    actorUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
     if (!version || version.softDeletedAt) {
       throw new ConvexError("Pending skill version not found.");
     }
+    const skill = await ctx.db.get(version.skillId);
+    if (!skill) throw new ConvexError("Skill not found.");
+
+    const priorPublicationStatus = version.publicationStatus ?? "published";
+    const hadPendingPublication = version.pendingPublication !== undefined;
+    let priorAttemptStatus: string | undefined;
+
     let attemptInspection: Awaited<
       ReturnType<typeof inspectSkillPublishAttemptForOrphanRepair>
     > | null = null;
     if (args.publishAttemptId) {
+      const attempt = await ctx.db.get(args.publishAttemptId);
+      priorAttemptStatus = attempt?.status;
       attemptInspection = await inspectSkillPublishAttemptForOrphanRepair(
         ctx,
         args.publishAttemptId,
@@ -13866,6 +13879,30 @@ export const publishPendingVersionAndCloseAttemptInternal = internalMutation({
     // Recovery must do the same for legacy versions without an attempt and for
     // attempts that already reached a terminal state.
     await ctx.db.patch(args.versionId, { pendingPublication: undefined });
+
+    // Durable recovery audit must commit with the publish writes (#3401 P1).
+    // Writing from the outer action after this mutation would recreate a crash
+    // window where the version is public but the repair is unattributed.
+    await ctx.db.insert("auditLogs", {
+      ...(args.actorUserId ? { actorUserId: args.actorUserId } : {}),
+      action: "skill.orphaned_pending_version.repair",
+      targetType: "skillVersion",
+      targetId: args.versionId,
+      metadata: {
+        skillId: version.skillId,
+        slug: skill.slug,
+        version: version.version,
+        publishAttemptId: args.publishAttemptId ?? null,
+        priorPublicationStatus,
+        priorAttemptStatus: priorAttemptStatus ?? null,
+        hadPendingPublication,
+        resultVersionId: result.versionId,
+        resultEmbeddingId: result.embeddingId,
+        resultPublicationStatus: result.publicationStatus,
+      },
+      createdAt: Date.now(),
+    });
+
     return { result, blockedByAttempt: null };
   },
 });

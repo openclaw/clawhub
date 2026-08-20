@@ -1716,15 +1716,27 @@ async function describeOwnerVisibleSkillVersionState(
 
   if (candidate.publicationStatus === "pending") {
     // Cap-exhausted finalize leaves the version "pending" while the attempt
-    // row is terminal "failed" — "re-check shortly" would be wrong.
+    // row is terminal "failed" — "re-check shortly" would be wrong when the
+    // recorded attempt is genuinely repair-eligible. Incomplete/failed
+    // prepublication checks must not claim operator orphan repair (#3401 P2).
     if (candidate.publishAttemptId) {
       const attempt = (await ctx.runQuery(internal.publishAttempts.getPublishAttemptByIdInternal, {
         attemptId: candidate.publishAttemptId,
-      })) as { status: string } | null;
+      })) as {
+        status: string;
+        repairEligible?: boolean;
+        checks?: { trufflehog: { status: string }; clawscan: { status: string } };
+      } | null;
       if (attempt?.status === "failed") {
+        if (attempt.repairEligible) {
+          return {
+            status: 409,
+            message: `Version ${candidate.version} is stuck pending after publication finalization failed (owner-only diagnostic; attempt ${candidate.publishAttemptId}). The version exists and blocks republish; an operator can repair it with maintenance:repairOrphanedPendingSkillVersion.`,
+          };
+        }
         return {
           status: 409,
-          message: `Version ${candidate.version} is stuck pending after publication finalization failed (owner-only diagnostic; attempt ${candidate.publishAttemptId}). The version exists and blocks republish; an operator can repair it with maintenance:repairOrphanedPendingSkillVersion.`,
+          message: `Version ${candidate.version} is stuck pending because publication checks did not complete successfully (owner-only diagnostic; attempt ${candidate.publishAttemptId}). The version exists and blocks republish; orphan repair is not available until recorded TruffleHog and ClawScan checks are both clean.`,
         };
       }
     }

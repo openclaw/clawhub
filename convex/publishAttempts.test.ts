@@ -2707,6 +2707,66 @@ describe("findActiveSkillPublishAttemptByIdInternal (#3401)", () => {
     });
   });
 
+  it("blocks a finalized attempt that lacks clean ClawScan evidence (#3401)", async () => {
+    const attempt = {
+      _id: "publishAttempts:finalized-incomplete",
+      kind: "skill",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "finalized",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "pending" },
+      },
+      createdAt: Date.now() - 60_000,
+      updatedAt: Date.now() - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:finalized-incomplete",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now: Date.now(),
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:finalized-incomplete",
+      status: "finalized",
+      repairBlockedReason: "checks-incomplete",
+    });
+  });
+
+  it("allows a finalized attempt only when both recorded checks are clean (#3401)", async () => {
+    const attempt = {
+      _id: "publishAttempts:finalized-clean",
+      kind: "skill",
+      skillId: "skills:demo",
+      skillVersionId: "skillVersions:demo",
+      status: "finalized",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
+      createdAt: Date.now() - 60_000,
+      updatedAt: Date.now() - 60_000,
+    };
+    const ctx = { db: { get: vi.fn(async () => attempt) } };
+
+    await expect(
+      findActiveSkillPublishAttemptByIdHandler(ctx, {
+        attemptId: "publishAttempts:finalized-clean",
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        now: Date.now(),
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:finalized-clean",
+      status: "finalized",
+      repairBlockedReason: null,
+    });
+  });
+
   it("returns null when the attempt is non-terminal but stale (no live claim, past retry window)", async () => {
     const now = Date.now();
     const attempt = {
@@ -2911,12 +2971,14 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
     const version = {
       _id: "skillVersions:1",
       skillId: "skills:1",
+      version: "1.0.0",
       publicationStatus: "published",
       pendingPublication: { tags: ["latest"] },
     };
-    const skill = { _id: "skills:1" };
+    const skill = { _id: "skills:1", slug: "demo-skill" };
     const embedding = { _id: "skillEmbeddings:1" };
     const patch = vi.fn();
+    const insert = vi.fn();
     const runAfter = vi.fn();
     const get = vi.fn(async (id: string) => {
       if (id === version._id) return version;
@@ -2932,7 +2994,7 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
         db: {
           delete: vi.fn(),
           get,
-          insert: vi.fn(),
+          insert,
           normalizeId: vi.fn(),
           patch,
           query,
@@ -2942,31 +3004,46 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
         scheduler: { runAfter },
       },
       patch,
+      insert,
       runAfter,
     };
   }
 
   it("clears the staged snapshot when the recovered version has no attempt", async () => {
-    const { ctx, patch, runAfter } = publishedVersionContext();
+    const { ctx, patch, insert, runAfter } = publishedVersionContext();
 
     await expect(
       publishPendingVersionAndCloseAttemptHandler(ctx, {
         versionId: "skillVersions:1",
         publishArgs: {},
+        actorUserId: "users:admin",
       }),
     ).resolves.toMatchObject({ blockedByAttempt: null });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
     expect(runAfter).toHaveBeenCalledTimes(4);
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "skill.orphaned_pending_version.repair",
+        targetType: "skillVersion",
+        targetId: "skillVersions:1",
+      }),
+    );
   });
 
   it("clears the staged snapshot when the recorded attempt is already terminal", async () => {
-    const { ctx, patch, runAfter } = publishedVersionContext({
+    const { ctx, patch, insert, runAfter } = publishedVersionContext({
       _id: "publishAttempts:1",
       kind: "skill",
       skillId: "skills:1",
       skillVersionId: "skillVersions:1",
       status: "finalized",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+      },
     });
 
     await expect(
@@ -2974,11 +3051,57 @@ describe("publishPendingVersionAndCloseAttemptInternal (#3401)", () => {
         versionId: "skillVersions:1",
         publishArgs: {},
         publishAttemptId: "publishAttempts:1",
+        actorUserId: "users:admin",
       }),
     ).resolves.toMatchObject({ blockedByAttempt: null });
 
     expect(patch).toHaveBeenCalledWith("skillVersions:1", { pendingPublication: undefined });
     expect(runAfter).not.toHaveBeenCalled();
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "skill.orphaned_pending_version.repair",
+        metadata: expect.objectContaining({
+          priorAttemptStatus: "finalized",
+          hadPendingPublication: true,
+        }),
+      }),
+    );
+  });
+
+  it("does not publish a finalized attempt that lacks clean check evidence (#3401)", async () => {
+    const { ctx, patch, insert, runAfter } = publishedVersionContext({
+      _id: "publishAttempts:1",
+      kind: "skill",
+      skillId: "skills:1",
+      skillVersionId: "skillVersions:1",
+      status: "finalized",
+      checks: {
+        trufflehog: { status: "clean" },
+        clawscan: { status: "pending" },
+      },
+    });
+
+    await expect(
+      publishPendingVersionAndCloseAttemptHandler(ctx, {
+        versionId: "skillVersions:1",
+        publishArgs: {},
+        publishAttemptId: "publishAttempts:1",
+        actorUserId: "users:admin",
+      }),
+    ).resolves.toMatchObject({
+      result: null,
+      blockedByAttempt: {
+        reason: "checks-incomplete",
+        attemptId: "publishAttempts:1",
+        status: "finalized",
+      },
+    });
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("repairs a freshly cap-exhausted failed attempt without treating it as live (#3401)", async () => {
