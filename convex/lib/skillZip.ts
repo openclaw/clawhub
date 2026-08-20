@@ -24,6 +24,7 @@ const FIXED_ZIP_DATE = new Date(1980, 0, 1, 0, 0, 0);
 // Storage response chunk boundaries vary with transport backpressure; normalize
 // them so identical files still produce byte-for-byte identical archives.
 const ZIP_INPUT_CHUNK_BYTES = 64 * 1024;
+const MAX_EXPORT_ARCHIVE_PATH_JSON_BYTES = 900;
 
 // ==================== Zip Slip Protection ====================
 
@@ -43,7 +44,12 @@ export function validateFilePath(filePath: string): boolean {
 
 /** Validate a namespaced bulk-export path (publisher + slug + stored file path). */
 export function validateExportArchivePath(filePath: string): boolean {
-  return validateZipPath(filePath, 1_000);
+  if (!validateZipPath(filePath, 900)) return false;
+  // The path is repeated in the signed JSON handoff. Bound its encoded form,
+  // not UTF-16 code units, so multibyte and escaped names cannot overflow the
+  // manifest budget while still passing the character-count guard.
+  const encodedJsonBytes = new TextEncoder().encode(JSON.stringify(filePath)).byteLength - 2;
+  return encodedJsonBytes <= MAX_EXPORT_ARCHIVE_PATH_JSON_BYTES;
 }
 
 function validateZipPath(filePath: string, maxLength: number): boolean {

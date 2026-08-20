@@ -72,6 +72,7 @@ import {
   buildDeterministicZip,
   buildMergedExportZip,
   type MergedExportManifestEntry,
+  validateExportArchivePath,
   validateSlug,
   validateFilePath,
 } from "../lib/skillZip";
@@ -4045,6 +4046,13 @@ export async function exportSkillsV1Handler(
           break;
         }
         const archivePath = `${exportRoot}/${version.files[j].path}`;
+        if (!validateExportArchivePath(archivePath)) {
+          exportErrors.push({
+            slug: digest.slug,
+            error: `archive path exceeds signed manifest byte limit (file index ${j})`,
+          });
+          continue;
+        }
         if (archivePaths.has(archivePath)) {
           exportErrors.push({
             slug: digest.slug,

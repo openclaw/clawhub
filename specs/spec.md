@@ -188,6 +188,11 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
   therefore terminates the stream; clients discard the partial ZIP and retry.
   This integrity rule applies while file reads, compression, and response output
   remain bounded and backpressured.
+  Bulk-export archive paths are capped at 900 bytes in their JSON-encoded UTF-8
+  representation, so multibyte or escaped legacy names cannot exceed the bounded
+  signed-handoff budget while passing a JavaScript character-count check. Files
+  outside that archive-path contract are omitted before signing and recorded in
+  `_errors.json`.
   Nitro never accepts a
   client-supplied manifest and
   accepts Convex's response only as a short-lived RS256 JWS signed by the

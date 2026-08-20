@@ -864,6 +864,91 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("skills export reports archive paths that exceed the signed byte budget", async () => {
+    vi.stubEnv("CLAWHUB_PREVIEW", "1");
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const longUnicodePath = `${"界".repeat(490)}.md`;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              skillId: "skills:demo",
+              slug: "demo",
+              displayName: "Demo",
+              latestVersionId: "skillVersions:demo",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: {},
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.versionId === "skillVersions:demo") {
+        return {
+          skillId: "skills:demo",
+          version: "1.0.0",
+          files: [
+            {
+              storageId: "storage:demo",
+              path: longUnicodePath,
+              size: 1,
+              sha256: "a".repeat(64),
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storageGetUrl = vi.fn(
+      async () => "https://preview-branch-123.convex.cloud/api/storage/storage-demo",
+    );
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery, storage: { get: vi.fn(), getUrl: storageGetUrl } }),
+      new Request(
+        "https://preview-branch-123.convex.site/api/v1/skills/export?startDate=1&endDate=5",
+        {
+          headers: {
+            authorization: "Bearer user-token",
+            "x-clawhub-archive-manifest": "v1",
+            "x-clawhub-vercel-oidc-token": "vercel-oidc",
+          },
+        },
+      ),
+      {
+        verifyArchiveRequester: vi.fn(async () => undefined),
+        signArchiveManifest: vi.fn(async (manifest: unknown) => JSON.stringify(manifest)),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Export-Errors")).toBe("1");
+    expect(storageGetUrl).not.toHaveBeenCalled();
+    const manifest = JSON.parse(await response.text());
+    expect(manifest.entries).toEqual([
+      expect.objectContaining({ kind: "inline", path: "_errors.json" }),
+    ]);
+    expect(JSON.parse(manifest.entries[0].text)).toEqual([
+      {
+        slug: "demo",
+        error: "archive path exceeds signed manifest byte limit (file index 0)",
+      },
+    ]);
+    expect(manifest.exportManifest).toEqual([]);
+  });
+
   it("skills export includes GitHub-backed skills as public GitHub handoff descriptors", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",

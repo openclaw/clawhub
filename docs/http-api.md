@@ -663,6 +663,8 @@ Response:
   `_source_handoff.json` with `sourceRef: "public-github"`, repo, commit, path,
   content hash, and archive URL. They do not include ClawHub-hosted source files.
 - Each skill includes `_export_skill_meta.json`.
+- Archive entry paths are limited to 900 bytes in their signed JSON encoding;
+  files beyond that limit are reported in `_errors.json`.
 - `_manifest.json` is always included at the ZIP root.
 - `_errors.json` is included when individual skills or files could not be
   exported before the archive manifest is sealed. `X-Export-Errors` reports

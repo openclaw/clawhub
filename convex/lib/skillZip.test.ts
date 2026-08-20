@@ -8,9 +8,21 @@ import {
   buildDeterministicZip,
   buildSkillMeta,
   type SkillZipMeta,
+  validateExportArchivePath,
 } from "./skillZip";
 
 describe("skillZip", () => {
+  describe("validateExportArchivePath", () => {
+    it("bounds the signed UTF-8 JSON representation instead of JavaScript characters", () => {
+      const prefix = "alice/demo/";
+      const asciiPath = `${prefix}${"a".repeat(900 - prefix.length)}`;
+      const multibytePath = `${prefix}${"界".repeat(400)}`;
+
+      expect(validateExportArchivePath(asciiPath)).toBe(true);
+      expect(validateExportArchivePath(multibytePath)).toBe(false);
+    });
+  });
+
   describe("buildSkillMeta", () => {
     it("returns metadata object with all fields", () => {
       const meta: SkillZipMeta = {
