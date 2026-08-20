@@ -12,13 +12,11 @@ export declare const ExperimentalClawFeedEntrySchema: import("arktype/internal/v
     type: "claw";
     id: string;
     title: string;
-    description?: string | undefined;
-    icon?: string | undefined;
     version: string;
-    state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+    state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
     publisher: {
         id: string;
-        trust: "community" | "official";
+        trust: "official" | "community";
     };
     clawManifestSummary: import("./claws.js").ClawManifestSummary;
     install: {
@@ -29,6 +27,8 @@ export declare const ExperimentalClawFeedEntrySchema: import("arktype/internal/v
             integrity: string;
         }[];
     };
+    description?: string | undefined;
+    icon?: string | undefined;
 }, {}>;
 export type ExperimentalClawFeedEntry = (typeof ExperimentalClawFeedEntrySchema)[inferred];
 export declare const ExperimentalClawFeedSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -37,18 +37,15 @@ export declare const ExperimentalClawFeedSchema: import("arktype/internal/varian
     generatedAt: string;
     sequence: number;
     expiresAt: string;
-    description?: string | undefined;
     entries: {
         type: "claw";
         id: string;
         title: string;
-        description?: string | undefined;
-        icon?: string | undefined;
         version: string;
-        state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+        state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
         publisher: {
             id: string;
-            trust: "community" | "official";
+            trust: "official" | "community";
         };
         clawManifestSummary: import("./claws.js").ClawManifestSummary;
         install: {
@@ -59,7 +56,10 @@ export declare const ExperimentalClawFeedSchema: import("arktype/internal/varian
                 integrity: string;
             }[];
         };
+        description?: string | undefined;
+        icon?: string | undefined;
     }[];
+    description?: string | undefined;
 }, {}>;
 export type ExperimentalClawFeed = (typeof ExperimentalClawFeedSchema)[inferred];
 export declare function parseExperimentalClawFeed(value: unknown): ExperimentalClawFeed;

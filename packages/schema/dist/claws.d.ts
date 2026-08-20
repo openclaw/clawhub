@@ -76,15 +76,15 @@ export declare const ClawManifestSchema: import("arktype/internal/variants/objec
     } | undefined;
     cronJobs?: {
         id: string;
-        name?: string | undefined;
         schedule: {
             cron: string;
             timezone: string;
         };
-        session: "isolated" | "main";
+        session: "main" | "isolated";
         message: string;
+        name?: string | undefined;
         delivery?: {
-            mode: "announce" | "none";
+            mode: "none" | "announce";
             channel?: "last" | undefined;
         } | undefined;
     }[] | undefined;
