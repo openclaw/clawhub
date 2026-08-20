@@ -56,22 +56,22 @@
 /convex/lib/webhooks.ts @openclaw/openclaw-secops @Patrick-Erichsen
 
 # Frontend auth, admin, publish, upload, and security-review surfaces.
-/src/lib/packageApi.ts @openclaw/openclaw-secops @BunsDev
-/src/lib/packageUpload.ts @openclaw/openclaw-secops @BunsDev
-/src/lib/roles.ts @openclaw/openclaw-secops @BunsDev
-/src/lib/uploadFiles.ts @openclaw/openclaw-secops @BunsDev
-/src/lib/uploadUtils.ts @openclaw/openclaw-secops @BunsDev
-/src/routes/admin.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/cli/auth.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/packages/new.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/plugins/publish.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/publish-plugin.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/publish-skill.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/skills/publish.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/upload.tsx @openclaw/openclaw-secops @BunsDev
-/src/routes/upload/ @openclaw/openclaw-secops @BunsDev
-/src/routes/$owner/$slug/security/ @openclaw/openclaw-secops @BunsDev
-/src/routes/plugins/$name/security/ @openclaw/openclaw-secops @BunsDev
+/src/lib/packageApi.ts @openclaw/openclaw-secops
+/src/lib/packageUpload.ts @openclaw/openclaw-secops
+/src/lib/roles.ts @openclaw/openclaw-secops
+/src/lib/uploadFiles.ts @openclaw/openclaw-secops
+/src/lib/uploadUtils.ts @openclaw/openclaw-secops
+/src/routes/admin.tsx @openclaw/openclaw-secops
+/src/routes/cli/auth.tsx @openclaw/openclaw-secops
+/src/routes/packages/new.tsx @openclaw/openclaw-secops
+/src/routes/plugins/publish.tsx @openclaw/openclaw-secops
+/src/routes/publish-plugin.tsx @openclaw/openclaw-secops
+/src/routes/publish-skill.tsx @openclaw/openclaw-secops
+/src/routes/skills/publish.tsx @openclaw/openclaw-secops
+/src/routes/upload.tsx @openclaw/openclaw-secops
+/src/routes/upload/ @openclaw/openclaw-secops
+/src/routes/$owner/$slug/security/ @openclaw/openclaw-secops
+/src/routes/plugins/$name/security/ @openclaw/openclaw-secops
 
 # CLI auth, admin, publishing, ownership, and package-contract surfaces.
 /packages/clawhub/src/browserAuth.ts @openclaw/openclaw-secops @Patrick-Erichsen
