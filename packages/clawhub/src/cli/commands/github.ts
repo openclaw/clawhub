@@ -4,11 +4,21 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
 
-const GITHUB_API = "https://api.github.com";
+const GITHUB_API = resolveGitHubApi();
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 const ZIP_USER_AGENT = "clawhub/package-publish";
 const GITHUB_RETRY_DELAYS_MS = [250, 500];
 const GITHUB_MAX_RATE_LIMIT_DELAY_MS = 5_000;
+
+function resolveGitHubApi() {
+  const testUrl = process.env.CLAWHUB_TEST_GITHUB_API_URL?.trim();
+  if (process.env.NODE_ENV !== "test" || !testUrl) return "https://api.github.com";
+  const url = new URL(testUrl);
+  if (url.protocol !== "http:" || (url.hostname !== "127.0.0.1" && url.hostname !== "localhost")) {
+    throw new Error("CLAWHUB_TEST_GITHUB_API_URL must use loopback HTTP");
+  }
+  return url.toString().replace(/\/$/, "");
+}
 
 type ResolvedPublishSource =
   | {

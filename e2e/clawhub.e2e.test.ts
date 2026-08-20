@@ -72,6 +72,59 @@ async function startPackagePublishRegistry(
   };
 }
 
+async function startGitHubPackageSource() {
+  const commit = "a".repeat(40);
+  const archive = zipSync({
+    "kitchen-sink-main/package.json": strToU8(
+      JSON.stringify({
+        name: "@openclaw/kitchen-sink",
+        version: "1.0.0",
+        type: "module",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: ">=2026.3.24-beta.2" },
+          build: { openclawVersion: "2026.3.24-beta.2" },
+        },
+      }),
+    ),
+    "kitchen-sink-main/openclaw.plugin.json": strToU8(
+      JSON.stringify({ id: "kitchen-sink", name: "Kitchen Sink" }),
+    ),
+    "kitchen-sink-main/dist/index.js": strToU8("export const demo = true;\n"),
+  });
+  const requests: string[] = [];
+  const server = createServer((req, res) => {
+    requests.push(req.url ?? "");
+    if (req.url === "/repos/openclaw/kitchen-sink") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ default_branch: "main" }));
+      return;
+    }
+    if (req.url === "/repos/openclaw/kitchen-sink/commits/main") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ sha: commit }));
+      return;
+    }
+    if (req.url === `/repos/openclaw/kitchen-sink/zipball/${commit}`) {
+      res.writeHead(200, { "Content-Type": "application/zip" });
+      res.end(Buffer.from(archive));
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("not found");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  return {
+    apiUrl: `http://127.0.0.1:${address.port}`,
+    requests,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  };
+}
+
 async function writeCodePluginFixture(root: string, name: string) {
   const folder = join(root, name);
   await mkdir(join(folder, "dist"), { recursive: true });
@@ -831,35 +884,49 @@ describe("clawhub e2e", () => {
   });
 
   it("package publish --dry-run from a GitHub repo shows a summary", async () => {
+    const github = await startGitHubPackageSource();
     const registry = getRegistry();
     const site = getSite();
-    const result = spawnSync(
-      "bun",
-      [
-        "clawhub",
-        "package",
-        "publish",
-        "openclaw/openclaw",
-        "--source-path",
-        "extensions/cohere",
-        "--dry-run",
-        "--site",
-        site,
-        "--registry",
-        registry,
-      ],
-      {
-        cwd: process.cwd(),
-        env: { ...process.env, CLAWHUB_DISABLE_TELEMETRY: "1" },
-        encoding: "utf8",
-      },
-    );
+    try {
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "package",
+          "publish",
+          "openclaw/kitchen-sink",
+          "--dry-run",
+          "--site",
+          site,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+            CLAWHUB_TEST_GITHUB_API_URL: github.apiUrl,
+            GITHUB_TOKEN: "",
+            NODE_ENV: "test",
+          },
+          encoding: "utf8",
+        },
+      );
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stdout).toMatch(/Dry run/i);
-    expect(result.stdout).toMatch(/@openclaw\/cohere-provider/);
-    expect(result.stdout).toMatch(/code-plugin/i);
-    expect(result.stdout).toMatch(/openclaw\.plugin\.json/);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(result.stdout).toMatch(/Dry run/i);
+      expect(result.stdout).toMatch(/@openclaw\/kitchen-sink/);
+      expect(result.stdout).toMatch(/code-plugin/i);
+      expect(result.stdout).toMatch(/openclaw\.plugin\.json/);
+      expect(github.requests).toEqual([
+        "/repos/openclaw/kitchen-sink",
+        "/repos/openclaw/kitchen-sink/commits/main",
+        `/repos/openclaw/kitchen-sink/zipball/${"a".repeat(40)}`,
+      ]);
+    } finally {
+      await github.close();
+    }
   }, 30_000);
 
   it("package publish --dry-run --json outputs valid JSON", async () => {
