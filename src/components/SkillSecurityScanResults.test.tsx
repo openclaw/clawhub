@@ -556,6 +556,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "A.I.G" })).toBeTruthy();
+    expect(screen.getByText("Malicious")).toBeTruthy();
     expect(
       screen
         .getByRole("link", { name: /Based on Tencent Zhuque Lab AI-Infra-Guard/i })
