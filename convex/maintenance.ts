@@ -3371,18 +3371,20 @@ export const getActivePublisherSlugInvariantPageInternal = internalQuery({
       .withIndex("by_owner_publisher_slug")
       .paginate({ cursor: args.cursor ?? null, numItems: clampInt(args.batchSize, 1, 200) });
     return {
-      items: page.page.map((skill): ActivePublisherSlugScanRow => ({
-        skillId: skill._id,
-        ownerPublisherId: skill.ownerPublisherId,
-        slug: skill.slug,
-        active: !skill.softDeletedAt,
-        latestVersionId: skill.latestVersionId,
-        latestVersion: skill.latestVersionSummary?.version,
-        moderationStatus: skill.moderationStatus ?? "unknown",
-        canonicalSkillId: skill.canonicalSkillId,
-        createdAt: skill.createdAt,
-        updatedAt: skill.updatedAt,
-      })),
+      items: page.page.map(
+        (skill): ActivePublisherSlugScanRow => ({
+          skillId: skill._id,
+          ownerPublisherId: skill.ownerPublisherId,
+          slug: skill.slug,
+          active: !skill.softDeletedAt,
+          latestVersionId: skill.latestVersionId,
+          latestVersion: skill.latestVersionSummary?.version,
+          moderationStatus: skill.moderationStatus ?? "unknown",
+          canonicalSkillId: skill.canonicalSkillId,
+          createdAt: skill.createdAt,
+          updatedAt: skill.updatedAt,
+        }),
+      ),
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
@@ -3827,6 +3829,7 @@ export async function repairOrphanedPendingSkillVersionHandler(
   ctx: ActionCtx,
   versionId: Id<"skillVersions">,
   dryRun: boolean,
+  actorUserId?: Id<"users">,
 ): Promise<SkillVersionRepairOutcome> {
   const context = await ctx.runQuery(internal.skills.getPendingSkillVersionRepairContextInternal, {
     versionId,
@@ -3909,6 +3912,7 @@ export async function repairOrphanedPendingSkillVersionHandler(
       versionId,
       publishArgs: skillInsertArgs,
       publishAttemptId: context.publishAttemptId ?? attemptInspection?.attemptId ?? undefined,
+      ...(actorUserId ? { actorUserId } : {}),
     },
   )) as
     | { result: PublishResult; blockedByAttempt: null }
@@ -3951,6 +3955,7 @@ export const repairOrphanedPendingSkillVersionInternal = internalAction({
     versionId: v.id("skillVersions"),
     dryRun: v.optional(v.boolean()),
     confirm: v.optional(v.string()),
+    actorUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args): Promise<SkillVersionRepairOutcome> => {
     const dryRun = args.dryRun !== false;
@@ -3959,7 +3964,7 @@ export const repairOrphanedPendingSkillVersionInternal = internalAction({
         `Pass confirm="${ORPHANED_PENDING_SKILL_VERSION_REPAIR_CONFIRM}" to apply.`,
       );
     }
-    return repairOrphanedPendingSkillVersionHandler(ctx, args.versionId, dryRun);
+    return repairOrphanedPendingSkillVersionHandler(ctx, args.versionId, dryRun, args.actorUserId);
   },
 });
 
@@ -3972,10 +3977,10 @@ export const repairOrphanedPendingSkillVersion: ReturnType<typeof action> = acti
   handler: async (ctx, args): Promise<SkillVersionRepairOutcome> => {
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
-    return ctx.runAction(
-      internal.maintenance.repairOrphanedPendingSkillVersionInternal,
-      args,
-    ) as Promise<SkillVersionRepairOutcome>;
+    return ctx.runAction(internal.maintenance.repairOrphanedPendingSkillVersionInternal, {
+      ...args,
+      actorUserId: user._id,
+    }) as Promise<SkillVersionRepairOutcome>;
   },
 });
 

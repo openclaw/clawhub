@@ -91,11 +91,3 @@ export const internalAction = internalActionGeneric;
  * @returns The wrapped function. Import this function from `convex/http.js` and route it to hook it up.
  */
 export const httpAction = httpActionGeneric;
-
-/**
- * Typesafe environment variables.
- *
- * This includes platform-provided env vars and any variables declared in
- * `convex.config.ts`.
- */
-export const env = process.env;

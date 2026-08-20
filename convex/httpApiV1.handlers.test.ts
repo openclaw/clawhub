@@ -5166,6 +5166,11 @@ describe("httpApiV1 handlers", () => {
           status: "failed",
           finalizationLastError: "finalize timed out",
           finalizationFailureCount: 5,
+          checks: {
+            trufflehog: { status: "clean" },
+            clawscan: { status: "clean" },
+          },
+          repairEligible: true,
         };
       }
       if ("skillId" in args) {
@@ -5187,7 +5192,70 @@ describe("httpApiV1 handlers", () => {
     const body = await response.text();
     expect(body).toContain("stuck pending after publication finalization failed");
     expect(body).toContain("attempt publishAttempts:failed");
+    expect(body).toContain("operator can repair");
     expect(body).not.toContain("finalize timed out");
+  });
+
+  it("does not claim orphan repair when failed attempt checks are incomplete (#3401)", async () => {
+    let versionLookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            ownerUserId: "users:owner",
+            tags: {},
+          },
+          latestVersion: null,
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+      if ("version" in args && "skillId" in args) {
+        versionLookupCount += 1;
+        if (versionLookupCount === 1) return null;
+        return {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          version: "1.0.0",
+          publicationStatus: "pending",
+          publishAttemptId: "publishAttempts:failed-checks",
+        };
+      }
+      if ("attemptId" in args) {
+        return {
+          status: "failed",
+          finalizationLastError: "scanner failed",
+          finalizationFailureCount: 0,
+          checks: {
+            trufflehog: { status: "clean" },
+            clawscan: { status: "failed" },
+          },
+          repairEligible: false,
+        };
+      }
+      if ("skillId" in args) {
+        return { _id: "skills:1", slug: "demo", ownerUserId: "users:owner" };
+      }
+      return null;
+    });
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain("publication checks did not complete successfully");
+    expect(body).toContain("orphan repair is not available");
+    expect(body).not.toContain("operator can repair");
   });
 
   it("surfaces owner-visible pending status for org publisher owners (#3349)", async () => {
