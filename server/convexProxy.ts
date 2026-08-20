@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { getVercelOidcToken } from "@vercel/oidc";
 import { defineEventHandler, getRequestURL, proxyRequest, type H3Event } from "h3";
@@ -304,8 +305,9 @@ function streamSkillExportArchive(
   target: string,
   signal: AbortSignal,
 ) {
-  const archiveEntries = prefetchSkillExportEntries(manifest.entries, signal);
-  const stream = buildMergedExportZipStream(archiveEntries, manifest.exportManifest);
+  const prefetched = prefetchSkillExportEntries(manifest.entries, signal);
+  const archiveStream = buildMergedExportZipStream(prefetched.entries, manifest.exportManifest);
+  const stream = cancelPrefetchWithArchive(archiveStream, prefetched.cancel);
   const headers = archiveResponseHeaders(manifestResponse, manifest.filename);
   const response = new Response(stream, { status: 200, headers });
   addDeploymentProofHeader(response, env, target);
@@ -316,26 +318,33 @@ function prefetchSkillExportEntries(
   entries: SkillExportArchiveManifestEntry[],
   signal: AbortSignal,
 ) {
+  const controller = new AbortController();
+  const abortFromRequest = () => controller.abort(signal.reason);
+  if (signal.aborted) abortFromRequest();
+  else signal.addEventListener("abort", abortFromRequest, { once: true });
   const ordered = [...entries].sort((a, b) => a.path.localeCompare(b.path));
   const storageEntries = ordered.filter(
     (entry): entry is Extract<SkillExportArchiveManifestEntry, { kind: "storage" }> =>
       entry.kind === "storage",
   );
   type PrefetchResult =
-    | { ok: true; stream: ReadableStream<Uint8Array> | null }
+    | { ok: true; stream: ReadableStream<Uint8Array> }
     | { ok: false; error: unknown };
   const pending = new Map<
     Extract<SkillExportArchiveManifestEntry, { kind: "storage" }>,
     Promise<PrefetchResult>
   >();
   let nextStorageIndex = 0;
+  let cancelled = false;
 
   const fetchEntry = async (
     entry: Extract<SkillExportArchiveManifestEntry, { kind: "storage" }>,
   ): Promise<PrefetchResult> => {
     try {
-      const response = await fetch(entry.url, { redirect: "error", signal });
-      if (response.status === 404) return { ok: true, stream: null };
+      const response = await fetch(entry.url, { redirect: "error", signal: controller.signal });
+      if (response.status === 404) {
+        throw new Error("Signed archive entry disappeared after manifest creation");
+      }
       if (!response.ok || !response.body) {
         throw new Error(`Failed to fetch archive entry: ${response.status}`);
       }
@@ -349,6 +358,7 @@ function prefetchSkillExportEntries(
   };
   const fillPrefetchWindow = () => {
     while (
+      !cancelled &&
       pending.size < SKILL_EXPORT_STORAGE_PREFETCH &&
       nextStorageIndex < storageEntries.length
     ) {
@@ -358,25 +368,70 @@ function prefetchSkillExportEntries(
   };
   fillPrefetchWindow();
 
-  return ordered.map((entry) => ({
-    path: entry.path,
-    openStream: async () => {
-      if (entry.kind === "inline") {
-        const bytes = new TextEncoder().encode(entry.text);
-        return new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(bytes);
-            controller.close();
-          },
-        });
-      }
-      const result = await (pending.get(entry) ?? fetchEntry(entry));
-      pending.delete(entry);
-      fillPrefetchWindow();
-      if (!result.ok) throw result.error;
-      return result.stream;
+  return {
+    entries: ordered.map((entry) => ({
+      path: entry.path,
+      openStream: async () => {
+        if (entry.kind === "inline") {
+          const bytes = new TextEncoder().encode(entry.text);
+          return new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(bytes);
+              controller.close();
+            },
+          });
+        }
+        const result = await (pending.get(entry) ?? fetchEntry(entry));
+        pending.delete(entry);
+        fillPrefetchWindow();
+        if (!result.ok) throw result.error;
+        return result.stream;
+      },
+    })),
+    cancel: async (reason?: unknown) => {
+      if (cancelled) return;
+      cancelled = true;
+      controller.abort(reason);
+      const results = await Promise.allSettled(pending.values());
+      pending.clear();
+      await Promise.allSettled(
+        results.flatMap((result) =>
+          result.status === "fulfilled" && result.value.ok
+            ? [result.value.stream.cancel(reason)]
+            : [],
+        ),
+      );
     },
-  }));
+  };
+}
+
+function cancelPrefetchWithArchive(
+  stream: ReadableStream<Uint8Array>,
+  cancelPrefetch: (reason?: unknown) => Promise<void>,
+) {
+  const reader = stream.getReader();
+  return new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        try {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            reader.releaseLock();
+            controller.close();
+          } else {
+            controller.enqueue(chunk.value);
+          }
+        } catch (error) {
+          await cancelPrefetch(error);
+          controller.error(error);
+        }
+      },
+      async cancel(reason) {
+        await Promise.allSettled([reader.cancel(reason), cancelPrefetch(reason)]);
+      },
+    },
+    { highWaterMark: 0 },
+  );
 }
 
 function enforceStreamIntegrity(
@@ -516,8 +571,7 @@ function parseSkillArchiveManifest(
     } catch {
       return null;
     }
-    if (url.username || url.password || url.origin !== expectedStorageOrigin) return null;
-    if (!url.pathname.startsWith("/api/storage/")) return null;
+    if (!isCanonicalConvexStorageUrl(url, expectedStorageOrigin)) return null;
   }
   return manifest as SkillArchiveManifest;
 }
@@ -548,6 +602,10 @@ function parseSkillExportArchiveManifest(
 
   const seenPaths = new Set<string>();
   let totalStorageBytes = 0;
+  let totalInlineBytes = Buffer.byteLength(
+    JSON.stringify(manifest.exportManifest, null, 2),
+    "utf8",
+  );
   for (const entry of manifest.entries) {
     if (!isSkillExportArchiveEntry(entry, expectedStorageOrigin)) return null;
     if (entry.path === "_manifest.json" || seenPaths.has(entry.path)) return null;
@@ -555,6 +613,11 @@ function parseSkillExportArchiveManifest(
     if (entry.kind === "storage") {
       totalStorageBytes += entry.size;
       if (totalStorageBytes > MAX_SKILL_EXPORT_TOTAL_BYTES) return null;
+    } else {
+      // Stored payload keeps its existing 256 MiB contract. Inline entries and
+      // the generated manifest share the separately bounded signed-JWS budget.
+      totalInlineBytes += Buffer.byteLength(entry.text, "utf8");
+      if (totalInlineBytes > MAX_ARCHIVE_MANIFEST_BYTES) return null;
     }
   }
   if (!manifest.exportManifest.every(isMergedExportManifestEntry)) return null;
@@ -598,11 +661,17 @@ function isSkillExportArchiveEntry(
   } catch {
     return false;
   }
+  return isCanonicalConvexStorageUrl(url, expectedStorageOrigin);
+}
+
+function isCanonicalConvexStorageUrl(url: URL, expectedStorageOrigin: string) {
   return (
     !url.username &&
     !url.password &&
+    !url.search &&
+    !url.hash &&
     url.origin === expectedStorageOrigin &&
-    url.pathname.startsWith("/api/storage/")
+    /^\/api\/storage\/[A-Za-z0-9_-]+$/.test(url.pathname)
   );
 }
 

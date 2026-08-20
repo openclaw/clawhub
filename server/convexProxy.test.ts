@@ -388,7 +388,7 @@ describe("Convex HTTP proxy", () => {
     ]);
   });
 
-  it("keeps a bulk export readable when signed storage disappears", async () => {
+  it("fails a bulk export when signed storage disappears", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString();
       if (url.startsWith("https://preview-branch-123.convex.site/api/v1/skills/export")) {
@@ -459,15 +459,9 @@ describe("Convex HTTP proxy", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Export-Errors")).toBe("1");
-    const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
-    expect(Object.keys(archive).sort()).toEqual([
-      "_errors.json",
-      "_manifest.json",
-      "alice/demo/_export_skill_meta.json",
-    ]);
-    expect(JSON.parse(new TextDecoder().decode(archive["_errors.json"]))).toEqual([
-      { slug: "missing", error: "version not found" },
-    ]);
+    await expect(response.arrayBuffer()).rejects.toThrow(
+      "Signed archive entry disappeared after manifest creation",
+    );
   });
 
   it("rejects bulk export manifests that point outside paired Convex storage", async () => {
@@ -508,6 +502,103 @@ describe("Convex HTTP proxy", () => {
     expect(response.status).toBe(502);
     expect(await response.text()).toBe("Invalid or expired archive manifest");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects bulk export manifests with non-canonical storage paths", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        {
+          schema: "clawhub.skill-export-archive-manifest.v1",
+          issuedAt: 1_000,
+          expiresAt: 31_000,
+          filename: "skills-export-1-5.zip",
+          entries: [
+            {
+              kind: "storage",
+              path: "alice/demo/SKILL.md",
+              url: "https://preview-branch-123.convex.cloud/api/storage/storage-1/extra",
+              size: 1,
+              sha256: "a".repeat(64),
+            },
+          ],
+          exportManifest: [],
+        },
+        { headers: { "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/skills/export?startDate=1&endDate=5"),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.status).toBe(502);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps inline metadata in its bounded manifest budget", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.startsWith("https://preview-branch-123.convex.site/api/v1/skills/export")) {
+        return Response.json(
+          {
+            schema: "clawhub.skill-export-archive-manifest.v1",
+            issuedAt: 1_000,
+            expiresAt: 31_000,
+            filename: "skills-export-1-5.zip",
+            entries: [
+              {
+                kind: "storage",
+                path: "alice/demo/SKILL.md",
+                url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+                size: 256 * 1024 * 1024,
+                sha256: "a".repeat(64),
+              },
+              {
+                kind: "inline",
+                path: "alice/demo/_export_skill_meta.json",
+                text: "x",
+              },
+            ],
+            exportManifest: [],
+          },
+          { headers: { "content-type": ARCHIVE_MANIFEST_CONTENT_TYPE } },
+        );
+      }
+      if (url === "https://preview-branch-123.convex.cloud/api/storage/storage-1") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start() {
+              // Keep the signed maximum-size storage entry unconsumed.
+            },
+          }),
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+
+    const response = await proxyConvexRequest(
+      mockEvent("https://preview.example/api/v1/skills/export?startDate=1&endDate=5"),
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await response.body?.cancel();
   });
 
   it("fails a bulk export stream when stored bytes miss the signed digest", async () => {
@@ -568,6 +659,7 @@ describe("Convex HTTP proxy", () => {
       size: 1,
       sha256: "a".repeat(64),
     }));
+    const cancelledStorage = new Set<number>();
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString();
       if (url.startsWith("https://preview-branch-123.convex.site/api/v1/skills/export")) {
@@ -596,10 +688,14 @@ describe("Convex HTTP proxy", () => {
         );
       }
       if (url.startsWith("https://preview-branch-123.convex.cloud/api/storage/")) {
+        const storageIndex = Number(url.slice(url.lastIndexOf("-") + 1));
         return new Response(
           new ReadableStream<Uint8Array>({
             start() {
               // Keep each prefetched response open so the test observes the live window.
+            },
+            cancel() {
+              cancelledStorage.add(storageIndex);
             },
           }),
         );
@@ -624,6 +720,7 @@ describe("Convex HTTP proxy", () => {
     );
     expect(storageCalls).toHaveLength(8);
     await response.body?.cancel();
+    expect([...cancelledStorage].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 
   it("does not record a download when every source Blob has vanished", async () => {
