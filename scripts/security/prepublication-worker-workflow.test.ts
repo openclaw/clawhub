@@ -154,6 +154,16 @@ describe("pre-publication publish worker workflow", () => {
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
       "npm install -g @openclaw/clawscan@0.1.7",
     );
+    expect(steps).toContainEqual(
+      expect.objectContaining({
+        uses: "actions/setup-python@v7",
+        with: { "python-version": "3.12" },
+      }),
+    );
+    const aigInstall = steps.find((step) => step.name === "Install A.I.G scanner")?.run;
+    expect(aigInstall).toContain("python -m pip install 'aig-skill-scan==0.2.1'");
+    expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.1"');
+    expect(aigInstall).toContain("aig-skill-scan --help");
     expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
       "npm install -g @openai/codex@0.142.3",
     );

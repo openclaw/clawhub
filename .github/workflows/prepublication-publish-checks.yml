@@ -80,6 +80,10 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
       - name: Install Codex CLI
         run: |
           set -euo pipefail
@@ -91,6 +95,13 @@ jobs:
           set -euo pipefail
           npm install -g @openclaw/clawscan@0.1.7
           clawscan --version
+
+      - name: Install A.I.G scanner
+        run: |
+          set -euo pipefail
+          python -m pip install 'aig-skill-scan==0.2.1'
+          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.1"'
+          aig-skill-scan --help >/dev/null
 
       - name: Run pre-publication publish worker
         env:
