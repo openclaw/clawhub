@@ -181,6 +181,7 @@ function completeJudgeResult(verdict: ClawScanVerdict) {
 }
 
 function clawScanArtifactJson(options?: {
+  aigRaw?: unknown;
   completedAt?: string;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
@@ -200,7 +201,7 @@ function clawScanArtifactJson(options?: {
     scanners: {
       aig: {
         status: scannerStatuses.aig,
-        raw: {
+        raw: options?.aigRaw ?? {
           version: "2.1.0",
           runs: [
             {
@@ -911,6 +912,63 @@ echo "not json" > "$out"`,
       expect(client.action).toHaveBeenCalledTimes(1);
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
         error: "ClawScan did not emit a valid JSON artifact",
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it("fails the job when completed A.I.G output has no SARIF run", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const artifactJson = clawScanArtifactJson({
+      aigRaw: { version: "2.1.0", runs: [] },
+    });
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+${artifactJson}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    try {
+      const client = {
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: false } : {};
+        }),
+      };
+
+      await expect(
+        processJob(
+          client,
+          "worker-auth",
+          skillVersionJob("securityScanJobs:aig-empty-runs"),
+          undefined,
+        ),
+      ).resolves.toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        error: "A.I.G SARIF output did not contain a run.",
       });
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;

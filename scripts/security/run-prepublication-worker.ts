@@ -462,8 +462,12 @@ function storedAnalysisFromClawScanArtifact(artifact: unknown): {
     return { error: "ClawScan aig scanner output was missing" };
   }
   const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
+  const aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
+  if (aigAnalysis.status === "error") {
+    return { error: aigAnalysis.error ?? "A.I.G returned unusable scanner output" };
+  }
   return {
-    aigAnalysis: normalizeAigAnalysis(rawAig, checkedAt),
+    aigAnalysis,
     analysis: {
       checkedAt,
       status: verdictToStoredStatus(verdict),
@@ -677,7 +681,11 @@ export async function processPrePublicationAttempt(
     let clawscan: WorkerCheckResult;
     let clawscanAnalysis: StoredLlmAnalysis | undefined;
     let aigAnalysis: AigAnalysis | undefined;
-    if (attempt.existingClawscanAnalysis) {
+    if (
+      attempt.existingClawscanAnalysis &&
+      attempt.existingAigAnalysis &&
+      attempt.existingAigAnalysis.status !== "error"
+    ) {
       clawscanAnalysis = attempt.existingClawscanAnalysis;
       aigAnalysis = attempt.existingAigAnalysis;
       clawscan = clawScanCheckResult(clawscanAnalysis);

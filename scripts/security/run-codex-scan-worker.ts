@@ -1268,6 +1268,15 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
   const runs = document.runs
     .map(asRecord)
     .filter((run): run is Record<string, unknown> => Boolean(run));
+  if (runs.length === 0) {
+    return {
+      status: "error",
+      issueCount: 0,
+      findings: [],
+      error: "A.I.G SARIF output did not contain a run.",
+      checkedAt,
+    };
+  }
   const ruleNames = new Map<string, string>();
   let scannerVersion: string | undefined;
   const rawResults: unknown[] = [];
@@ -1787,9 +1796,13 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
 
   const checkedAt = artifactCompletedAtMs(artifact);
+  const aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
+  if (aigAnalysis.status === "error") {
+    throw new Error(aigAnalysis.error ?? "A.I.G returned unusable scanner output");
+  }
 
   return {
-    aigAnalysis: normalizeAigAnalysis(rawAig, checkedAt),
+    aigAnalysis,
     llmAnalysis: toStoredLlmAnalysis(parsed, checkedAt),
     mapping: clawScanDiagnosticMapping(artifact),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),

@@ -425,6 +425,16 @@ describe("run-codex-scan-worker diagnostics", () => {
     });
   });
 
+  it("rejects A.I.G SARIF without an actual run", () => {
+    expect(normalizeAigAnalysis(JSON.stringify({ version: "2.1.0", runs: [] }), 123)).toEqual({
+      checkedAt: 123,
+      error: "A.I.G SARIF output did not contain a run.",
+      findings: [],
+      issueCount: 0,
+      status: "error",
+    });
+  });
+
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {
     const workspace = await tempDir();
 
