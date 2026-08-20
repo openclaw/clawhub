@@ -31,6 +31,7 @@ import {
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   isPublisherAbuseCheckEligible,
   labelForTemporalPublisherAbuse,
+  normalizeTemporalAbuseCohortBenchmark,
   PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   summarizePublisherAbuseLogPressure,
   type PublisherAbuseInput,
@@ -64,7 +65,7 @@ const DEFAULT_TEMPORAL_CANDIDATE_LIMIT = 8_000;
 const MAX_TEMPORAL_CANDIDATE_LIMIT = 8_000;
 const DEFAULT_TEMPORAL_MAX_PAGES = 100;
 const MAX_TEMPORAL_MAX_PAGES = 100;
-const CURRENT_TEMPORAL_LOOKBACK_DAYS = 37;
+const CURRENT_TEMPORAL_LOOKBACK_DAYS = 60;
 const DEFAULT_BACKFILL_TEMPORAL_LOOKBACK_DAYS = 365;
 const MAX_BACKFILL_TEMPORAL_LOOKBACK_DAYS = 730;
 const MAX_TEMPORAL_DAILY_STAT_READS_PER_PAGE = 8_000;
@@ -119,6 +120,8 @@ const FAILED_TEMPORAL_CLEANUP_LABELS = [
   "potential_ban_candidate",
   "review",
 ] satisfies PendingPublisherAbuseReviewLabel[];
+const PUBLISHER_TEMPORAL_ABUSE_MODEL_PREFIX = "publisher-abuse-temporal.";
+const LEGACY_PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSIONS = ["publisher-abuse-temporal.v1"] as const;
 
 type TriageStatus = Doc<"publisherAbuseReviewNominations">["status"];
 type ScoreRun = Doc<"publisherAbuseScoreRuns">;
@@ -138,6 +141,9 @@ const publisherAbuseReviewTabValidator = v.union(
 const publisherAbuseSignalTypeValidator = v.union(
   v.literal("high_install_download_ratio"),
   v.literal("sustained_downloads_flat_installs"),
+  v.literal("download_spike_flat_installs"),
+  v.literal("sustained_abnormal_download_days"),
+  v.literal("owner_synchronized_download_trends"),
 );
 const publisherAbuseSignalReviewStatusValidator = v.union(
   v.literal("open"),
@@ -281,6 +287,8 @@ const temporalAbuseCohortBenchmarkValidator = v.object({
   downloads30dP99: v.number(),
   spikeMultiplier7dP95: v.number(),
   spikeMultiplier7dP99: v.number(),
+  excess7DownloadsP95: v.number(),
+  excess7DownloadsP99: v.number(),
 });
 
 const temporalScoreValidator = v.object({
@@ -293,13 +301,24 @@ const temporalScoreValidator = v.object({
   previous30Downloads: v.number(),
   baseline7Downloads: v.number(),
   spikeMultiplier: v.number(),
+  expected7Downloads: v.number(),
+  excess7Downloads: v.number(),
   recent30Downloads: v.number(),
   recent30Installs: v.number(),
   downloadInstallRatio30: v.number(),
   downloads30dCohortBand: v.optional(temporalCohortBandValidator),
   spikeMultiplierCohortBand: v.optional(temporalCohortBandValidator),
+  excess7DownloadsCohortBand: v.optional(temporalCohortBandValidator),
   downloads30dVsPeerP95: v.optional(v.number()),
   spikeMultiplierVsPeerP95: v.optional(v.number()),
+  excess7DownloadsVsPeerP95: v.optional(v.number()),
+  sustainedDaysAboveThreshold: v.number(),
+  sustainedWindowDays: v.number(),
+  sustainedDailyDownloadThreshold: v.number(),
+  sustainedExpectedDailyDownloads: v.number(),
+  sustainedWindowDownloads: v.number(),
+  sustainedWindowInstalls: v.number(),
+  sustainedDailyDownloads: v.array(v.number()),
   installDownloadRatio7: v.number(),
   installDownloadRatio30: v.number(),
   installDownloadExcessZScore7: v.number(),
@@ -1002,7 +1021,7 @@ async function getPublisherAbuseAutobanEligibility(
       preserveWarningState: true,
     };
   }
-  if (scoredByRun.modelVersion !== PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION) {
+  if (!isPublisherTemporalAbuseModelVersion(scoredByRun.modelVersion)) {
     return { kind: "ready" };
   }
   return {
@@ -1575,7 +1594,9 @@ export const getPublisherAbuseScoreRunStateInternal = internalQuery({
       scannedPublishers: run.scannedPublishers,
       finalizedScores: run.finalizedScores,
       temporalScanComplete: run.temporalScanComplete,
-      temporalBenchmark: run.temporalBenchmark,
+      temporalBenchmark: run.temporalBenchmark
+        ? normalizeTemporalAbuseCohortBenchmark(run.temporalBenchmark)
+        : undefined,
     };
   },
 });
@@ -2016,7 +2037,7 @@ export async function markPublisherAbuseScoreRunFailedInternalHandler(
   }
 
   const shouldCleanupFailedTemporalRun =
-    run.modelVersion === PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION &&
+    isPublisherTemporalAbuseModelVersion(run.modelVersion) &&
     (run.status === "running" || Boolean(args.cleanupLabel) || Boolean(args.cleanupCursor));
   if (shouldCleanupFailedTemporalRun) {
     await cleanupFailedTemporalPublisherAbuseRunPage(ctx, {
@@ -3217,8 +3238,12 @@ function withoutTemporalCohortClassification(
       : 0,
     downloads30dCohortBand: undefined,
     spikeMultiplierCohortBand: undefined,
+    excess7DownloadsCohortBand: undefined,
     downloads30dVsPeerP95: undefined,
     spikeMultiplierVsPeerP95: undefined,
+    excess7DownloadsVsPeerP95: undefined,
+    sustainedDaysAboveThreshold: 0,
+    sustainedDailyDownloadThreshold: 0,
     spikeWindowStartDay: undefined,
     spikeWindowEndDay: undefined,
     sustainedWindowStartDay: undefined,
@@ -3463,7 +3488,8 @@ function addTemporalPublisherAggregateCandidate(
   existing.highTemporalSkillCount += 1;
   if (
     candidate.temporalScore.downloads30dCohortBand === "p99" ||
-    candidate.temporalScore.spikeMultiplierCohortBand === "p99"
+    candidate.temporalScore.spikeMultiplierCohortBand === "p99" ||
+    candidate.temporalScore.excess7DownloadsCohortBand === "p99"
   ) {
     existing.p99TemporalSkillCount += 1;
   }
@@ -3499,13 +3525,23 @@ function temporalEvidenceFromCandidate(candidate: TemporalSkillCandidate) {
     previous30Downloads: candidate.temporalScore.previous30Downloads,
     baseline7Downloads: candidate.temporalScore.baseline7Downloads,
     spikeMultiplier: candidate.temporalScore.spikeMultiplier,
+    expected7Downloads: candidate.temporalScore.expected7Downloads,
+    excess7Downloads: candidate.temporalScore.excess7Downloads,
     recent30Downloads: candidate.temporalScore.recent30Downloads,
     recent30Installs: candidate.temporalScore.recent30Installs,
     downloadInstallRatio30: candidate.temporalScore.downloadInstallRatio30,
     downloads30dCohortBand: candidate.temporalScore.downloads30dCohortBand,
     spikeMultiplierCohortBand: candidate.temporalScore.spikeMultiplierCohortBand,
+    excess7DownloadsCohortBand: candidate.temporalScore.excess7DownloadsCohortBand,
     downloads30dVsPeerP95: candidate.temporalScore.downloads30dVsPeerP95,
     spikeMultiplierVsPeerP95: candidate.temporalScore.spikeMultiplierVsPeerP95,
+    excess7DownloadsVsPeerP95: candidate.temporalScore.excess7DownloadsVsPeerP95,
+    sustainedDaysAboveThreshold: candidate.temporalScore.sustainedDaysAboveThreshold,
+    sustainedWindowDays: candidate.temporalScore.sustainedWindowDays,
+    sustainedDailyDownloadThreshold: candidate.temporalScore.sustainedDailyDownloadThreshold,
+    sustainedExpectedDailyDownloads: candidate.temporalScore.sustainedExpectedDailyDownloads,
+    sustainedWindowDownloads: candidate.temporalScore.sustainedWindowDownloads,
+    sustainedWindowInstalls: candidate.temporalScore.sustainedWindowInstalls,
     installDownloadRatio7: candidate.temporalScore.installDownloadRatio7,
     installDownloadRatio30: candidate.temporalScore.installDownloadRatio30,
     installDownloadExcessZScore7: candidate.temporalScore.installDownloadExcessZScore7,
@@ -3532,19 +3568,50 @@ export async function archiveTemporalPublisherAbuseSignals(
   let archivedSignals = 0;
   let changedSignals = 0;
   for (const candidate of args.candidates) {
-    for (const signalType of signalTypesForTemporalCandidate(candidate)) {
-      const changed = await upsertPublisherAbuseSignal(ctx, {
+    const signalTypes = signalTypesForTemporalCandidate(candidate);
+    const existingSignals = await Promise.all(
+      signalTypes.map((signalType) =>
+        findExistingTemporalPublisherAbuseSignal(ctx, candidate, signalType),
+      ),
+    );
+    for (const [index, signalType] of signalTypes.entries()) {
+      const existingSignal = existingSignals[index];
+      const result = await upsertPublisherAbuseSignal(ctx, {
         runId: args.runId,
         candidate,
         benchmark: args.benchmark,
         signalType,
         now: args.now,
+        existingSignal: existingSignal ?? null,
       });
       archivedSignals += 1;
-      if (changed) changedSignals += 1;
+      if (result.changed) changedSignals += 1;
     }
   }
   return { archivedCandidates: args.candidates.length, archivedSignals, changedSignals };
+}
+
+async function findExistingTemporalPublisherAbuseSignal(
+  ctx: Pick<MutationCtx, "db">,
+  candidate: TemporalSkillCandidate,
+  signalType: PublisherAbuseSignalType,
+) {
+  const findByType = async (candidateSignalType: PublisherAbuseSignalType) =>
+    await ctx.db
+      .query("publisherAbuseSignals")
+      .withIndex("by_skill_signal_type_and_owner_key", (q) =>
+        q
+          .eq("skillId", candidate.skillId)
+          .eq("signalType", candidateSignalType)
+          .eq("ownerKey", candidate.ownerKey),
+      )
+      .first();
+  const currentSignal = await findByType(signalType);
+  if (currentSignal || signalType !== "sustained_abnormal_download_days") return currentSignal;
+
+  // v2 replaced the broad legacy sustained type. Reuse that row so an
+  // operator's existing snooze or dismissal cannot be bypassed by the rename.
+  return await findByType("sustained_downloads_flat_installs");
 }
 
 export async function archiveTemporalPublisherAbuseSignalsPageInternalHandler(
@@ -3563,11 +3630,14 @@ function signalTypesForTemporalCandidate(
   candidate: TemporalSkillCandidate,
 ): PublisherAbuseSignalType[] {
   const signalTypes: PublisherAbuseSignalType[] = [];
-  if (candidate.temporalScore.nearConversion) {
-    signalTypes.push("high_install_download_ratio");
+  if (candidate.temporalScore.spike) {
+    signalTypes.push("download_spike_flat_installs");
   }
   if (candidate.temporalScore.sustained) {
-    signalTypes.push("sustained_downloads_flat_installs");
+    signalTypes.push("sustained_abnormal_download_days");
+  }
+  if (candidate.temporalScore.nearConversion) {
+    signalTypes.push("high_install_download_ratio");
   }
   return signalTypes;
 }
@@ -3580,17 +3650,10 @@ async function upsertPublisherAbuseSignal(
     benchmark?: TemporalAbuseCohortBenchmark;
     signalType: PublisherAbuseSignalType;
     now: number;
+    existingSignal: PublisherAbuseSignalDoc | null;
   },
-): Promise<boolean> {
-  const signal = await ctx.db
-    .query("publisherAbuseSignals")
-    .withIndex("by_skill_signal_type_and_owner_key", (q) =>
-      q
-        .eq("skillId", args.candidate.skillId)
-        .eq("signalType", args.signalType)
-        .eq("ownerKey", args.candidate.ownerKey),
-    )
-    .first();
+): Promise<{ changed: boolean }> {
+  const signal = args.existingSignal;
   const snapshot = publisherAbuseSignalSnapshot(args);
 
   if (signal) {
@@ -3663,7 +3726,7 @@ async function upsertPublisherAbuseSignal(
       notificationClaimedAt: shouldNotify ? undefined : signal.notificationClaimedAt,
       lastNotificationError: shouldNotify ? undefined : signal.lastNotificationError,
     });
-    return shouldNotify;
+    return { changed: shouldNotify };
   }
 
   await ctx.db.insert("publisherAbuseSignals", {
@@ -3677,14 +3740,19 @@ async function upsertPublisherAbuseSignal(
     lastChangedAt: args.now,
     needsNotification: true,
   });
-  return true;
+  return { changed: true };
 }
 
 function freshEvidenceCrossesRepeatThreshold(
   signalType: PublisherAbuseSignalType,
   fresh: { downloads: number; installs: number },
 ) {
-  if (signalType === "sustained_downloads_flat_installs") {
+  if (
+    signalType === "sustained_downloads_flat_installs" ||
+    signalType === "sustained_abnormal_download_days" ||
+    signalType === "download_spike_flat_installs" ||
+    signalType === "owner_synchronized_download_trends"
+  ) {
     return (
       fresh.downloads >= RECURRING_SUSTAINED_SIGNAL_MIN_DOWNLOADS &&
       fresh.installs <= RECURRING_SUSTAINED_SIGNAL_MAX_INSTALLS
@@ -3729,6 +3797,14 @@ function publisherAbuseSignalSnapshot(args: {
     allTimeDownloads: nonNegative(candidate.totalDownloads),
     allTimeInstalls: nonNegative(candidate.totalInstalls),
     temporalBenchmark: args.benchmark,
+    expected7Downloads: candidate.temporalScore.expected7Downloads,
+    excess7Downloads: candidate.temporalScore.excess7Downloads,
+    sustainedDaysAboveThreshold: candidate.temporalScore.sustainedDaysAboveThreshold,
+    sustainedWindowDays: candidate.temporalScore.sustainedWindowDays,
+    sustainedDailyDownloadThreshold: candidate.temporalScore.sustainedDailyDownloadThreshold,
+    sustainedExpectedDailyDownloads: candidate.temporalScore.sustainedExpectedDailyDownloads,
+    sustainedWindowDownloads: candidate.temporalScore.sustainedWindowDownloads,
+    sustainedWindowInstalls: candidate.temporalScore.sustainedWindowInstalls,
     allTimeInstallDownloadRatio: installDownloadRatio({
       installs: candidate.totalInstalls,
       downloads: candidate.totalDownloads,
@@ -4222,6 +4298,10 @@ function isAggregatePublisherAbuseModelVersion(modelVersion: string) {
   return modelVersion.startsWith("publisher-abuse-pressure.");
 }
 
+function isPublisherTemporalAbuseModelVersion(modelVersion: string) {
+  return modelVersion.startsWith(PUBLISHER_TEMPORAL_ABUSE_MODEL_PREFIX);
+}
+
 function aggregatePublisherAbuseModelVersionNumber(modelVersion: string) {
   const match = /^publisher-abuse-pressure\.v(\d+)$/.exec(modelVersion);
   const versionText = match?.[1];
@@ -4281,7 +4361,7 @@ function isReopenableNominationStatus(status: TriageStatus) {
 function isDeferredNominationForCurrentTemporalRun(status: TriageStatus, run: ScoreRun) {
   return (
     status === "candidate_for_future_action" &&
-    run.modelVersion === PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION &&
+    isPublisherTemporalAbuseModelVersion(run.modelVersion) &&
     run.temporalMode === "current" &&
     run.temporalScanComplete === true
   );
@@ -4296,7 +4376,7 @@ function isFailedPressureRunAutobanDeferral(
     nomination.status === "candidate_for_future_action" &&
     nomination.notes === FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE &&
     score.label === "potential_ban_candidate" &&
-    run.modelVersion !== PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION &&
+    !isPublisherTemporalAbuseModelVersion(run.modelVersion) &&
     run.status === "running" &&
     run.phase === "finalizing"
   );
@@ -4396,9 +4476,14 @@ async function getLatestPublisherAbuseSignalRun(ctx: QueryCtx) {
     "collecting",
     "downloads_percentiles",
     "spike_percentiles",
+    "excess_percentiles",
     "classifying",
     "completed",
   ] as const;
+  const legacyModelVersions = [
+    PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    ...LEGACY_PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSIONS,
+  ];
   const [taggedRun, legacyRuns] = await Promise.all([
     ctx.db
       .query("publisherAbuseScoreRuns")
@@ -4408,18 +4493,20 @@ async function getLatestPublisherAbuseSignalRun(ctx: QueryCtx) {
       .order("desc")
       .first(),
     Promise.all(
-      legacyTemporalPhases.map(
-        async (temporalPipelinePhase) =>
-          await ctx.db
-            .query("publisherAbuseScoreRuns")
-            .withIndex("by_model_version_and_temporal_pipeline_kind_and_phase_started_at", (q) =>
-              q
-                .eq("modelVersion", PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION)
-                .eq("temporalPipelineKind", undefined)
-                .eq("temporalPipelinePhase", temporalPipelinePhase),
-            )
-            .order("desc")
-            .first(),
+      legacyModelVersions.flatMap((modelVersion) =>
+        legacyTemporalPhases.map(
+          async (temporalPipelinePhase) =>
+            await ctx.db
+              .query("publisherAbuseScoreRuns")
+              .withIndex("by_model_version_and_temporal_pipeline_kind_and_phase_started_at", (q) =>
+                q
+                  .eq("modelVersion", modelVersion)
+                  .eq("temporalPipelineKind", undefined)
+                  .eq("temporalPipelinePhase", temporalPipelinePhase),
+              )
+              .order("desc")
+              .first(),
+        ),
       ),
     ),
   ]);

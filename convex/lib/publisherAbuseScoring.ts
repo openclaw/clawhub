@@ -1,5 +1,5 @@
 export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v4";
-export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v1";
+export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v2";
 
 export type PublisherAbuseLabel = "pass" | "review" | "potential_ban_candidate";
 
@@ -69,13 +69,24 @@ export type SkillTemporalAbuseScore = {
   previous30Downloads: number;
   baseline7Downloads: number;
   spikeMultiplier: number;
+  expected7Downloads: number;
+  excess7Downloads: number;
   recent30Downloads: number;
   recent30Installs: number;
   downloadInstallRatio30: number;
   downloads30dCohortBand?: "p95" | "p99";
   spikeMultiplierCohortBand?: "p95" | "p99";
+  excess7DownloadsCohortBand?: "p95" | "p99";
   downloads30dVsPeerP95?: number;
   spikeMultiplierVsPeerP95?: number;
+  excess7DownloadsVsPeerP95?: number;
+  sustainedDaysAboveThreshold: number;
+  sustainedWindowDays: number;
+  sustainedDailyDownloadThreshold: number;
+  sustainedExpectedDailyDownloads: number;
+  sustainedWindowDownloads: number;
+  sustainedWindowInstalls: number;
+  sustainedDailyDownloads: number[];
   installDownloadRatio7: number;
   installDownloadRatio30: number;
   installDownloadExcessZScore7: number;
@@ -98,7 +109,25 @@ export type TemporalAbuseCohortBenchmark = {
   downloads30dP99: number;
   spikeMultiplier7dP95: number;
   spikeMultiplier7dP99: number;
+  excess7DownloadsP95: number;
+  excess7DownloadsP99: number;
 };
+
+export type StoredTemporalAbuseCohortBenchmark = Omit<
+  TemporalAbuseCohortBenchmark,
+  "excess7DownloadsP95" | "excess7DownloadsP99"
+> &
+  Partial<Pick<TemporalAbuseCohortBenchmark, "excess7DownloadsP95" | "excess7DownloadsP99">>;
+
+export function normalizeTemporalAbuseCohortBenchmark(
+  benchmark: StoredTemporalAbuseCohortBenchmark,
+): TemporalAbuseCohortBenchmark {
+  return {
+    ...benchmark,
+    excess7DownloadsP95: benchmark.excess7DownloadsP95 ?? 0,
+    excess7DownloadsP99: benchmark.excess7DownloadsP99 ?? 0,
+  };
+}
 
 export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
   modelVersion: PUBLISHER_ABUSE_MODEL_VERSION,
@@ -124,11 +153,10 @@ export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
 const MIN_PRESSURE_FOR_LOG = 1e-9;
 const TEMPORAL_SPIKE_RECENT_DAYS = 7;
 const TEMPORAL_SPIKE_BASELINE_DAYS = 30;
-const TEMPORAL_SUSTAINED_DAYS = 30;
+const TEMPORAL_SUSTAINED_DAYS = 14;
+const TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS = 10;
 const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
-const TEMPORAL_MIN_SPIKE_7_DOWNLOADS = 2_000;
-const TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER = 6;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
 const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 1_000;
@@ -337,6 +365,7 @@ export function computeCurrentSkillTemporalAbuseScore(input: {
     statsByDay,
     spikeStartDay: input.todayDay - TEMPORAL_SPIKE_RECENT_DAYS + 1,
     sustainedStartDay: input.todayDay - TEMPORAL_SUSTAINED_DAYS + 1,
+    recent30StartDay: input.todayDay - 30 + 1,
   });
   return classifySkillTemporalAbuseScore(score, input.benchmark);
 }
@@ -356,15 +385,17 @@ export function computeHistoricalSkillTemporalAbuseScore(input: {
   let bestNearConversion = emptySkillTemporalAbuseScore();
 
   for (let startDay = minDay; startDay <= maxDay; startDay += 1) {
+    const score = classifySkillTemporalAbuseScore(
+      computeSkillTemporalAbuseScoreForWindows({
+        statsByDay,
+        spikeStartDay: startDay,
+        sustainedStartDay: startDay,
+        recent30StartDay: startDay,
+      }),
+      input.benchmark,
+    );
+
     if (startDay + TEMPORAL_SPIKE_RECENT_DAYS - 1 <= maxDay) {
-      const score = classifySkillTemporalAbuseScore(
-        computeSkillTemporalAbuseScoreForWindows({
-          statsByDay,
-          spikeStartDay: startDay,
-          sustainedStartDay: startDay,
-        }),
-        input.benchmark,
-      );
       if (score.spike && score.spikeMultiplier > bestSpike.spikeMultiplier) {
         bestSpike = score;
       }
@@ -378,20 +409,20 @@ export function computeHistoricalSkillTemporalAbuseScore(input: {
     }
 
     if (startDay + TEMPORAL_SUSTAINED_DAYS - 1 <= maxDay) {
-      const score = classifySkillTemporalAbuseScore(
-        computeSkillTemporalAbuseScoreForWindows({
-          statsByDay,
-          spikeStartDay: startDay,
-          sustainedStartDay: startDay,
-        }),
-        input.benchmark,
-      );
-      if (score.sustained && score.recent30Downloads > bestSustained.recent30Downloads) {
+      if (
+        score.sustained &&
+        (score.sustainedDaysAboveThreshold > bestSustained.sustainedDaysAboveThreshold ||
+          (score.sustainedDaysAboveThreshold === bestSustained.sustainedDaysAboveThreshold &&
+            score.sustainedWindowDownloads > bestSustained.sustainedWindowDownloads))
+      ) {
         bestSustained = score;
       }
+    }
+
+    if (startDay + 30 - 1 <= maxDay) {
       if (
         score.nearConversion &&
-        score.nearConversionWindowEndDay === startDay + TEMPORAL_SUSTAINED_DAYS - 1 &&
+        score.nearConversionWindowEndDay === startDay + 30 - 1 &&
         score.installDownloadRatio30 > bestNearConversion.installDownloadRatio30
       ) {
         bestNearConversion = score;
@@ -411,10 +442,14 @@ export function labelForTemporalPublisherAbuse(input: {
 }
 
 export function computeTemporalAbuseCohortBenchmark(
-  scores: Pick<SkillTemporalAbuseScore, "recent30Downloads" | "spikeMultiplier">[],
+  scores: Pick<
+    SkillTemporalAbuseScore,
+    "recent30Downloads" | "spikeMultiplier" | "excess7Downloads"
+  >[],
 ): TemporalAbuseCohortBenchmark {
   const downloads30d = scores.map((score) => nonNegative(score.recent30Downloads));
   const spikeMultipliers = scores.map((score) => nonNegative(score.spikeMultiplier));
+  const excess7Downloads = scores.map((score) => nonNegative(score.excess7Downloads));
   return {
     sampleSize: scores.length,
     downloads30dAverage: average(downloads30d),
@@ -423,6 +458,8 @@ export function computeTemporalAbuseCohortBenchmark(
     downloads30dP99: percentile(downloads30d, 0.99),
     spikeMultiplier7dP95: percentile(spikeMultipliers, 0.95),
     spikeMultiplier7dP99: percentile(spikeMultipliers, 0.99),
+    excess7DownloadsP95: percentile(excess7Downloads, 0.95),
+    excess7DownloadsP99: percentile(excess7Downloads, 0.99),
   };
 }
 
@@ -435,26 +472,37 @@ export function classifySkillTemporalAbuseScore(
   const downloads30dVsPeerP95 = score.recent30Downloads / Math.max(1, benchmark.downloads30dP95);
   const spikeMultiplierVsPeerP95 =
     score.spikeMultiplier / Math.max(1, benchmark.spikeMultiplier7dP95);
-  const downloads30dCohortBand =
-    score.recent30Installs <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
-    score.recent30Downloads >
-      benchmark.downloads30dP99 * TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER
-      ? p99Band({ value: score.recent30Downloads, p99: benchmark.downloads30dP99 })
-      : undefined;
-  const spikeMultiplierCohortBand =
-    score.recent7Installs <= TEMPORAL_MAX_SPIKE_INSTALLS &&
-    score.recent7Downloads >= TEMPORAL_MIN_SPIKE_7_DOWNLOADS
-      ? p99Band({ value: score.spikeMultiplier, p99: benchmark.spikeMultiplier7dP99 })
-      : undefined;
-  const spike = Boolean(spikeMultiplierCohortBand);
-  const sustained = Boolean(downloads30dCohortBand);
+  const excess7DownloadsVsPeerP95 =
+    score.excess7Downloads / Math.max(1, benchmark.excess7DownloadsP95);
+  const lowSpikeInstalls = score.recent7Installs <= TEMPORAL_MAX_SPIKE_INSTALLS;
+  const spikeMultiplierCohortBand = lowSpikeInstalls
+    ? p99Band({ value: score.spikeMultiplier, p99: benchmark.spikeMultiplier7dP99 })
+    : undefined;
+  const excess7DownloadsCohortBand = lowSpikeInstalls
+    ? p99Band({ value: score.excess7Downloads, p99: benchmark.excess7DownloadsP99 })
+    : undefined;
+  const spike = Boolean(spikeMultiplierCohortBand && excess7DownloadsCohortBand);
+  const sustainedDailyDownloadThreshold = Math.max(
+    Math.max(
+      TEMPORAL_MIN_BASELINE_7_DOWNLOADS / TEMPORAL_SPIKE_RECENT_DAYS,
+      score.sustainedExpectedDailyDownloads,
+    ) * Math.max(1, benchmark.spikeMultiplier7dP95),
+    score.sustainedExpectedDailyDownloads +
+      benchmark.excess7DownloadsP95 / TEMPORAL_SPIKE_RECENT_DAYS,
+  );
+  const sustainedDaysAboveThreshold = score.sustainedDailyDownloads.filter(
+    (downloads) => downloads > sustainedDailyDownloadThreshold,
+  ).length;
+  const sustained =
+    score.sustainedWindowInstalls <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
+    sustainedDaysAboveThreshold >= TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS;
   const nearConversion = score.nearConversion;
   const nearConversionPressure = nearConversion
     ? Math.max(score.installDownloadExcessZScore7, score.installDownloadExcessZScore30)
     : 0;
   const reasonCodes: string[] = [];
   if (spike) reasonCodes.push("temporal_download_spike_flat_installs");
-  if (sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
+  if (sustained) reasonCodes.push("temporal_sustained_abnormal_download_days");
   if (nearConversion) reasonCodes.push("temporal_installs_track_downloads");
 
   return {
@@ -463,14 +511,18 @@ export function classifySkillTemporalAbuseScore(
     sustained,
     nearConversion,
     pressure: Math.max(
-      spike ? spikeMultiplierVsPeerP95 : 0,
-      sustained ? downloads30dVsPeerP95 : 0,
+      spike ? Math.min(spikeMultiplierVsPeerP95, excess7DownloadsVsPeerP95) : 0,
+      sustained ? sustainedDaysAboveThreshold / TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS : 0,
       nearConversionPressure,
     ),
-    downloads30dCohortBand,
+    downloads30dCohortBand: undefined,
     spikeMultiplierCohortBand,
+    excess7DownloadsCohortBand,
     downloads30dVsPeerP95,
     spikeMultiplierVsPeerP95,
+    excess7DownloadsVsPeerP95,
+    sustainedDaysAboveThreshold,
+    sustainedDailyDownloadThreshold,
     spikeWindowStartDay: spike ? score.spikeWindowStartDay : undefined,
     spikeWindowEndDay: spike ? score.spikeWindowEndDay : undefined,
     sustainedWindowStartDay: sustained ? score.sustainedWindowStartDay : undefined,
@@ -511,25 +563,40 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
   statsByDay: Map<number, { downloads: number; installs: number }>;
   spikeStartDay: number;
   sustainedStartDay: number;
+  recent30StartDay: number;
 }): SkillTemporalAbuseScore {
   const spikeEndDay = input.spikeStartDay + TEMPORAL_SPIKE_RECENT_DAYS - 1;
   const sustainedEndDay = input.sustainedStartDay + TEMPORAL_SUSTAINED_DAYS - 1;
+  const recent30EndDay = input.recent30StartDay + 30 - 1;
   const recent7 = sumTemporalStatsRange(input.statsByDay, input.spikeStartDay, spikeEndDay);
   const previous30 = sumTemporalStatsRange(
     input.statsByDay,
     input.spikeStartDay - TEMPORAL_SPIKE_BASELINE_DAYS,
     input.spikeStartDay - 1,
   );
-  const recent30 = sumTemporalStatsRange(
+  const sustainedPrevious30 = sumTemporalStatsRange(
+    input.statsByDay,
+    input.recent30StartDay - TEMPORAL_SPIKE_BASELINE_DAYS,
+    input.recent30StartDay - 1,
+  );
+  const sustainedWindow = sumTemporalStatsRange(
     input.statsByDay,
     input.sustainedStartDay,
     sustainedEndDay,
   );
-  const baseline7Downloads = Math.max(
-    TEMPORAL_MIN_BASELINE_7_DOWNLOADS,
-    (previous30.downloads / TEMPORAL_SPIKE_BASELINE_DAYS) * TEMPORAL_SPIKE_RECENT_DAYS,
+  const sustainedDailyDownloads = dailyDownloadsRange(
+    input.statsByDay,
+    input.sustainedStartDay,
+    sustainedEndDay,
   );
+  const recent30 = sumTemporalStatsRange(input.statsByDay, input.recent30StartDay, recent30EndDay);
+  const expected7Downloads =
+    (previous30.downloads / TEMPORAL_SPIKE_BASELINE_DAYS) * TEMPORAL_SPIKE_RECENT_DAYS;
+  const baseline7Downloads = Math.max(TEMPORAL_MIN_BASELINE_7_DOWNLOADS, expected7Downloads);
   const spikeMultiplier = baseline7Downloads > 0 ? recent7.downloads / baseline7Downloads : 0;
+  const excess7Downloads = Math.max(0, recent7.downloads - expected7Downloads);
+  const sustainedExpectedDailyDownloads =
+    sustainedPrevious30.downloads / TEMPORAL_SPIKE_BASELINE_DAYS;
   const downloadInstallRatio30 = recent30.downloads / Math.max(1, recent30.installs);
   const installDownloadRatio7 = recent7.installs / Math.max(1, recent7.downloads);
   const installDownloadRatio30 = recent30.installs / Math.max(1, recent30.downloads);
@@ -567,6 +634,8 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
     previous30Downloads: previous30.downloads,
     baseline7Downloads,
     spikeMultiplier,
+    expected7Downloads,
+    excess7Downloads,
     recent30Downloads: recent30.downloads,
     recent30Installs: recent30.installs,
     downloadInstallRatio30,
@@ -574,6 +643,13 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
     installDownloadRatio30,
     installDownloadExcessZScore7,
     installDownloadExcessZScore30,
+    sustainedDaysAboveThreshold: 0,
+    sustainedWindowDays: TEMPORAL_SUSTAINED_DAYS,
+    sustainedDailyDownloadThreshold: 0,
+    sustainedExpectedDailyDownloads,
+    sustainedWindowDownloads: sustainedWindow.downloads,
+    sustainedWindowInstalls: sustainedWindow.installs,
+    sustainedDailyDownloads,
     spikeWindowStartDay: input.spikeStartDay,
     spikeWindowEndDay: spikeEndDay,
     sustainedWindowStartDay: input.sustainedStartDay,
@@ -581,12 +657,12 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
     nearConversionWindowStartDay: nearConversion7
       ? input.spikeStartDay
       : nearConversion30
-        ? input.sustainedStartDay
+        ? input.recent30StartDay
         : undefined,
     nearConversionWindowEndDay: nearConversion7
       ? spikeEndDay
       : nearConversion30
-        ? sustainedEndDay
+        ? recent30EndDay
         : undefined,
     reasonCodes,
   };
@@ -602,7 +678,7 @@ function mergeTemporalAbuseWindowScores(
   }
   const reasonCodes: string[] = [];
   if (bestSpike.spike) reasonCodes.push("temporal_download_spike_flat_installs");
-  if (bestSustained.sustained) reasonCodes.push("temporal_sustained_downloads_flat_installs");
+  if (bestSustained.sustained) reasonCodes.push("temporal_sustained_abnormal_download_days");
   if (bestNearConversion.nearConversion) reasonCodes.push("temporal_installs_track_downloads");
 
   return {
@@ -625,6 +701,12 @@ function mergeTemporalAbuseWindowScores(
     spikeMultiplier: bestSpike.spike
       ? bestSpike.spikeMultiplier
       : bestNearConversion.spikeMultiplier,
+    expected7Downloads: bestSpike.spike
+      ? bestSpike.expected7Downloads
+      : bestNearConversion.expected7Downloads,
+    excess7Downloads: bestSpike.spike
+      ? bestSpike.excess7Downloads
+      : bestNearConversion.excess7Downloads,
     recent30Downloads: bestSustained.sustained
       ? bestSustained.recent30Downloads
       : bestNearConversion.recent30Downloads,
@@ -640,8 +722,17 @@ function mergeTemporalAbuseWindowScores(
     installDownloadExcessZScore30: bestNearConversion.installDownloadExcessZScore30,
     downloads30dCohortBand: bestSustained.downloads30dCohortBand,
     spikeMultiplierCohortBand: bestSpike.spikeMultiplierCohortBand,
+    excess7DownloadsCohortBand: bestSpike.excess7DownloadsCohortBand,
     downloads30dVsPeerP95: bestSustained.downloads30dVsPeerP95,
     spikeMultiplierVsPeerP95: bestSpike.spikeMultiplierVsPeerP95,
+    excess7DownloadsVsPeerP95: bestSpike.excess7DownloadsVsPeerP95,
+    sustainedDaysAboveThreshold: bestSustained.sustainedDaysAboveThreshold,
+    sustainedWindowDays: bestSustained.sustainedWindowDays,
+    sustainedDailyDownloadThreshold: bestSustained.sustainedDailyDownloadThreshold,
+    sustainedExpectedDailyDownloads: bestSustained.sustainedExpectedDailyDownloads,
+    sustainedWindowDownloads: bestSustained.sustainedWindowDownloads,
+    sustainedWindowInstalls: bestSustained.sustainedWindowInstalls,
+    sustainedDailyDownloads: bestSustained.sustainedDailyDownloads,
     spikeWindowStartDay: bestSpike.spikeWindowStartDay,
     spikeWindowEndDay: bestSpike.spikeWindowEndDay,
     sustainedWindowStartDay: bestSustained.sustainedWindowStartDay,
@@ -681,6 +772,18 @@ function sumTemporalStatsRange(
   return { downloads, installs };
 }
 
+function dailyDownloadsRange(
+  statsByDay: Map<number, { downloads: number; installs: number }>,
+  startDay: number,
+  endDay: number,
+) {
+  const downloads: number[] = [];
+  for (let day = startDay; day <= endDay; day += 1) {
+    downloads.push(statsByDay.get(day)?.downloads ?? 0);
+  }
+  return downloads;
+}
+
 function emptySkillTemporalAbuseScore(): SkillTemporalAbuseScore {
   return {
     spike: false,
@@ -692,6 +795,8 @@ function emptySkillTemporalAbuseScore(): SkillTemporalAbuseScore {
     previous30Downloads: 0,
     baseline7Downloads: TEMPORAL_MIN_BASELINE_7_DOWNLOADS,
     spikeMultiplier: 0,
+    expected7Downloads: 0,
+    excess7Downloads: 0,
     recent30Downloads: 0,
     recent30Installs: 0,
     downloadInstallRatio30: 0,
@@ -699,6 +804,13 @@ function emptySkillTemporalAbuseScore(): SkillTemporalAbuseScore {
     installDownloadRatio30: 0,
     installDownloadExcessZScore7: 0,
     installDownloadExcessZScore30: 0,
+    sustainedDaysAboveThreshold: 0,
+    sustainedWindowDays: TEMPORAL_SUSTAINED_DAYS,
+    sustainedDailyDownloadThreshold: 0,
+    sustainedExpectedDailyDownloads: 0,
+    sustainedWindowDownloads: 0,
+    sustainedWindowInstalls: 0,
+    sustainedDailyDownloads: Array.from({ length: TEMPORAL_SUSTAINED_DAYS }, () => 0),
     reasonCodes: [],
   };
 }

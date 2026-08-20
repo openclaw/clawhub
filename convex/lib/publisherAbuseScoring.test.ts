@@ -432,6 +432,8 @@ describe("publisher abuse scoring", () => {
         downloads30dP99: 5_000,
         spikeMultiplier7dP95: 5,
         spikeMultiplier7dP99: 20,
+        excess7DownloadsP95: 1_000,
+        excess7DownloadsP99: 2_000,
       }),
       dailyStats: [
         ...dailyRange(64, 30, { downloads: 5, installs: 0 }),
@@ -445,63 +447,104 @@ describe("publisher abuse scoring", () => {
     expect(score.recent7Installs).toBe(0);
     expect(score.previous30Downloads).toBe(150);
     expect(score.spikeMultiplier).toBeCloseTo(28);
+    expect(score.expected7Downloads).toBe(35);
+    expect(score.excess7Downloads).toBe(2_765);
     expect(score.spikeMultiplierCohortBand).toBe("p99");
+    expect(score.excess7DownloadsCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
   });
 
-  it("flags sustained flat-install traffic one download above six times platform P99", () => {
+  it("does not flag a large multiplier without unusually high excess downloads", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        spikeMultiplier7dP95: 3,
+        spikeMultiplier7dP99: 5,
+        excess7DownloadsP95: 1_000,
+        excess7DownloadsP99: 2_000,
+      }),
+      dailyStats: dailyRange(94, 7, { downloads: 150, installs: 0 }),
+    });
+
+    expect(score.spikeMultiplier).toBe(10.5);
+    expect(score.excess7Downloads).toBe(1_050);
+    expect(score.spikeMultiplierCohortBand).toBe("p99");
+    expect(score.excess7DownloadsCohortBand).toBeUndefined();
+    expect(score.spike).toBe(false);
+  });
+
+  it("flags traffic that stays abnormally high for at least 10 of 14 days", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
       benchmark: temporalBenchmark({
-        downloads30dP95: 284,
-        downloads30dP99: 600,
-        spikeMultiplier7dP95: 20,
-        spikeMultiplier7dP99: 50,
+        spikeMultiplier7dP95: 5,
+        excess7DownloadsP95: 500,
       }),
       dailyStats: [
-        ...dailyRange(71, 29, { downloads: 120, installs: 0 }),
-        { day: 100, downloads: 121, installs: 0 },
+        ...dailyRange(41, 30, { downloads: 5, installs: 0 }),
+        ...dailyRange(87, 10, { downloads: 120, installs: 0 }),
+        ...dailyRange(97, 4, { downloads: 0, installs: 0 }),
       ],
     });
 
     expect(score.spike).toBe(false);
     expect(score.sustained).toBe(true);
-    expect(score.recent30Downloads).toBe(3_601);
-    expect(score.recent30Installs).toBe(0);
-    expect(score.downloadInstallRatio30).toBe(3_601);
-    expect(score.downloads30dCohortBand).toBe("p99");
-    expect(score.reasonCodes).toContain("temporal_sustained_downloads_flat_installs");
+    expect(score.sustainedDaysAboveThreshold).toBe(10);
+    expect(score.sustainedWindowDays).toBe(14);
+    expect(score.sustainedExpectedDailyDownloads).toBe(5);
+    expect(score.sustainedDailyDownloadThreshold).toBeCloseTo(76.43, 2);
+    expect(score.reasonCodes).toContain("temporal_sustained_abnormal_download_days");
   });
 
-  it("keeps P95-only sustained download traffic below review thresholds", () => {
+  it("does not call nine abnormal days sustained", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay: 100,
       benchmark: temporalBenchmark({
-        downloads30dP95: 3_000,
-        downloads30dP99: 6_000,
+        spikeMultiplier7dP95: 5,
+        excess7DownloadsP95: 500,
       }),
-      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+      dailyStats: [
+        ...dailyRange(41, 30, { downloads: 5, installs: 0 }),
+        ...dailyRange(87, 9, { downloads: 120, installs: 0 }),
+      ],
     });
 
-    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.sustainedDaysAboveThreshold).toBe(9);
     expect(score.sustained).toBe(false);
-    expect(score.downloads30dCohortBand).toBeUndefined();
   });
 
-  it("keeps downloads at exactly six times platform P99 below the sustained threshold", () => {
+  it("does not treat an established steady download rate as a new sustained incident", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay: 100,
       benchmark: temporalBenchmark({
-        downloads30dP95: 284,
-        downloads30dP99: 600,
+        spikeMultiplier7dP95: 5,
+        excess7DownloadsP95: 500,
       }),
-      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+      dailyStats: dailyRange(41, 60, { downloads: 120, installs: 0 }),
     });
 
-    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.sustainedExpectedDailyDownloads).toBe(120);
+    expect(score.sustainedDaysAboveThreshold).toBe(0);
     expect(score.sustained).toBe(false);
-    expect(score.downloads30dCohortBand).toBeUndefined();
+  });
+
+  it("detects 30 days of constant high traffic after a cold baseline", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        spikeMultiplier7dP95: 5,
+        excess7DownloadsP95: 500,
+      }),
+      dailyStats: [
+        ...dailyRange(41, 30, { downloads: 0, installs: 0 }),
+        ...dailyRange(71, 30, { downloads: 11_000, installs: 0 }),
+      ],
+    });
+
+    expect(score.sustainedExpectedDailyDownloads).toBe(0);
+    expect(score.sustainedDaysAboveThreshold).toBe(14);
+    expect(score.sustained).toBe(true);
   });
 
   it("flags high-volume installs that track downloads too closely", () => {
@@ -618,6 +661,8 @@ describe("publisher abuse scoring", () => {
         downloads30dP99: 1_000,
         spikeMultiplier7dP95: 5,
         spikeMultiplier7dP99: 25,
+        excess7DownloadsP95: 500,
+        excess7DownloadsP99: 2_000,
       }),
       dailyStats: [
         ...dailyRange(10, 30, { downloads: 3, installs: 0 }),
@@ -632,15 +677,23 @@ describe("publisher abuse scoring", () => {
     expect(score.sustainedWindowStartDay).toBe(80);
     expect(score.reasonCodes).toEqual([
       "temporal_download_spike_flat_installs",
-      "temporal_sustained_downloads_flat_installs",
+      "temporal_sustained_abnormal_download_days",
     ]);
   });
 
   it("computes cohort benchmark percentiles from scanned skill windows", () => {
     const benchmark = computeTemporalAbuseCohortBenchmark([
-      ...Array.from({ length: 95 }, () => ({ recent30Downloads: 100, spikeMultiplier: 1 })),
-      ...Array.from({ length: 4 }, () => ({ recent30Downloads: 500, spikeMultiplier: 2 })),
-      { recent30Downloads: 10_000, spikeMultiplier: 30 },
+      ...Array.from({ length: 95 }, () => ({
+        recent30Downloads: 100,
+        spikeMultiplier: 1,
+        excess7Downloads: 20,
+      })),
+      ...Array.from({ length: 4 }, () => ({
+        recent30Downloads: 500,
+        spikeMultiplier: 2,
+        excess7Downloads: 100,
+      })),
+      { recent30Downloads: 10_000, spikeMultiplier: 30, excess7Downloads: 5_000 },
     ]);
 
     expect(benchmark.sampleSize).toBe(100);
@@ -648,6 +701,7 @@ describe("publisher abuse scoring", () => {
     expect(benchmark.downloads30dP95).toBe(100);
     expect(benchmark.downloads30dP99).toBe(500);
     expect(benchmark.spikeMultiplier7dP99).toBe(2);
+    expect(benchmark.excess7DownloadsP99).toBe(100);
   });
 });
 
@@ -660,6 +714,8 @@ function temporalBenchmark(overrides = {}) {
     downloads30dP99: 5_000,
     spikeMultiplier7dP95: 5,
     spikeMultiplier7dP99: 25,
+    excess7DownloadsP95: 500,
+    excess7DownloadsP99: 2_000,
     ...overrides,
   };
 }

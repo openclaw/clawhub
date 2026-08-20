@@ -291,7 +291,7 @@ describe("publisherAbuseDevSeed.seed", () => {
     expect(ratioRecentStats.reduce((sum, doc) => sum + Number(doc.installs), 0)).toBe(288);
     expect(tables.publisherAbuseSignals).toEqual([
       expect.objectContaining({
-        signalType: "sustained_downloads_flat_installs",
+        signalType: "sustained_abnormal_download_days",
         skillSlug: "demo-temporal-download-burst",
       }),
       expect.objectContaining({
@@ -299,6 +299,7 @@ describe("publisherAbuseDevSeed.seed", () => {
         skillSlug: "demo-temporal-install-ratio",
       }),
     ]);
+    expect(tables.users?.some((doc) => doc.handle === "local-abuse")).toBe(true);
   });
 
   it("clears existing demo rows before inserting repeatable seed data", async () => {

@@ -760,7 +760,7 @@ describe("Management", () => {
     const firstSignal = makePublisherAbuseSignal();
     const secondSignal = makePublisherAbuseSignal({
       _id: "publisherAbuseSignals:sustained",
-      signalType: "sustained_downloads_flat_installs",
+      signalType: "sustained_abnormal_download_days",
       skillId: "skills:sustained",
       skillSlug: "sustained-skill",
       skillDisplayName: "Sustained Skill",
@@ -802,6 +802,7 @@ describe("Management", () => {
 
     render(<Management />);
 
+    expect(screen.getByText("Sustained unusual downloads")).toBeTruthy();
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Ratio Skill" }));
     expect(screen.getByText("1 selected")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Snooze 1 signal" }));
@@ -1772,7 +1773,7 @@ describe("Management", () => {
   });
 
   it("shows temporal download/install evidence in the abuse drawer", () => {
-    const temporalEvidence = [
+    const legacyTemporalEvidence = [
       {
         skillId: "skills:burst",
         slug: "download-burst",
@@ -1796,14 +1797,30 @@ describe("Management", () => {
         reasonCodes: ["temporal_sustained_downloads_flat_installs"],
       },
     ];
+    const temporalEvidence = [
+      {
+        ...legacyTemporalEvidence[0],
+        expected7Downloads: 2_320,
+        excess7Downloads: 3_963,
+        excess7DownloadsCohortBand: "p99",
+        excess7DownloadsVsPeerP95: 9.9,
+        sustainedDaysAboveThreshold: 11,
+        sustainedWindowDays: 14,
+        sustainedDailyDownloadThreshold: 265,
+        sustainedExpectedDailyDownloads: 66,
+        sustainedWindowDownloads: 14_269,
+        sustainedWindowInstalls: 5,
+        reasonCodes: ["temporal_sustained_abnormal_download_days"],
+      },
+    ];
     const item = makePublisherAbuseItem({
       handle: "temporal-pub",
       zScore: 2.65,
       scoreOverrides: {
-        modelVersion: "publisher-abuse-temporal.v1",
+        modelVersion: "publisher-abuse-temporal.v2",
         pressure: 1101,
         temporalMaxPressure: 1,
-        reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+        reasonCodes: ["temporal_sustained_abnormal_download_days"],
         temporalBenchmark: {
           scope: "all_active_skills",
           sampleSize: 1000,
@@ -1813,6 +1830,8 @@ describe("Management", () => {
           downloads30dP99: 3000,
           spikeMultiplier7dP95: 4,
           spikeMultiplier7dP99: 12,
+          excess7DownloadsP95: 400,
+          excess7DownloadsP99: 1200,
         },
         temporalEvidence,
       },
@@ -1834,7 +1853,7 @@ describe("Management", () => {
           spikeMultiplier7dP95: 4,
           spikeMultiplier7dP99: 12,
         },
-        temporalEvidence,
+        temporalEvidence: legacyTemporalEvidence,
       },
     });
 
@@ -1866,8 +1885,9 @@ describe("Management", () => {
     expect(screen.queryByText("Very High")).toBeNull();
     expect(screen.getByText(/Compared with all 1,000 active skills/)).toBeTruthy();
     expect(screen.getByText("Download Burst")).toBeTruthy();
-    expect(screen.getByText("16,200")).toBeTruthy();
-    expect(screen.getByText("Platform 30d P95")).toBeTruthy();
+    expect(screen.getByText("14,269")).toBeTruthy();
+    expect(screen.getByText("Abnormal days (14d)")).toBeTruthy();
+    expect(screen.getByText("Platform excess P99")).toBeTruthy();
 
     fireEvent.click(screen.getByText("legacy-temporal-pub"));
 

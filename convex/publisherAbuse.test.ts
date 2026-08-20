@@ -76,6 +76,9 @@ vi.mock("./_generated/api", () => ({
       banUserInternal: Symbol("banUserInternal"),
     },
     emailsNode: {
+      sendPublisherAbuseTrafficExplanationInternal: Symbol(
+        "sendPublisherAbuseTrafficExplanationInternal",
+      ),
       sendPublisherAbuseWarningInternal: Symbol("sendPublisherAbuseWarningInternal"),
     },
   },
@@ -279,7 +282,12 @@ const listReviewItemsPageHandler = (
 const listSignalsPageHandler = (
   publisherAbuse.listSignalsPage as unknown as Wrapped<
     {
-      signalType?: "high_install_download_ratio" | "sustained_downloads_flat_installs";
+      signalType?:
+        | "high_install_download_ratio"
+        | "sustained_downloads_flat_installs"
+        | "download_spike_flat_installs"
+        | "sustained_abnormal_download_days"
+        | "owner_synchronized_download_trends";
       reviewStatus?: "open" | "snoozed" | "dismissed";
       paginationOpts: { numItems: number; cursor: string | null };
     },
@@ -1050,7 +1058,7 @@ describe("publisher abuse dry-run persistence", () => {
     };
     const snoozedSignal = { ...signal, reviewStatus: "snoozed" };
     const dismissedSignal = { ...signal, reviewStatus: "dismissed" };
-    const patch = vi.fn(async () => null);
+    const patch = vi.fn(async (_id: string, _value: Record<string, unknown>) => null);
     const insert = vi.fn(async () => "publisherAbuseSignalReviewEvents:event");
     const ctx = {
       db: {
@@ -9151,6 +9159,8 @@ describe("publisher abuse dry-run persistence", () => {
         downloads30dP99: 2_000,
         spikeMultiplier7dP95: 20,
         spikeMultiplier7dP99: 20,
+        excess7DownloadsP95: 1_976.6666666666667,
+        excess7DownloadsP99: 1_976.6666666666667,
       },
     });
 
@@ -9167,12 +9177,25 @@ describe("publisher abuse dry-run persistence", () => {
     candidate.temporalScore.sustained = false;
     candidate.temporalScore.recent30Downloads = 3_370;
     candidate.temporalScore.recent30Installs = 4;
+    candidate.temporalScore.spikeMultiplier = 1;
+    candidate.temporalScore.excess7Downloads = 0;
+    candidate.temporalScore.sustainedWindowInstalls = 4;
+    candidate.temporalScore.sustainedDailyDownloads = [
+      ...Array.from({ length: 10 }, () => 200),
+      0,
+      0,
+      0,
+      0,
+    ];
     candidate.temporalScore.reasonCodes = [];
     const ordinaryScore = {
       ...candidate.temporalScore,
       recent30Downloads: 100,
       recent30Installs: 1,
       spikeMultiplier: 1,
+      excess7Downloads: 0,
+      sustainedWindowInstalls: 1,
+      sustainedDailyDownloads: Array.from({ length: 14 }, () => 0),
     };
     const ctx = {
       runQuery: vi.fn(async () => ({
@@ -9210,7 +9233,7 @@ describe("publisher abuse dry-run persistence", () => {
           slug: "anysearch",
           temporalScore: expect.objectContaining({
             sustained: true,
-            downloads30dCohortBand: "p99",
+            sustainedDaysAboveThreshold: 10,
           }),
         }),
       ],
@@ -9226,12 +9249,25 @@ describe("publisher abuse dry-run persistence", () => {
     candidate.temporalScore.sustained = false;
     candidate.temporalScore.recent30Downloads = 3_370;
     candidate.temporalScore.recent30Installs = 4;
+    candidate.temporalScore.spikeMultiplier = 1;
+    candidate.temporalScore.excess7Downloads = 0;
+    candidate.temporalScore.sustainedWindowInstalls = 4;
+    candidate.temporalScore.sustainedDailyDownloads = [
+      ...Array.from({ length: 10 }, () => 200),
+      0,
+      0,
+      0,
+      0,
+    ];
     candidate.temporalScore.reasonCodes = [];
     const ordinaryScore = {
       ...candidate.temporalScore,
       recent30Downloads: 100,
       recent30Installs: 1,
       spikeMultiplier: 1,
+      excess7Downloads: 0,
+      sustainedWindowInstalls: 1,
+      sustainedDailyDownloads: Array.from({ length: 14 }, () => 0),
     };
     const runMutation = vi
       .fn()
@@ -10143,7 +10179,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(scoreInsertPayload?.zScore).toBeLessThan(2.5);
   });
 
-  it("archives durable temporal review signals without archiving spike-only evidence", async () => {
+  it("archives surge, sustained-day, and high-ratio signals separately", async () => {
     const highRatio = temporalCandidate("skills:ratio", {
       slug: "ratio",
       displayName: "Ratio",
@@ -10168,7 +10204,7 @@ describe("publisher abuse dry-run persistence", () => {
     sustained.temporalScore.sustained = true;
     sustained.temporalScore.recent7Downloads = 1_000;
     sustained.temporalScore.recent30Downloads = 5_000;
-    sustained.temporalScore.reasonCodes = ["temporal_sustained_downloads_flat_installs"];
+    sustained.temporalScore.reasonCodes = ["temporal_sustained_abnormal_download_days"];
 
     const spikeOnly = temporalCandidate("skills:spike", {
       slug: "spike",
@@ -10303,8 +10339,8 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     ).resolves.toEqual({
       archivedCandidates: 3,
-      archivedSignals: 2,
-      changedSignals: 1,
+      archivedSignals: 3,
+      changedSignals: 2,
     });
 
     expect(signalLookups).toEqual([
@@ -10315,8 +10351,18 @@ describe("publisher abuse dry-run persistence", () => {
       },
       {
         skillId: "skills:sustained",
+        signalType: "sustained_abnormal_download_days",
+        ownerKey: sustained.ownerKey,
+      },
+      {
+        skillId: "skills:sustained",
         signalType: "sustained_downloads_flat_installs",
         ownerKey: sustained.ownerKey,
+      },
+      {
+        skillId: "skills:spike",
+        signalType: "download_spike_flat_installs",
+        ownerKey: spikeOnly.ownerKey,
       },
     ]);
     expect(patch).toHaveBeenCalledWith(
@@ -10336,7 +10382,7 @@ describe("publisher abuse dry-run persistence", () => {
     );
     expect(insertedSignals).toEqual([
       expect.objectContaining({
-        signalType: "sustained_downloads_flat_installs",
+        signalType: "sustained_abnormal_download_days",
         skillId: "skills:sustained",
         skillSlug: "sustained",
         recent30Downloads: 5_000,
@@ -10347,6 +10393,16 @@ describe("publisher abuse dry-run persistence", () => {
         notificationBaselineDownloads: 10_000,
         notificationBaselineInstalls: 0,
         lastChangedAt: 1_234,
+        needsNotification: true,
+      }),
+      expect.objectContaining({
+        signalType: "download_spike_flat_installs",
+        skillId: "skills:spike",
+        skillSlug: "spike",
+        firstSeenAt: 1_234,
+        lastSeenAt: 1_234,
+        seenCount: 1,
+        reviewStatus: "open",
         needsNotification: true,
       }),
     ]);
@@ -10375,6 +10431,96 @@ describe("publisher abuse dry-run persistence", () => {
         needsNotification: true,
       }),
     );
+  });
+
+  it("preserves a legacy dismissal when the sustained signal type is upgraded", async () => {
+    const candidate = temporalCandidate("skills:dismissed", {
+      slug: "dismissed",
+      displayName: "Dismissed",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.sustained = true;
+    const legacySignal = {
+      _id: "publisherAbuseSignals:dismissed",
+      signalType: "sustained_downloads_flat_installs",
+      ownerKey: candidate.ownerKey,
+      ownerPublisherId: candidate.ownerPublisherId,
+      ownerUserId: candidate.ownerUserId,
+      handleSnapshot: candidate.handleSnapshot,
+      skillId: candidate.skillId,
+      skillSlug: candidate.slug,
+      skillDisplayName: candidate.displayName,
+      firstSeenAt: 10,
+      lastSeenAt: 20,
+      seenCount: 2,
+      recent7Downloads: 1_000,
+      recent7Installs: 0,
+      recent7InstallDownloadRatio: 0,
+      recent30Downloads: 5_000,
+      recent30Installs: 0,
+      recent30InstallDownloadRatio: 0,
+      allTimeDownloads: candidate.totalDownloads,
+      allTimeInstalls: candidate.totalInstalls,
+      allTimeInstallDownloadRatio: 0,
+      reviewStatus: "dismissed",
+      notificationBaselineDownloads: candidate.totalDownloads,
+      notificationBaselineInstalls: candidate.totalInstalls,
+      lastChangedAt: 20,
+      needsNotification: false,
+    };
+    const patch = vi.fn(async (_id: string, _value: Record<string, unknown>) => null);
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: (
+            _indexName: string,
+            build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const constraints: Record<string, unknown> = {};
+            const q = {
+              eq(field: string, value: unknown) {
+                constraints[field] = value;
+                return q;
+              },
+            };
+            build(q);
+            return {
+              first: async () =>
+                constraints.signalType === "sustained_downloads_flat_installs"
+                  ? legacySignal
+                  : null,
+            };
+          },
+        })),
+        insert: vi.fn(async () => {
+          throw new Error("dismissed legacy signals must be reused");
+        }),
+        patch,
+      },
+      scheduler,
+    };
+
+    await expect(
+      archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
+        runId: "publisherAbuseScoreRuns:temporal",
+        candidates: [candidate],
+        now: 1_234,
+      }),
+    ).resolves.toEqual({
+      archivedCandidates: 1,
+      archivedSignals: 1,
+      changedSignals: 0,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      legacySignal._id,
+      expect.objectContaining({
+        signalType: "sustained_abnormal_download_days",
+        reviewStatus: "dismissed",
+        needsNotification: false,
+      }),
+    );
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("keeps acknowledged evidence quiet and reopens only for fresh post-snooze activity", async () => {
@@ -11004,6 +11150,8 @@ function temporalCandidate(skillId: string, skill: { slug: string; displayName: 
       previous30Downloads: 100,
       baseline7Downloads: 100,
       spikeMultiplier: 20,
+      expected7Downloads: 23.333333333333336,
+      excess7Downloads: 1_976.6666666666667,
       recent30Downloads: 2_000,
       recent30Installs: 0,
       downloadInstallRatio30: 2_000,
@@ -11011,6 +11159,13 @@ function temporalCandidate(skillId: string, skill: { slug: string; displayName: 
       installDownloadRatio30: 0,
       installDownloadExcessZScore7: 0,
       installDownloadExcessZScore30: 0,
+      sustainedDaysAboveThreshold: 0,
+      sustainedWindowDays: 14,
+      sustainedDailyDownloadThreshold: 0,
+      sustainedExpectedDailyDownloads: 0,
+      sustainedWindowDownloads: 0,
+      sustainedWindowInstalls: 0,
+      sustainedDailyDownloads: [] as number[],
       spikeWindowStartDay: 94,
       spikeWindowEndDay: 100,
       reasonCodes: ["temporal_download_spike_flat_installs"],
@@ -11027,5 +11182,7 @@ function temporalBenchmark() {
     downloads30dP99: 5_000,
     spikeMultiplier7dP95: 5,
     spikeMultiplier7dP99: 25,
+    excess7DownloadsP95: 500,
+    excess7DownloadsP99: 2_000,
   };
 }
