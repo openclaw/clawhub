@@ -322,7 +322,7 @@ function prefetchSkillExportEntries(
       entry.kind === "storage",
   );
   type PrefetchResult =
-    | { ok: true; stream: ReadableStream<Uint8Array> }
+    | { ok: true; stream: ReadableStream<Uint8Array> | null }
     | { ok: false; error: unknown };
   const pending = new Map<
     Extract<SkillExportArchiveManifestEntry, { kind: "storage" }>,
@@ -335,6 +335,7 @@ function prefetchSkillExportEntries(
   ): Promise<PrefetchResult> => {
     try {
       const response = await fetch(entry.url, { redirect: "error", signal });
+      if (response.status === 404) return { ok: true, stream: null };
       if (!response.ok || !response.body) {
         throw new Error(`Failed to fetch archive entry: ${response.status}`);
       }
