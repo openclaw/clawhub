@@ -162,15 +162,46 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   to enforce temporal traffic signals requires an explicit policy and code
   change; increasing a temporal score cannot silently cross the existing
   pressure-model autoban boundary.
+- A newly archived temporal signal from a completed current scan may ask the
+  current skill owner to explain unusual download traffic. The request is
+  context gathering, not enforcement: the skill and account remain active,
+  silence is not evidence of abuse, and the response must not directly feed an
+  automatic ban. Historical signals and diagnostic or partial scans must not
+  generate a backlog of skill-level owner emails. A skill receives at most one
+  request when the same scan archives multiple signal types. A newly detected
+  publisher-wide synchronization signal may send one publisher-level request,
+  even when its candidate set includes snoozed historical signals. That email
+  gives two qualitative reasons: anomalous downloads affect many or all of the
+  publisher's skills, and those skills follow nearly identical download trends.
+  Owner-facing email and form copy asks for context without disclosing exact
+  counts, windows, percentile cutoffs, or detection thresholds.
+- The explanation link is available only to the skill's current personal owner
+  or an owner/admin of its current organization. For publisher-wide signals,
+  the representative skill is only an ownership anchor and the form is presented
+  as a publisher-level request. Ownership changes invalidate the old request.
+  The link also carries a single-case 256-bit token generated with Web Crypto
+  inside the email action. Only its SHA-256 hash is stored on the signal, and
+  both a matching token and current owner
+  authorization are required to read or submit the form. One
+  immutable structured response is stored with the signal and audited without
+  copying the free-text explanation into the audit log. Staff can see the
+  delivery state and response in the signal inspector. Owner contact has an
+  explicit queued, retrying, sent, cancelled, or not-deliverable state. Delivery
+  attempts are bounded at four with exponential backoff. The durable record
+  includes the recipient, exact subject, template version, qualitative reason
+  bullets, provider identifier, timestamps, attempt count, and a text snapshot
+  whose response URL is replaced with `[SECURE EXPLANATION LINK]`; neither the
+  raw token nor the live link may appear in staff-visible or audit state.
 - Hermit owns Discord notification delivery for publisher abuse Signals.
-  ClawHub queues Hermit digests only for changed open signals: newly archived
-  signals, manual reopens, expired snoozes with qualifying fresh evidence, and
-  open signals whose evidence has materially increased since the previous
-  notification. A higher seen count alone is not a change. Material increases
-  use the same lower repeat thresholds as post-snooze recurrence, and the
-  notification checkpoint advances only when a notification is queued so
-  smaller changes accumulate across scans. Active snoozed or dismissed signals
-  must update their metric snapshot without notifying Hermit.
+  ClawHub queues actionable events only for a terminal scan failure, a terminal
+  owner-contact failure, or an owner response. Detection, recurrence, manual
+  reopen, and ordinary evidence changes must not produce routine Discord noise;
+  older queued digest rows are claimed as no-ops during rollout. Staff-alert
+  attempts are recorded with queued, delivering, retrying, delivered, or failed
+  state and stop after four attempts. Terminal contact or alert failure remains
+  visible as needing attention. The staff dashboard must support indexed views
+  for needs-attention, awaiting-owner, contact-failed, not-contacted, and all-open
+  signals, and the inspector must show the owner-contact and staff-alert history.
 - Aggregate publisher spam-abuse labels start at the 200-skill pivot. Below
   that pivot, publishers can contribute to the population baseline, but they
   cannot receive aggregate spam reason codes or be nominated by this score path.

@@ -14,8 +14,11 @@ vi.mock("resend", () => ({
   Resend: resendConstructorMock,
 }));
 
-const { sendBanNotificationInternal, sendPublisherAbuseWarningInternal } =
-  await import("./emailsNode");
+const {
+  sendBanNotificationInternal,
+  sendPublisherAbuseTrafficExplanationInternal,
+  sendPublisherAbuseWarningInternal,
+} = await import("./emailsNode");
 
 type SendBanNotificationHandler = {
   _handler: (
@@ -60,6 +63,17 @@ type SendPublisherAbuseWarningHandler = {
         reasonCodes: string[];
       };
     },
+  ) => Promise<unknown>;
+};
+
+type SendPublisherAbuseTrafficExplanationHandler = {
+  _handler: (
+    ctx: {
+      runQuery: ReturnType<typeof vi.fn>;
+      runMutation: ReturnType<typeof vi.fn>;
+      scheduler: { runAfter: ReturnType<typeof vi.fn> };
+    },
+    args: { signalId: string },
   ) => Promise<unknown>;
 };
 
@@ -223,5 +237,283 @@ describe("transactional account emails", () => {
         warningPendingAt: 1_700_000_000_000,
       },
     );
+  });
+
+  it("sends a neutral traffic question with a stable request link", async () => {
+    vi.stubEnv("SITE_URL", "https://clawhub.example/");
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue({
+        kind: "send",
+        requestedAt: 1_700_000_000_000,
+        recipientUserId: "users:owner",
+        to: "owner@example.com",
+        handle: "owner",
+        publisherHandle: "owner",
+        skillDisplayName: "Popular Skill",
+        skillSlug: "popular-skill",
+        scope: "skill",
+        allPublisherSkills: false,
+        attemptCount: 0,
+      }),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, attemptCount: 1 })
+        .mockResolvedValueOnce({ ok: true }),
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    const result = await (
+      sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+    )._handler(ctx, {
+      signalId: "publisherAbuseSignals:traffic",
+    });
+
+    expect(result).toEqual({ ok: true, id: "email_123" });
+    expect(ctx.runQuery).toHaveBeenCalledWith(
+      internal.publisherAbuseTrafficExplanation.getEmailContextInternal,
+      { signalId: "publisherAbuseSignals:traffic" },
+    );
+    const [payload, options] = resendSendMock.mock.calls[0] ?? [];
+    expect(payload).toMatchObject({
+      to: "owner@example.com",
+      subject: "Question about downloads for Popular Skill",
+    });
+    expect(payload.text).toMatch(
+      /https:\/\/clawhub\.example\/traffic-explanation\?signal=publisherAbuseSignals%3Atraffic&token=[a-f0-9]{64}/,
+    );
+    expect(options).toEqual({
+      idempotencyKey: expect.stringMatching(
+        /^publisher-abuse-traffic-explanation:publisherAbuseSignals:traffic:1700000000000:[a-f0-9]{64}$/,
+      ),
+    });
+    expect(ctx.runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.publisherAbuseTrafficExplanation.beginDeliveryAttemptInternal,
+      expect.objectContaining({
+        signalId: "publisherAbuseSignals:traffic",
+        expectedAttemptCount: 0,
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        recipientEmail: "owner@example.com",
+        subject: "Question about downloads for Popular Skill",
+        templateVersion: "traffic-explanation.v1",
+        redactedTextSnapshot: expect.stringContaining("[SECURE EXPLANATION LINK]"),
+      }),
+    );
+    expect(JSON.stringify(ctx.runMutation.mock.calls[0])).not.toContain("token=");
+    expect(ctx.runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.publisherAbuseTrafficExplanation.recordDeliveryInternal,
+      {
+        signalId: "publisherAbuseSignals:traffic",
+        requestedAt: 1_700_000_000_000,
+        delivery: {
+          status: "sent",
+          sentAt: 1_700_000_100_000,
+          providerId: "email_123",
+        },
+      },
+    );
+  });
+
+  it("sends publisher-scoped reasons for synchronized skill traffic", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue({
+        kind: "send",
+        requestedAt: 1_700_000_000_000,
+        recipientUserId: "users:owner",
+        to: "owner@example.com",
+        handle: "owner",
+        publisherHandle: "portfolio-owner",
+        skillDisplayName: "Ownership Anchor",
+        skillSlug: "ownership-anchor",
+        scope: "publisher",
+        allPublisherSkills: true,
+        attemptCount: 0,
+      }),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, attemptCount: 1 })
+        .mockResolvedValueOnce({ ok: true }),
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    await (
+      sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+    )._handler(ctx, {
+      signalId: "publisherAbuseSignals:portfolio",
+    });
+
+    const [payload] = resendSendMock.mock.calls[0] ?? [];
+    expect(payload.subject).toBe("Question about downloads for @portfolio-owner");
+    expect(payload.text).toContain(
+      "- Unusual download activity was detected across all of your skills.",
+    );
+    expect(payload.text).toContain(
+      "- Download activity across those skills follows nearly identical trends.",
+    );
+  });
+
+  it("does not email a request that is no longer actionable", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue({
+        kind: "skip",
+        requestedAt: 1_700_000_000_000,
+        reason: "skill_owner_changed",
+      }),
+      runMutation: vi.fn().mockResolvedValue({ ok: true }),
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    const result = await (
+      sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+    )._handler(ctx, {
+      signalId: "publisherAbuseSignals:traffic",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "skill_owner_changed" });
+    expect(resendSendMock).not.toHaveBeenCalled();
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      internal.publisherAbuseTrafficExplanation.recordDeliveryInternal,
+      {
+        signalId: "publisherAbuseSignals:traffic",
+        requestedAt: 1_700_000_000_000,
+        delivery: {
+          status: "cancelled",
+          recordedAt: expect.any(Number),
+          reason: "skill_owner_changed",
+        },
+      },
+    );
+  });
+
+  it("records a bounded retry when owner contact delivery fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    resendSendMock.mockResolvedValueOnce({ data: null, error: { message: "rejected" } });
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue({
+        kind: "send",
+        requestedAt: 1_700_000_000_000,
+        recipientUserId: "users:owner",
+        to: "owner@example.com",
+        handle: "owner",
+        publisherHandle: "owner",
+        skillDisplayName: "Popular Skill",
+        skillSlug: "popular-skill",
+        scope: "skill",
+        allPublisherSkills: false,
+        attemptCount: 0,
+      }),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, attemptCount: 1 })
+        .mockResolvedValueOnce({ ok: true }),
+      scheduler: { runAfter: vi.fn(async () => null) },
+    };
+
+    await expect(
+      (
+        sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+      )._handler(ctx, {
+        signalId: "publisherAbuseSignals:traffic",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "resend_error" });
+
+    expect(ctx.runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.publisherAbuseTrafficExplanation.recordDeliveryInternal,
+      {
+        signalId: "publisherAbuseSignals:traffic",
+        requestedAt: 1_700_000_000_000,
+        delivery: {
+          status: "retrying",
+          recordedAt: expect.any(Number),
+          reason: "resend_error",
+        },
+      },
+    );
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      5 * 60_000,
+      internal.emailsNode.sendPublisherAbuseTrafficExplanationInternal,
+      { signalId: "publisherAbuseSignals:traffic" },
+    );
+  });
+
+  it("stops retrying after the fourth owner contact delivery failure", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    resendSendMock.mockResolvedValueOnce({ data: null, error: { message: "rejected" } });
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue({
+        kind: "send",
+        requestedAt: 1_700_000_000_000,
+        recipientUserId: "users:owner",
+        to: "owner@example.com",
+        handle: "owner",
+        publisherHandle: "owner",
+        skillDisplayName: "Popular Skill",
+        skillSlug: "popular-skill",
+        scope: "skill",
+        allPublisherSkills: false,
+        attemptCount: 3,
+      }),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, attemptCount: 4 })
+        .mockResolvedValueOnce({ ok: true }),
+      scheduler: { runAfter: vi.fn(async () => null) },
+    };
+
+    await expect(
+      (
+        sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+      )._handler(ctx, {
+        signalId: "publisherAbuseSignals:traffic",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "resend_error" });
+
+    expect(ctx.runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.publisherAbuseTrafficExplanation.recordDeliveryInternal,
+      {
+        signalId: "publisherAbuseSignals:traffic",
+        requestedAt: 1_700_000_000_000,
+        delivery: {
+          status: "not_deliverable",
+          recordedAt: expect.any(Number),
+          reason: "resend_error",
+        },
+      },
+    );
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("does not email when another action already claimed the attempt", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue({
+        kind: "send",
+        requestedAt: 1_700_000_000_000,
+        recipientUserId: "users:owner",
+        to: "owner@example.com",
+        handle: "owner",
+        publisherHandle: "owner",
+        skillDisplayName: "Popular Skill",
+        skillSlug: "popular-skill",
+        scope: "skill",
+        allPublisherSkills: false,
+        attemptCount: 0,
+      }),
+      runMutation: vi.fn().mockResolvedValue({ ok: false, reason: "stale_request" }),
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    const result = await (
+      sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+    )._handler(ctx, {
+      signalId: "publisherAbuseSignals:traffic",
+    });
+
+    expect(result).toEqual({ ok: false, reason: "stale_request" });
+    expect(resendSendMock).not.toHaveBeenCalled();
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
   });
 });

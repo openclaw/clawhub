@@ -289,16 +289,33 @@ describe("publisherAbuseDevSeed.seed", () => {
     expect(burstRecentStats.reduce((sum, doc) => sum + Number(doc.installs), 0)).toBe(8);
     expect(ratioRecentStats.reduce((sum, doc) => sum + Number(doc.downloads), 0)).toBe(2_400);
     expect(ratioRecentStats.reduce((sum, doc) => sum + Number(doc.installs), 0)).toBe(288);
-    expect(tables.publisherAbuseSignals).toEqual([
-      expect.objectContaining({
-        signalType: "sustained_abnormal_download_days",
-        skillSlug: "demo-temporal-download-burst",
-      }),
-      expect.objectContaining({
-        signalType: "high_install_download_ratio",
-        skillSlug: "demo-temporal-install-ratio",
-      }),
-    ]);
+    expect(tables.publisherAbuseSignals).toHaveLength(7);
+    expect(tables.publisherAbuseSignals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          signalType: "sustained_abnormal_download_days",
+          skillSlug: "demo-temporal-download-burst",
+          contactState: "sent",
+          attentionState: "needs_attention",
+          notificationState: "delivered",
+          trafficExplanationRequest: expect.objectContaining({
+            recipientUserId: expect.any(String),
+            sentAt: expect.any(Number),
+            tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+            redactedTextSnapshot: expect.stringContaining("[SECURE EXPLANATION LINK]"),
+          }),
+        }),
+        expect.objectContaining({
+          signalType: "high_install_download_ratio",
+          skillSlug: "demo-temporal-install-ratio",
+        }),
+        expect.objectContaining({ contactState: "queued" }),
+        expect.objectContaining({ contactState: "retrying" }),
+        expect.objectContaining({ attentionState: "awaiting_owner" }),
+        expect.objectContaining({ contactState: "not_deliverable" }),
+        expect.objectContaining({ notificationState: "failed" }),
+      ]),
+    );
     expect(tables.users?.some((doc) => doc.handle === "local-abuse")).toBe(true);
   });
 
@@ -378,7 +395,7 @@ describe("publisherAbuseDevSeed.seed", () => {
     expect(tables.users.filter((doc) => doc.handle === "demo-abuse-pub-01")).toHaveLength(1);
     expect(tables.users).toHaveLength(16);
     expect(tables.publisherAbuseReviewNominations).toHaveLength(146);
-    expect(tables.publisherAbuseSignals).toHaveLength(2);
+    expect(tables.publisherAbuseSignals).toHaveLength(7);
   });
 });
 

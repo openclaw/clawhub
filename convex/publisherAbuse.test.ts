@@ -289,6 +289,12 @@ const listSignalsPageHandler = (
         | "sustained_abnormal_download_days"
         | "owner_synchronized_download_trends";
       reviewStatus?: "open" | "snoozed" | "dismissed";
+      workflowFilter?:
+        | "needs_attention"
+        | "awaiting_owner"
+        | "contact_failed"
+        | "not_contacted"
+        | "all_open";
       paginationOpts: { numItems: number; cursor: string | null };
     },
     {
@@ -315,6 +321,7 @@ const archiveTemporalPublisherAbuseSignalsPageHandler = (
       runId: string;
       candidates: TemporalSkillCandidate[];
       now: number;
+      requestOwnerExplanation?: boolean;
     },
     {
       archivedCandidates: number;
@@ -334,6 +341,7 @@ const archiveTemporalPublisherAbuseSignalsHandler = (
       batchSize?: number;
       maxPages?: number;
       notifyHermit?: boolean;
+      notifyOwners?: boolean;
     },
     {
       ok: true;
@@ -1123,8 +1131,7 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         reviewStatus: "open",
         reviewNote: "recurring",
-        needsNotification: true,
-        lastChangedAt: expect.any(Number),
+        needsNotification: false,
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -1151,7 +1158,7 @@ describe("publisher abuse dry-run persistence", () => {
         nextStatus: "open",
       }),
     );
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {});
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("lets moderators snooze a batch of signals with one audited transition per signal", async () => {
@@ -1322,7 +1329,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("sends one Hermit digest for claimed changed signals and clears notification state", async () => {
+  it("sends an actionable owner-response event and clears notification state", async () => {
     const previousEnv = { ...process.env };
     const previousFetch = globalThis.fetch;
     process.env.CLAWHUB_HERMIT_TOKEN = "hermit-token";
@@ -1357,6 +1364,13 @@ describe("publisher abuse dry-run persistence", () => {
       freshInstallsSinceSnooze: 0,
       reviewStatus: "open",
       needsNotification: false,
+      notificationEventKind: "publisher_abuse_signal_owner_response_submitted",
+      trafficExplanationResponse: {
+        kind: "expected",
+        message: "Shared in our newsletter.",
+        submittedAt: 1716000000000,
+        submittedByUserId: "users:ratio-owner",
+      },
     };
     const runMutation = vi.fn(async (target: unknown) => {
       const name = String(target);
@@ -1389,26 +1403,20 @@ describe("publisher abuse dry-run persistence", () => {
       const requestBody = (requestInit as RequestInit | undefined)?.body;
       if (typeof requestBody !== "string") throw new Error("Expected Hermit request body");
       const payload = JSON.parse(requestBody);
-      expect(payload).toEqual(
-        expect.objectContaining({
-          kind: "publisher_abuse_signals_changed",
-          changedCount: 1,
-          hasMore: false,
-          dashboardUrl: "https://clawhub.example.test/management?view=abuse&tab=signals",
-          topSignals: [
-            expect.objectContaining({
-              publisher: "ratio-owner",
-              skillSlug: "ratio-skill",
-              severity: "high",
-              recurrenceCount: 1,
-              freshDownloadsSinceSnooze: 2_000,
-              freshInstallsSinceSnooze: 0,
-              seenCount: 3,
-              skillUrl: "https://clawhub.example.test/ratio-owner/skills/ratio-skill",
-            }),
-          ],
-        }),
-      );
+      expect(payload).toEqual({
+        kind: "publisher_abuse_signal_owner_response_submitted",
+        signalId: "publisherAbuseSignals:ratio",
+        signalType: "sustained_downloads_flat_installs",
+        scope: "skill",
+        publisher: "ratio-owner",
+        skillSlug: "ratio-skill",
+        skillDisplayName: "Ratio Skill",
+        responseKind: "expected",
+        responsePreview: "Shared in our newsletter.",
+        submittedAt: 1716000000000,
+        dashboardUrl:
+          "https://clawhub.example.test/management?view=abuse&tab=signals&signal=publisherAbuseSignals%3Aratio",
+      });
       expect(runMutation).toHaveBeenCalledWith(
         expect.any(Symbol),
         expect.objectContaining({
@@ -1475,7 +1483,7 @@ describe("publisher abuse dry-run persistence", () => {
     }
   });
 
-  it("schedules the next Hermit signal digest immediately when more changed signals remain", async () => {
+  it("sends owner contact failures and schedules the next actionable event immediately", async () => {
     const previousEnv = { ...process.env };
     const previousFetch = globalThis.fetch;
     process.env.CLAWHUB_HERMIT_TOKEN = "hermit-token";
@@ -1506,6 +1514,13 @@ describe("publisher abuse dry-run persistence", () => {
       allTimeInstallDownloadRatio: 0.12,
       reviewStatus: "open",
       needsNotification: false,
+      notificationEventKind: "publisher_abuse_signal_owner_contact_failed",
+      trafficExplanationRequest: {
+        requestedAt: 1715990000000,
+        latestAttemptAt: 1716000000000,
+        attemptCount: 4,
+        deliveryError: "resend_error",
+      },
     };
     const runMutation = vi.fn(async (target: unknown) => {
       const name = String(target);
@@ -1532,7 +1547,20 @@ describe("publisher abuse dry-run persistence", () => {
       const [, requestInit] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
       const requestBody = (requestInit as RequestInit | undefined)?.body;
       if (typeof requestBody !== "string") throw new Error("Expected Hermit request body");
-      expect(JSON.parse(requestBody)).toEqual(expect.objectContaining({ hasMore: true }));
+      expect(JSON.parse(requestBody)).toEqual({
+        kind: "publisher_abuse_signal_owner_contact_failed",
+        signalId: "publisherAbuseSignals:ratio",
+        signalType: "high_install_download_ratio",
+        scope: "skill",
+        publisher: "ratio-owner",
+        skillSlug: "ratio-skill",
+        skillDisplayName: "Ratio Skill",
+        failureReason: "resend_error",
+        attemptCount: 4,
+        failedAt: 1716000000000,
+        dashboardUrl:
+          "https://clawhub.example.test/management?view=abuse&tab=signals&signal=publisherAbuseSignals%3Aratio",
+      });
     } finally {
       process.env = previousEnv;
       globalThis.fetch = previousFetch;
@@ -1569,7 +1597,7 @@ describe("publisher abuse dry-run persistence", () => {
     }
   });
 
-  it("requeues Hermit signal notifications after a failed digest POST", async () => {
+  it("requeues actionable Hermit events after a failed POST", async () => {
     const previousEnv = { ...process.env };
     const previousFetch = globalThis.fetch;
     process.env.CLAWHUB_HERMIT_TOKEN = "hermit-token";
@@ -1600,6 +1628,12 @@ describe("publisher abuse dry-run persistence", () => {
       allTimeInstallDownloadRatio: 0.12,
       reviewStatus: "open",
       needsNotification: false,
+      notificationEventKind: "publisher_abuse_signal_owner_response_submitted",
+      trafficExplanationResponse: {
+        kind: "not_recognized",
+        submittedAt: 1716000000000,
+        submittedByUserId: "users:ratio-owner",
+      },
     };
     const runMutation = vi.fn(async (target: unknown) => {
       const name = String(target);
@@ -1620,7 +1654,7 @@ describe("publisher abuse dry-run persistence", () => {
         expect.objectContaining({
           ok: false,
           sent: false,
-          error: expect.stringContaining("Hermit publisher abuse digest failed: 500 nope"),
+          failed: 1,
         }),
       );
       expect(runMutation).toHaveBeenCalledWith(
@@ -1628,7 +1662,7 @@ describe("publisher abuse dry-run persistence", () => {
         expect.objectContaining({
           signalIds: ["publisherAbuseSignals:ratio"],
           claimedAt: 1_000,
-          error: expect.stringContaining("Hermit publisher abuse digest failed: 500 nope"),
+          error: expect.stringContaining("Hermit publisher abuse event failed: 500 nope"),
         }),
       );
       expect(scheduler.runAfter).toHaveBeenCalledWith(60 * 60 * 1000, expect.any(Symbol), {
@@ -1686,10 +1720,12 @@ describe("publisher abuse dry-run persistence", () => {
       reviewStatus: "open",
       needsNotification: true,
       lastChangedAt: 900_000,
+      notificationEventKind: "publisher_abuse_signal_owner_response_submitted",
     };
     const patch = vi.fn(async () => null);
     const db = {
       patch,
+      insert: vi.fn(async () => "auditLogs:notification"),
       query: vi.fn((table: string) => {
         expect(table).toBe("publisherAbuseSignals");
         return {
@@ -1764,10 +1800,14 @@ describe("publisher abuse dry-run persistence", () => {
           lastNotificationError: "Retrying after stale Hermit notification claim.",
         }),
       );
-      expect(patch).toHaveBeenCalledWith("publisherAbuseSignals:pending", {
-        needsNotification: false,
-        notificationClaimedAt: 1_000_000,
-      });
+      expect(patch).toHaveBeenCalledWith(
+        "publisherAbuseSignals:pending",
+        expect.objectContaining({
+          needsNotification: false,
+          notificationClaimedAt: 1_000_000,
+          notificationAttemptCount: 1,
+        }),
+      );
     } finally {
       nowSpy.mockRestore();
     }
@@ -1781,6 +1821,7 @@ describe("publisher abuse dry-run persistence", () => {
       needsNotification: false,
       notificationClaimedAt: 10,
       lastChangedAt: 900_000 - index,
+      notificationEventKind: "publisher_abuse_signal_owner_response_submitted",
     }));
     const pendingSignals = staleClaims.slice(0, 5).map((signal) => ({
       ...signal,
@@ -1790,6 +1831,7 @@ describe("publisher abuse dry-run persistence", () => {
     const patch = vi.fn(async () => null);
     const db = {
       patch,
+      insert: vi.fn(async () => "auditLogs:notification"),
       query: vi.fn((table: string) => {
         expect(table).toBe("publisherAbuseSignals");
         return {
@@ -1837,10 +1879,13 @@ describe("publisher abuse dry-run persistence", () => {
             lastNotificationError: "Retrying after stale Hermit notification claim.",
           }),
         );
-        expect(patch).toHaveBeenCalledWith(signal._id, {
-          needsNotification: false,
-          notificationClaimedAt: 1_000_000,
-        });
+        expect(patch).toHaveBeenCalledWith(
+          signal._id,
+          expect.objectContaining({
+            needsNotification: false,
+            notificationClaimedAt: 1_000_000,
+          }),
+        );
       }
       expect(patch).not.toHaveBeenCalledWith("publisherAbuseSignals:stale-5", expect.anything());
     } finally {
@@ -1869,7 +1914,7 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(
       markPublisherAbuseSignalNotificationsSucceededHandler(
-        { db: { get, patch } },
+        { db: { get, patch, insert: vi.fn(async () => "auditLogs:notification") } },
         {
           signalIds: ["publisherAbuseSignals:delivered", "publisherAbuseSignals:changed-again"],
           claimedAt: 1_000,
@@ -1879,12 +1924,15 @@ describe("publisher abuse dry-run persistence", () => {
     ).resolves.toBeUndefined();
 
     expect(patch).toHaveBeenCalledTimes(1);
-    expect(patch).toHaveBeenCalledWith("publisherAbuseSignals:delivered", {
-      needsNotification: false,
-      notificationClaimedAt: undefined,
-      lastNotifiedAt: 3_000,
-      lastNotificationError: undefined,
-    });
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:delivered",
+      expect.objectContaining({
+        needsNotification: false,
+        notificationClaimedAt: undefined,
+        notificationState: "delivered",
+        lastNotifiedAt: 3_000,
+      }),
+    );
   });
 
   it("returns a bounded publisher abuse signal count on the dashboard", async () => {
@@ -5246,6 +5294,79 @@ describe("publisher abuse dry-run persistence", () => {
     expect(signalPaginate).toHaveBeenCalledWith({ numItems: 10, cursor: null });
   });
 
+  it.each([
+    [
+      "needs_attention",
+      "by_review_status_and_needs_attention_and_last_seen_at",
+      { reviewStatus: "open", needsAttention: true },
+    ],
+    [
+      "contact_failed",
+      "by_review_status_and_attention_state_and_last_seen_at",
+      { reviewStatus: "open", attentionState: "contact_failed" },
+    ],
+    [
+      "awaiting_owner",
+      "by_review_status_and_attention_state_and_last_seen_at",
+      {
+        reviewStatus: "open",
+        attentionState: "awaiting_owner",
+      },
+    ],
+    [
+      "not_contacted",
+      "by_review_status_and_attention_state_and_last_seen_at",
+      {
+        reviewStatus: "open",
+        attentionState: "not_contacted",
+      },
+    ],
+    ["all_open", "by_review_status_and_last_seen_at", { reviewStatus: "open" }],
+  ] as const)(
+    "uses the indexed %s signal workflow filter",
+    async (workflowFilter, index, expected) => {
+      vi.mocked(requireUser).mockResolvedValue({
+        userId: "users:moderator",
+        user: { _id: "users:moderator", role: "moderator" },
+      } as never);
+      const paginate = vi.fn(async () => ({ page: [], isDone: true, continueCursor: "" }));
+      const ctx = {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "publisherAbuseSignals") {
+              throw new Error(`unexpected table ${table}`);
+            }
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                expect(indexName).toBe(index);
+                expect(constraints).toEqual(expected);
+                return { order: () => ({ paginate }) };
+              },
+            };
+          }),
+        },
+      };
+
+      await expect(
+        listSignalsPageHandler(ctx, {
+          workflowFilter,
+          paginationOpts: { numItems: 10, cursor: null },
+        }),
+      ).resolves.toEqual({ page: [], isDone: true, continueCursor: "" });
+    },
+  );
+
   it("rejects combined archived signal filters instead of paginating the wrong index", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
@@ -5265,7 +5386,7 @@ describe("publisher abuse dry-run persistence", () => {
         reviewStatus: "snoozed",
         paginationOpts: { numItems: 10, cursor: null },
       }),
-    ).rejects.toThrow("Filter by signalType or reviewStatus, not both.");
+    ).rejects.toThrow("Filter by signalType, reviewStatus, or workflowFilter, not more than one.");
   });
 
   it("pages unfiltered archived publisher abuse signals by last seen time", async () => {
@@ -9446,7 +9567,7 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     );
     expect(ctx.runMutation.mock.calls[0]?.[1]).not.toHaveProperty("runId");
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {});
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("does not archive temporal dry-run signals before the full benchmark scan completes", async () => {
@@ -10377,7 +10498,7 @@ describe("publisher abuse dry-run persistence", () => {
         notificationBaselineDownloads: 10_000,
         notificationBaselineInstalls: 1_000,
         lastChangedAt: 20,
-        needsNotification: true,
+        needsNotification: false,
       }),
     );
     expect(insertedSignals).toEqual([
@@ -10393,7 +10514,7 @@ describe("publisher abuse dry-run persistence", () => {
         notificationBaselineDownloads: 10_000,
         notificationBaselineInstalls: 0,
         lastChangedAt: 1_234,
-        needsNotification: true,
+        needsNotification: false,
       }),
       expect.objectContaining({
         signalType: "download_spike_flat_installs",
@@ -10403,7 +10524,7 @@ describe("publisher abuse dry-run persistence", () => {
         lastSeenAt: 1_234,
         seenCount: 1,
         reviewStatus: "open",
-        needsNotification: true,
+        needsNotification: false,
       }),
     ]);
 
@@ -10428,9 +10549,153 @@ describe("publisher abuse dry-run persistence", () => {
         notificationBaselineDownloads: 10_500,
         notificationBaselineInstalls: 1_050,
         lastChangedAt: 2_345,
-        needsNotification: true,
+        needsNotification: false,
       }),
     );
+  });
+
+  it("requests one owner explanation when a new skill raises multiple signal types", async () => {
+    const candidate = temporalCandidate("skills:dual-signal", {
+      slug: "dual-signal",
+      displayName: "Dual Signal",
+    });
+    candidate.temporalScore.nearConversion = true;
+    candidate.temporalScore.sustained = true;
+    const insertedSignals: Array<Record<string, unknown>> = [];
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: (
+            _indexName: string,
+            build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const q = {
+              eq() {
+                return q;
+              },
+            };
+            build(q);
+            return { first: async () => null };
+          },
+        })),
+        insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+          if (table === "publisherAbuseSignals") {
+            insertedSignals.push(value);
+            return `publisherAbuseSignals:${insertedSignals.length}`;
+          }
+          return "auditLogs:queued";
+        }),
+        patch: vi.fn(async () => null),
+      },
+      scheduler,
+    };
+
+    await expect(
+      archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
+        runId: "publisherAbuseScoreRuns:temporal",
+        candidates: [candidate],
+        now: 1_234,
+        requestOwnerExplanation: true,
+      }),
+    ).resolves.toEqual({
+      archivedCandidates: 1,
+      archivedSignals: 3,
+      changedSignals: 3,
+    });
+
+    expect(insertedSignals).toHaveLength(3);
+    expect(insertedSignals[0]).toEqual(
+      expect.objectContaining({
+        trafficExplanationRequest: {
+          requestedAt: 1_234,
+          state: "queued",
+          attemptCount: 0,
+        },
+      }),
+    );
+    expect(insertedSignals[1]).not.toHaveProperty("trafficExplanationRequest");
+    expect(insertedSignals[2]).not.toHaveProperty("trafficExplanationRequest");
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {
+      signalId: "publisherAbuseSignals:1",
+    });
+  });
+
+  it("does not backfill owner emails onto existing historical signals", async () => {
+    const candidate = temporalCandidate("skills:historical", {
+      slug: "historical",
+      displayName: "Historical",
+    });
+    const existingSignal: Record<string, unknown> = {
+      _id: "publisherAbuseSignals:historical",
+      signalType: "download_spike_flat_installs",
+      ownerKey: candidate.ownerKey,
+      ownerPublisherId: candidate.ownerPublisherId,
+      ownerUserId: candidate.ownerUserId,
+      handleSnapshot: candidate.handleSnapshot,
+      skillId: candidate.skillId,
+      skillSlug: candidate.slug,
+      skillDisplayName: candidate.displayName,
+      firstSeenAt: 10,
+      lastSeenAt: 20,
+      seenCount: 2,
+      recent7Downloads: 800,
+      recent7Installs: 96,
+      recent7InstallDownloadRatio: 0.12,
+      recent30Downloads: 2_400,
+      recent30Installs: 288,
+      recent30InstallDownloadRatio: 0.12,
+      allTimeDownloads: candidate.totalDownloads,
+      allTimeInstalls: candidate.totalInstalls,
+      allTimeInstallDownloadRatio: 0.12,
+      reviewStatus: "open",
+      notificationBaselineDownloads: candidate.totalDownloads,
+      notificationBaselineInstalls: candidate.totalInstalls,
+      lastChangedAt: 20,
+      needsNotification: false,
+    };
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const patch = vi.fn(async (_id: string, _value: Record<string, unknown>) => null);
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({ first: async () => existingSignal }),
+        })),
+        insert: vi.fn(async () => "publisherAbuseSignals:unexpected"),
+        patch,
+      },
+      scheduler,
+    };
+
+    await archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
+      runId: "publisherAbuseScoreRuns:temporal",
+      candidates: [candidate],
+      now: 1_234,
+      requestOwnerExplanation: true,
+    });
+
+    expect(patch).toHaveBeenCalledWith("publisherAbuseSignals:historical", expect.any(Object));
+    expect(patch.mock.calls[0]?.[1]).not.toHaveProperty("trafficExplanationRequest");
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+
+    existingSignal.trafficExplanationRequest = {
+      requestedAt: 1_000,
+      tokenHash: "old-token-hash",
+      deliveryError: "resend_error",
+    };
+    patch.mockClear();
+
+    await archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
+      runId: "publisherAbuseScoreRuns:temporal",
+      candidates: [candidate],
+      now: 2_345,
+      requestOwnerExplanation: true,
+    });
+
+    expect(patch.mock.calls[0]?.[1]).not.toHaveProperty("trafficExplanationRequest");
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("preserves a legacy dismissal when the sustained signal type is upgraded", async () => {
@@ -10506,6 +10771,7 @@ describe("publisher abuse dry-run persistence", () => {
         runId: "publisherAbuseScoreRuns:temporal",
         candidates: [candidate],
         now: 1_234,
+        requestOwnerExplanation: true,
       }),
     ).resolves.toEqual({
       archivedCandidates: 1,
@@ -10520,6 +10786,7 @@ describe("publisher abuse dry-run persistence", () => {
         needsNotification: false,
       }),
     );
+    expect(patch.mock.calls[0]?.[1]).not.toHaveProperty("trafficExplanationRequest");
     expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
@@ -10663,7 +10930,7 @@ describe("publisher abuse dry-run persistence", () => {
         freshInstallsSinceSnooze: 0,
         recurrenceCount: 1,
         lastChangedAt: 1_234,
-        needsNotification: true,
+        needsNotification: false,
       }),
     );
     expect(patch).toHaveBeenCalledWith(

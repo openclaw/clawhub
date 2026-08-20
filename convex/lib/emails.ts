@@ -6,6 +6,8 @@ export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
   "Repeated malicious rejections may lead to account disablement.";
 const MAX_EMAIL_FINDING_SUMMARY_LENGTH = 280;
 export const ADMIN_ONE_OFF_TEMPLATE = "generic-one-off";
+export const PUBLISHER_ABUSE_TRAFFIC_EXPLANATION_TEMPLATE = "traffic-explanation.v1";
+export const REDACTED_TRAFFIC_EXPLANATION_LINK = "[SECURE EXPLANATION LINK]";
 
 const PUBLISHER_ABUSE_FINDING_SUMMARY =
   "Your account was identified by ClawHub's publisher abuse review workflow for activity that appears inconsistent with our Acceptable Usage policy.";
@@ -25,6 +27,8 @@ const PUBLISHER_ABUSE_WARNING_REASON_MESSAGES: Record<string, string> = {
     "Download spikes with little corresponding install activity.",
   temporal_sustained_downloads_flat_installs:
     "Sustained download activity with little corresponding install activity.",
+  temporal_sustained_abnormal_download_days:
+    "Sustained unusual download activity with little corresponding install activity.",
   temporal_installs_track_downloads:
     "Install and download patterns that are far outside normal conversion behavior.",
 };
@@ -36,6 +40,7 @@ const PUBLISHER_ABUSE_WARNING_REASON_PRIORITY = [
   "low_stars_per_skill",
   "temporal_download_spike_flat_installs",
   "temporal_sustained_downloads_flat_installs",
+  "temporal_sustained_abnormal_download_days",
   "temporal_installs_track_downloads",
 ] as const;
 const MAX_PUBLISHER_ABUSE_WARNING_REASONS = 3;
@@ -120,6 +125,16 @@ export type PublisherAbuseWarningEmailArgs = {
   warningSentAt?: number;
   deadlineAt: number;
   score: PublisherAbuseWarningScore;
+};
+
+export type PublisherAbuseTrafficExplanationEmailArgs = {
+  handle?: string;
+  publisherHandle: string;
+  skillDisplayName: string;
+  skillSlug: string;
+  scope?: "skill" | "publisher";
+  allPublisherSkills?: boolean;
+  responseUrl: string;
 };
 
 export type AdminOneOffEmailArgs = {
@@ -615,6 +630,72 @@ export async function buildPublisherAbuseWarningEmail(args: PublisherAbuseWarnin
     ].join("\n"),
     html,
   };
+}
+
+export async function buildPublisherAbuseTrafficExplanationEmail(
+  args: PublisherAbuseTrafficExplanationEmailArgs,
+) {
+  const publisherHandle = args.publisherHandle.trim().replace(/^@+/, "");
+  const publisherLabel = publisherHandle ? `@${publisherHandle}` : "your publisher";
+  const isPublisherScope = args.scope === "publisher";
+  const reasonBullets = isPublisherScope
+    ? [
+        args.allPublisherSkills
+          ? "Unusual download activity was detected across all of your skills."
+          : "Unusual download activity was detected across many of your skills.",
+        "Download activity across those skills follows nearly identical trends.",
+      ]
+    : ["Unusually high downloads were detected for this skill."];
+  const subject = isPublisherScope
+    ? `Question about downloads for ${publisherLabel}`
+    : `Question about downloads for ${args.skillDisplayName}`;
+  const body = isPublisherScope
+    ? [
+        `We noticed unusually high download activity across skills published by ${publisherLabel}.`,
+        "",
+        "Why we're asking:",
+        ...reasonBullets.map((reason) => `- ${reason}`),
+        "",
+        "Your skills and account remain active. This message is not a warning or penalty.",
+        "",
+        "Can you tell us whether you expected this traffic and what may have caused it? If you do not recognize the activity, please tell us that too.",
+      ].join("\n")
+    : [
+        `We noticed unusually high download activity for ${args.skillDisplayName} (${publisherLabel}/${args.skillSlug}).`,
+        "",
+        "Your skill and account remain active. This message is not a warning or penalty.",
+        "",
+        "Can you tell us whether you expected this traffic and what may have caused it? If you do not recognize the activity, please tell us that too.",
+      ].join("\n");
+
+  const html = await renderGenericOneOffTemplate({
+    recipientHandle: handleLabel(args.handle),
+    subject,
+    title: "Help us understand this traffic",
+    body,
+    primaryActionLabel: "Explain this traffic",
+    primaryActionUrl: args.responseUrl,
+  });
+
+  return {
+    subject,
+    templateVersion: PUBLISHER_ABUSE_TRAFFIC_EXPLANATION_TEMPLATE,
+    reasonBullets,
+    text: [
+      greeting(args.handle),
+      "",
+      body,
+      "",
+      `Explain this traffic: ${args.responseUrl}`,
+      "",
+      "ClawHub Team",
+    ].join("\n"),
+    html,
+  };
+}
+
+export function redactPublisherAbuseTrafficExplanationText(text: string, responseUrl: string) {
+  return text.replaceAll(responseUrl, REDACTED_TRAFFIC_EXPLANATION_LINK);
 }
 
 export async function buildAdminOneOffEmail(args: AdminOneOffEmailArgs) {

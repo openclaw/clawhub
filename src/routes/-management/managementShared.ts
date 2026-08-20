@@ -34,6 +34,12 @@ export type PublisherAbuseTab =
   | "resolved"
   | "signals";
 export type PublisherAbuseSignalStatus = "open" | "snoozed" | "dismissed";
+export type PublisherAbuseSignalWorkflowFilter =
+  | "needs_attention"
+  | "awaiting_owner"
+  | "contact_failed"
+  | "not_contacted"
+  | "all_open";
 
 export type ManagementView =
   | "overview"

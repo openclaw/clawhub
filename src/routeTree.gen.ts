@@ -23,6 +23,7 @@ import { Route as PublishSkillRouteImport } from './routes/publish-skill'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StarsRouteImport } from './routes/stars'
+import { Route as TrafficExplanationRouteImport } from './routes/traffic-explanation'
 import { Route as UploadRouteImport } from './routes/upload'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as AuthDocsRouteImport } from './routes/auth/docs'
@@ -131,6 +132,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const StarsRoute = StarsRouteImport.update({
   id: '/stars',
   path: '/stars',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrafficExplanationRoute = TrafficExplanationRouteImport.update({
+  id: '/traffic-explanation',
+  path: '/traffic-explanation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UploadRoute = UploadRouteImport.update({
@@ -354,6 +360,7 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/stars': typeof StarsRoute
+  '/traffic-explanation': typeof TrafficExplanationRoute
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
@@ -409,6 +416,7 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/stars': typeof StarsRoute
+  '/traffic-explanation': typeof TrafficExplanationRoute
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
@@ -465,6 +473,7 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/stars': typeof StarsRoute
+  '/traffic-explanation': typeof TrafficExplanationRoute
   '/upload': typeof UploadRoute
   '/$owner/$slug': typeof OwnerSlugRouteWithChildren
   '/auth/docs': typeof AuthDocsRoute
@@ -522,6 +531,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/stars'
+    | '/traffic-explanation'
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
@@ -577,6 +587,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/stars'
+    | '/traffic-explanation'
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
@@ -632,6 +643,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/stars'
+    | '/traffic-explanation'
     | '/upload'
     | '/$owner/$slug'
     | '/auth/docs'
@@ -688,6 +700,7 @@ export interface RootRouteChildren {
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
   StarsRoute: typeof StarsRoute
+  TrafficExplanationRoute: typeof TrafficExplanationRoute
   UploadRoute: typeof UploadRoute
   OwnerSlugRoute: typeof OwnerSlugRouteWithChildren
   AuthDocsRoute: typeof AuthDocsRoute
@@ -814,6 +827,13 @@ declare module '@tanstack/react-router' {
       path: '/stars'
       fullPath: '/stars'
       preLoaderRoute: typeof StarsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/traffic-explanation': {
+      id: '/traffic-explanation'
+      path: '/traffic-explanation'
+      fullPath: '/traffic-explanation'
+      preLoaderRoute: typeof TrafficExplanationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/upload': {
@@ -1182,6 +1202,7 @@ const rootRouteChildren: RootRouteChildren = {
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
   StarsRoute: StarsRoute,
+  TrafficExplanationRoute: TrafficExplanationRoute,
   UploadRoute: UploadRoute,
   OwnerSlugRoute: OwnerSlugRouteWithChildren,
   AuthDocsRoute: AuthDocsRoute,

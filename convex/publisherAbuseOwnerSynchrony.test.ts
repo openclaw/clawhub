@@ -70,16 +70,18 @@ function snoozedSignal(now: number) {
 }
 
 describe("publisher abuse owner synchrony signal", () => {
-  it("creates one publisher-level signal with portfolio evidence", async () => {
-    const inserted: Array<Record<string, unknown>> = [];
+  it("creates one publisher-level signal and queues one tokenized explanation", async () => {
+    const insertedSignals: Array<Record<string, unknown>> = [];
+    const auditLogs: Array<Record<string, unknown>> = [];
     const scheduler = { runAfter: vi.fn(async () => null) };
     const ctx = {
       db: {
         query: vi.fn(() => ({
           withIndex: () => ({ first: async () => null }),
         })),
-        insert: vi.fn(async (_table: string, value: Record<string, unknown>) => {
-          inserted.push(value);
+        insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+          if (table === "publisherAbuseSignals") insertedSignals.push(value);
+          if (table === "auditLogs") auditLogs.push(value);
           return "publisherAbuseSignals:portfolio";
         }),
         patch: vi.fn(async () => null),
@@ -91,14 +93,16 @@ describe("publisher abuse owner synchrony signal", () => {
       upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
         candidate: candidate(),
         now: 1_700_000_000_000,
+        requestOwnerExplanation: true,
       }),
     ).resolves.toMatchObject({
       signalId: "publisherAbuseSignals:portfolio",
       created: true,
       changed: true,
+      ownerExplanationRequested: true,
     });
 
-    expect(inserted).toEqual([
+    expect(insertedSignals).toEqual([
       expect.objectContaining({
         signalType: "owner_synchronized_download_trends",
         ownerKey: "publisher:publishers:portfolio",
@@ -114,9 +118,20 @@ describe("publisher abuse owner synchrony signal", () => {
           catalogCoverage: 23 / 122,
           correlationFloor: 0.986,
         }),
+        trafficExplanationRequest: {
+          requestedAt: 1_700_000_000_000,
+          state: "queued",
+          attemptCount: 0,
+        },
       }),
     ]);
-    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(auditLogs).toEqual([
+      expect.objectContaining({ action: "publisher_abuse.signal.owner_contact_queued" }),
+    ]);
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      signalId: "publisherAbuseSignals:portfolio",
+    });
   });
 
   it("keeps expired snoozes closed when no fresh evidence crosses the repeat threshold", async () => {

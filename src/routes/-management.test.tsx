@@ -440,7 +440,34 @@ describe("Management", () => {
   });
 
   it("shows archived publisher abuse signals without querying nominations for the signals tab", () => {
-    const signal = makePublisherAbuseSignal();
+    const signal = makePublisherAbuseSignal({
+      contactState: "sent",
+      attentionState: "needs_attention",
+      needsAttention: true,
+      notificationEventKind: "publisher_abuse_signal_owner_response_submitted",
+      notificationState: "delivered",
+      trafficExplanationRequest: {
+        requestedAt: 1715990000000,
+        tokenHash: "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb",
+        state: "sent",
+        latestAttemptAt: 1715990050000,
+        attemptCount: 1,
+        sentAt: 1715990100000,
+        recipientUserId: "users:ratio-owner",
+        recipientEmail: "owner@example.com",
+        providerId: "email_123",
+        subject: "Question about downloads for Ratio Skill",
+        templateVersion: "traffic-explanation.v1",
+        reasonBullets: ["Downloads rose unusually quickly while installs stayed flat."],
+        redactedTextSnapshot: "Hello owner.\n\n[SECURE EXPLANATION LINK]",
+      },
+      trafficExplanationResponse: {
+        kind: "expected",
+        message: "Shared in our newsletter.",
+        submittedAt: 1715990200000,
+        submittedByUserId: "users:ratio-owner",
+      },
+    });
     const potentialBanItem = makePublisherAbuseItem();
     const reviewItem = makePublisherAbuseItem({
       handle: "review-pub",
@@ -476,6 +503,20 @@ describe("Management", () => {
       }
       if (name === "publisherAbuse:getSignalActivityTrend") {
         return makeSignalActivityTrend();
+      }
+      if (name === "publisherAbuse:getSignalCommunicationTimeline") {
+        return [
+          {
+            id: "auditLogs:contact",
+            action: "publisher_abuse.signal.owner_contact_sent",
+            createdAt: 1715990100000,
+          },
+          {
+            id: "auditLogs:response",
+            action: "publisher_abuse.signal.traffic_explanation_submitted",
+            createdAt: 1715990200000,
+          },
+        ];
       }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;
@@ -532,13 +573,26 @@ describe("Management", () => {
     expect(screen.getAllByText("Open").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("High")).toBeTruthy();
     expect(screen.getByText("Ratio Skill")).toBeTruthy();
+    expect(screen.getByText("Needs attention · replied")).toBeTruthy();
     expect(screen.getByText("@ratio-owner / ratio-skill")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Open skill Ratio Skill" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Open publisher ratio-owner" })).toBeNull();
     expect(screen.getAllByText("12%")).toHaveLength(1);
     expect(screen.getByText("Showing 1 signals")).toBeTruthy();
     expect(screen.getByRole("group", { name: "Signal status" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Signal workflow filter" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "All open" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Needs attention" }));
+    expect(
+      usePaginatedQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
+          JSON.stringify(args) === JSON.stringify({ workflowFilter: "needs_attention" }),
+      ),
+    ).toBe(true);
     expect(screen.queryByRole("button", { name: /^Snooze 14 days$/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Dismiss signal$/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Snoozed" }));
@@ -572,6 +626,21 @@ describe("Management", () => {
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
     expect(screen.getByText("30-day activity")).toBeTruthy();
+    expect(screen.getByText("Owner communication")).toBeTruthy();
+    expect(screen.getByText("owner@example.com")).toBeTruthy();
+    expect(screen.getByText("email_123")).toBeTruthy();
+    expect(screen.getByText("traffic-explanation.v1")).toBeTruthy();
+    expect(screen.getByText("Question about downloads for Ratio Skill")).toBeTruthy();
+    expect(
+      screen.getByText("Downloads rose unusually quickly while installs stayed flat."),
+    ).toBeTruthy();
+    expect(screen.getByText(/\[SECURE EXPLANATION LINK\]/)).toBeTruthy();
+    expect(screen.queryByText(/ffe054fe7ae0/)).toBeNull();
+    expect(screen.getByText("Communication activity")).toBeTruthy();
+    expect(screen.getByText("Owner contact sent")).toBeTruthy();
+    expect(screen.getByText("Traffic explanation submitted")).toBeTruthy();
+    expect(screen.getByText("Owner expected the traffic")).toBeTruthy();
+    expect(screen.getByText("Shared in our newsletter.")).toBeTruthy();
     expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("Installs")).toBeTruthy();
     const drawerZones = Array.from(document.querySelectorAll(".pa-sheet-body > .pa-zone"));
@@ -593,7 +662,7 @@ describe("Management", () => {
       usePaginatedQueryMock.mock.calls.some(
         ([query, args]) =>
           getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
-          JSON.stringify(args) === JSON.stringify({ reviewStatus: "open" }),
+          JSON.stringify(args) === JSON.stringify({ workflowFilter: "all_open" }),
       ),
     ).toBe(true);
     expect(
@@ -652,7 +721,7 @@ describe("Management", () => {
       usePaginatedQueryMock.mock.calls.some(
         ([query, args]) =>
           getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
-          JSON.stringify(args) === JSON.stringify({ reviewStatus: "open" }),
+          JSON.stringify(args) === JSON.stringify({ workflowFilter: "all_open" }),
       ),
     ).toBe(true);
   });

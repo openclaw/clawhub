@@ -7,6 +7,7 @@ import {
   buildMaliciousArtifactEmail,
   buildPackageInspectorValidationUrl,
   buildPackageInspectorFindingsEmail,
+  buildPublisherAbuseTrafficExplanationEmail,
   buildPublisherAbuseWarningEmail,
   buildRestoredAccountEmail,
   buildSecretBlockedPublishEmail,
@@ -361,6 +362,56 @@ describe("moderation notification email copy", () => {
     expect(email.html).toContain("Very low installs per listing.");
     expect(email.html).toContain("2026-06-26 04:00:00 UTC");
     expect(email.html).toContain(OPENCLAW_DISCORD_URL);
+  });
+
+  it("asks for traffic context without implying enforcement", async () => {
+    const email = await buildPublisherAbuseTrafficExplanationEmail({
+      handle: "owner",
+      publisherHandle: "owner",
+      skillDisplayName: "Popular Skill",
+      skillSlug: "popular-skill",
+      responseUrl:
+        "https://clawhub.ai/traffic-explanation?signal=publisherAbuseSignals%3Atraffic&token=secret",
+    });
+
+    expect(email.subject).toBe("Question about downloads for Popular Skill");
+    expect(email.text).toContain("unusually high download activity");
+    expect(email.text).not.toContain("330,000");
+    expect(email.text).not.toContain("past 30 days");
+    expect(email.text).toContain("Your skill and account remain active");
+    expect(email.text).toContain("This message is not a warning or penalty");
+    expect(email.text).toContain("If you do not recognize the activity");
+    expect(email.html).toContain("Help us understand this traffic");
+    expect(email.html).toContain("Explain this traffic");
+    expect(email.text.toLowerCase()).not.toContain("ban");
+    expect(email.text.toLowerCase()).not.toContain("suspend");
+    expect(email.text.toLowerCase()).not.toContain("deadline");
+  });
+
+  it("explains a synchronized publisher pattern with qualitative bullet reasons", async () => {
+    const email = await buildPublisherAbuseTrafficExplanationEmail({
+      handle: "owner",
+      publisherHandle: "portfolio-owner",
+      skillDisplayName: "Ownership Anchor",
+      skillSlug: "ownership-anchor",
+      scope: "publisher",
+      allPublisherSkills: true,
+      responseUrl:
+        "https://clawhub.ai/traffic-explanation?signal=publisherAbuseSignals%3Aportfolio&token=secret",
+    });
+
+    expect(email.subject).toBe("Question about downloads for @portfolio-owner");
+    expect(email.text).toContain("Why we're asking:");
+    expect(email.text).toContain(
+      "- Unusual download activity was detected across all of your skills.",
+    );
+    expect(email.text).toContain(
+      "- Download activity across those skills follows nearly identical trends.",
+    );
+    expect(email.text).toContain("Your skills and account remain active");
+    expect(email.text).not.toContain("98%");
+    expect(email.text).not.toContain("60 days");
+    expect(email.text).not.toContain("23 skills");
   });
 
   it("builds a templated admin one-off email with escaped staff-authored content", async () => {

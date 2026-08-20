@@ -131,6 +131,7 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
 
 export const readPublisherAbuseOwnerKeysPageInternal = internalQuery({
   args: { cursor: v.optional(v.string()) },
+  returns: v.any(),
   handler: readPublisherAbuseOwnerKeysPageInternalHandler,
 });
 
@@ -257,6 +258,7 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
 
 export const getPublisherAbuseOwnerSynchronyCandidateInternal = internalQuery({
   args: { ownerKey: v.string(), todayDay: v.number() },
+  returns: v.any(),
   handler: getPublisherAbuseOwnerSynchronyCandidateInternalHandler,
 });
 
@@ -266,6 +268,7 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
     runId?: Id<"publisherAbuseScoreRuns">;
     candidate: OwnerSynchronyCandidate;
     now: number;
+    requestOwnerExplanation?: boolean;
   },
 ) {
   const { candidate } = args;
@@ -385,14 +388,15 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
       lastSeenAt: args.now,
       seenCount: existing.seenCount + 1,
       lastChangedAt: shouldNotify ? args.now : existing.lastChangedAt,
-      needsNotification: shouldNotify ? true : (existing.needsNotification ?? false),
-      notificationClaimedAt: shouldNotify ? undefined : existing.notificationClaimedAt,
-      lastNotificationError: shouldNotify ? undefined : existing.lastNotificationError,
+      needsNotification: existing.notificationEventKind
+        ? (existing.needsNotification ?? false)
+        : false,
     });
     return {
       signalId: existing._id,
       created: false as const,
       changed: shouldNotify,
+      ownerExplanationRequested: false,
     };
   }
 
@@ -405,12 +409,39 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
     notificationBaselineDownloads: candidate.allTimeDownloads,
     notificationBaselineInstalls: candidate.allTimeInstalls,
     lastChangedAt: args.now,
-    needsNotification: true,
+    needsNotification: false,
+    contactState: args.requestOwnerExplanation ? "queued" : "not_requested",
+    attentionState: "not_contacted",
+    needsAttention: false,
+    ...(args.requestOwnerExplanation
+      ? {
+          trafficExplanationRequest: {
+            requestedAt: args.now,
+            state: "queued",
+            attemptCount: 0,
+          },
+        }
+      : {}),
   });
+  if (args.requestOwnerExplanation) {
+    await ctx.db.insert("auditLogs", {
+      action: "publisher_abuse.signal.owner_contact_queued",
+      targetType: "publisherAbuseSignal",
+      targetId: signalId,
+      metadata: { scope: "publisher" },
+      createdAt: args.now,
+    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.emailsNode.sendPublisherAbuseTrafficExplanationInternal,
+      { signalId },
+    );
+  }
   return {
     signalId,
     created: true as const,
     changed: true,
+    ownerExplanationRequested: args.requestOwnerExplanation === true,
   };
 }
 
@@ -419,7 +450,9 @@ export const upsertPublisherAbuseOwnerSynchronySignalInternal = internalMutation
     runId: v.optional(v.id("publisherAbuseScoreRuns")),
     candidate: ownerSynchronyCandidateValidator,
     now: v.number(),
+    requestOwnerExplanation: v.optional(v.boolean()),
   },
+  returns: v.any(),
   handler: upsertPublisherAbuseOwnerSynchronySignalInternalHandler,
 });
 
@@ -449,7 +482,11 @@ export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
       {},
     );
   }
-  return { matchedOwners: page.matchedOwners, isDone: page.isDone };
+  return {
+    matchedOwners: page.matchedOwners,
+    requestedExplanations: page.requestedExplanations,
+    isDone: page.isDone,
+  };
 }
 
 export async function scanPublisherAbuseOwnerSynchronyPage(
@@ -465,6 +502,7 @@ export async function scanPublisherAbuseOwnerSynchronyPage(
     args.cursor ? { cursor: args.cursor } : {},
   );
   let matchedOwners = 0;
+  let requestedExplanations = 0;
   for (const ownerKey of page.ownerKeys) {
     const candidate: OwnerSynchronyCandidate | null = await ctx.runQuery(
       internal.publisherAbuseOwnerSynchrony.getPublisherAbuseOwnerSynchronyCandidateInternal,
@@ -472,17 +510,19 @@ export async function scanPublisherAbuseOwnerSynchronyPage(
     );
     if (!candidate) continue;
     matchedOwners += 1;
-    await ctx.runMutation(
+    const result: { ownerExplanationRequested: boolean } = await ctx.runMutation(
       internal.publisherAbuseOwnerSynchrony.upsertPublisherAbuseOwnerSynchronySignalInternal,
       {
         ...(args.runId ? { runId: args.runId } : {}),
         candidate,
         now: Date.now(),
+        requestOwnerExplanation: true,
       },
     );
+    if (result.ownerExplanationRequested) requestedExplanations += 1;
   }
 
-  return { matchedOwners, cursor: page.cursor, isDone: page.isDone };
+  return { matchedOwners, requestedExplanations, cursor: page.cursor, isDone: page.isDone };
 }
 
 export const runPublisherAbuseOwnerSynchronyScanInternal = internalAction({
@@ -491,5 +531,6 @@ export const runPublisherAbuseOwnerSynchronyScanInternal = internalAction({
     cursor: v.optional(v.string()),
     todayDay: v.number(),
   },
+  returns: v.any(),
   handler: runPublisherAbuseOwnerSynchronyScanInternalHandler,
 });

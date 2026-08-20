@@ -52,6 +52,7 @@ import {
   type PublisherAbuseSignalEntry,
   type PublisherAbuseReviewItem,
   type PublisherAbuseSignalStatus,
+  type PublisherAbuseSignalWorkflowFilter,
   type PublisherAbuseTab,
   type PromotionEntry,
   type PromotionInput,
@@ -313,6 +314,8 @@ export function Management() {
   const [publisherAbuseNotes, setPublisherAbuseNotes] = useState("");
   const [publisherAbuseSignalStatus, setPublisherAbuseSignalStatus] =
     useState<PublisherAbuseSignalStatus>("open");
+  const [publisherAbuseSignalWorkflowFilter, setPublisherAbuseSignalWorkflowFilter] =
+    useState<PublisherAbuseSignalWorkflowFilter>("all_open");
   const [selectedPublisherAbuseNominationId, setSelectedPublisherAbuseNominationId] =
     useState<Id<"publisherAbuseReviewNominations"> | null>(null);
   const {
@@ -333,7 +336,9 @@ export function Management() {
   } = usePaginatedQuery(
     api.publisherAbuse.listSignalsPage,
     staff && abuseViewActive && publisherAbuseTab === "signals"
-      ? { reviewStatus: publisherAbuseSignalStatus }
+      ? publisherAbuseSignalStatus === "open"
+        ? { workflowFilter: publisherAbuseSignalWorkflowFilter }
+        : { reviewStatus: publisherAbuseSignalStatus }
       : "skip",
     { initialNumItems: 25 },
   );
@@ -776,7 +781,7 @@ export function Management() {
   const requestReopenPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Reopen ${item.signal.skillDisplayName}?`,
-      body: "Returns this signal to the default review queue and queues a Hermit digest notification.",
+      body: "Returns this signal to the default review queue without sending a routine staff alert.",
       confirmLabel: "Reopen signal",
       reason: {
         label: "Note (optional)",
@@ -889,11 +894,13 @@ export function Management() {
             signalLoadedCount={publisherAbuseSignalItems.length}
             signalPageStatus={publisherAbuseSignalPageStatus}
             signalStatus={publisherAbuseSignalStatus}
+            signalWorkflowFilter={publisherAbuseSignalWorkflowFilter}
             tab={publisherAbuseTab}
             onBanOwner={banPublisherAbuseOwner}
             onChangeNotes={setPublisherAbuseNotes}
             onChangeSearch={setPublisherAbuseSearch}
             onChangeSignalStatus={setPublisherAbuseSignalStatus}
+            onChangeSignalWorkflowFilter={setPublisherAbuseSignalWorkflowFilter}
             onChangeTab={(nextTab) => {
               setPublisherAbuseTab(nextTab);
               if (nextTab === "signals") {

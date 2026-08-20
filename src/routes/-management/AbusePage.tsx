@@ -42,6 +42,7 @@ import {
   type PublisherAbuseReviewScore,
   type PublisherAbuseSignalEntry,
   type PublisherAbuseSignalStatus,
+  type PublisherAbuseSignalWorkflowFilter,
   type PublisherAbuseTab,
   USER_BAN_REASON_MAX_LENGTH,
 } from "./managementShared";
@@ -64,11 +65,13 @@ export function AbusePage({
   signalLoadedCount,
   signalPageStatus,
   signalStatus,
+  signalWorkflowFilter,
   tab,
   onBanOwner,
   onChangeNotes,
   onChangeSearch,
   onChangeSignalStatus,
+  onChangeSignalWorkflowFilter,
   onChangeTab,
   onClose,
   onDismissSignal,
@@ -103,11 +106,13 @@ export function AbusePage({
   signalLoadedCount: number;
   signalPageStatus: string;
   signalStatus: PublisherAbuseSignalStatus;
+  signalWorkflowFilter: PublisherAbuseSignalWorkflowFilter;
   tab: PublisherAbuseTab;
   onBanOwner: (item: PublisherAbuseReviewItem) => void;
   onChangeNotes: (value: string) => void;
   onChangeSearch: (value: string) => void;
   onChangeSignalStatus: (value: PublisherAbuseSignalStatus) => void;
+  onChangeSignalWorkflowFilter: (value: PublisherAbuseSignalWorkflowFilter) => void;
   onChangeTab: (value: PublisherAbuseTab) => void;
   onClose: () => void;
   onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
@@ -468,6 +473,29 @@ export function AbusePage({
                 onClick={() => onChangeSignalStatus(status)}
               >
                 {formatPublisherAbuseSignalStatus(status)}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {tab === "signals" && signalStatus === "open" ? (
+          <div className="pa-signal-status-tabs" role="group" aria-label="Signal workflow filter">
+            {(
+              [
+                ["needs_attention", "Needs attention"],
+                ["awaiting_owner", "Awaiting owner"],
+                ["contact_failed", "Contact failed"],
+                ["not_contacted", "Not contacted"],
+                ["all_open", "All open"],
+              ] as const
+            ).map(([filter, label]) => (
+              <button
+                key={filter}
+                type="button"
+                className={signalWorkflowFilter === filter ? "active" : ""}
+                aria-pressed={signalWorkflowFilter === filter}
+                onClick={() => onChangeSignalWorkflowFilter(filter)}
+              >
+                {label}
               </button>
             ))}
           </div>
@@ -1105,6 +1133,23 @@ function PublisherAbuseSignalsTable({
                           {formatPublisherAbuseSnoozeState(item.signal.snoozedUntil)}
                         </div>
                       ) : null}
+                      {item.signal.trafficExplanationResponse ? (
+                        <div className="pa-signal-repeat is-recurring">
+                          Needs attention · replied
+                        </div>
+                      ) : item.signal.contactState === "not_deliverable" ? (
+                        <div className="pa-signal-repeat is-recurring">
+                          Needs attention · contact failed
+                        </div>
+                      ) : item.signal.notificationState === "failed" ? (
+                        <div className="pa-signal-repeat is-recurring">
+                          Needs attention · alert failed
+                        </div>
+                      ) : (
+                        <div className="pa-signal-repeat">
+                          {formatTrafficContactState(item.signal.contactState ?? "not_requested")}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div className="pa-signal-subject">
@@ -1166,6 +1211,9 @@ function PublisherAbuseSignalInspector({
           endDay: getActivityTrendEndDay(item.signal.lastSeenAt),
         },
   );
+  const communicationTimeline = useQuery(api.publisherAbuse.getSignalCommunicationTimeline, {
+    signalId: item.signal._id,
+  });
   const hasFreshEvidence =
     typeof item.signal.freshDownloadsSinceSnooze === "number" &&
     typeof item.signal.freshInstallsSinceSnooze === "number";
@@ -1360,6 +1408,132 @@ function PublisherAbuseSignalInspector({
               {formatWholeNumber(item.signal.temporalBenchmark.sampleSize)} active skills: P95{" "}
               {formatWholeNumber(item.signal.temporalBenchmark.downloads30dP95)}, P99{" "}
               {formatWholeNumber(item.signal.temporalBenchmark.downloads30dP99)}.
+            </p>
+          ) : null}
+        </section>
+
+        {item.signal.trafficExplanationRequest ? (
+          <section className="pa-zone">
+            <div className="pa-section-label">Owner communication</div>
+            <div className="pa-metrics">
+              <PublisherAbuseSignalMeta
+                label="Contact state"
+                value={formatTrafficContactState(item.signal.contactState ?? "queued")}
+              />
+              <PublisherAbuseSignalMeta
+                label="Requested"
+                value={formatShortTimestamp(item.signal.trafficExplanationRequest.requestedAt)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Latest attempt"
+                value={
+                  item.signal.trafficExplanationRequest.latestAttemptAt
+                    ? formatShortTimestamp(item.signal.trafficExplanationRequest.latestAttemptAt)
+                    : "—"
+                }
+              />
+              <PublisherAbuseSignalMeta
+                label="Attempts"
+                value={formatWholeNumber(item.signal.trafficExplanationRequest.attemptCount ?? 0)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Sent"
+                value={
+                  item.signal.trafficExplanationRequest.sentAt
+                    ? formatShortTimestamp(item.signal.trafficExplanationRequest.sentAt)
+                    : "—"
+                }
+              />
+              <PublisherAbuseSignalMeta
+                label="Recipient"
+                value={
+                  item.signal.trafficExplanationRequest.recipientEmail ??
+                  item.signal.trafficExplanationRequest.recipientUserId ??
+                  "—"
+                }
+              />
+              <PublisherAbuseSignalMeta
+                label="Provider ID"
+                value={item.signal.trafficExplanationRequest.providerId ?? "—"}
+              />
+              <PublisherAbuseSignalMeta
+                label="Template"
+                value={item.signal.trafficExplanationRequest.templateVersion ?? "—"}
+              />
+            </div>
+            {item.signal.trafficExplanationRequest.subject ? (
+              <div className="pa-reason-list">
+                <div className="pa-reason">
+                  <strong>{item.signal.trafficExplanationRequest.subject}</strong>
+                  <small>Exact subject</small>
+                </div>
+                {(item.signal.trafficExplanationRequest.reasonBullets ?? []).map((reason) => (
+                  <div key={reason} className="pa-reason">
+                    <strong>{reason}</strong>
+                    <small>Owner-facing reason</small>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {item.signal.trafficExplanationRequest.redactedTextSnapshot ? (
+              <pre className="mt-3 whitespace-pre-wrap rounded-md bg-[color:var(--oc-surface-subtle)] p-3 text-xs leading-5 text-[color:var(--oc-text-secondary)]">
+                {item.signal.trafficExplanationRequest.redactedTextSnapshot}
+              </pre>
+            ) : null}
+            {item.signal.trafficExplanationRequest.deliveryError ? (
+              <p className="pa-hint">
+                Latest failure: {item.signal.trafficExplanationRequest.deliveryError}
+              </p>
+            ) : null}
+            {item.signal.trafficExplanationResponse ? (
+              <div className="pa-reason-list">
+                <div className="pa-reason">
+                  <strong>
+                    {formatTrafficExplanationKind(item.signal.trafficExplanationResponse.kind)}
+                  </strong>
+                  <small>
+                    Submitted{" "}
+                    {formatShortTimestamp(item.signal.trafficExplanationResponse.submittedAt)}
+                    {" · "}
+                    {compactIdentifier(item.signal.trafficExplanationResponse.submittedByUserId)}
+                  </small>
+                  {item.signal.trafficExplanationResponse.message ? (
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[color:var(--oc-text-primary)]">
+                      {item.signal.trafficExplanationResponse.message}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : (
+          <section className="pa-zone">
+            <div className="pa-section-label">Owner communication</div>
+            <p className="pa-hint">Not requested.</p>
+          </section>
+        )}
+
+        <section className="pa-zone">
+          <div className="pa-section-label">Communication activity</div>
+          <div className="pa-history">
+            {(communicationTimeline ?? []).map(
+              (entry: { id: string; action: string; createdAt: number }) => (
+                <div key={entry.id} className="pa-history-item">
+                  <span>{formatShortTimestamp(entry.createdAt)}</span>
+                  <strong>{formatCommunicationAction(entry.action)}</strong>
+                </div>
+              ),
+            )}
+            {communicationTimeline?.length === 0 ? (
+              <p className="pa-hint">No communication activity recorded.</p>
+            ) : null}
+          </div>
+          {item.signal.notificationEventKind ? (
+            <p className="pa-hint">
+              Staff alert: {formatNotificationState(item.signal.notificationState ?? "queued")} ·{" "}
+              {item.signal.notificationEventKind
+                .replaceAll("publisher_abuse_signal_", "")
+                .replaceAll("_", " ")}
             </p>
           ) : null}
         </section>
@@ -1811,6 +1985,8 @@ export function filterPublisherAbuseSignals(items: PublisherAbuseSignalEntry[], 
       item.signal.skillSlug,
       item.signal.skillDisplayName,
       ...(item.signal.reasonCodes ?? []),
+      item.signal.trafficExplanationResponse?.kind,
+      item.signal.trafficExplanationResponse?.message,
     ]
       .filter((value) => typeof value === "string" && value.length > 0)
       .join(" ")
@@ -1886,6 +2062,29 @@ function describePublisherAbuseSignalType(signalType: string) {
     return "Several already-anomalous skills under this publisher have nearly identical download trends and similarly sized peaks.";
   }
   return "Archived publisher abuse signal for manual review.";
+}
+
+function formatTrafficExplanationKind(kind: string) {
+  if (kind === "expected") return "Owner expected the traffic";
+  if (kind === "not_recognized") return "Owner does not recognize the traffic";
+  return "Owner is unsure about the traffic";
+}
+
+function formatTrafficContactState(state: string) {
+  if (state === "not_requested") return "Not requested";
+  if (state === "not_deliverable") return "Not deliverable";
+  return state.charAt(0).toUpperCase() + state.slice(1).replaceAll("_", " ");
+}
+
+function formatNotificationState(state: string) {
+  return state.charAt(0).toUpperCase() + state.slice(1).replaceAll("_", " ");
+}
+
+function formatCommunicationAction(action: string) {
+  return action
+    .replace("publisher_abuse.signal.", "")
+    .replaceAll("_", " ")
+    .replace(/^./, (character) => character.toUpperCase());
 }
 
 function formatPublisherAbuseSignalSeverity(signalType: string, recurrenceCount = 0) {

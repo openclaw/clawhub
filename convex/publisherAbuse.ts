@@ -40,6 +40,7 @@ import {
   type TemporalAbuseCohortBenchmark,
 } from "./lib/publisherAbuseScoring";
 import { freshPublisherAbuseEvidenceCrossesRepeatThreshold } from "./lib/publisherAbuseSignalLifecycle";
+import { truncatePublisherAbuseResponsePreview } from "./lib/publisherAbuseTrafficExplanation";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -84,6 +85,7 @@ const MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH = 1000;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_BATCH_SIZE = 10;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_MAX_BATCH_SIZE = 25;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_RETRY_MS = 60 * 60 * 1000;
+const MAX_PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_ATTEMPTS = 4;
 const PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_RETRY_MS = 5 * 60 * 1000;
 const MAX_PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_ATTEMPTS = 5;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN = 100;
@@ -145,6 +147,13 @@ const publisherAbuseSignalReviewStatusValidator = v.union(
   v.literal("open"),
   v.literal("snoozed"),
   v.literal("dismissed"),
+);
+const publisherAbuseSignalWorkflowFilterValidator = v.union(
+  v.literal("needs_attention"),
+  v.literal("awaiting_owner"),
+  v.literal("contact_failed"),
+  v.literal("not_contacted"),
+  v.literal("all_open"),
 );
 
 type RunState = {
@@ -446,8 +455,10 @@ export const listSignalsPage = query({
   args: {
     signalType: v.optional(publisherAbuseSignalTypeValidator),
     reviewStatus: v.optional(publisherAbuseSignalReviewStatusValidator),
+    workflowFilter: v.optional(publisherAbuseSignalWorkflowFilterValidator),
     paginationOpts: paginationOptsValidator,
   },
+  returns: v.any(),
   handler: async (ctx, args) => {
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) {
@@ -465,15 +476,50 @@ export const listSignalsPage = query({
     );
     const signalType = args.signalType;
     const reviewStatus = args.reviewStatus;
-    if (signalType && reviewStatus) {
-      throw new Error("Filter by signalType or reviewStatus, not both.");
+    const workflowFilter = args.workflowFilter;
+    if ([signalType, reviewStatus, workflowFilter].filter(Boolean).length > 1) {
+      throw new Error("Filter by signalType, reviewStatus, or workflowFilter, not more than one.");
     }
     const paginationOpts: PublisherAbuseReviewPaginationOpts = {
       cursor: args.paginationOpts.cursor ?? null,
       numItems: requestedItems,
     };
-    const page =
-      reviewStatus && !signalType
+    const page = workflowFilter
+      ? workflowFilter === "needs_attention"
+        ? await ctx.db
+            .query("publisherAbuseSignals")
+            .withIndex("by_review_status_and_needs_attention_and_last_seen_at", (q) =>
+              q.eq("reviewStatus", "open").eq("needsAttention", true),
+            )
+            .order("desc")
+            .paginate(paginationOpts)
+        : workflowFilter === "contact_failed"
+          ? await ctx.db
+              .query("publisherAbuseSignals")
+              .withIndex("by_review_status_and_attention_state_and_last_seen_at", (q) =>
+                q.eq("reviewStatus", "open").eq("attentionState", "contact_failed"),
+              )
+              .order("desc")
+              .paginate(paginationOpts)
+          : workflowFilter === "all_open"
+            ? await ctx.db
+                .query("publisherAbuseSignals")
+                .withIndex("by_review_status_and_last_seen_at", (q) => q.eq("reviewStatus", "open"))
+                .order("desc")
+                .paginate(paginationOpts)
+            : await ctx.db
+                .query("publisherAbuseSignals")
+                .withIndex("by_review_status_and_attention_state_and_last_seen_at", (q) =>
+                  q
+                    .eq("reviewStatus", "open")
+                    .eq(
+                      "attentionState",
+                      workflowFilter === "awaiting_owner" ? "awaiting_owner" : "not_contacted",
+                    ),
+                )
+                .order("desc")
+                .paginate(paginationOpts)
+      : reviewStatus && !signalType
         ? await ctx.db
             .query("publisherAbuseSignals")
             .withIndex("by_review_status_and_last_seen_at", (q) =>
@@ -509,6 +555,7 @@ export const getSignalActivityTrend = query({
     signalId: v.id("publisherAbuseSignals"),
     endDay: v.number(),
   },
+  returns: v.any(),
   handler: async (ctx, args) => {
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) return null;
@@ -526,6 +573,33 @@ export const getSignalActivityTrend = query({
       .take(ACTIVITY_TREND_DAYS);
 
     return buildDailyActivityTrends(rows, endDay);
+  },
+});
+
+export const getSignalCommunicationTimeline = query({
+  args: { signalId: v.id("publisherAbuseSignals") },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const auth = await requirePublisherAbuseDashboardUser(ctx);
+    if (!auth) return [];
+    const signal = await ctx.db.get(args.signalId);
+    if (!signal) return [];
+    const entries = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_target_createdAt", (q) =>
+        q.eq("targetType", "publisherAbuseSignal").eq("targetId", args.signalId),
+      )
+      .order("asc")
+      .take(100);
+    return entries
+      .filter((entry) => entry.action.startsWith("publisher_abuse.signal."))
+      .map((entry) => ({
+        id: entry._id,
+        action: entry.action,
+        actorUserId: entry.actorUserId ?? null,
+        metadata: entry.metadata ?? null,
+        createdAt: entry.createdAt,
+      }));
   },
 });
 
@@ -776,14 +850,8 @@ export const reopenPublisherAbuseSignal = mutation({
       status: "open",
       actorUserId: user._id,
       note: normalizePublisherAbuseSignalReviewNote(args.note),
-      notify: true,
       now,
     });
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-      {},
-    );
     return { ok: true, status: "open" as const };
   },
 });
@@ -928,10 +996,23 @@ async function setPublisherAbuseSignalReviewStatusWithActor(
     actorUserId: Id<"users">;
     now: number;
     snoozedUntil?: number;
-    notify?: boolean;
   },
 ) {
   const previousStatus = publisherAbuseSignalReviewStatus(args.signal);
+  const contactRequest = args.signal.trafficExplanationRequest;
+  const cancelledContactRequest =
+    args.status !== "open" &&
+    contactRequest &&
+    !contactRequest.sentAt &&
+    contactRequest.state !== "cancelled" &&
+    contactRequest.state !== "not_deliverable"
+      ? {
+          ...contactRequest,
+          tokenHash: undefined,
+          state: "cancelled" as const,
+          deliveryError: "signal_no_longer_open",
+        }
+      : null;
   await ctx.db.patch(args.signal._id, {
     reviewStatus: args.status,
     reviewedByUserId: args.actorUserId,
@@ -945,17 +1026,30 @@ async function setPublisherAbuseSignalReviewStatusWithActor(
     freshInstallsSinceSnooze: args.status === "snoozed" ? 0 : undefined,
     snoozeCount:
       args.status === "snoozed" ? (args.signal.snoozeCount ?? 0) + 1 : args.signal.snoozeCount,
-    notificationBaselineDownloads: args.notify
-      ? args.signal.allTimeDownloads
-      : args.signal.notificationBaselineDownloads,
-    notificationBaselineInstalls: args.notify
-      ? args.signal.allTimeInstalls
-      : args.signal.notificationBaselineInstalls,
-    needsNotification: args.notify === true,
-    lastChangedAt: args.notify ? args.now : args.signal.lastChangedAt,
-    notificationClaimedAt: undefined,
-    lastNotificationError: undefined,
+    notificationBaselineDownloads: args.signal.notificationBaselineDownloads,
+    notificationBaselineInstalls: args.signal.notificationBaselineInstalls,
+    needsNotification: args.signal.notificationEventKind
+      ? (args.signal.needsNotification ?? false)
+      : false,
+    ...(cancelledContactRequest
+      ? {
+          contactState: "cancelled" as const,
+          attentionState: "none" as const,
+          needsAttention: false,
+          trafficExplanationRequest: cancelledContactRequest,
+        }
+      : {}),
   });
+  if (cancelledContactRequest) {
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher_abuse.signal.owner_contact_cancelled",
+      targetType: "publisherAbuseSignal",
+      targetId: args.signal._id,
+      metadata: { reason: "signal_no_longer_open" },
+      createdAt: args.now,
+    });
+  }
   await ctx.db.insert("publisherAbuseSignalReviewEvents", {
     signalId: args.signal._id,
     ownerKey: args.signal.ownerKey,
@@ -1697,6 +1791,7 @@ export const archiveTemporalPublisherAbuseSignalsPageInternal = internalMutation
     candidates: v.array(temporalCandidateValidator),
     benchmark: v.optional(temporalAbuseCohortBenchmarkValidator),
     now: v.number(),
+    requestOwnerExplanation: v.optional(v.boolean()),
   },
   handler: archiveTemporalPublisherAbuseSignalsPageInternalHandler,
 });
@@ -1726,6 +1821,7 @@ export const archiveTemporalPublisherAbuseSignalsInternal = internalAction({
     batchSize: v.optional(v.number()),
     maxPages: v.optional(v.number()),
     notifyHermit: v.optional(v.boolean()),
+    notifyOwners: v.optional(v.boolean()),
   },
   handler: archiveTemporalPublisherAbuseSignalsInternalHandler,
 });
@@ -1734,6 +1830,7 @@ export const claimPublisherAbuseSignalNotificationsInternal = internalMutation({
   args: {
     limit: v.optional(v.number()),
   },
+  returns: v.any(),
   handler: claimPublisherAbuseSignalNotificationsInternalHandler,
 });
 
@@ -1743,6 +1840,7 @@ export const markPublisherAbuseSignalNotificationsSucceededInternal = internalMu
     claimedAt: v.number(),
     now: v.number(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     for (const signalId of args.signalIds) {
       const signal = await ctx.db.get(signalId);
@@ -1756,8 +1854,20 @@ export const markPublisherAbuseSignalNotificationsSucceededInternal = internalMu
       await ctx.db.patch(signalId, {
         needsNotification: false,
         notificationClaimedAt: undefined,
+        notificationState: "delivered",
+        notificationDeliveredAt: args.now,
         lastNotifiedAt: args.now,
         lastNotificationError: undefined,
+      });
+      await ctx.db.insert("auditLogs", {
+        action: "publisher_abuse.signal.staff_notification_delivered",
+        targetType: "publisherAbuseSignal",
+        targetId: signalId,
+        metadata: {
+          eventKind: signal.notificationEventKind,
+          attemptCount: signal.notificationAttemptCount ?? 1,
+        },
+        createdAt: args.now,
       });
     }
   },
@@ -1769,6 +1879,7 @@ export const markPublisherAbuseSignalNotificationsFailedInternal = internalMutat
     claimedAt: v.number(),
     error: v.string(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     for (const signalId of args.signalIds) {
       const signal = await ctx.db.get(signalId);
@@ -1780,9 +1891,35 @@ export const markPublisherAbuseSignalNotificationsFailedInternal = internalMutat
         continue;
       }
       await ctx.db.patch(signalId, {
-        needsNotification: true,
+        needsNotification:
+          (signal.notificationAttemptCount ?? 1) < MAX_PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_ATTEMPTS,
         notificationClaimedAt: undefined,
+        notificationState:
+          (signal.notificationAttemptCount ?? 1) < MAX_PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_ATTEMPTS
+            ? "retrying"
+            : "failed",
+        needsAttention:
+          (signal.notificationAttemptCount ?? 1) >=
+          MAX_PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_ATTEMPTS,
+        attentionState:
+          (signal.notificationAttemptCount ?? 1) >= MAX_PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_ATTEMPTS
+            ? "needs_attention"
+            : signal.attentionState,
         lastNotificationError: args.error.slice(0, 500),
+      });
+      await ctx.db.insert("auditLogs", {
+        action:
+          (signal.notificationAttemptCount ?? 1) < MAX_PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_ATTEMPTS
+            ? "publisher_abuse.signal.staff_notification_retrying"
+            : "publisher_abuse.signal.staff_notification_failed",
+        targetType: "publisherAbuseSignal",
+        targetId: signalId,
+        metadata: {
+          eventKind: signal.notificationEventKind,
+          attemptCount: signal.notificationAttemptCount ?? 1,
+          error: args.error.slice(0, 500),
+        },
+        createdAt: Date.now(),
       });
     }
   },
@@ -1792,6 +1929,7 @@ export const notifyPublisherAbuseSignalChangesInternal = internalAction({
   args: {
     limit: v.optional(v.number()),
   },
+  returns: v.any(),
   handler: notifyPublisherAbuseSignalChangesInternalHandler,
 });
 
@@ -1803,6 +1941,7 @@ export const notifyPublisherAbuseSignalScanFailureInternal = internalAction({
     failedAt: v.number(),
     deliveryAttempt: v.optional(v.number()),
   },
+  returns: v.any(),
   handler: notifyPublisherAbuseSignalScanFailureInternalHandler,
 });
 
@@ -2637,6 +2776,7 @@ export async function archiveTemporalPublisherAbuseSignalsInternalHandler(
     batchSize?: number;
     maxPages?: number;
     notifyHermit?: boolean;
+    notifyOwners?: boolean;
   },
 ) {
   return await archiveTemporalPublisherAbuseSignalPages(ctx, args);
@@ -2652,6 +2792,7 @@ async function archiveTemporalPublisherAbuseSignalPages(
     batchSize?: number;
     maxPages?: number;
     notifyHermit?: boolean;
+    notifyOwners?: boolean;
   },
 ) {
   const batchSize = clampInt(
@@ -2682,6 +2823,7 @@ async function archiveTemporalPublisherAbuseSignalPages(
         ...(args.runId ? { runId: args.runId } : {}),
         candidates: batch,
         now: args.now,
+        requestOwnerExplanation: args.notifyOwners ?? false,
       },
     );
     pages += 1;
@@ -2710,17 +2852,10 @@ async function archiveTemporalPublisherAbuseSignalPages(
           batchSize,
           maxPages,
           notifyHermit: args.notifyHermit,
+          notifyOwners: args.notifyOwners ?? false,
         },
       );
     }
-  }
-
-  if (args.notifyHermit && changedSignals > 0) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-      {},
-    );
   }
 
   return {
@@ -2753,11 +2888,15 @@ export async function claimPublisherAbuseSignalNotificationsInternalHandler(
     .withIndex("by_needs_notification_and_last_changed_at", (q) => q.eq("needsNotification", true))
     .order("desc")
     .take(limit + 1);
-  const signals = pendingSignals.slice(0, limit).filter((signal) => {
-    return publisherAbuseSignalReviewStatus(signal) === "open";
-  });
+  const signals = pendingSignals
+    .slice(0, limit)
+    .filter(
+      (signal) =>
+        publisherAbuseSignalReviewStatus(signal) === "open" &&
+        signal.notificationEventKind !== undefined,
+    );
   for (const signal of pendingSignals.slice(0, limit)) {
-    if (publisherAbuseSignalReviewStatus(signal) !== "open") {
+    if (publisherAbuseSignalReviewStatus(signal) !== "open" || !signal.notificationEventKind) {
       await ctx.db.patch(signal._id, {
         needsNotification: false,
         notificationClaimedAt: undefined,
@@ -2767,6 +2906,19 @@ export async function claimPublisherAbuseSignalNotificationsInternalHandler(
     await ctx.db.patch(signal._id, {
       needsNotification: false,
       notificationClaimedAt: now,
+      notificationState: (signal.notificationAttemptCount ?? 0) > 0 ? "retrying" : "queued",
+      notificationAttemptCount: (signal.notificationAttemptCount ?? 0) + 1,
+      notificationLatestAttemptAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      action: "publisher_abuse.signal.staff_notification_attempted",
+      targetType: "publisherAbuseSignal",
+      targetId: signal._id,
+      metadata: {
+        eventKind: signal.notificationEventKind,
+        attemptCount: (signal.notificationAttemptCount ?? 0) + 1,
+      },
+      createdAt: now,
     });
   }
   return {
@@ -2793,6 +2945,7 @@ async function requeueStalePublisherAbuseSignalNotificationClaims(
     await ctx.db.patch(signal._id, {
       needsNotification: true,
       notificationClaimedAt: undefined,
+      notificationState: "retrying",
       lastNotificationError: "Retrying after stale Hermit notification claim.",
     });
   }
@@ -2830,59 +2983,56 @@ export async function notifyPublisherAbuseSignalChangesInternalHandler(
     return { ok: true as const, sent: false as const };
   }
 
-  const signalIds = claimed.signals.map((signal) => signal._id);
-  const payload = buildHermitPublisherAbuseSignalDigest(claimed.signals, claimed.hasMore, config);
-  try {
-    const response = await fetch(config.digestUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Hermit publisher abuse digest failed: ${response.status} ${body}`);
-    }
-    const now = Date.now();
-    await ctx.runMutation(
-      internal.publisherAbuse.markPublisherAbuseSignalNotificationsSucceededInternal,
-      {
-        signalIds,
-        claimedAt: claimed.claimedAt,
-        now,
-      },
-    );
-    if (claimed.hasMore) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-        { limit: args.limit },
+  let sent = 0;
+  let failed = 0;
+  for (const signal of claimed.signals) {
+    try {
+      const payload = buildHermitPublisherAbuseActionablePayload(signal, config);
+      if (!payload) throw new Error("Signal has no actionable Hermit event payload");
+      const response = await fetch(config.digestUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Hermit publisher abuse event failed: ${response.status} ${body}`);
+      }
+      await ctx.runMutation(
+        internal.publisherAbuse.markPublisherAbuseSignalNotificationsSucceededInternal,
+        { signalIds: [signal._id], claimedAt: claimed.claimedAt, now: Date.now() },
+      );
+      sent += 1;
+    } catch (error) {
+      const message = errorMessageFromUnknown(error);
+      failed += 1;
+      console.error("[publisher-abuse-signals] Hermit actionable event failed", {
+        signalId: signal._id,
+        message,
+      });
+      await ctx.runMutation(
+        internal.publisherAbuse.markPublisherAbuseSignalNotificationsFailedInternal,
+        {
+          signalIds: [signal._id],
+          claimedAt: claimed.claimedAt,
+          error: message,
+        },
       );
     }
-    return { ok: true as const, sent: true as const, count: signalIds.length };
-  } catch (error) {
-    const message = errorMessageFromUnknown(error);
-    console.error("[publisher-abuse-signals] Hermit notification failed", {
-      count: signalIds.length,
-      message,
-    });
-    await ctx.runMutation(
-      internal.publisherAbuse.markPublisherAbuseSignalNotificationsFailedInternal,
-      {
-        signalIds,
-        claimedAt: claimed.claimedAt,
-        error: message,
-      },
-    );
+  }
+  if (claimed.hasMore || failed > 0) {
     await ctx.scheduler.runAfter(
-      PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_RETRY_MS,
+      failed > 0 ? PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_RETRY_MS : 0,
       internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
       { limit: args.limit },
     );
-    return { ok: false as const, sent: false as const, error: message };
   }
+  return failed === 0
+    ? { ok: true as const, sent: true as const, count: sent }
+    : { ok: false as const, sent: sent > 0, count: sent, failed };
 }
 
 export async function notifyPublisherAbuseSignalScanFailureInternalHandler(
@@ -2960,53 +3110,45 @@ function getHermitPublisherAbuseSignalConfig() {
   };
 }
 
-function buildHermitPublisherAbuseSignalDigest(
-  signals: PublisherAbuseSignalDoc[],
-  hasMore: boolean,
+function buildHermitPublisherAbuseActionablePayload(
+  signal: PublisherAbuseSignalDoc,
   config: { siteUrl: string },
 ) {
-  return {
-    kind: "publisher_abuse_signals_changed",
-    changedCount: signals.length,
-    hasMore,
-    dashboardUrl: `${config.siteUrl}/management?view=abuse&tab=signals`,
-    topSignals: signals.map((signal) => ({
-      signalId: signal._id,
-      signalType: signal.signalType,
-      severity: publisherAbuseSignalSeverity(signal.signalType, signal.recurrenceCount),
-      publisher: signal.handleSnapshot,
-      skillSlug: signal.skillSlug,
-      skillDisplayName: signal.skillDisplayName,
-      seenCount: signal.seenCount,
-      firstSeenAt: signal.firstSeenAt,
-      lastSeenAt: signal.lastSeenAt,
-      recent7Downloads: signal.recent7Downloads,
-      recent7Installs: signal.recent7Installs,
-      recent7InstallDownloadRatio: signal.recent7InstallDownloadRatio,
-      recent30Downloads: signal.recent30Downloads,
-      recent30Installs: signal.recent30Installs,
-      recent30InstallDownloadRatio: signal.recent30InstallDownloadRatio,
-      allTimeDownloads: signal.allTimeDownloads,
-      allTimeInstalls: signal.allTimeInstalls,
-      allTimeInstallDownloadRatio: signal.allTimeInstallDownloadRatio,
-      recurrenceCount: signal.recurrenceCount ?? 0,
-      freshDownloadsSinceSnooze: signal.freshDownloadsSinceSnooze ?? 0,
-      freshInstallsSinceSnooze: signal.freshInstallsSinceSnooze ?? 0,
-      skillUrl: `${config.siteUrl}/${routeSegment(signal.handleSnapshot)}/skills/${routeSegment(
-        signal.skillSlug,
-      )}`,
-      publisherUrl: `${config.siteUrl}/${routeSegment(signal.handleSnapshot)}`,
-    })),
+  const publisherScope = signal.signalType === "owner_synchronized_download_trends";
+  const context = {
+    signalId: signal._id,
+    signalType: signal.signalType,
+    scope: publisherScope ? ("publisher" as const) : ("skill" as const),
+    publisher: signal.handleSnapshot,
+    skillSlug: publisherScope ? null : signal.skillSlug,
+    skillDisplayName: publisherScope ? null : signal.skillDisplayName,
+    dashboardUrl: `${config.siteUrl}/management?view=abuse&tab=signals&signal=${encodeURIComponent(signal._id)}`,
   };
-}
-
-function publisherAbuseSignalSeverity(signalType: PublisherAbuseSignalType, recurrenceCount = 0) {
-  if (recurrenceCount > 0) return "high";
-  return signalType === "high_install_download_ratio" ? "high" : "review";
-}
-
-function routeSegment(value: string) {
-  return encodeURIComponent(value.trim().replace(/^@+/, ""));
+  if (signal.notificationEventKind === "publisher_abuse_signal_owner_contact_failed") {
+    const request = signal.trafficExplanationRequest;
+    return {
+      ...context,
+      kind: signal.notificationEventKind,
+      failureReason: request?.deliveryError ?? "Owner contact was not deliverable.",
+      attemptCount: Math.max(1, request?.attemptCount ?? 0),
+      failedAt: request?.latestAttemptAt ?? request?.requestedAt ?? signal.lastSeenAt,
+    };
+  }
+  if (signal.notificationEventKind === "publisher_abuse_signal_owner_response_submitted") {
+    const response = signal.trafficExplanationResponse;
+    if (!response) return null;
+    const preview = response.message
+      ? truncatePublisherAbuseResponsePreview(response.message)
+      : null;
+    return {
+      ...context,
+      kind: signal.notificationEventKind,
+      responseKind: response.kind,
+      responsePreview: preview,
+      submittedAt: response.submittedAt,
+    };
+  }
+  return null;
 }
 
 function chunkArray<T>(values: T[], chunkSize: number) {
@@ -3189,6 +3331,7 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
         candidates: highTemporalCandidates,
         now: Date.now(),
         notifyHermit: (args.trigger ?? "cron") === "cron",
+        notifyOwners: false,
       });
     }
     return {
@@ -3293,6 +3436,7 @@ async function finishTemporalPublisherAbuseScan(
       candidates: highTemporalCandidates,
       now: Date.now(),
       notifyHermit: args.trigger === "cron",
+      notifyOwners: true,
     });
     await processPublisherAbuseAutobanPages(ctx, {});
   }
@@ -3559,7 +3703,11 @@ export async function archiveTemporalPublisherAbuseSignals(
     candidates: TemporalSkillCandidate[];
     benchmark?: TemporalAbuseCohortBenchmark;
     now: number;
+    requestOwnerExplanation?: boolean;
   },
+  options: {
+    onOwnerExplanationRequested?: (signalId: Id<"publisherAbuseSignals">) => Promise<void>;
+  } = {},
 ) {
   let archivedSignals = 0;
   let changedSignals = 0;
@@ -3570,18 +3718,32 @@ export async function archiveTemporalPublisherAbuseSignals(
         findExistingTemporalPublisherAbuseSignal(ctx, candidate, signalType),
       ),
     );
+    let mayRequestNewOwnerExplanation =
+      args.requestOwnerExplanation === true &&
+      signalTypes.some(isTrafficExplanationSignalType) &&
+      !existingSignals.some((signal) => signal?.trafficExplanationRequest);
+
     for (const [index, signalType] of signalTypes.entries()) {
       const existingSignal = existingSignals[index];
-      const result = await upsertPublisherAbuseSignal(ctx, {
-        runId: args.runId,
-        candidate,
-        benchmark: args.benchmark,
-        signalType,
-        now: args.now,
-        existingSignal: existingSignal ?? null,
-      });
+      const result = await upsertPublisherAbuseSignal(
+        ctx,
+        {
+          runId: args.runId,
+          candidate,
+          benchmark: args.benchmark,
+          signalType,
+          now: args.now,
+          existingSignal: existingSignal ?? null,
+          requestOwnerExplanation:
+            isTrafficExplanationSignalType(signalType) &&
+            existingSignal === null &&
+            mayRequestNewOwnerExplanation,
+        },
+        options,
+      );
       archivedSignals += 1;
       if (result.changed) changedSignals += 1;
+      if (result.ownerExplanationRequested) mayRequestNewOwnerExplanation = false;
     }
   }
   return { archivedCandidates: args.candidates.length, archivedSignals, changedSignals };
@@ -3617,9 +3779,18 @@ export async function archiveTemporalPublisherAbuseSignalsPageInternalHandler(
     candidates: TemporalSkillCandidate[];
     benchmark?: TemporalAbuseCohortBenchmark;
     now: number;
+    requestOwnerExplanation?: boolean;
   },
 ) {
-  return await archiveTemporalPublisherAbuseSignals(ctx, args);
+  return await archiveTemporalPublisherAbuseSignals(ctx, args, {
+    onOwnerExplanationRequested: async (signalId) => {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.emailsNode.sendPublisherAbuseTrafficExplanationInternal,
+        { signalId },
+      );
+    },
+  });
 }
 
 function signalTypesForTemporalCandidate(
@@ -3638,6 +3809,13 @@ function signalTypesForTemporalCandidate(
   return signalTypes;
 }
 
+function isTrafficExplanationSignalType(signalType: PublisherAbuseSignalType) {
+  return (
+    signalType === "download_spike_flat_installs" ||
+    signalType === "sustained_abnormal_download_days"
+  );
+}
+
 async function upsertPublisherAbuseSignal(
   ctx: Pick<MutationCtx, "db">,
   args: {
@@ -3647,8 +3825,12 @@ async function upsertPublisherAbuseSignal(
     signalType: PublisherAbuseSignalType;
     now: number;
     existingSignal: PublisherAbuseSignalDoc | null;
+    requestOwnerExplanation: boolean;
   },
-): Promise<{ changed: boolean }> {
+  options: {
+    onOwnerExplanationRequested?: (signalId: Id<"publisherAbuseSignals">) => Promise<void>;
+  },
+): Promise<{ changed: boolean; ownerExplanationRequested: boolean }> {
   const signal = args.existingSignal;
   const snapshot = publisherAbuseSignalSnapshot(args);
 
@@ -3718,14 +3900,15 @@ async function upsertPublisherAbuseSignal(
       lastSeenAt: args.now,
       seenCount: signal.seenCount + 1,
       lastChangedAt: shouldNotify ? args.now : signal.lastChangedAt,
-      needsNotification: shouldNotify ? true : (signal.needsNotification ?? false),
-      notificationClaimedAt: shouldNotify ? undefined : signal.notificationClaimedAt,
-      lastNotificationError: shouldNotify ? undefined : signal.lastNotificationError,
+      needsNotification: signal.notificationEventKind ? (signal.needsNotification ?? false) : false,
     });
-    return { changed: shouldNotify };
+    return {
+      changed: shouldNotify,
+      ownerExplanationRequested: false,
+    };
   }
 
-  await ctx.db.insert("publisherAbuseSignals", {
+  const signalId = await ctx.db.insert("publisherAbuseSignals", {
     ...snapshot,
     firstSeenAt: args.now,
     lastSeenAt: args.now,
@@ -3734,9 +3917,34 @@ async function upsertPublisherAbuseSignal(
     notificationBaselineDownloads: snapshot.allTimeDownloads,
     notificationBaselineInstalls: snapshot.allTimeInstalls,
     lastChangedAt: args.now,
-    needsNotification: true,
+    needsNotification: false,
+    contactState: args.requestOwnerExplanation ? "queued" : "not_requested",
+    attentionState: "not_contacted",
+    needsAttention: false,
+    ...(args.requestOwnerExplanation
+      ? {
+          trafficExplanationRequest: {
+            requestedAt: args.now,
+            state: "queued",
+            attemptCount: 0,
+          },
+        }
+      : {}),
   });
-  return { changed: true };
+  if (args.requestOwnerExplanation) {
+    await ctx.db.insert("auditLogs", {
+      action: "publisher_abuse.signal.owner_contact_queued",
+      targetType: "publisherAbuseSignal",
+      targetId: signalId,
+      metadata: { scope: "skill" },
+      createdAt: args.now,
+    });
+    await options.onOwnerExplanationRequested?.(signalId);
+  }
+  return {
+    changed: true,
+    ownerExplanationRequested: args.requestOwnerExplanation,
+  };
 }
 
 function publisherAbuseSignalSnapshot(args: {

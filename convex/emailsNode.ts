@@ -9,13 +9,18 @@ import { internalAction } from "./functions";
 import {
   buildBanNotificationEmail,
   buildMaliciousArtifactEmail,
+  buildPublisherAbuseTrafficExplanationEmail,
   buildPublisherAbuseWarningEmail,
   buildRestoredAccountEmail,
   buildSecretBlockedPublishEmail,
+  redactPublisherAbuseTrafficExplanationText,
   type NotificationArtifact,
 } from "./lib/emails";
+import { createPublisherAbuseTrafficExplanationToken } from "./lib/publisherAbuseTrafficExplanation";
 
 const DEFAULT_FROM = "ClawHub Security <noreply@notifications.openclaw.ai>";
+const PUBLISHER_ABUSE_CONTACT_MAX_ATTEMPTS = 4;
+const PUBLISHER_ABUSE_CONTACT_RETRY_BASE_MS = 5 * 60_000;
 
 const notificationArtifactValidator = v.object({
   kind: v.union(v.literal("skill"), v.literal("plugin")),
@@ -270,6 +275,106 @@ export const sendPublisherAbuseWarningInternal = internalAction({
       warningSentAt,
       deadlineAt,
     });
+    return result;
+  },
+});
+
+function trafficExplanationResponseUrl(signalId: string, token: string) {
+  const siteUrl = (process.env.SITE_URL?.trim() || "https://clawhub.ai").replace(/\/$/, "");
+  const url = new URL("/traffic-explanation", siteUrl);
+  url.searchParams.set("signal", signalId);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
+export const sendPublisherAbuseTrafficExplanationInternal = internalAction({
+  args: {
+    signalId: v.id("publisherAbuseSignals"),
+  },
+  returns: v.any(),
+  handler: async (ctx, args): Promise<SendEmailResult> => {
+    const context = await ctx.runQuery(
+      internal.publisherAbuseTrafficExplanation.getEmailContextInternal,
+      { signalId: args.signalId },
+    );
+    if (!context) return { ok: false, reason: "request_not_actionable" };
+    if (context.kind === "skip") {
+      await ctx.runMutation(internal.publisherAbuseTrafficExplanation.recordDeliveryInternal, {
+        signalId: args.signalId,
+        requestedAt: context.requestedAt,
+        delivery: {
+          status:
+            context.reason === "owner_already_responded" ||
+            context.reason === "signal_no_longer_open" ||
+            context.reason === "skill_owner_changed"
+              ? "cancelled"
+              : "not_deliverable",
+          recordedAt: Date.now(),
+          reason: context.reason,
+        },
+      });
+      return { ok: false, reason: context.reason };
+    }
+    const explanationToken = await createPublisherAbuseTrafficExplanationToken();
+    const responseUrl = trafficExplanationResponseUrl(args.signalId, explanationToken.token);
+    const email = await buildPublisherAbuseTrafficExplanationEmail({
+      handle: context.handle,
+      publisherHandle: context.publisherHandle,
+      skillDisplayName: context.skillDisplayName,
+      skillSlug: context.skillSlug,
+      scope: context.scope,
+      allPublisherSkills: context.allPublisherSkills,
+      responseUrl,
+    });
+    const attempt = await ctx.runMutation(
+      internal.publisherAbuseTrafficExplanation.beginDeliveryAttemptInternal,
+      {
+        signalId: args.signalId,
+        requestedAt: context.requestedAt,
+        attemptedAt: Date.now(),
+        expectedAttemptCount: context.attemptCount,
+        tokenHash: explanationToken.tokenHash,
+        recipientUserId: context.recipientUserId,
+        recipientEmail: context.to,
+        subject: email.subject,
+        templateVersion: email.templateVersion,
+        reasonBullets: email.reasonBullets,
+        redactedTextSnapshot: redactPublisherAbuseTrafficExplanationText(email.text, responseUrl),
+      },
+    );
+    if (!attempt.ok) return { ok: false, reason: attempt.reason };
+    const result = await sendTransactionalEmail({
+      idempotencyKey: `publisher-abuse-traffic-explanation:${args.signalId}:${context.requestedAt}:${explanationToken.tokenHash}`,
+      to: context.to,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    });
+    await ctx.runMutation(internal.publisherAbuseTrafficExplanation.recordDeliveryInternal, {
+      signalId: args.signalId,
+      requestedAt: context.requestedAt,
+      delivery: result.ok
+        ? {
+            status: "sent",
+            sentAt: Date.now(),
+            providerId: result.id,
+          }
+        : {
+            status:
+              attempt.attemptCount >= PUBLISHER_ABUSE_CONTACT_MAX_ATTEMPTS
+                ? "not_deliverable"
+                : "retrying",
+            recordedAt: Date.now(),
+            reason: result.reason,
+          },
+    });
+    if (!result.ok && attempt.attemptCount < PUBLISHER_ABUSE_CONTACT_MAX_ATTEMPTS) {
+      await ctx.scheduler.runAfter(
+        PUBLISHER_ABUSE_CONTACT_RETRY_BASE_MS * 2 ** (attempt.attemptCount - 1),
+        internal.emailsNode.sendPublisherAbuseTrafficExplanationInternal,
+        { signalId: args.signalId },
+      );
+    }
     return result;
   },
 });
