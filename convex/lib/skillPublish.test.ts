@@ -209,6 +209,201 @@ describe("skillPublish", () => {
     ).rejects.toThrow("storage unavailable");
   });
 
+  it("waits for publish webhook lookup and scheduling before finalization settles", async () => {
+    const previousWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    process.env.DISCORD_WEBHOOK_URL = "https://example.invalid/webhook";
+    try {
+      const publishResult = {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo",
+        embeddingId: "skillEmbeddings:demo",
+      };
+      const webhookLookup = deferred<{
+        skill: {
+          _id: string;
+          slug: string;
+          displayName: string;
+          summary: string;
+          tags: Record<string, unknown>;
+        };
+        owner: { handle: string };
+      }>();
+      const webhookSchedule = deferred<void>();
+      const recordFinalized = vi.fn();
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if ("claimId" in args && !("result" in args)) {
+          return {
+            status: "claimed",
+            attemptId: "publishAttempts:webhook",
+            skillInsertArgs: {
+              userId: "users:1",
+              slug: "webhook-demo",
+              displayName: "Webhook Demo",
+              version: "1.0.0",
+              embedding: [0, 1, 2],
+            },
+            followup: {
+              slug: "webhook-demo",
+              version: "1.0.0",
+              displayName: "Webhook Demo",
+            },
+          };
+        }
+        if ("version" in args && "embedding" in args) return publishResult;
+        if ("result" in args) {
+          recordFinalized();
+          return {
+            attemptId: "publishAttempts:webhook",
+            status: "finalized",
+            result: args.result,
+          };
+        }
+        throw new Error("unexpected mutation");
+      });
+      const scheduler = {
+        runAfter: vi.fn((_delay: number, _ref: unknown, args: Record<string, unknown>) =>
+          args.event === "skill.publish" ? webhookSchedule.promise : Promise.resolve(),
+        ),
+      };
+      const ctx = {
+        runMutation,
+        runQuery: vi.fn(() => webhookLookup.promise),
+        scheduler,
+      };
+
+      const finalization = finalizeSkillPublishAttempt(
+        ctx as never,
+        "publishAttempts:webhook" as never,
+      );
+      const settled = vi.fn();
+      void finalization.then(settled, settled);
+
+      await vi.waitFor(() => expect(ctx.runQuery).toHaveBeenCalledOnce());
+      expect(settled).not.toHaveBeenCalled();
+
+      webhookLookup.resolve({
+        skill: {
+          _id: "skills:demo",
+          slug: "webhook-demo",
+          displayName: "Webhook Demo",
+          summary: "Webhook scheduling regression coverage.",
+          tags: {},
+        },
+        owner: { handle: "demo" },
+      });
+      await vi.waitFor(() =>
+        expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+          event: "skill.publish",
+          skill: expect.objectContaining({ slug: "webhook-demo" }),
+        }),
+      );
+      expect(settled).not.toHaveBeenCalled();
+
+      webhookSchedule.resolve();
+      await expect(finalization).resolves.toEqual(publishResult);
+      expect(recordFinalized).toHaveBeenCalledOnce();
+    } finally {
+      if (previousWebhookUrl === undefined) {
+        delete process.env.DISCORD_WEBHOOK_URL;
+      } else {
+        process.env.DISCORD_WEBHOOK_URL = previousWebhookUrl;
+      }
+    }
+  });
+
+  it.each(["lookup", "schedule"] as const)(
+    "keeps a successful publish finalized when webhook %s fails",
+    async (failure) => {
+      const previousWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
+      process.env.DISCORD_WEBHOOK_URL = "https://example.invalid/webhook";
+      try {
+        const publishResult = {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+        const recordFinalized = vi.fn();
+        const releaseClaim = vi.fn();
+        const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+          if ("claimId" in args && !("result" in args) && !("error" in args)) {
+            return {
+              status: "claimed",
+              attemptId: "publishAttempts:webhook-failure",
+              skillInsertArgs: {
+                userId: "users:1",
+                slug: "webhook-demo",
+                displayName: "Webhook Demo",
+                version: "1.0.0",
+                embedding: [0, 1, 2],
+              },
+              followup: {
+                slug: "webhook-demo",
+                version: "1.0.0",
+                displayName: "Webhook Demo",
+              },
+            };
+          }
+          if ("version" in args && "embedding" in args) return publishResult;
+          if ("result" in args) {
+            recordFinalized();
+            return {
+              attemptId: "publishAttempts:webhook-failure",
+              status: "finalized",
+              result: args.result,
+            };
+          }
+          if ("error" in args) {
+            releaseClaim();
+            return {
+              attemptId: "publishAttempts:webhook-failure",
+              status: "ready_to_finalize",
+            };
+          }
+          throw new Error("unexpected mutation");
+        });
+        const scheduler = {
+          runAfter: vi.fn((_delay: number, _ref: unknown, args: Record<string, unknown>) => {
+            if (failure === "schedule" && args.event === "skill.publish") {
+              return Promise.reject(new Error("webhook scheduler unavailable"));
+            }
+            return Promise.resolve();
+          }),
+        };
+        const ctx = {
+          runMutation,
+          runQuery: vi.fn(() => {
+            if (failure === "lookup") {
+              return Promise.reject(new Error("webhook lookup unavailable"));
+            }
+            return Promise.resolve({
+              skill: {
+                _id: "skills:demo",
+                slug: "webhook-demo",
+                displayName: "Webhook Demo",
+                summary: "Webhook failure regression coverage.",
+                tags: {},
+              },
+              owner: { handle: "demo" },
+            });
+          }),
+          scheduler,
+        };
+
+        await expect(
+          finalizeSkillPublishAttempt(ctx as never, "publishAttempts:webhook-failure" as never),
+        ).resolves.toEqual(publishResult);
+        expect(recordFinalized).toHaveBeenCalledOnce();
+        expect(releaseClaim).not.toHaveBeenCalled();
+      } finally {
+        if (previousWebhookUrl === undefined) {
+          delete process.env.DISCORD_WEBHOOK_URL;
+        } else {
+          process.env.DISCORD_WEBHOOK_URL = previousWebhookUrl;
+        }
+      }
+    },
+  );
+
   it("publishes long display names without rewriting the stored label", async () => {
     const displayName = "A".repeat(120);
     const skillMarkdown = `---\ndescription: Long compatibility name.\n---\n# ${displayName}\n`;
@@ -1517,4 +1712,12 @@ function validPng() {
       "base64",
     ),
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
