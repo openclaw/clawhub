@@ -92,6 +92,26 @@ export type SkillSpectorAnalysis = {
   checkedAt: number;
 };
 
+export type AigFinding = {
+  ruleId: string;
+  level: string;
+  message: string;
+  file?: string;
+  startLine?: number;
+  endLine?: number;
+  remediation?: string;
+};
+
+export type AigAnalysis = {
+  status: string;
+  issueCount: number;
+  findings: AigFinding[];
+  scannerVersion?: string;
+  summary?: string;
+  error?: string;
+  checkedAt: number;
+};
+
 type SkillSpectorScannerResult = {
   applicable: boolean;
   error?: string;
@@ -130,6 +150,7 @@ type ClawScanCommandDiagnostic = {
       verdict?: string;
     };
     scanners?: {
+      aigStatus?: string;
       skillspectorStatus?: string;
       staticStatus?: string;
     };
@@ -143,6 +164,7 @@ type JobDiagnosticInput = {
   error?: string;
   job: ClaimedJob;
   llmAnalysis?: unknown;
+  aigAnalysis?: unknown;
   runId?: string;
   skillSpectorAnalysis?: unknown;
   startedAt: number;
@@ -160,11 +182,12 @@ type ProcessJobResult = {
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CLAWSCAN_TIMEOUT_MS = 20 * 60 * 1000;
-const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector"];
+const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector", "aig"];
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
+const MAX_STORED_AIG_FINDINGS = 25;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const logger = createWorkerLogger({ name: "security-scan-worker" });
 
@@ -386,11 +409,16 @@ const DIAGNOSTIC_PUBLIC_TEXT_PATHS = new Set([
   "clawscanmapping.judge.verdict",
   "clawscanmapping.judge.promptsha256",
   "clawscanmapping.judge.outputschemasha256",
+  "clawscanmapping.scanners.aigstatus",
   "clawscanmapping.scanners.skillspectorstatus",
   "clawscanmapping.scanners.staticstatus",
   "llmanalysis.confidence",
   "llmanalysis.status",
   "llmanalysis.verdict",
+  "aiganalysis.findings.*.level",
+  "aiganalysis.findings.*.ruleid",
+  "aiganalysis.scannerversion",
+  "aiganalysis.status",
   "skillspectoranalysis.issues.*.issueid",
   "skillspectoranalysis.issues.*.severity",
   "skillspectoranalysis.recommendation",
@@ -694,6 +722,7 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       waitForVtUntil: input.job.job.waitForVtUntil,
     },
     llmAnalysis: redactDiagnosticValue(input.llmAnalysis, ["llmAnalysis"]),
+    aigAnalysis: redactDiagnosticValue(input.aigAnalysis, ["aigAnalysis"]),
     runId: input.runId,
     clawscan: input.clawscan
       ? {
@@ -1153,6 +1182,143 @@ export function normalizeSkillSpectorAnalysis(
   };
 }
 
+function normalizeAigPrediction(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["clean", "benign", "safe", "pass", "passed"].includes(normalized)) return "clean";
+  if (["malicious", "unsafe", "block", "blocked"].includes(normalized)) return "malicious";
+  if (["suspicious", "review", "warning", "warn"].includes(normalized)) return "suspicious";
+  return undefined;
+}
+
+function aigPredictionFromProperties(value: unknown) {
+  const properties = asRecord(value);
+  if (!properties) return undefined;
+  for (const key of ["prediction", "verdict", "judgment", "status"]) {
+    const prediction = normalizeAigPrediction(properties[key]);
+    if (prediction) return prediction;
+  }
+  return undefined;
+}
+
+function aigResultMessage(result: Record<string, unknown>, ruleName?: string) {
+  const message = asRecord(result.message);
+  return (
+    readString(message ?? {}, ["text", "markdown"]) ??
+    readString(result, ["message", "description"]) ??
+    ruleName ??
+    readString(result, ["ruleId", "rule_id"]) ??
+    "A.I.G reported a security finding."
+  );
+}
+
+function normalizeAigFinding(
+  input: unknown,
+  index: number,
+  ruleNames: ReadonlyMap<string, string>,
+): AigFinding | null {
+  const result = asRecord(input);
+  if (!result) return null;
+  const ruleId = readString(result, ["ruleId", "rule_id"]) ?? `AIG-${index + 1}`;
+  const location = Array.isArray(result.locations) ? asRecord(result.locations[0]) : undefined;
+  const physicalLocation = asRecord(location?.physicalLocation);
+  const artifactLocation = asRecord(physicalLocation?.artifactLocation);
+  const region = asRecord(physicalLocation?.region);
+  const properties = asRecord(result.properties);
+  const remediation =
+    readString(properties ?? {}, ["remediation", "recommendation", "mitigation", "fix"]) ??
+    (Array.isArray(result.fixes)
+      ? readString(asRecord(result.fixes[0]) ?? {}, ["description", "message"])
+      : undefined);
+  return {
+    ruleId:
+      truncateStoredSkillSpectorText(ruleId, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
+      `AIG-${index + 1}`,
+    level:
+      truncateStoredSkillSpectorText(
+        readString(result, ["level"]) ?? readString(properties ?? {}, ["severity"]),
+        MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+      ) ?? "warning",
+    message:
+      truncateStoredSkillSpectorText(aigResultMessage(result, ruleNames.get(ruleId))) ??
+      "A.I.G reported a security finding.",
+    file: truncateStoredSkillSpectorText(
+      readString(artifactLocation ?? {}, ["uri", "path"]),
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    startLine: readNumber(region ?? {}, ["startLine", "start_line"]),
+    endLine: readNumber(region ?? {}, ["endLine", "end_line"]),
+    remediation: truncateStoredSkillSpectorText(remediation),
+  };
+}
+
+export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAnalysis {
+  const parsed = JSON.parse(raw) as unknown;
+  const document = asRecord(parsed);
+  if (!document || readString(document, ["version"]) !== "2.1.0" || !Array.isArray(document.runs)) {
+    return {
+      status: "error",
+      issueCount: 0,
+      findings: [],
+      error: "A.I.G returned invalid SARIF 2.1.0 output.",
+      checkedAt,
+    };
+  }
+
+  const runs = document.runs
+    .map(asRecord)
+    .filter((run): run is Record<string, unknown> => Boolean(run));
+  const ruleNames = new Map<string, string>();
+  let scannerVersion: string | undefined;
+  const rawResults: unknown[] = [];
+  let prediction = aigPredictionFromProperties(document.properties);
+
+  for (const run of runs) {
+    const driver = asRecord(asRecord(run.tool)?.driver);
+    scannerVersion ??= readString(driver ?? {}, ["version", "semanticVersion"]);
+    const rules = Array.isArray(driver?.rules) ? driver.rules : [];
+    for (const rawRule of rules) {
+      const rule = asRecord(rawRule);
+      if (!rule) continue;
+      const id = readString(rule, ["id"]);
+      const name = readString(rule, ["name", "shortDescription"]);
+      if (id && name) ruleNames.set(id, name);
+    }
+    prediction ??= aigPredictionFromProperties(run.properties);
+    if (Array.isArray(run.results)) rawResults.push(...run.results);
+  }
+
+  for (const rawResult of rawResults) {
+    prediction ??= aigPredictionFromProperties(asRecord(rawResult)?.properties);
+  }
+  if (!prediction) {
+    prediction = rawResults.some(
+      (result) => readString(asRecord(result) ?? {}, ["level"])?.toLowerCase() === "error",
+    )
+      ? "malicious"
+      : rawResults.length > 0
+        ? "suspicious"
+        : "clean";
+  }
+
+  const findings = rawResults
+    .slice(0, MAX_STORED_AIG_FINDINGS)
+    .map((result, index) => normalizeAigFinding(result, index, ruleNames))
+    .filter((finding): finding is AigFinding => Boolean(finding));
+  const issueCount = rawResults.length;
+  return {
+    status: prediction,
+    issueCount,
+    findings,
+    scannerVersion: truncateStoredSkillSpectorText(
+      scannerVersion,
+      MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
+    ),
+    summary: `A.I.G reported ${issueCount} ${issueCount === 1 ? "finding" : "findings"}.`,
+    checkedAt,
+  };
+}
+
 function verdictToStatus(verdict: string) {
   return verdict === "benign" ? "clean" : verdict;
 }
@@ -1560,6 +1726,7 @@ function clawScanDiagnosticMapping(artifact: Record<string, unknown>) {
       verdict: readString(result ?? {}, ["verdict"]),
     },
     scanners: {
+      aigStatus: scannerStatuses.aig,
       skillspectorStatus: scannerStatuses.skillspector,
       staticStatus: scannerStatuses["clawscan-static"],
     },
@@ -1579,6 +1746,7 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const scannerStatuses = readClawScanScannerStatuses(artifact);
   const allowedScannerStatuses: Record<string, Set<string>> = {
     "clawscan-static": new Set(["completed"]),
+    aig: new Set(["completed"]),
     skillspector: new Set(["completed"]),
   };
   for (const [scanner, status] of Object.entries(scannerStatuses)) {
@@ -1612,9 +1780,16 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const rawSkillSpector =
     typeof skillSpector.raw === "string" ? skillSpector.raw : JSON.stringify(skillSpector.raw);
 
+  const aig = asRecord(scanners?.aig);
+  if (!aig || aig.raw === undefined) {
+    throw new Error("ClawScan aig scanner output was missing");
+  }
+  const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
+
   const checkedAt = artifactCompletedAtMs(artifact);
 
   return {
+    aigAnalysis: normalizeAigAnalysis(rawAig, checkedAt),
     llmAnalysis: toStoredLlmAnalysis(parsed, checkedAt),
     mapping: clawScanDiagnosticMapping(artifact),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),
@@ -1747,6 +1922,7 @@ export async function processJob(
   let errorMessage: string | undefined;
   let scanCompletedAt: number | undefined;
   let llmAnalysis: StoredLlmAnalysis | undefined;
+  let aigAnalysis: AigAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
@@ -1755,6 +1931,7 @@ export async function processJob(
       Object.assign(clawscan, next);
     });
     llmAnalysis = mapped.llmAnalysis;
+    aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
     await client.action(api.securityScan.completeCodexScanJob, {
@@ -1762,6 +1939,7 @@ export async function processJob(
       jobId: job.job._id as Id<"securityScanJobs">,
       leaseToken: job.job.leaseToken,
       llmAnalysis,
+      aigAnalysis,
       skillSpectorAnalysis,
       runId: process.env.GITHUB_RUN_ID,
     });
@@ -1837,6 +2015,7 @@ export async function processJob(
         error: errorMessage,
         job,
         llmAnalysis,
+        aigAnalysis,
         runId: process.env.GITHUB_RUN_ID,
         skillSpectorAnalysis,
         startedAt,

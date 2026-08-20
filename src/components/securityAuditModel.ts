@@ -1,16 +1,18 @@
 import {
+  type AigAnalysis,
   getClawScanDisplayStatus,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 
-export type AuditScannerKind = "static" | "virustotal" | "skillspector";
+export type AuditScannerKind = "aig" | "static" | "virustotal" | "skillspector";
 
 export const SECURITY_AUDIT_SUBTEXT = "Security checks across malware telemetry and agentic risk";
 
 type SecurityAuditSignals = {
   vtAnalysis?: VtAnalysis | null;
+  aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   staticScan?: {
@@ -22,6 +24,7 @@ type SecurityAuditSignals = {
 };
 
 export const AUDIT_SCANNER_LABELS: Record<AuditScannerKind, string> = {
+  aig: "A.I.G",
   skillspector: "SkillSpector",
   static: "Static analysis",
   virustotal: "VirusTotal",
@@ -57,17 +60,22 @@ export function getAuditScannerOrder(signals?: SecurityAuditSignals): AuditScann
   const hasStaticScanReview = Boolean(
     signals?.staticScan?.summary?.trim() || signals?.staticScan?.findings?.length,
   );
+  let order: AuditScannerKind[];
   if (signals?.skillSpectorAnalysis) {
-    return hasStaticScanReview
+    order = hasStaticScanReview
       ? ["skillspector", ...SUPPORTING_AUDIT_SCANNER_ORDER]
       : ["skillspector", "virustotal"];
+  } else if (hasStaticScanReview) {
+    order = ["virustotal", "static"];
+  } else {
+    order = ["skillspector", "virustotal"];
   }
-  if (hasStaticScanReview) return ["virustotal", "static"];
-  return ["skillspector", "virustotal"];
+  return signals?.aigAnalysis ? ["aig", ...order] : order;
 }
 
 export function getLatestAuditCheckedAt(signals: SecurityAuditSignals) {
   const values = [
+    signals.aigAnalysis?.checkedAt,
     signals.llmAnalysis?.checkedAt,
     signals.skillSpectorAnalysis?.checkedAt,
     signals.vtAnalysis?.checkedAt,

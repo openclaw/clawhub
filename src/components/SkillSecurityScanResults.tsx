@@ -106,6 +106,26 @@ export type SkillSpectorAnalysis = {
   checkedAt: number;
 };
 
+type AigFinding = {
+  ruleId: string;
+  level: string;
+  message: string;
+  file?: string;
+  startLine?: number;
+  endLine?: number;
+  remediation?: string;
+};
+
+export type AigAnalysis = {
+  status: string;
+  issueCount: number;
+  findings: AigFinding[];
+  scannerVersion?: string;
+  summary?: string;
+  error?: string;
+  checkedAt: number;
+};
+
 type StaticFinding = {
   code: string;
   severity: string;

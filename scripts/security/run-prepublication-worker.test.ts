@@ -176,6 +176,14 @@ describe("pre-publication worker", () => {
       summary: "TruffleHog found no verified secrets.",
     });
     const runClawScan = vi.fn().mockResolvedValue({
+      aigAnalysis: {
+        checkedAt: 123,
+        findings: [],
+        issueCount: 0,
+        scannerVersion: "0.2.1",
+        status: "clean",
+        summary: "A.I.G reported 0 findings.",
+      },
       analysis: {
         checkedAt: 123,
         confidence: "high",
@@ -208,6 +216,7 @@ describe("pre-publication worker", () => {
         token: "worker-token",
         trufflehog: { status: "clean", summary: "TruffleHog found no verified secrets." },
         clawscan: expect.objectContaining({ status: "clean" }),
+        aigAnalysis: expect.objectContaining({ status: "clean", issueCount: 0 }),
       }),
     );
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
@@ -630,7 +639,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
 JSON
 `,
     );
@@ -662,6 +671,11 @@ JSON
           analysis: expect.objectContaining({
             status: "clean",
             verdict: "benign",
+          }),
+          aigAnalysis: expect.objectContaining({
+            issueCount: 0,
+            scannerVersion: "0.2.1",
+            status: "clean",
           }),
           check: {
             status: "clean",

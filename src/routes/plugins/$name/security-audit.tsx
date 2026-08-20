@@ -172,6 +172,7 @@ export function PluginSecurityAuditPage({
       }}
       sha256hash={release.artifact?.sha256 ?? null}
       vtAnalysis={release.vtAnalysis ?? null}
+      aigAnalysis={release.aigAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}
       skillSpectorApplicable={

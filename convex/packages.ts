@@ -354,6 +354,26 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const aigAnalysisValidator = v.object({
+  status: v.string(),
+  issueCount: v.number(),
+  findings: v.array(
+    v.object({
+      ruleId: v.string(),
+      level: v.string(),
+      message: v.string(),
+      file: v.optional(v.string()),
+      startLine: v.optional(v.number()),
+      endLine: v.optional(v.number()),
+      remediation: v.optional(v.string()),
+    }),
+  ),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 const PACKAGE_STAT_EVENT_BATCH_SIZE = 100;
 export const PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =
   "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS";
@@ -1315,6 +1335,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
           : release.verification,
       sha256hash: release.sha256hash,
       vtAnalysis: release.vtAnalysis,
+      aigAnalysis: release.aigAnalysis,
       skillSpectorAnalysis: release.skillSpectorAnalysis,
       llmAnalysis: release.llmAnalysis,
       staticScan: release.staticScan,
@@ -12183,6 +12204,20 @@ export const updateReleaseSkillSpectorAnalysisInternal = internalMutation({
     if (!isReleaseActive(release)) return;
     await ctx.db.patch(args.releaseId, {
       skillSpectorAnalysis: args.skillSpectorAnalysis,
+    });
+  },
+});
+
+export const updateReleaseAigAnalysisInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    aigAnalysis: v.optional(aigAnalysisValidator),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!isReleaseActive(release)) return;
+    await ctx.db.patch(args.releaseId, {
+      aigAnalysis: args.aigAnalysis,
     });
   },
 });

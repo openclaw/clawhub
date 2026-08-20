@@ -11,6 +11,7 @@ import {
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
 import {
+  normalizeAigAnalysis,
   normalizeSkillSpectorAnalysis,
   publishWorkerHealthSummary,
   processJob,
@@ -367,6 +368,61 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(analysis.issues).toHaveLength(25);
     expect(analysis.issues[0]?.codeSnippet).toContain("...[truncated ");
     expect(analysis.issues[0]?.codeSnippet?.length).toBeLessThan(longSnippet.length);
+  });
+
+  it("normalizes A.I.G SARIF findings and scanner metadata", () => {
+    const analysis = normalizeAigAnalysis(
+      JSON.stringify({
+        version: "2.1.0",
+        runs: [
+          {
+            tool: {
+              driver: {
+                name: "aig-skill-scan",
+                version: "0.2.1",
+                rules: [{ id: "T04", name: "Embedded Malicious Code" }],
+              },
+            },
+            results: [
+              {
+                ruleId: "T04",
+                level: "error",
+                message: { text: "Embedded payload executes a downloaded script." },
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: "SKILL.md" },
+                      region: { startLine: 12, endLine: 14 },
+                    },
+                  },
+                ],
+                properties: { remediation: "Remove the downloaded payload." },
+              },
+            ],
+          },
+        ],
+      }),
+      123,
+    );
+
+    expect(analysis).toEqual({
+      checkedAt: 123,
+      findings: [
+        {
+          endLine: 14,
+          file: "SKILL.md",
+          level: "error",
+          message: "Embedded payload executes a downloaded script.",
+          remediation: "Remove the downloaded payload.",
+          ruleId: "T04",
+          startLine: 12,
+        },
+      ],
+      issueCount: 1,
+      scannerVersion: "0.2.1",
+      status: "malicious",
+      summary: "A.I.G reported 1 finding.",
+    });
   });
 
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {

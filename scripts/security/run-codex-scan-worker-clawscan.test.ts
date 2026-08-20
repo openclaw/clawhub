@@ -184,11 +184,12 @@ function clawScanArtifactJson(options?: {
   completedAt?: string;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
-  scannerStatuses?: Partial<Record<"clawscan-static" | "skillspector", string>>;
+  scannerStatuses?: Partial<Record<"aig" | "clawscan-static" | "skillspector", string>>;
   verdict?: ClawScanVerdict;
 }) {
   const verdict = options?.verdict ?? "benign";
   const scannerStatuses = {
+    aig: "completed",
     "clawscan-static": "completed",
     skillspector: "completed",
     ...options?.scannerStatuses,
@@ -197,6 +198,25 @@ function clawScanArtifactJson(options?: {
     schemaVersion: "clawscan-run-v1",
     profile: "clawhub",
     scanners: {
+      aig: {
+        status: scannerStatuses.aig,
+        raw: {
+          version: "2.1.0",
+          runs: [
+            {
+              tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } },
+              results: [
+                {
+                  ruleId: "T04",
+                  level: "error",
+                  message: { text: "Embedded payload" },
+                  properties: { remediation: "Remove the payload." },
+                },
+              ],
+            },
+          ],
+        },
+      },
       skillspector: {
         status: scannerStatuses.skillspector,
         raw: {
@@ -555,6 +575,11 @@ JSON`,
             status: expectedStatus,
             verdict,
           },
+          aigAnalysis: {
+            issueCount: 1,
+            scannerVersion: "0.2.1",
+            status: "malicious",
+          },
           skillSpectorAnalysis: {
             issueCount: 1,
             status: "suspicious",
@@ -690,6 +715,10 @@ JSON`,
           llmAnalysis: {
             status: "clean",
             verdict: "benign",
+          },
+          aigAnalysis: {
+            issueCount: 1,
+            status: "malicious",
           },
           skillSpectorAnalysis: {
             issueCount: 1,

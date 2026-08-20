@@ -183,6 +183,28 @@ export const PackageSkillSpectorAnalysisSchema = type({
 });
 export type PackageSkillSpectorAnalysis = (typeof PackageSkillSpectorAnalysisSchema)[inferred];
 
+export const PackageAigFindingSchema = type({
+  ruleId: "string",
+  level: "string",
+  message: "string",
+  file: "string?",
+  startLine: "number?",
+  endLine: "number?",
+  remediation: "string?",
+});
+export type PackageAigFinding = (typeof PackageAigFindingSchema)[inferred];
+
+export const PackageAigAnalysisSchema = type({
+  status: "string",
+  issueCount: "number",
+  findings: PackageAigFindingSchema.array(),
+  scannerVersion: "string?",
+  summary: "string?",
+  error: "string?",
+  checkedAt: "number",
+});
+export type PackageAigAnalysis = (typeof PackageAigAnalysisSchema)[inferred];
+
 export const PackageLlmAnalysisDimensionSchema = type({
   name: "string",
   label: "string",
@@ -497,6 +519,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     sha256hash: "string|null?",
     vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
     skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
+    aigAnalysis: PackageAigAnalysisSchema.or("null").optional(),
     llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
     staticScan: PackageStaticScanSchema.or("null").optional(),
   }).or("null"),

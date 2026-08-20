@@ -13,7 +13,9 @@ import {
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
 import {
+  type AigAnalysis,
   type ClaimedJob,
+  normalizeAigAnalysis,
   type StoredLlmAnalysis,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
@@ -43,6 +45,7 @@ type ClaimedPrePublicationAttempt = {
     release?: Record<string, unknown>;
   };
   existingClawscanAnalysis?: StoredLlmAnalysis;
+  existingAigAnalysis?: AigAnalysis;
   checkClaimExpiresAt: number;
   createdAt: number;
 };
@@ -74,6 +77,7 @@ type TruffleHogResult = WorkerCheckResult & {
 type ClawScanResult = {
   check: WorkerCheckResult;
   analysis?: StoredLlmAnalysis;
+  aigAnalysis?: AigAnalysis;
 };
 
 type ProcessAttemptDeps = {
@@ -421,6 +425,7 @@ function collectClawScanScannerFailures(scanners: Record<string, unknown> | unde
 
 function storedAnalysisFromClawScanArtifact(artifact: unknown): {
   analysis?: StoredLlmAnalysis;
+  aigAnalysis?: AigAnalysis;
   error?: string;
 } {
   const record = asRecord(artifact);
@@ -451,9 +456,16 @@ function storedAnalysisFromClawScanArtifact(artifact: unknown): {
   const guidance = readString(result, ["guidance"]);
   const model = readString(result, ["model"]);
   const summary = readString(result, ["summary"]);
+  const checkedAt = Date.now();
+  const aig = asRecord(asRecord(record?.scanners)?.aig);
+  if (!aig || aig.raw === undefined) {
+    return { error: "ClawScan aig scanner output was missing" };
+  }
+  const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
   return {
+    aigAnalysis: normalizeAigAnalysis(rawAig, checkedAt),
     analysis: {
-      checkedAt: Date.now(),
+      checkedAt,
       status: verdictToStoredStatus(verdict),
       verdict,
       ...(confidence ? { confidence } : {}),
@@ -542,6 +554,7 @@ export async function runNativeClawScan(
   }
   return {
     analysis: parsed.analysis,
+    aigAnalysis: parsed.aigAnalysis,
     check: clawScanCheckResult(parsed.analysis),
   };
 }
@@ -561,6 +574,7 @@ async function completeAttempt(
   trufflehog: WorkerCheckResult,
   clawscan: WorkerCheckResult,
   clawscanAnalysis?: StoredLlmAnalysis,
+  aigAnalysis?: AigAnalysis,
 ) {
   return await client.action(api.publishAttempts.completePrePublicationChecks, {
     token,
@@ -570,6 +584,7 @@ async function completeAttempt(
     trufflehog: checkResultForConvex(trufflehog),
     clawscan: checkResultForConvex(clawscan),
     ...(clawscanAnalysis ? { clawscanAnalysis } : {}),
+    ...(aigAnalysis ? { aigAnalysis } : {}),
   });
 }
 
@@ -593,6 +608,8 @@ export async function processPrePublicationAttempt(
           status: "clean",
           summary: "Pre-publication ClawScan already passed.",
         },
+        undefined,
+        attempt.existingAigAnalysis,
       );
       logger.info(
         {
@@ -659,8 +676,10 @@ export async function processPrePublicationAttempt(
 
     let clawscan: WorkerCheckResult;
     let clawscanAnalysis: StoredLlmAnalysis | undefined;
+    let aigAnalysis: AigAnalysis | undefined;
     if (attempt.existingClawscanAnalysis) {
       clawscanAnalysis = attempt.existingClawscanAnalysis;
+      aigAnalysis = attempt.existingAigAnalysis;
       clawscan = clawScanCheckResult(clawscanAnalysis);
       logger.info(
         {
@@ -674,6 +693,7 @@ export async function processPrePublicationAttempt(
       try {
         const review = await runClawScan(job, workspace);
         clawscanAnalysis = review.analysis;
+        aigAnalysis = review.aigAnalysis;
         clawscan = review.check;
       } catch (error) {
         clawscan = {
@@ -691,6 +711,7 @@ export async function processPrePublicationAttempt(
       trufflehog,
       clawscan,
       clawscanAnalysis,
+      aigAnalysis,
     );
     logger.info(
       {

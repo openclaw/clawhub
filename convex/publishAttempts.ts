@@ -67,6 +67,26 @@ const workerLlmAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const workerAigAnalysisValidator = v.object({
+  status: v.string(),
+  issueCount: v.number(),
+  findings: v.array(
+    v.object({
+      ruleId: v.string(),
+      level: v.string(),
+      message: v.string(),
+      file: v.optional(v.string()),
+      startLine: v.optional(v.number()),
+      endLine: v.optional(v.number()),
+      remediation: v.optional(v.string()),
+    }),
+  ),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -84,6 +104,14 @@ function withClawscanAnalysis(insertArgs: unknown, clawscanAnalysis: unknown) {
   return {
     ...asRecord(insertArgs),
     llmAnalysis: clawscanAnalysis,
+  };
+}
+
+function withAigAnalysis(insertArgs: unknown, aigAnalysis: unknown) {
+  if (!aigAnalysis) return insertArgs;
+  return {
+    ...asRecord(insertArgs),
+    aigAnalysis,
   };
 }
 
@@ -682,6 +710,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
+    aigAnalysis: v.optional(workerAigAnalysisValidator),
   },
   handler: async (ctx, args) => {
     const attempt = await ctx.db.get(args.attemptId);
@@ -752,6 +781,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         await ctx.db.patch(attempt.skillVersionId, {
           publicationStatus: "blocked",
           llmAnalysis: args.clawscanAnalysis,
+          aigAnalysis: args.aigAnalysis,
           publishAttemptId: attempt._id,
         });
       }
@@ -764,6 +794,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
           publicationStatus: "blocked",
           verification,
           llmAnalysis: args.clawscanAnalysis,
+          aigAnalysis: args.aigAnalysis,
           publishAttemptId: attempt._id,
         });
       }
@@ -772,11 +803,17 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         checks,
         skillInsertArgs:
           attempt.kind === "skill"
-            ? withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis)
+            ? withAigAnalysis(
+                withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis),
+                args.aigAnalysis,
+              )
             : attempt.skillInsertArgs,
         packageInsertArgs:
           attempt.kind === "package"
-            ? withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis)
+            ? withAigAnalysis(
+                withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis),
+                args.aigAnalysis,
+              )
             : attempt.packageInsertArgs,
         checkClaimId: undefined,
         checkClaimedAt: undefined,
@@ -817,12 +854,14 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     if (attempt.kind === "skill" && attempt.skillVersionId && args.clawscanAnalysis) {
       await ctx.db.patch(attempt.skillVersionId, {
         llmAnalysis: args.clawscanAnalysis,
+        aigAnalysis: args.aigAnalysis,
         publishAttemptId: attempt._id,
       });
     }
     if (attempt.kind === "package" && attempt.packageReleaseId && args.clawscanAnalysis) {
       await ctx.db.patch(attempt.packageReleaseId, {
         llmAnalysis: args.clawscanAnalysis,
+        aigAnalysis: args.aigAnalysis,
         publishAttemptId: attempt._id,
       });
     }
@@ -832,11 +871,17 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
       checks,
       skillInsertArgs:
         attempt.kind === "skill"
-          ? withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis)
+          ? withAigAnalysis(
+              withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis),
+              args.aigAnalysis,
+            )
           : attempt.skillInsertArgs,
       packageInsertArgs:
         attempt.kind === "package"
-          ? withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis)
+          ? withAigAnalysis(
+              withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis),
+              args.aigAnalysis,
+            )
           : attempt.packageInsertArgs,
       checkClaimId: undefined,
       checkClaimedAt: undefined,
@@ -927,10 +972,12 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
       });
 
       let existingClawscanAnalysis: unknown;
+      let existingAigAnalysis: unknown;
       if (attempt.kind === "skill" && attempt.skillVersionId) {
         const version = await ctx.db.get(attempt.skillVersionId);
         if (version?.fingerprint === attempt.artifactFingerprint) {
           existingClawscanAnalysis = reusableClawscanAnalysis(version.llmAnalysis);
+          existingAigAnalysis = version.aigAnalysis;
         }
       } else if (attempt.kind === "package" && attempt.packageReleaseId) {
         const release = await ctx.db.get(attempt.packageReleaseId);
@@ -939,6 +986,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
           : release?.integritySha256;
         if (release && releaseFingerprint === attempt.artifactFingerprint) {
           existingClawscanAnalysis = reusableClawscanAnalysis(release.llmAnalysis);
+          existingAigAnalysis = release.aigAnalysis;
         }
       }
 
@@ -969,6 +1017,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
               scanContext: buildPackageAttemptScanContext(attempt),
             }),
         ...(existingClawscanAnalysis ? { existingClawscanAnalysis } : {}),
+        ...(existingAigAnalysis ? { existingAigAnalysis } : {}),
         checkClaimExpiresAt,
         createdAt: attempt.createdAt,
       };
@@ -1421,6 +1470,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
     clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
+    aigAnalysis: v.optional(workerAigAnalysisValidator),
   },
   handler: async (ctx, args): Promise<unknown> => {
     assertWorkerToken(args.token);
@@ -1433,6 +1483,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
         trufflehog: args.trufflehog,
         clawscan: args.clawscan,
         clawscanAnalysis: args.clawscanAnalysis,
+        aigAnalysis: args.aigAnalysis,
       },
     )) as {
       attemptId: Id<"publishAttempts">;

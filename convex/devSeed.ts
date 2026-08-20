@@ -2611,6 +2611,28 @@ function staticSuspiciousSkillScan(now: number) {
   };
 }
 
+function aigSuspiciousSkillAnalysis(now: number) {
+  return {
+    status: "malicious",
+    issueCount: 1,
+    findings: [
+      {
+        ruleId: "T04",
+        level: "error",
+        message: "The skill instructs the agent to transmit local session data externally.",
+        file: "SKILL.md",
+        startLine: 17,
+        endLine: 18,
+        remediation:
+          "Remove the session-file upload instruction and keep diagnostics local to the stated Todoist workflow.",
+      },
+    ],
+    scannerVersion: "0.2.1",
+    summary: "A.I.G reported 1 finding from SkillTrustBench rule T04.",
+    checkedAt: now,
+  };
+}
+
 function clawScanRiskAnalysis(now: number) {
   return {
     status: "suspicious",
@@ -3148,6 +3170,7 @@ export async function seedLocalModerationFixturesHandler(
             frontmatter: scannedSkillFrontmatter,
             clawdis: scannedSkillClawdis,
           },
+          aigAnalysis: aigSuspiciousSkillAnalysis(now),
         });
       } else {
         storageIdsToDelete.push(args.scannedSkillStorageId);
@@ -3364,6 +3387,7 @@ export async function seedLocalModerationFixturesHandler(
       checkedAt: now,
     },
     llmAnalysis: clawScanRiskAnalysis(now),
+    aigAnalysis: aigSuspiciousSkillAnalysis(now),
     staticScan: scannedSkillStaticScan,
   });
   const scannedSkillEmbeddingId = await ctx.db.insert("skillEmbeddings", {

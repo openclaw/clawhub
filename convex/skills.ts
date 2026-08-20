@@ -266,6 +266,26 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const aigAnalysisValidator = v.object({
+  status: v.string(),
+  issueCount: v.number(),
+  findings: v.array(
+    v.object({
+      ruleId: v.string(),
+      level: v.string(),
+      message: v.string(),
+      file: v.optional(v.string()),
+      startLine: v.optional(v.number()),
+      endLine: v.optional(v.number()),
+      remediation: v.optional(v.string()),
+    }),
+  ),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 function buildStructuredModerationPatch(params: {
   staticScan?: Doc<"skillVersions">["staticScan"];
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
@@ -1849,6 +1869,7 @@ type PublicSkillVersion = {
   softDeletedAt?: number;
   sha256hash?: string;
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
+  aigAnalysis?: Doc<"skillVersions">["aigAnalysis"];
   skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   staticScan?: {
@@ -2108,6 +2129,7 @@ function toPublicSkillVersion(
     softDeletedAt: version.softDeletedAt,
     sha256hash: version.sha256hash,
     vtAnalysis: version.vtAnalysis,
+    aigAnalysis: version.aigAnalysis,
     skillSpectorAnalysis: version.skillSpectorAnalysis,
     llmAnalysis: version.llmAnalysis,
     staticScan: version.staticScan
@@ -2152,6 +2174,7 @@ function toPublicGitHubSkillScan(
     path: currentPath ?? scan.path,
     status: scan.status,
     version: version ?? commit.slice(0, 12),
+    aigAnalysis: scan.aigAnalysis,
     skillSpectorAnalysis: scan.skillSpectorAnalysis,
     llmAnalysis: scan.llmAnalysis,
     staticScan: scan.staticScan
@@ -9235,6 +9258,20 @@ export const updateVersionSkillSpectorAnalysisInternal = internalMutation({
     if (!version) return;
     await ctx.db.patch(args.versionId, {
       skillSpectorAnalysis: args.skillSpectorAnalysis,
+    });
+  },
+});
+
+export const updateVersionAigAnalysisInternal = internalMutation({
+  args: {
+    versionId: v.id("skillVersions"),
+    aigAnalysis: aigAnalysisValidator,
+  },
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    if (!version) return;
+    await ctx.db.patch(args.versionId, {
+      aigAnalysis: args.aigAnalysis,
     });
   },
 });

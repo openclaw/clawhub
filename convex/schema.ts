@@ -63,6 +63,26 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const aigAnalysisValidator = v.object({
+  status: v.string(),
+  issueCount: v.number(),
+  findings: v.array(
+    v.object({
+      ruleId: v.string(),
+      level: v.string(),
+      message: v.string(),
+      file: v.optional(v.string()),
+      startLine: v.optional(v.number()),
+      endLine: v.optional(v.number()),
+      remediation: v.optional(v.string()),
+    }),
+  ),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 const depRegistryStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -582,6 +602,7 @@ const githubSkillScans = defineTable({
   status: githubSkillScanStatusValidator,
   skillScanRequestId: v.optional(v.id("skillScanRequests")),
   staticScan: v.optional(staticScanValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
   lastError: v.optional(v.string()),
@@ -1195,6 +1216,7 @@ const skillVersions = defineTable({
   ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
@@ -1867,6 +1889,7 @@ const packageReleases = defineTable({
   // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
@@ -2206,6 +2229,7 @@ const skillScanRequests = defineTable({
   ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
   staticScan: v.optional(staticScanValidator),

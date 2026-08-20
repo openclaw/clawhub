@@ -10,6 +10,7 @@ import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
   getSkillSpectorIssueCount,
   SecurityScanResults,
+  type AigAnalysis,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type VtAnalysis,
@@ -162,6 +163,25 @@ const skillSpectorAnalysis: SkillSpectorAnalysis = {
         "The manifest advertises a generic security benchmark skill, but the body defines an unrelated Magic 8-Ball skill that executes shell commands.",
       remediation:
         "Make the manifest and body accurately describe the same skill, and reject deceptive metadata.",
+    },
+  ],
+};
+
+const aigAnalysis: AigAnalysis = {
+  status: "malicious",
+  issueCount: 1,
+  scannerVersion: "0.2.1",
+  summary: "A.I.G reported 1 finding from SkillTrustBench rule T04.",
+  checkedAt: Date.now(),
+  findings: [
+    {
+      ruleId: "T04",
+      level: "error",
+      message: "The skill instructs the agent to transmit local session data externally.",
+      file: "SKILL.md",
+      startLine: 17,
+      endLine: 18,
+      remediation: "Remove the session-file upload instruction.",
     },
   ],
 };
@@ -518,6 +538,37 @@ describe("SecurityScanResults static guidance", () => {
         node.textContent?.trim(),
       ),
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+  });
+
+  it("renders A.I.G findings with Tencent Zhuque Lab attribution", () => {
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "A.I.G Demo",
+          name: "aig-demo",
+          version: "1.0.0",
+          detailPath: "/local/aig-demo",
+        }}
+        aigAnalysis={aigAnalysis}
+        llmAnalysis={clawScanAnalysis}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "A.I.G" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: /Based on Tencent Zhuque Lab AI-Infra-Guard/i })
+        .getAttribute("href"),
+    ).toBe("https://github.com/Tencent/AI-Infra-Guard");
+    expect(screen.getByText("T04")).toBeTruthy();
+    expect(screen.getByText("SKILL.md:17")).toBeTruthy();
+    expect(screen.getByText("Remove the session-file upload instruction.")).toBeTruthy();
+    expect(
+      Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["Overview", "A.I.G", "SkillSpector", "VirusTotal"]);
   });
 
   it("loads plugin SkillSpector snippets through the package text-preview contract", async () => {
@@ -1152,6 +1203,7 @@ describe("SecurityScanResults static guidance", () => {
         detailPath: "/local/pattern-guard",
       },
       sha256hash: "a".repeat(64),
+      aigAnalysis,
       llmAnalysis: clawScanAnalysis,
       skillSpectorAnalysis,
       staticScan,
@@ -1162,6 +1214,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(buildSecurityAuditExportEntries(input).map((entry) => entry.path)).toEqual([
       "manifest.json",
       "clawscan.json",
+      "aig.json",
       "skillspector.json",
       "static-analysis.json",
       "virustotal.json",
@@ -1172,6 +1225,7 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(Object.keys(zipEntries).sort()).toEqual([
       "README.md",
+      "aig.json",
       "clawscan.json",
       "manifest.json",
       "skillspector.json",
@@ -1179,11 +1233,13 @@ describe("SecurityScanResults static guidance", () => {
       "virustotal.json",
     ]);
     expect(JSON.parse(decode("manifest.json")).scanners).toEqual({
+      aig: "malicious",
       clawscan: "suspicious",
       skillspector: "suspicious",
       staticAnalysis: "suspicious",
       virustotal: "suspicious",
     });
+    expect(JSON.parse(decode("aig.json")).findings[0].ruleId).toBe("T04");
     expect(JSON.parse(decode("skillspector.json")).issues[0].issueId).toBe("SDI-1");
     expect(JSON.parse(decode("static-analysis.json")).findings[0].code).toBe(
       "static.network_request",

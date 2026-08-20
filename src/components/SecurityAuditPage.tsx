@@ -32,6 +32,7 @@ import {
   hasSkillSpectorFindings,
   ScanResultBadge,
   SkillSpectorFindings,
+  type AigAnalysis,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type SkillSpectorIssue,
@@ -60,6 +61,7 @@ type SecurityAuditPageProps = {
   entity: EntityRef;
   sha256hash?: string | null;
   vtAnalysis?: VtAnalysis | null;
+  aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   skillSpectorApplicable?: boolean;
@@ -567,6 +569,64 @@ function StaticScanSection(props: SecurityAuditPageProps) {
   return <StaticScanDetails staticScan={staticScan} />;
 }
 
+function AigSection(props: SecurityAuditPageProps) {
+  const analysis = props.aigAnalysis;
+  if (!analysis) return null;
+  return (
+    <div className="security-report-panel-body security-report-panel-body-findings">
+      <div className="security-report-overview-body">
+        <p>
+          {analysis.summary?.trim() ||
+            `A.I.G reported ${analysis.issueCount} ${analysis.issueCount === 1 ? "finding" : "findings"}.`}
+        </p>
+      </div>
+      {analysis.findings.length ? (
+        <div className="static-analysis-findings">
+          {analysis.findings.map((finding, index) => {
+            const location = finding.file
+              ? `${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
+              : null;
+            return (
+              <article
+                key={`${finding.ruleId}-${finding.file ?? "artifact"}-${finding.startLine ?? 0}-${index}`}
+                className="static-analysis-finding"
+              >
+                <div className="static-analysis-finding-header">
+                  <h3 className="agentic-risk-finding-title">{finding.message}</h3>
+                  <div className="agentic-risk-finding-badges">
+                    <ScanResultBadge
+                      status={finding.level}
+                      label={formatStaticScanSeverity(finding.level)}
+                    />
+                  </div>
+                </div>
+                <dl className="static-analysis-finding-details">
+                  <div>
+                    <dt>Rule</dt>
+                    <dd>{finding.ruleId}</dd>
+                  </div>
+                  {location ? (
+                    <div>
+                      <dt>Location</dt>
+                      <dd>{location}</dd>
+                    </div>
+                  ) : null}
+                  {finding.remediation?.trim() ? (
+                    <div>
+                      <dt>Remediation</dt>
+                      <dd>{finding.remediation}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function VirusTotalSection(props: SecurityAuditPageProps) {
   const vtUrl = props.sha256hash ? `https://www.virustotal.com/gui/file/${props.sha256hash}` : null;
   return (
@@ -710,6 +770,20 @@ function SkillSpectorAttribution() {
   );
 }
 
+function AigAttribution() {
+  return (
+    <a
+      className="skillspector-attribution"
+      href="https://github.com/Tencent/AI-Infra-Guard"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Based on Tencent Zhuque Lab AI-Infra-Guard
+      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+    </a>
+  );
+}
+
 function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
   for (const candidate of candidates) {
     const value = candidate?.trim();
@@ -841,9 +915,11 @@ function SecurityAuditScannerSection({
             {label}
           </h2>
           {kind === "skillspector" ? <SkillSpectorAttribution /> : null}
+          {kind === "aig" ? <AigAttribution /> : null}
         </div>
       </div>
       {kind === "static" ? <StaticScanSection {...props} /> : null}
+      {kind === "aig" ? <AigSection {...props} /> : null}
       {kind === "virustotal" ? <VirusTotalSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
     </section>

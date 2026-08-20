@@ -322,6 +322,26 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
+const aigAnalysisValidator = v.object({
+  status: v.string(),
+  issueCount: v.number(),
+  findings: v.array(
+    v.object({
+      ruleId: v.string(),
+      level: v.string(),
+      message: v.string(),
+      file: v.optional(v.string()),
+      startLine: v.optional(v.number()),
+      endLine: v.optional(v.number()),
+      remediation: v.optional(v.string()),
+    }),
+  ),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 const scanRequestFileValidator = v.object({
   path: v.string(),
   size: v.number(),
@@ -367,6 +387,7 @@ const internalRefs = internal as unknown as {
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
     updateReleaseLlmAnalysisInternal: unknown;
+    updateReleaseAigAnalysisInternal: unknown;
     updateReleaseSkillSpectorAnalysisInternal: unknown;
   };
   securityScan: {
@@ -395,6 +416,7 @@ const internalRefs = internal as unknown as {
     getVersionByIdInternal: unknown;
     listVersionFingerprintsInternal: unknown;
     updateVersionLlmAnalysisInternal: unknown;
+    updateVersionAigAnalysisInternal: unknown;
     updateVersionSkillSpectorAnalysisInternal: unknown;
   };
   skillCards: {
@@ -1054,6 +1076,7 @@ function skillScanRequestExpiresAt(now: number) {
 
 function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
   return {
+    aig: request.aigAnalysis ?? null,
     clawscan: request.llmAnalysis ?? null,
     skillspector: request.skillSpectorAnalysis ?? null,
     staticAnalysis: request.staticScan ?? null,
@@ -1069,10 +1092,11 @@ function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
 function storedScanReportFromArtifact(
   artifact: Pick<
     Doc<"skillVersions"> | Doc<"packageReleases">,
-    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
   >,
 ) {
   return {
+    aig: artifact.aigAnalysis ?? null,
     clawscan: artifact.llmAnalysis ?? null,
     skillspector: artifact.skillSpectorAnalysis ?? null,
     staticAnalysis: artifact.staticScan ?? null,
@@ -1088,10 +1112,11 @@ function storedScanReportFromArtifact(
 function hasStoredScanReport(
   artifact: Pick<
     Doc<"skillVersions"> | Doc<"packageReleases">,
-    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
   >,
 ) {
   return Boolean(
+    artifact.aigAnalysis ||
     artifact.llmAnalysis ||
     artifact.skillSpectorAnalysis ||
     artifact.staticScan ||
@@ -1102,10 +1127,11 @@ function hasStoredScanReport(
 function completedAtFromStoredScanReport(
   artifact: Pick<
     Doc<"skillVersions"> | Doc<"packageReleases">,
-    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
   >,
 ) {
   const checkedAtValues = [
+    artifact.aigAnalysis?.checkedAt,
     artifact.llmAnalysis?.checkedAt,
     artifact.skillSpectorAnalysis?.checkedAt,
     artifact.staticScan?.checkedAt,
@@ -1507,6 +1533,7 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
         path: target.githubPath,
         status: "pending",
         staticScan: args.staticScan,
+        aigAnalysis: undefined,
         skillSpectorAnalysis: undefined,
         llmAnalysis: undefined,
         lastError: undefined,
@@ -2006,6 +2033,7 @@ export const recordSkillScanRequestSucceededInternal = internalMutation({
     jobId: v.id("securityScanJobs"),
     runId: v.optional(v.string()),
     llmAnalysis: llmAnalysisValidator,
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     writtenBack: v.optional(v.boolean()),
   },
@@ -2016,6 +2044,7 @@ export const recordSkillScanRequestSucceededInternal = internalMutation({
     await ctx.db.patch(request._id, {
       status: "succeeded",
       llmAnalysis: args.llmAnalysis,
+      aigAnalysis: args.aigAnalysis,
       ...(args.skillSpectorAnalysis
         ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
         : {}),
@@ -2038,6 +2067,7 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
     verdict: catalogScanVerdictValidator,
     runId: v.optional(v.string()),
     llmAnalysis: llmAnalysisValidator,
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   },
   handler: async (ctx, args) => {
@@ -2251,6 +2281,7 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
       status: scanFailed ? "failed" : "succeeded",
       lastError: scanFailed ? "Catalog scan analysis failed" : undefined,
       llmAnalysis: args.llmAnalysis,
+      aigAnalysis: args.aigAnalysis,
       ...(args.skillSpectorAnalysis
         ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
         : {}),
@@ -2313,6 +2344,7 @@ export const recordGitHubSkillScanResultInternal = internalMutation({
     githubSkillScanId: v.id("githubSkillScans"),
     scanStatus: githubSkillScanStatusValidator,
     llmAnalysis: v.optional(llmAnalysisValidator),
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     error: v.optional(v.string()),
     runId: v.optional(v.string()),
@@ -2325,6 +2357,7 @@ export const recordGitHubSkillScanResultInternal = internalMutation({
     await ctx.db.patch(scan._id, {
       status: args.scanStatus,
       llmAnalysis: args.llmAnalysis,
+      aigAnalysis: args.aigAnalysis,
       skillSpectorAnalysis: args.skillSpectorAnalysis,
       lastError: error,
       runId: args.runId,
@@ -3375,6 +3408,7 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
           if (scan) {
             await ctx.db.patch(scan._id, {
               status: "pending",
+              aigAnalysis: undefined,
               skillSpectorAnalysis: undefined,
               llmAnalysis: undefined,
               lastError: undefined,
@@ -3801,6 +3835,7 @@ export const completeCodexScanJob = action({
     jobId: v.id("securityScanJobs"),
     leaseToken: v.string(),
     llmAnalysis: llmAnalysisValidator,
+    aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     runId: v.optional(v.string()),
   },
@@ -3823,6 +3858,12 @@ export const completeCodexScanJob = action({
     }
 
     if (target.job.targetKind === "skillVersion" && target.version) {
+      if (args.aigAnalysis) {
+        await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
+          versionId: target.version._id,
+          aigAnalysis: args.aigAnalysis,
+        });
+      }
       if (args.skillSpectorAnalysis) {
         await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
           versionId: target.version._id,
@@ -3834,6 +3875,10 @@ export const completeCodexScanJob = action({
         llmAnalysis: args.llmAnalysis,
       });
     } else if (target.job.targetKind === "packageRelease" && target.release) {
+      await runMutationRef(ctx, internalRefs.packages.updateReleaseAigAnalysisInternal, {
+        releaseId: target.release._id,
+        ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
+      });
       await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
         releaseId: target.release._id,
         ...(args.skillSpectorAnalysis
@@ -3851,6 +3896,12 @@ export const completeCodexScanJob = action({
         target.scanRequest.update &&
         target.version
       ) {
+        if (args.aigAnalysis) {
+          await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
+            versionId: target.version._id,
+            aigAnalysis: args.aigAnalysis,
+          });
+        }
         if (args.skillSpectorAnalysis) {
           await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
             versionId: target.version._id,
@@ -3871,6 +3922,7 @@ export const completeCodexScanJob = action({
           githubSkillScanId: target.githubScan._id,
           scanStatus: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
           llmAnalysis: args.llmAnalysis,
+          aigAnalysis: args.aigAnalysis,
           skillSpectorAnalysis,
           runId: args.runId,
         });
@@ -3892,6 +3944,7 @@ export const completeCodexScanJob = action({
             verdict: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
             runId: args.runId,
             llmAnalysis: args.llmAnalysis,
+            aigAnalysis: args.aigAnalysis,
             skillSpectorAnalysis,
           },
         );
@@ -3911,6 +3964,7 @@ export const completeCodexScanJob = action({
         jobId: args.jobId,
         runId: args.runId,
         llmAnalysis: args.llmAnalysis,
+        aigAnalysis: args.aigAnalysis,
         skillSpectorAnalysis,
         writtenBack,
       });
