@@ -1201,15 +1201,24 @@ function aigPredictionFromProperties(value: unknown) {
   return undefined;
 }
 
+function sarifMessageText(value: unknown) {
+  if (typeof value === "string") return value.trim() || undefined;
+  return readString(asRecord(value) ?? {}, ["text", "markdown"]);
+}
+
 function aigResultMessage(result: Record<string, unknown>, ruleName?: string) {
   const message = asRecord(result.message);
-  return (
+  const title =
     readString(message ?? {}, ["text", "markdown"]) ??
-    readString(result, ["message", "description"]) ??
+    readString(result, ["message"]) ??
     ruleName ??
     readString(result, ["ruleId", "rule_id"]) ??
-    "A.I.G reported a security finding."
-  );
+    "A.I.G reported a security finding.";
+  const description =
+    readString(asRecord(result.properties) ?? {}, ["description"]) ??
+    readString(result, ["description"]);
+  if (!description || description === title) return title;
+  return /[.!?]$/.test(title) ? `${title} ${description}` : `${title}: ${description}`;
 }
 
 function normalizeAigFinding(
@@ -1225,11 +1234,11 @@ function normalizeAigFinding(
   const artifactLocation = asRecord(physicalLocation?.artifactLocation);
   const region = asRecord(physicalLocation?.region);
   const properties = asRecord(result.properties);
+  const firstFix = Array.isArray(result.fixes) ? asRecord(result.fixes[0]) : undefined;
   const remediation =
     readString(properties ?? {}, ["remediation", "recommendation", "mitigation", "fix"]) ??
-    (Array.isArray(result.fixes)
-      ? readString(asRecord(result.fixes[0]) ?? {}, ["description", "message"])
-      : undefined);
+    sarifMessageText(firstFix?.description) ??
+    sarifMessageText(firstFix?.message);
   return {
     ruleId:
       truncateStoredSkillSpectorText(ruleId, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
@@ -1265,10 +1274,7 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
     };
   }
 
-  const runs = document.runs
-    .map(asRecord)
-    .filter((run): run is Record<string, unknown> => Boolean(run));
-  if (runs.length === 0) {
+  if (document.runs.length === 0) {
     return {
       status: "error",
       issueCount: 0,
@@ -1276,6 +1282,37 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
       error: "A.I.G SARIF output did not contain a run.",
       checkedAt,
     };
+  }
+  const runs: Record<string, unknown>[] = [];
+  for (const rawRun of document.runs) {
+    const run = asRecord(rawRun);
+    const driver = asRecord(asRecord(run?.tool)?.driver);
+    if (
+      !run ||
+      readString(driver ?? {}, ["name"]) !== "aig-skill-scan" ||
+      !Array.isArray(run.results)
+    ) {
+      return {
+        status: "error",
+        issueCount: 0,
+        findings: [],
+        error: "A.I.G SARIF output did not contain a valid aig-skill-scan run.",
+        checkedAt,
+      };
+    }
+    if (
+      Array.isArray(run.invocations) &&
+      run.invocations.some((invocation) => asRecord(invocation)?.executionSuccessful === false)
+    ) {
+      return {
+        status: "error",
+        issueCount: 0,
+        findings: [],
+        error: "A.I.G SARIF output reported an unsuccessful invocation.",
+        checkedAt,
+      };
+    }
+    runs.push(run);
   }
   const ruleNames = new Map<string, string>();
   let scannerVersion: string | undefined;
@@ -1301,13 +1338,7 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
     prediction ??= aigPredictionFromProperties(asRecord(rawResult)?.properties);
   }
   if (!prediction) {
-    prediction = rawResults.some(
-      (result) => readString(asRecord(result) ?? {}, ["level"])?.toLowerCase() === "error",
-    )
-      ? "malicious"
-      : rawResults.length > 0
-        ? "suspicious"
-        : "clean";
+    prediction = rawResults.length > 0 ? "suspicious" : "clean";
   }
 
   const findings = rawResults

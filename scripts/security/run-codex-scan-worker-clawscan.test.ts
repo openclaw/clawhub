@@ -579,7 +579,7 @@ JSON`,
           aigAnalysis: {
             issueCount: 1,
             scannerVersion: "0.2.1",
-            status: "malicious",
+            status: "suspicious",
           },
           skillSpectorAnalysis: {
             issueCount: 1,
@@ -719,7 +719,7 @@ JSON`,
           },
           aigAnalysis: {
             issueCount: 1,
-            status: "malicious",
+            status: "suspicious",
           },
           skillSpectorAnalysis: {
             issueCount: 1,

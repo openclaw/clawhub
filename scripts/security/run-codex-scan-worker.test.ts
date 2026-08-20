@@ -396,7 +396,11 @@ describe("run-codex-scan-worker diagnostics", () => {
                     },
                   },
                 ],
-                properties: { remediation: "Remove the downloaded payload." },
+                properties: {
+                  description: "The payload bypasses review by downloading code at runtime.",
+                  severity: "High",
+                },
+                fixes: [{ description: { text: "Remove the downloaded payload." } }],
               },
             ],
           },
@@ -412,7 +416,8 @@ describe("run-codex-scan-worker diagnostics", () => {
           endLine: 14,
           file: "SKILL.md",
           level: "error",
-          message: "Embedded payload executes a downloaded script.",
+          message:
+            "Embedded payload executes a downloaded script. The payload bypasses review by downloading code at runtime.",
           remediation: "Remove the downloaded payload.",
           ruleId: "T04",
           startLine: 12,
@@ -420,7 +425,7 @@ describe("run-codex-scan-worker diagnostics", () => {
       ],
       issueCount: 1,
       scannerVersion: "0.2.1",
-      status: "malicious",
+      status: "suspicious",
       summary: "A.I.G reported 1 finding.",
     });
   });
@@ -429,6 +434,16 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(normalizeAigAnalysis(JSON.stringify({ version: "2.1.0", runs: [] }), 123)).toEqual({
       checkedAt: 123,
       error: "A.I.G SARIF output did not contain a run.",
+      findings: [],
+      issueCount: 0,
+      status: "error",
+    });
+  });
+
+  it("rejects malformed A.I.G SARIF runs instead of treating them as clean", () => {
+    expect(normalizeAigAnalysis(JSON.stringify({ version: "2.1.0", runs: [{}] }), 123)).toEqual({
+      checkedAt: 123,
+      error: "A.I.G SARIF output did not contain a valid aig-skill-scan run.",
       findings: [],
       issueCount: 0,
       status: "error",
