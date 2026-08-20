@@ -93,11 +93,32 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   exclusions apply only to review candidates, not to the platform benchmark.
   Partial scans must not archive signals or present their top-download slice as
   a platform percentile.
-- Flat-install temporal review signals are deliberately high-confidence:
-  sustained volume must exceed six times the platform 30-day download P99 and
-  have at most 5 installs; a spike must exceed the platform P99, reach at least
-  2,000 downloads in 7 days, and have at most 2 installs. These signals indicate
-  anomalous traffic for manual review, not publisher attribution.
+- Flat-install temporal review signals compare each skill with both its own
+  frozen history and the full active-skill population. A 7-day surge requires
+  both its growth multiple and its absolute downloads above the frozen baseline
+  to exceed the platform P99, with at most 2 installs. Requiring both prevents a
+  tiny baseline from turning modest traffic into a signal solely because the
+  multiplier is large. Sustained traffic uses the 30 days before the current
+  30-day observation period as a frozen baseline, so a month-long rise cannot
+  raise its own comparison point. Each of the latest 14 days is compared with a
+  threshold derived from the platform P95 growth multiple and P95 absolute
+  excess; at least 10 days must exceed that threshold, with at most 5 installs
+  in the 14-day window. This catches traffic that arrives at a steady abnormal
+  rate after a cold start instead of only detecting a spike on the day it
+  begins. These
+  signals indicate anomalous traffic for manual review, not publisher
+  attribution.
+- The completed temporal pipeline also checks for publisher-wide synchronization
+  among skills that already have a non-dismissed download anomaly signal.
+  The synchronized group must cover at least 15% of the publisher's currently
+  published skills. Every pair of trailing 60-day download curves must have
+  Pearson correlation of at least 0.98, and the largest seven-day rolling peak
+  must be no more than 1.25 times the smallest. At least two skills are required
+  only because a trend comparison needs a pair; there is no fixed catalogue-size
+  threshold. This produces one `owner_synchronized_download_trends` signal for
+  the publisher, not one extra signal per skill. Snoozed skill signals remain
+  eligible as historical evidence; dismissed signals do not. The similar-peak
+  requirement avoids treating shared direction alone as evidence.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score
@@ -126,6 +147,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   inspector must show the selected skill's daily downloads and installs across
   the same trailing 30-day window, loaded on demand from the bounded daily-stat
   index so staff can judge whether the evidence is sustained or spiky.
+  When a model version renames an equivalent signal type, it must reuse the
+  existing signal row and preserve its snoozed/dismissed state; a type rename
+  must never bypass an operator decision or create a fresh owner email.
+- Every `publisher-abuse-temporal.*` model version, including legacy rows,
+  remains ineligible for warning-first automatic enforcement. A future decision
+  to enforce temporal traffic signals requires an explicit policy and code
+  change; increasing a temporal score cannot silently cross the existing
+  pressure-model autoban boundary.
 - Hermit owns Discord notification delivery for publisher abuse Signals.
   ClawHub queues Hermit digests only for changed open signals: newly archived
   signals, manual reopens, expired snoozes with qualifying fresh evidence, and

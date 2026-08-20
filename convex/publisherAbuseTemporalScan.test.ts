@@ -39,6 +39,8 @@ function temporalScore(overrides: Partial<SkillTemporalAbuseScore> = {}): SkillT
     previous30Downloads: 100,
     baseline7Downloads: 100,
     spikeMultiplier: 1,
+    expected7Downloads: 100,
+    excess7Downloads: 0,
     recent30Downloads: 100,
     recent30Installs: 0,
     downloadInstallRatio30: 100,
@@ -46,6 +48,13 @@ function temporalScore(overrides: Partial<SkillTemporalAbuseScore> = {}): SkillT
     installDownloadRatio30: 0,
     installDownloadExcessZScore7: 0,
     installDownloadExcessZScore30: 0,
+    sustainedDaysAboveThreshold: 0,
+    sustainedWindowDays: 14,
+    sustainedDailyDownloadThreshold: 0,
+    sustainedExpectedDailyDownloads: 0,
+    sustainedWindowDownloads: 0,
+    sustainedWindowInstalls: 0,
+    sustainedDailyDownloads: [],
     reasonCodes: [],
     ...overrides,
   };
@@ -101,6 +110,7 @@ function temporalRun(
     temporalDownloadsSum: 0,
     temporalDownloadsProcessed: 0,
     temporalSpikeProcessed: 0,
+    temporalExcessProcessed: 0,
     ...overrides,
   };
 }
@@ -221,6 +231,48 @@ describe("scheduled temporal publisher abuse scan", () => {
         actorUserId,
         temporalPipelineKind: "signals",
       }),
+    );
+  });
+
+  it("fails an incompatible running signal scan instead of resuming it", async () => {
+    const oldRun = temporalRun({ modelVersion: "publisher-abuse-temporal.v1" });
+    const newRunId = "publisherAbuseScoreRuns:v2" as Id<"publisherAbuseScoreRuns">;
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async () => newRunId);
+    let queryCount = 0;
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              first: vi.fn(async () => {
+                queryCount += 1;
+                return queryCount === 1 ? oldRun : null;
+              }),
+            })),
+          })),
+        })),
+        patch,
+        insert,
+      },
+      scheduler: { runAfter: vi.fn(async () => null) },
+    };
+
+    await expect(
+      getOrStartScheduledTemporalScanInternalHandler(ctx as unknown as MutationCtx, {
+        trigger: "manual",
+        actorUserId: "users:moderator" as Id<"users">,
+      }),
+    ).resolves.toEqual({ runId: newRunId, resumed: false });
+
+    expect(patch).toHaveBeenCalledWith(oldRun._id, {
+      status: "failed",
+      errorMessage: "Superseded by publisher-abuse-temporal.v2.",
+      updatedAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns",
+      expect.objectContaining({ modelVersion: "publisher-abuse-temporal.v2" }),
     );
   });
 
@@ -392,6 +444,8 @@ describe("scheduled temporal publisher abuse scan", () => {
           temporalDownloadsP99: 3_000,
           temporalSpikeP95: 4,
           temporalSpikeP99: 12,
+          temporalExcessP95: 400,
+          temporalExcessP99: 1_200,
         }),
       ),
     ).toEqual({
@@ -403,6 +457,8 @@ describe("scheduled temporal publisher abuse scan", () => {
       downloads30dP99: 3_000,
       spikeMultiplier7dP95: 4,
       spikeMultiplier7dP99: 12,
+      excess7DownloadsP95: 400,
+      excess7DownloadsP99: 1_200,
     });
   });
 
@@ -431,8 +487,8 @@ describe("scheduled temporal publisher abuse scan", () => {
         nextCursor: "next-page",
         isDone: false,
         benchmarkScores: [
-          { recent30Downloads: 0, spikeMultiplier: 0 },
-          { recent30Downloads: 100, spikeMultiplier: 1 },
+          { recent30Downloads: 0, spikeMultiplier: 0, excess7Downloads: 0 },
+          { recent30Downloads: 100, spikeMultiplier: 1, excess7Downloads: 50 },
         ],
         candidates: [candidate],
       }),
@@ -493,7 +549,11 @@ describe("scheduled temporal publisher abuse scan", () => {
 
   it("passes only percentile inputs to the persisted benchmark sample validator", async () => {
     const run = temporalRun();
-    const fullScore = temporalScore({ recent30Downloads: 3_000, spikeMultiplier: 4 });
+    const fullScore = temporalScore({
+      recent30Downloads: 3_000,
+      spikeMultiplier: 4,
+      excess7Downloads: 2_500,
+    });
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(run)
@@ -522,7 +582,7 @@ describe("scheduled temporal publisher abuse scan", () => {
       expectedCursor: undefined,
       nextCursor: "next-page",
       isDone: false,
-      benchmarkScores: [{ recent30Downloads: 3_000, spikeMultiplier: 4 }],
+      benchmarkScores: [{ recent30Downloads: 3_000, spikeMultiplier: 4, excess7Downloads: 2_500 }],
       candidates: [],
     });
   });
@@ -659,6 +719,8 @@ describe("scheduled temporal publisher abuse scan", () => {
       downloads30dP99: 600,
       spikeMultiplier7dP95: 4,
       spikeMultiplier7dP99: 12,
+      excess7DownloadsP95: 400,
+      excess7DownloadsP99: 1_200,
     };
     const run = temporalRun({
       phase: "finalizing",
@@ -667,7 +729,12 @@ describe("scheduled temporal publisher abuse scan", () => {
     });
     const candidate = temporalCandidate(
       "skills:anysearch" as Id<"skills">,
-      temporalScore({ recent30Downloads: 3_700, recent30Installs: 4 }),
+      temporalScore({
+        recent30Downloads: 3_700,
+        recent30Installs: 4,
+        sustainedWindowInstalls: 4,
+        sustainedDailyDownloads: [...Array.from({ length: 10 }, () => 100), 0, 0, 0, 0],
+      }),
     );
     const runQuery = vi
       .fn()
@@ -702,13 +769,17 @@ describe("scheduled temporal publisher abuse scan", () => {
             skillId: candidate.skillId,
             temporalScore: expect.objectContaining({
               sustained: true,
-              downloads30dCohortBand: "p99",
+              sustainedDaysAboveThreshold: 10,
             }),
           }),
         ],
       }),
     );
     expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      runId: run._id,
+      todayDay: 100,
+    });
   });
 
   it("does not archive or revive a scan that has already failed", async () => {
@@ -725,6 +796,8 @@ describe("scheduled temporal publisher abuse scan", () => {
         downloads30dP99: 30,
         spikeMultiplier7dP95: 2,
         spikeMultiplier7dP99: 3,
+        excess7DownloadsP95: 20,
+        excess7DownloadsP99: 30,
       },
     });
     const ctx = {

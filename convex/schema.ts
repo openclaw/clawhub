@@ -3771,6 +3771,7 @@ const publisherAbuseScoreRuns = defineTable({
       v.literal("collecting"),
       v.literal("downloads_percentiles"),
       v.literal("spike_percentiles"),
+      v.literal("excess_percentiles"),
       v.literal("classifying"),
       v.literal("completed"),
     ),
@@ -3779,16 +3780,20 @@ const publisherAbuseScoreRuns = defineTable({
   temporalSourceCursor: v.optional(v.string()),
   temporalDownloadsCursor: v.optional(v.string()),
   temporalSpikeCursor: v.optional(v.string()),
+  temporalExcessCursor: v.optional(v.string()),
   temporalCandidateCursor: v.optional(v.string()),
   temporalSampleSize: v.optional(v.number()),
   temporalDownloadsSum: v.optional(v.number()),
   temporalDownloadsProcessed: v.optional(v.number()),
   temporalSpikeProcessed: v.optional(v.number()),
+  temporalExcessProcessed: v.optional(v.number()),
   temporalDownloadsMedian: v.optional(v.number()),
   temporalDownloadsP95: v.optional(v.number()),
   temporalDownloadsP99: v.optional(v.number()),
   temporalSpikeP95: v.optional(v.number()),
   temporalSpikeP99: v.optional(v.number()),
+  temporalExcessP95: v.optional(v.number()),
+  temporalExcessP99: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
       scope: v.optional(v.literal("all_active_skills")),
@@ -3799,6 +3804,8 @@ const publisherAbuseScoreRuns = defineTable({
       downloads30dP99: v.number(),
       spikeMultiplier7dP95: v.number(),
       spikeMultiplier7dP99: v.number(),
+      excess7DownloadsP95: v.optional(v.number()),
+      excess7DownloadsP99: v.optional(v.number()),
     }),
   ),
   errorMessage: v.optional(v.string()),
@@ -3847,10 +3854,7 @@ const publisherAbuseTemporalScanSamples = defineTable({
 })
   .index("by_run_id_and_recent30_downloads", ["runId", "recent30Downloads"])
   .index("by_run_id_and_spike_multiplier", ["runId", "spikeMultiplier"])
-  .index("by_run_id_and_excess7_downloads", {
-    fields: ["runId", "excess7Downloads"],
-    staged: true,
-  })
+  .index("by_run_id_and_excess7_downloads", ["runId", "excess7Downloads"])
   .index("by_expiration_time", ["expirationTime"]);
 
 const publisherAbuseTemporalScanScoreValidator = v.object({
@@ -3863,13 +3867,24 @@ const publisherAbuseTemporalScanScoreValidator = v.object({
   previous30Downloads: v.number(),
   baseline7Downloads: v.number(),
   spikeMultiplier: v.number(),
+  expected7Downloads: v.optional(v.number()),
+  excess7Downloads: v.optional(v.number()),
   recent30Downloads: v.number(),
   recent30Installs: v.number(),
   downloadInstallRatio30: v.number(),
   downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
   spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+  excess7DownloadsCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
   downloads30dVsPeerP95: v.optional(v.number()),
   spikeMultiplierVsPeerP95: v.optional(v.number()),
+  excess7DownloadsVsPeerP95: v.optional(v.number()),
+  sustainedDaysAboveThreshold: v.optional(v.number()),
+  sustainedWindowDays: v.optional(v.number()),
+  sustainedDailyDownloadThreshold: v.optional(v.number()),
+  sustainedExpectedDailyDownloads: v.optional(v.number()),
+  sustainedWindowDownloads: v.optional(v.number()),
+  sustainedWindowInstalls: v.optional(v.number()),
+  sustainedDailyDownloads: v.optional(v.array(v.number())),
   installDownloadRatio7: v.number(),
   installDownloadRatio30: v.number(),
   installDownloadExcessZScore7: v.number(),
@@ -3935,6 +3950,8 @@ const publisherAbuseScores = defineTable({
       downloads30dP99: v.number(),
       spikeMultiplier7dP95: v.number(),
       spikeMultiplier7dP99: v.number(),
+      excess7DownloadsP95: v.optional(v.number()),
+      excess7DownloadsP99: v.optional(v.number()),
     }),
   ),
   temporalEvidence: v.optional(
@@ -3952,13 +3969,23 @@ const publisherAbuseScores = defineTable({
         previous30Downloads: v.number(),
         baseline7Downloads: v.number(),
         spikeMultiplier: v.number(),
+        expected7Downloads: v.optional(v.number()),
+        excess7Downloads: v.optional(v.number()),
         recent30Downloads: v.number(),
         recent30Installs: v.number(),
         downloadInstallRatio30: v.number(),
         downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
         spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+        excess7DownloadsCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
         downloads30dVsPeerP95: v.optional(v.number()),
         spikeMultiplierVsPeerP95: v.optional(v.number()),
+        excess7DownloadsVsPeerP95: v.optional(v.number()),
+        sustainedDaysAboveThreshold: v.optional(v.number()),
+        sustainedWindowDays: v.optional(v.number()),
+        sustainedDailyDownloadThreshold: v.optional(v.number()),
+        sustainedExpectedDailyDownloads: v.optional(v.number()),
+        sustainedWindowDownloads: v.optional(v.number()),
+        sustainedWindowInstalls: v.optional(v.number()),
         installDownloadRatio7: v.optional(v.number()),
         installDownloadRatio30: v.optional(v.number()),
         installDownloadExcessZScore7: v.optional(v.number()),
@@ -4047,6 +4074,9 @@ const publisherAbuseReviewEvents = defineTable({
 const publisherAbuseSignalTypeValidator = v.union(
   v.literal("high_install_download_ratio"),
   v.literal("sustained_downloads_flat_installs"),
+  v.literal("download_spike_flat_installs"),
+  v.literal("sustained_abnormal_download_days"),
+  v.literal("owner_synchronized_download_trends"),
 );
 
 const publisherAbuseSignalReviewStatusValidator = v.union(
@@ -4088,6 +4118,32 @@ const publisherAbuseSignals = defineTable({
       downloads30dP99: v.number(),
       spikeMultiplier7dP95: v.number(),
       spikeMultiplier7dP99: v.number(),
+      excess7DownloadsP95: v.optional(v.number()),
+      excess7DownloadsP99: v.optional(v.number()),
+    }),
+  ),
+  expected7Downloads: v.optional(v.number()),
+  excess7Downloads: v.optional(v.number()),
+  sustainedDaysAboveThreshold: v.optional(v.number()),
+  sustainedWindowDays: v.optional(v.number()),
+  sustainedDailyDownloadThreshold: v.optional(v.number()),
+  sustainedExpectedDailyDownloads: v.optional(v.number()),
+  sustainedWindowDownloads: v.optional(v.number()),
+  sustainedWindowInstalls: v.optional(v.number()),
+  reasonCodes: v.optional(v.array(v.string())),
+  portfolioEvidence: v.optional(
+    v.object({
+      skillCount: v.number(),
+      publisherSkillCount: v.number(),
+      allPublisherSkills: v.boolean(),
+      skillSlugs: v.array(v.string()),
+      correlationFloor: v.number(),
+      correlationMedian: v.number(),
+      peak7DownloadsMin: v.number(),
+      peak7DownloadsMax: v.number(),
+      catalogCoverage: v.number(),
+      windowStartDay: v.number(),
+      windowEndDay: v.number(),
     }),
   ),
   reviewStatus: publisherAbuseSignalReviewStatusValidator,
@@ -4113,10 +4169,7 @@ const publisherAbuseSignals = defineTable({
   .index("by_last_seen_at", ["lastSeenAt"])
   .index("by_signal_type_and_last_seen_at", ["signalType", "lastSeenAt"])
   .index("by_owner_key_and_last_seen_at", ["ownerKey", "lastSeenAt"])
-  .index("by_owner_key_and_signal_type", {
-    fields: ["ownerKey", "signalType"],
-    staged: true,
-  })
+  .index("by_owner_key_and_signal_type", ["ownerKey", "signalType"])
   .index("by_skill_and_signal_type", ["skillId", "signalType"])
   .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"])
   .index("by_review_status_and_last_seen_at", ["reviewStatus", "lastSeenAt"])
