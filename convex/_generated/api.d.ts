@@ -167,7 +167,6 @@ import type * as lib_workerTextRedaction from "../lib/workerTextRedaction.js";
 import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
 import type * as migrations from "../migrations.js";
-import type * as orphanRepairProofDevSeed from "../orphanRepairProofDevSeed.js";
 import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packageLeaderboards from "../packageLeaderboards.js";
@@ -384,7 +383,6 @@ declare const fullApi: ApiFromModules<{
   maintenance: typeof maintenance;
   managementDevSeed: typeof managementDevSeed;
   migrations: typeof migrations;
-  orphanRepairProofDevSeed: typeof orphanRepairProofDevSeed;
   packageInspectorHttp: typeof packageInspectorHttp;
   packageInspectorNode: typeof packageInspectorNode;
   packageLeaderboards: typeof packageLeaderboards;
