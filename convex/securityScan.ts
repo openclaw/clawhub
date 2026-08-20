@@ -2044,7 +2044,7 @@ export const recordSkillScanRequestSucceededInternal = internalMutation({
     await ctx.db.patch(request._id, {
       status: "succeeded",
       llmAnalysis: args.llmAnalysis,
-      aigAnalysis: args.aigAnalysis,
+      ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
       ...(args.skillSpectorAnalysis
         ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
         : {}),
@@ -2281,7 +2281,7 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
       status: scanFailed ? "failed" : "succeeded",
       lastError: scanFailed ? "Catalog scan analysis failed" : undefined,
       llmAnalysis: args.llmAnalysis,
-      aigAnalysis: args.aigAnalysis,
+      ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
       ...(args.skillSpectorAnalysis
         ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
         : {}),
@@ -2357,7 +2357,7 @@ export const recordGitHubSkillScanResultInternal = internalMutation({
     await ctx.db.patch(scan._id, {
       status: args.scanStatus,
       llmAnalysis: args.llmAnalysis,
-      aigAnalysis: args.aigAnalysis,
+      ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
       skillSpectorAnalysis: args.skillSpectorAnalysis,
       lastError: error,
       runId: args.runId,
@@ -3875,10 +3875,12 @@ export const completeCodexScanJob = action({
         llmAnalysis: args.llmAnalysis,
       });
     } else if (target.job.targetKind === "packageRelease" && target.release) {
-      await runMutationRef(ctx, internalRefs.packages.updateReleaseAigAnalysisInternal, {
-        releaseId: target.release._id,
-        ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
-      });
+      if (args.aigAnalysis) {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseAigAnalysisInternal, {
+          releaseId: target.release._id,
+          aigAnalysis: args.aigAnalysis,
+        });
+      }
       await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
         releaseId: target.release._id,
         ...(args.skillSpectorAnalysis

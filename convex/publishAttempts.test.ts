@@ -1775,6 +1775,79 @@ describe("publishAttempts", () => {
     );
   });
 
+  it("preserves staged AIG evidence when an older worker omits AIG analysis", async () => {
+    const now = Date.now();
+    const existingAigAnalysis = {
+      status: "suspicious",
+      issueCount: 1,
+      findings: [],
+      checkedAt: now - 1_000,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:demo"
+            ? {
+                _id: "publishAttempts:demo",
+                kind: "skill",
+                status: "pending_checks",
+                skillVersionId: "skillVersions:demo",
+                artifactFingerprint: "fingerprint",
+                checkClaimId: "checks:claim",
+                checkClaimExpiresAt: now + 60_000,
+                skillInsertArgs: {
+                  slug: "demo-skill",
+                  version: "1.0.0",
+                  aigAnalysis: existingAigAnalysis,
+                },
+              }
+            : {
+                _id: "skillVersions:demo",
+                fingerprint: "fingerprint",
+                aigAnalysis: existingAigAnalysis,
+              },
+        ),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+        clawscanAnalysis: {
+          status: "completed",
+          verdict: "benign",
+          checkedAt: now,
+        },
+      }),
+    ).resolves.toMatchObject({ status: "ready_to_finalize" });
+
+    const versionPatch = ctx.db.patch.mock.calls.find(
+      ([id]) => id === "skillVersions:demo",
+    )?.[1] as Record<string, unknown> | undefined;
+    expect(versionPatch).toBeDefined();
+    expect(versionPatch).not.toHaveProperty("aigAnalysis");
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        skillInsertArgs: expect.objectContaining({ aigAnalysis: existingAigAnalysis }),
+      }),
+    );
+  });
+
   it("retains malicious analysis while keeping the staged artifact blocked", async () => {
     const now = Date.now();
     const llmAnalysis = {

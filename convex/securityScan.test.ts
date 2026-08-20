@@ -5429,7 +5429,7 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("clears legacy plugin SkillSpector results when no new analysis is produced", async () => {
+  it("preserves plugin AIG results when an older worker omits AIG analysis", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: {
@@ -5453,13 +5453,13 @@ describe("securityScan", () => {
       },
     );
 
-    expect(runMutation).toHaveBeenNthCalledWith(
-      1,
-      expect.anything(),
-      expect.objectContaining({ releaseId: "packageReleases:plugin" }),
-    );
-    const scanPatch = runMutation.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(scanPatch).not.toHaveProperty("skillSpectorAnalysis");
+    expect(runMutation).toHaveBeenCalledTimes(4);
+    const releasePatches = runMutation.mock.calls
+      .map(([, mutationArgs]) => mutationArgs as Record<string, unknown>)
+      .filter((mutationArgs) => mutationArgs.releaseId === "packageReleases:plugin");
+    expect(releasePatches).toHaveLength(2);
+    expect(releasePatches).not.toContainEqual(expect.objectContaining({ aigAnalysis: undefined }));
+    expect(releasePatches.some((patch) => "aigAnalysis" in patch)).toBe(false);
   });
 
   it("persists an error ClawScan result when worker retries are exhausted", async () => {
