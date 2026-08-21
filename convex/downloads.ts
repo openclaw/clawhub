@@ -46,6 +46,7 @@ const ARCHIVE_MANIFEST_CLOCK_SKEW_MS = 5_000;
 const MAX_ARCHIVE_MANIFEST_FILES = 8_192;
 const MAX_ARCHIVE_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_ARCHIVE_METRIC_TOKEN_BYTES = 16 * 1024;
+const LOCAL_DOWNLOAD_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]);
 
 type DownloadCtx = Parameters<Parameters<typeof httpAction>[0]>[0];
 
@@ -83,7 +84,8 @@ export async function downloadZipHandler(
 
   const manifestRequested = request.headers.get(ARCHIVE_MANIFEST_REQUEST_HEADER) === "v1";
   const publicOrigin = publicApiOrigin(request);
-  if (!manifestRequested && publicOrigin !== url.origin) {
+  const isLocalDownload = LOCAL_DOWNLOAD_HOSTS.has(url.hostname);
+  if (!manifestRequested && !isLocalDownload && publicOrigin !== url.origin) {
     return new Response(null, {
       status: 307,
       headers: mergeHeaders(

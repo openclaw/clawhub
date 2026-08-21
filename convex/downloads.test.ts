@@ -133,6 +133,39 @@ describe("downloads helpers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
+  it("keeps local direct downloads on the local Convex handler", async () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "anonymous:anonymous-clawhub-test");
+    vi.stubEnv("SITE_URL", "http://127.0.0.1:3000");
+    const runMutation = vi.fn(async () => okRate());
+    const runQuery = vi.fn(async () => null);
+
+    const response = await downloadZipHandler(
+      { runMutation, runQuery } as unknown as ActionCtx,
+      new Request("http://127.0.0.1:3211/api/v1/download?slug=demo"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Location")).toBeNull();
+    expect(runMutation).toHaveBeenCalled();
+    expect(runQuery).toHaveBeenCalledOnce();
+  });
+
+  it("redirects direct downloads from a hosted Convex custom domain", async () => {
+    vi.stubEnv("SITE_URL", "https://clawhub.ai");
+    const runMutation = vi.fn(async () => okRate());
+    const runQuery = vi.fn(async () => null);
+
+    const response = await downloadZipHandler(
+      { runMutation, runQuery } as unknown as ActionCtx,
+      new Request("https://api.clawhub.example/api/v1/download?slug=demo"),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("Location")).toBe("https://clawhub.ai/api/v1/download?slug=demo");
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
   it("schedules zip download stats outside the response path", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
 
