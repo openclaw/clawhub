@@ -490,12 +490,12 @@ test("bot publication rejects a live recovery artifact before parent-state evalu
   );
 });
 
-test("human direct recovery requires durable environment approval evidence", () => {
+test("normal human-dispatched publication keeps the parent-owned route", () => {
   const identity = protectedIdentity();
   const receipt = parseParentAuthorizationReceipt(JSON.stringify(parentReceipt(identity)));
-  assert.throws(
-    () => deriveAuthorizationRoute(identity, runFixture(identity, humanActor), receipt),
-    /requires durable environment approval evidence/,
+  assert.equal(
+    deriveAuthorizationRoute(identity, runFixture(identity, humanActor), receipt),
+    "automated-awaited",
   );
 });
 
@@ -562,6 +562,18 @@ test("detached normal publication permits only active or successful parents", as
       /not allowed by authorization route automated-detached/,
     );
   }
+});
+
+test("normal human-dispatched publication does not require recovery evidence", async () => {
+  const identity = protectedIdentity();
+  const receipt = parentReceipt(identity);
+  const result = await verifyTrustedToolingIdentity({
+    rawIdentity: JSON.stringify(identity),
+    rawParentReceipt: JSON.stringify(receipt),
+    env: callerEnv(identity, humanActor),
+    getJson: apiFixture({ identity, receipt, actor: humanActor }),
+  });
+  assert.equal(result.authorizationRoute, "automated-awaited");
 });
 
 test("explicit recovery permits a failed parent after protected environment approval", async () => {

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 type WorkflowStep = {
+  "continue-on-error"?: boolean;
   env?: Record<string, unknown>;
   id?: string;
   if?: string;
@@ -113,7 +114,9 @@ describe("package publish reusable workflow", () => {
       "openclaw-clawhub-parent-authorization-",
     );
     expect(recoveryReceiptStep).toMatchObject({
-      if: "inputs.trusted_tooling_identity_json != '' && github.actor != 'github-actions[bot]'",
+      id: "recovery_approval",
+      if: "inputs.trusted_tooling_identity_json != ''",
+      "continue-on-error": true,
       uses: "actions/download-artifact@v8",
       with: {
         name: "openclaw-clawhub-recovery-approval-${{ github.run_id }}-${{ github.run_attempt }}",
@@ -127,6 +130,8 @@ describe("package publish reusable workflow", () => {
       TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
       PARENT_AUTHORIZATION_RECEIPT_PATH:
         "${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json",
+      RECOVERY_APPROVAL_RECEIPT_PATH:
+        "${{ steps.recovery_approval.outcome == 'success' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}",
       GITHUB_REPOSITORY: "${{ github.repository }}",
       GITHUB_RUN_ID: "${{ github.run_id }}",
       GITHUB_RUN_ATTEMPT: "${{ github.run_attempt }}",
@@ -141,6 +146,8 @@ describe("package publish reusable workflow", () => {
       TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
       PARENT_AUTHORIZATION_RECEIPT_PATH:
         "${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json",
+      RECOVERY_APPROVAL_RECEIPT_PATH:
+        "${{ steps.recovery_approval.outcome == 'success' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}",
       GITHUB_ACTOR: "${{ github.actor }}",
     });
   });

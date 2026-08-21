@@ -386,15 +386,12 @@ function validateRecoveryApprovalReceipt(identity, receipt, actor) {
 }
 
 function deriveAuthorizationRoute(identity, run, parentReceipt, recoveryReceipt) {
-  const actor = String(run.actor?.login ?? "");
-  if (isBotActor(run)) {
-    if (recoveryReceipt) {
-      fail("automated ClawHub publication cannot select the recovery route");
-    }
+  if (!recoveryReceipt) {
     return parentReceipt.authorizationRoute;
   }
-  if (!recoveryReceipt) {
-    fail("direct ClawHub recovery requires durable environment approval evidence");
+  const actor = String(run.actor?.login ?? "");
+  if (isBotActor(run)) {
+    fail("automated ClawHub publication cannot select the recovery route");
   }
   validateRecoveryApprovalReceipt(identity, recoveryReceipt, actor);
   return "explicit-recovery";

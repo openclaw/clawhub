@@ -69,8 +69,9 @@ It contains `approval.json` with exactly:
 
 The receipt is durable evidence that the trusted child workflow crossed its
 protected environment gate. Bot-dispatched runs cannot select recovery, even
-if a recovery artifact is present. Human recovery without this artifact fails
-closed.
+if a recovery artifact is present. A non-bot actor alone does not select
+recovery; normal human-dispatched releases keep the parent-owned automated
+route. Failed-parent recovery without this artifact fails closed.
 
 ## State And Mutation Rules
 
