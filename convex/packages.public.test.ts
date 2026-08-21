@@ -368,6 +368,9 @@ const publishPendingReleaseInternalHandler = (
   publishPendingReleaseInternal as unknown as WrappedHandler<
     {
       releaseId: string;
+      trustedPublishTokenId?: string;
+      trustedPublishInventoryDigest?: string;
+      trustedPublishAuthorizationVersion?: 2;
     },
     unknown
   >
@@ -8253,6 +8256,7 @@ describe("packages public queries", () => {
       summary: "demo",
       files: [],
       integritySha256: "abc123",
+      publicationStatus: "pending" as const,
       trustedPublishTokenId: token._id,
       trustedPublishInventoryDigest: inventoryDigest,
     };
@@ -8261,10 +8265,22 @@ describe("packages public queries", () => {
       ok: true,
       packageId: pkg._id,
       releaseId: "packageReleases:new",
+      publicationStatus: "pending",
     });
     expect(ctx.patch).toHaveBeenCalledWith(token._id, {
       consumedAt: expect.any(Number),
     });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packageReleases",
+      expect.objectContaining({
+        publicationStatus: "pending",
+        pendingPublication: expect.objectContaining({
+          trustedPublishTokenId: token._id,
+          trustedPublishInventoryDigest: inventoryDigest,
+          trustedPublishAuthorizationVersion: 2,
+        }),
+      }),
+    );
 
     await expect(insertReleaseInternalHandler(ctx, args)).rejects.toThrow(
       "Trusted publish authorization is missing, expired, or consumed",
@@ -8390,6 +8406,116 @@ describe("packages public queries", () => {
         scanStatus: "clean",
       }),
     );
+  });
+
+  it("atomically revalidates staged v2 authorization during public promotion", async () => {
+    const inventoryDigest = "d".repeat(64);
+    const buildCtx = (options?: { revoked?: boolean; rotated?: boolean }) => {
+      const pkg = makePackageDoc({ family: "bundle-plugin" });
+      const token = {
+        _id: "packagePublishTokens:v2",
+        packageId: pkg._id,
+        version: "2.0.0",
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+        runId: "100",
+        runAttempt: "1",
+        sha: "c".repeat(40),
+        ref: "refs/tags/release-publish/tooling",
+        scope: "publish",
+        inventoryDigest,
+        authorizationVersion: 2,
+        consumedAt: 1_700_000_000_000,
+        revokedAt: options?.revoked ? 1_700_000_000_001 : undefined,
+        expiresAt: 1_700_000_000_000,
+      };
+      const trustedPublisher = {
+        _id: "packageTrustedPublishers:1",
+        packageId: pkg._id,
+        provider: token.provider,
+        repository: options?.rotated ? "openclaw/rotated" : token.repository,
+        repositoryId: token.repositoryId,
+        repositoryOwner: token.repositoryOwner,
+        repositoryOwnerId: token.repositoryOwnerId,
+        workflowFilename: token.workflowFilename,
+        environment: token.environment,
+      };
+      const pendingRelease = makeReleaseDoc({
+        _id: "packageReleases:pending-v2",
+        packageId: pkg._id,
+        version: token.version,
+        publicationStatus: "pending",
+        pendingPublication: {
+          displayName: "Demo Plugin",
+          tags: ["latest"],
+          channel: "community",
+          isOfficial: false,
+          trustedPublishTokenId: token._id,
+          trustedPublishInventoryDigest: inventoryDigest,
+          trustedPublishAuthorizationVersion: 2,
+        },
+      });
+      return {
+        ctx: makeInsertReleaseCtx(pkg, [pendingRelease], {
+          [pkg._id]: pkg,
+          [pendingRelease._id]: pendingRelease,
+          [token._id]: token,
+          [trustedPublisher._id]: trustedPublisher,
+        }),
+        releaseId: pendingRelease._id,
+      };
+    };
+
+    const valid = buildCtx();
+    await expect(
+      publishPendingReleaseInternalHandler(valid.ctx, {
+        releaseId: valid.releaseId,
+        trustedPublishTokenId: "packagePublishTokens:v2",
+        trustedPublishInventoryDigest: inventoryDigest,
+        trustedPublishAuthorizationVersion: 2,
+      }),
+    ).resolves.toMatchObject({ ok: true, releaseId: valid.releaseId });
+    expect(valid.ctx.patch).toHaveBeenCalledWith(
+      valid.releaseId,
+      expect.objectContaining({ publicationStatus: "published" }),
+    );
+
+    const revoked = buildCtx({ revoked: true });
+    await expect(
+      publishPendingReleaseInternalHandler(revoked.ctx, {
+        releaseId: revoked.releaseId,
+        trustedPublishTokenId: "packagePublishTokens:v2",
+        trustedPublishInventoryDigest: inventoryDigest,
+        trustedPublishAuthorizationVersion: 2,
+      }),
+    ).rejects.toThrow("Staged OpenClaw publish authorization no longer matches the release");
+    expect(revoked.ctx.patch).not.toHaveBeenCalled();
+
+    const rotated = buildCtx({ rotated: true });
+    await expect(
+      publishPendingReleaseInternalHandler(rotated.ctx, {
+        releaseId: rotated.releaseId,
+        trustedPublishTokenId: "packagePublishTokens:v2",
+        trustedPublishInventoryDigest: inventoryDigest,
+        trustedPublishAuthorizationVersion: 2,
+      }),
+    ).rejects.toThrow(
+      "Trusted publish authorization no longer matches the current trusted publisher",
+    );
+    expect(rotated.ctx.patch).not.toHaveBeenCalled();
+
+    const missingCallerBinding = buildCtx();
+    await expect(
+      publishPendingReleaseInternalHandler(missingCallerBinding.ctx, {
+        releaseId: missingCallerBinding.releaseId,
+      }),
+    ).rejects.toThrow("Staged OpenClaw publish authorization no longer matches the release");
+    expect(missingCallerBinding.ctx.patch).not.toHaveBeenCalled();
   });
 
   it("keeps the current latest when finalizing an older package release", async () => {
@@ -8868,7 +8994,12 @@ describe("packages public queries", () => {
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ releaseId: "packageReleases:pending" }),
+      expect.objectContaining({
+        releaseId: "packageReleases:pending",
+        trustedPublishTokenId: token._id,
+        trustedPublishInventoryDigest: inventoryDigest,
+        trustedPublishAuthorizationVersion: 2,
+      }),
     );
   });
 

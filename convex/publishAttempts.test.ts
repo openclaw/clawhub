@@ -1440,6 +1440,7 @@ describe("publishAttempts", () => {
   it.each([
     "Staged OpenClaw publish authorization token is missing",
     "Staged OpenClaw publish authorization no longer matches the release",
+    "Trusted publish authorization no longer matches the current trusted publisher",
   ])("terminalizes permanent staged OpenClaw authorization failure: %s", async (error) => {
     const ctx = {
       db: {

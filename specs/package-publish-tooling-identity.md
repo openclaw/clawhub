@@ -112,11 +112,14 @@ rolls back consumption.
 Version 2 OpenClaw publishes always use staged publication. After security
 checks pass, the finalizer revalidates the stored exact transaction and
 requires the parent attempt to have reached an immutable authorized terminal
-outcome before changing the release to public. Active parents remain pending.
-Cancelled or otherwise unauthorized terminal parents fail the attempt while
-the release remains non-public. GitHub API or other transient verification
-failures remain retryable. The scheduled pre-publication worker retries ready
-finalizations every five minutes.
+outcome. The pending release itself stores its consumed v2 token and inventory
+binding. The promotion mutation atomically rereads that token, its revocation
+state, package/version/inventory transaction, and current trusted publisher
+before changing the release to public. Active parents remain pending. Cancelled
+or otherwise unauthorized terminal parents fail the attempt while the release
+remains non-public. GitHub API or other transient verification failures remain
+retryable. The scheduled pre-publication worker retries ready finalizations
+every five minutes.
 
 The terminal outcome removes the cross-system cancellation race: successful
 GitHub Actions run attempts do not become cancelled after completion, so the

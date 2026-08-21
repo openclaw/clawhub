@@ -8253,7 +8253,7 @@ async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
     trustedPublishInventoryDigest?: string;
     trustedPublishAuthorizationVersion?: number;
   };
-  if (followup.trustedPublishAuthorizationVersion !== 2) return;
+  if (followup.trustedPublishAuthorizationVersion !== 2) return undefined;
   if (!followup.trustedPublishTokenId) {
     throw new ConvexError("Staged OpenClaw publish authorization token is missing");
   }
@@ -8287,6 +8287,11 @@ async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
     },
     "terminal",
   );
+  return {
+    trustedPublishTokenId: token._id,
+    trustedPublishInventoryDigest: token.inventoryDigest,
+    trustedPublishAuthorizationVersion: 2 as const,
+  };
 }
 
 async function runPackageInspectorPublishGate(
@@ -9350,13 +9355,15 @@ export const finalizePackagePublishAttemptInternal = internalAction({
 
     let publishResult: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
     try {
-      if (claim.releaseId !== undefined) {
-        await reverifyStagedOpenClawAuthorizationBeforeFinalize(ctx, claim);
-      }
+      const trustedPublishAuthorization =
+        claim.releaseId !== undefined
+          ? await reverifyStagedOpenClawAuthorizationBeforeFinalize(ctx, claim)
+          : undefined;
       publishResult =
         claim.releaseId !== undefined
           ? await runMutationRef(ctx, internalRefs.packages.publishPendingReleaseInternal, {
               releaseId: claim.releaseId,
+              ...trustedPublishAuthorization,
             })
           : await runMutationRef(
               ctx,
@@ -11152,6 +11159,9 @@ async function schedulePackageReleaseTagCleanup(
 export const publishPendingReleaseInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
+    trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
+    trustedPublishInventoryDigest: v.optional(v.string()),
+    trustedPublishAuthorizationVersion: v.optional(v.literal(2)),
   },
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
@@ -11174,8 +11184,54 @@ export const publishPendingReleaseInternal = internalMutation({
       throw new ConvexError("Package not found");
     }
 
-    const now = Date.now();
     const metadata = pendingPackagePublicationMetadata(release);
+    // The pending row and finalizer must present the same v2 binding. Recheck
+    // mutable revocation and publisher state in the transaction that goes public.
+    if (
+      metadata.trustedPublishAuthorizationVersion !== undefined ||
+      args.trustedPublishAuthorizationVersion !== undefined
+    ) {
+      if (
+        metadata.trustedPublishAuthorizationVersion !== 2 ||
+        typeof metadata.trustedPublishTokenId !== "string" ||
+        typeof metadata.trustedPublishInventoryDigest !== "string" ||
+        args.trustedPublishAuthorizationVersion !== 2 ||
+        args.trustedPublishTokenId !== metadata.trustedPublishTokenId ||
+        args.trustedPublishInventoryDigest !== metadata.trustedPublishInventoryDigest
+      ) {
+        throw new ConvexError(
+          "Staged OpenClaw publish authorization no longer matches the release",
+        );
+      }
+      const token = await ctx.db.get(args.trustedPublishTokenId);
+      if (
+        !token ||
+        token.repository !== "openclaw/openclaw" ||
+        token.authorizationVersion !== 2 ||
+        (token.scope ?? "publish") !== "publish" ||
+        !token.consumedAt ||
+        token.revokedAt ||
+        token.packageId !== release.packageId ||
+        token.version !== release.version ||
+        !token.inventoryDigest ||
+        token.inventoryDigest !== metadata.trustedPublishInventoryDigest
+      ) {
+        throw new ConvexError(
+          "Staged OpenClaw publish authorization no longer matches the release",
+        );
+      }
+      const trustedPublisher = await ctx.db
+        .query("packageTrustedPublishers")
+        .withIndex("by_package", (q) => q.eq("packageId", token.packageId))
+        .unique();
+      if (!doesTrustedPublisherMatchPublishToken(trustedPublisher, token)) {
+        throw new ConvexError(
+          "Trusted publish authorization no longer matches the current trusted publisher",
+        );
+      }
+    }
+
+    const now = Date.now();
     const firstPublishedRelease = hasNoPublishedPackageVersions(pkg);
     const pendingFamily = stringPendingField(metadata, "family", pkg.family) as PackageFamily;
     const packageFamily = firstPublishedRelease ? pendingFamily : pkg.family;
@@ -11358,6 +11414,7 @@ export const insertReleaseInternal = internalMutation({
         ? { ...args.verification, scanStatus: prePublicationScanStatus }
         : args.verification;
     const normalizedName = normalizePackageName(args.name);
+    let trustedPublishAuthorizationVersion: 2 | undefined;
     if (args.trustedPublishTokenId) {
       const token = await ctx.db.get(args.trustedPublishTokenId);
       if (
@@ -11406,6 +11463,7 @@ export const insertReleaseInternal = internalMutation({
       // Consuming inside this mutation makes replay impossible: any later failure
       // rolls this patch back with the release insert.
       await ctx.db.patch(token._id, { consumedAt: now });
+      trustedPublishAuthorizationVersion = token.authorizationVersion;
     } else if (args.trustedPublishInventoryDigest) {
       throw new ConvexError("Trusted publish inventory requires a publish token");
     }
@@ -11633,6 +11691,13 @@ export const insertReleaseInternal = internalMutation({
             channel: nextChannel,
             isOfficial: nextIsOfficial,
             tags: effectiveTags,
+            trustedPublishTokenId:
+              trustedPublishAuthorizationVersion === 2 ? args.trustedPublishTokenId : undefined,
+            trustedPublishInventoryDigest:
+              trustedPublishAuthorizationVersion === 2
+                ? args.trustedPublishInventoryDigest
+                : undefined,
+            trustedPublishAuthorizationVersion,
           }
         : undefined,
       changelog: args.changelog,
