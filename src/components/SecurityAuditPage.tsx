@@ -909,7 +909,13 @@ function AigAttribution() {
       aria-label="By Tencent"
       title="Based on Tencent Zhuque Lab AI-Infra-Guard"
     >
-      By Tencent
+      <img
+        className="security-scanner-attribution-mark"
+        src="https://static.www.tencent.com/favicon.ico"
+        alt=""
+        aria-hidden="true"
+      />
+      <span>By Tencent</span>
     </a>
   );
 }
@@ -1044,9 +1050,6 @@ function SecurityAuditScannerSection({
           <h2 id={`${kind}-heading`} className="skill-install-panel-title">
             {label}
           </h2>
-          {kind === "aig" && props.aigAnalysis ? (
-            <ScanResultBadge status={props.aigAnalysis.status} />
-          ) : null}
           {kind === "skillspector" ? <SkillSpectorAttribution /> : null}
           {kind === "aig" ? <AigAttribution /> : null}
         </div>

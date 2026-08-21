@@ -558,13 +558,15 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "A.I.G" })).toBeTruthy();
-    expect(screen.getByText("Malicious")).toBeTruthy();
+    expect(screen.queryByText("Malicious")).toBeNull();
     expect(screen.getByRole("link", { name: "By Tencent" }).getAttribute("href")).toBe(
       "https://github.com/Tencent/AI-Infra-Guard",
     );
     expect(
-      container.querySelector('a[href="https://github.com/Tencent/AI-Infra-Guard"] img'),
-    ).toBeNull();
+      container
+        .querySelector('a[href="https://github.com/Tencent/AI-Infra-Guard"] img')
+        ?.getAttribute("src"),
+    ).toBe("https://static.www.tencent.com/favicon.ico");
     expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
     expect(screen.getByText("Findings (1)")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "T04 · Embedded Malicious Code" })).toBeTruthy();
