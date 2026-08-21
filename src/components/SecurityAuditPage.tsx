@@ -1048,7 +1048,18 @@ function SecurityAuditScannerSection({
       <div className="security-report-panel-header">
         <div className="security-report-panel-title-row">
           <h2 id={`${kind}-heading`} className="skill-install-panel-title">
-            {label}
+            {kind === "aig" ? (
+              <a
+                href="https://github.com/Tencent/AI-Infra-Guard/tree/main/skill-scan"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="View A.I.G scanner methodology"
+              >
+                {label}
+              </a>
+            ) : (
+              label
+            )}
           </h2>
           {kind === "skillspector" ? <SkillSpectorAttribution /> : null}
           {kind === "aig" ? <AigAttribution /> : null}

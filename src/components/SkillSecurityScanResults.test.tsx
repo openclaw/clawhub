@@ -558,6 +558,10 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "A.I.G" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "A.I.G" }).getAttribute("href")).toBe(
+      "https://github.com/Tencent/AI-Infra-Guard/tree/main/skill-scan",
+    );
+    expect(screen.getByRole("link", { name: "A.I.G" }).getAttribute("target")).toBe("_blank");
     expect(screen.queryByText("Malicious")).toBeNull();
     expect(screen.getByRole("link", { name: "By Tencent" }).getAttribute("href")).toBe(
       "https://github.com/Tencent/AI-Infra-Guard",
