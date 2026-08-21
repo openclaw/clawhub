@@ -131,17 +131,13 @@ The package source recorded by the registry comes from
 
 ## Manual Route And Cutover
 
-Ordinary callers remain compatible. Every automated OpenClaw real publish at
-newer reusable-workflow revisions requires v2. The only non-v2 OpenClaw routes
-are:
+Ordinary callers remain compatible. Every OpenClaw GitHub Actions OIDC publish
+requires v2, including the pre-cutover reusable-workflow revision. The only
+non-v2 OpenClaw route is a directly authenticated ClawHub user supplying an
+explicit manual override.
 
-- the exact pre-cutover reusable-workflow SHA
-  `a42cd2f73d6afb769b271d463fc111669cb7a499`
-- a directly authenticated ClawHub user supplying an explicit manual override
-
-The compatibility SHA is intentionally exact. OpenClaw must add the v2
-identity, post-dispatch parent receipt, package inventory list, and child
-inputs before pinning a newer ClawHub workflow revision. The v2 child must
+OpenClaw must add the v2 identity, post-dispatch parent receipt, package
+inventory list, and child inputs before this server gate is deployed. The v2 child must
 accept the staged response instead of waiting inline for publication, so the
 awaited parent can finish successfully. Published-artifact verification must
 run from a detached post-parent route after ClawHub finalization, not from the

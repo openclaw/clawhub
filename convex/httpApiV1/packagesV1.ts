@@ -99,8 +99,6 @@ import {
   toOptionalNumber,
 } from "./shared";
 
-const LEGACY_OPENCLAW_PACKAGE_PUBLISH_WORKFLOW_SHA = "a42cd2f73d6afb769b271d463fc111669cb7a499";
-
 const apiRefs = api as unknown as {
   packages: {
     listPublicPage: unknown;
@@ -2613,21 +2611,20 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       const scope = payload.scope ?? "publish";
       let openClawAuthorization = null;
       if (verified.repository === "openclaw/openclaw") {
-        if (payload.trustedToolingIdentityJson?.trim()) {
-          openClawAuthorization = await verifyOpenClawPublishAuthorization({
-            rawIdentity: payload.trustedToolingIdentityJson,
-            packageName: payload.packageName,
-            version: payload.version,
-            inventoryDigest: payload.inventoryDigest ?? "",
-            oidc: verified,
-          });
-        } else if (
-          payload.scope !== undefined ||
-          payload.inventoryDigest !== undefined ||
-          verified.jobWorkflowSha !== LEGACY_OPENCLAW_PACKAGE_PUBLISH_WORKFLOW_SHA
+        if (
+          payload.scope === undefined ||
+          payload.inventoryDigest === undefined ||
+          !payload.trustedToolingIdentityJson?.trim()
         ) {
           throw new Error("OpenClaw trusted publishes require authorization version 2");
         }
+        openClawAuthorization = await verifyOpenClawPublishAuthorization({
+          rawIdentity: payload.trustedToolingIdentityJson,
+          packageName: payload.packageName,
+          version: payload.version,
+          inventoryDigest: payload.inventoryDigest,
+          oidc: verified,
+        });
       }
       const { token, prefix } = generateToken();
       const tokenHash = await hashToken(token);
