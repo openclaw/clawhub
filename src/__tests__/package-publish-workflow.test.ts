@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -185,6 +186,66 @@ describe("package publish workflow", () => {
     );
     expect(workflow).not.toContain("Prebuilt artifact mode does not accept source_path");
     expect(workflow).toContain('cmd += ["--source-path", source_path]');
+  });
+
+  it("revalidates a supplied trusted tooling tuple immediately before publication", () => {
+    const workflowText = readFileSync(resolve(".github/workflows/package-publish.yml"), "utf8");
+    const workflow = parseYaml(workflowText) as {
+      on?: {
+        workflow_call?: {
+          inputs?: Record<
+            string,
+            { default?: boolean | number | string; required?: boolean; type?: string }
+          >;
+        };
+      };
+      jobs?: {
+        publish?: {
+          steps?: Array<{
+            env?: Record<string, string>;
+            if?: string;
+            name?: string;
+            run?: string;
+          }>;
+        };
+      };
+    };
+    const steps = workflow.jobs?.publish?.steps ?? [];
+    const verifyIndex = steps.findIndex(
+      (step) => step.name === "Revalidate trusted tooling identity",
+    );
+    const publishIndex = steps.findIndex((step) => step.name === "Run package publish");
+    const verifyStep = steps[verifyIndex];
+
+    expect(workflow.on?.workflow_call?.inputs?.trusted_tooling_identity_json).toEqual({
+      description:
+        "Optional versioned trusted tooling workflow identity JSON to revalidate immediately before publication.",
+      required: false,
+      type: "string",
+      default: "",
+    });
+    expect(verifyIndex).toBeGreaterThan(-1);
+    expect(verifyIndex + 1).toBe(publishIndex);
+    expect(verifyStep?.if).toBe("inputs.trusted_tooling_identity_json != ''");
+    expect(verifyStep?.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
+      GITHUB_REPOSITORY: "${{ github.repository }}",
+      GITHUB_EVENT_NAME: "${{ github.event_name }}",
+    });
+    expect(verifyStep?.run).toContain("verify-trusted-tooling-identity.cjs");
+  });
+
+  it("passes the trusted tooling identity behavior contract", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["--test", ".github/scripts/verify-trusted-tooling-identity.node-test.cjs"],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout).toMatch(/# tests [1-9][0-9]*/);
+    expect(result.stdout).toContain("# fail 0");
   });
 
   it("forwards optional catalog metadata and changelog inputs", () => {

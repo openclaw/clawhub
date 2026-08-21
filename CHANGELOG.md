@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- GitHub Actions: revalidate versioned trusted tooling workflow identity immediately before package publication, including exact protected lightweight tags, so approval waits cannot authorize moved tooling.
 - CI: authenticate the scheduled project-skill updater's pull request mutations with the Barnacle GitHub App while retaining the workflow token for provenance lookup and branch publication.
 - Workers: materialize zero-byte directory markers without colliding with descendant files, while retaining real empty files and verifying every downloaded artifact digest.
 - Deploy: allow an explicitly confirmed backend-only deploy to pause and reliably restore active external-skill rollouts instead of requiring a manual dashboard toggle.

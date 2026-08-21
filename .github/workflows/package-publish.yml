@@ -115,6 +115,11 @@ on:
         required: false
         type: string
         default: clawhub-package-publish-json
+      trusted_tooling_identity_json:
+        description: Optional versioned trusted tooling workflow identity JSON to revalidate immediately before publication.
+        required: false
+        type: string
+        default: ""
     secrets:
       clawhub_token:
         required: false
@@ -693,6 +698,15 @@ jobs:
           name: ${{ inputs.inspector_artifact_name }}
           path: ${{ runner.temp }}/plugin-inspector
           if-no-files-found: ignore
+
+      - name: Revalidate trusted tooling identity
+        if: inputs.trusted_tooling_identity_json != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: node "$GITHUB_WORKSPACE/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs"
 
       - name: Run package publish
         run: |
