@@ -169,6 +169,9 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 - Nitro streams those source files into the deterministic ZIP with backpressure
   and owns the public response headers. Archive bytes must not pass through a
   Convex HTTP action because those responses are capped at 20 MiB.
+- Direct requests to a production Convex-site download URL redirect to the
+  canonical public API origin before rate limiting, database reads, or storage
+  access so the archive still crosses the Nitro manifest boundary.
 - The manifest is an internal server-to-server capability, not a client token.
   Nitro overwrites the internal request headers and authenticates to Convex with
   its Vercel OIDC identity; Convex verifies the Vercel signature plus the exact

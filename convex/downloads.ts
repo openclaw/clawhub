@@ -2,7 +2,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { buildDownloadMetricArgs, getDownloadIdentity } from "./downloadMetrics";
 import { httpAction } from "./functions";
-import { ambiguousSkillSlugResponse } from "./httpApiV1/shared";
+import { ambiguousSkillSlugResponse, publicApiOrigin } from "./httpApiV1/shared";
 import { getOptionalActiveAuthUserIdFromAction } from "./lib/access";
 import { getOptionalApiTokenUserId } from "./lib/apiTokenAuth";
 import {
@@ -82,6 +82,19 @@ export async function downloadZipHandler(
   }
 
   const manifestRequested = request.headers.get(ARCHIVE_MANIFEST_REQUEST_HEADER) === "v1";
+  const publicOrigin = publicApiOrigin(request);
+  if (!manifestRequested && publicOrigin !== url.origin) {
+    return new Response(null, {
+      status: 307,
+      headers: mergeHeaders(
+        {
+          Location: new URL(`${url.pathname}${url.search}`, publicOrigin).href,
+          "Cache-Control": "no-store",
+        },
+        corsHeaders(),
+      ),
+    });
+  }
   if (manifestRequested) {
     const token = request.headers.get(ARCHIVE_REQUEST_IDENTITY_HEADER)?.trim();
     const expectedEnvironment = expectedVercelEnvironmentForConvexSite(request.url);
