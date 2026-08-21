@@ -1,26 +1,26 @@
-const MAX_IDENTITY_BYTES = 8 * 1024;
+const { lstatSync, readFileSync } = require("node:fs");
+
+const MAX_JSON_BYTES = 8 * 1024;
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
+const ARTIFACT_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const WORKFLOW_PATTERN = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 const FULL_REF_PATTERN = /^refs\/(?:heads|tags)\/(.+)$/;
 const PROTECTED_TAG_PATTERN = /^refs\/tags\/(release-publish\/([a-f0-9]{12})-[1-9][0-9]*)$/;
 const MAIN_FULL_REF = "refs/heads/main";
 const RELEASE_PARENT_WORKFLOW = ".github/workflows/openclaw-release-publish.yml";
-const PARENT_STATE_POLICIES = new Set([
-  "active",
-  "active-or-success",
-  "recovery-active-or-success-or-failure",
-]);
-const REQUIRED_KEYS = [
+const CLAWHUB_CHILD_WORKFLOW = ".github/workflows/plugin-clawhub-release.yml";
+const RECOVERY_ENVIRONMENT = "clawhub-plugin-release";
+const RECOVERY_APPROVAL_JOB = "approve_plugins_clawhub_release";
+const PARENT_RECEIPT_KIND = "openclaw-clawhub-parent-authorization";
+const RECOVERY_RECEIPT_KIND = "openclaw-clawhub-recovery-approval";
+const AUTOMATED_ROUTES = new Set(["automated-awaited", "automated-detached"]);
+const IDENTITY_KEYS = [
   "fullRef",
-  "parentFullRef",
-  "parentRef",
   "parentRepository",
   "parentRunAttempt",
   "parentRunId",
-  "parentSha",
-  "parentStatePolicy",
   "parentWorkflow",
   "ref",
   "repository",
@@ -30,6 +30,33 @@ const REQUIRED_KEYS = [
   "toolingFullRef",
   "toolingRef",
   "toolingSha",
+  "version",
+  "workflow",
+];
+const PARENT_RECEIPT_KEYS = [
+  "authorizationRoute",
+  "childWorkflow",
+  "fullRef",
+  "headSha",
+  "kind",
+  "ref",
+  "repository",
+  "runAttempt",
+  "runId",
+  "version",
+  "workflow",
+];
+const RECOVERY_RECEIPT_KEYS = [
+  "actor",
+  "approvalJob",
+  "authorizationRoute",
+  "environment",
+  "kind",
+  "parentRunAttempt",
+  "parentRunId",
+  "repository",
+  "runAttempt",
+  "runId",
   "version",
   "workflow",
 ];
@@ -52,35 +79,40 @@ function requireMatchingRef(ref, fullRef, name) {
   }
 }
 
-function parseTrustedToolingIdentity(raw) {
+function parseExactJson(raw, { name, keys, version }) {
   if (typeof raw !== "string" || !raw.trim()) {
-    fail("trusted tooling identity JSON is required");
+    fail(`${name} JSON is required`);
   }
-  if (Buffer.byteLength(raw, "utf8") > MAX_IDENTITY_BYTES) {
-    fail("trusted tooling identity JSON exceeds the 8 KiB limit");
+  if (Buffer.byteLength(raw, "utf8") > MAX_JSON_BYTES) {
+    fail(`${name} JSON exceeds the 8 KiB limit`);
   }
 
   let value;
   try {
     value = JSON.parse(raw);
   } catch {
-    fail("trusted tooling identity JSON is malformed");
+    fail(`${name} JSON is malformed`);
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    fail("trusted tooling identity must be a JSON object");
+    fail(`${name} must be a JSON object`);
   }
 
-  const keys = Object.keys(value).sort();
-  if (
-    keys.length !== REQUIRED_KEYS.length ||
-    keys.some((key, index) => key !== REQUIRED_KEYS[index])
-  ) {
-    fail(`trusted tooling identity v2 must contain exactly: ${REQUIRED_KEYS.join(", ")}`);
+  const actualKeys = Object.keys(value).sort();
+  if (actualKeys.length !== keys.length || actualKeys.some((key, index) => key !== keys[index])) {
+    fail(`${name} v${version} must contain exactly: ${keys.join(", ")}`);
   }
-  if (value.version !== 2) {
-    fail("trusted tooling identity version must be 2");
+  if (value.version !== version) {
+    fail(`${name} version must be ${version}`);
   }
+  return value;
+}
 
+function parseTrustedToolingIdentity(raw) {
+  const value = parseExactJson(raw, {
+    name: "trusted tooling identity",
+    keys: IDENTITY_KEYS,
+    version: 2,
+  });
   const identity = {
     version: 2,
     repository: requireString(value.repository, "repository", REPOSITORY_PATTERN),
@@ -101,34 +133,24 @@ function parseTrustedToolingIdentity(raw) {
       "parentRunAttempt",
       POSITIVE_INTEGER_PATTERN,
     ),
-    parentRef: requireString(value.parentRef, "parentRef"),
-    parentFullRef: requireString(value.parentFullRef, "parentFullRef"),
-    parentSha: requireString(value.parentSha, "parentSha", SHA_PATTERN),
-    parentStatePolicy: requireString(value.parentStatePolicy, "parentStatePolicy"),
   };
   requireMatchingRef(identity.ref, identity.fullRef, "caller");
-  requireMatchingRef(identity.parentRef, identity.parentFullRef, "parent");
 
-  if (!PARENT_STATE_POLICIES.has(identity.parentStatePolicy)) {
-    fail("trusted tooling identity parentStatePolicy is unknown");
+  if (identity.workflow !== CLAWHUB_CHILD_WORKFLOW) {
+    fail("trusted tooling identity workflow is not the OpenClaw ClawHub publisher");
   }
   if (identity.parentWorkflow !== RELEASE_PARENT_WORKFLOW) {
     fail("trusted tooling identity parentWorkflow is not the OpenClaw release publisher");
   }
-  if (
-    identity.parentRepository !== identity.repository ||
-    identity.parentRef !== identity.toolingRef ||
-    identity.parentFullRef !== identity.toolingFullRef ||
-    identity.parentSha !== identity.toolingSha
-  ) {
-    fail("trusted tooling identity parent tuple does not match its tooling tuple");
+  if (identity.parentRepository !== identity.repository) {
+    fail("trusted tooling identity parent repository does not match its caller repository");
   }
 
   if (identity.toolingFullRef === MAIN_FULL_REF) {
     if (identity.toolingRef !== "main") {
       fail("trusted main tooling ref must be main");
     }
-    return { ...identity, route: "main" };
+    return { ...identity, toolingRoute: "main" };
   }
 
   const protectedTag = PROTECTED_TAG_PATTERN.exec(identity.toolingFullRef);
@@ -138,7 +160,91 @@ function parseTrustedToolingIdentity(raw) {
   if (identity.toolingSha.slice(0, 12) !== protectedTag[2]) {
     fail("trusted release-publish tag prefix does not match its tooling SHA");
   }
-  return { ...identity, route: "protected-tag" };
+  return { ...identity, toolingRoute: "protected-tag" };
+}
+
+function parseParentAuthorizationReceipt(raw) {
+  const value = parseExactJson(raw, {
+    name: "release parent authorization receipt",
+    keys: PARENT_RECEIPT_KEYS,
+    version: 1,
+  });
+  const receipt = {
+    version: 1,
+    kind: requireString(value.kind, "parent receipt kind"),
+    repository: requireString(value.repository, "parent receipt repository", REPOSITORY_PATTERN),
+    workflow: requireString(value.workflow, "parent receipt workflow", WORKFLOW_PATTERN),
+    runId: requireString(value.runId, "parent receipt runId", POSITIVE_INTEGER_PATTERN),
+    runAttempt: requireString(
+      value.runAttempt,
+      "parent receipt runAttempt",
+      POSITIVE_INTEGER_PATTERN,
+    ),
+    ref: requireString(value.ref, "parent receipt ref"),
+    fullRef: requireString(value.fullRef, "parent receipt fullRef"),
+    headSha: requireString(value.headSha, "parent receipt headSha", SHA_PATTERN),
+    childWorkflow: requireString(
+      value.childWorkflow,
+      "parent receipt childWorkflow",
+      WORKFLOW_PATTERN,
+    ),
+    authorizationRoute: requireString(
+      value.authorizationRoute,
+      "parent receipt authorizationRoute",
+    ),
+  };
+  requireMatchingRef(receipt.ref, receipt.fullRef, "parent receipt");
+  if (receipt.kind !== PARENT_RECEIPT_KIND) {
+    fail("release parent authorization receipt kind is invalid");
+  }
+  if (!AUTOMATED_ROUTES.has(receipt.authorizationRoute)) {
+    fail("release parent authorization receipt route is unknown");
+  }
+  return receipt;
+}
+
+function parseRecoveryApprovalReceipt(raw) {
+  const value = parseExactJson(raw, {
+    name: "recovery environment approval receipt",
+    keys: RECOVERY_RECEIPT_KEYS,
+    version: 1,
+  });
+  const receipt = {
+    version: 1,
+    kind: requireString(value.kind, "recovery receipt kind"),
+    repository: requireString(value.repository, "recovery receipt repository", REPOSITORY_PATTERN),
+    workflow: requireString(value.workflow, "recovery receipt workflow", WORKFLOW_PATTERN),
+    runId: requireString(value.runId, "recovery receipt runId", POSITIVE_INTEGER_PATTERN),
+    runAttempt: requireString(
+      value.runAttempt,
+      "recovery receipt runAttempt",
+      POSITIVE_INTEGER_PATTERN,
+    ),
+    actor: requireString(value.actor, "recovery receipt actor"),
+    environment: requireString(value.environment, "recovery receipt environment"),
+    approvalJob: requireString(value.approvalJob, "recovery receipt approvalJob"),
+    authorizationRoute: requireString(
+      value.authorizationRoute,
+      "recovery receipt authorizationRoute",
+    ),
+    parentRunId: requireString(
+      value.parentRunId,
+      "recovery receipt parentRunId",
+      POSITIVE_INTEGER_PATTERN,
+    ),
+    parentRunAttempt: requireString(
+      value.parentRunAttempt,
+      "recovery receipt parentRunAttempt",
+      POSITIVE_INTEGER_PATTERN,
+    ),
+  };
+  if (receipt.kind !== RECOVERY_RECEIPT_KIND) {
+    fail("recovery environment approval receipt kind is invalid");
+  }
+  if (receipt.authorizationRoute !== "explicit-recovery") {
+    fail("recovery environment approval receipt route is invalid");
+  }
+  return receipt;
 }
 
 function requireContextValue(env, name) {
@@ -163,6 +269,7 @@ function validateInvocationContext(identity, env) {
       fail(`trusted tooling identity does not match ${name}`);
     }
   }
+  return requireContextValue(env, "GITHUB_ACTOR");
 }
 
 function normalizeQualifiedWorkflowRef(value, ref, fullRef) {
@@ -172,7 +279,7 @@ function normalizeQualifiedWorkflowRef(value, ref, fullRef) {
   fail("trusted tooling workflow path uses an ambiguous ref qualifier");
 }
 
-function validateWorkflowRun(identity, run) {
+function validateWorkflowRun(identity, run, actor) {
   if (!run || typeof run !== "object" || Array.isArray(run)) {
     fail("trusted tooling workflow run response is invalid");
   }
@@ -186,6 +293,7 @@ function validateWorkflowRun(identity, run) {
     ["head branch", String(run.head_branch ?? ""), identity.ref],
     ["head SHA", String(run.head_sha ?? ""), identity.sha],
     ["event", String(run.event ?? ""), "workflow_dispatch"],
+    ["actor", String(run.actor?.login ?? ""), actor],
   ];
   for (const [name, actual, expected] of checks) {
     if (actual !== expected) {
@@ -203,7 +311,96 @@ function validateWorkflowRun(identity, run) {
   }
 }
 
-function validateReleaseParentState(identity, run) {
+function parentArtifactName(identity) {
+  return `${PARENT_RECEIPT_KIND}-${identity.parentRunId}-${identity.parentRunAttempt}`;
+}
+
+function recoveryArtifactName(identity) {
+  return `${RECOVERY_RECEIPT_KIND}-${identity.runId}-${identity.runAttempt}`;
+}
+
+function validateArtifactResponse(response, { headSha, name, runId }) {
+  if (
+    !response ||
+    typeof response !== "object" ||
+    Array.isArray(response) ||
+    response.total_count !== 1 ||
+    !Array.isArray(response.artifacts) ||
+    response.artifacts.length !== 1
+  ) {
+    fail(`trusted authorization artifact ${name} is missing or ambiguous`);
+  }
+  const artifact = response.artifacts[0];
+  if (
+    artifact?.name !== name ||
+    artifact?.expired !== false ||
+    String(artifact?.workflow_run?.id ?? "") !== runId ||
+    artifact?.workflow_run?.head_sha !== headSha ||
+    !ARTIFACT_DIGEST_PATTERN.test(String(artifact?.digest ?? ""))
+  ) {
+    fail(`trusted authorization artifact ${name} identity is invalid`);
+  }
+}
+
+function validateParentAuthorizationReceipt(identity, receipt) {
+  const checks = [
+    ["repository", receipt.repository, identity.parentRepository],
+    ["workflow", receipt.workflow, identity.parentWorkflow],
+    ["run id", receipt.runId, identity.parentRunId],
+    ["run attempt", receipt.runAttempt, identity.parentRunAttempt],
+    ["ref", receipt.ref, identity.toolingRef],
+    ["full ref", receipt.fullRef, identity.toolingFullRef],
+    ["head SHA", receipt.headSha, identity.toolingSha],
+    ["child workflow", receipt.childWorkflow, identity.workflow],
+  ];
+  for (const [name, actual, expected] of checks) {
+    if (actual !== expected) {
+      fail(`release parent authorization receipt ${name} mismatch`);
+    }
+  }
+}
+
+function isBotActor(run) {
+  const login = String(run.actor?.login ?? "");
+  return run.actor?.type === "Bot" || login.endsWith("[bot]");
+}
+
+function validateRecoveryApprovalReceipt(identity, receipt, actor) {
+  const checks = [
+    ["repository", receipt.repository, identity.repository],
+    ["workflow", receipt.workflow, identity.workflow],
+    ["run id", receipt.runId, identity.runId],
+    ["run attempt", receipt.runAttempt, identity.runAttempt],
+    ["actor", receipt.actor, actor],
+    ["environment", receipt.environment, RECOVERY_ENVIRONMENT],
+    ["approval job", receipt.approvalJob, RECOVERY_APPROVAL_JOB],
+    ["authorization route", receipt.authorizationRoute, "explicit-recovery"],
+    ["parent run id", receipt.parentRunId, identity.parentRunId],
+    ["parent run attempt", receipt.parentRunAttempt, identity.parentRunAttempt],
+  ];
+  for (const [name, actual, expected] of checks) {
+    if (actual !== expected) {
+      fail(`recovery environment approval receipt ${name} mismatch`);
+    }
+  }
+}
+
+function deriveAuthorizationRoute(identity, run, parentReceipt, recoveryReceipt) {
+  const actor = String(run.actor?.login ?? "");
+  if (isBotActor(run)) {
+    if (recoveryReceipt) {
+      fail("automated ClawHub publication cannot select the recovery route");
+    }
+    return parentReceipt.authorizationRoute;
+  }
+  if (!recoveryReceipt) {
+    fail("direct ClawHub recovery requires durable environment approval evidence");
+  }
+  validateRecoveryApprovalReceipt(identity, recoveryReceipt, actor);
+  return "explicit-recovery";
+}
+
+function validateReleaseParentState(route, run) {
   const status = String(run.status ?? "");
   const conclusion = String(run.conclusion ?? "");
   const active = status === "in_progress" && conclusion === "";
@@ -211,18 +408,17 @@ function validateReleaseParentState(identity, run) {
   const failed = status === "completed" && conclusion === "failure";
   const allowed =
     active ||
-    (identity.parentStatePolicy === "active-or-success" && successful) ||
-    (identity.parentStatePolicy === "recovery-active-or-success-or-failure" &&
-      (successful || failed));
+    (route === "automated-detached" && successful) ||
+    (route === "explicit-recovery" && (successful || failed));
 
   if (!allowed) {
     fail(
-      `trusted release parent state ${status || "<missing>"}/${conclusion || "none"} is not allowed by policy ${identity.parentStatePolicy}`,
+      `trusted release parent state ${status || "<missing>"}/${conclusion || "none"} is not allowed by authorization route ${route}`,
     );
   }
 }
 
-function validateReleaseParentRun(identity, run) {
+function validateReleaseParentRun(identity, receipt, route, run) {
   if (!run || typeof run !== "object" || Array.isArray(run)) {
     fail("trusted release parent workflow run response is invalid");
   }
@@ -233,8 +429,8 @@ function validateReleaseParentRun(identity, run) {
     ["run id", String(run.id ?? ""), identity.parentRunId],
     ["run attempt", String(run.run_attempt ?? ""), identity.parentRunAttempt],
     ["workflow path", workflowPath, identity.parentWorkflow],
-    ["head branch", String(run.head_branch ?? ""), identity.parentRef],
-    ["head SHA", String(run.head_sha ?? ""), identity.parentSha],
+    ["head branch", String(run.head_branch ?? ""), receipt.ref],
+    ["head SHA", String(run.head_sha ?? ""), receipt.headSha],
     ["event", String(run.event ?? ""), "workflow_dispatch"],
   ];
   for (const [name, actual, expected] of checks) {
@@ -245,13 +441,13 @@ function validateReleaseParentRun(identity, run) {
 
   const normalizedQualifiedRef = normalizeQualifiedWorkflowRef(
     qualifiedRef,
-    identity.parentRef,
-    identity.parentFullRef,
+    receipt.ref,
+    receipt.fullRef,
   );
-  if (normalizedQualifiedRef && normalizedQualifiedRef !== identity.parentFullRef) {
+  if (normalizedQualifiedRef && normalizedQualifiedRef !== receipt.fullRef) {
     fail("trusted release parent workflow path ref mismatch");
   }
-  validateReleaseParentState(identity, run);
+  validateReleaseParentState(route, run);
 }
 
 function validateProtectedTag(identity, tagRef) {
@@ -275,21 +471,68 @@ function validateMainLineage(identity, comparison) {
   }
 }
 
-async function verifyTrustedToolingIdentity({ rawIdentity, env, getJson }) {
+function readBoundedReceipt(path, name) {
+  const receiptPath = requireString(path, `${name} path`);
+  const stat = lstatSync(receiptPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_JSON_BYTES) {
+    fail(`${name} file is not a bounded regular file`);
+  }
+  return readFileSync(receiptPath, "utf8");
+}
+
+async function verifyTrustedToolingIdentity({
+  rawIdentity,
+  rawParentReceipt,
+  rawRecoveryReceipt = "",
+  env,
+  getJson,
+}) {
   const identity = parseTrustedToolingIdentity(rawIdentity);
-  validateInvocationContext(identity, env);
+  const actor = validateInvocationContext(identity, env);
 
   const run = await getJson(
     `repos/${identity.repository}/actions/runs/${identity.runId}/attempts/${identity.runAttempt}`,
   );
-  validateWorkflowRun(identity, run);
+  validateWorkflowRun(identity, run, actor);
+
+  const expectedParentArtifact = parentArtifactName(identity);
+  const parentArtifacts = await getJson(
+    `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/artifacts?name=${encodeURIComponent(expectedParentArtifact)}`,
+  );
+  validateArtifactResponse(parentArtifacts, {
+    headSha: identity.toolingSha,
+    name: expectedParentArtifact,
+    runId: identity.parentRunId,
+  });
+  const parentReceipt = parseParentAuthorizationReceipt(rawParentReceipt);
+  validateParentAuthorizationReceipt(identity, parentReceipt);
+
+  let recoveryReceipt;
+  if (rawRecoveryReceipt) {
+    const expectedRecoveryArtifact = recoveryArtifactName(identity);
+    const recoveryArtifacts = await getJson(
+      `repos/${identity.repository}/actions/runs/${identity.runId}/artifacts?name=${encodeURIComponent(expectedRecoveryArtifact)}`,
+    );
+    validateArtifactResponse(recoveryArtifacts, {
+      headSha: identity.sha,
+      name: expectedRecoveryArtifact,
+      runId: identity.runId,
+    });
+    recoveryReceipt = parseRecoveryApprovalReceipt(rawRecoveryReceipt);
+  }
+  const authorizationRoute = deriveAuthorizationRoute(
+    identity,
+    run,
+    parentReceipt,
+    recoveryReceipt,
+  );
 
   const parentRun = await getJson(
     `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/attempts/${identity.parentRunAttempt}`,
   );
-  validateReleaseParentRun(identity, parentRun);
+  validateReleaseParentRun(identity, parentReceipt, authorizationRoute, parentRun);
 
-  if (identity.route === "main") {
+  if (identity.toolingRoute === "main") {
     const comparison = await getJson(
       `repos/${identity.repository}/compare/${identity.toolingSha}...main`,
     );
@@ -301,7 +544,7 @@ async function verifyTrustedToolingIdentity({ rawIdentity, env, getJson }) {
     validateProtectedTag(identity, tagRef);
   }
 
-  return identity;
+  return { ...identity, authorizationRoute };
 }
 
 async function githubJson(path, token) {
@@ -322,13 +565,24 @@ async function githubJson(path, token) {
 
 async function main() {
   const token = requireString(process.env.GH_TOKEN, "GH_TOKEN");
+  const rawRecoveryReceipt = process.env.RECOVERY_APPROVAL_RECEIPT_PATH
+    ? readBoundedReceipt(
+        process.env.RECOVERY_APPROVAL_RECEIPT_PATH,
+        "recovery environment approval receipt",
+      )
+    : "";
   const identity = await verifyTrustedToolingIdentity({
     rawIdentity: process.env.TRUSTED_TOOLING_IDENTITY_JSON,
+    rawParentReceipt: readBoundedReceipt(
+      process.env.PARENT_AUTHORIZATION_RECEIPT_PATH,
+      "release parent authorization receipt",
+    ),
+    rawRecoveryReceipt,
     env: process.env,
     getJson: (path) => githubJson(path, token),
   });
   console.log(
-    `Verified trusted tooling identity v${identity.version} for ${identity.repository} ${identity.toolingFullRef}.`,
+    `Verified trusted tooling identity v${identity.version} for ${identity.repository} ${identity.toolingFullRef} via ${identity.authorizationRoute}.`,
   );
 }
 
@@ -344,10 +598,18 @@ if (require.main === module) {
 }
 
 module.exports = {
+  deriveAuthorizationRoute,
+  parentArtifactName,
+  parseParentAuthorizationReceipt,
+  parseRecoveryApprovalReceipt,
   parseTrustedToolingIdentity,
+  recoveryArtifactName,
+  validateArtifactResponse,
   validateInvocationContext,
   validateMainLineage,
+  validateParentAuthorizationReceipt,
   validateProtectedTag,
+  validateRecoveryApprovalReceipt,
   validateReleaseParentRun,
   validateReleaseParentState,
   validateWorkflowRun,

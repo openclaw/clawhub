@@ -116,7 +116,7 @@ on:
         type: string
         default: clawhub-package-publish-json
       trusted_tooling_identity_json:
-        description: Optional versioned trusted tooling and release-parent identity JSON to revalidate immediately before publication.
+        description: Optional versioned trusted tooling and release-parent run identity; immutable authorization receipts are then required.
         required: false
         type: string
         default: ""
@@ -227,12 +227,32 @@ jobs:
           PUBLICATION_TIMEOUT_MINUTES: ${{ inputs.publication_timeout_minutes }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
         run: |
+          set -euo pipefail
           if [[ "$JSON_MODE" != "true" ]]; then
             echo "::warning::This reusable workflow always emits JSON output; forcing --json for downstream parsing."
           fi
           if [[ "$DRY_RUN" == "true" ]]; then
             exit 0
+          fi
+          if [[ "$GITHUB_REPOSITORY" == "openclaw/openclaw" && "$GITHUB_ACTOR" == "github-actions[bot]" ]]; then
+            python3 - <<'PY'
+          import json
+          import os
+
+          raw = os.environ["TRUSTED_TOOLING_IDENTITY_JSON"].strip()
+          if not raw:
+              raise SystemExit("Automated OpenClaw real publishes require trusted tooling identity v2.")
+          try:
+              identity = json.loads(raw)
+          except json.JSONDecodeError as error:
+              raise SystemExit("Automated OpenClaw real publishes require valid trusted tooling identity JSON.") from error
+          if not isinstance(identity, dict) or identity.get("version") != 2:
+              raise SystemExit("Automated OpenClaw real publishes require trusted tooling identity v2.")
+          PY
           fi
           if [[ "$WAIT_FOR_PUBLICATION" == "true" ]] && { ! [[ "$PUBLICATION_TIMEOUT_MINUTES" =~ ^[1-9][0-9]*$ ]] || (( PUBLICATION_TIMEOUT_MINUTES > 40 )); }; then
             echo "::error::publication_timeout_minutes must be an integer from 1 through 40."
@@ -699,11 +719,33 @@ jobs:
           path: ${{ runner.temp }}/plugin-inspector
           if-no-files-found: ignore
 
+      - name: Download release parent authorization receipt
+        if: inputs.trusted_tooling_identity_json != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: openclaw-clawhub-parent-authorization-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunAttempt }}
+          path: ${{ runner.temp }}/openclaw-clawhub-parent-authorization
+          github-token: ${{ github.token }}
+          repository: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRepository }}
+          run-id: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}
+
+      - name: Download recovery environment approval receipt
+        if: inputs.trusted_tooling_identity_json != '' && github.actor != 'github-actions[bot]'
+        uses: actions/download-artifact@v8
+        with:
+          name: openclaw-clawhub-recovery-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/openclaw-clawhub-recovery-approval
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
       - name: Revalidate trusted tooling identity
         if: inputs.trusted_tooling_identity_json != ''
         env:
           GH_TOKEN: ${{ github.token }}
           TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
+          PARENT_AUTHORIZATION_RECEIPT_PATH: ${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json
+          RECOVERY_APPROVAL_RECEIPT_PATH: ${{ github.actor != 'github-actions[bot]' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -713,9 +755,25 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: node "$GITHUB_WORKSPACE/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs"
 
       - name: Run package publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
+          PARENT_AUTHORIZATION_RECEIPT_PATH: ${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json
+          RECOVERY_APPROVAL_RECEIPT_PATH: ${{ github.actor != 'github-actions[bot]' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/clawhub-package-publish-command.sh" | tee "$RUNNER_TEMP/package-publish.json"

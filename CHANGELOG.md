@@ -9,7 +9,7 @@
 
 ### Fixes
 
-- GitHub Actions: bind OpenClaw package publication to the exact live release parent attempt and an explicit parent-state policy, so a failed or cancelled parent cannot silently retain mutation authority after approval waits.
+- GitHub Actions/CLI: bind OpenClaw package mutations to immutable parent-run and protected-environment authorization receipts, rechecking at staged-upload and final-publish boundaries so callers cannot grant themselves recovery authority or retain it after parent cancellation.
 - GitHub Actions: revalidate versioned trusted tooling workflow identity immediately before package publication, including exact protected lightweight tags, so approval waits cannot authorize moved tooling.
 - CI: authenticate the scheduled project-skill updater's pull request mutations with the Barnacle GitHub App while retaining the workflow token for provenance lookup and branch publication.
 - Workers: materialize zero-byte directory markers without colliding with descendant files, while retaining real empty files and verifying every downloaded artifact digest.

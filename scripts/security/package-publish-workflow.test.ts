@@ -6,8 +6,11 @@ import { parse as parseYaml } from "yaml";
 type WorkflowStep = {
   env?: Record<string, unknown>;
   id?: string;
+  if?: string;
   name?: string;
   run?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
 };
 
 describe("package publish reusable workflow", () => {
@@ -52,11 +55,17 @@ describe("package publish reusable workflow", () => {
     expect(validateStep?.env).toMatchObject({
       WAIT_FOR_PUBLICATION: "${{ inputs.wait_for_publication }}",
       PUBLICATION_TIMEOUT_MINUTES: "${{ inputs.publication_timeout_minutes }}",
+      GITHUB_REPOSITORY: "${{ github.repository }}",
+      GITHUB_ACTOR: "${{ github.actor }}",
+      TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
     });
     expect(validateStep?.run).toContain(
       "publication_timeout_minutes must be an integer from 1 through 40",
     );
     expect(validateStep?.run).toContain("PUBLICATION_TIMEOUT_MINUTES > 40");
+    expect(validateStep?.run).toContain(
+      "Automated OpenClaw real publishes require trusted tooling identity v2.",
+    );
 
     const resolveStep = job.steps.find((step) => step.name === "Resolve publish command");
     expect(resolveStep?.env).toMatchObject({
@@ -76,19 +85,63 @@ describe("package publish reusable workflow", () => {
     const verifyIndex = job.steps.findIndex(
       (step) => step.name === "Revalidate trusted tooling identity",
     );
+    const parentReceiptIndex = job.steps.findIndex(
+      (step) => step.name === "Download release parent authorization receipt",
+    );
+    const recoveryReceiptIndex = job.steps.findIndex(
+      (step) => step.name === "Download recovery environment approval receipt",
+    );
     const publishIndex = job.steps.findIndex((step) => step.name === "Run package publish");
+    const publishStep = job.steps[publishIndex];
     const verifyStep = job.steps[verifyIndex];
+    const parentReceiptStep = job.steps[parentReceiptIndex];
+    const recoveryReceiptStep = job.steps[recoveryReceiptIndex];
+    expect(parentReceiptIndex).toBeGreaterThan(-1);
+    expect(recoveryReceiptIndex).toBe(parentReceiptIndex + 1);
+    expect(verifyIndex).toBe(recoveryReceiptIndex + 1);
     expect(verifyIndex + 1).toBe(publishIndex);
+    expect(parentReceiptStep).toMatchObject({
+      if: "inputs.trusted_tooling_identity_json != ''",
+      uses: "actions/download-artifact@v8",
+      with: {
+        "github-token": "${{ github.token }}",
+        repository: "${{ fromJson(inputs.trusted_tooling_identity_json).parentRepository }}",
+        "run-id": "${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}",
+      },
+    });
+    expect(String(parentReceiptStep?.with?.name)).toContain(
+      "openclaw-clawhub-parent-authorization-",
+    );
+    expect(recoveryReceiptStep).toMatchObject({
+      if: "inputs.trusted_tooling_identity_json != '' && github.actor != 'github-actions[bot]'",
+      uses: "actions/download-artifact@v8",
+      with: {
+        name: "openclaw-clawhub-recovery-approval-${{ github.run_id }}-${{ github.run_attempt }}",
+        "github-token": "${{ github.token }}",
+        repository: "${{ github.repository }}",
+        "run-id": "${{ github.run_id }}",
+      },
+    });
     expect(verifyStep?.env).toMatchObject({
       GH_TOKEN: "${{ github.token }}",
       TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
+      PARENT_AUTHORIZATION_RECEIPT_PATH:
+        "${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json",
       GITHUB_REPOSITORY: "${{ github.repository }}",
       GITHUB_RUN_ID: "${{ github.run_id }}",
       GITHUB_RUN_ATTEMPT: "${{ github.run_attempt }}",
       GITHUB_WORKFLOW_REF: "${{ github.workflow_ref }}",
       GITHUB_WORKFLOW_SHA: "${{ github.workflow_sha }}",
       GITHUB_EVENT_NAME: "${{ github.event_name }}",
+      GITHUB_ACTOR: "${{ github.actor }}",
     });
     expect(verifyStep?.run).toContain("verify-trusted-tooling-identity.cjs");
+    expect(publishStep?.env).toMatchObject({
+      GH_TOKEN: "${{ github.token }}",
+      TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
+      PARENT_AUTHORIZATION_RECEIPT_PATH:
+        "${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json",
+      GITHUB_ACTOR: "${{ github.actor }}",
+    });
   });
 });

@@ -2317,6 +2317,54 @@ describe("package commands", () => {
     }
   });
 
+  it("revalidates authorization immediately before a single-attempt package POST", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "authorized-plugin-1.0.0.tgz";
+      await writeFile(
+        join(workdir, packName),
+        npmPackFixture({
+          "package/package.json": makeCodePluginPackageJson({
+            name: "@scope/authorized-plugin",
+            displayName: "Authorized Plugin",
+            version: "1.0.0",
+          }),
+          "package/openclaw.plugin.json": JSON.stringify({ id: "authorized.plugin" }),
+          "package/dist/index.js": "export const demo = true;\n",
+        }),
+      );
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        publicationStatus: "published",
+      });
+      const revalidateTrustedTooling = vi.fn<() => Promise<void>>().mockResolvedValue();
+
+      await cmdPublishPackage(
+        makeOpts(workdir),
+        packName,
+        {
+          sourceRepo: "openclaw/authorized-plugin",
+          sourceCommit: "abc123",
+        },
+        { revalidateTrustedTooling },
+      );
+
+      expect(revalidateTrustedTooling).toHaveBeenCalledTimes(1);
+      expect(httpMocks.apiRequestForm).toHaveBeenCalledWith(
+        "https://clawhub.ai",
+        expect.objectContaining({
+          path: "/api/v1/packages",
+          retryCount: 0,
+        }),
+        expect.anything(),
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("stages ClawPack tarballs over the multipart publish budget", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -2371,6 +2419,61 @@ describe("package commands", () => {
       expect(getPublishForm().get("clawpackUploadTicket")).toBe("uploadTickets:clawpack");
       expect(getPublishPayload()).not.toHaveProperty("artifact");
       expect(getPublishPayload()).not.toHaveProperty("files");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("stops after staged upload when parent authorization is cancelled before publish", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const packName = "cancelled-parent-plugin-1.0.0.tgz";
+      const packBytes = npmPackFixture({
+        "package/package.json": makeCodePluginPackageJson({
+          name: "@scope/cancelled-parent-plugin",
+          displayName: "Cancelled Parent Plugin",
+          version: "1.0.0",
+        }),
+        "package/openclaw.plugin.json": JSON.stringify({ id: "cancelled.parent.plugin" }),
+        "package/dist/index.js": "export const demo = true;\n",
+        "package/dist/model.bin": randomBytes(24 * 1024 * 1024),
+      });
+      await writeFile(join(workdir, packName), packBytes);
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        uploadUrl: "https://upload.local",
+        uploadTicket: "uploadTickets:clawpack",
+      });
+      httpMocks.uploadBinary.mockResolvedValueOnce({ storageId: "storage:clawpack" });
+      const revalidateTrustedTooling = vi
+        .fn<() => Promise<void>>()
+        .mockResolvedValueOnce()
+        .mockResolvedValueOnce()
+        .mockRejectedValueOnce(new Error("release parent was cancelled"));
+
+      await expect(
+        cmdPublishPackage(
+          makeOpts(workdir),
+          packName,
+          {
+            sourceRepo: "openclaw/cancelled-parent-plugin",
+            sourceCommit: "abc123",
+          },
+          { revalidateTrustedTooling },
+        ),
+      ).rejects.toThrow("release parent was cancelled");
+
+      expect(revalidateTrustedTooling).toHaveBeenCalledTimes(3);
+      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+        "https://clawhub.ai",
+        expect.objectContaining({ retryCount: 0 }),
+        expect.anything(),
+      );
+      expect(httpMocks.uploadBinary).toHaveBeenCalledWith(
+        expect.objectContaining({ retryCount: 0 }),
+        expect.anything(),
+      );
+      expect(httpMocks.uploadBinary).toHaveBeenCalledTimes(1);
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
