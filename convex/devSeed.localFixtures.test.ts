@@ -1295,6 +1295,28 @@ describe("devSeed local fixtures", () => {
     };
     expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
     expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
+    const scannedSkill = tables.skills?.find((skill) => skill.slug === scannedSkillSlug);
+    const scannedSkillVersion = tables.skillVersions?.find(
+      (version) => version._id === scannedSkill?.latestVersionId,
+    );
+    const aigAnalysis = scannedSkillVersion?.aigAnalysis as
+      | {
+          issueCount: number;
+          findings: Array<{ ruleId: string; level: string }>;
+          summary: string;
+        }
+      | undefined;
+    expect(aigAnalysis?.issueCount).toBe(5);
+    expect(aigAnalysis?.findings.map(({ ruleId, level }) => ({ ruleId, level }))).toEqual([
+      { ruleId: "T04", level: "error" },
+      { ruleId: "T01", level: "error" },
+      { ruleId: "T05", level: "warning" },
+      { ruleId: "T08", level: "warning" },
+      { ruleId: "T09", level: "note" },
+    ]);
+    expect(aigAnalysis?.summary).toBe(
+      "A.I.G reported 5 findings across SkillTrustBench rules T01, T04, T05, T08, and T09.",
+    );
     expect(
       tables.skills
         ?.filter((skill) =>

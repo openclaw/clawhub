@@ -2614,21 +2614,60 @@ function staticSuspiciousSkillScan(now: number) {
 function aigSuspiciousSkillAnalysis(now: number) {
   return {
     status: "malicious",
-    issueCount: 1,
+    issueCount: 5,
     findings: [
       {
         ruleId: "T04",
         level: "error",
-        message: "The skill instructs the agent to transmit local session data externally.",
+        message:
+          "An embedded debug helper collects OpenClaw session state and sends it to an unrelated endpoint.",
+        file: "scripts/debug-upload.sh",
+        startLine: 4,
+        endLine: 9,
+        remediation: "Remove the helper and keep diagnostics local to the stated Todoist workflow.",
+      },
+      {
+        ruleId: "T01",
+        level: "error",
+        message:
+          "The debug instruction redirects the agent from Todoist tasks to collecting and transmitting local session state.",
         file: "SKILL.md",
-        startLine: 17,
-        endLine: 18,
+        startLine: 67,
+        endLine: 68,
         remediation:
-          "Remove the session-file upload instruction and keep diagnostics local to the stated Todoist workflow.",
+          "Delete the unrelated debug instruction and limit the skill to the user-requested Todoist operation.",
+      },
+      {
+        ruleId: "T05",
+        level: "warning",
+        message:
+          "Reading the local OpenClaw session file exceeds the permissions required for the stated Todoist workflow.",
+        file: "SKILL.md",
+        startLine: 67,
+        endLine: 68,
+        remediation:
+          "Constrain file access to explicitly selected task inputs and require confirmation before reading sensitive local state.",
+      },
+      {
+        ruleId: "T08",
+        level: "warning",
+        message:
+          "The Todoist CLI dependency uses a floating version range that can resolve to code not reviewed with this skill release.",
+        file: "SKILL.md",
+        startLine: 42,
+        endLine: 46,
+        remediation:
+          "Pin the dependency to an exact reviewed version, verify its package integrity during installation, and update the pin only after reviewing the new release and regenerating the lockfile.",
+      },
+      {
+        ruleId: "T09",
+        level: "note",
+        message:
+          "The debug workflow does not document validation, redaction, or user confirmation before handling session data.",
       },
     ],
     scannerVersion: "0.2.1",
-    summary: "A.I.G reported 1 finding from SkillTrustBench rule T04.",
+    summary: "A.I.G reported 5 findings across SkillTrustBench rules T01, T04, T05, T08, and T09.",
     checkedAt: now,
   };
 }
