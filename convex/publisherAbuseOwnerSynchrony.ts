@@ -8,6 +8,7 @@ import {
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
+import { freshPublisherAbuseEvidenceCrossesRepeatThreshold } from "./lib/publisherAbuseSignalLifecycle";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -307,24 +308,79 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
   };
 
   if (existing) {
+    const previousStatus = existing.reviewStatus;
+    const snoozeExpired =
+      previousStatus === "snoozed" &&
+      typeof existing.snoozedUntil === "number" &&
+      existing.snoozedUntil <= args.now;
+    const hasEvidenceCheckpoint =
+      typeof existing.evidenceBaselineDownloads === "number" &&
+      typeof existing.evidenceBaselineInstalls === "number";
+    const evidenceBaselineDownloads =
+      existing.evidenceBaselineDownloads ?? candidate.allTimeDownloads;
+    const evidenceBaselineInstalls = existing.evidenceBaselineInstalls ?? candidate.allTimeInstalls;
+    const freshDownloadsSinceSnooze = Math.max(
+      0,
+      candidate.allTimeDownloads - evidenceBaselineDownloads,
+    );
+    const freshInstallsSinceSnooze = Math.max(
+      0,
+      candidate.allTimeInstalls - evidenceBaselineInstalls,
+    );
+    const recurringAfterSnooze =
+      snoozeExpired &&
+      hasEvidenceCheckpoint &&
+      freshPublisherAbuseEvidenceCrossesRepeatThreshold(OWNER_SYNCHRONY_SIGNAL_TYPE, {
+        downloads: freshDownloadsSinceSnooze,
+        installs: freshInstallsSinceSnooze,
+      });
     const evidenceChanged =
       JSON.stringify(existing.portfolioEvidence?.skillSlugs ?? []) !==
         JSON.stringify(candidate.portfolioEvidence.skillSlugs) ||
       existing.portfolioEvidence?.allPublisherSkills !==
         candidate.portfolioEvidence.allPublisherSkills;
+    const nextStatus = recurringAfterSnooze ? "open" : previousStatus;
+    const shouldNotify = recurringAfterSnooze || (previousStatus === "open" && evidenceChanged);
     await ctx.db.patch(existing._id, {
       ...snapshot,
+      reviewStatus: nextStatus,
+      snoozedUntil: nextStatus === "snoozed" ? existing.snoozedUntil : undefined,
+      evidenceAcknowledgedAt:
+        previousStatus === "snoozed"
+          ? (existing.evidenceAcknowledgedAt ?? args.now)
+          : existing.evidenceAcknowledgedAt,
+      evidenceBaselineDownloads:
+        previousStatus === "snoozed"
+          ? evidenceBaselineDownloads
+          : existing.evidenceBaselineDownloads,
+      evidenceBaselineInstalls:
+        previousStatus === "snoozed" ? evidenceBaselineInstalls : existing.evidenceBaselineInstalls,
+      freshDownloadsSinceSnooze:
+        previousStatus === "snoozed"
+          ? freshDownloadsSinceSnooze
+          : existing.freshDownloadsSinceSnooze,
+      freshInstallsSinceSnooze:
+        previousStatus === "snoozed" ? freshInstallsSinceSnooze : existing.freshInstallsSinceSnooze,
+      recurrenceCount: recurringAfterSnooze
+        ? (existing.recurrenceCount ?? 0) + 1
+        : existing.recurrenceCount,
+      notificationBaselineDownloads: shouldNotify
+        ? candidate.allTimeDownloads
+        : (existing.notificationBaselineDownloads ?? existing.allTimeDownloads),
+      notificationBaselineInstalls: shouldNotify
+        ? candidate.allTimeInstalls
+        : (existing.notificationBaselineInstalls ?? existing.allTimeInstalls),
       lastSeenAt: args.now,
       seenCount: existing.seenCount + 1,
-      lastChangedAt: evidenceChanged ? args.now : existing.lastChangedAt,
-      needsNotification: evidenceChanged ? true : (existing.needsNotification ?? false),
-      notificationClaimedAt: evidenceChanged ? undefined : existing.notificationClaimedAt,
-      lastNotificationError: evidenceChanged ? undefined : existing.lastNotificationError,
+      lastChangedAt: shouldNotify ? args.now : existing.lastChangedAt,
+      needsNotification: shouldNotify ? true : (existing.needsNotification ?? false),
+      notificationClaimedAt: shouldNotify ? undefined : existing.notificationClaimedAt,
+      lastNotificationError: shouldNotify ? undefined : existing.lastNotificationError,
     });
     return {
       signalId: existing._id,
       created: false as const,
-      changed: evidenceChanged,
+      changed: shouldNotify,
     };
   }
 
