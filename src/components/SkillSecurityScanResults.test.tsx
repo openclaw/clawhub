@@ -511,6 +511,12 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "SkillSpector" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SkillSpector" }).getAttribute("href")).toBe(
+      "https://github.com/NVIDIA/SkillSpector",
+    );
+    expect(screen.getByRole("link", { name: "SkillSpector" }).getAttribute("target")).toBe(
+      "_blank",
+    );
     expect(screen.getByText("By NVIDIA")).toBeTruthy();
     expect(screen.queryByText("SkillSpector found 1 issue.")).toBeNull();
     expect(screen.getByRole("heading", { name: "Description-Behavior Mismatch" })).toBeTruthy();

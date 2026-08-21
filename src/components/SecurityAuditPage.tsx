@@ -74,6 +74,16 @@ type SecurityAuditPageProps = {
 const EMPTY_SKILLSPECTOR_ISSUES: SkillSpectorIssue[] = [];
 const SKILLSPECTOR_VISIBLE_CHECK_LIMIT = 5;
 const AIG_VISIBLE_RULE_LIMIT = 5;
+const AUDIT_SCANNER_LINKS: Partial<Record<AuditScannerKind, { href: string; title: string }>> = {
+  aig: {
+    href: "https://github.com/Tencent/AI-Infra-Guard/tree/main/skill-scan",
+    title: "View A.I.G scanner methodology",
+  },
+  skillspector: {
+    href: "https://github.com/NVIDIA/SkillSpector",
+    title: "View SkillSpector source repository",
+  },
+};
 const AIG_RULES = [
   {
     id: "T01",
@@ -1040,6 +1050,7 @@ function SecurityAuditScannerSection({
   props: SecurityAuditPageProps;
 }) {
   const label = AUDIT_SCANNER_LABELS[kind];
+  const scannerLink = AUDIT_SCANNER_LINKS[kind];
   return (
     <section
       className="security-report-panel security-report-panel-compact"
@@ -1048,12 +1059,12 @@ function SecurityAuditScannerSection({
       <div className="security-report-panel-header">
         <div className="security-report-panel-title-row">
           <h2 id={`${kind}-heading`} className="skill-install-panel-title">
-            {kind === "aig" ? (
+            {scannerLink ? (
               <a
-                href="https://github.com/Tencent/AI-Infra-Guard/tree/main/skill-scan"
+                href={scannerLink.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="View A.I.G scanner methodology"
+                title={scannerLink.title}
               >
                 {label}
               </a>
