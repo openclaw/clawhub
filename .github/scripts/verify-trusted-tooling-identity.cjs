@@ -6,8 +6,22 @@ const WORKFLOW_PATTERN = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 const FULL_REF_PATTERN = /^refs\/(?:heads|tags)\/(.+)$/;
 const PROTECTED_TAG_PATTERN = /^refs\/tags\/(release-publish\/([a-f0-9]{12})-[1-9][0-9]*)$/;
 const MAIN_FULL_REF = "refs/heads/main";
+const RELEASE_PARENT_WORKFLOW = ".github/workflows/openclaw-release-publish.yml";
+const PARENT_STATE_POLICIES = new Set([
+  "active",
+  "active-or-success",
+  "recovery-active-or-success-or-failure",
+]);
 const REQUIRED_KEYS = [
   "fullRef",
+  "parentFullRef",
+  "parentRef",
+  "parentRepository",
+  "parentRunAttempt",
+  "parentRunId",
+  "parentSha",
+  "parentStatePolicy",
+  "parentWorkflow",
   "ref",
   "repository",
   "runAttempt",
@@ -61,14 +75,14 @@ function parseTrustedToolingIdentity(raw) {
     keys.length !== REQUIRED_KEYS.length ||
     keys.some((key, index) => key !== REQUIRED_KEYS[index])
   ) {
-    fail(`trusted tooling identity v1 must contain exactly: ${REQUIRED_KEYS.join(", ")}`);
+    fail(`trusted tooling identity v2 must contain exactly: ${REQUIRED_KEYS.join(", ")}`);
   }
-  if (value.version !== 1) {
-    fail("trusted tooling identity version must be 1");
+  if (value.version !== 2) {
+    fail("trusted tooling identity version must be 2");
   }
 
   const identity = {
-    version: 1,
+    version: 2,
     repository: requireString(value.repository, "repository", REPOSITORY_PATTERN),
     workflow: requireString(value.workflow, "workflow", WORKFLOW_PATTERN),
     runId: requireString(value.runId, "runId", POSITIVE_INTEGER_PATTERN),
@@ -79,8 +93,36 @@ function parseTrustedToolingIdentity(raw) {
     toolingRef: requireString(value.toolingRef, "toolingRef"),
     toolingFullRef: requireString(value.toolingFullRef, "toolingFullRef"),
     toolingSha: requireString(value.toolingSha, "toolingSha", SHA_PATTERN),
+    parentRepository: requireString(value.parentRepository, "parentRepository", REPOSITORY_PATTERN),
+    parentWorkflow: requireString(value.parentWorkflow, "parentWorkflow", WORKFLOW_PATTERN),
+    parentRunId: requireString(value.parentRunId, "parentRunId", POSITIVE_INTEGER_PATTERN),
+    parentRunAttempt: requireString(
+      value.parentRunAttempt,
+      "parentRunAttempt",
+      POSITIVE_INTEGER_PATTERN,
+    ),
+    parentRef: requireString(value.parentRef, "parentRef"),
+    parentFullRef: requireString(value.parentFullRef, "parentFullRef"),
+    parentSha: requireString(value.parentSha, "parentSha", SHA_PATTERN),
+    parentStatePolicy: requireString(value.parentStatePolicy, "parentStatePolicy"),
   };
   requireMatchingRef(identity.ref, identity.fullRef, "caller");
+  requireMatchingRef(identity.parentRef, identity.parentFullRef, "parent");
+
+  if (!PARENT_STATE_POLICIES.has(identity.parentStatePolicy)) {
+    fail("trusted tooling identity parentStatePolicy is unknown");
+  }
+  if (identity.parentWorkflow !== RELEASE_PARENT_WORKFLOW) {
+    fail("trusted tooling identity parentWorkflow is not the OpenClaw release publisher");
+  }
+  if (
+    identity.parentRepository !== identity.repository ||
+    identity.parentRef !== identity.toolingRef ||
+    identity.parentFullRef !== identity.toolingFullRef ||
+    identity.parentSha !== identity.toolingSha
+  ) {
+    fail("trusted tooling identity parent tuple does not match its tooling tuple");
+  }
 
   if (identity.toolingFullRef === MAIN_FULL_REF) {
     if (identity.toolingRef !== "main") {
@@ -123,10 +165,10 @@ function validateInvocationContext(identity, env) {
   }
 }
 
-function normalizeQualifiedWorkflowRef(value, identity) {
+function normalizeQualifiedWorkflowRef(value, ref, fullRef) {
   if (!value) return "";
   if (value.startsWith("refs/")) return value;
-  if (value === identity.ref && identity.fullRef === MAIN_FULL_REF) return MAIN_FULL_REF;
+  if (value === ref && fullRef === MAIN_FULL_REF) return MAIN_FULL_REF;
   fail("trusted tooling workflow path uses an ambiguous ref qualifier");
 }
 
@@ -151,10 +193,65 @@ function validateWorkflowRun(identity, run) {
     }
   }
 
-  const normalizedQualifiedRef = normalizeQualifiedWorkflowRef(qualifiedRef, identity);
+  const normalizedQualifiedRef = normalizeQualifiedWorkflowRef(
+    qualifiedRef,
+    identity.ref,
+    identity.fullRef,
+  );
   if (normalizedQualifiedRef && normalizedQualifiedRef !== identity.fullRef) {
     fail("trusted tooling workflow path ref mismatch");
   }
+}
+
+function validateReleaseParentState(identity, run) {
+  const status = String(run.status ?? "");
+  const conclusion = String(run.conclusion ?? "");
+  const active = status === "in_progress" && conclusion === "";
+  const successful = status === "completed" && conclusion === "success";
+  const failed = status === "completed" && conclusion === "failure";
+  const allowed =
+    active ||
+    (identity.parentStatePolicy === "active-or-success" && successful) ||
+    (identity.parentStatePolicy === "recovery-active-or-success-or-failure" &&
+      (successful || failed));
+
+  if (!allowed) {
+    fail(
+      `trusted release parent state ${status || "<missing>"}/${conclusion || "none"} is not allowed by policy ${identity.parentStatePolicy}`,
+    );
+  }
+}
+
+function validateReleaseParentRun(identity, run) {
+  if (!run || typeof run !== "object" || Array.isArray(run)) {
+    fail("trusted release parent workflow run response is invalid");
+  }
+
+  const [workflowPath, qualifiedRef = ""] = String(run.path ?? "").split("@", 2);
+  const checks = [
+    ["repository", run.repository?.full_name, identity.parentRepository],
+    ["run id", String(run.id ?? ""), identity.parentRunId],
+    ["run attempt", String(run.run_attempt ?? ""), identity.parentRunAttempt],
+    ["workflow path", workflowPath, identity.parentWorkflow],
+    ["head branch", String(run.head_branch ?? ""), identity.parentRef],
+    ["head SHA", String(run.head_sha ?? ""), identity.parentSha],
+    ["event", String(run.event ?? ""), "workflow_dispatch"],
+  ];
+  for (const [name, actual, expected] of checks) {
+    if (actual !== expected) {
+      fail(`trusted release parent workflow ${name} mismatch`);
+    }
+  }
+
+  const normalizedQualifiedRef = normalizeQualifiedWorkflowRef(
+    qualifiedRef,
+    identity.parentRef,
+    identity.parentFullRef,
+  );
+  if (normalizedQualifiedRef && normalizedQualifiedRef !== identity.parentFullRef) {
+    fail("trusted release parent workflow path ref mismatch");
+  }
+  validateReleaseParentState(identity, run);
 }
 
 function validateProtectedTag(identity, tagRef) {
@@ -186,6 +283,11 @@ async function verifyTrustedToolingIdentity({ rawIdentity, env, getJson }) {
     `repos/${identity.repository}/actions/runs/${identity.runId}/attempts/${identity.runAttempt}`,
   );
   validateWorkflowRun(identity, run);
+
+  const parentRun = await getJson(
+    `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/attempts/${identity.parentRunAttempt}`,
+  );
+  validateReleaseParentRun(identity, parentRun);
 
   if (identity.route === "main") {
     const comparison = await getJson(
@@ -246,6 +348,8 @@ module.exports = {
   validateInvocationContext,
   validateMainLineage,
   validateProtectedTag,
+  validateReleaseParentRun,
+  validateReleaseParentState,
   validateWorkflowRun,
   verifyTrustedToolingIdentity,
 };

@@ -219,7 +219,7 @@ describe("package publish workflow", () => {
 
     expect(workflow.on?.workflow_call?.inputs?.trusted_tooling_identity_json).toEqual({
       description:
-        "Optional versioned trusted tooling workflow identity JSON to revalidate immediately before publication.",
+        "Optional versioned trusted tooling and release-parent identity JSON to revalidate immediately before publication.",
       required: false,
       type: "string",
       default: "",
@@ -246,7 +246,11 @@ describe("package publish workflow", () => {
   it("passes the trusted tooling identity behavior contract", () => {
     const result = spawnSync(
       process.execPath,
-      ["--test", ".github/scripts/verify-trusted-tooling-identity.node-test.cjs"],
+      [
+        "--test",
+        "--test-reporter=tap",
+        ".github/scripts/verify-trusted-tooling-identity.node-test.cjs",
+      ],
       { encoding: "utf8" },
     );
 

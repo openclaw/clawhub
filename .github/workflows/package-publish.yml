@@ -116,7 +116,7 @@ on:
         type: string
         default: clawhub-package-publish-json
       trusted_tooling_identity_json:
-        description: Optional versioned trusted tooling workflow identity JSON to revalidate immediately before publication.
+        description: Optional versioned trusted tooling and release-parent identity JSON to revalidate immediately before publication.
         required: false
         type: string
         default: ""
