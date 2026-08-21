@@ -209,67 +209,72 @@ async function findOrganizationRecipient(ctx: DbCtx, publisherId: Id<"publishers
   return null;
 }
 
+export async function getEmailContextInternalHandler(
+  ctx: DbCtx,
+  args: { signalId: Id<"publisherAbuseSignals"> },
+) {
+  const signal = await ctx.db.get(args.signalId);
+  if (!signal?.trafficExplanationRequest || signal.trafficExplanationRequest.sentAt) return null;
+  if (
+    signal.trafficExplanationRequest.state === "cancelled" ||
+    signal.trafficExplanationRequest.state === "not_deliverable"
+  ) {
+    return null;
+  }
+  const requestedAt = signal.trafficExplanationRequest.requestedAt;
+  if (signal.trafficExplanationResponse) {
+    return { kind: "skip" as const, requestedAt, reason: "owner_already_responded" };
+  }
+  if (signal.reviewStatus !== "open") {
+    return { kind: "skip" as const, requestedAt, reason: "signal_no_longer_open" };
+  }
+
+  const skill = await ctx.db.get(signal.skillId);
+  if (!skill || !signalStillBelongsToSkill(signal, skill)) {
+    return { kind: "skip" as const, requestedAt, reason: "skill_owner_changed" };
+  }
+
+  let recipient: EmailRecipient | null = null;
+  let publisherHandle = signal.handleSnapshot;
+  if (signal.ownerPublisherId) {
+    const publisher = await ctx.db.get(signal.ownerPublisherId);
+    if (!publisher || !isPublisherActive(publisher)) {
+      return { kind: "skip" as const, requestedAt, reason: "publisher_unavailable" };
+    }
+    publisherHandle = publisher.handle;
+    recipient =
+      publisher.kind === "user"
+        ? await activeEmailUser(ctx, publisher.linkedUserId ?? skill.ownerUserId)
+        : await findOrganizationRecipient(ctx, publisher._id);
+  } else {
+    recipient = await activeEmailUser(ctx, signal.ownerUserId ?? skill.ownerUserId);
+  }
+  if (!recipient) {
+    return { kind: "skip" as const, requestedAt, reason: "owner_email_unavailable" };
+  }
+
+  return {
+    kind: "send" as const,
+    requestedAt,
+    recipientUserId: recipient.user._id,
+    to: recipient.email,
+    handle: recipient.user.handle,
+    publisherHandle,
+    skillDisplayName: signal.skillDisplayName,
+    skillSlug: signal.skillSlug,
+    scope:
+      signal.signalType === "owner_synchronized_download_trends"
+        ? ("publisher" as const)
+        : ("skill" as const),
+    allPublisherSkills: signal.portfolioEvidence?.allPublisherSkills ?? false,
+    attemptCount: signal.trafficExplanationRequest.attemptCount ?? 0,
+  };
+}
+
 export const getEmailContextInternal = internalQuery({
   args: { signalId: v.id("publisherAbuseSignals") },
   returns: v.any(),
-  handler: async (ctx, args) => {
-    const signal = await ctx.db.get(args.signalId);
-    if (!signal?.trafficExplanationRequest || signal.trafficExplanationRequest.sentAt) return null;
-    if (
-      signal.trafficExplanationRequest.state === "cancelled" ||
-      signal.trafficExplanationRequest.state === "not_deliverable"
-    ) {
-      return null;
-    }
-    const requestedAt = signal.trafficExplanationRequest.requestedAt;
-    if (signal.trafficExplanationResponse) {
-      return { kind: "skip" as const, requestedAt, reason: "owner_already_responded" };
-    }
-    if (signal.reviewStatus !== "open") {
-      return { kind: "skip" as const, requestedAt, reason: "signal_no_longer_open" };
-    }
-
-    const skill = await ctx.db.get(signal.skillId);
-    if (!skill || !signalStillBelongsToSkill(signal, skill)) {
-      return { kind: "skip" as const, requestedAt, reason: "skill_owner_changed" };
-    }
-
-    let recipient: EmailRecipient | null = null;
-    let publisherHandle = signal.handleSnapshot;
-    if (signal.ownerPublisherId) {
-      const publisher = await ctx.db.get(signal.ownerPublisherId);
-      if (!publisher || !isPublisherActive(publisher)) {
-        return { kind: "skip" as const, requestedAt, reason: "publisher_unavailable" };
-      }
-      publisherHandle = publisher.handle;
-      recipient =
-        publisher.kind === "user"
-          ? await activeEmailUser(ctx, publisher.linkedUserId ?? skill.ownerUserId)
-          : await findOrganizationRecipient(ctx, publisher._id);
-    } else {
-      recipient = await activeEmailUser(ctx, signal.ownerUserId ?? skill.ownerUserId);
-    }
-    if (!recipient) {
-      return { kind: "skip" as const, requestedAt, reason: "owner_email_unavailable" };
-    }
-
-    return {
-      kind: "send" as const,
-      requestedAt,
-      recipientUserId: recipient.user._id,
-      to: recipient.email,
-      handle: recipient.user.handle,
-      publisherHandle,
-      skillDisplayName: signal.skillDisplayName,
-      skillSlug: signal.skillSlug,
-      scope:
-        signal.signalType === "owner_synchronized_download_trends"
-          ? ("publisher" as const)
-          : ("skill" as const),
-      allPublisherSkills: signal.portfolioEvidence?.allPublisherSkills ?? false,
-      attemptCount: signal.trafficExplanationRequest.attemptCount ?? 0,
-    };
-  },
+  handler: getEmailContextInternalHandler,
 });
 
 export const beginDeliveryAttemptInternal = internalMutation({
@@ -300,6 +305,16 @@ export const beginDeliveryAttemptInternal = internalMutation({
       request.state === "not_deliverable"
     ) {
       return { ok: false as const, reason: "stale_request" as const };
+    }
+    const currentEmailContext = await getEmailContextInternalHandler(ctx, {
+      signalId: args.signalId,
+    });
+    if (
+      currentEmailContext?.kind !== "send" ||
+      currentEmailContext.recipientUserId !== args.recipientUserId ||
+      currentEmailContext.to !== args.recipientEmail
+    ) {
+      return { ok: false as const, reason: "owner_changed" as const };
     }
     const attemptCount = (request.attemptCount ?? 0) + 1;
     await ctx.db.patch(args.signalId, {

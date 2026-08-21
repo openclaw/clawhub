@@ -348,6 +348,34 @@ describe("publisher abuse traffic explanations", () => {
     expect(JSON.stringify(patch.mock.calls)).not.toContain(VALID_TOKEN);
   });
 
+  it("refuses an email attempt when ownership changed after recipient resolution", async () => {
+    const { ctx, documents, patch } = makeFixture();
+    documents.set("publishers:owner", {
+      _id: "publishers:owner",
+      kind: "user",
+      handle: "new-owner",
+      linkedUserId: "users:new-owner",
+    });
+
+    await expect(
+      beginDeliveryAttemptHandler(ctx, {
+        signalId: "publisherAbuseSignals:traffic",
+        requestedAt: 1_700_000_000_000,
+        attemptedAt: 1_700_000_100_000,
+        expectedAttemptCount: 0,
+        tokenHash: VALID_TOKEN_HASH,
+        recipientUserId: "users:owner",
+        recipientEmail: "owner@example.com",
+        subject: "Question about downloads for Popular Skill",
+        templateVersion: "traffic-explanation.v1",
+        reasonBullets: ["Downloads rose unusually quickly while installs stayed flat."],
+        redactedTextSnapshot: "Hello owner, [SECURE EXPLANATION LINK]",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "owner_changed" });
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("hides the request from users who do not manage the current publisher", async () => {
     const { ctx } = makeFixture();
     const stranger = {

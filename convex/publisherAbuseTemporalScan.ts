@@ -15,7 +15,7 @@ import {
 } from "./lib/publisherAbuseScoring";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import {
-  archiveTemporalPublisherAbuseSignals,
+  archiveTemporalPublisherAbuseSignalsPageInternalHandler,
   type TemporalSkillCandidate,
 } from "./publisherAbuse";
 import { scanPublisherAbuseOwnerSynchronyPage } from "./publisherAbuseOwnerSynchrony";
@@ -580,11 +580,12 @@ export async function advanceScheduledTemporalCandidatesInternalHandler(
   }
   if (!run.temporalBenchmark) throw new Error("Temporal scan benchmark is missing");
   if (args.candidates.length > 0) {
-    await archiveTemporalPublisherAbuseSignals(ctx, {
+    await archiveTemporalPublisherAbuseSignalsPageInternalHandler(ctx, {
       runId: run._id,
       candidates: args.candidates,
       benchmark: normalizeTemporalAbuseCohortBenchmark(run.temporalBenchmark),
       now,
+      requestOwnerExplanation: true,
     });
   }
   const finalizedScores = run.finalizedScores + args.candidates.length;
