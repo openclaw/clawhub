@@ -44,6 +44,31 @@ function candidate() {
   };
 }
 
+function snoozedSignal(now: number) {
+  const value = candidate();
+  return {
+    _id: "publisherAbuseSignals:portfolio",
+    ...value,
+    ownerUserId: value.ownerUserId ?? null,
+    skillId: value.representativeSkillId,
+    skillSlug: value.representativeSkillSlug,
+    skillDisplayName: value.representativeSkillDisplayName,
+    signalType: "owner_synchronized_download_trends" as const,
+    reviewStatus: "snoozed" as const,
+    snoozedUntil: now - 1,
+    evidenceAcknowledgedAt: now - 10_000,
+    evidenceBaselineDownloads: value.allTimeDownloads,
+    evidenceBaselineInstalls: value.allTimeInstalls,
+    notificationBaselineDownloads: value.allTimeDownloads,
+    notificationBaselineInstalls: value.allTimeInstalls,
+    firstSeenAt: now - 20_000,
+    lastSeenAt: now - 10_000,
+    seenCount: 2,
+    lastChangedAt: now - 10_000,
+    needsNotification: false,
+  };
+}
+
 describe("publisher abuse owner synchrony signal", () => {
   it("creates one publisher-level signal with portfolio evidence", async () => {
     const inserted: Array<Record<string, unknown>> = [];
@@ -92,5 +117,77 @@ describe("publisher abuse owner synchrony signal", () => {
       }),
     ]);
     expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("keeps expired snoozes closed when no fresh evidence crosses the repeat threshold", async () => {
+    const now = 1_700_000_000_000;
+    const existing = snoozedSignal(now);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({ first: async () => existing }),
+        })),
+        patch,
+      },
+    };
+
+    await expect(
+      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
+        candidate: candidate(),
+        now,
+      }),
+    ).resolves.toMatchObject({ created: false, changed: false });
+
+    expect(patch).toHaveBeenCalledWith(
+      existing._id,
+      expect.objectContaining({
+        reviewStatus: "snoozed",
+        snoozedUntil: existing.snoozedUntil,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
+        needsNotification: false,
+      }),
+    );
+  });
+
+  it("reopens an expired snooze when fresh synchronized traffic crosses the repeat threshold", async () => {
+    const now = 1_700_000_000_000;
+    const existing = snoozedSignal(now);
+    const repeatedCandidate = {
+      ...candidate(),
+      allTimeDownloads: existing.evidenceBaselineDownloads + 1_500,
+      allTimeInstalls: existing.evidenceBaselineInstalls + 3,
+    };
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({ first: async () => existing }),
+        })),
+        patch,
+      },
+    };
+
+    await expect(
+      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
+        candidate: repeatedCandidate,
+        now,
+      }),
+    ).resolves.toMatchObject({ created: false, changed: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      existing._id,
+      expect.objectContaining({
+        reviewStatus: "open",
+        snoozedUntil: undefined,
+        freshDownloadsSinceSnooze: 1_500,
+        freshInstallsSinceSnooze: 3,
+        recurrenceCount: 1,
+        needsNotification: true,
+        notificationBaselineDownloads: repeatedCandidate.allTimeDownloads,
+        notificationBaselineInstalls: repeatedCandidate.allTimeInstalls,
+      }),
+    );
   });
 });

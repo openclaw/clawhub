@@ -39,6 +39,7 @@ import {
   type SkillTemporalAbuseScore,
   type TemporalAbuseCohortBenchmark,
 } from "./lib/publisherAbuseScoring";
+import { freshPublisherAbuseEvidenceCrossesRepeatThreshold } from "./lib/publisherAbuseSignalLifecycle";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -78,11 +79,6 @@ const DEFAULT_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 5;
 const MAX_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 50;
 const MAX_TEMPORAL_SIGNAL_ARCHIVE_CONTINUATION_CANDIDATES = 250;
 const DEFAULT_PUBLISHER_ABUSE_SIGNAL_SNOOZE_DAYS = 14;
-const RECURRING_SUSTAINED_SIGNAL_MIN_DOWNLOADS = 1_500;
-const RECURRING_SUSTAINED_SIGNAL_MAX_INSTALLS = 5;
-const RECURRING_RATIO_SIGNAL_MIN_DOWNLOADS = 500;
-const RECURRING_RATIO_SIGNAL_MIN_INSTALLS = 50;
-const RECURRING_RATIO_SIGNAL_MIN_RATIO = 0.1;
 const MAX_PUBLISHER_ABUSE_SIGNAL_BATCH_SIZE = 50;
 const MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH = 1000;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_BATCH_SIZE = 10;
@@ -3678,7 +3674,7 @@ async function upsertPublisherAbuseSignal(
     const recurringAfterSnooze =
       snoozeExpired &&
       hasEvidenceCheckpoint &&
-      freshEvidenceCrossesRepeatThreshold(args.signalType, {
+      freshPublisherAbuseEvidenceCrossesRepeatThreshold(args.signalType, {
         downloads: freshDownloadsSinceSnooze,
         installs: freshInstallsSinceSnooze,
       });
@@ -3688,7 +3684,7 @@ async function upsertPublisherAbuseSignal(
       signal.notificationBaselineInstalls ?? signal.allTimeInstalls;
     const materiallyStrongerEvidence =
       previousStatus === "open" &&
-      freshEvidenceCrossesRepeatThreshold(args.signalType, {
+      freshPublisherAbuseEvidenceCrossesRepeatThreshold(args.signalType, {
         downloads: Math.max(0, snapshot.allTimeDownloads - notificationBaselineDownloads),
         installs: Math.max(0, snapshot.allTimeInstalls - notificationBaselineInstalls),
       });
@@ -3741,28 +3737,6 @@ async function upsertPublisherAbuseSignal(
     needsNotification: true,
   });
   return { changed: true };
-}
-
-function freshEvidenceCrossesRepeatThreshold(
-  signalType: PublisherAbuseSignalType,
-  fresh: { downloads: number; installs: number },
-) {
-  if (
-    signalType === "sustained_downloads_flat_installs" ||
-    signalType === "sustained_abnormal_download_days" ||
-    signalType === "download_spike_flat_installs" ||
-    signalType === "owner_synchronized_download_trends"
-  ) {
-    return (
-      fresh.downloads >= RECURRING_SUSTAINED_SIGNAL_MIN_DOWNLOADS &&
-      fresh.installs <= RECURRING_SUSTAINED_SIGNAL_MAX_INSTALLS
-    );
-  }
-  return (
-    fresh.downloads >= RECURRING_RATIO_SIGNAL_MIN_DOWNLOADS &&
-    fresh.installs >= RECURRING_RATIO_SIGNAL_MIN_INSTALLS &&
-    installDownloadRatio(fresh) >= RECURRING_RATIO_SIGNAL_MIN_RATIO
-  );
 }
 
 function publisherAbuseSignalSnapshot(args: {
