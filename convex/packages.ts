@@ -8162,6 +8162,15 @@ function doesTrustedPublisherMatchPublishToken(
   );
 }
 
+function assertOpenClawPublishAuthorizationVersion(token: {
+  repository?: string;
+  authorizationVersion?: number;
+}) {
+  if (token.repository === "openclaw/openclaw" && token.authorizationVersion !== 2) {
+    throw new ConvexError("OpenClaw trusted publishes require authorization version 2");
+  }
+}
+
 async function reverifyOpenClawAuthorizationBeforePublish(
   auth: PackagePublishAuthContext,
   transaction: {
@@ -8170,13 +8179,9 @@ async function reverifyOpenClawAuthorizationBeforePublish(
     inventoryDigest: string;
   },
 ) {
-  if (
-    auth.kind !== "github-actions" ||
-    auth.publishToken.repository !== "openclaw/openclaw" ||
-    auth.publishToken.authorizationVersion !== 2
-  ) {
+  if (auth.kind !== "github-actions" || auth.publishToken.repository !== "openclaw/openclaw")
     return;
-  }
+  assertOpenClawPublishAuthorizationVersion(auth.publishToken);
   await reverifyOpenClawAuthorizationEvidence(auth.publishToken, transaction, "submission");
 }
 
@@ -8252,16 +8257,23 @@ async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
     trustedPublishTokenId?: Id<"packagePublishTokens">;
     trustedPublishInventoryDigest?: string;
     trustedPublishAuthorizationVersion?: number;
+    githubActionsAudit?: { repository?: string };
   };
+  const token = followup.trustedPublishTokenId
+    ? await runQueryRef<Doc<"packagePublishTokens"> | null>(
+        ctx,
+        internalRefs.packagePublishTokens.getByIdInternal,
+        { tokenId: followup.trustedPublishTokenId },
+      )
+    : null;
+  assertOpenClawPublishAuthorizationVersion({
+    repository: followup.githubActionsAudit?.repository ?? token?.repository,
+    authorizationVersion: followup.trustedPublishAuthorizationVersion,
+  });
   if (followup.trustedPublishAuthorizationVersion !== 2) return undefined;
   if (!followup.trustedPublishTokenId) {
     throw new ConvexError("Staged OpenClaw publish authorization token is missing");
   }
-  const token = await runQueryRef<Doc<"packagePublishTokens"> | null>(
-    ctx,
-    internalRefs.packagePublishTokens.getByIdInternal,
-    { tokenId: followup.trustedPublishTokenId },
-  );
   // Staging already consumed this exact transaction. Finalization may outlive
   // the short token TTL, so durable consumed evidence replaces expiry here.
   if (
@@ -9480,13 +9492,7 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
     if ((publishToken.scope ?? "publish") !== "publish") {
       throw new ConvexError("Trusted upload token cannot authorize package publication");
     }
-    if (
-      publishToken.repository === "openclaw/openclaw" &&
-      (publishToken.scope !== undefined || publishToken.inventoryDigest !== undefined) &&
-      publishToken.authorizationVersion !== 2
-    ) {
-      throw new ConvexError("OpenClaw trusted publishes require authorization version 2");
-    }
+    assertOpenClawPublishAuthorizationVersion(publishToken);
     const trustedPublisher = await runQueryRef<PackageTrustedPublisherDoc | null>(
       ctx,
       internalRefs.packages.getTrustedPublisherByPackageIdInternal,
@@ -11436,13 +11442,7 @@ export const insertReleaseInternal = internalMutation({
           "Trusted publish authorization does not match this package transaction",
         );
       }
-      if (
-        token.repository === "openclaw/openclaw" &&
-        (token.scope !== undefined || token.inventoryDigest !== undefined) &&
-        token.authorizationVersion !== 2
-      ) {
-        throw new ConvexError("OpenClaw trusted publishes require authorization version 2");
-      }
+      assertOpenClawPublishAuthorizationVersion(token);
       const tokenPackage = await ctx.db.get(token.packageId);
       if (
         !tokenPackage ||

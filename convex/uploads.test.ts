@@ -105,16 +105,19 @@ describe("package publish upload tickets", () => {
     ).rejects.toThrow("Trusted publish token is missing or expired");
   });
 
-  it("preserves unscoped legacy upload tokens during the coordinated cutover", async () => {
+  it("rejects legacy OpenClaw upload tokens minted before the v2 cutover", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_000);
     const ctx = makeCtx({
       _id: "packagePublishTokens:legacy",
+      repository: "openclaw/openclaw",
       expiresAt: 10_000,
     });
 
-    await createForTokenHandler(ctx, { publishTokenId: "packagePublishTokens:legacy" });
+    await expect(
+      createForTokenHandler(ctx, { publishTokenId: "packagePublishTokens:legacy" }),
+    ).rejects.toThrow("OpenClaw trusted publishes require authorization version 2");
 
-    expect(ctx.db.insert).toHaveBeenCalledOnce();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 

@@ -42,6 +42,12 @@ export const createPackagePublishUploadForTokenInternal = internalMutation({
     ) {
       throw new Error("Trusted publish token is missing or expired");
     }
+    if (
+      publishToken.repository === "openclaw/openclaw" &&
+      publishToken.authorizationVersion !== 2
+    ) {
+      throw new Error("OpenClaw trusted publishes require authorization version 2");
+    }
     if (publishToken.scope === "publish") {
       throw new Error("Trusted publish token cannot authorize package upload");
     }

@@ -346,6 +346,8 @@ const insertReleaseInternalHandler = (
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
       normalizedBundleManifest?: unknown;
+      trustedPublishTokenId?: string;
+      trustedPublishInventoryDigest?: string;
       source?: unknown;
     },
     unknown
@@ -8196,6 +8198,47 @@ describe("packages public queries", () => {
     );
   });
 
+  it("rejects legacy OpenClaw authorization inside the release mutation", async () => {
+    const pkg = makePackageDoc({ family: "bundle-plugin" });
+    const token = {
+      _id: "packagePublishTokens:legacy",
+      packageId: pkg._id,
+      version: "1.0.0",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+      expiresAt: Date.now() + 60_000,
+    };
+    const ctx = makeInsertReleaseCtx(pkg, [], {
+      [token._id]: token,
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: pkg.name,
+        displayName: pkg.displayName,
+        family: "bundle-plugin",
+        version: token.version,
+        changelog: "legacy release",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        publicationStatus: "pending",
+        trustedPublishTokenId: token._id,
+      }),
+    ).rejects.toThrow("OpenClaw trusted publishes require authorization version 2");
+
+    expect(ctx.insert).not.toHaveBeenCalled();
+    expect(ctx.patch).not.toHaveBeenCalled();
+  });
+
   it("atomically consumes a v2 trusted publish capability with the release insert", async () => {
     const inventoryDigest = "d".repeat(64);
     const pkg = makePackageDoc({ family: "bundle-plugin" });
@@ -8814,6 +8857,54 @@ describe("packages public queries", () => {
       }),
     );
     expect(ctx.runQuery).not.toHaveBeenCalled();
+  });
+
+  it("rejects staged legacy OpenClaw attempts before public promotion", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (typeof args === "object" && args !== null && "attemptId" in args && !("error" in args)) {
+        return {
+          status: "claimed",
+          attemptId: "publishAttempts:demo",
+          packageId: "packages:demo",
+          releaseId: "packageReleases:pending",
+          packageFollowup: {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            trustedPublishTokenId: "packagePublishTokens:legacy",
+          },
+        };
+      }
+      if (typeof args === "object" && args !== null && "error" in args) {
+        return { attemptId: "publishAttempts:demo", status: "ready_to_finalize" };
+      }
+      throw new Error(`Unexpected mutation args ${JSON.stringify(args)}`);
+    });
+    const ctx = {
+      runMutation,
+      runQuery: vi.fn(async () => ({
+        _id: "packagePublishTokens:legacy",
+        repository: "openclaw/openclaw",
+      })),
+    };
+
+    await expect(
+      finalizePackagePublishAttemptInternalHandler(ctx as never, {
+        attemptId: "publishAttempts:demo",
+      }),
+    ).rejects.toThrow("OpenClaw trusted publishes require authorization version 2");
+
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:pending" }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        attemptId: "publishAttempts:demo",
+        error: "OpenClaw trusted publishes require authorization version 2",
+      }),
+    );
+    expect(ctx.runQuery).toHaveBeenCalledOnce();
   });
 
   it("keeps v2 releases pending until the exact parent succeeds", async () => {
@@ -11367,9 +11458,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
@@ -11398,6 +11489,48 @@ describe("packages public queries", () => {
     ).rejects.toThrow(
       "Trusted publish token no longer matches the current package trusted publisher",
     );
+  });
+
+  it("rejects legacy OpenClaw tokens before trusted publish action work", async () => {
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        _id: "packagePublishTokens:legacy",
+        packageId: "packages:demo",
+        provider: "github-actions",
+        repository: "openclaw/openclaw",
+        repositoryId: "1",
+        repositoryOwner: "openclaw",
+        repositoryOwnerId: "2",
+        workflowFilename: "plugin-clawhub-release.yml",
+        environment: "clawhub-release",
+        version: "1.0.0",
+        sha: "abc123",
+        ref: "refs/heads/main",
+        runId: "100",
+        runAttempt: "1",
+        expiresAt: Date.now() + 60_000,
+      })),
+      runMutation: vi.fn(),
+      runAction: vi.fn(),
+    };
+
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:legacy",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "legacy publish",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow("OpenClaw trusted publishes require authorization version 2");
+
+    expect(ctx.runQuery).toHaveBeenCalledOnce();
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+    expect(ctx.runAction).not.toHaveBeenCalled();
   });
 
   it("binds a split-ref trusted publish to the frozen candidate source", async () => {
@@ -11603,9 +11736,9 @@ describe("packages public queries", () => {
       _id: "packageTrustedPublishers:1",
       packageId: "packages:demo",
       provider: "github-actions",
-      repository: "openclaw/openclaw",
+      repository: "example/example",
       repositoryId: "1",
-      repositoryOwner: "openclaw",
+      repositoryOwner: "example",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
       environment: "clawhub-release",
@@ -11617,9 +11750,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
@@ -11701,9 +11834,9 @@ describe("packages public queries", () => {
       _id: "packageTrustedPublishers:1",
       packageId: "packages:demo",
       provider: "github-actions",
-      repository: "openclaw/openclaw",
+      repository: "example/example",
       repositoryId: "1",
-      repositoryOwner: "openclaw",
+      repositoryOwner: "example",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
       environment: "clawhub-release",
@@ -11715,9 +11848,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
@@ -11818,9 +11951,9 @@ describe("packages public queries", () => {
       _id: "packageTrustedPublishers:1",
       packageId: "packages:demo",
       provider: "github-actions",
-      repository: "openclaw/openclaw",
+      repository: "example/example",
       repositoryId: "1",
-      repositoryOwner: "openclaw",
+      repositoryOwner: "example",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
       environment: "clawhub-release",
@@ -11843,9 +11976,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
@@ -11938,9 +12071,9 @@ describe("packages public queries", () => {
       _id: "packageTrustedPublishers:1",
       packageId: "packages:demo",
       provider: "github-actions",
-      repository: "openclaw/openclaw",
+      repository: "example/example",
       repositoryId: "1",
-      repositoryOwner: "openclaw",
+      repositoryOwner: "example",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
       environment: "clawhub-release",
@@ -11952,9 +12085,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
@@ -12023,9 +12156,9 @@ describe("packages public queries", () => {
       _id: "packageTrustedPublishers:1",
       packageId: "packages:demo",
       provider: "github-actions",
-      repository: "openclaw/openclaw",
+      repository: "example/example",
       repositoryId: "1",
-      repositoryOwner: "openclaw",
+      repositoryOwner: "example",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
       environment: "clawhub-release",
@@ -12037,9 +12170,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
@@ -12103,9 +12236,9 @@ describe("packages public queries", () => {
       _id: "packageTrustedPublishers:1",
       packageId: "packages:demo",
       provider: "github-actions",
-      repository: "openclaw/openclaw",
+      repository: "example/example",
       repositoryId: "1",
-      repositoryOwner: "openclaw",
+      repositoryOwner: "example",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
       environment: "clawhub-release",
@@ -12117,9 +12250,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           environment: "clawhub-release",
@@ -12194,9 +12327,9 @@ describe("packages public queries", () => {
       _id: "packageTrustedPublishers:1",
       packageId: "packages:demo",
       provider: "github-actions",
-      repository: "openclaw/openclaw",
+      repository: "example/example",
       repositoryId: "1",
-      repositoryOwner: "openclaw",
+      repositoryOwner: "example",
       repositoryOwnerId: "2",
       workflowFilename: "plugin-clawhub-release.yml",
     };
@@ -12207,9 +12340,9 @@ describe("packages public queries", () => {
           _id: "packagePublishTokens:1",
           packageId: "packages:demo",
           provider: "github-actions",
-          repository: "openclaw/openclaw",
+          repository: "example/example",
           repositoryId: "1",
-          repositoryOwner: "openclaw",
+          repositoryOwner: "example",
           repositoryOwnerId: "2",
           workflowFilename: "plugin-clawhub-release.yml",
           version: "1.0.0",
