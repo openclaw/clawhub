@@ -8196,6 +8196,7 @@ async function reverifyOpenClawAuthorizationEvidence(
 ) {
   if (
     !token.trustedToolingIdentityJson ||
+    !token.authorizationTransactionKey ||
     !token.authorizationKey ||
     !token.authorizationArtifactId ||
     !token.authorizationArtifactDigest
@@ -8229,7 +8230,8 @@ async function reverifyOpenClawAuthorizationEvidence(
     },
   });
   if (
-    token.authorizationKey !== `${authorization.transactionKey}:publish` ||
+    token.authorizationTransactionKey !== authorization.transactionKey ||
+    token.authorizationKey !== `${token.authorizationTransactionKey}:publish` ||
     token.authorizationArtifactId !== authorization.artifactId ||
     token.authorizationArtifactDigest !== authorization.artifactDigest ||
     token.authorizationRoute !== authorization.authorizationRoute ||

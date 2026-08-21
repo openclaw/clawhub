@@ -16945,7 +16945,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("mints a short-lived publish token after verifying GitHub OIDC", async () => {
+  it("derives one transaction key for scoped GitHub upload and publish tokens", async () => {
     vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
       repository: "example/example",
       repositoryId: "1",
@@ -16989,23 +16989,34 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
 
-    const response = await __handlers.mintPublishTokenV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/publish/token/mint", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          packageName: "@openclaw/demo-plugin",
-          version: "1.0.0",
-          githubOidcToken: "gh.jwt",
+    const mint = async (scope: "upload" | "publish") =>
+      await __handlers.mintPublishTokenV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request("https://example.com/api/v1/publish/token/mint", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            packageName: "@openclaw/demo-plugin",
+            version: "1.0.0",
+            githubOidcToken: "gh.jwt",
+            scope,
+            inventoryDigest: "e".repeat(64),
+          }),
         }),
-      }),
-    );
+      );
 
-    if (response.status !== 200) throw new Error(await response.text());
-    const body = await response.json();
-    expect(body.token).toEqual(expect.any(String));
-    expect(body.expiresAt).toEqual(expect.any(Number));
+    const uploadResponse = await mint("upload");
+    const publishResponse = await mint("publish");
+    if (uploadResponse.status !== 200) throw new Error(await uploadResponse.text());
+    if (publishResponse.status !== 200) throw new Error(await publishResponse.text());
+    await expect(uploadResponse.json()).resolves.toMatchObject({
+      token: expect.any(String),
+      expiresAt: expect.any(Number),
+    });
+    await expect(publishResponse.json()).resolves.toMatchObject({
+      token: expect.any(String),
+      expiresAt: expect.any(Number),
+    });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -17014,18 +17025,32 @@ describe("httpApiV1 handlers", () => {
         config: expect.objectContaining({ rate: RATE_LIMITS.trustedPublish.ip }),
       }),
     );
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        packageId: "packages:1",
-        version: "1.0.0",
-        repository: "example/example",
-        workflowFilename: "plugin-clawhub-release.yml",
-        environment: "clawhub-release",
-        runId: "101",
-        sha: "abc123",
-      }),
-    );
+    const tokenMints = runMutation.mock.calls
+      .map(([, args]) => args)
+      .filter((args) => args.packageId === "packages:1");
+    expect(tokenMints).toHaveLength(2);
+    const authorizationTransactionKey = tokenMints[0]?.authorizationTransactionKey;
+    expect(authorizationTransactionKey).toEqual(expect.stringMatching(/^[a-f0-9]{64}$/));
+    if (typeof authorizationTransactionKey !== "string") {
+      throw new Error("Missing derived authorization transaction key");
+    }
+    expect(tokenMints[0]).toMatchObject({
+      version: "1.0.0",
+      repository: "example/example",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+      runId: "101",
+      sha: "abc123",
+      scope: "upload",
+      inventoryDigest: "e".repeat(64),
+      authorizationTransactionKey,
+    });
+    expect(tokenMints[1]).toMatchObject({
+      scope: "publish",
+      authorizationTransactionKey,
+    });
+    expect(tokenMints[0]?.authorizationKey).toBe(`${authorizationTransactionKey}:upload`);
+    expect(tokenMints[1]?.authorizationKey).toBe(`${authorizationTransactionKey}:publish`);
   });
 
   it("requires and stores v2 authorization for newer OpenClaw workflow revisions", async () => {
@@ -17126,6 +17151,7 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         authorizationVersion: 2,
+        authorizationTransactionKey: "exact-transaction",
         authorizationKey: "exact-transaction:publish",
         inventoryDigest: "e".repeat(64),
         trustedToolingIdentityJson: '{"version":2}',

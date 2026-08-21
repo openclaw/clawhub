@@ -1648,7 +1648,10 @@ See `DEPRECATIONS.md` for removal plan.
 
 `POST /api/cli/upload-url` returns `uploadUrl` and `uploadTicket`. Package
 publishes that stage a ClawPack tarball must send the resulting storage id as
-`clawpack` and the returned ticket as `clawpackUploadTicket`.
+`clawpack` and the returned ticket as `clawpackUploadTicket`. GitHub Actions
+publishes use separate upload- and publish-scoped credentials; the server
+accepts the ticket only when both credentials belong to the same authorization
+transaction.
 
 ## Registry discovery (`/.well-known/clawhub.json`)
 

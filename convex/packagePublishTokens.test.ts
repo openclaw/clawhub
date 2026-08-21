@@ -29,6 +29,7 @@ function createArgs() {
     inventoryDigest: "b".repeat(64),
     authorizationVersion: 2,
     authorizationRoute: "automated-awaited",
+    authorizationTransactionKey: "exact-parent:child:candidate:package:version:inventory",
     authorizationKey: "exact-parent:child:candidate:package:version:inventory:publish",
     authorizationArtifactId: "101",
     authorizationArtifactDigest: `sha256:${"c".repeat(64)}`,

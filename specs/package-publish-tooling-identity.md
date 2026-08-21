@@ -101,6 +101,13 @@ short-lived credential bound to:
 
 Each scope can be minted once for an exact authorization transaction. Replay
 and cross-package, cross-version, or changed-inventory minting fail closed.
+The server records a first-class transaction key on each scoped credential.
+Large-artifact upload tickets bind to that key, so the upload-scoped credential
+that creates the ticket and the distinct publish-scoped credential that
+consumes it must prove the same repository, workflow run attempt, package,
+version, and inventory transaction. Fresh ticket consumption rechecks token
+scope, expiry, revocation, consumption, and OpenClaw v2 authorization. A retry
+may reuse the same ticket only for the exact storage object already recorded.
 
 Immediately before staging, the ClawHub server repeats the live v2 verification
 from the identity stored with the publish credential. The mutation then

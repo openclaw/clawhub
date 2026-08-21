@@ -2570,6 +2570,33 @@ async function getPackageAndTrustedPublisherByName(ctx: ActionCtx, packageName: 
   return { pkg, trustedPublisher };
 }
 
+async function derivePackagePublishAuthorizationTransactionKey(args: {
+  packageId: Id<"packages">;
+  version: string;
+  inventoryDigest: string;
+  verified: Awaited<ReturnType<typeof verifyGitHubActionsTrustedPublishJwt>>;
+}) {
+  return await hashToken(
+    JSON.stringify([
+      "github-actions-package-publish-v1",
+      args.packageId,
+      args.version,
+      args.inventoryDigest,
+      args.verified.repository,
+      args.verified.repositoryId,
+      args.verified.repositoryOwner,
+      args.verified.repositoryOwnerId,
+      args.verified.workflowFilename,
+      args.verified.environment ?? "",
+      args.verified.runId,
+      args.verified.runAttempt,
+      args.verified.sha,
+      args.verified.ref,
+      args.verified.refType ?? "",
+    ]),
+  );
+}
+
 export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "trustedPublish");
   if (!rate.ok) return rate.response;
@@ -2609,6 +2636,9 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
       });
       const scope = payload.scope ?? "publish";
+      if (payload.scope !== undefined && payload.inventoryDigest === undefined) {
+        throw new Error("Scoped trusted publishes require an inventory digest");
+      }
       let openClawAuthorization = null;
       if (verified.repository === "openclaw/openclaw") {
         if (
@@ -2626,6 +2656,16 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
           oidc: verified,
         });
       }
+      const authorizationTransactionKey =
+        payload.scope === undefined
+          ? undefined
+          : (openClawAuthorization?.transactionKey ??
+            (await derivePackagePublishAuthorizationTransactionKey({
+              packageId: pkg._id,
+              version: payload.version,
+              inventoryDigest: payload.inventoryDigest!,
+              verified,
+            })));
       const { token, prefix } = generateToken();
       const tokenHash = await hashToken(token);
       const expiresAt = Date.now() + 15 * 60_000;
@@ -2657,7 +2697,6 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
             ? {
                 authorizationVersion: 2,
                 authorizationRoute: openClawAuthorization.authorizationRoute,
-                authorizationKey: `${openClawAuthorization.transactionKey}:${scope}`,
                 authorizationArtifactId: openClawAuthorization.artifactId,
                 authorizationArtifactDigest: openClawAuthorization.artifactDigest,
                 trustedToolingIdentityJson: payload.trustedToolingIdentityJson,
@@ -2667,6 +2706,12 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
                 parentWorkflow: openClawAuthorization.identity.parentWorkflow,
                 parentRunId: openClawAuthorization.identity.parentRunId,
                 parentRunAttempt: openClawAuthorization.identity.parentRunAttempt,
+              }
+            : {}),
+          ...(authorizationTransactionKey
+            ? {
+                authorizationTransactionKey,
+                authorizationKey: `${authorizationTransactionKey}:${scope}`,
               }
             : {}),
           expiresAt,

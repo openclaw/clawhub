@@ -51,16 +51,22 @@ export const createPackagePublishUploadForTokenInternal = internalMutation({
     if (publishToken.scope === "publish") {
       throw new Error("Trusted publish token cannot authorize package upload");
     }
-    if (publishToken.authorizationVersion === 2 && publishToken.scope !== "upload") {
-      throw new Error("OpenClaw trusted uploads require an upload-scoped token");
+    if (publishToken.scope !== undefined && publishToken.scope !== "upload") {
+      throw new Error("Trusted package uploads require an upload-scoped token");
+    }
+    if (publishToken.scope !== undefined && !publishToken.authorizationTransactionKey) {
+      throw new Error("Scoped trusted publish authorization is missing its transaction key");
     }
     const uploadTicket = await ctx.db.insert("packagePublishUploadTickets", {
       kind: "github-actions",
       publishTokenId: args.publishTokenId,
+      ...(publishToken.authorizationTransactionKey
+        ? { authorizationTransactionKey: publishToken.authorizationTransactionKey }
+        : {}),
       createdAt: now,
       expiresAt: now + PACKAGE_PUBLISH_UPLOAD_TICKET_TTL_MS,
     });
-    if (publishToken.authorizationVersion === 2) {
+    if (publishToken.scope !== undefined) {
       // One-time capability consumption and ticket creation share the transaction.
       await ctx.db.patch(publishToken._id, { consumedAt: now });
     }
@@ -87,12 +93,42 @@ export const consumePackagePublishUploadTicketInternal = internalMutation({
     if (!ticket || ticket.expiresAt <= now) {
       throw new Error("Package tarball upload ticket is missing or expired");
     }
-    if (
-      args.auth.kind === "user"
-        ? ticket.kind !== "user" || ticket.userId !== args.auth.userId
-        : ticket.kind !== "github-actions" || ticket.publishTokenId !== args.auth.publishTokenId
-    ) {
-      throw new Error("Package tarball upload ticket does not match this publish token");
+    if (args.auth.kind === "user") {
+      if (ticket.kind !== "user" || ticket.userId !== args.auth.userId) {
+        throw new Error("Package tarball upload ticket does not match this publish token");
+      }
+    } else {
+      if (ticket.kind !== "github-actions") {
+        throw new Error("Package tarball upload ticket does not match this publish token");
+      }
+      const publishToken = await ctx.db.get(args.auth.publishTokenId);
+      if (
+        !publishToken ||
+        publishToken.revokedAt ||
+        publishToken.expiresAt <= now ||
+        (!ticket.usedAt && publishToken.consumedAt)
+      ) {
+        throw new Error("Trusted publish token is missing, expired, or consumed");
+      }
+      if ((publishToken.scope ?? "publish") !== "publish") {
+        throw new Error("Trusted upload token cannot authorize package publication");
+      }
+      if (
+        publishToken.repository === "openclaw/openclaw" &&
+        publishToken.authorizationVersion !== 2
+      ) {
+        throw new Error("OpenClaw trusted publishes require authorization version 2");
+      }
+      if (ticket.authorizationTransactionKey !== undefined || publishToken.scope !== undefined) {
+        if (!ticket.authorizationTransactionKey || !publishToken.authorizationTransactionKey) {
+          throw new Error("Scoped trusted publish authorization is missing its transaction key");
+        }
+        if (ticket.authorizationTransactionKey !== publishToken.authorizationTransactionKey) {
+          throw new Error("Package tarball upload ticket does not match this publish transaction");
+        }
+      } else if (ticket.publishTokenId !== args.auth.publishTokenId) {
+        throw new Error("Package tarball upload ticket does not match this publish token");
+      }
     }
     if (ticket.usedAt) {
       if (ticket.storageId === args.storageId) return;

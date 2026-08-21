@@ -27,6 +27,7 @@ export const createInternal = internalMutation({
     inventoryDigest: v.optional(v.string()),
     authorizationVersion: v.optional(v.literal(2)),
     authorizationRoute: v.optional(v.string()),
+    authorizationTransactionKey: v.optional(v.string()),
     authorizationKey: v.optional(v.string()),
     authorizationArtifactId: v.optional(v.string()),
     authorizationArtifactDigest: v.optional(v.string()),
