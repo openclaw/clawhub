@@ -8690,6 +8690,227 @@ describe("packages public queries", () => {
     expect(ctx.runQuery).not.toHaveBeenCalled();
   });
 
+  it("keeps v2 releases pending until the exact parent succeeds", async () => {
+    const inventoryDigest = "d".repeat(64);
+    const token = {
+      _id: "packagePublishTokens:v2",
+      packageId: "packages:demo",
+      version: "1.0.0",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+      runId: "100",
+      runAttempt: "1",
+      sha: "c".repeat(40),
+      ref: "refs/tags/release-publish/tooling",
+      scope: "publish",
+      inventoryDigest,
+      authorizationVersion: 2,
+      authorizationRoute: "automated-awaited",
+      authorizationKey: "exact-transaction:publish",
+      authorizationArtifactId: "101",
+      authorizationArtifactDigest: `sha256:${"a".repeat(64)}`,
+      trustedToolingIdentityJson: '{"version":2}',
+      candidateRepository: "openclaw/openclaw",
+      candidateSha: "b".repeat(40),
+      parentRepository: "openclaw/openclaw",
+      parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
+      parentRunId: "99",
+      parentRunAttempt: "1",
+      consumedAt: Date.now(),
+      expiresAt: Date.now() - 1,
+    };
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (typeof args === "object" && args !== null && "attemptId" in args && !("error" in args)) {
+        return {
+          status: "claimed",
+          attemptId: "publishAttempts:demo",
+          packageId: "packages:demo",
+          releaseId: "packageReleases:pending",
+          packageFollowup: {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            trustedPublishTokenId: token._id,
+            trustedPublishInventoryDigest: inventoryDigest,
+            trustedPublishAuthorizationVersion: 2,
+          },
+        };
+      }
+      if (typeof args === "object" && args !== null && "error" in args) {
+        return { attemptId: "publishAttempts:demo", status: "ready_to_finalize" };
+      }
+      throw new Error(`Unexpected mutation args ${JSON.stringify(args)}`);
+    });
+    const ctx = {
+      runMutation,
+      runQuery: vi.fn(async () => token),
+    };
+    vi.mocked(verifyOpenClawPublishAuthorization).mockRejectedValue(
+      new Error("OpenClaw release parent is not terminal; public publication remains pending"),
+    );
+
+    await expect(
+      finalizePackagePublishAttemptInternalHandler(ctx as never, {
+        attemptId: "publishAttempts:demo",
+      }),
+    ).rejects.toThrow("public publication remains pending");
+
+    expect(verifyOpenClawPublishAuthorization).toHaveBeenCalledWith(
+      expect.objectContaining({
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        inventoryDigest,
+        requiredParentState: "terminal",
+      }),
+    );
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:pending" }),
+    );
+  });
+
+  it("publishes a staged v2 release only after terminal parent authorization", async () => {
+    const inventoryDigest = "d".repeat(64);
+    const token = {
+      _id: "packagePublishTokens:v2",
+      packageId: "packages:demo",
+      version: "1.0.0",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+      runId: "100",
+      runAttempt: "1",
+      sha: "c".repeat(40),
+      ref: "refs/tags/release-publish/tooling",
+      scope: "publish",
+      inventoryDigest,
+      authorizationVersion: 2,
+      authorizationRoute: "automated-awaited",
+      authorizationKey: "exact-transaction:publish",
+      authorizationArtifactId: "101",
+      authorizationArtifactDigest: `sha256:${"a".repeat(64)}`,
+      trustedToolingIdentityJson: '{"version":2}',
+      candidateRepository: "openclaw/openclaw",
+      candidateSha: "b".repeat(40),
+      parentRepository: "openclaw/openclaw",
+      parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
+      parentRunId: "99",
+      parentRunAttempt: "1",
+      consumedAt: Date.now(),
+      expiresAt: Date.now() - 1,
+    };
+    const authorization = {
+      identity: {
+        candidateRepository: token.candidateRepository,
+        candidateSha: token.candidateSha,
+        parentRepository: token.parentRepository,
+        parentWorkflow: token.parentWorkflow,
+        parentRunId: token.parentRunId,
+        parentRunAttempt: token.parentRunAttempt,
+      },
+      authorizationRoute: token.authorizationRoute,
+      artifactId: token.authorizationArtifactId,
+      artifactDigest: token.authorizationArtifactDigest,
+      transactionKey: "exact-transaction",
+    };
+    vi.mocked(verifyOpenClawPublishAuthorization).mockResolvedValue(authorization as never);
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (typeof args !== "object" || args === null) {
+        throw new Error(`Unexpected mutation args ${JSON.stringify(args)}`);
+      }
+      if ("attemptId" in args && !("result" in args) && !("error" in args)) {
+        return {
+          status: "claimed",
+          attemptId: "publishAttempts:demo",
+          packageId: "packages:demo",
+          releaseId: "packageReleases:pending",
+          packageFollowup: {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            trustedPublishTokenId: token._id,
+            trustedPublishInventoryDigest: inventoryDigest,
+            trustedPublishAuthorizationVersion: 2,
+          },
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:pending",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runMutation,
+      runQuery: vi.fn(async () => token),
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    await expect(
+      finalizePackagePublishAttemptInternalHandler(ctx as never, {
+        attemptId: "publishAttempts:demo",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:pending",
+    });
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:pending" }),
+    );
+  });
+
+  it("fails closed when a staged v2 release loses its durable publish token", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (typeof args === "object" && args !== null && "attemptId" in args && !("error" in args)) {
+        return {
+          status: "claimed",
+          attemptId: "publishAttempts:demo",
+          packageId: "packages:demo",
+          releaseId: "packageReleases:pending",
+          packageFollowup: {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            trustedPublishInventoryDigest: "d".repeat(64),
+            trustedPublishAuthorizationVersion: 2,
+          },
+        };
+      }
+      if (typeof args === "object" && args !== null && "error" in args) {
+        return { attemptId: "publishAttempts:demo", status: "ready_to_finalize" };
+      }
+      throw new Error(`Unexpected mutation args ${JSON.stringify(args)}`);
+    });
+    const ctx = {
+      runMutation,
+      runQuery: vi.fn(),
+    };
+
+    await expect(
+      finalizePackagePublishAttemptInternalHandler(ctx as never, {
+        attemptId: "publishAttempts:demo",
+      }),
+    ).rejects.toThrow("Staged OpenClaw publish authorization token is missing");
+
+    expect(ctx.runQuery).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:pending" }),
+    );
+  });
+
   it("recovers idempotent package publish results for the same owner", async () => {
     const release = makeReleaseDoc({ integritySha256: "abc123" });
     const ctx = {
@@ -11051,7 +11272,7 @@ describe("packages public queries", () => {
   it("binds a split-ref trusted publish to the frozen candidate source", async () => {
     const candidateSha = "b".repeat(40);
     const previousStage = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
-    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
+    delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
     const manifestBytes = new TextEncoder().encode(JSON.stringify({ id: "demo.plugin" }));
     const inventoryDigest = await buildPackageInventoryDigest([
       {
@@ -11192,6 +11413,7 @@ describe("packages public queries", () => {
       ok: true,
       packageId: "packages:demo",
       releaseId: "packageReleases:demo-2",
+      publicationStatus: "pending",
     });
 
     expect(runMutation).toHaveBeenCalledWith(
@@ -11209,6 +11431,16 @@ describe("packages public queries", () => {
     expect(runMutation).not.toHaveBeenCalledWith(expect.anything(), {
       tokenId: "packagePublishTokens:1",
     });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        packageFollowup: expect.objectContaining({
+          trustedPublishTokenId: "packagePublishTokens:1",
+          trustedPublishInventoryDigest: inventoryDigest,
+          trustedPublishAuthorizationVersion: 2,
+        }),
+      }),
+    );
     expect(verifyOpenClawPublishAuthorization).toHaveBeenCalledWith(
       expect.objectContaining({
         rawIdentity: '{"version":2}',

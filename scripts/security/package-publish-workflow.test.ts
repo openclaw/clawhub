@@ -74,16 +74,24 @@ describe("package publish reusable workflow", () => {
     expect(resolveStep?.env).toMatchObject({
       INPUT_WAIT_FOR_PUBLICATION: "${{ inputs.wait_for_publication }}",
       INPUT_PUBLICATION_TIMEOUT_MINUTES: "${{ inputs.publication_timeout_minutes }}",
+      TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
     });
     expect(resolveStep?.run).toContain('cmd += ["--wait", "--wait-timeout"');
     expect(resolveStep?.run).toContain("timeout_minutes * 60");
+    expect(resolveStep?.run).toContain(
+      'os.environ["INPUT_WAIT_FOR_PUBLICATION"] == "true" and not is_openclaw_v2',
+    );
+    expect(resolveStep?.run).toContain('trusted_identity.get("repository") == "openclaw/openclaw"');
 
     const captureStep = job.steps.find((step) => step.name === "Capture workflow outputs");
     expect(captureStep?.env).toMatchObject({
       DRY_RUN: "${{ inputs.dry_run }}",
       WAIT_FOR_PUBLICATION: "${{ inputs.wait_for_publication }}",
+      TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
     });
     expect(captureStep?.run).toContain('parsed.get("publicationStatus") != "published"');
+    expect(captureStep?.run).toContain("and not is_openclaw_v2");
+    expect(captureStep?.run).toContain('trusted_identity.get("repository") == "openclaw/openclaw"');
 
     const verifyIndex = job.steps.findIndex(
       (step) => step.name === "Revalidate trusted tooling identity",

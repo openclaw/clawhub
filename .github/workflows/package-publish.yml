@@ -23,7 +23,7 @@ on:
         type: boolean
         default: true
       wait_for_publication:
-        description: Wait for security checks and definitive publication on real publishes.
+        description: Wait for definitive publication, except v2 OpenClaw publishes finalized after the parent succeeds.
         required: false
         type: boolean
         default: true
@@ -383,6 +383,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF: ${{ github.ref }}
           GITHUB_SHA: ${{ github.sha }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
         run: |
           python3 - <<'PY'
           import json
@@ -534,9 +535,16 @@ jobs:
               os.environ["INPUT_REGISTRY"],
           ]
 
+          trusted_identity_raw = os.environ["TRUSTED_TOOLING_IDENTITY_JSON"].strip()
+          trusted_identity = json.loads(trusted_identity_raw) if trusted_identity_raw else {}
+          is_openclaw_v2 = (
+              trusted_identity.get("version") == 2
+              and trusted_identity.get("repository") == "openclaw/openclaw"
+          )
+
           if os.environ["INPUT_DRY_RUN"] == "true":
               cmd.append("--dry-run")
-          elif os.environ["INPUT_WAIT_FOR_PUBLICATION"] == "true":
+          elif os.environ["INPUT_WAIT_FOR_PUBLICATION"] == "true" and not is_openclaw_v2:
               timeout_minutes = int(os.environ["INPUT_PUBLICATION_TIMEOUT_MINUTES"])
               cmd += ["--wait", "--wait-timeout", str(timeout_minutes * 60)]
           cmd.append("--json")
@@ -791,6 +799,7 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dry_run }}
           WAIT_FOR_PUBLICATION: ${{ inputs.wait_for_publication }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
         run: |
           python3 - <<'PY'
           import json
@@ -800,9 +809,16 @@ jobs:
           output_path = Path(os.environ["RUNNER_TEMP"]) / "package-publish.json"
           raw = output_path.read_text(encoding="utf-8").strip()
           parsed = json.loads(raw)
+          trusted_identity_raw = os.environ["TRUSTED_TOOLING_IDENTITY_JSON"].strip()
+          trusted_identity = json.loads(trusted_identity_raw) if trusted_identity_raw else {}
+          is_openclaw_v2 = (
+              trusted_identity.get("version") == 2
+              and trusted_identity.get("repository") == "openclaw/openclaw"
+          )
           if (
               os.environ["DRY_RUN"] != "true"
               and os.environ["WAIT_FOR_PUBLICATION"] == "true"
+              and not is_openclaw_v2
               and parsed.get("publicationStatus") != "published"
           ):
               raise SystemExit(

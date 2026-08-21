@@ -64,14 +64,22 @@ The identity cannot request recovery.
 
 ## State Policy
 
-ClawHub derives parent state policy from the evidenced route:
+ClawHub derives parent state policy from the evidenced route. Submission and
+public visibility are separate boundaries:
 
-- `automated-awaited`: parent must be active
-- `automated-detached`: parent may be active or completed successfully
-- `explicit-recovery`: parent may be active, successful, or failed
+- submission:
+  - `automated-awaited`: parent must be active
+  - `automated-detached`: parent may be active or completed successfully
+  - `explicit-recovery`: parent may be active, successful, or failed
+- public finalization:
+  - both automated routes require the exact parent attempt to be completed
+    successfully
+  - explicit recovery requires the exact parent attempt to be completed
+    successfully or failed with the protected recovery evidence
 
 Cancelled parents are never authorized. Unknown routes, states, conclusions,
-fields, and versions fail closed.
+fields, and versions fail closed. An active parent can authorize only a
+non-public staged release.
 
 ## Server Authorization
 
@@ -94,13 +102,26 @@ short-lived credential bound to:
 Each scope can be minted once for an exact authorization transaction. Replay
 and cross-package, cross-version, or changed-inventory minting fail closed.
 
-Immediately before release insertion, the ClawHub server repeats the live v2
-verification from the identity stored with the publish credential. Version 2
-OpenClaw publishes do not use deferred staged publication. The release
-mutation then rechecks the credential, current trusted-publisher config,
-package, version, inventory, expiry, and consumption state, and consumes the
-credential in the same Convex transaction as release insertion. A failed
-mutation rolls back consumption.
+Immediately before staging, the ClawHub server repeats the live v2 verification
+from the identity stored with the publish credential. The mutation then
+rechecks the credential, current trusted-publisher config, package, version,
+inventory, expiry, and consumption state, and consumes the credential in the
+same Convex transaction as the non-public release insert. A failed mutation
+rolls back consumption.
+
+Version 2 OpenClaw publishes always use staged publication. After security
+checks pass, the finalizer revalidates the stored exact transaction and
+requires the parent attempt to have reached an immutable authorized terminal
+outcome before changing the release to public. Active parents remain pending.
+Cancelled or otherwise unauthorized terminal parents fail the attempt while
+the release remains non-public. GitHub API or other transient verification
+failures remain retryable. The scheduled pre-publication worker retries ready
+finalizations every five minutes.
+
+The terminal outcome removes the cross-system cancellation race: successful
+GitHub Actions run attempts do not become cancelled after completion, so the
+subsequent Convex publication mutation cannot outlive a mutable active-parent
+authorization.
 
 The package source recorded by the registry comes from
 `candidateRepository`/`candidateSha`, not the tooling workflow SHA.
@@ -117,5 +138,9 @@ are:
 
 The compatibility SHA is intentionally exact. OpenClaw must add the v2
 identity, post-dispatch parent receipt, package inventory list, and child
-inputs before pinning a newer ClawHub workflow revision. Merge and deployment
-of the ClawHub verifier alone must not move the OpenClaw pin.
+inputs before pinning a newer ClawHub workflow revision. The v2 child must
+accept the staged response instead of waiting inline for publication, so the
+awaited parent can finish successfully. Published-artifact verification must
+run from a detached post-parent route after ClawHub finalization, not from the
+still-awaited child run. Merge and deployment of the ClawHub verifier alone
+must not move the OpenClaw pin.

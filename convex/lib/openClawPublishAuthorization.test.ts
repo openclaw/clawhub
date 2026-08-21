@@ -265,6 +265,50 @@ describe("OpenClaw package publish authorization", () => {
     ).rejects.toThrow("not authorized");
   });
 
+  it("withholds public finalization until an automated parent succeeds", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
+    await expect(
+      verifyOpenClawPublishAuthorization({
+        rawIdentity: JSON.stringify(identity()),
+        packageName: "@openclaw/demo-plugin",
+        version: "1.0.0",
+        inventoryDigest,
+        oidc: oidc(),
+        requiredParentState: "terminal",
+        fetchImpl: githubFetch({}),
+      }),
+    ).rejects.toThrow("public publication remains pending");
+
+    await expect(
+      verifyOpenClawPublishAuthorization({
+        rawIdentity: JSON.stringify(identity()),
+        packageName: "@openclaw/demo-plugin",
+        version: "1.0.0",
+        inventoryDigest,
+        oidc: oidc(),
+        requiredParentState: "terminal",
+        fetchImpl: githubFetch({ parentStatus: "completed", parentConclusion: "success" }),
+      }),
+    ).resolves.toMatchObject({ authorizationRoute: "automated-awaited" });
+  });
+
+  it("terminally rejects cancellation before a staged release becomes public", async () => {
+    process.env.GITHUB_TOKEN = "test-token";
+    await expect(
+      verifyOpenClawPublishAuthorization({
+        rawIdentity: JSON.stringify(identity()),
+        packageName: "@openclaw/demo-plugin",
+        version: "1.0.0",
+        inventoryDigest,
+        oidc: oidc(),
+        requiredParentState: "terminal",
+        fetchImpl: githubFetch({ parentStatus: "completed", parentConclusion: "cancelled" }),
+      }),
+    ).rejects.toThrow(
+      "OpenClaw release parent terminal state completed/cancelled is not authorized",
+    );
+  });
+
   it("rejects GitHub App and bot-suffixed recovery actors", async () => {
     process.env.GITHUB_TOKEN = "test-token";
     await expect(

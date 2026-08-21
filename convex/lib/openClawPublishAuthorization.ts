@@ -178,6 +178,7 @@ type VerifyOptions = {
   version: string;
   inventoryDigest: string;
   oidc: VerifiedGitHubActionsIdentity;
+  requiredParentState?: "submission" | "terminal";
   fetchImpl?: typeof fetch;
 };
 
@@ -520,12 +521,27 @@ function validateReceipt(
   }
 }
 
-function validateParentState(route: string, run: GitHubRun) {
+function validateParentState(
+  route: string,
+  run: GitHubRun,
+  requiredParentState: "submission" | "terminal",
+) {
   const status = stringOrNumber(run.status);
   const conclusion = stringOrNumber(run.conclusion);
   const active = status === "in_progress" && !conclusion;
   const successful = status === "completed" && conclusion === "success";
   const failed = status === "completed" && conclusion === "failure";
+  if (requiredParentState === "terminal") {
+    if (status !== "completed") {
+      fail("OpenClaw release parent is not terminal; public publication remains pending");
+    }
+    if (!successful && !(route === "explicit-recovery" && failed)) {
+      fail(
+        `OpenClaw release parent terminal state ${status}/${conclusion || "none"} is not authorized by ${route}`,
+      );
+    }
+    return;
+  }
   if (
     !active &&
     !(route === "automated-detached" && successful) &&
@@ -752,7 +768,7 @@ export async function verifyOpenClawPublishAuthorization(
     validateRecoveryReceipt(identity, parseRecoveryReceipt(recoveryArtifact.rawReceipt), childRun);
     authorizationRoute = "explicit-recovery";
   }
-  validateParentState(authorizationRoute, parentRun);
+  validateParentState(authorizationRoute, parentRun, options.requiredParentState ?? "submission");
   await validateToolingRef(identity, fetchImpl);
 
   return {

@@ -1392,6 +1392,96 @@ describe("publishAttempts", () => {
     expect(transientCtx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
   });
 
+  it("terminalizes a staged release when its exact OpenClaw parent is cancelled", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:cancelled"
+            ? {
+                _id: id,
+                kind: "package",
+                status: "finalizing",
+                packageReleaseId: "packageReleases:pending",
+                packageFollowup: {},
+                finalizationClaimId: "finalize:claim",
+              }
+            : {
+                _id: "packageReleases:pending",
+                publicationStatus: "pending",
+              },
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+    const error =
+      "OpenClaw release parent terminal state completed/cancelled is not authorized by automated-awaited";
+
+    await expect(
+      releasePackageFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:cancelled",
+        claimId: "finalize:claim",
+        error,
+      }),
+    ).resolves.toEqual({ attemptId: "publishAttempts:cancelled", status: "failed" });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:cancelled",
+      expect.objectContaining({ status: "failed", finalizationLastError: error }),
+    );
+    expect(ctx.db.patch).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "Staged OpenClaw publish authorization token is missing",
+    "Staged OpenClaw publish authorization no longer matches the release",
+  ])("terminalizes permanent staged OpenClaw authorization failure: %s", async (error) => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:invalid-auth"
+            ? {
+                _id: id,
+                kind: "package",
+                status: "finalizing",
+                packageReleaseId: "packageReleases:pending",
+                packageFollowup: {},
+                finalizationClaimId: "finalize:claim",
+              }
+            : {
+                _id: "packageReleases:pending",
+                publicationStatus: "pending",
+              },
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      releasePackageFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:invalid-auth",
+        claimId: "finalize:claim",
+        error,
+      }),
+    ).resolves.toEqual({ attemptId: "publishAttempts:invalid-auth", status: "failed" });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:invalid-auth",
+      expect.objectContaining({ status: "failed", finalizationLastError: error }),
+    );
+  });
+
   it("terminalizes deleted package releases instead of retrying finalization", async () => {
     const ctx = {
       db: {

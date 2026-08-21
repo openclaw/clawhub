@@ -8177,7 +8177,18 @@ async function reverifyOpenClawAuthorizationBeforePublish(
   ) {
     return;
   }
-  const token = auth.publishToken;
+  await reverifyOpenClawAuthorizationEvidence(auth.publishToken, transaction, "submission");
+}
+
+async function reverifyOpenClawAuthorizationEvidence(
+  token: Doc<"packagePublishTokens">,
+  transaction: {
+    name: string;
+    version: string;
+    inventoryDigest: string;
+  },
+  requiredParentState: "submission" | "terminal",
+) {
   if (
     !token.trustedToolingIdentityJson ||
     !token.authorizationKey ||
@@ -8191,6 +8202,7 @@ async function reverifyOpenClawAuthorizationBeforePublish(
     packageName: transaction.name,
     version: transaction.version,
     inventoryDigest: transaction.inventoryDigest,
+    requiredParentState,
     oidc: {
       repository: token.repository,
       repositoryId: token.repositoryId,
@@ -8225,6 +8237,56 @@ async function reverifyOpenClawAuthorizationBeforePublish(
   ) {
     throw new ConvexError("OpenClaw trusted publish authorization evidence changed after mint");
   }
+}
+
+async function reverifyStagedOpenClawAuthorizationBeforeFinalize(
+  ctx: ActionCtx,
+  claim: {
+    packageId?: Id<"packages">;
+    packageFollowup: unknown;
+  },
+) {
+  const followup = claim.packageFollowup as {
+    packageName?: string;
+    version?: string;
+    trustedPublishTokenId?: Id<"packagePublishTokens">;
+    trustedPublishInventoryDigest?: string;
+    trustedPublishAuthorizationVersion?: number;
+  };
+  if (followup.trustedPublishAuthorizationVersion !== 2) return;
+  if (!followup.trustedPublishTokenId) {
+    throw new ConvexError("Staged OpenClaw publish authorization token is missing");
+  }
+  const token = await runQueryRef<Doc<"packagePublishTokens"> | null>(
+    ctx,
+    internalRefs.packagePublishTokens.getByIdInternal,
+    { tokenId: followup.trustedPublishTokenId },
+  );
+  // Staging already consumed this exact transaction. Finalization may outlive
+  // the short token TTL, so durable consumed evidence replaces expiry here.
+  if (
+    !token ||
+    token.repository !== "openclaw/openclaw" ||
+    token.authorizationVersion !== 2 ||
+    !token.consumedAt ||
+    token.revokedAt ||
+    token.packageId !== claim.packageId ||
+    token.version !== followup.version ||
+    !token.inventoryDigest ||
+    token.inventoryDigest !== followup.trustedPublishInventoryDigest ||
+    !followup.packageName
+  ) {
+    throw new ConvexError("Staged OpenClaw publish authorization no longer matches the release");
+  }
+  await reverifyOpenClawAuthorizationEvidence(
+    token,
+    {
+      name: followup.packageName,
+      version: followup.version,
+      inventoryDigest: token.inventoryDigest,
+    },
+    "terminal",
+  );
 }
 
 async function runPackageInspectorPublishGate(
@@ -9027,10 +9089,10 @@ async function publishPackageImpl(
         version,
         inspectorWarnings: inspectorResult?.warnings ?? [],
         inspectorMetadata: inspectorResult?.metadata,
-        trustedPublishTokenId:
-          auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2
-            ? auth.publishToken._id
-            : undefined,
+        trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
+        trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
+        trustedPublishAuthorizationVersion:
+          auth.kind === "github-actions" ? auth.publishToken.authorizationVersion : undefined,
         manualOverrideAudit:
           auth.kind === "user" && existingTrustedPublisher && manualOverrideReason
             ? {
@@ -9072,7 +9134,6 @@ async function publishPackageImpl(
         tokenId: auth.publishToken._id,
       });
     }
-
     if (staged.status === "finalized" && staged.result) {
       const finalizedResult = {
         ...staged.result,
@@ -9289,6 +9350,9 @@ export const finalizePackagePublishAttemptInternal = internalAction({
 
     let publishResult: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
     try {
+      if (claim.releaseId !== undefined) {
+        await reverifyStagedOpenClawAuthorizationBeforeFinalize(ctx, claim);
+      }
       publishResult =
         claim.releaseId !== undefined
           ? await runMutationRef(ctx, internalRefs.packages.publishPendingReleaseInternal, {
@@ -9428,7 +9492,7 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
     }
     return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload, {
       stagePrePublicationChecks:
-        stagedPrePublicationPublishesEnabled() && publishToken.authorizationVersion !== 2,
+        publishToken.authorizationVersion === 2 || stagedPrePublicationPublishesEnabled(),
     });
   },
 });
@@ -9520,6 +9584,8 @@ async function runPackagePublishPostFinalizeFollowups(
     inspectorWarnings?: PackageInspectorFinding[];
     inspectorMetadata?: PackageInspectorPublishResult["metadata"];
     trustedPublishTokenId?: Id<"packagePublishTokens">;
+    trustedPublishInventoryDigest?: string;
+    trustedPublishAuthorizationVersion?: number;
     manualOverrideAudit?: {
       actorUserId: Id<"users">;
       version: string;
