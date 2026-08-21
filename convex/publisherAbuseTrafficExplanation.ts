@@ -371,7 +371,14 @@ export const recordDeliveryInternal = internalMutation({
   handler: async (ctx, args) => {
     const signal = await ctx.db.get(args.signalId);
     const request = signal?.trafficExplanationRequest;
-    if (!signal || !request || request.requestedAt !== args.requestedAt || request.sentAt) {
+    if (
+      !signal ||
+      !request ||
+      request.requestedAt !== args.requestedAt ||
+      request.sentAt ||
+      request.state === "cancelled" ||
+      request.state === "not_deliverable"
+    ) {
       return { ok: false as const, reason: "stale_request" as const };
     }
 

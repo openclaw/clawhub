@@ -316,6 +316,31 @@ describe("publisher abuse traffic explanations", () => {
     expect(JSON.stringify(patch.mock.calls)).not.toContain(VALID_TOKEN_HASH);
   });
 
+  it("keeps cancellation terminal when an in-flight send finishes later", async () => {
+    const { ctx, documents, patch, signal } = makeFixture();
+    documents.set(signal._id, {
+      ...signal,
+      trafficExplanationRequest: {
+        ...signal.trafficExplanationRequest,
+        state: "cancelled",
+      },
+    });
+
+    await expect(
+      recordDeliveryHandler(ctx, {
+        signalId: "publisherAbuseSignals:traffic",
+        requestedAt: 1_700_000_000_000,
+        delivery: {
+          status: "sent",
+          sentAt: 1_700_000_200_000,
+          providerId: "email:late",
+        },
+      }),
+    ).resolves.toEqual({ ok: false, reason: "stale_request" });
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("claims one email attempt by storing only the token hash", async () => {
     const { ctx, patch } = makeFixture();
 
