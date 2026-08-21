@@ -23,6 +23,10 @@ vi.mock("./lib/githubActionsOidc", () => ({
   verifyGitHubActionsTrustedPublishJwt: vi.fn(),
 }));
 
+vi.mock("./lib/openClawPublishAuthorization", () => ({
+  verifyOpenClawPublishAuthorization: vi.fn(),
+}));
+
 vi.mock("./skills", () => ({
   publishVersionForUser: vi.fn(),
 }));
@@ -36,6 +40,7 @@ const {
 } = await import("./lib/apiTokenAuth");
 const { fetchGitHubRepositoryIdentity, verifyGitHubActionsTrustedPublishJwt } =
   await import("./lib/githubActionsOidc");
+const { verifyOpenClawPublishAuthorization } = await import("./lib/openClawPublishAuthorization");
 const { buildBundleFingerprint } = await import("./lib/skillCards");
 const { sha256Hex } = await import("./lib/clawpack");
 const { publishVersionForUser } = await import("./skills");
@@ -329,6 +334,7 @@ beforeEach(() => {
   vi.mocked(requirePackagePublishAuth).mockReset();
   vi.mocked(fetchGitHubRepositoryIdentity).mockReset();
   vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockReset();
+  vi.mocked(verifyOpenClawPublishAuthorization).mockReset();
   vi.mocked(publishVersionForUser).mockReset();
 });
 
@@ -16954,6 +16960,7 @@ describe("httpApiV1 handlers", () => {
       refType: "branch",
       actor: "onur",
       actorId: "42",
+      jobWorkflowSha: "a42cd2f73d6afb769b271d463fc111669cb7a499",
     } as never);
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if ("key" in args) return okRate();
@@ -17022,6 +17029,169 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("requires and stores v2 authorization for newer OpenClaw workflow revisions", async () => {
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+      runId: "101",
+      runAttempt: "2",
+      sha: "c".repeat(40),
+      ref: "refs/heads/release/2026.8.3",
+      actor: "release-app[bot]",
+      actorId: "42",
+      jobWorkflowSha: "f".repeat(40),
+    } as never);
+    vi.mocked(verifyOpenClawPublishAuthorization).mockResolvedValue({
+      identity: {
+        version: 2,
+        repository: "openclaw/openclaw",
+        workflow: ".github/workflows/plugin-clawhub-release.yml",
+        runId: "101",
+        runAttempt: "2",
+        ref: "release/2026.8.3",
+        fullRef: "refs/heads/release/2026.8.3",
+        sha: "c".repeat(40),
+        candidateRepository: "openclaw/openclaw",
+        candidateSha: "b".repeat(40),
+        toolingRef: "main",
+        toolingFullRef: "refs/heads/main",
+        toolingSha: "a".repeat(40),
+        parentRepository: "openclaw/openclaw",
+        parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
+        parentRunId: "99",
+        parentRunAttempt: "3",
+      },
+      authorizationRoute: "automated-awaited",
+      artifactId: "artifact-101",
+      artifactDigest: `sha256:${"d".repeat(64)}`,
+      transactionKey: "exact-transaction",
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return "mutation:ok";
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          _id: "packages:1",
+          name: "@openclaw/demo-plugin",
+          ownerUserId: "users:owner",
+        };
+      }
+      if ("packageId" in args) {
+        return {
+          _id: "packageTrustedPublishers:1",
+          packageId: "packages:1",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.mintPublishTokenV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/publish/token/mint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          packageName: "@openclaw/demo-plugin",
+          version: "1.0.0",
+          githubOidcToken: "gh.jwt",
+          scope: "publish",
+          inventoryDigest: "e".repeat(64),
+          trustedToolingIdentityJson: '{"version":2}',
+        }),
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(verifyOpenClawPublishAuthorization).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rawIdentity: '{"version":2}',
+        packageName: "@openclaw/demo-plugin",
+        version: "1.0.0",
+        inventoryDigest: "e".repeat(64),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        authorizationVersion: 2,
+        authorizationKey: "exact-transaction:publish",
+        inventoryDigest: "e".repeat(64),
+        trustedToolingIdentityJson: '{"version":2}',
+        candidateSha: "b".repeat(40),
+        parentRunId: "99",
+      }),
+    );
+  });
+
+  it("rejects newer OpenClaw workflow revisions without v2 authorization", async () => {
+    vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      runId: "101",
+      runAttempt: "1",
+      sha: "c".repeat(40),
+      ref: "refs/heads/main",
+      jobWorkflowSha: "f".repeat(40),
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return "mutation:ok";
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          _id: "packages:1",
+          name: "@openclaw/demo-plugin",
+          ownerUserId: "users:owner",
+        };
+      }
+      if ("packageId" in args) {
+        return {
+          packageId: "packages:1",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+        };
+      }
+      return null;
+    });
+
+    const response = await __handlers.mintPublishTokenV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/publish/token/mint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          packageName: "@openclaw/demo-plugin",
+          version: "1.0.0",
+          githubOidcToken: "gh.jwt",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("authorization version 2");
+  });
+
   it("mints a short-lived publish token without environment when none is pinned", async () => {
     vi.mocked(verifyGitHubActionsTrustedPublishJwt).mockResolvedValue({
       repository: "openclaw/openclaw",
@@ -17037,6 +17207,7 @@ describe("httpApiV1 handlers", () => {
       refType: "branch",
       actor: "onur",
       actorId: "42",
+      jobWorkflowSha: "a42cd2f73d6afb769b271d463fc111669cb7a499",
     } as never);
     const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if ("key" in args) return okRate();

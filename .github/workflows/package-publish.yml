@@ -229,6 +229,7 @@ jobs:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_ACTOR_TYPE: ${{ github.event.sender.type }}
           TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
         run: |
           set -euo pipefail
@@ -238,7 +239,7 @@ jobs:
           if [[ "$DRY_RUN" == "true" ]]; then
             exit 0
           fi
-          if [[ "$GITHUB_REPOSITORY" == "openclaw/openclaw" && "$GITHUB_ACTOR" == "github-actions[bot]" ]]; then
+          if [[ "$GITHUB_REPOSITORY" == "openclaw/openclaw" && -z "$CLAWHUB_TOKEN" ]]; then
             python3 - <<'PY'
           import json
           import os
@@ -253,6 +254,11 @@ jobs:
           if not isinstance(identity, dict) or identity.get("version") != 2:
               raise SystemExit("Automated OpenClaw real publishes require trusted tooling identity v2.")
           PY
+          fi
+          actor_type="${GITHUB_ACTOR_TYPE,,}"
+          if [[ "$GITHUB_REPOSITORY" == "openclaw/openclaw" && -n "$CLAWHUB_TOKEN" && ( "${GITHUB_ACTOR,,}" == *"[bot]" || "$actor_type" == "bot" || "$actor_type" == "app" ) ]]; then
+            echo "::error::OpenClaw's non-v2 manual publish route requires a directly authenticated human actor."
+            exit 1
           fi
           if [[ "$WAIT_FOR_PUBLICATION" == "true" ]] && { ! [[ "$PUBLICATION_TIMEOUT_MINUTES" =~ ^[1-9][0-9]*$ ]] || (( PUBLICATION_TIMEOUT_MINUTES > 40 )); }; then
             echo "::error::publication_timeout_minutes must be an integer from 1 through 40."
@@ -723,7 +729,7 @@ jobs:
         if: inputs.trusted_tooling_identity_json != ''
         uses: actions/download-artifact@v8
         with:
-          name: openclaw-clawhub-parent-authorization-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunAttempt }}
+          name: openclaw-clawhub-parent-authorization-v2-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunAttempt }}-${{ fromJson(inputs.trusted_tooling_identity_json).runId }}-${{ fromJson(inputs.trusted_tooling_identity_json).runAttempt }}
           path: ${{ runner.temp }}/openclaw-clawhub-parent-authorization
           github-token: ${{ github.token }}
           repository: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRepository }}

@@ -34,8 +34,19 @@ export const createPackagePublishUploadForTokenInternal = internalMutation({
   handler: async (ctx, args) => {
     const publishToken = await ctx.db.get(args.publishTokenId);
     const now = Date.now();
-    if (!publishToken || publishToken.revokedAt || publishToken.expiresAt <= now) {
+    if (
+      !publishToken ||
+      publishToken.revokedAt ||
+      publishToken.consumedAt ||
+      publishToken.expiresAt <= now
+    ) {
       throw new Error("Trusted publish token is missing or expired");
+    }
+    if (publishToken.scope === "publish") {
+      throw new Error("Trusted publish token cannot authorize package upload");
+    }
+    if (publishToken.authorizationVersion === 2 && publishToken.scope !== "upload") {
+      throw new Error("OpenClaw trusted uploads require an upload-scoped token");
     }
     const uploadTicket = await ctx.db.insert("packagePublishUploadTickets", {
       kind: "github-actions",
@@ -43,6 +54,10 @@ export const createPackagePublishUploadForTokenInternal = internalMutation({
       createdAt: now,
       expiresAt: now + PACKAGE_PUBLISH_UPLOAD_TICKET_TTL_MS,
     });
+    if (publishToken.authorizationVersion === 2) {
+      // One-time capability consumption and ticket creation share the transaction.
+      await ctx.db.patch(publishToken._id, { consumedAt: now });
+    }
     const uploadUrl = await ctx.storage.generateUploadUrl();
     return { uploadUrl, uploadTicket };
   },

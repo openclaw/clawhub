@@ -58,6 +58,7 @@ describe("package publish reusable workflow", () => {
       PUBLICATION_TIMEOUT_MINUTES: "${{ inputs.publication_timeout_minutes }}",
       GITHUB_REPOSITORY: "${{ github.repository }}",
       GITHUB_ACTOR: "${{ github.actor }}",
+      GITHUB_ACTOR_TYPE: "${{ github.event.sender.type }}",
       TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
     });
     expect(validateStep?.run).toContain(
@@ -67,6 +68,7 @@ describe("package publish reusable workflow", () => {
     expect(validateStep?.run).toContain(
       "Automated OpenClaw real publishes require trusted tooling identity v2.",
     );
+    expect(validateStep?.run).toContain('"$actor_type" == "app"');
 
     const resolveStep = job.steps.find((step) => step.name === "Resolve publish command");
     expect(resolveStep?.env).toMatchObject({
@@ -111,7 +113,13 @@ describe("package publish reusable workflow", () => {
       },
     });
     expect(String(parentReceiptStep?.with?.name)).toContain(
-      "openclaw-clawhub-parent-authorization-",
+      "openclaw-clawhub-parent-authorization-v2-",
+    );
+    expect(String(parentReceiptStep?.with?.name)).toContain(
+      "${{ fromJson(inputs.trusted_tooling_identity_json).runId }}",
+    );
+    expect(String(parentReceiptStep?.with?.name)).toContain(
+      "${{ fromJson(inputs.trusted_tooling_identity_json).runAttempt }}",
     );
     expect(recoveryReceiptStep).toMatchObject({
       id: "recovery_approval",

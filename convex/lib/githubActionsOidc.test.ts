@@ -434,6 +434,7 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
       workflow_ref:
         "openclaw/openclaw/.github/workflows/plugin-clawhub-release.yml@refs/heads/main",
       job_workflow_ref: "openclaw/clawhub/.github/workflows/package-publish.yml@refs/heads/main",
+      job_workflow_sha: "a".repeat(40),
       runner_environment: "github-hosted",
       environment: trustedPublisher.environment,
       event_name: "workflow_dispatch",
@@ -460,6 +461,7 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
       repository: trustedPublisher.repository,
       workflowFilename: trustedPublisher.workflowFilename,
       jobWorkflowRef: "openclaw/clawhub/.github/workflows/package-publish.yml@refs/heads/main",
+      jobWorkflowSha: "a".repeat(40),
     });
   });
 

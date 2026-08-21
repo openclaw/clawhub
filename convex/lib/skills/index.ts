@@ -226,6 +226,17 @@ export async function hashSkillFiles(files: Array<{ path: string; sha256: string
   return toHex(new Uint8Array(digest));
 }
 
+export async function buildPackageInventoryDigest(
+  files: Array<{ path: string; sha256: string; size: number }>,
+) {
+  const payload = [...files]
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map((file) => `${file.path}\0${file.size}\0${file.sha256.toLowerCase()}`)
+    .join("\n");
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(payload));
+  return toHex(new Uint8Array(digest));
+}
+
 function truncateCodePoints(text: string, maxChars: number) {
   if (maxChars <= 0) return "";
   if (text.length <= maxChars) return text;

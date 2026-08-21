@@ -30,6 +30,7 @@ export type VerifiedGitHubActionsIdentity = {
   workflowName: string;
   workflowRef: string;
   jobWorkflowRef?: string;
+  jobWorkflowSha?: string;
   environment?: string;
   runnerEnvironment: string;
   eventName: string;
@@ -174,6 +175,7 @@ async function verifyGitHubActionsWorkflowJwt(
   const workflowRef = requireString(payload.workflow_ref, "workflow_ref");
   const workflow = parseWorkflowRef(workflowRef, repository);
   const jobWorkflowRef = optionalString(payload.job_workflow_ref);
+  const jobWorkflowSha = optionalString(payload.job_workflow_sha);
   const runnerEnvironment = requireString(payload.runner_environment, "runner_environment");
   const environment = optionalString(payload.environment);
   const eventName = requireString(payload.event_name, "event_name");
@@ -253,6 +255,7 @@ async function verifyGitHubActionsWorkflowJwt(
     workflowName,
     workflowRef,
     ...(jobWorkflowRef ? { jobWorkflowRef } : {}),
+    ...(jobWorkflowSha ? { jobWorkflowSha } : {}),
     ...(environment ? { environment } : {}),
     runnerEnvironment,
     eventName,

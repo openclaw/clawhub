@@ -818,6 +818,9 @@ export const PublishTokenMintRequestSchema = type({
     packageName: "string",
     version: "string",
     githubOidcToken: "string",
+    scope: '("upload" | "publish")?',
+    inventoryDigest: "string?",
+    trustedToolingIdentityJson: "string?",
 });
 export const ApiV1PublishTokenMintResponseSchema = type({
     token: "string",

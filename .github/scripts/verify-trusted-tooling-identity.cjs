@@ -17,6 +17,8 @@ const PARENT_RECEIPT_KIND = "openclaw-clawhub-parent-authorization";
 const RECOVERY_RECEIPT_KIND = "openclaw-clawhub-recovery-approval";
 const AUTOMATED_ROUTES = new Set(["automated-awaited", "automated-detached"]);
 const IDENTITY_KEYS = [
+  "candidateRepository",
+  "candidateSha",
   "fullRef",
   "parentRepository",
   "parentRunAttempt",
@@ -35,17 +37,30 @@ const IDENTITY_KEYS = [
 ];
 const PARENT_RECEIPT_KEYS = [
   "authorizationRoute",
+  "candidateRepository",
+  "candidateSha",
+  "childFullRef",
+  "childHeadSha",
+  "childRef",
+  "childRepository",
+  "childRunAttempt",
+  "childRunId",
   "childWorkflow",
   "fullRef",
   "headSha",
   "kind",
+  "packages",
   "ref",
   "repository",
   "runAttempt",
   "runId",
+  "toolingFullRef",
+  "toolingRef",
+  "toolingSha",
   "version",
   "workflow",
 ];
+const PACKAGE_TRANSACTION_KEYS = ["inventoryDigest", "name", "version"];
 const RECOVERY_RECEIPT_KEYS = [
   "actor",
   "approvalJob",
@@ -122,6 +137,12 @@ function parseTrustedToolingIdentity(raw) {
     ref: requireString(value.ref, "ref"),
     fullRef: requireString(value.fullRef, "fullRef"),
     sha: requireString(value.sha, "sha", SHA_PATTERN),
+    candidateRepository: requireString(
+      value.candidateRepository,
+      "candidateRepository",
+      REPOSITORY_PATTERN,
+    ),
+    candidateSha: requireString(value.candidateSha, "candidateSha", SHA_PATTERN),
     toolingRef: requireString(value.toolingRef, "toolingRef"),
     toolingFullRef: requireString(value.toolingFullRef, "toolingFullRef"),
     toolingSha: requireString(value.toolingSha, "toolingSha", SHA_PATTERN),
@@ -145,6 +166,9 @@ function parseTrustedToolingIdentity(raw) {
   if (identity.parentRepository !== identity.repository) {
     fail("trusted tooling identity parent repository does not match its caller repository");
   }
+  if (identity.candidateRepository !== identity.repository) {
+    fail("trusted tooling identity candidate repository does not match its caller repository");
+  }
 
   if (identity.toolingFullRef === MAIN_FULL_REF) {
     if (identity.toolingRef !== "main") {
@@ -167,10 +191,10 @@ function parseParentAuthorizationReceipt(raw) {
   const value = parseExactJson(raw, {
     name: "release parent authorization receipt",
     keys: PARENT_RECEIPT_KEYS,
-    version: 1,
+    version: 2,
   });
   const receipt = {
-    version: 1,
+    version: 2,
     kind: requireString(value.kind, "parent receipt kind"),
     repository: requireString(value.repository, "parent receipt repository", REPOSITORY_PATTERN),
     workflow: requireString(value.workflow, "parent receipt workflow", WORKFLOW_PATTERN),
@@ -188,12 +212,42 @@ function parseParentAuthorizationReceipt(raw) {
       "parent receipt childWorkflow",
       WORKFLOW_PATTERN,
     ),
+    childRepository: requireString(
+      value.childRepository,
+      "parent receipt childRepository",
+      REPOSITORY_PATTERN,
+    ),
+    childRunId: requireString(
+      value.childRunId,
+      "parent receipt childRunId",
+      POSITIVE_INTEGER_PATTERN,
+    ),
+    childRunAttempt: requireString(
+      value.childRunAttempt,
+      "parent receipt childRunAttempt",
+      POSITIVE_INTEGER_PATTERN,
+    ),
+    childRef: requireString(value.childRef, "parent receipt childRef"),
+    childFullRef: requireString(value.childFullRef, "parent receipt childFullRef"),
+    childHeadSha: requireString(value.childHeadSha, "parent receipt childHeadSha", SHA_PATTERN),
+    candidateRepository: requireString(
+      value.candidateRepository,
+      "parent receipt candidateRepository",
+      REPOSITORY_PATTERN,
+    ),
+    candidateSha: requireString(value.candidateSha, "parent receipt candidateSha", SHA_PATTERN),
+    toolingRef: requireString(value.toolingRef, "parent receipt toolingRef"),
+    toolingFullRef: requireString(value.toolingFullRef, "parent receipt toolingFullRef"),
+    toolingSha: requireString(value.toolingSha, "parent receipt toolingSha", SHA_PATTERN),
+    packages: parsePackageTransactions(value.packages),
     authorizationRoute: requireString(
       value.authorizationRoute,
       "parent receipt authorizationRoute",
     ),
   };
   requireMatchingRef(receipt.ref, receipt.fullRef, "parent receipt");
+  requireMatchingRef(receipt.childRef, receipt.childFullRef, "parent receipt child");
+  requireMatchingRef(receipt.toolingRef, receipt.toolingFullRef, "parent receipt tooling");
   if (receipt.kind !== PARENT_RECEIPT_KIND) {
     fail("release parent authorization receipt kind is invalid");
   }
@@ -201,6 +255,33 @@ function parseParentAuthorizationReceipt(raw) {
     fail("release parent authorization receipt route is unknown");
   }
   return receipt;
+}
+
+function parsePackageTransactions(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 512) {
+    fail("release parent authorization receipt packages are invalid");
+  }
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      fail(`release parent authorization receipt package ${index} is invalid`);
+    }
+    const actualKeys = Object.keys(entry).sort();
+    if (
+      actualKeys.length !== PACKAGE_TRANSACTION_KEYS.length ||
+      actualKeys.some((key, keyIndex) => key !== PACKAGE_TRANSACTION_KEYS[keyIndex])
+    ) {
+      fail(`release parent authorization receipt package ${index} keys are invalid`);
+    }
+    return {
+      name: requireString(entry.name, `parent receipt package ${index} name`),
+      version: requireString(entry.version, `parent receipt package ${index} version`),
+      inventoryDigest: requireString(
+        entry.inventoryDigest,
+        `parent receipt package ${index} inventoryDigest`,
+        /^[a-f0-9]{64}$/,
+      ),
+    };
+  });
 }
 
 function parseRecoveryApprovalReceipt(raw) {
@@ -312,7 +393,7 @@ function validateWorkflowRun(identity, run, actor) {
 }
 
 function parentArtifactName(identity) {
-  return `${PARENT_RECEIPT_KIND}-${identity.parentRunId}-${identity.parentRunAttempt}`;
+  return `${PARENT_RECEIPT_KIND}-v2-${identity.parentRunId}-${identity.parentRunAttempt}-${identity.runId}-${identity.runAttempt}`;
 }
 
 function recoveryArtifactName(identity) {
@@ -351,7 +432,18 @@ function validateParentAuthorizationReceipt(identity, receipt) {
     ["ref", receipt.ref, identity.toolingRef],
     ["full ref", receipt.fullRef, identity.toolingFullRef],
     ["head SHA", receipt.headSha, identity.toolingSha],
+    ["child repository", receipt.childRepository, identity.repository],
     ["child workflow", receipt.childWorkflow, identity.workflow],
+    ["child run id", receipt.childRunId, identity.runId],
+    ["child run attempt", receipt.childRunAttempt, identity.runAttempt],
+    ["child ref", receipt.childRef, identity.ref],
+    ["child full ref", receipt.childFullRef, identity.fullRef],
+    ["child head SHA", receipt.childHeadSha, identity.sha],
+    ["candidate repository", receipt.candidateRepository, identity.candidateRepository],
+    ["candidate SHA", receipt.candidateSha, identity.candidateSha],
+    ["tooling ref", receipt.toolingRef, identity.toolingRef],
+    ["tooling full ref", receipt.toolingFullRef, identity.toolingFullRef],
+    ["tooling SHA", receipt.toolingSha, identity.toolingSha],
   ];
   for (const [name, actual, expected] of checks) {
     if (actual !== expected) {
@@ -362,7 +454,8 @@ function validateParentAuthorizationReceipt(identity, receipt) {
 
 function isBotActor(run) {
   const login = String(run.actor?.login ?? "");
-  return run.actor?.type === "Bot" || login.endsWith("[bot]");
+  const type = String(run.actor?.type ?? "").toLowerCase();
+  return type === "bot" || type === "app" || login.toLowerCase().endsWith("[bot]");
 }
 
 function validateRecoveryApprovalReceipt(identity, receipt, actor) {

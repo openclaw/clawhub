@@ -55,6 +55,7 @@ import {
   validateOpenClawExternalCodePluginPackageContents,
   validateOpenClawExternalCodePluginPackageJson,
 } from "../../schema/index.js";
+import { buildGitHubFolderContentHash, hashSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
@@ -1003,13 +1004,17 @@ export async function cmdPublishPackage(
       const trustedToolingBoundary =
         runtime.revalidateTrustedTooling !== undefined ||
         Boolean(process.env.TRUSTED_TOOLING_IDENTITY_JSON?.trim());
-      let publishToken = await resolvePackagePublishToken({
+      const inventoryDigest = buildGitHubFolderContentHash(hashSkillFiles(plan.filesOnDisk).files);
+      let resolvedPublishToken = await resolvePackagePublishToken({
         registry,
         packageName: plan.payload.name,
         version: plan.payload.version,
+        scope: "upload",
+        inventoryDigest,
         manualOverrideReason: plan.payload.manualOverrideReason,
         spinner,
       });
+      let publishToken = resolvedPublishToken.token;
       await validateClawPublishProfilePolicy(plan, registry, publishToken);
       const form = new FormData();
       const payloadJson = JSON.stringify(plan.payload);
@@ -1050,6 +1055,18 @@ export async function cmdPublishPackage(
 
       if (spinner) spinner.text = `Publishing ${plan.payload.name}@${plan.payload.version}`;
       await revalidateTrustedTooling();
+      if (resolvedPublishToken.kind === "github-actions") {
+        resolvedPublishToken = await resolvePackagePublishToken({
+          registry,
+          packageName: plan.payload.name,
+          version: plan.payload.version,
+          scope: "publish",
+          inventoryDigest,
+          manualOverrideReason: plan.payload.manualOverrideReason,
+          spinner,
+        });
+        publishToken = resolvedPublishToken.token;
+      }
       const result = await apiRequestForm(
         registry,
         {
@@ -1083,13 +1100,17 @@ export async function cmdPublishPackage(
           spinner,
           runtime,
           refreshPublishToken: async () => {
-            publishToken = await resolvePackagePublishToken({
-              registry,
-              packageName,
-              version,
-              manualOverrideReason,
-              spinner,
-            });
+            publishToken = (
+              await resolvePackagePublishToken({
+                registry,
+                packageName,
+                version,
+                scope: "publish",
+                inventoryDigest,
+                manualOverrideReason,
+                spinner,
+              })
+            ).token;
             return publishToken;
           },
         });
@@ -2805,6 +2826,8 @@ async function mintPackagePublishToken(
   packageName: string,
   version: string,
   githubOidcToken: string,
+  scope: "upload" | "publish",
+  inventoryDigest: string,
 ) {
   const response = await apiRequest(
     registry,
@@ -2815,6 +2838,11 @@ async function mintPackagePublishToken(
         packageName,
         version,
         githubOidcToken,
+        scope,
+        inventoryDigest,
+        ...(process.env.TRUSTED_TOOLING_IDENTITY_JSON?.trim()
+          ? { trustedToolingIdentityJson: process.env.TRUSTED_TOOLING_IDENTITY_JSON.trim() }
+          : {}),
       },
     },
     ApiV1PublishTokenMintResponseSchema,
@@ -2826,15 +2854,17 @@ async function resolvePackagePublishToken(params: {
   registry: string;
   packageName: string;
   version: string;
+  scope: "upload" | "publish";
+  inventoryDigest: string;
   manualOverrideReason?: string;
   spinner: ReturnType<typeof createCrabLoader> | null;
 }) {
   if (params.manualOverrideReason?.trim()) {
-    return await requireAuthToken();
+    return { kind: "user" as const, token: await requireAuthToken() };
   }
 
   if (!hasGitHubActionsOidcEnv()) {
-    return await requireAuthToken();
+    return { kind: "user" as const, token: await requireAuthToken() };
   }
 
   if (params.spinner) {
@@ -2845,12 +2875,17 @@ async function resolvePackagePublishToken(params: {
     if (params.spinner) {
       params.spinner.text = "Minting short-lived ClawHub publish token";
     }
-    return await mintPackagePublishToken(
-      params.registry,
-      params.packageName,
-      params.version,
-      githubOidcToken,
-    );
+    return {
+      kind: "github-actions" as const,
+      token: await mintPackagePublishToken(
+        params.registry,
+        params.packageName,
+        params.version,
+        githubOidcToken,
+        params.scope,
+        params.inventoryDigest,
+      ),
+    };
   } catch (error) {
     const status =
       typeof error === "object" && error !== null && "status" in error
@@ -2862,7 +2897,7 @@ async function resolvePackagePublishToken(params: {
     if (params.spinner) {
       params.spinner.text = "Trusted publishing unavailable, falling back to ClawHub token";
     }
-    return await requireAuthToken();
+    return { kind: "user" as const, token: await requireAuthToken() };
   }
 }
 

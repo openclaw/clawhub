@@ -43,6 +43,7 @@ import {
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { verifyOpenClawPublishAuthorization } from "../lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "../lib/packageArtifacts";
 import { tryNormalizePackageName } from "../lib/packageRegistry";
 import {
@@ -97,6 +98,9 @@ import {
   text,
   toOptionalNumber,
 } from "./shared";
+
+const LEGACY_OPENCLAW_PACKAGE_PUBLISH_WORKFLOW_SHA = "a42cd2f73d6afb769b271d463fc111669cb7a499";
+
 const apiRefs = api as unknown as {
   packages: {
     listPublicPage: unknown;
@@ -2584,6 +2588,9 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
       packageName: string;
       version: string;
       githubOidcToken: string;
+      scope?: "upload" | "publish";
+      inventoryDigest?: string;
+      trustedToolingIdentityJson?: string;
     };
     const { pkg, trustedPublisher } = await getPackageAndTrustedPublisherByName(
       ctx,
@@ -2603,6 +2610,25 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
         workflowFilename: trustedPublisher.workflowFilename,
         ...(trustedPublisher.environment ? { environment: trustedPublisher.environment } : {}),
       });
+      const scope = payload.scope ?? "publish";
+      let openClawAuthorization = null;
+      if (verified.repository === "openclaw/openclaw") {
+        if (payload.trustedToolingIdentityJson?.trim()) {
+          openClawAuthorization = await verifyOpenClawPublishAuthorization({
+            rawIdentity: payload.trustedToolingIdentityJson,
+            packageName: payload.packageName,
+            version: payload.version,
+            inventoryDigest: payload.inventoryDigest ?? "",
+            oidc: verified,
+          });
+        } else if (
+          payload.scope !== undefined ||
+          payload.inventoryDigest !== undefined ||
+          verified.jobWorkflowSha !== LEGACY_OPENCLAW_PACKAGE_PUBLISH_WORKFLOW_SHA
+        ) {
+          throw new Error("OpenClaw trusted publishes require authorization version 2");
+        }
+      }
       const { token, prefix } = generateToken();
       const tokenHash = await hashToken(token);
       const expiresAt = Date.now() + 15 * 60_000;
@@ -2628,6 +2654,24 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
           ...(verified.refType ? { refType: verified.refType } : {}),
           ...(verified.actor ? { actor: verified.actor } : {}),
           ...(verified.actorId ? { actorId: verified.actorId } : {}),
+          ...(payload.scope ? { scope } : {}),
+          ...(payload.inventoryDigest ? { inventoryDigest: payload.inventoryDigest } : {}),
+          ...(openClawAuthorization
+            ? {
+                authorizationVersion: 2,
+                authorizationRoute: openClawAuthorization.authorizationRoute,
+                authorizationKey: `${openClawAuthorization.transactionKey}:${scope}`,
+                authorizationArtifactId: openClawAuthorization.artifactId,
+                authorizationArtifactDigest: openClawAuthorization.artifactDigest,
+                trustedToolingIdentityJson: payload.trustedToolingIdentityJson,
+                candidateRepository: openClawAuthorization.identity.candidateRepository,
+                candidateSha: openClawAuthorization.identity.candidateSha,
+                parentRepository: openClawAuthorization.identity.parentRepository,
+                parentWorkflow: openClawAuthorization.identity.parentWorkflow,
+                parentRunId: openClawAuthorization.identity.parentRunId,
+                parentRunAttempt: openClawAuthorization.identity.parentRunAttempt,
+              }
+            : {}),
           expiresAt,
         } as never,
       );
@@ -2647,6 +2691,18 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
             runAttempt: verified.runAttempt,
             sha: verified.sha,
             ref: verified.ref,
+            scope,
+            ...(payload.inventoryDigest ? { inventoryDigest: payload.inventoryDigest } : {}),
+            ...(openClawAuthorization
+              ? {
+                  authorizationVersion: 2,
+                  authorizationRoute: openClawAuthorization.authorizationRoute,
+                  authorizationArtifactId: openClawAuthorization.artifactId,
+                  candidateSha: openClawAuthorization.identity.candidateSha,
+                  parentRunId: openClawAuthorization.identity.parentRunId,
+                  parentRunAttempt: openClawAuthorization.identity.parentRunAttempt,
+                }
+              : {}),
             decision: "allowed",
           },
         } as never,

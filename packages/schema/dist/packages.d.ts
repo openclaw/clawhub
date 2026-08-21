@@ -1292,6 +1292,9 @@ export declare const PublishTokenMintRequestSchema: import("arktype/internal/var
     packageName: string;
     version: string;
     githubOidcToken: string;
+    scope?: "publish" | "upload" | undefined;
+    inventoryDigest?: string | undefined;
+    trustedToolingIdentityJson?: string | undefined;
 }, {}>;
 export type PublishTokenMintRequest = (typeof PublishTokenMintRequestSchema)[inferred];
 export declare const ApiV1PublishTokenMintResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

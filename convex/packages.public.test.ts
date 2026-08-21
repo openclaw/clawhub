@@ -3,11 +3,13 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./lib/clawpack";
+import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
+import { buildPackageInventoryDigest } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import {
   backfillLatestPackageScanStatusInternal,
@@ -79,6 +81,10 @@ import {
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
   authTables: {},
+}));
+
+vi.mock("./lib/openClawPublishAuthorization", () => ({
+  verifyOpenClawPublishAuthorization: vi.fn(),
 }));
 
 type WrappedHandler<TArgs, TResult> = {
@@ -1114,6 +1120,7 @@ const repairPackageIdentityInternalHandler = (
 
 beforeEach(() => {
   process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+  vi.mocked(verifyOpenClawPublishAuthorization).mockReset();
 });
 
 afterEach(() => {
@@ -2391,6 +2398,34 @@ function makeInsertReleaseCtx(
                         ? { _id: "officialPublishers:openclaw", publisherId }
                         : null,
                     ),
+                };
+              },
+            ),
+          };
+        }
+        if (table === "packageTrustedPublishers") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const filters = new Map<string, unknown>();
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                const trustedPublisher =
+                  Object.values(recordsById).find(
+                    (record) =>
+                      String(record._id).startsWith("packageTrustedPublishers:") &&
+                      record.packageId === filters.get("packageId"),
+                  ) ?? null;
+                return {
+                  unique: vi.fn().mockResolvedValue(trustedPublisher),
                 };
               },
             ),
@@ -8158,6 +8193,84 @@ describe("packages public queries", () => {
     );
   });
 
+  it("atomically consumes a v2 trusted publish capability with the release insert", async () => {
+    const inventoryDigest = "d".repeat(64);
+    const pkg = makePackageDoc({ family: "bundle-plugin" });
+    const token = {
+      _id: "packagePublishTokens:1",
+      packageId: pkg._id,
+      version: "1.0.0",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+      runId: "100",
+      runAttempt: "1",
+      sha: "c".repeat(40),
+      ref: "refs/tags/release-publish/tooling",
+      scope: "publish",
+      inventoryDigest,
+      authorizationVersion: 2,
+      authorizationKey: "exact-transaction:publish",
+      expiresAt: Date.now() + 60_000,
+    };
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: pkg._id,
+      provider: token.provider,
+      repository: token.repository,
+      repositoryId: token.repositoryId,
+      repositoryOwner: token.repositoryOwner,
+      repositoryOwnerId: token.repositoryOwnerId,
+      workflowFilename: token.workflowFilename,
+      environment: token.environment,
+    };
+    const ctx = makeInsertReleaseCtx(pkg, [], {
+      "users:owner": { _id: "users:owner", role: "user" },
+      [token._id]: token,
+      [trustedPublisher._id]: trustedPublisher,
+    });
+    const args = {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      publishActor: {
+        kind: "github-actions" as const,
+        repository: token.repository,
+        workflow: token.workflowFilename,
+        runId: token.runId,
+        runAttempt: token.runAttempt,
+        sha: token.sha,
+      },
+      name: pkg.name,
+      displayName: pkg.displayName,
+      family: "bundle-plugin" as const,
+      version: token.version,
+      changelog: "authorized release",
+      tags: ["latest"],
+      summary: "demo",
+      files: [],
+      integritySha256: "abc123",
+      trustedPublishTokenId: token._id,
+      trustedPublishInventoryDigest: inventoryDigest,
+    };
+
+    await expect(insertReleaseInternalHandler(ctx, args)).resolves.toMatchObject({
+      ok: true,
+      packageId: pkg._id,
+      releaseId: "packageReleases:new",
+    });
+    expect(ctx.patch).toHaveBeenCalledWith(token._id, {
+      consumedAt: expect.any(Number),
+    });
+
+    await expect(insertReleaseInternalHandler(ctx, args)).rejects.toThrow(
+      "Trusted publish authorization is missing, expired, or consumed",
+    );
+  });
+
   it("creates pending package releases without updating public latest pointers", async () => {
     const existingPackage = makePackageDoc({
       latestReleaseId: "packageReleases:old",
@@ -10932,6 +11045,177 @@ describe("packages public queries", () => {
       }),
     ).rejects.toThrow(
       "Trusted publish token no longer matches the current package trusted publisher",
+    );
+  });
+
+  it("binds a split-ref trusted publish to the frozen candidate source", async () => {
+    const candidateSha = "b".repeat(40);
+    const previousStage = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
+    const manifestBytes = new TextEncoder().encode(JSON.stringify({ id: "demo.plugin" }));
+    const inventoryDigest = await buildPackageInventoryDigest([
+      {
+        path: packageManifestFile.path,
+        size: manifestBytes.byteLength,
+        sha256: await sha256Hex(manifestBytes),
+      },
+    ]);
+    vi.mocked(verifyOpenClawPublishAuthorization).mockResolvedValue({
+      identity: {
+        version: 2,
+        repository: "openclaw/openclaw",
+        workflow: ".github/workflows/plugin-clawhub-release.yml",
+        runId: "100",
+        runAttempt: "1",
+        ref: "release-publish/tooling",
+        fullRef: "refs/tags/release-publish/tooling",
+        sha: "c".repeat(40),
+        candidateRepository: "openclaw/openclaw",
+        candidateSha,
+        toolingRef: "release-publish/tooling",
+        toolingFullRef: "refs/tags/release-publish/tooling",
+        toolingSha: "c".repeat(40),
+        parentRepository: "openclaw/openclaw",
+        parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
+        parentRunId: "99",
+        parentRunAttempt: "1",
+      },
+      authorizationRoute: "automated-awaited",
+      artifactId: "101",
+      artifactDigest: `sha256:${"d".repeat(64)}`,
+      transactionKey: "exact-transaction",
+    });
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "name" in args &&
+        "version" in args &&
+        "files" in args
+      ) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:demo-2",
+        };
+      }
+      return null;
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+          version: "1.0.0",
+          sha: "c".repeat(40),
+          ref: "refs/tags/release-publish/tooling",
+          runId: "100",
+          runAttempt: "1",
+          scope: "publish",
+          inventoryDigest,
+          authorizationVersion: 2,
+          authorizationRoute: "automated-awaited",
+          authorizationKey: "exact-transaction:publish",
+          authorizationArtifactId: "101",
+          authorizationArtifactDigest: `sha256:${"d".repeat(64)}`,
+          trustedToolingIdentityJson: '{"version":2}',
+          candidateRepository: "openclaw/openclaw",
+          candidateSha,
+          parentRepository: "openclaw/openclaw",
+          parentWorkflow: ".github/workflows/openclaw-release-publish.yml",
+          parentRunId: "99",
+          parentRunAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null),
+      runMutation,
+      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: makePackageManifestStorage(),
+    };
+
+    let result: unknown;
+    try {
+      result = await publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+        publishTokenId: "packagePublishTokens:1",
+        payload: {
+          name: "demo-plugin",
+          family: "bundle-plugin",
+          version: "1.0.0",
+          changelog: "split ref",
+          bundle: { hostTargets: ["desktop"] },
+          source: {
+            kind: "github",
+            url: "https://github.com/openclaw/openclaw",
+            repo: "openclaw/openclaw",
+            ref: candidateSha,
+            commit: candidateSha,
+            path: "extensions/demo-plugin",
+            importedAt: 1,
+          },
+          files: [packageManifestFile],
+        },
+      });
+    } finally {
+      if (previousStage === undefined) {
+        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+      } else {
+        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousStage;
+      }
+    }
+    expect(result).toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-2",
+    });
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        source: expect.objectContaining({
+          repo: "openclaw/openclaw",
+          ref: candidateSha,
+          commit: candidateSha,
+          path: "extensions/demo-plugin",
+        }),
+        trustedPublishInventoryDigest: inventoryDigest,
+      }),
+    );
+    expect(runMutation).not.toHaveBeenCalledWith(expect.anything(), {
+      tokenId: "packagePublishTokens:1",
+    });
+    expect(verifyOpenClawPublishAuthorization).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rawIdentity: '{"version":2}',
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        inventoryDigest,
+      }),
     );
   });
 

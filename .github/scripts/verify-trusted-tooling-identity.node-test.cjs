@@ -24,6 +24,7 @@ const parentWorkflow = ".github/workflows/openclaw-release-publish.yml";
 const botActor = "github-actions[bot]";
 const humanActor = "release-maintainer";
 const digest = `sha256:${"d".repeat(64)}`;
+const inventoryDigest = "e".repeat(64);
 
 function protectedIdentity(overrides = {}) {
   return {
@@ -35,6 +36,8 @@ function protectedIdentity(overrides = {}) {
     ref: callerRef,
     fullRef: `refs/tags/${callerRef}`,
     sha: callerSha,
+    candidateRepository: "openclaw/openclaw",
+    candidateSha: "b".repeat(40),
     toolingRef,
     toolingFullRef: `refs/tags/${toolingRef}`,
     toolingSha,
@@ -56,7 +59,7 @@ function mainIdentity(overrides = {}) {
 
 function parentReceipt(identity, overrides = {}) {
   return {
-    version: 1,
+    version: 2,
     kind: "openclaw-clawhub-parent-authorization",
     repository: identity.parentRepository,
     workflow: identity.parentWorkflow,
@@ -65,7 +68,25 @@ function parentReceipt(identity, overrides = {}) {
     ref: identity.toolingRef,
     fullRef: identity.toolingFullRef,
     headSha: identity.toolingSha,
+    childRepository: identity.repository,
     childWorkflow: identity.workflow,
+    childRunId: identity.runId,
+    childRunAttempt: identity.runAttempt,
+    childRef: identity.ref,
+    childFullRef: identity.fullRef,
+    childHeadSha: identity.sha,
+    candidateRepository: identity.candidateRepository,
+    candidateSha: identity.candidateSha,
+    toolingRef: identity.toolingRef,
+    toolingFullRef: identity.toolingFullRef,
+    toolingSha: identity.toolingSha,
+    packages: [
+      {
+        name: "@openclaw/demo",
+        version: "1.0.0",
+        inventoryDigest,
+      },
+    ],
     authorizationRoute: "automated-awaited",
     ...overrides,
   };
@@ -470,6 +491,24 @@ test("bot actors cannot select recovery even with a recovery receipt", () => {
   const recovery = recoveryReceipt(identity, { actor: botActor });
   assert.throws(
     () => deriveAuthorizationRoute(identity, runFixture(identity), receipt, recovery),
+    /cannot select the recovery route/,
+  );
+});
+
+test("GitHub App actors cannot select recovery without a bot-suffixed login", () => {
+  const identity = protectedIdentity();
+  const receipt = parseParentAuthorizationReceipt(JSON.stringify(parentReceipt(identity)));
+  const recovery = recoveryReceipt(identity, { actor: "release-service" });
+  assert.throws(
+    () =>
+      deriveAuthorizationRoute(
+        identity,
+        runFixture(identity, "release-service", {
+          actor: { login: "release-service", type: "App" },
+        }),
+        receipt,
+        recovery,
+      ),
     /cannot select the recovery route/,
   );
 });

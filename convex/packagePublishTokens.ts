@@ -23,14 +23,41 @@ export const createInternal = internalMutation({
     refType: v.optional(v.string()),
     actor: v.optional(v.string()),
     actorId: v.optional(v.string()),
+    scope: v.optional(v.union(v.literal("upload"), v.literal("publish"))),
+    inventoryDigest: v.optional(v.string()),
+    authorizationVersion: v.optional(v.literal(2)),
+    authorizationRoute: v.optional(v.string()),
+    authorizationKey: v.optional(v.string()),
+    authorizationArtifactId: v.optional(v.string()),
+    authorizationArtifactDigest: v.optional(v.string()),
+    trustedToolingIdentityJson: v.optional(v.string()),
+    candidateRepository: v.optional(v.string()),
+    candidateSha: v.optional(v.string()),
+    parentRepository: v.optional(v.string()),
+    parentWorkflow: v.optional(v.string()),
+    parentRunId: v.optional(v.string()),
+    parentRunAttempt: v.optional(v.string()),
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    if (args.authorizationKey) {
+      const existing = await ctx.db
+        .query("packagePublishTokens")
+        .withIndex("by_package", (q) =>
+          q.eq("packageId", args.packageId).eq("version", args.version),
+        )
+        .filter((q) => q.eq(q.field("authorizationKey"), args.authorizationKey))
+        .first();
+      if (existing) {
+        throw new Error("This trusted publish authorization transaction was already minted");
+      }
+    }
     return await ctx.db.insert("packagePublishTokens", {
       ...args,
       createdAt: now,
       lastUsedAt: undefined,
+      consumedAt: undefined,
       revokedAt: undefined,
     });
   },

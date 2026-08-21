@@ -1,7 +1,10 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { consumePackagePublishUploadTicketInternal } from "./uploads";
+import {
+  consumePackagePublishUploadTicketInternal,
+  createPackagePublishUploadForTokenInternal,
+} from "./uploads";
 
 type ConsumeArgs = {
   uploadTicket: string;
@@ -16,12 +19,20 @@ type WrappedHandler<TArgs> = {
 const consumeHandler = (
   consumePackagePublishUploadTicketInternal as unknown as WrappedHandler<ConsumeArgs>
 )._handler;
+const createForTokenHandler = (
+  createPackagePublishUploadForTokenInternal as unknown as WrappedHandler<{
+    publishTokenId: string;
+  }>
+)._handler;
 
-function makeCtx(ticket: Record<string, unknown> | null, storage: Record<string, unknown> | null) {
+function makeCtx(
+  document: Record<string, unknown> | null,
+  storage: Record<string, unknown> | null = null,
+) {
   return {
     db: {
-      get: vi.fn(async () => ticket),
-      insert: vi.fn(),
+      get: vi.fn(async () => document),
+      insert: vi.fn(async () => "packagePublishUploadTickets:1"),
       normalizeId: vi.fn(),
       patch: vi.fn(),
       query: vi.fn(),
@@ -32,12 +43,79 @@ function makeCtx(ticket: Record<string, unknown> | null, storage: Record<string,
         query: vi.fn(),
       },
     },
+    storage: {
+      generateUploadUrl: vi.fn(async () => "https://upload.example"),
+    },
   };
 }
 
 describe("package publish upload tickets", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("atomically consumes a v2 upload capability when creating its ticket", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const ctx = makeCtx({
+      _id: "packagePublishTokens:1",
+      authorizationVersion: 2,
+      scope: "upload",
+      expiresAt: 10_000,
+    });
+
+    await expect(
+      createForTokenHandler(ctx, { publishTokenId: "packagePublishTokens:1" }),
+    ).resolves.toEqual({
+      uploadUrl: "https://upload.example",
+      uploadTicket: "packagePublishUploadTickets:1",
+    });
+
+    expect(ctx.db.insert).toHaveBeenCalledWith("packagePublishUploadTickets", {
+      kind: "github-actions",
+      publishTokenId: "packagePublishTokens:1",
+      createdAt: 2_000,
+      expiresAt: 902_000,
+    });
+    expect(ctx.db.patch).toHaveBeenCalledWith("packagePublishTokens:1", {
+      consumedAt: 2_000,
+    });
+  });
+
+  it("rejects publish-scoped and consumed capabilities for package upload", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const publishCtx = makeCtx({
+      _id: "packagePublishTokens:1",
+      authorizationVersion: 2,
+      scope: "publish",
+      expiresAt: 10_000,
+    });
+    await expect(
+      createForTokenHandler(publishCtx, { publishTokenId: "packagePublishTokens:1" }),
+    ).rejects.toThrow("Trusted publish token cannot authorize package upload");
+
+    const consumedCtx = makeCtx({
+      _id: "packagePublishTokens:2",
+      authorizationVersion: 2,
+      scope: "upload",
+      consumedAt: 1_500,
+      expiresAt: 10_000,
+    });
+    await expect(
+      createForTokenHandler(consumedCtx, { publishTokenId: "packagePublishTokens:2" }),
+    ).rejects.toThrow("Trusted publish token is missing or expired");
+  });
+
+  it("preserves unscoped legacy upload tokens during the coordinated cutover", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(2_000);
+    const ctx = makeCtx({
+      _id: "packagePublishTokens:legacy",
+      expiresAt: 10_000,
+    });
+
+    await createForTokenHandler(ctx, { publishTokenId: "packagePublishTokens:legacy" });
+
+    expect(ctx.db.insert).toHaveBeenCalledOnce();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
   it("consumes a fresh upload ticket for the same user", async () => {

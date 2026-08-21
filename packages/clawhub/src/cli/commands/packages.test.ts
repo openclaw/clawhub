@@ -33,6 +33,7 @@ const inspectorMocks = {
 };
 const originalOidcRequestUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
 const originalOidcRequestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+const originalTrustedToolingIdentity = process.env.TRUSTED_TOOLING_IDENTITY_JSON;
 
 vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
@@ -252,6 +253,11 @@ afterEach(() => {
     delete process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
   } else {
     process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = originalOidcRequestToken;
+  }
+  if (originalTrustedToolingIdentity === undefined) {
+    delete process.env.TRUSTED_TOOLING_IDENTITY_JSON;
+  } else {
+    process.env.TRUSTED_TOOLING_IDENTITY_JSON = originalTrustedToolingIdentity;
   }
 });
 
@@ -2007,8 +2013,8 @@ describe("package commands", () => {
         (call) => (call[1] as { method?: string }).method === "GET",
       );
       expect(statusCalls.map((call) => (call[1] as { token?: string }).token)).toEqual([
-        "short_token_1",
         "short_token_2",
+        "short_token_3",
       ]);
       expect(mockWrite).toHaveBeenCalledTimes(1);
       expect(JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""))).toMatchObject({
@@ -2912,11 +2918,13 @@ describe("package commands", () => {
     try {
       process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.actions.githubusercontent.com/oidc";
       process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "gh-request-token";
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
+      process.env.TRUSTED_TOOLING_IDENTITY_JSON = '{"version":2,"test":"identity"}';
+      const fetchMock = vi.fn().mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ value: "github-oidc-jwt" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
       );
       vi.stubGlobal("fetch", fetchMock);
 
@@ -2937,20 +2945,32 @@ describe("package commands", () => {
         "utf8",
       );
 
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        token: "clh_short_publish",
-        expiresAt: 1_234_567_890,
-      });
+      httpMocks.apiRequest.mockImplementation(
+        async (_registry: string, request: { path?: string; body?: { scope?: string } }) => {
+          if (request.path !== "/api/v1/publish/token/mint") {
+            throw new Error(`Unexpected API request: ${request.path}`);
+          }
+          return {
+            token: request.body?.scope === "publish" ? "clh_short_publish" : "clh_short_upload",
+            expiresAt: 1_234_567_890,
+          };
+        },
+      );
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         packageId: "pkg_1",
         releaseId: "rel_1",
       });
 
-      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
-        sourceRepo: "openclaw/demo-plugin",
-        sourceCommit: "abc123",
-      });
+      await cmdPublishPackage(
+        makeOpts(workdir),
+        "demo-plugin",
+        {
+          sourceRepo: "openclaw/demo-plugin",
+          sourceCommit: "abc123",
+        },
+        { revalidateTrustedTooling: vi.fn() },
+      );
 
       expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalledWith(
@@ -2962,16 +2982,37 @@ describe("package commands", () => {
           }),
         }),
       );
-      expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+        1,
         "https://clawhub.ai",
         expect.objectContaining({
           method: "POST",
           path: "/api/v1/publish/token/mint",
-          body: {
+          body: expect.objectContaining({
             packageName: "@scope/demo-plugin",
             version: "1.0.0",
             githubOidcToken: "github-oidc-jwt",
-          },
+            scope: "upload",
+            inventoryDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+            trustedToolingIdentityJson: '{"version":2,"test":"identity"}',
+          }),
+        }),
+        expect.anything(),
+      );
+      expect(httpMocks.apiRequest).toHaveBeenNthCalledWith(
+        2,
+        "https://clawhub.ai",
+        expect.objectContaining({
+          method: "POST",
+          path: "/api/v1/publish/token/mint",
+          body: expect.objectContaining({
+            packageName: "@scope/demo-plugin",
+            version: "1.0.0",
+            githubOidcToken: "github-oidc-jwt",
+            scope: "publish",
+            inventoryDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+            trustedToolingIdentityJson: '{"version":2,"test":"identity"}',
+          }),
         }),
         expect.anything(),
       );
@@ -2980,6 +3021,7 @@ describe("package commands", () => {
         | undefined;
       expect(publishArgs?.token).toBe("clh_short_publish");
     } finally {
+      delete process.env.TRUSTED_TOOLING_IDENTITY_JSON;
       await rm(workdir, { recursive: true, force: true });
     }
   });

@@ -250,7 +250,13 @@ describe("package publish workflow", () => {
         "run-id": "${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}",
       },
     });
-    expect(parentReceiptStep?.with?.name).toContain("openclaw-clawhub-parent-authorization-");
+    expect(parentReceiptStep?.with?.name).toContain("openclaw-clawhub-parent-authorization-v2-");
+    expect(parentReceiptStep?.with?.name).toContain(
+      "${{ fromJson(inputs.trusted_tooling_identity_json).runId }}",
+    );
+    expect(parentReceiptStep?.with?.name).toContain(
+      "${{ fromJson(inputs.trusted_tooling_identity_json).runAttempt }}",
+    );
     expect(recoveryReceiptStep).toMatchObject({
       id: "recovery_approval",
       if: "inputs.trusted_tooling_identity_json != ''",

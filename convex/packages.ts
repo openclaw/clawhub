@@ -71,6 +71,7 @@ import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
 import { isOfficialPublisher } from "./lib/officialPublishers";
+import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
   assertPackageVersion,
@@ -128,7 +129,7 @@ import {
   type SearchTrustSignals,
 } from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
-import { hashSkillFiles } from "./lib/skills";
+import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
@@ -8114,6 +8115,8 @@ function resolveTrustedPublishSource(
   publishToken: Doc<"packagePublishTokens">,
 ): ServerPackagePublishRequest["source"] {
   const source = payload.source;
+  const sourceRepository = publishToken.candidateRepository ?? publishToken.repository;
+  const sourceSha = publishToken.candidateSha ?? publishToken.sha;
   if (source && source.kind !== "github") {
     throw new ConvexError("Trusted publishes only support GitHub source metadata");
   }
@@ -8121,22 +8124,22 @@ function resolveTrustedPublishSource(
     typeof source?.repo === "string" && source.repo.trim()
       ? (normalizeGitHubRepository(source.repo) ?? source.repo.trim())
       : undefined;
-  if (requestedRepo && requestedRepo !== publishToken.repository) {
+  if (requestedRepo && requestedRepo !== sourceRepository) {
     throw new ConvexError("Trusted publish source repo must match the verified GitHub repository");
   }
-  if (source?.commit && source.commit !== publishToken.sha) {
-    throw new ConvexError("Trusted publish source commit must match the verified GitHub SHA");
+  if (source?.commit && source.commit !== sourceSha) {
+    throw new ConvexError("Trusted publish source commit must match the authorized candidate SHA");
   }
-  if (source?.ref && source.ref !== publishToken.ref) {
-    throw new ConvexError("Trusted publish source ref must match the verified GitHub ref");
+  if (source?.ref && source.ref !== sourceSha) {
+    throw new ConvexError("Trusted publish source ref must match the authorized candidate SHA");
   }
   const path = source?.path?.trim() || ".";
   return {
     kind: "github",
-    url: `https://github.com/${publishToken.repository}`,
-    repo: publishToken.repository,
-    ref: publishToken.ref,
-    commit: publishToken.sha,
+    url: `https://github.com/${sourceRepository}`,
+    repo: sourceRepository,
+    ref: sourceSha,
+    commit: sourceSha,
     path,
     importedAt: source?.importedAt ?? Date.now(),
   };
@@ -8157,6 +8160,71 @@ function doesTrustedPublisherMatchPublishToken(
     trustedPublisher.workflowFilename === publishToken.workflowFilename &&
     trustedPublisher.environment === publishToken.environment,
   );
+}
+
+async function reverifyOpenClawAuthorizationBeforePublish(
+  auth: PackagePublishAuthContext,
+  transaction: {
+    name: string;
+    version: string;
+    inventoryDigest: string;
+  },
+) {
+  if (
+    auth.kind !== "github-actions" ||
+    auth.publishToken.repository !== "openclaw/openclaw" ||
+    auth.publishToken.authorizationVersion !== 2
+  ) {
+    return;
+  }
+  const token = auth.publishToken;
+  if (
+    !token.trustedToolingIdentityJson ||
+    !token.authorizationKey ||
+    !token.authorizationArtifactId ||
+    !token.authorizationArtifactDigest
+  ) {
+    throw new ConvexError("OpenClaw trusted publish authorization evidence is incomplete");
+  }
+  const authorization = await verifyOpenClawPublishAuthorization({
+    rawIdentity: token.trustedToolingIdentityJson,
+    packageName: transaction.name,
+    version: transaction.version,
+    inventoryDigest: transaction.inventoryDigest,
+    oidc: {
+      repository: token.repository,
+      repositoryId: token.repositoryId,
+      repositoryOwner: token.repositoryOwner,
+      repositoryOwnerId: token.repositoryOwnerId,
+      workflowFilename: token.workflowFilename,
+      workflowName: token.workflowFilename,
+      workflowRef: `${token.repository}/.github/workflows/${token.workflowFilename}@${token.ref}`,
+      environment: token.environment,
+      runnerEnvironment: "github-hosted",
+      eventName: "workflow_dispatch",
+      sha: token.sha,
+      ref: token.ref,
+      refType: token.refType,
+      actor: token.actor,
+      actorId: token.actorId,
+      runId: token.runId,
+      runAttempt: token.runAttempt,
+    },
+  });
+  if (
+    token.authorizationKey !== `${authorization.transactionKey}:publish` ||
+    token.authorizationArtifactId !== authorization.artifactId ||
+    token.authorizationArtifactDigest !== authorization.artifactDigest ||
+    token.authorizationRoute !== authorization.authorizationRoute ||
+    token.candidateRepository !== authorization.identity.candidateRepository ||
+    token.candidateSha !== authorization.identity.candidateSha ||
+    token.parentRepository !== authorization.identity.parentRepository ||
+    token.parentWorkflow !== authorization.identity.parentWorkflow ||
+    token.parentRunId !== authorization.identity.parentRunId ||
+    token.parentRunAttempt !== authorization.identity.parentRunAttempt
+  ) {
+    throw new ConvexError("OpenClaw trusted publish authorization evidence changed after mint");
+  }
 }
 
 async function runPackageInspectorPublishGate(
@@ -8429,6 +8497,14 @@ async function publishPackageImpl(
     ctx,
     normalizePublishFiles(payload.files),
   );
+  const inventoryDigest = await buildPackageInventoryDigest(files);
+  if (
+    auth.kind === "github-actions" &&
+    auth.publishToken.inventoryDigest !== undefined &&
+    auth.publishToken.inventoryDigest !== inventoryDigest
+  ) {
+    throw new ConvexError("Published package inventory does not match the minted authorization");
+  }
   if (payload.artifact?.kind !== "npm-pack") {
     const oversizedFile = findOversizedPublishFile(files);
     if (oversizedFile) {
@@ -8766,6 +8842,8 @@ async function publishPackageImpl(
     pluginManifestSummary,
     clawManifestSummary: validatedClaw?.summary,
     source: effectiveSource,
+    trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
+    trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
   };
   const publishedArtifactSha256 = family === "claw" ? packageInsertArgs.clawpackSha256 : undefined;
   const attemptArtifactFingerprint = publishedArtifactSha256 ?? integritySha256;
@@ -8832,7 +8910,7 @@ async function publishPackageImpl(
           if (!existingAttempt.result) {
             throw new ConvexError("Finalized publish attempt is missing its package result.");
           }
-          if (auth.kind === "github-actions") {
+          if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
             await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
               tokenId: auth.publishToken._id,
             });
@@ -8846,7 +8924,7 @@ async function publishPackageImpl(
             ? { ...finalizedResult, inspectorFindings }
             : finalizedResult;
         }
-        if (auth.kind === "github-actions") {
+        if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
           await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
             tokenId: auth.publishToken._id,
           });
@@ -8900,6 +8978,11 @@ async function publishPackageImpl(
       );
     }
 
+    await reverifyOpenClawAuthorizationBeforePublish(auth, {
+      name,
+      version,
+      inventoryDigest,
+    });
     const pendingResult = await runMutationRef<{
       ok: true;
       packageId: Id<"packages">;
@@ -8944,7 +9027,10 @@ async function publishPackageImpl(
         version,
         inspectorWarnings: inspectorResult?.warnings ?? [],
         inspectorMetadata: inspectorResult?.metadata,
-        trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
+        trustedPublishTokenId:
+          auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2
+            ? auth.publishToken._id
+            : undefined,
         manualOverrideAudit:
           auth.kind === "user" && existingTrustedPublisher && manualOverrideReason
             ? {
@@ -8981,7 +9067,7 @@ async function publishPackageImpl(
       });
       throw error;
     });
-    if (auth.kind === "github-actions") {
+    if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
       await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
         tokenId: auth.publishToken._id,
       });
@@ -9012,6 +9098,11 @@ async function publishPackageImpl(
     };
   }
 
+  await reverifyOpenClawAuthorizationBeforePublish(auth, {
+    name,
+    version,
+    inventoryDigest,
+  });
   const publishResult = await runMutationRef<{
     ok: true;
     packageId: Id<"packages">;
@@ -9046,7 +9137,7 @@ async function publishPackageImpl(
     }
   }
 
-  if (auth.kind === "github-actions") {
+  if (auth.kind === "github-actions" && auth.publishToken.authorizationVersion !== 2) {
     await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
       tokenId: auth.publishToken._id,
     });
@@ -9307,8 +9398,23 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
       internalRefs.packagePublishTokens.getByIdInternal,
       { tokenId: args.publishTokenId },
     );
-    if (!publishToken || publishToken.revokedAt || publishToken.expiresAt <= Date.now()) {
+    if (
+      !publishToken ||
+      publishToken.revokedAt ||
+      publishToken.consumedAt ||
+      publishToken.expiresAt <= Date.now()
+    ) {
       throw new ConvexError("Trusted publish token is missing or expired");
+    }
+    if ((publishToken.scope ?? "publish") !== "publish") {
+      throw new ConvexError("Trusted upload token cannot authorize package publication");
+    }
+    if (
+      publishToken.repository === "openclaw/openclaw" &&
+      (publishToken.scope !== undefined || publishToken.inventoryDigest !== undefined) &&
+      publishToken.authorizationVersion !== 2
+    ) {
+      throw new ConvexError("OpenClaw trusted publishes require authorization version 2");
     }
     const trustedPublisher = await runQueryRef<PackageTrustedPublisherDoc | null>(
       ctx,
@@ -9321,7 +9427,8 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
       );
     }
     return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload, {
-      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
+      stagePrePublicationChecks:
+        stagedPrePublicationPublishesEnabled() && publishToken.authorizationVersion !== 2,
     });
   },
 });
@@ -11167,6 +11274,8 @@ export const insertReleaseInternal = internalMutation({
     pluginManifestSummary: v.optional(v.any()),
     clawManifestSummary: v.optional(v.any()),
     source: v.optional(v.any()),
+    trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
+    trustedPublishInventoryDigest: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     if (args.family === "claw" && !experimentalClawsEnabled()) {
@@ -11183,6 +11292,57 @@ export const insertReleaseInternal = internalMutation({
         ? { ...args.verification, scanStatus: prePublicationScanStatus }
         : args.verification;
     const normalizedName = normalizePackageName(args.name);
+    if (args.trustedPublishTokenId) {
+      const token = await ctx.db.get(args.trustedPublishTokenId);
+      if (
+        !token ||
+        token.revokedAt ||
+        token.consumedAt ||
+        token.expiresAt <= now ||
+        (token.scope ?? "publish") !== "publish"
+      ) {
+        throw new ConvexError("Trusted publish authorization is missing, expired, or consumed");
+      }
+      if (
+        token.version !== args.version ||
+        (token.inventoryDigest !== undefined &&
+          (!args.trustedPublishInventoryDigest ||
+            token.inventoryDigest !== args.trustedPublishInventoryDigest))
+      ) {
+        throw new ConvexError(
+          "Trusted publish authorization does not match this package transaction",
+        );
+      }
+      if (
+        token.repository === "openclaw/openclaw" &&
+        (token.scope !== undefined || token.inventoryDigest !== undefined) &&
+        token.authorizationVersion !== 2
+      ) {
+        throw new ConvexError("OpenClaw trusted publishes require authorization version 2");
+      }
+      const tokenPackage = await ctx.db.get(token.packageId);
+      if (
+        !tokenPackage ||
+        tokenPackage.normalizedName !== normalizedName ||
+        tokenPackage.softDeletedAt
+      ) {
+        throw new ConvexError("Trusted publish authorization package no longer matches");
+      }
+      const trustedPublisher = await ctx.db
+        .query("packageTrustedPublishers")
+        .withIndex("by_package", (q) => q.eq("packageId", token.packageId))
+        .unique();
+      if (!doesTrustedPublisherMatchPublishToken(trustedPublisher, token)) {
+        throw new ConvexError(
+          "Trusted publish authorization no longer matches the current trusted publisher",
+        );
+      }
+      // Consuming inside this mutation makes replay impossible: any later failure
+      // rolls this patch back with the release insert.
+      await ctx.db.patch(token._id, { consumedAt: now });
+    } else if (args.trustedPublishInventoryDigest) {
+      throw new ConvexError("Trusted publish inventory requires a publish token");
+    }
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
     const owner = await ctx.db.get(args.ownerUserId);

@@ -1012,6 +1012,9 @@ export const PublishTokenMintRequestSchema = type({
   packageName: "string",
   version: "string",
   githubOidcToken: "string",
+  scope: '("upload" | "publish")?',
+  inventoryDigest: "string?",
+  trustedToolingIdentityJson: "string?",
 });
 export type PublishTokenMintRequest = (typeof PublishTokenMintRequestSchema)[inferred];
 
