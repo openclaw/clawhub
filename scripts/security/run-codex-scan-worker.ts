@@ -96,6 +96,8 @@ export type AigFinding = {
   ruleId: string;
   level: string;
   message: string;
+  title?: string;
+  description?: string;
   file?: string;
   startLine?: number;
   endLine?: number;
@@ -1221,6 +1223,24 @@ function aigResultMessage(result: Record<string, unknown>, ruleName?: string) {
   return /[.!?]$/.test(title) ? `${title} ${description}` : `${title}: ${description}`;
 }
 
+function aigResultTitle(result: Record<string, unknown>, ruleName?: string) {
+  const message = asRecord(result.message);
+  return (
+    readString(message ?? {}, ["text", "markdown"]) ??
+    readString(result, ["message"]) ??
+    ruleName ??
+    readString(result, ["ruleId", "rule_id"]) ??
+    "A.I.G reported a security finding."
+  );
+}
+
+function aigResultDescription(result: Record<string, unknown>) {
+  return (
+    readString(asRecord(result.properties) ?? {}, ["description"]) ??
+    readString(result, ["description"])
+  );
+}
+
 function normalizeAigFinding(
   input: unknown,
   index: number,
@@ -1239,6 +1259,8 @@ function normalizeAigFinding(
     readString(properties ?? {}, ["remediation", "recommendation", "mitigation", "fix"]) ??
     sarifMessageText(firstFix?.description) ??
     sarifMessageText(firstFix?.message);
+  const title = truncateStoredSkillSpectorText(aigResultTitle(result, ruleNames.get(ruleId)));
+  const description = truncateStoredSkillSpectorText(aigResultDescription(result));
   return {
     ruleId:
       truncateStoredSkillSpectorText(ruleId, MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS) ??
@@ -1251,6 +1273,8 @@ function normalizeAigFinding(
     message:
       truncateStoredSkillSpectorText(aigResultMessage(result, ruleNames.get(ruleId))) ??
       "A.I.G reported a security finding.",
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
     file: truncateStoredSkillSpectorText(
       readString(artifactLocation ?? {}, ["uri", "path"]),
       MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,

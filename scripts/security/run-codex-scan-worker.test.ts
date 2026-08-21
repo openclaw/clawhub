@@ -413,6 +413,7 @@ describe("run-codex-scan-worker diagnostics", () => {
       checkedAt: 123,
       findings: [
         {
+          description: "The payload bypasses review by downloading code at runtime.",
           endLine: 14,
           file: "SKILL.md",
           level: "error",
@@ -421,6 +422,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           remediation: "Remove the downloaded payload.",
           ruleId: "T04",
           startLine: 12,
+          title: "Embedded payload executes a downloaded script.",
         },
       ],
       issueCount: 1,

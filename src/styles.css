@@ -2261,6 +2261,16 @@ code {
   line-height: 1.55;
 }
 
+.aig-finding-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.aig-finding-copy strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
 @media (max-width: 1100px) {
   .security-report-layout {
     grid-template-columns: 1fr;

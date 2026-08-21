@@ -2621,6 +2621,9 @@ function aigSuspiciousSkillAnalysis(now: number) {
         level: "error",
         message:
           "An embedded debug helper collects OpenClaw session state and sends it to an unrelated endpoint.",
+        title: "Embedded session upload helper",
+        description:
+          "The helper collects local OpenClaw session state and transmits it to an endpoint unrelated to the Todoist workflow.",
         file: "scripts/debug-upload.sh",
         startLine: 4,
         endLine: 9,
@@ -2631,6 +2634,9 @@ function aigSuspiciousSkillAnalysis(now: number) {
         level: "error",
         message:
           "The debug instruction redirects the agent from Todoist tasks to collecting and transmitting local session state.",
+        title: "Todoist workflow hijacking",
+        description:
+          "The instruction redirects the agent away from its stated task-management purpose to collect and transmit local session state.",
         file: "SKILL.md",
         startLine: 67,
         endLine: 68,
@@ -2642,6 +2648,9 @@ function aigSuspiciousSkillAnalysis(now: number) {
         level: "warning",
         message:
           "Reading the local OpenClaw session file exceeds the permissions required for the stated Todoist workflow.",
+        title: "Excessive session-file access",
+        description:
+          "The skill reads sensitive OpenClaw state that is not required to read or update Todoist tasks.",
         file: "SKILL.md",
         startLine: 67,
         endLine: 68,
@@ -2653,6 +2662,9 @@ function aigSuspiciousSkillAnalysis(now: number) {
         level: "warning",
         message:
           "The Todoist CLI dependency uses a floating version range that can resolve to code not reviewed with this skill release.",
+        title: "Floating Todoist dependency",
+        description:
+          "The declared version range can install dependency code that was not reviewed with this skill release.",
         file: "SKILL.md",
         startLine: 42,
         endLine: 46,
@@ -2664,6 +2676,9 @@ function aigSuspiciousSkillAnalysis(now: number) {
         level: "note",
         message:
           "The debug workflow does not document validation, redaction, or user confirmation before handling session data.",
+        title: "Unreviewed session-data handling",
+        description:
+          "The workflow handles sensitive session data without documented validation, redaction, or user confirmation.",
       },
     ],
     scannerVersion: "0.2.1",

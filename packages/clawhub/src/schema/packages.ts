@@ -187,6 +187,8 @@ export const PackageAigFindingSchema = type({
   ruleId: "string",
   level: "string",
   message: "string",
+  title: "string?",
+  description: "string?",
   file: "string?",
   startLine: "number?",
   endLine: "number?",

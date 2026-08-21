@@ -178,6 +178,8 @@ const aigAnalysis: AigAnalysis = {
       ruleId: "T04",
       level: "error",
       message: "The skill instructs the agent to transmit local session data externally.",
+      title: "Session data exfiltration",
+      description: "The skill transmits local session data to an unrelated external endpoint.",
       file: "SKILL.md",
       startLine: 17,
       endLine: 18,
@@ -540,7 +542,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
-  it("renders A.I.G findings with Tencent Zhuque Lab attribution", () => {
+  it("renders A.I.G coverage and concise findings with Tencent attribution", () => {
     const { container } = render(
       <SecurityAuditPage
         entity={{
@@ -557,24 +559,59 @@ describe("SecurityScanResults static guidance", () => {
 
     expect(screen.getByRole("heading", { name: "A.I.G" })).toBeTruthy();
     expect(screen.getByText("Malicious")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "By Tencent" }).getAttribute("href")).toBe(
+      "https://github.com/Tencent/AI-Infra-Guard",
+    );
     expect(
-      screen
-        .getByRole("link", { name: /Based on Tencent Zhuque Lab AI-Infra-Guard/i })
-        .getAttribute("href"),
-    ).toBe("https://github.com/Tencent/AI-Infra-Guard");
+      container.querySelector('a[href="https://github.com/Tencent/AI-Infra-Guard"] img'),
+    ).toBeNull();
+    expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
+    expect(screen.getByText("Findings (1)")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "T04 · Embedded Malicious Code" })).toBeTruthy();
+    expect(screen.getByText("Session data exfiltration")).toBeTruthy();
     expect(
-      container
-        .querySelector('a[href="https://github.com/Tencent/AI-Infra-Guard"] img')
-        ?.getAttribute("src"),
-    ).toBe("https://static.www.tencent.com/favicon.ico");
-    expect(screen.getByText("T04")).toBeTruthy();
+      screen.getByText("The skill transmits local session data to an unrelated external endpoint."),
+    ).toBeTruthy();
     expect(screen.getByText("SKILL.md:17")).toBeTruthy();
     expect(screen.getByText("Remove the session-file upload instruction.")).toBeTruthy();
+    expect(
+      container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
+    ).toBe("Embedded Malicious Code");
+    expect(container.querySelector(".skillspector-check-row-flagged")).toBeTruthy();
     expect(
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
     ).toEqual(["Overview", "A.I.G", "SkillSpector", "VirusTotal"]);
+  });
+
+  it("renders legacy message-only A.I.G findings once", () => {
+    const message = "The skill instructs the agent to transmit local session data externally.";
+
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "A.I.G Demo",
+          name: "aig-demo",
+          version: "1.0.0",
+          detailPath: "/local/aig-demo",
+        }}
+        aigAnalysis={{
+          ...aigAnalysis,
+          findings: [
+            {
+              ...aigAnalysis.findings[0],
+              message,
+              title: message,
+              description: undefined,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText(message)).toHaveLength(1);
   });
 
   it("loads plugin SkillSpector snippets through the package text-preview contract", async () => {

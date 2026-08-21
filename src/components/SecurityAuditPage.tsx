@@ -73,6 +73,55 @@ type SecurityAuditPageProps = {
 
 const EMPTY_SKILLSPECTOR_ISSUES: SkillSpectorIssue[] = [];
 const SKILLSPECTOR_VISIBLE_CHECK_LIMIT = 5;
+const AIG_VISIBLE_RULE_LIMIT = 5;
+const AIG_RULES = [
+  {
+    id: "T01",
+    name: "Skill Instruction Hijacking",
+    description: "Alters the agent's session goals or safety constraints when the skill loads",
+  },
+  {
+    id: "T02",
+    name: "Agent Memory Poisoning",
+    description: "Writes attacker-controlled rules into memory that affect later sessions",
+  },
+  {
+    id: "T03",
+    name: "Remote Payload Retrieval and Execution",
+    description: "Fetches external code whose behavior can change after review",
+  },
+  {
+    id: "T04",
+    name: "Embedded Malicious Code",
+    description: "Ships malicious scripts inside the skill and executes them locally",
+  },
+  {
+    id: "T05",
+    name: "Unauthorized Access and Privilege Escalation",
+    description: "Obtains permissions beyond the task's legitimate needs",
+  },
+  {
+    id: "T06",
+    name: "System Persistence",
+    description: "Installs backdoors, hooks, services, or scheduled tasks that survive the run",
+  },
+  {
+    id: "T07",
+    name: "Tool Hijacking and Spoofing",
+    description: "Modifies or replaces tools so legitimate-looking calls execute attacker logic",
+  },
+  {
+    id: "T08",
+    name: "Insecure Dependencies",
+    description: "Introduces malicious components through unsafe dependency sources",
+  },
+  {
+    id: "T09",
+    name: "Insecure Skill Coding Practices",
+    description: "Finds exploitable flaws such as hardcoded secrets or command injection",
+  },
+] as const;
+const AIG_RULE_BY_ID = new Map(AIG_RULES.map((rule) => [rule.id, rule]));
 const SKILLSPECTOR_CLEAN_CHECKS = [
   {
     category: "Prompt Injection",
@@ -572,58 +621,138 @@ function StaticScanSection(props: SecurityAuditPageProps) {
 function AigSection(props: SecurityAuditPageProps) {
   const analysis = props.aigAnalysis;
   if (!analysis) return null;
+  const issueCount = Math.max(analysis.issueCount, analysis.findings.length);
+  const hasFindings = issueCount > 0;
+  const hasHiddenFindings = issueCount > analysis.findings.length;
+  const findingsTitle = hasFindings ? `Findings (${issueCount})` : "Findings";
+  const status = analysis.status.trim().toLowerCase();
+  const showChecks = !["error", "failed", "loading", "not_found", "pending"].includes(status);
   return (
     <div className="security-report-panel-body security-report-panel-body-findings">
-      <div className="security-report-overview-body">
-        <p>
-          {analysis.summary?.trim() ||
-            `A.I.G reported ${analysis.issueCount} ${analysis.issueCount === 1 ? "finding" : "findings"}.`}
-        </p>
-      </div>
-      {analysis.findings.length ? (
-        <div className="static-analysis-findings">
-          {analysis.findings.map((finding, index) => {
-            const location = finding.file
-              ? `${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
-              : null;
-            return (
-              <article
+      {!showChecks ? (
+        <div className="security-report-overview-body">
+          <p>
+            {analysis.error?.trim() ||
+              analysis.summary?.trim() ||
+              "A.I.G findings are pending for this release."}
+          </p>
+        </div>
+      ) : null}
+      {showChecks ? <AigChecks analysis={analysis} hasHiddenFindings={hasHiddenFindings} /> : null}
+      {hasFindings ? (
+        <div className="skillspector-findings-block">
+          <div className="skillspector-subsection-title">{findingsTitle}</div>
+          <div className="static-analysis-findings">
+            {analysis.findings.map((finding, index) => (
+              <AigFindingCard
+                finding={finding}
                 key={`${finding.ruleId}-${finding.file ?? "artifact"}-${finding.startLine ?? 0}-${index}`}
-                className="static-analysis-finding"
-              >
-                <div className="static-analysis-finding-header">
-                  <h3 className="agentic-risk-finding-title">{finding.message}</h3>
-                  <div className="agentic-risk-finding-badges">
-                    <ScanResultBadge
-                      status={finding.level}
-                      label={formatStaticScanSeverity(finding.level)}
-                    />
-                  </div>
-                </div>
-                <dl className="static-analysis-finding-details">
-                  <div>
-                    <dt>Rule</dt>
-                    <dd>{finding.ruleId}</dd>
-                  </div>
-                  {location ? (
-                    <div>
-                      <dt>Location</dt>
-                      <dd>{location}</dd>
-                    </div>
-                  ) : null}
-                  {finding.remediation?.trim() ? (
-                    <div>
-                      <dt>Remediation</dt>
-                      <dd>{finding.remediation}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-              </article>
-            );
-          })}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
     </div>
+  );
+}
+
+function AigChecks({
+  analysis,
+  hasHiddenFindings,
+}: {
+  analysis: AigAnalysis;
+  hasHiddenFindings: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const flaggedRules = new Set(analysis.findings.map((finding) => finding.ruleId.toUpperCase()));
+  const sortedRules = [...AIG_RULES].sort((left, right) => {
+    const leftFlagged = flaggedRules.has(left.id);
+    const rightFlagged = flaggedRules.has(right.id);
+    if (leftFlagged === rightFlagged) return 0;
+    return leftFlagged ? -1 : 1;
+  });
+  const visibleRules = isExpanded ? sortedRules : sortedRules.slice(0, AIG_VISIBLE_RULE_LIMIT);
+  const remainingCount = sortedRules.length - AIG_VISIBLE_RULE_LIMIT;
+
+  return (
+    <div className="skillspector-checks" aria-label="A.I.G checks">
+      <div className="skillspector-subsection-title">Vulnerability Patterns</div>
+      <ul className="skillspector-checks-list">
+        {visibleRules.map((rule) => {
+          const isFlagged = flaggedRules.has(rule.id);
+          const isUnknown = hasHiddenFindings && !isFlagged;
+          const Icon = isFlagged ? TriangleAlert : isUnknown ? Info : Check;
+          return (
+            <li
+              className={`skillspector-check-row${isFlagged ? " skillspector-check-row-flagged" : ""}${isUnknown ? " skillspector-check-row-unknown" : ""}`}
+              key={rule.id}
+            >
+              <Icon
+                className={`skillspector-check-icon${isFlagged ? " skillspector-check-icon-flagged" : ""}${isUnknown ? " skillspector-check-icon-unknown" : ""}`}
+                aria-hidden="true"
+              />
+              <span className="skillspector-check-category">{rule.name}</span>
+              <span className="skillspector-check-patterns">{rule.description}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {remainingCount > 0 ? (
+        <button
+          type="button"
+          className="skillspector-checks-toggle"
+          onClick={() => setIsExpanded((value) => !value)}
+        >
+          {isExpanded ? "Show less" : `Show ${remainingCount} more`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] }) {
+  const rule = AIG_RULE_BY_ID.get(finding.ruleId.toUpperCase() as (typeof AIG_RULES)[number]["id"]);
+  const findingTitle = finding.title?.trim();
+  const description = finding.description?.trim();
+  const fallbackDescription = finding.message.trim();
+  const findingDescription = description || fallbackDescription;
+  const location = finding.file
+    ? `${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
+    : null;
+
+  return (
+    <article className="static-analysis-finding">
+      <div className="static-analysis-finding-header">
+        <h3 className="agentic-risk-finding-title">
+          {finding.ruleId}
+          {rule ? ` · ${rule.name}` : ""}
+        </h3>
+        <div className="agentic-risk-finding-badges">
+          <ScanResultBadge status={finding.level} label={formatStaticScanSeverity(finding.level)} />
+        </div>
+      </div>
+      <dl className="static-analysis-finding-details">
+        {location ? (
+          <div>
+            <dt>Location</dt>
+            <dd>{location}</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Finding</dt>
+          <dd className="aig-finding-copy">
+            {findingTitle ? <strong>{findingTitle}</strong> : null}
+            {findingDescription !== findingTitle ? <span>{findingDescription}</span> : null}
+          </dd>
+        </div>
+        {finding.remediation?.trim() ? (
+          <div>
+            <dt>Remediation</dt>
+            <dd>{finding.remediation}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </article>
   );
 }
 
@@ -777,15 +906,10 @@ function AigAttribution() {
       href="https://github.com/Tencent/AI-Infra-Guard"
       target="_blank"
       rel="noopener noreferrer"
+      aria-label="By Tencent"
+      title="Based on Tencent Zhuque Lab AI-Infra-Guard"
     >
-      <img
-        className="security-scanner-attribution-mark"
-        src="https://static.www.tencent.com/favicon.ico"
-        alt=""
-        aria-hidden="true"
-      />
-      Based on Tencent Zhuque Lab AI-Infra-Guard
-      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+      By Tencent
     </a>
   );
 }

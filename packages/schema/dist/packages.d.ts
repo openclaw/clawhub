@@ -182,6 +182,8 @@ export declare const PackageAigFindingSchema: import("arktype/internal/variants/
     ruleId: string;
     level: string;
     message: string;
+    title?: string | undefined;
+    description?: string | undefined;
     file?: string | undefined;
     startLine?: number | undefined;
     endLine?: number | undefined;
@@ -195,6 +197,8 @@ export declare const PackageAigAnalysisSchema: import("arktype/internal/variants
         ruleId: string;
         level: string;
         message: string;
+        title?: string | undefined;
+        description?: string | undefined;
         file?: string | undefined;
         startLine?: number | undefined;
         endLine?: number | undefined;
@@ -752,6 +756,8 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
                 ruleId: string;
                 level: string;
                 message: string;
+                title?: string | undefined;
+                description?: string | undefined;
                 file?: string | undefined;
                 startLine?: number | undefined;
                 endLine?: number | undefined;

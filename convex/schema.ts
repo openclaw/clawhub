@@ -71,6 +71,8 @@ const aigAnalysisValidator = v.object({
       ruleId: v.string(),
       level: v.string(),
       message: v.string(),
+      title: v.optional(v.string()),
+      description: v.optional(v.string()),
       file: v.optional(v.string()),
       startLine: v.optional(v.number()),
       endLine: v.optional(v.number()),
