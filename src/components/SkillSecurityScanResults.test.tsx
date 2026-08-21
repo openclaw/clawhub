@@ -562,6 +562,11 @@ describe("SecurityScanResults static guidance", () => {
         .getByRole("link", { name: /Based on Tencent Zhuque Lab AI-Infra-Guard/i })
         .getAttribute("href"),
     ).toBe("https://github.com/Tencent/AI-Infra-Guard");
+    expect(
+      container
+        .querySelector('a[href="https://github.com/Tencent/AI-Infra-Guard"] img')
+        ?.getAttribute("src"),
+    ).toBe("https://static.www.tencent.com/favicon.ico");
     expect(screen.getByText("T04")).toBeTruthy();
     expect(screen.getByText("SKILL.md:17")).toBeTruthy();
     expect(screen.getByText("Remove the session-file upload instruction.")).toBeTruthy();

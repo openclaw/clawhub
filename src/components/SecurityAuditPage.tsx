@@ -760,7 +760,7 @@ function SkillSpectorAttribution() {
   return (
     <div className="skillspector-attribution" aria-label="By NVIDIA">
       <img
-        className="skillspector-nvidia-mark"
+        className="security-scanner-attribution-mark"
         src="https://www.nvidia.com/favicon.ico"
         alt=""
         aria-hidden="true"
@@ -778,6 +778,12 @@ function AigAttribution() {
       target="_blank"
       rel="noopener noreferrer"
     >
+      <img
+        className="security-scanner-attribution-mark"
+        src="https://static.www.tencent.com/favicon.ico"
+        alt=""
+        aria-hidden="true"
+      />
       Based on Tencent Zhuque Lab AI-Infra-Guard
       <ExternalLink className="h-3 w-3" aria-hidden="true" />
     </a>
