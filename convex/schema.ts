@@ -3842,10 +3842,15 @@ const publisherAbuseTemporalScanSamples = defineTable({
   runId: v.id("publisherAbuseScoreRuns"),
   recent30Downloads: v.number(),
   spikeMultiplier: v.number(),
+  excess7Downloads: v.optional(v.number()),
   expirationTime: v.number(),
 })
   .index("by_run_id_and_recent30_downloads", ["runId", "recent30Downloads"])
   .index("by_run_id_and_spike_multiplier", ["runId", "spikeMultiplier"])
+  .index("by_run_id_and_excess7_downloads", {
+    fields: ["runId", "excess7Downloads"],
+    staged: true,
+  })
   .index("by_expiration_time", ["expirationTime"]);
 
 const publisherAbuseTemporalScanScoreValidator = v.object({
@@ -4108,6 +4113,10 @@ const publisherAbuseSignals = defineTable({
   .index("by_last_seen_at", ["lastSeenAt"])
   .index("by_signal_type_and_last_seen_at", ["signalType", "lastSeenAt"])
   .index("by_owner_key_and_last_seen_at", ["ownerKey", "lastSeenAt"])
+  .index("by_owner_key_and_signal_type", {
+    fields: ["ownerKey", "signalType"],
+    staged: true,
+  })
   .index("by_skill_and_signal_type", ["skillId", "signalType"])
   .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"])
   .index("by_review_status_and_last_seen_at", ["reviewStatus", "lastSeenAt"])
