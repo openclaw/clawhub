@@ -7,22 +7,24 @@ tooling across a moving default branch.
 The version 1 object contains exactly:
 
 - `version`: `1`
-- `repository`: trusted tooling `owner/repo`
-- `workflow`: trusted tooling workflow path under `.github/workflows/`
-- `runId` and `runAttempt`: positive decimal strings for the trusted tooling
-  workflow execution
-- `ref` and `fullRef`: either `main` / `refs/heads/main` or an exact
-  `release-publish/<sha12>-<decimal>` lightweight tag
-- `sha`: the exact trusted tooling workflow commit
+- `repository`: invoking workflow `owner/repo`
+- `workflow`: invoking workflow path under `.github/workflows/`
+- `runId` and `runAttempt`: positive decimal strings for the invoking workflow
+  execution
+- `ref`, `fullRef`, and `sha`: exact invoking workflow ref and commit
+- `toolingRef`, `toolingFullRef`, and `toolingSha`: either `main` /
+  `refs/heads/main` plus its trusted commit, or an exact
+  `release-publish/<sha12>-<decimal>` lightweight tag and commit
 
 The decimal suffix on a protected tooling tag records tag-creation provenance.
-It is intentionally distinct from the later approving workflow `runId`.
+It is intentionally distinct from the invoking publish workflow `runId`.
 
-When present, the workflow requires the caller repository to match the tuple,
-then verifies the trusted tooling run directly through GitHub. Immediately
-before package publication, it then:
+When present, the workflow binds the tuple to the live invoking GitHub context
+and re-reads that exact workflow run through GitHub. Immediately before package
+publication, it then:
 
-- requires the main-route SHA to remain an ancestor of current `main`; or
+- requires the main-route tooling SHA to remain an ancestor of current `main`;
+  or
 - re-reads the protected tag and requires an exact lightweight
   tag-to-commit match.
 

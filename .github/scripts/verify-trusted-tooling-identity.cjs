@@ -3,8 +3,8 @@ const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const WORKFLOW_PATTERN = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
-const PROTECTED_TAG_PATTERN =
-  /^refs\/tags\/(release-publish\/([a-f0-9]{12})-[1-9][0-9]*)$/;
+const FULL_REF_PATTERN = /^refs\/(?:heads|tags)\/(.+)$/;
+const PROTECTED_TAG_PATTERN = /^refs\/tags\/(release-publish\/([a-f0-9]{12})-[1-9][0-9]*)$/;
 const MAIN_FULL_REF = "refs/heads/main";
 const REQUIRED_KEYS = [
   "fullRef",
@@ -13,6 +13,9 @@ const REQUIRED_KEYS = [
   "runAttempt",
   "runId",
   "sha",
+  "toolingFullRef",
+  "toolingRef",
+  "toolingSha",
   "version",
   "workflow",
 ];
@@ -26,6 +29,13 @@ function requireString(value, name, pattern) {
     fail(`trusted tooling identity ${name} is invalid`);
   }
   return value;
+}
+
+function requireMatchingRef(ref, fullRef, name) {
+  const match = FULL_REF_PATTERN.exec(fullRef);
+  if (!match || match[1] !== ref) {
+    fail(`trusted tooling identity ${name} ref does not match its full ref`);
+  }
 }
 
 function parseTrustedToolingIdentity(raw) {
@@ -66,21 +76,25 @@ function parseTrustedToolingIdentity(raw) {
     ref: requireString(value.ref, "ref"),
     fullRef: requireString(value.fullRef, "fullRef"),
     sha: requireString(value.sha, "sha", SHA_PATTERN),
+    toolingRef: requireString(value.toolingRef, "toolingRef"),
+    toolingFullRef: requireString(value.toolingFullRef, "toolingFullRef"),
+    toolingSha: requireString(value.toolingSha, "toolingSha", SHA_PATTERN),
   };
+  requireMatchingRef(identity.ref, identity.fullRef, "caller");
 
-  if (identity.fullRef === MAIN_FULL_REF) {
-    if (identity.ref !== "main") {
-      fail("trusted main identity ref must be main");
+  if (identity.toolingFullRef === MAIN_FULL_REF) {
+    if (identity.toolingRef !== "main") {
+      fail("trusted main tooling ref must be main");
     }
     return { ...identity, route: "main" };
   }
 
-  const protectedTag = PROTECTED_TAG_PATTERN.exec(identity.fullRef);
-  if (!protectedTag || identity.ref !== protectedTag[1]) {
-    fail("trusted release-publish identity must use an exact protected tag ref");
+  const protectedTag = PROTECTED_TAG_PATTERN.exec(identity.toolingFullRef);
+  if (!protectedTag || identity.toolingRef !== protectedTag[1]) {
+    fail("trusted release-publish tooling must use an exact protected tag ref");
   }
-  if (identity.sha.slice(0, 12) !== protectedTag[2]) {
-    fail("trusted release-publish tag prefix does not match its workflow SHA");
+  if (identity.toolingSha.slice(0, 12) !== protectedTag[2]) {
+    fail("trusted release-publish tag prefix does not match its tooling SHA");
   }
   return { ...identity, route: "protected-tag" };
 }
@@ -90,8 +104,16 @@ function requireContextValue(env, name) {
 }
 
 function validateInvocationContext(identity, env) {
+  const expectedWorkflowRef = `${identity.repository}/${identity.workflow}@${identity.fullRef}`;
   const checks = [
     ["GITHUB_REPOSITORY", identity.repository],
+    ["GITHUB_RUN_ID", identity.runId],
+    ["GITHUB_RUN_ATTEMPT", identity.runAttempt],
+    ["GITHUB_WORKFLOW_REF", expectedWorkflowRef],
+    ["GITHUB_WORKFLOW_SHA", identity.sha],
+    ["GITHUB_REF", identity.fullRef],
+    ["GITHUB_REF_NAME", identity.ref],
+    ["GITHUB_SHA", identity.sha],
     ["GITHUB_EVENT_NAME", "workflow_dispatch"],
   ];
   for (const [name, expected] of checks) {
@@ -101,10 +123,10 @@ function validateInvocationContext(identity, env) {
   }
 }
 
-function normalizeQualifiedWorkflowRef(value, route) {
+function normalizeQualifiedWorkflowRef(value, identity) {
   if (!value) return "";
   if (value.startsWith("refs/")) return value;
-  if (route === "main" && value === "main") return MAIN_FULL_REF;
+  if (value === identity.ref && identity.fullRef === MAIN_FULL_REF) return MAIN_FULL_REF;
   fail("trusted tooling workflow path uses an ambiguous ref qualifier");
 }
 
@@ -129,20 +151,20 @@ function validateWorkflowRun(identity, run) {
     }
   }
 
-  const normalizedQualifiedRef = normalizeQualifiedWorkflowRef(qualifiedRef, identity.route);
+  const normalizedQualifiedRef = normalizeQualifiedWorkflowRef(qualifiedRef, identity);
   if (normalizedQualifiedRef && normalizedQualifiedRef !== identity.fullRef) {
     fail("trusted tooling workflow path ref mismatch");
   }
 }
 
 function validateProtectedTag(identity, tagRef) {
-  if (tagRef?.ref !== identity.fullRef) {
+  if (tagRef?.ref !== identity.toolingFullRef) {
     fail("trusted release-publish tag ref mismatch");
   }
   if (tagRef?.object?.type !== "commit") {
     fail("trusted release-publish ref must be a lightweight tag");
   }
-  if (tagRef.object.sha !== identity.sha) {
+  if (tagRef.object.sha !== identity.toolingSha) {
     fail("trusted release-publish tag moved after approval");
   }
 }
@@ -150,9 +172,9 @@ function validateProtectedTag(identity, tagRef) {
 function validateMainLineage(identity, comparison) {
   if (
     !["ahead", "identical"].includes(String(comparison?.status ?? "")) ||
-    comparison?.merge_base_commit?.sha !== identity.sha
+    comparison?.merge_base_commit?.sha !== identity.toolingSha
   ) {
-    fail("trusted main workflow SHA is no longer reachable from main");
+    fail("trusted main tooling SHA is no longer reachable from main");
   }
 }
 
@@ -167,12 +189,12 @@ async function verifyTrustedToolingIdentity({ rawIdentity, env, getJson }) {
 
   if (identity.route === "main") {
     const comparison = await getJson(
-      `repos/${identity.repository}/compare/${identity.sha}...main`,
+      `repos/${identity.repository}/compare/${identity.toolingSha}...main`,
     );
     validateMainLineage(identity, comparison);
   } else {
     const tagRef = await getJson(
-      `repos/${identity.repository}/git/ref/tags/${encodeURIComponent(identity.ref)}`,
+      `repos/${identity.repository}/git/ref/tags/${encodeURIComponent(identity.toolingRef)}`,
     );
     validateProtectedTag(identity, tagRef);
   }
@@ -204,7 +226,7 @@ async function main() {
     getJson: (path) => githubJson(path, token),
   });
   console.log(
-    `Verified trusted tooling identity v${identity.version} for ${identity.repository} ${identity.fullRef}.`,
+    `Verified trusted tooling identity v${identity.version} for ${identity.repository} ${identity.toolingFullRef}.`,
   );
 }
 

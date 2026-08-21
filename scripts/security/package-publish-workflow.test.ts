@@ -83,6 +83,10 @@ describe("package publish reusable workflow", () => {
       GH_TOKEN: "${{ github.token }}",
       TRUSTED_TOOLING_IDENTITY_JSON: "${{ inputs.trusted_tooling_identity_json }}",
       GITHUB_REPOSITORY: "${{ github.repository }}",
+      GITHUB_RUN_ID: "${{ github.run_id }}",
+      GITHUB_RUN_ATTEMPT: "${{ github.run_attempt }}",
+      GITHUB_WORKFLOW_REF: "${{ github.workflow_ref }}",
+      GITHUB_WORKFLOW_SHA: "${{ github.workflow_sha }}",
       GITHUB_EVENT_NAME: "${{ github.event_name }}",
     });
     expect(verifyStep?.run).toContain("verify-trusted-tooling-identity.cjs");
