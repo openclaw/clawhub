@@ -84,7 +84,7 @@ type SkillsNavigate = (options: {
   replace?: boolean;
 }) => void | Promise<void>;
 
-type ListStatus = "loading" | "idle" | "loadingMore" | "done";
+type ListStatus = "loading" | "idle" | "loadingMore" | "done" | "error";
 
 export function buildSkillsSearchKey({
   categorySlug,
@@ -294,10 +294,14 @@ export function useSkillsBrowseModel({
           setListResults([]);
           setTrendingState("unavailable");
         }
-        // Keep canonical Trending's dedicated unavailable state; other pages remain retryable.
+        // Keep canonical Trending's dedicated unavailable state. Elsewhere a failed first page
+        // gets its own error state, so neither the empty state nor the load-more affordance has
+        // to stand in for "the request failed"; later pages stay retryable through load-more.
         setListCursor(pageCursor);
         setListAutoLoadPaused(Boolean(pageCursor));
-        setListStatus(catalogTab === "trending" && !pageCursor ? "done" : "idle");
+        setListStatus(
+          catalogTab === "trending" && !pageCursor ? "done" : pageCursor ? "idle" : "error",
+        );
       }
     },
     [
@@ -350,6 +354,7 @@ export function useSkillsBrowseModel({
   const isLoadingList = listStatus === "loading";
   const canLoadMoreList = listStatus === "idle";
   const isLoadingMoreList = listStatus === "loadingMore";
+  const listFailedList = listStatus === "error";
 
   useEffect(() => {
     window.clearTimeout(navigateTimer.current);
@@ -511,6 +516,7 @@ export function useSkillsBrowseModel({
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
   const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList;
+  const listFailed = !hasQuery && listFailedList;
   const canAutoLoad = false;
 
   const loadMore = useCallback(() => {
@@ -524,6 +530,13 @@ export function useSkillsBrowseModel({
       void fetchPage(listCursor, fetchGeneration.current);
     }
   }, [canLoadMore, fetchPage, hasQuery, isLoadingMore, listCursor]);
+
+  // The failed first page never advanced a cursor, so a retry just replays it.
+  const retryLoad = useCallback(() => {
+    if (!listFailed) return;
+    setListStatus("loading");
+    void fetchPage(null, fetchGeneration.current);
+  }, [fetchPage, listFailed]);
 
   useEffect(() => {
     if (!isLoadingMore) {
@@ -668,6 +681,7 @@ export function useSkillsBrowseModel({
     featuredOnly,
     isLoadingMore,
     isLoadingSkills,
+    listFailed,
     loadMore,
     loadMoreRef,
     onClearFilters,
@@ -678,6 +692,7 @@ export function useSkillsBrowseModel({
     onToggleFeatured,
     onToggleView,
     query,
+    retryLoad,
     sort,
     sorted,
     trendingState,
