@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- API: record skipped and failed skill evaluation outcomes without passing worker tokens to internal mutations.
 - GitHub Actions/CLI/API: require v2 authorization for every OpenClaw OIDC publish, bind large-artifact upload tickets and package mutations to the exact authorization transaction, consume scoped capabilities with non-public staging, then require an immutable successful parent attempt and atomic durable authorization revalidation before final publication.
 - GitHub Actions: revalidate versioned trusted tooling workflow identity immediately before package publication, including exact protected lightweight tags, so approval waits cannot authorize moved tooling.
 - CI: authenticate the scheduled project-skill updater's pull request mutations with the Barnacle GitHub App while retaining the workflow token for provenance lookup and branch publication.

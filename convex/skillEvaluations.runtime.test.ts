@@ -378,4 +378,82 @@ describe("skill evaluation runtime queue", () => {
       skipReason: "stale-version",
     });
   });
+
+  it("terminalizes a claimed unsupported configuration through the worker action", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
+    const t = convexTest(schema, modules);
+    const skillId = await insertNvidiaSkill(t, { hash: "current", slug: "unsupported" });
+    const runId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("skillEvaluationRuns", {
+          ...evaluationRow({
+            skillId,
+            contentHash: "current",
+            scanStatus: "clean",
+            source: "sync",
+          }),
+          evaluatorCommit: "unsupported",
+        }),
+    );
+    const [claimed] = await t.mutation(
+      internal.skillEvaluations.claimQueuedSkillEvaluationsInternal,
+      { workerId: "worker", limit: 1 },
+    );
+
+    await expect(
+      t.action(api.skillEvaluations.skipSkillEvaluation, {
+        token: "worker-token",
+        runId,
+        leaseToken: claimed.leaseToken,
+        reason: "unsupported-config: worker configuration changed",
+      }),
+    ).resolves.toEqual({ ok: true });
+    const run = await t.run(async (ctx) => await ctx.db.get(runId));
+    expect(run).toMatchObject({
+      status: "skipped",
+      skipReason: "unsupported-config: worker configuration changed",
+    });
+    expect(run).not.toHaveProperty("leaseToken");
+    expect(run).not.toHaveProperty("leaseExpiresAt");
+  });
+
+  it("applies the existing retry policy through the worker failure action", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-token");
+    const t = convexTest(schema, modules);
+    const skillId = await insertNvidiaSkill(t, { hash: "current", slug: "failed" });
+    const runId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert(
+          "skillEvaluationRuns",
+          evaluationRow({
+            skillId,
+            contentHash: "current",
+            scanStatus: "clean",
+            source: "sync",
+          }),
+        ),
+    );
+    const [claimed] = await t.mutation(
+      internal.skillEvaluations.claimQueuedSkillEvaluationsInternal,
+      { workerId: "worker", limit: 1 },
+    );
+
+    await expect(
+      t.action(api.skillEvaluations.failSkillEvaluation, {
+        token: "worker-token",
+        runId,
+        leaseToken: claimed.leaseToken,
+        error: "evaluator failed",
+      }),
+    ).resolves.toEqual({ ok: true, retry: true });
+    const run = await t.run(async (ctx) => await ctx.db.get(runId));
+    expect(run).toMatchObject({
+      status: "queued",
+      attempts: 1,
+      lastError: "evaluator failed",
+    });
+    expect(run).not.toHaveProperty("leaseToken");
+    expect(run).not.toHaveProperty("leaseExpiresAt");
+    expect(run).not.toHaveProperty("completedAt");
+  });
 });

@@ -471,7 +471,11 @@ export const skipSkillEvaluation = action({
     const result = await runMutationRef<{ ok: true }>(
       ctx,
       internalRefs.skillEvaluations.skipSkillEvaluationInternal,
-      args,
+      {
+        runId: args.runId,
+        leaseToken: args.leaseToken,
+        reason: args.reason,
+      },
     );
     await requestNextSkillEvaluationDispatch(ctx);
     return result;
@@ -490,7 +494,11 @@ export const failSkillEvaluation = action({
     const result = await runMutationRef<{ ok: true; retry: boolean }>(
       ctx,
       internalRefs.skillEvaluations.failSkillEvaluationInternal,
-      args,
+      {
+        runId: args.runId,
+        leaseToken: args.leaseToken,
+        error: args.error,
+      },
     );
     await requestNextSkillEvaluationDispatch(ctx);
     return result;
