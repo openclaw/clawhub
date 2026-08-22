@@ -1,13 +1,69 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
-import { internal } from "./_generated/api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("publish attempt runtime recovery", () => {
+  it.each([
+    { checkStatus: "pending", status: "pending_checks" },
+    { checkStatus: "clean", status: "ready_to_finalize" },
+  ] as const)(
+    "returns null without mutating a targeted $status foreign lease",
+    async ({ checkStatus, status }) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "runtime-worker-token");
+      const t = convexTest(schema, modules);
+      const checkClaimExpiresAt = Date.now() + 60_000;
+      const attemptId = await t.run(async (ctx) => {
+        const userId = await ctx.db.insert("users", {});
+        return await ctx.db.insert("publishAttempts", {
+          kind: "skill",
+          status,
+          userId,
+          slug: "active-foreign-lease",
+          displayName: "Active Foreign Lease",
+          version: "1.0.0",
+          idempotencyKey: `runtime-${status}`,
+          artifactFingerprint: "fingerprint",
+          files: [],
+          checks: {
+            trufflehog: { status: checkStatus },
+            clawscan: { status: checkStatus },
+          },
+          checkClaimId: "foreign-claim",
+          checkClaimedAt: 1,
+          checkClaimExpiresAt,
+          createdAt: 1,
+          updatedAt: 1,
+          expiresAt: checkClaimExpiresAt + 60_000,
+        });
+      });
+      const before = await t.run(async (ctx) => await ctx.db.get(attemptId));
+
+      await expect(
+        t.action(api.publishAttempts.claimPrePublicationChecks, {
+          token: "runtime-worker-token",
+          attemptId,
+          preferRetry: true,
+        }),
+      ).resolves.toBeNull();
+
+      const after = await t.run(async (ctx) => await ctx.db.get(attemptId));
+      expect(after).toEqual(before);
+      expect(after).toMatchObject({
+        checkClaimId: "foreign-claim",
+        checkClaimExpiresAt,
+      });
+    },
+  );
+
   it("reserves retry-first claims for expired attempts under sustained fresh traffic", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();
