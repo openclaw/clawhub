@@ -888,12 +888,16 @@ export async function scheduleSkillPublishFollowups(
   await scheduleSkillPublishSecurityFollowups(ctx, publishResult);
 
   if (!followup.skipWebhook && getWebhookConfig().url) {
-    void schedulePublishWebhook(ctx, {
-      slug: followup.slug,
-      version: followup.version,
-      displayName: followup.displayName,
-      ownerHandle: followup.ownerHandle,
-    });
+    try {
+      await schedulePublishWebhook(ctx, {
+        slug: followup.slug,
+        version: followup.version,
+        displayName: followup.displayName,
+        ownerHandle: followup.ownerHandle,
+      });
+    } catch {
+      // Publication has committed; the Discord notification is best-effort.
+    }
   }
 }
 
