@@ -327,6 +327,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   exact pre-publication worker through the production GitHub App as soon as the
   attempt becomes pending; the scheduled worker remains recovery for missed
   dispatches.
+- For pending-check and ready-finalization attempts, duplicate targeted recovery
+  against a live foreign lease returns no work. It preserves the existing claim
+  ID and expiry without falling through to another claim path; the same claim
+  may resume its own lease.
 - Authenticated package publishers can read only their own exact publish
   attempt, or the exact package and version authorized by a GitHub Actions
   publish token. The response exposes one normalized pending, published,
