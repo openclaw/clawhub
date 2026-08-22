@@ -104,6 +104,54 @@ function makeAttemptLookupCtx(
   };
 }
 
+function makeClaimCtx(attempt: Record<string, unknown>) {
+  return {
+    db: {
+      delete: vi.fn(),
+      get: vi.fn(async () => attempt),
+      insert: vi.fn(),
+      normalizeId: vi.fn(),
+      patch: vi.fn(),
+      query: vi.fn(),
+      replace: vi.fn(),
+      system: {},
+    },
+  };
+}
+
+const TARGETED_CLAIM_CASES = [
+  {
+    name: "pending-check",
+    handler: claimPendingChecksHandler,
+    status: "pending_checks",
+  },
+  {
+    name: "ready-finalization",
+    handler: claimReadyFinalizationHandler,
+    status: "ready_to_finalize",
+  },
+] as const;
+
+function makeTargetedClaimAttempt(
+  status: (typeof TARGETED_CLAIM_CASES)[number]["status"],
+  claimId: string,
+) {
+  return {
+    _id: "publishAttempts:targeted",
+    kind: "skill",
+    status,
+    userId: "users:publisher",
+    slug: "demo-skill",
+    displayName: "Demo Skill",
+    version: "1.0.0",
+    artifactFingerprint: "fingerprint",
+    files: [],
+    checkClaimId: claimId,
+    checkClaimExpiresAt: Date.now() + 60_000,
+    createdAt: Date.now(),
+  };
+}
+
 describe("publishAttempts", () => {
   it("returns a finalized package attempt only for the exact actor, owner, and artifact", async () => {
     const result = {
@@ -795,6 +843,71 @@ describe("publishAttempts", () => {
     ).resolves.toBeNull();
   });
 
+  it.each(TARGETED_CLAIM_CASES)(
+    "handles targeted $name lease contention and recovery",
+    async ({ handler, status }) => {
+      const foreignCtx = makeClaimCtx(makeTargetedClaimAttempt(status, "existing-claim"));
+      await expect(
+        handler(foreignCtx, {
+          attemptId: "publishAttempts:targeted",
+          claimId: "new-claim",
+        }),
+      ).resolves.toEqual({ outcome: "active_claim" });
+      expect(foreignCtx.db.patch).not.toHaveBeenCalled();
+
+      const sameClaimCtx = makeClaimCtx(makeTargetedClaimAttempt(status, "same-claim"));
+      await expect(
+        handler(sameClaimCtx, {
+          attemptId: "publishAttempts:targeted",
+          claimId: "same-claim",
+        }),
+      ).resolves.toMatchObject({
+        attemptId: "publishAttempts:targeted",
+        claimId: "same-claim",
+      });
+      expect(sameClaimCtx.db.patch).toHaveBeenCalledWith(
+        "publishAttempts:targeted",
+        expect.objectContaining({ checkClaimId: "same-claim" }),
+      );
+
+      const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+      process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";
+      const readyClaim = "publishAttempts:claimReadyPublishAttemptFinalizationRetryInternal";
+      const pendingClaim = "publishAttempts:claimPendingPublishAttemptChecksInternal";
+      const results =
+        status === "ready_to_finalize"
+          ? [{ outcome: "active_claim" }]
+          : [null, { outcome: "active_claim" }];
+      const ctx = {
+        runMutation: vi.fn(),
+        storage: {
+          getUrl: vi.fn(),
+        },
+      };
+      for (const result of results) ctx.runMutation.mockResolvedValueOnce(result);
+
+      try {
+        await expect(
+          claimPrePublicationChecksHandler(ctx, {
+            token: "worker-token",
+            attemptId: "publishAttempts:targeted",
+            preferRetry: true,
+          }),
+        ).resolves.toBeNull();
+      } finally {
+        if (previousToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+        else process.env.SECURITY_SCAN_WORKER_TOKEN = previousToken;
+      }
+
+      expect(
+        ctx.runMutation.mock.calls.map(([ref]) =>
+          getFunctionName(ref as Parameters<typeof getFunctionName>[0]),
+        ),
+      ).toEqual(status === "ready_to_finalize" ? [readyClaim] : [readyClaim, pendingClaim]);
+      expect(ctx.storage.getUrl).not.toHaveBeenCalled();
+    },
+  );
+
   it("skips ready-to-finalize attempts with an active retry lease", async () => {
     const ctx = {
       db: {
@@ -916,35 +1029,37 @@ describe("publishAttempts", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
-  it("rejects targeted ready-finalization claims with mismatched filters", async () => {
-    const ctx = {
-      db: {
-        delete: vi.fn(),
-        get: vi.fn(async () => ({
-          _id: "publishAttempts:ready",
-          status: "ready_to_finalize",
+  it.each(TARGETED_CLAIM_CASES)(
+    "rejects targeted $name claims with mismatched filters before active leases",
+    async ({ handler, status }) => {
+      const mismatches = [
+        [{ kind: "package" }, "Publish attempt kind does not match worker claim."],
+        [{ slug: "different-skill" }, "Publish attempt slug does not match worker claim."],
+        [{ version: "2.0.0" }, "Publish attempt version does not match worker claim."],
+      ] as const;
+
+      for (const [mismatch, message] of mismatches) {
+        const ctx = makeClaimCtx({
+          _id: "publishAttempts:targeted",
+          status,
           kind: "skill",
           slug: "expected-skill",
           version: "1.0.0",
-        })),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
-      },
-    };
+          checkClaimId: "existing-claim",
+          checkClaimExpiresAt: Date.now() + 60_000,
+        });
 
-    await expect(
-      claimReadyFinalizationHandler(ctx, {
-        attemptId: "publishAttempts:ready",
-        claimId: "claim-1",
-        slug: "different-skill",
-      }),
-    ).rejects.toThrow("Publish attempt slug does not match worker claim.");
-    expect(ctx.db.patch).not.toHaveBeenCalled();
-  });
+        await expect(
+          handler(ctx, {
+            attemptId: "publishAttempts:targeted",
+            claimId: "new-claim",
+            ...mismatch,
+          }),
+        ).rejects.toThrow(message);
+        expect(ctx.db.patch).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("lets worker completion retries reclaim expired finalization leases", async () => {
     const now = Date.now();

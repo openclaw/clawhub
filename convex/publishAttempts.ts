@@ -11,6 +11,7 @@ const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
+const ACTIVE_CLAIM_OUTCOME = { outcome: "active_claim" as const };
 const PUBLISH_ATTEMPT_STATUSES = [
   "pending_checks",
   "ready_to_finalize",
@@ -915,9 +916,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         continue;
       }
       if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
-        if (args.attemptId) {
-          throw new ConvexError("Publish attempt checks are already claimed.");
-        }
+        if (args.attemptId) return ACTIVE_CLAIM_OUTCOME;
         continue;
       }
       if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
@@ -1027,9 +1026,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
         continue;
       }
       if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
-        if (args.attemptId) {
-          throw new ConvexError("Publish attempt finalization retry is already claimed.");
-        }
+        if (args.attemptId) return ACTIVE_CLAIM_OUTCOME;
         continue;
       }
       if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
@@ -1352,12 +1349,13 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
       slug: args.slug,
       version: args.version,
     };
-    const reservedRetry = args.preferRetry
-      ? await ctx.runMutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
-          ...claimArgs,
-          retryOnly: true,
-        })
-      : null;
+    const reservedRetry =
+      args.preferRetry && !args.attemptId
+        ? await ctx.runMutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+            ...claimArgs,
+            retryOnly: true,
+          })
+        : null;
     const claimed = (reservedRetry ??
       (await ctx.runMutation(
         internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
@@ -1366,36 +1364,39 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
       (await ctx.runMutation(
         internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
         claimArgs,
-      ))) as null | {
-      attemptId: Id<"publishAttempts">;
-      status: "pending_checks" | "ready_to_finalize";
-      claimId: string;
-      kind: "skill" | "package";
-      userId: Id<"users">;
-      ownerUserId?: Id<"users">;
-      ownerPublisherId?: Id<"publishers">;
-      sourceOwnerPublisherId?: Id<"publishers">;
-      skillId?: Id<"skills">;
-      versionId?: Id<"skillVersions">;
-      packageId?: Id<"packages">;
-      releaseId?: Id<"packageReleases">;
-      slug: string;
-      displayName: string;
-      version: string;
-      artifactFingerprint: string;
-      files: Array<{
-        path: string;
-        size: number;
-        storageId: Id<"_storage">;
-        sha256: string;
-        contentType?: string;
-      }>;
-      clawpackStorageId?: Id<"_storage">;
-      scanContext?: Record<string, unknown>;
-      checkClaimExpiresAt: number;
-      createdAt: number;
-    };
-    if (!claimed) return null;
+      ))) as
+      | null
+      | typeof ACTIVE_CLAIM_OUTCOME
+      | {
+          attemptId: Id<"publishAttempts">;
+          status: "pending_checks" | "ready_to_finalize";
+          claimId: string;
+          kind: "skill" | "package";
+          userId: Id<"users">;
+          ownerUserId?: Id<"users">;
+          ownerPublisherId?: Id<"publishers">;
+          sourceOwnerPublisherId?: Id<"publishers">;
+          skillId?: Id<"skills">;
+          versionId?: Id<"skillVersions">;
+          packageId?: Id<"packages">;
+          releaseId?: Id<"packageReleases">;
+          slug: string;
+          displayName: string;
+          version: string;
+          artifactFingerprint: string;
+          files: Array<{
+            path: string;
+            size: number;
+            storageId: Id<"_storage">;
+            sha256: string;
+            contentType?: string;
+          }>;
+          clawpackStorageId?: Id<"_storage">;
+          scanContext?: Record<string, unknown>;
+          checkClaimExpiresAt: number;
+          createdAt: number;
+        };
+    if (!claimed || "outcome" in claimed) return null;
 
     const files = await Promise.all(
       claimed.files.map(async (file) => ({
