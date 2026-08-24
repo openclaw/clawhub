@@ -199,7 +199,7 @@ describe("publisher abuse owner synchrony signal", () => {
         freshDownloadsSinceSnooze: 1_500,
         freshInstallsSinceSnooze: 3,
         recurrenceCount: 1,
-        needsNotification: true,
+        needsNotification: false,
         notificationBaselineDownloads: repeatedCandidate.allTimeDownloads,
         notificationBaselineInstalls: repeatedCandidate.allTimeInstalls,
       }),

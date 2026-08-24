@@ -488,17 +488,15 @@ export const listSignalsPage = query({
       ? workflowFilter === "needs_attention"
         ? await ctx.db
             .query("publisherAbuseSignals")
-            .withIndex("by_review_status_and_needs_attention_and_last_seen_at", (q) =>
-              q.eq("reviewStatus", "open").eq("needsAttention", true),
-            )
+            .withIndex("by_review_status_and_last_seen_at", (q) => q.eq("reviewStatus", "open"))
+            .filter((q) => q.eq(q.field("needsAttention"), true))
             .order("desc")
             .paginate(paginationOpts)
         : workflowFilter === "contact_failed"
           ? await ctx.db
               .query("publisherAbuseSignals")
-              .withIndex("by_review_status_and_attention_state_and_last_seen_at", (q) =>
-                q.eq("reviewStatus", "open").eq("attentionState", "contact_failed"),
-              )
+              .withIndex("by_review_status_and_last_seen_at", (q) => q.eq("reviewStatus", "open"))
+              .filter((q) => q.eq(q.field("attentionState"), "contact_failed"))
               .order("desc")
               .paginate(paginationOpts)
           : workflowFilter === "all_open"
@@ -509,13 +507,12 @@ export const listSignalsPage = query({
                 .paginate(paginationOpts)
             : await ctx.db
                 .query("publisherAbuseSignals")
-                .withIndex("by_review_status_and_attention_state_and_last_seen_at", (q) =>
-                  q
-                    .eq("reviewStatus", "open")
-                    .eq(
-                      "attentionState",
-                      workflowFilter === "awaiting_owner" ? "awaiting_owner" : "not_contacted",
-                    ),
+                .withIndex("by_review_status_and_last_seen_at", (q) => q.eq("reviewStatus", "open"))
+                .filter((q) =>
+                  q.eq(
+                    q.field("attentionState"),
+                    workflowFilter === "awaiting_owner" ? "awaiting_owner" : "not_contacted",
+                  ),
                 )
                 .order("desc")
                 .paginate(paginationOpts)
