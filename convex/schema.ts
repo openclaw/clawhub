@@ -4109,16 +4109,6 @@ const publisherAbuseSignals = defineTable({
   notificationClaimedAt: v.optional(v.number()),
   lastNotifiedAt: v.optional(v.number()),
   lastNotificationError: v.optional(v.string()),
-  attentionState: v.optional(
-    v.union(
-      v.literal("needs_attention"),
-      v.literal("awaiting_owner"),
-      v.literal("contact_failed"),
-      v.literal("not_contacted"),
-      v.literal("none"),
-    ),
-  ),
-  needsAttention: v.optional(v.boolean()),
 })
   .index("by_last_seen_at", ["lastSeenAt"])
   .index("by_signal_type_and_last_seen_at", ["signalType", "lastSeenAt"])
@@ -4130,14 +4120,6 @@ const publisherAbuseSignals = defineTable({
   .index("by_skill_and_signal_type", ["skillId", "signalType"])
   .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"])
   .index("by_review_status_and_last_seen_at", ["reviewStatus", "lastSeenAt"])
-  .index("by_review_status_and_attention_state_and_last_seen_at", {
-    fields: ["reviewStatus", "attentionState", "lastSeenAt"],
-    staged: true,
-  })
-  .index("by_review_status_and_needs_attention_and_last_seen_at", {
-    fields: ["reviewStatus", "needsAttention", "lastSeenAt"],
-    staged: true,
-  })
   .index("by_needs_notification_and_last_changed_at", ["needsNotification", "lastChangedAt"])
   .index("by_needs_notification_and_notification_claimed_at", [
     "needsNotification",
