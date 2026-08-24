@@ -17915,6 +17915,31 @@ describe("package scan backfill", () => {
     expect(result).toEqual({ releases: [], nextCursor: 0, done: false });
   });
 
+  it("bounds the historical candidate page independently of the scan batch size", async () => {
+    const backlogTake = vi.fn().mockResolvedValue([]);
+
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({ take: backlogTake })),
+              })),
+            };
+          }),
+          get: vi.fn(),
+        },
+      } as never,
+      { batchSize: 100, prioritizeRecent: false },
+    );
+
+    expect(backlogTake).toHaveBeenCalledWith(8);
+    expect(result).toEqual({ releases: [], nextCursor: 0, done: true });
+  });
+
   it("runs the recent-release probe before draining older backlog", async () => {
     const result = await getPackageReleaseScanBackfillBatchInternalHandler(
       {

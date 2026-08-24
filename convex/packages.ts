@@ -150,6 +150,7 @@ const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
 const PACKAGE_RELEASE_TAG_CLEANUP_BATCH_SIZE = 4;
 // The recent scan probe reads full release rows plus each parent package in one transaction.
 const MAX_PACKAGE_RELEASE_SCAN_RECENT_CANDIDATES = 4;
+const MAX_PACKAGE_RELEASE_SCAN_BACKLOG_CANDIDATES = 8;
 const packageListScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -8037,7 +8038,11 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     const cursor = args.cursor ?? 0;
     const prioritizeRecent = args.prioritizeRecent ?? true;
 
-    const backlogCandidateLimit = batchSize * 3;
+    // Each candidate can read a near-1 MiB release and parent package.
+    const backlogCandidateLimit = Math.min(
+      batchSize * 3,
+      MAX_PACKAGE_RELEASE_SCAN_BACKLOG_CANDIDATES,
+    );
     const releases = prioritizeRecent
       ? await ctx.db
           .query("packageReleases")
