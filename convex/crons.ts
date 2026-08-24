@@ -253,6 +253,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "publisher-abuse-signal-communications-retention-prune",
+    { hours: 24 },
+    internal.retention.pruneExpiredPublisherAbuseSignalCommunicationsInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
     "publisher-invite-retention-prune",
     { hours: 6 },
     internal.retention.pruneExpiredPublisherInvitesInternal,

@@ -84,6 +84,34 @@ export const pruneExpiredAuthRefreshTokensInternal = internalMutation({
   },
 });
 
+export const pruneExpiredPublisherAbuseSignalCommunicationsInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = normalizeRetentionBatchSize(args.batchSize);
+    const stale = await ctx.db
+      .query("publisherAbuseSignalCommunications")
+      .withIndex("by_expiration_time", (q) => q.lt("expirationTime", Date.now()))
+      .take(batchSize);
+
+    for (const communication of stale) {
+      await ctx.db.delete(communication._id);
+    }
+
+    const hasMore = stale.length === batchSize;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.retention.pruneExpiredPublisherAbuseSignalCommunicationsInternal,
+        { batchSize },
+      );
+    }
+
+    return { deleted: stale.length, hasMore };
+  },
+});
+
 export const pruneExpiredPublisherInvitesInternal = internalMutation({
   args: {
     batchSize: v.optional(v.number()),

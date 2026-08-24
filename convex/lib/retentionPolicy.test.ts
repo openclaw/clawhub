@@ -84,6 +84,13 @@ describe("retention policies", () => {
     expect(getRetentionPolicy("publisherAbuseSignals")).toMatchObject({
       classification: "permanent",
     });
+    expect(getRetentionPolicy("publisherAbuseSignalCommunications")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "retention.pruneExpiredPublisherAbuseSignalCommunicationsInternal",
+      retention: "180 days after the latest owner-contact activity.",
+    });
   });
 
   it("documents package stat events as processed-event retention", () => {

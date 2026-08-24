@@ -4,6 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 const retentionRefs = vi.hoisted(() => ({
   pruneExpiredAuthSessionsInternal: Symbol("pruneExpiredAuthSessionsInternal"),
   pruneExpiredAuthRefreshTokensInternal: Symbol("pruneExpiredAuthRefreshTokensInternal"),
+  pruneExpiredPublisherAbuseSignalCommunicationsInternal: Symbol(
+    "pruneExpiredPublisherAbuseSignalCommunicationsInternal",
+  ),
   pruneExpiredPublisherInvitesInternal: Symbol("pruneExpiredPublisherInvitesInternal"),
   pruneExpiredSkillPublishUploadsInternal: Symbol("pruneExpiredSkillPublishUploadsInternal"),
 }));
@@ -17,6 +20,7 @@ vi.mock("./_generated/api", () => ({
 const {
   pruneExpiredAuthRefreshTokensInternal,
   pruneExpiredAuthSessionsInternal,
+  pruneExpiredPublisherAbuseSignalCommunicationsInternal,
   pruneExpiredPublisherInvitesInternal,
   pruneExpiredSkillPublishUploadsInternal,
 } = await import("./retention");
@@ -33,6 +37,12 @@ const pruneSessionsHandler = (
 )._handler;
 const pruneTokensHandler = (
   pruneExpiredAuthRefreshTokensInternal as unknown as WrappedHandler<
+    { batchSize?: number },
+    { deleted: number; hasMore: boolean }
+  >
+)._handler;
+const pruneSignalCommunicationsHandler = (
+  pruneExpiredPublisherAbuseSignalCommunicationsInternal as unknown as WrappedHandler<
     { batchSize?: number },
     { deleted: number; hasMore: boolean }
   >
@@ -187,6 +197,42 @@ describe("auth retention", () => {
     expect(result).toEqual({ deleted: 1, hasMore: false });
     expect(lt).toHaveBeenCalledWith("expirationTime", now);
     expect(deleteDoc).toHaveBeenCalledWith("authRefreshTokens:expired");
+  });
+
+  it("deletes expired publisher abuse communication payloads in bounded batches", async () => {
+    const now = 2_500_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const rows = [{ _id: "publisherAbuseSignalCommunications:expired" }];
+    const deleteDoc = vi.fn();
+    const runAfter = vi.fn();
+    const lt = vi.fn(() => ({}));
+    const ctx = {
+      db: makeDb({
+        query: vi.fn((table: string) => {
+          expect(table).toBe("publisherAbuseSignalCommunications");
+          return {
+            withIndex: vi.fn((indexName: string, build: (q: unknown) => unknown) => {
+              expect(indexName).toBe("by_expiration_time");
+              build({ lt });
+              return { take: vi.fn(async () => rows) };
+            }),
+          };
+        }),
+        delete: deleteDoc,
+      }),
+      scheduler: { runAfter },
+    };
+
+    const result = await pruneSignalCommunicationsHandler(ctx as never, { batchSize: 1 });
+
+    expect(result).toEqual({ deleted: 1, hasMore: true });
+    expect(lt).toHaveBeenCalledWith("expirationTime", now);
+    expect(deleteDoc).toHaveBeenCalledWith("publisherAbuseSignalCommunications:expired");
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      retentionRefs.pruneExpiredPublisherAbuseSignalCommunicationsInternal,
+      { batchSize: 1 },
+    );
   });
 
   it("deletes expired publisher invites by expiry time", async () => {

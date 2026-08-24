@@ -150,6 +150,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   When a model version renames an equivalent signal type, it must reuse the
   existing signal row and preserve its snoozed/dismissed state; a type rename
   must never bypass an operator decision or create a fresh owner email.
+- Publisher abuse owner-contact payloads are not permanent signal evidence.
+  The permanent signal stores only workflow state. A one-to-one communication
+  record stores the recipient, token hash, email content and snapshot, provider
+  metadata, delivery errors, and owner response for 180 days after the latest
+  contact activity, then an indexed bounded cleanup deletes it. Audit events may
+  retain lifecycle facts and stable reason codes, but must never copy recipient
+  email, message text, raw provider errors, the token, or the live link.
 - Every `publisher-abuse-temporal.*` model version, including legacy rows,
   remains ineligible for warning-first automatic enforcement. A future decision
   to enforce temporal traffic signals requires an explicit policy and code

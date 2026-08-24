@@ -326,6 +326,15 @@ export const RETENTION_POLICIES = {
   publisherAbuseReviewNominations: permanent("Abuse review workflow state."),
   publisherAbuseReviewEvents: permanent("Abuse review event history."),
   publisherAbuseSignals: permanent("Durable publisher abuse signal archive for staff review."),
+  publisherAbuseSignalCommunications: ephemeral(
+    "Owner-contact recipient data, message content, secure-link state, and delivery details are sensitive case data.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "retention.pruneExpiredPublisherAbuseSignalCommunicationsInternal",
+      retention: "180 days after the latest owner-contact activity.",
+    },
+  ),
   publisherAbuseSignalReviewEvents: permanent("Abuse signal review event history."),
   vtScanLogs: permanent("VirusTotal scan log history."),
   apiTokens: permanent("User API tokens until revoked."),
