@@ -5295,14 +5295,36 @@ describe("publisher abuse dry-run persistence", () => {
   });
 
   it.each([
-    ["needs_attention", { field: "needsAttention", value: true }],
-    ["contact_failed", { field: "attentionState", value: "contact_failed" }],
-    ["awaiting_owner", { field: "attentionState", value: "awaiting_owner" }],
-    ["not_contacted", { field: "attentionState", value: "not_contacted" }],
-    ["all_open", null],
+    [
+      "needs_attention",
+      "by_review_status_and_needs_attention_and_last_seen_at",
+      { reviewStatus: "open", needsAttention: true },
+    ],
+    [
+      "contact_failed",
+      "by_review_status_and_attention_state_and_last_seen_at",
+      { reviewStatus: "open", attentionState: "contact_failed" },
+    ],
+    [
+      "awaiting_owner",
+      "by_review_status_and_attention_state_and_last_seen_at",
+      {
+        reviewStatus: "open",
+        attentionState: "awaiting_owner",
+      },
+    ],
+    [
+      "not_contacted",
+      "by_review_status_and_attention_state_and_last_seen_at",
+      {
+        reviewStatus: "open",
+        attentionState: "not_contacted",
+      },
+    ],
+    ["all_open", "by_review_status_and_last_seen_at", { reviewStatus: "open" }],
   ] as const)(
-    "uses the existing review-status index for the %s signal workflow filter",
-    async (workflowFilter, expectedFilter) => {
+    "uses the indexed %s signal workflow filter",
+    async (workflowFilter, index, expected) => {
       vi.mocked(requireUser).mockResolvedValue({
         userId: "users:moderator",
         user: { _id: "users:moderator", role: "moderator" },
@@ -5327,30 +5349,9 @@ describe("publisher abuse dry-run persistence", () => {
                   },
                 };
                 build(q);
-                expect(indexName).toBe("by_review_status_and_last_seen_at");
-                expect(constraints).toEqual({ reviewStatus: "open" });
-                const ordered = { order: () => ({ paginate }) };
-                return {
-                  ...ordered,
-                  filter: (
-                    filter: (q: {
-                      field: (field: string) => string;
-                      eq: (field: string, value: unknown) => boolean;
-                    }) => unknown,
-                  ) => {
-                    const filterConstraint: { field?: string; value?: unknown } = {};
-                    filter({
-                      field: (field) => field,
-                      eq: (field, value) => {
-                        filterConstraint.field = field;
-                        filterConstraint.value = value;
-                        return true;
-                      },
-                    });
-                    expect(filterConstraint).toEqual(expectedFilter);
-                    return ordered;
-                  },
-                };
+                expect(indexName).toBe(index);
+                expect(constraints).toEqual(expected);
+                return { order: () => ({ paginate }) };
               },
             };
           }),
