@@ -107,6 +107,7 @@ function publisherAbuseWarningArgs() {
 describe("transactional account emails", () => {
   beforeEach(() => {
     vi.stubEnv("RESEND_API_KEY", "resend_test");
+    vi.stubEnv("CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET", "ab".repeat(32));
     resendConstructorMock.mockClear();
     resendSendMock.mockReset();
     resendSendMock.mockResolvedValue({ data: { id: "email_123" }, error: null });
@@ -439,6 +440,51 @@ describe("transactional account emails", () => {
     );
   });
 
+  it.each([
+    [undefined, "missing_token_secret"],
+    ["not-a-256-bit-secret", "invalid_token_secret"],
+  ] as const)("fails owner contact closed for token configuration %s", async (secret, reason) => {
+    vi.stubEnv("CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET", secret);
+    const context = {
+      kind: "send" as const,
+      requestedAt: 1_700_000_000_000,
+      recipientUserId: "users:owner",
+      to: "owner@example.com",
+      handle: "owner",
+      publisherHandle: "owner",
+      skillDisplayName: "Popular Skill",
+      skillSlug: "popular-skill",
+      scope: "skill" as const,
+      allPublisherSkills: false,
+      attemptCount: 0,
+    };
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue(context),
+      runMutation: vi.fn().mockResolvedValue({ ok: true }),
+      scheduler: { runAfter: vi.fn(async () => null) },
+    };
+
+    await expect(
+      (
+        sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+      )._handler(ctx, { signalId: "publisherAbuseSignals:traffic" }),
+    ).resolves.toEqual({ ok: false, reason });
+
+    expect(resendSendMock).not.toHaveBeenCalled();
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      internal.publisherAbuseTrafficExplanation.recordDeliveryInternal,
+      {
+        signalId: "publisherAbuseSignals:traffic",
+        requestedAt: context.requestedAt,
+        delivery: {
+          status: "not_deliverable",
+          recordedAt: expect.any(Number),
+          reason,
+        },
+      },
+    );
+  });
+
   it("records a bounded retry when owner contact delivery fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     resendSendMock.mockResolvedValueOnce({ data: null, error: { message: "rejected" } });
@@ -489,6 +535,54 @@ describe("transactional account emails", () => {
       internal.emailsNode.sendPublisherAbuseTrafficExplanationInternal,
       { signalId: "publisherAbuseSignals:traffic" },
     );
+  });
+
+  it("keeps the same owner response link and provider idempotency key across retries", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    resendSendMock
+      .mockResolvedValueOnce({ data: null, error: { message: "ambiguous failure" } })
+      .mockResolvedValueOnce({ data: { id: "email_retry" }, error: null });
+    const firstContext = {
+      kind: "send" as const,
+      requestedAt: 1_700_000_000_000,
+      recipientUserId: "users:owner",
+      to: "owner@example.com",
+      handle: "owner",
+      publisherHandle: "owner",
+      skillDisplayName: "Popular Skill",
+      skillSlug: "popular-skill",
+      scope: "skill" as const,
+      allPublisherSkills: false,
+      attemptCount: 0,
+    };
+    const retryContext = { ...firstContext, attemptCount: 1 };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(firstContext)
+        .mockResolvedValueOnce(firstContext)
+        .mockResolvedValueOnce(retryContext)
+        .mockResolvedValueOnce(retryContext),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, attemptCount: 1 })
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true, attemptCount: 2 })
+        .mockResolvedValueOnce({ ok: true }),
+      scheduler: { runAfter: vi.fn(async () => null) },
+    };
+
+    await (
+      sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+    )._handler(ctx, { signalId: "publisherAbuseSignals:traffic" });
+    await (
+      sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+    )._handler(ctx, { signalId: "publisherAbuseSignals:traffic" });
+
+    const [firstPayload, firstOptions] = resendSendMock.mock.calls[0] ?? [];
+    const [retryPayload, retryOptions] = resendSendMock.mock.calls[1] ?? [];
+    expect(retryPayload.text).toBe(firstPayload.text);
+    expect(retryOptions.idempotencyKey).toBe(firstOptions.idempotencyKey);
   });
 
   it("stops retrying after the fourth owner contact delivery failure", async () => {

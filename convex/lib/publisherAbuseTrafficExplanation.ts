@@ -6,6 +6,7 @@ export const PUBLISHER_ABUSE_TRAFFIC_EXPLANATION_MAX_LENGTH = 3_000;
 export const PUBLISHER_ABUSE_SIGNAL_COMMUNICATION_RETENTION_MS = 180 * 24 * 60 * 60 * 1_000;
 const TRAFFIC_EXPLANATION_TOKEN_BYTES = 32;
 const TRAFFIC_EXPLANATION_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
+const TRAFFIC_EXPLANATION_TOKEN_SECRET_PATTERN = /^[a-f0-9]{64}$/;
 
 export const publisherAbuseTrafficExplanationKindValidator = v.union(
   v.literal("expected"),
@@ -27,12 +28,39 @@ export async function getPublisherAbuseSignalCommunication(
     .unique();
 }
 
-export async function createPublisherAbuseTrafficExplanationToken(): Promise<{
+export async function createPublisherAbuseTrafficExplanationToken(args: {
+  signalId: string;
+  requestedAt: number;
+  secret: string;
+}): Promise<{
   token: string;
   tokenHash: string;
 }> {
-  const randomBytes = crypto.getRandomValues(new Uint8Array(TRAFFIC_EXPLANATION_TOKEN_BYTES));
-  const token = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (!TRAFFIC_EXPLANATION_TOKEN_SECRET_PATTERN.test(args.secret)) {
+    throw new Error("Traffic explanation token secret must be a 256-bit lowercase hex value");
+  }
+  const secretBytes = Uint8Array.from(args.secret.match(/.{2}/g) ?? [], (byte) =>
+    Number.parseInt(byte, 16),
+  );
+  if (secretBytes.byteLength !== TRAFFIC_EXPLANATION_TOKEN_BYTES) {
+    throw new Error("Traffic explanation token secret must be 256 bits");
+  }
+  const key = await crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const caseIdentity = JSON.stringify([
+    "publisher-abuse-traffic-explanation.v1",
+    args.signalId,
+    args.requestedAt,
+  ]);
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(caseIdentity));
+  const token = Array.from(new Uint8Array(signature), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
   return {
     token,
     tokenHash: await hashPublisherAbuseTrafficExplanationToken(token),

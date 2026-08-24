@@ -502,13 +502,35 @@ describe("publisher abuse traffic explanations", () => {
 
 describe("publisher abuse traffic explanation primitives", () => {
   it("creates a 256-bit token whose stored hash verifies it", async () => {
-    const created = await createPublisherAbuseTrafficExplanationToken();
+    const created = await createPublisherAbuseTrafficExplanationToken({
+      signalId: "publisherAbuseSignals:traffic",
+      requestedAt: 1_700_000_000_000,
+      secret: "ab".repeat(32),
+    });
 
     expect(created.token).toMatch(/^[a-f0-9]{64}$/);
     await expect(
       matchesPublisherAbuseTrafficExplanationToken(created.token, created.tokenHash),
     ).resolves.toBe(true);
     expect(created.tokenHash).not.toBe(created.token);
+  });
+
+  it("derives a stable token for one request and a different token for another", async () => {
+    const request = {
+      signalId: "publisherAbuseSignals:traffic",
+      requestedAt: 1_700_000_000_000,
+      secret: "ab".repeat(32),
+    };
+
+    const first = await createPublisherAbuseTrafficExplanationToken(request);
+    const retry = await createPublisherAbuseTrafficExplanationToken(request);
+    const otherRequest = await createPublisherAbuseTrafficExplanationToken({
+      ...request,
+      requestedAt: request.requestedAt + 1,
+    });
+
+    expect(retry).toEqual(first);
+    expect(otherRequest.token).not.toBe(first.token);
   });
 
   it("truncates response previews without splitting a grapheme", () => {

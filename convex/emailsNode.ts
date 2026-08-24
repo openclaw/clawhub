@@ -5,6 +5,7 @@ import { dirname } from "node:path";
 import { v } from "convex/values";
 import { Resend } from "resend";
 import { internal } from "./_generated/api";
+import { env } from "./_generated/server";
 import { internalAction } from "./functions";
 import {
   buildBanNotificationEmail,
@@ -315,7 +316,38 @@ export const sendPublisherAbuseTrafficExplanationInternal = internalAction({
       });
       return { ok: false, reason: context.reason };
     }
-    const explanationToken = await createPublisherAbuseTrafficExplanationToken();
+    const tokenSecret = env.CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET;
+    if (!tokenSecret) {
+      await ctx.runMutation(internal.publisherAbuseTrafficExplanation.recordDeliveryInternal, {
+        signalId: args.signalId,
+        requestedAt: context.requestedAt,
+        delivery: {
+          status: "not_deliverable",
+          recordedAt: Date.now(),
+          reason: "missing_token_secret",
+        },
+      });
+      return { ok: false, reason: "missing_token_secret" };
+    }
+    let explanationToken: Awaited<ReturnType<typeof createPublisherAbuseTrafficExplanationToken>>;
+    try {
+      explanationToken = await createPublisherAbuseTrafficExplanationToken({
+        signalId: args.signalId,
+        requestedAt: context.requestedAt,
+        secret: tokenSecret,
+      });
+    } catch {
+      await ctx.runMutation(internal.publisherAbuseTrafficExplanation.recordDeliveryInternal, {
+        signalId: args.signalId,
+        requestedAt: context.requestedAt,
+        delivery: {
+          status: "not_deliverable",
+          recordedAt: Date.now(),
+          reason: "invalid_token_secret",
+        },
+      });
+      return { ok: false, reason: "invalid_token_secret" };
+    }
     const responseUrl = trafficExplanationResponseUrl(args.signalId, explanationToken.token);
     const email = await buildPublisherAbuseTrafficExplanationEmail({
       handle: context.handle,

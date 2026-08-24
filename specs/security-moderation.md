@@ -179,10 +179,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   or an owner/admin of its current organization. For publisher-wide signals,
   the representative skill is only an ownership anchor and the form is presented
   as a publisher-level request. Ownership changes invalidate the old request.
-  The link also carries a single-case 256-bit token generated with Web Crypto
-  inside the email action. Only its SHA-256 hash is stored in the bounded
-  communication record, and both a matching token and current owner
-  authorization are required to read or submit the form. One immutable
+  The link also carries a single-case 256-bit token derived with Web Crypto
+  inside the email action from the case identity and a deployment secret.
+  Retries derive the same token and provider idempotency key, so an ambiguously
+  delivered earlier link remains valid. Only the token's SHA-256 hash is stored
+  in the bounded communication record, and both a matching token and current
+  owner authorization are required to read or submit the form. One immutable
   structured response is stored in that record and audited without copying the
   free-text explanation into the audit log. Staff can see the retained
   delivery state and response in the signal inspector. Owner contact has an

@@ -125,6 +125,10 @@ Ensure Convex env is set (auth + embeddings):
 - `CLAWHUB_SECURITY_EMAIL_FROM` for the outbound From header, defaulting to
   `ClawHub Security <noreply@notifications.openclaw.ai>` on the verified Resend
   domain
+- `CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET` as a 64-character lowercase hex
+  value for deriving stable, case-scoped owner explanation links across email
+  retries; generate it from 32 cryptographically random bytes and do not rotate
+  it while retained owner explanation requests still need to accept responses
 - `CLAWHUB_NOREPLY_FROM` for guarded staff emails, defaulting to
   `ClawHub <noreply@notifications.openclaw.ai>` on the verified Resend domain
 - `SITE_URL` (your web app URL)
