@@ -125,6 +125,10 @@ export const submit = mutation({
     if (!signalId) throw new ConvexError("Traffic explanation request not found");
     const result = await getTrafficExplanationForUser(ctx, signalId, user, args.token);
     if (!result) throw new ConvexError("Traffic explanation request not found");
+    const submittedAt = Date.now();
+    if (result.communication.expirationTime <= submittedAt) {
+      throw new ConvexError("Traffic explanation request has expired");
+    }
     if (result.communication.response) {
       throw new ConvexError("A response has already been submitted for this traffic request");
     }
@@ -139,7 +143,6 @@ export const submit = mutation({
       throw new ConvexError("Please tell us what may have caused the traffic");
     }
 
-    const submittedAt = Date.now();
     await ctx.db.patch(result.communication._id, {
       response: {
         kind: args.kind,

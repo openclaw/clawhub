@@ -85,7 +85,10 @@ const recordDeliveryHandler = (
   >
 )._handler;
 
-function makeFixture({ response }: { response?: Record<string, unknown> } = {}) {
+function makeFixture({
+  expirationTime,
+  response,
+}: { expirationTime?: number; response?: Record<string, unknown> } = {}) {
   const owner = {
     _id: "users:owner" as Id<"users">,
     _creationTime: 1,
@@ -126,7 +129,7 @@ function makeFixture({ response }: { response?: Record<string, unknown> } = {}) 
       tokenHash: VALID_TOKEN_HASH,
     },
     ...(response ? { response } : {}),
-    expirationTime: 1_800_000_000_000,
+    expirationTime: expirationTime ?? 1_800_000_000_000,
   };
   const documents = new Map<string, Record<string, unknown>>([
     [owner._id, owner],
@@ -293,6 +296,26 @@ describe("publisher abuse traffic explanations", () => {
     );
     expect(JSON.stringify(insert.mock.calls)).not.toContain("newsletter");
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {});
+  });
+
+  it("rejects an expired request before retention cleanup can renew it", async () => {
+    const expirationTime = 1_700_000_100_000;
+    const { ctx, insert, owner, patch, scheduler } = makeFixture({ expirationTime });
+    vi.mocked(requireUser).mockResolvedValue({ userId: owner._id, user: owner });
+    vi.spyOn(Date, "now").mockReturnValue(expirationTime);
+
+    await expect(
+      submitHandler(ctx, {
+        signalId: "publisherAbuseSignals:traffic",
+        token: VALID_TOKEN,
+        kind: "expected",
+        message: "Shared in our newsletter.",
+      }),
+    ).rejects.toThrow("Traffic explanation request has expired");
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("marks terminal contact failures actionable without retaining the response token", async () => {

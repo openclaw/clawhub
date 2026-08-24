@@ -156,7 +156,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   metadata, delivery errors, and owner response for 180 days after the latest
   contact activity, then an indexed bounded cleanup deletes it. Audit events may
   retain lifecycle facts and stable reason codes, but must never copy recipient
-  email, message text, raw provider errors, the token, or the live link.
+  email, message text, raw provider errors, the token, or the live link. The
+  submit mutation enforces the expiration timestamp before writing a response,
+  so an expired request cannot renew retained data while awaiting cleanup.
 - Every `publisher-abuse-temporal.*` model version, including legacy rows,
   remains ineligible for warning-first automatic enforcement. A future decision
   to enforce temporal traffic signals requires an explicit policy and code
