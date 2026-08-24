@@ -339,8 +339,20 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
         JSON.stringify(candidate.portfolioEvidence.skillSlugs) ||
       existing.portfolioEvidence?.allPublisherSkills !==
         candidate.portfolioEvidence.allPublisherSkills;
+    const notificationBaselineDownloads =
+      existing.notificationBaselineDownloads ?? existing.allTimeDownloads;
+    const notificationBaselineInstalls =
+      existing.notificationBaselineInstalls ?? existing.allTimeInstalls;
+    const materiallyStrongerEvidence =
+      previousStatus === "open" &&
+      freshPublisherAbuseEvidenceCrossesRepeatThreshold(OWNER_SYNCHRONY_SIGNAL_TYPE, {
+        downloads: Math.max(0, candidate.allTimeDownloads - notificationBaselineDownloads),
+        installs: Math.max(0, candidate.allTimeInstalls - notificationBaselineInstalls),
+      });
     const nextStatus = recurringAfterSnooze ? "open" : previousStatus;
-    const shouldNotify = recurringAfterSnooze || (previousStatus === "open" && evidenceChanged);
+    const shouldNotify =
+      recurringAfterSnooze ||
+      (previousStatus === "open" && (evidenceChanged || materiallyStrongerEvidence));
     await ctx.db.patch(existing._id, {
       ...snapshot,
       reviewStatus: nextStatus,
@@ -366,10 +378,10 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
         : existing.recurrenceCount,
       notificationBaselineDownloads: shouldNotify
         ? candidate.allTimeDownloads
-        : (existing.notificationBaselineDownloads ?? existing.allTimeDownloads),
+        : notificationBaselineDownloads,
       notificationBaselineInstalls: shouldNotify
         ? candidate.allTimeInstalls
-        : (existing.notificationBaselineInstalls ?? existing.allTimeInstalls),
+        : notificationBaselineInstalls,
       lastSeenAt: args.now,
       seenCount: existing.seenCount + 1,
       lastChangedAt: shouldNotify ? args.now : existing.lastChangedAt,
