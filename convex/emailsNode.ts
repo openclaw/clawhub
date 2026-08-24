@@ -343,6 +343,32 @@ export const sendPublisherAbuseTrafficExplanationInternal = internalAction({
       },
     );
     if (!attempt.ok) return { ok: false, reason: attempt.reason };
+    const currentContext = await ctx.runQuery(
+      internal.publisherAbuseTrafficExplanation.getEmailContextInternal,
+      { signalId: args.signalId },
+    );
+    if (
+      currentContext?.kind !== "send" ||
+      currentContext.recipientUserId !== context.recipientUserId ||
+      currentContext.to !== context.to
+    ) {
+      const reason =
+        currentContext?.kind === "skip"
+          ? currentContext.reason
+          : currentContext
+            ? "owner_changed"
+            : "request_not_actionable";
+      await ctx.runMutation(internal.publisherAbuseTrafficExplanation.recordDeliveryInternal, {
+        signalId: args.signalId,
+        requestedAt: context.requestedAt,
+        delivery: {
+          status: "cancelled",
+          recordedAt: Date.now(),
+          reason,
+        },
+      });
+      return { ok: false, reason };
+    }
     const result = await sendTransactionalEmail({
       idempotencyKey: `publisher-abuse-traffic-explanation:${args.signalId}:${context.requestedAt}:${explanationToken.tokenHash}`,
       to: context.to,

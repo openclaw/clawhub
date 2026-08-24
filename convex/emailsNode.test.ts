@@ -354,6 +354,58 @@ describe("transactional account emails", () => {
     );
   });
 
+  it("cancels before the provider call when ownership changes after the delivery claim", async () => {
+    const initialContext = {
+      kind: "send" as const,
+      requestedAt: 1_700_000_000_000,
+      recipientUserId: "users:former-owner",
+      to: "former-owner@example.com",
+      handle: "former-owner",
+      publisherHandle: "former-owner",
+      skillDisplayName: "Transferred Skill",
+      skillSlug: "transferred-skill",
+      scope: "skill" as const,
+      allPublisherSkills: false,
+      attemptCount: 0,
+    };
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValueOnce(initialContext).mockResolvedValueOnce({
+        kind: "skip",
+        requestedAt: initialContext.requestedAt,
+        reason: "skill_owner_changed",
+      }),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, attemptCount: 1 })
+        .mockResolvedValueOnce({ ok: true }),
+      scheduler: { runAfter: vi.fn(async () => null) },
+    };
+
+    await expect(
+      (
+        sendPublisherAbuseTrafficExplanationInternal as unknown as SendPublisherAbuseTrafficExplanationHandler
+      )._handler(ctx, {
+        signalId: "publisherAbuseSignals:transferred",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "skill_owner_changed" });
+
+    expect(ctx.runQuery).toHaveBeenCalledTimes(2);
+    expect(resendSendMock).not.toHaveBeenCalled();
+    expect(ctx.runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.publisherAbuseTrafficExplanation.recordDeliveryInternal,
+      {
+        signalId: "publisherAbuseSignals:transferred",
+        requestedAt: initialContext.requestedAt,
+        delivery: {
+          status: "cancelled",
+          recordedAt: expect.any(Number),
+          reason: "skill_owner_changed",
+        },
+      },
+    );
+  });
+
   it("does not email a request that is no longer actionable", async () => {
     const ctx = {
       runQuery: vi.fn().mockResolvedValue({
