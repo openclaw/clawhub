@@ -148,6 +148,8 @@ const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
 const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
 // Release rows can approach 1 MiB, and trigger-wrapped patches materialize full documents.
 const PACKAGE_RELEASE_TAG_CLEANUP_BATCH_SIZE = 4;
+// The recent scan probe reads full release rows plus each parent package in one transaction.
+const MAX_PACKAGE_RELEASE_SCAN_RECENT_CANDIDATES = 4;
 const packageListScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -8035,28 +8037,17 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     const cursor = args.cursor ?? 0;
     const prioritizeRecent = args.prioritizeRecent ?? true;
 
-    const [recentReleases, backlogReleases] = await Promise.all([
-      prioritizeRecent
-        ? ctx.db
-            .query("packageReleases")
-            .order("desc")
-            .take(batchSize * 2)
-        : Promise.resolve([]),
-      ctx.db
-        .query("packageReleases")
-        .withIndex("by_creation_time", (q) => q.gt("_creationTime", cursor))
-        .order("asc")
-        .take(batchSize * 3),
-    ]);
-
-    const releases = [
-      ...recentReleases,
-      ...backlogReleases.filter(
-        (release, index, all) =>
-          recentReleases.findIndex((candidate) => candidate._id === release._id) === -1 &&
-          all.findIndex((candidate) => candidate._id === release._id) === index,
-      ),
-    ];
+    const backlogCandidateLimit = batchSize * 3;
+    const releases = prioritizeRecent
+      ? await ctx.db
+          .query("packageReleases")
+          .order("desc")
+          .take(Math.min(batchSize * 2, MAX_PACKAGE_RELEASE_SCAN_RECENT_CANDIDATES))
+      : await ctx.db
+          .query("packageReleases")
+          .withIndex("by_creation_time", (q) => q.gt("_creationTime", cursor))
+          .order("asc")
+          .take(backlogCandidateLimit);
 
     const results: Array<{
       releaseId: Id<"packageReleases">;
@@ -8068,7 +8059,7 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     let nextCursor = cursor;
 
     for (const release of releases) {
-      nextCursor = release._creationTime;
+      if (!prioritizeRecent) nextCursor = release._creationTime;
       if (results.length >= batchSize) break;
       if (release.softDeletedAt) continue;
 
@@ -8092,7 +8083,7 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     return {
       releases: results,
       nextCursor,
-      done: backlogReleases.length < batchSize * 3,
+      done: prioritizeRecent ? false : releases.length < backlogCandidateLimit,
     };
   },
 });

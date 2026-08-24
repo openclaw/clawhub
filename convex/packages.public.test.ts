@@ -17834,7 +17834,7 @@ describe("package scan backfill", () => {
           }),
         },
       } as never,
-      { batchSize: 10 },
+      { batchSize: 10, prioritizeRecent: false },
     );
 
     expect(result.releases).toEqual([
@@ -17882,13 +17882,40 @@ describe("package scan backfill", () => {
           }),
         },
       } as never,
-      { batchSize: 10 },
+      { batchSize: 10, prioritizeRecent: false },
     );
 
     expect(result.releases).toEqual([]);
   });
 
-  it("prioritizes recent releases before draining older backlog", async () => {
+  it("bounds the recent-release probe independently of the scan batch size", async () => {
+    const recentTake = vi.fn().mockResolvedValue([]);
+    const backlogTake = vi.fn().mockResolvedValue([]);
+
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({ take: recentTake })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({ take: backlogTake })),
+              })),
+            };
+          }),
+          get: vi.fn(),
+        },
+      } as never,
+      { batchSize: 100, prioritizeRecent: true },
+    );
+
+    expect(recentTake).toHaveBeenCalledWith(4);
+    expect(backlogTake).not.toHaveBeenCalled();
+    expect(result).toEqual({ releases: [], nextCursor: 0, done: false });
+  });
+
+  it("runs the recent-release probe before draining older backlog", async () => {
     const result = await getPackageReleaseScanBackfillBatchInternalHandler(
       {
         db: {
@@ -17934,22 +17961,43 @@ describe("package scan backfill", () => {
       { batchSize: 2, prioritizeRecent: true },
     );
 
-    expect(result.releases).toEqual([
+    expect(result).toEqual({
+      releases: [
+        {
+          releaseId: "packageReleases:recent-vt",
+          packageId: "packages:demo",
+          needsVt: true,
+          needsLlm: false,
+          needsStatic: false,
+        },
+      ],
+      nextCursor: 0,
+      done: false,
+    });
+  });
+
+  it("starts the cursor backlog after the bounded recent probe", async () => {
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await backfillPackageReleaseScansInternalHandler(
       {
-        releaseId: "packageReleases:recent-vt",
-        packageId: "packages:demo",
-        needsVt: true,
-        needsLlm: false,
-        needsStatic: false,
-      },
-      {
-        releaseId: "packageReleases:old-static",
-        packageId: "packages:demo",
-        needsVt: false,
-        needsLlm: false,
-        needsStatic: true,
-      },
-    ]);
+        runQuery: vi.fn().mockResolvedValue({
+          releases: [],
+          nextCursor: 0,
+          done: false,
+        }),
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 100 },
+    );
+
+    expect(result).toEqual({ scheduled: 0, nextCursor: 0, done: false });
+    expect(runAfter).toHaveBeenCalledTimes(1);
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      cursor: 0,
+      batchSize: 100,
+      scheduled: 0,
+    });
   });
 
   it("schedules static rescans for releases missing only static scan data", async () => {
