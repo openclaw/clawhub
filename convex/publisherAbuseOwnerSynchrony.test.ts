@@ -190,4 +190,44 @@ describe("publisher abuse owner synchrony signal", () => {
       }),
     );
   });
+
+  it("re-notifies an open synchrony signal when unchanged members gain material traffic", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      ...snoozedSignal(now),
+      reviewStatus: "open" as const,
+      snoozedUntil: undefined,
+    };
+    const repeatedCandidate = {
+      ...candidate(),
+      allTimeDownloads: existing.notificationBaselineDownloads + 1_500,
+      allTimeInstalls: existing.notificationBaselineInstalls + 3,
+    };
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({ first: async () => existing }),
+        })),
+        patch,
+      },
+    };
+
+    await expect(
+      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
+        candidate: repeatedCandidate,
+        now,
+      }),
+    ).resolves.toMatchObject({ created: false, changed: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      existing._id,
+      expect.objectContaining({
+        needsNotification: true,
+        lastChangedAt: now,
+        notificationBaselineDownloads: repeatedCandidate.allTimeDownloads,
+        notificationBaselineInstalls: repeatedCandidate.allTimeInstalls,
+      }),
+    );
+  });
 });
