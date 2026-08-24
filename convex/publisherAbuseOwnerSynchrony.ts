@@ -9,6 +9,7 @@ import {
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
 import { freshPublisherAbuseEvidenceCrossesRepeatThreshold } from "./lib/publisherAbuseSignalLifecycle";
+import { publisherAbuseSignalCommunicationExpirationTime } from "./lib/publisherAbuseTrafficExplanation";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -413,17 +414,17 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
     contactState: args.requestOwnerExplanation ? "queued" : "not_requested",
     attentionState: "not_contacted",
     needsAttention: false,
-    ...(args.requestOwnerExplanation
-      ? {
-          trafficExplanationRequest: {
-            requestedAt: args.now,
-            state: "queued",
-            attemptCount: 0,
-          },
-        }
-      : {}),
   });
   if (args.requestOwnerExplanation) {
+    await ctx.db.insert("publisherAbuseSignalCommunications", {
+      signalId,
+      request: {
+        requestedAt: args.now,
+        state: "queued",
+        attemptCount: 0,
+      },
+      expirationTime: publisherAbuseSignalCommunicationExpirationTime(args.now),
+    });
     await ctx.db.insert("auditLogs", {
       action: "publisher_abuse.signal.owner_contact_queued",
       targetType: "publisherAbuseSignal",

@@ -6,7 +6,9 @@ import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
 import {
   PUBLISHER_ABUSE_TRAFFIC_EXPLANATION_MAX_LENGTH,
+  getPublisherAbuseSignalCommunication,
   matchesPublisherAbuseTrafficExplanationToken,
+  publisherAbuseSignalCommunicationExpirationTime,
   publisherAbuseTrafficExplanationKindValidator,
 } from "./lib/publisherAbuseTrafficExplanation";
 import {
@@ -70,19 +72,18 @@ async function getTrafficExplanationForUser(
   token: string,
 ) {
   const signal = await ctx.db.get(signalId);
-  if (!signal?.trafficExplanationRequest) return null;
+  if (!signal) return null;
+  const communication = await getPublisherAbuseSignalCommunication(ctx, signalId);
+  if (!communication) return null;
   if (
-    !(await matchesPublisherAbuseTrafficExplanationToken(
-      token,
-      signal.trafficExplanationRequest.tokenHash,
-    ))
+    !(await matchesPublisherAbuseTrafficExplanationToken(token, communication.request.tokenHash))
   ) {
     return null;
   }
   const skill = await ctx.db.get(signal.skillId);
   if (!skill || !signalStillBelongsToSkill(signal, skill)) return null;
   if (!(await canManageTrafficExplanation(ctx, user, skill))) return null;
-  return { signal, skill };
+  return { signal, skill, communication };
 }
 
 export const getForOwner = query({
@@ -105,7 +106,7 @@ export const getForOwner = query({
       skillSlug: result.signal.skillSlug,
       publisherHandle: result.signal.handleSnapshot,
       allPublisherSkills: result.signal.portfolioEvidence?.allPublisherSkills ?? false,
-      response: result.signal.trafficExplanationResponse ?? null,
+      response: result.communication.response ?? null,
     };
   },
 });
@@ -124,7 +125,7 @@ export const submit = mutation({
     if (!signalId) throw new ConvexError("Traffic explanation request not found");
     const result = await getTrafficExplanationForUser(ctx, signalId, user, args.token);
     if (!result) throw new ConvexError("Traffic explanation request not found");
-    if (result.signal.trafficExplanationResponse) {
+    if (result.communication.response) {
       throw new ConvexError("A response has already been submitted for this traffic request");
     }
 
@@ -139,13 +140,16 @@ export const submit = mutation({
     }
 
     const submittedAt = Date.now();
-    await ctx.db.patch(signalId, {
-      trafficExplanationResponse: {
+    await ctx.db.patch(result.communication._id, {
+      response: {
         kind: args.kind,
         ...(message ? { message } : {}),
         submittedAt,
         submittedByUserId: userId,
       },
+      expirationTime: publisherAbuseSignalCommunicationExpirationTime(submittedAt),
+    });
+    await ctx.db.patch(signalId, {
       needsAttention: true,
       attentionState: "needs_attention",
       notificationEventKind: "publisher_abuse_signal_owner_response_submitted",
@@ -214,15 +218,15 @@ export async function getEmailContextInternalHandler(
   args: { signalId: Id<"publisherAbuseSignals"> },
 ) {
   const signal = await ctx.db.get(args.signalId);
-  if (!signal?.trafficExplanationRequest || signal.trafficExplanationRequest.sentAt) return null;
-  if (
-    signal.trafficExplanationRequest.state === "cancelled" ||
-    signal.trafficExplanationRequest.state === "not_deliverable"
-  ) {
+  if (!signal) return null;
+  const communication = await getPublisherAbuseSignalCommunication(ctx, args.signalId);
+  if (!communication || communication.request.sentAt) return null;
+  const request = communication.request;
+  if (request.state === "cancelled" || request.state === "not_deliverable") {
     return null;
   }
-  const requestedAt = signal.trafficExplanationRequest.requestedAt;
-  if (signal.trafficExplanationResponse) {
+  const requestedAt = request.requestedAt;
+  if (communication.response) {
     return { kind: "skip" as const, requestedAt, reason: "owner_already_responded" };
   }
   if (signal.reviewStatus !== "open") {
@@ -267,7 +271,7 @@ export async function getEmailContextInternalHandler(
         ? ("publisher" as const)
         : ("skill" as const),
     allPublisherSkills: signal.portfolioEvidence?.allPublisherSkills ?? false,
-    attemptCount: signal.trafficExplanationRequest.attemptCount ?? 0,
+    attemptCount: request.attemptCount ?? 0,
   };
 }
 
@@ -294,7 +298,10 @@ export const beginDeliveryAttemptInternal = internalMutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const signal = await ctx.db.get(args.signalId);
-    const request = signal?.trafficExplanationRequest;
+    const communication = signal
+      ? await getPublisherAbuseSignalCommunication(ctx, args.signalId)
+      : null;
+    const request = communication?.request;
     if (
       !signal ||
       !request ||
@@ -317,8 +324,8 @@ export const beginDeliveryAttemptInternal = internalMutation({
       return { ok: false as const, reason: "owner_changed" as const };
     }
     const attemptCount = (request.attemptCount ?? 0) + 1;
-    await ctx.db.patch(args.signalId, {
-      trafficExplanationRequest: {
+    await ctx.db.patch(communication._id, {
+      request: {
         ...request,
         tokenHash: args.tokenHash,
         state: attemptCount === 1 ? "queued" : "retrying",
@@ -332,6 +339,9 @@ export const beginDeliveryAttemptInternal = internalMutation({
         redactedTextSnapshot: args.redactedTextSnapshot,
         deliveryError: undefined,
       },
+      expirationTime: publisherAbuseSignalCommunicationExpirationTime(args.attemptedAt),
+    });
+    await ctx.db.patch(args.signalId, {
       contactState: attemptCount === 1 ? "queued" : "retrying",
       attentionState: "not_contacted",
       needsAttention: false,
@@ -340,7 +350,7 @@ export const beginDeliveryAttemptInternal = internalMutation({
       signalId: args.signalId,
       action: "publisher_abuse.signal.owner_contact_attempted",
       createdAt: args.attemptedAt,
-      metadata: { attemptCount, recipientUserId: args.recipientUserId },
+      metadata: { attemptCount },
     });
     return { ok: true as const, attemptCount };
   },
@@ -370,7 +380,10 @@ export const recordDeliveryInternal = internalMutation({
   returns: v.any(),
   handler: async (ctx, args) => {
     const signal = await ctx.db.get(args.signalId);
-    const request = signal?.trafficExplanationRequest;
+    const communication = signal
+      ? await getPublisherAbuseSignalCommunication(ctx, args.signalId)
+      : null;
+    const request = communication?.request;
     if (
       !signal ||
       !request ||
@@ -383,14 +396,17 @@ export const recordDeliveryInternal = internalMutation({
     }
 
     if (args.delivery.status === "sent") {
-      await ctx.db.patch(args.signalId, {
-        trafficExplanationRequest: {
+      await ctx.db.patch(communication._id, {
+        request: {
           ...request,
           state: "sent",
           sentAt: args.delivery.sentAt,
           providerId: args.delivery.providerId ?? undefined,
           deliveryError: undefined,
         },
+        expirationTime: publisherAbuseSignalCommunicationExpirationTime(args.delivery.sentAt),
+      });
+      await ctx.db.patch(args.signalId, {
         contactState: "sent",
         attentionState: "awaiting_owner",
         needsAttention: false,
@@ -401,8 +417,6 @@ export const recordDeliveryInternal = internalMutation({
         createdAt: args.delivery.sentAt,
         metadata: {
           attemptCount: request.attemptCount ?? 1,
-          recipientUserId: request.recipientUserId,
-          providerId: args.delivery.providerId,
         },
       });
       return { ok: true as const, attemptCount: request.attemptCount ?? 1 };
@@ -411,13 +425,16 @@ export const recordDeliveryInternal = internalMutation({
     const reason = args.delivery.reason.slice(0, MAX_SAFE_DELIVERY_REASON_LENGTH);
     const terminal = args.delivery.status !== "retrying";
     const notDeliverable = args.delivery.status === "not_deliverable";
-    await ctx.db.patch(args.signalId, {
-      trafficExplanationRequest: {
+    await ctx.db.patch(communication._id, {
+      request: {
         ...request,
         state: args.delivery.status,
         tokenHash: terminal ? undefined : request.tokenHash,
         deliveryError: reason,
       },
+      expirationTime: publisherAbuseSignalCommunicationExpirationTime(args.delivery.recordedAt),
+    });
+    await ctx.db.patch(args.signalId, {
       contactState: args.delivery.status,
       attentionState: notDeliverable ? "contact_failed" : terminal ? "none" : "not_contacted",
       needsAttention: notDeliverable,
@@ -444,7 +461,7 @@ export const recordDeliveryInternal = internalMutation({
             ? "publisher_abuse.signal.owner_contact_cancelled"
             : "publisher_abuse.signal.owner_contact_not_deliverable",
       createdAt: args.delivery.recordedAt,
-      metadata: { attemptCount: request.attemptCount ?? 0, reason },
+      metadata: { attemptCount: request.attemptCount ?? 0, deliveryStatus: args.delivery.status },
     });
     if (notDeliverable) {
       await ctx.scheduler.runAfter(

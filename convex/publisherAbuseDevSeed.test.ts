@@ -100,6 +100,11 @@ function createDb(seedTables: Record<string, TestDoc[]>) {
             take: async (numItems: number) => {
               return matched().slice(0, numItems);
             },
+            unique: async () => {
+              const rows = matched();
+              if (rows.length > 1) throw new Error("expected a unique test row");
+              return rows[0] ?? null;
+            },
           };
         },
       }),
@@ -298,12 +303,6 @@ describe("publisherAbuseDevSeed.seed", () => {
           contactState: "sent",
           attentionState: "needs_attention",
           notificationState: "delivered",
-          trafficExplanationRequest: expect.objectContaining({
-            recipientUserId: expect.any(String),
-            sentAt: expect.any(Number),
-            tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-            redactedTextSnapshot: expect.stringContaining("[SECURE EXPLANATION LINK]"),
-          }),
         }),
         expect.objectContaining({
           signalType: "high_install_download_ratio",
@@ -314,6 +313,19 @@ describe("publisherAbuseDevSeed.seed", () => {
         expect.objectContaining({ attentionState: "awaiting_owner" }),
         expect.objectContaining({ contactState: "not_deliverable" }),
         expect.objectContaining({ notificationState: "failed" }),
+      ]),
+    );
+    expect(tables.publisherAbuseSignalCommunications).toHaveLength(6);
+    expect(tables.publisherAbuseSignalCommunications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          request: expect.objectContaining({
+            recipientUserId: expect.any(String),
+            sentAt: expect.any(Number),
+            tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+            redactedTextSnapshot: expect.stringContaining("[SECURE EXPLANATION LINK]"),
+          }),
+        }),
       ]),
     );
     expect(tables.users?.some((doc) => doc.handle === "local-abuse")).toBe(true);
@@ -367,6 +379,12 @@ describe("publisherAbuseDevSeed.seed", () => {
           skillId: "skills:old-temporal",
         },
       ],
+      publisherAbuseSignalCommunications: [
+        {
+          _id: "publisherAbuseSignalCommunications:old-temporal",
+          signalId: "publisherAbuseSignals:old-temporal",
+        },
+      ],
       users: [{ _id: "users:old-demo", handle: "demo-abuse-pub-01" }],
     });
 
@@ -390,6 +408,9 @@ describe("publisherAbuseDevSeed.seed", () => {
     );
     expect(tables.publisherAbuseSignals.map((doc) => doc._id)).not.toContain(
       "publisherAbuseSignals:old-temporal",
+    );
+    expect(tables.publisherAbuseSignalCommunications.map((doc) => doc._id)).not.toContain(
+      "publisherAbuseSignalCommunications:old-temporal",
     );
     expect(tables.users.map((doc) => doc._id)).not.toContain("users:old-demo");
     expect(tables.users.filter((doc) => doc.handle === "demo-abuse-pub-01")).toHaveLength(1);

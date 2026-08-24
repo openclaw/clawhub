@@ -117,11 +117,16 @@ function makeFixture({ response }: { response?: Record<string, unknown> } = {}) 
     handleSnapshot: publisher.handle,
     recent30Downloads: 330_000,
     reviewStatus: "open",
-    trafficExplanationRequest: {
+  };
+  const communication = {
+    _id: "publisherAbuseSignalCommunications:traffic",
+    signalId: signal._id,
+    request: {
       requestedAt: 1_700_000_000_000,
       tokenHash: VALID_TOKEN_HASH,
     },
-    ...(response ? { trafficExplanationResponse: response } : {}),
+    ...(response ? { response } : {}),
+    expirationTime: 1_800_000_000_000,
   };
   const documents = new Map<string, Record<string, unknown>>([
     [owner._id, owner],
@@ -138,12 +143,24 @@ function makeFixture({ response }: { response?: Record<string, unknown> } = {}) 
         id.startsWith("publisherAbuseSignals:") ? id : null,
       ),
       get: vi.fn(async (id: string) => documents.get(id) ?? null),
+      query: vi.fn((table: string) => {
+        if (table !== "publisherAbuseSignalCommunications") {
+          throw new Error(`unexpected query ${table}`);
+        }
+        return {
+          withIndex: vi.fn((_index: string, build: (q: unknown) => unknown) => {
+            const q = { eq: vi.fn(() => q) };
+            build(q);
+            return { unique: vi.fn(async () => communication) };
+          }),
+        };
+      }),
       patch,
       insert,
     },
     scheduler,
   };
-  return { ctx, documents, insert, owner, patch, scheduler, signal, skill };
+  return { communication, ctx, documents, insert, owner, patch, scheduler, signal, skill };
 }
 
 function makeLegacyPersonalFixture() {
@@ -244,14 +261,19 @@ describe("publisher abuse traffic explanations", () => {
     ).resolves.toEqual({ ok: true, submittedAt: 1_700_000_100_000 });
 
     expect(patch).toHaveBeenCalledWith(
-      "publisherAbuseSignals:traffic",
+      "publisherAbuseSignalCommunications:traffic",
       expect.objectContaining({
-        trafficExplanationResponse: {
+        response: {
           kind: "expected",
           message: "Shared in our newsletter.",
           submittedAt: 1_700_000_100_000,
           submittedByUserId: "users:owner",
         },
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:traffic",
+      expect.objectContaining({
         needsAttention: true,
         attentionState: "needs_attention",
         notificationEventKind: "publisher_abuse_signal_owner_response_submitted",
@@ -289,13 +311,18 @@ describe("publisher abuse traffic explanations", () => {
     ).resolves.toEqual({ ok: true });
 
     expect(patch).toHaveBeenCalledWith(
-      "publisherAbuseSignals:traffic",
+      "publisherAbuseSignalCommunications:traffic",
       expect.objectContaining({
-        trafficExplanationRequest: expect.objectContaining({
+        request: expect.objectContaining({
           state: "not_deliverable",
           tokenHash: undefined,
           deliveryError: "resend_error",
         }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:traffic",
+      expect.objectContaining({
         contactState: "not_deliverable",
         attentionState: "contact_failed",
         needsAttention: true,
@@ -309,7 +336,7 @@ describe("publisher abuse traffic explanations", () => {
       "auditLogs",
       expect.objectContaining({
         action: "publisher_abuse.signal.owner_contact_not_deliverable",
-        metadata: { attemptCount: 0, reason: "resend_error" },
+        metadata: { attemptCount: 0, deliveryStatus: "not_deliverable" },
       }),
     );
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {});
@@ -317,14 +344,8 @@ describe("publisher abuse traffic explanations", () => {
   });
 
   it("keeps cancellation terminal when an in-flight send finishes later", async () => {
-    const { ctx, documents, patch, signal } = makeFixture();
-    documents.set(signal._id, {
-      ...signal,
-      trafficExplanationRequest: {
-        ...signal.trafficExplanationRequest,
-        state: "cancelled",
-      },
-    });
+    const { communication, ctx, patch } = makeFixture();
+    Object.assign(communication.request, { state: "cancelled" });
 
     await expect(
       recordDeliveryHandler(ctx, {
@@ -361,9 +382,9 @@ describe("publisher abuse traffic explanations", () => {
     ).resolves.toEqual({ ok: true, attemptCount: 1 });
 
     expect(patch).toHaveBeenCalledWith(
-      "publisherAbuseSignals:traffic",
+      "publisherAbuseSignalCommunications:traffic",
       expect.objectContaining({
-        trafficExplanationRequest: expect.objectContaining({
+        request: expect.objectContaining({
           tokenHash: VALID_TOKEN_HASH,
           attemptCount: 1,
           redactedTextSnapshot: "Hello owner, [SECURE EXPLANATION LINK]",

@@ -72,6 +72,7 @@ function snoozedSignal(now: number) {
 describe("publisher abuse owner synchrony signal", () => {
   it("creates one publisher-level signal and queues one tokenized explanation", async () => {
     const insertedSignals: Array<Record<string, unknown>> = [];
+    const insertedCommunications: Array<Record<string, unknown>> = [];
     const auditLogs: Array<Record<string, unknown>> = [];
     const scheduler = { runAfter: vi.fn(async () => null) };
     const ctx = {
@@ -81,6 +82,9 @@ describe("publisher abuse owner synchrony signal", () => {
         })),
         insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
           if (table === "publisherAbuseSignals") insertedSignals.push(value);
+          if (table === "publisherAbuseSignalCommunications") {
+            insertedCommunications.push(value);
+          }
           if (table === "auditLogs") auditLogs.push(value);
           return "publisherAbuseSignals:portfolio";
         }),
@@ -118,7 +122,12 @@ describe("publisher abuse owner synchrony signal", () => {
           catalogCoverage: 23 / 122,
           correlationFloor: 0.986,
         }),
-        trafficExplanationRequest: {
+      }),
+    ]);
+    expect(insertedCommunications).toEqual([
+      expect.objectContaining({
+        signalId: "publisherAbuseSignals:portfolio",
+        request: {
           requestedAt: 1_700_000_000_000,
           state: "queued",
           attemptCount: 0,

@@ -1,6 +1,9 @@
 import { v } from "convex/values";
+import type { Id } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 export const PUBLISHER_ABUSE_TRAFFIC_EXPLANATION_MAX_LENGTH = 3_000;
+export const PUBLISHER_ABUSE_SIGNAL_COMMUNICATION_RETENTION_MS = 180 * 24 * 60 * 60 * 1_000;
 const TRAFFIC_EXPLANATION_TOKEN_BYTES = 32;
 const TRAFFIC_EXPLANATION_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 
@@ -9,6 +12,20 @@ export const publisherAbuseTrafficExplanationKindValidator = v.union(
   v.literal("not_recognized"),
   v.literal("unsure"),
 );
+
+export function publisherAbuseSignalCommunicationExpirationTime(activityAt: number) {
+  return activityAt + PUBLISHER_ABUSE_SIGNAL_COMMUNICATION_RETENTION_MS;
+}
+
+export async function getPublisherAbuseSignalCommunication(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  signalId: Id<"publisherAbuseSignals">,
+) {
+  return await ctx.db
+    .query("publisherAbuseSignalCommunications")
+    .withIndex("by_signal_id", (q) => q.eq("signalId", signalId))
+    .unique();
+}
 
 export async function createPublisherAbuseTrafficExplanationToken(): Promise<{
   token: string;

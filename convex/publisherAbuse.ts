@@ -40,7 +40,11 @@ import {
   type TemporalAbuseCohortBenchmark,
 } from "./lib/publisherAbuseScoring";
 import { freshPublisherAbuseEvidenceCrossesRepeatThreshold } from "./lib/publisherAbuseSignalLifecycle";
-import { truncatePublisherAbuseResponsePreview } from "./lib/publisherAbuseTrafficExplanation";
+import {
+  getPublisherAbuseSignalCommunication,
+  publisherAbuseSignalCommunicationExpirationTime,
+  truncatePublisherAbuseResponsePreview,
+} from "./lib/publisherAbuseTrafficExplanation";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -125,6 +129,11 @@ type TriageStatus = Doc<"publisherAbuseReviewNominations">["status"];
 type ScoreRun = Doc<"publisherAbuseScoreRuns">;
 type ScoreDoc = Doc<"publisherAbuseScores">;
 type PublisherAbuseSignalDoc = Doc<"publisherAbuseSignals">;
+type PublisherAbuseSignalCommunicationDoc = Doc<"publisherAbuseSignalCommunications">;
+type PublisherAbuseSignalWithCommunication = PublisherAbuseSignalDoc & {
+  trafficExplanationRequest?: PublisherAbuseSignalCommunicationDoc["request"];
+  trafficExplanationResponse?: PublisherAbuseSignalCommunicationDoc["response"];
+};
 type PublisherAbuseSignalType = PublisherAbuseSignalDoc["signalType"];
 type PublisherAbuseSignalReviewStatus = NonNullable<PublisherAbuseSignalDoc["reviewStatus"]>;
 type RunPhase = ScoreRun["phase"];
@@ -999,7 +1008,8 @@ async function setPublisherAbuseSignalReviewStatusWithActor(
   },
 ) {
   const previousStatus = publisherAbuseSignalReviewStatus(args.signal);
-  const contactRequest = args.signal.trafficExplanationRequest;
+  const communication = await getPublisherAbuseSignalCommunication(ctx, args.signal._id);
+  const contactRequest = communication?.request;
   const cancelledContactRequest =
     args.status !== "open" &&
     contactRequest &&
@@ -1013,6 +1023,12 @@ async function setPublisherAbuseSignalReviewStatusWithActor(
           deliveryError: "signal_no_longer_open",
         }
       : null;
+  if (cancelledContactRequest && communication) {
+    await ctx.db.patch(communication._id, {
+      request: cancelledContactRequest,
+      expirationTime: publisherAbuseSignalCommunicationExpirationTime(args.now),
+    });
+  }
   await ctx.db.patch(args.signal._id, {
     reviewStatus: args.status,
     reviewedByUserId: args.actorUserId,
@@ -1036,7 +1052,6 @@ async function setPublisherAbuseSignalReviewStatusWithActor(
           contactState: "cancelled" as const,
           attentionState: "none" as const,
           needsAttention: false,
-          trafficExplanationRequest: cancelledContactRequest,
         }
       : {}),
   });
@@ -2922,7 +2937,9 @@ export async function claimPublisherAbuseSignalNotificationsInternalHandler(
     });
   }
   return {
-    signals,
+    signals: await Promise.all(
+      signals.map(async (signal) => await hydratePublisherAbuseSignalCommunication(ctx, signal)),
+    ),
     hasMore: pendingSignals.length > limit || hasMoreStaleClaims,
     claimedAt: now,
   };
@@ -2963,7 +2980,7 @@ export async function notifyPublisherAbuseSignalChangesInternalHandler(
   }
 
   const claimed: {
-    signals: PublisherAbuseSignalDoc[];
+    signals: PublisherAbuseSignalWithCommunication[];
     hasMore: boolean;
     claimedAt: number;
   } = await ctx.runMutation(
@@ -3111,7 +3128,7 @@ function getHermitPublisherAbuseSignalConfig() {
 }
 
 function buildHermitPublisherAbuseActionablePayload(
-  signal: PublisherAbuseSignalDoc,
+  signal: PublisherAbuseSignalWithCommunication,
   config: { siteUrl: string },
 ) {
   const publisherScope = signal.signalType === "owner_synchronized_download_trends";
@@ -3721,7 +3738,9 @@ export async function archiveTemporalPublisherAbuseSignals(
     let mayRequestNewOwnerExplanation =
       args.requestOwnerExplanation === true &&
       signalTypes.some(isTrafficExplanationSignalType) &&
-      !existingSignals.some((signal) => signal?.trafficExplanationRequest);
+      !existingSignals.some(
+        (signal) => signal?.contactState && signal.contactState !== "not_requested",
+      );
 
     for (const [index, signalType] of signalTypes.entries()) {
       const existingSignal = existingSignals[index];
@@ -3921,17 +3940,17 @@ async function upsertPublisherAbuseSignal(
     contactState: args.requestOwnerExplanation ? "queued" : "not_requested",
     attentionState: "not_contacted",
     needsAttention: false,
-    ...(args.requestOwnerExplanation
-      ? {
-          trafficExplanationRequest: {
-            requestedAt: args.now,
-            state: "queued",
-            attemptCount: 0,
-          },
-        }
-      : {}),
   });
   if (args.requestOwnerExplanation) {
+    await ctx.db.insert("publisherAbuseSignalCommunications", {
+      signalId,
+      request: {
+        requestedAt: args.now,
+        state: "queued",
+        attemptCount: 0,
+      },
+      expirationTime: publisherAbuseSignalCommunicationExpirationTime(args.now),
+    });
     await ctx.db.insert("auditLogs", {
       action: "publisher_abuse.signal.owner_contact_queued",
       targetType: "publisherAbuseSignal",
@@ -4765,12 +4784,25 @@ async function summarizeVisiblePublisherAbuseSignals(
       continue;
     }
     items.push({
-      signal,
+      signal: await hydratePublisherAbuseSignalCommunication(ctx, signal),
       publisher: publisher ? summarizePublisherForAbuseReview(publisher) : null,
       ownerUser: ownerUser ? summarizeUserForAbuseReview(ownerUser) : null,
     });
   }
   return items;
+}
+
+async function hydratePublisherAbuseSignalCommunication(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  signal: PublisherAbuseSignalDoc,
+): Promise<PublisherAbuseSignalWithCommunication> {
+  const communication = await getPublisherAbuseSignalCommunication(ctx, signal._id);
+  if (!communication) return signal;
+  return {
+    ...signal,
+    trafficExplanationRequest: communication.request,
+    ...(communication.response ? { trafficExplanationResponse: communication.response } : {}),
+  };
 }
 
 async function getPublisherAbuseReviewNominationCountSummary(ctx: QueryCtx) {

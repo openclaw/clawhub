@@ -1070,6 +1070,13 @@ describe("publisher abuse dry-run persistence", () => {
     const insert = vi.fn(async () => "publisherAbuseSignalReviewEvents:event");
     const ctx = {
       db: {
+        query: vi.fn(() => ({
+          withIndex: (_index: string, build: (q: unknown) => unknown) => {
+            const q = { eq: vi.fn(() => q) };
+            build(q);
+            return { unique: async () => null };
+          },
+        })),
         get: vi.fn(async () => {
           if (patch.mock.calls.length === 0) return signal;
           if (patch.mock.calls.length === 1) return snoozedSignal;
@@ -1206,6 +1213,13 @@ describe("publisher abuse dry-run persistence", () => {
       reviewPublisherAbuseSignalsBatchHandler(
         {
           db: {
+            query: vi.fn(() => ({
+              withIndex: (_index: string, build: (q: unknown) => unknown) => {
+                const q = { eq: vi.fn(() => q) };
+                build(q);
+                return { unique: async () => null };
+              },
+            })),
             get: vi.fn(async (id: string) => signals.get(id) ?? null),
             patch,
             insert,
@@ -1727,6 +1741,15 @@ describe("publisher abuse dry-run persistence", () => {
       patch,
       insert: vi.fn(async () => "auditLogs:notification"),
       query: vi.fn((table: string) => {
+        if (table === "publisherAbuseSignalCommunications") {
+          return {
+            withIndex: (_indexName: string, build: (q: unknown) => unknown) => {
+              const q = { eq: vi.fn(() => q) };
+              build(q);
+              return { unique: async () => null };
+            },
+          };
+        }
         expect(table).toBe("publisherAbuseSignals");
         return {
           withIndex: (
@@ -1833,6 +1856,11 @@ describe("publisher abuse dry-run persistence", () => {
       patch,
       insert: vi.fn(async () => "auditLogs:notification"),
       query: vi.fn((table: string) => {
+        if (table === "publisherAbuseSignalCommunications") {
+          return {
+            withIndex: () => ({ unique: async () => null }),
+          };
+        }
         expect(table).toBe("publisherAbuseSignals");
         return {
           withIndex: (indexName: string) => {
@@ -5143,6 +5171,9 @@ describe("publisher abuse dry-run persistence", () => {
           throw new Error(`unexpected get ${id}`);
         }),
         query: vi.fn((table: string) => {
+          if (table === "publisherAbuseSignalCommunications") {
+            return { withIndex: () => ({ unique: async () => null }) };
+          }
           if (table === "publisherAbuseSignals") {
             return {
               withIndex: (
@@ -5245,6 +5276,9 @@ describe("publisher abuse dry-run persistence", () => {
           throw new Error(`unexpected get ${id}`);
         }),
         query: vi.fn((table: string) => {
+          if (table === "publisherAbuseSignalCommunications") {
+            return { withIndex: () => ({ unique: async () => null }) };
+          }
           if (table === "publisherAbuseSignals") {
             return {
               withIndex: (
@@ -5455,6 +5489,9 @@ describe("publisher abuse dry-run persistence", () => {
           throw new Error(`unexpected get ${id}`);
         }),
         query: vi.fn((table: string) => {
+          if (table === "publisherAbuseSignalCommunications") {
+            return { withIndex: () => ({ unique: async () => null }) };
+          }
           if (table === "publisherAbuseSignals") {
             return {
               withIndex: (indexName: string) => {
@@ -10562,6 +10599,7 @@ describe("publisher abuse dry-run persistence", () => {
     candidate.temporalScore.nearConversion = true;
     candidate.temporalScore.sustained = true;
     const insertedSignals: Array<Record<string, unknown>> = [];
+    const insertedCommunications: Array<Record<string, unknown>> = [];
     const scheduler = { runAfter: vi.fn(async () => null) };
     const ctx = {
       db: {
@@ -10583,6 +10621,10 @@ describe("publisher abuse dry-run persistence", () => {
           if (table === "publisherAbuseSignals") {
             insertedSignals.push(value);
             return `publisherAbuseSignals:${insertedSignals.length}`;
+          }
+          if (table === "publisherAbuseSignalCommunications") {
+            insertedCommunications.push(value);
+            return `publisherAbuseSignalCommunications:${insertedCommunications.length}`;
           }
           return "auditLogs:queued";
         }),
@@ -10607,13 +10649,19 @@ describe("publisher abuse dry-run persistence", () => {
     expect(insertedSignals).toHaveLength(3);
     expect(insertedSignals[0]).toEqual(
       expect.objectContaining({
-        trafficExplanationRequest: {
+        contactState: "queued",
+      }),
+    );
+    expect(insertedCommunications).toEqual([
+      expect.objectContaining({
+        signalId: "publisherAbuseSignals:1",
+        request: {
           requestedAt: 1_234,
           state: "queued",
           attemptCount: 0,
         },
       }),
-    );
+    ]);
     expect(insertedSignals[1]).not.toHaveProperty("trafficExplanationRequest");
     expect(insertedSignals[2]).not.toHaveProperty("trafficExplanationRequest");
     expect(scheduler.runAfter).toHaveBeenCalledTimes(1);

@@ -14,6 +14,7 @@ import {
   PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
+import { publisherAbuseSignalCommunicationExpirationTime } from "./lib/publisherAbuseTrafficExplanation";
 
 // DEV-ONLY seed for the publisher-abuse review dashboard. It inserts one
 // completed score run plus a spread of synthetic scores/nominations so every
@@ -650,7 +651,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     lastScoredAt: temporalCompletedAt,
     updatedAt: temporalCompletedAt,
   });
-  await ctx.db.insert("publisherAbuseSignals", {
+  const responseSignalId = await ctx.db.insert("publisherAbuseSignals", {
     signalType: "sustained_abnormal_download_days",
     ownerKey: TEMPORAL_DEMO_OWNER_KEY,
     ownerPublisherId: temporalPublisherId,
@@ -682,7 +683,10 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     notificationAttemptCount: 1,
     notificationDeliveredAt: temporalCompletedAt - 2 * 60_000,
     needsNotification: false,
-    trafficExplanationRequest: {
+  });
+  await ctx.db.insert("publisherAbuseSignalCommunications", {
+    signalId: responseSignalId,
+    request: {
       requestedAt: temporalCompletedAt - 5 * 60_000,
       tokenHash: "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb",
       state: "sent",
@@ -698,12 +702,13 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
       redactedTextSnapshot:
         "Hello local-abuse,\n\nWe noticed unusual download activity.\n\n[SECURE EXPLANATION LINK]",
     },
-    trafficExplanationResponse: {
+    response: {
       kind: "expected",
       message: "A documentation launch linked directly to this skill.",
       submittedAt: temporalCompletedAt - 3 * 60_000,
       submittedByUserId: temporalUserId,
     },
+    expirationTime: publisherAbuseSignalCommunicationExpirationTime(temporalCompletedAt),
   });
   const communicationStateSignals = [
     {
@@ -816,7 +821,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     },
   ];
   for (const [index, state] of communicationStateSignals.entries()) {
-    await ctx.db.insert("publisherAbuseSignals", {
+    const signalId = await ctx.db.insert("publisherAbuseSignals", {
       signalType: "sustained_abnormal_download_days",
       ownerKey: TEMPORAL_DEMO_OWNER_KEY,
       ownerPublisherId: temporalPublisherId,
@@ -843,7 +848,6 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
       contactState: state.contactState,
       attentionState: state.attentionState,
       needsAttention: state.needsAttention,
-      trafficExplanationRequest: state.request,
       ...(state.notificationEventKind
         ? {
             notificationEventKind: state.notificationEventKind,
@@ -854,7 +858,12 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
             needsNotification: state.needsNotification,
           }
         : {}),
-      ...(state.response ? { trafficExplanationResponse: state.response } : {}),
+    });
+    await ctx.db.insert("publisherAbuseSignalCommunications", {
+      signalId,
+      request: state.request,
+      ...(state.response ? { response: state.response } : {}),
+      expirationTime: publisherAbuseSignalCommunicationExpirationTime(temporalCompletedAt),
     });
   }
   await ctx.db.insert("publisherAbuseSignals", {
@@ -991,6 +1000,11 @@ async function clearTemporalDemoSignalsForSkill(
       )
       .take(CLEAR_SEED_BATCH_SIZE);
     for (const row of rows) {
+      const communication = await ctx.db
+        .query("publisherAbuseSignalCommunications")
+        .withIndex("by_signal_id", (q) => q.eq("signalId", row._id))
+        .unique();
+      if (communication) await ctx.db.delete(communication._id);
       await ctx.db.delete(row._id);
       deleted += 1;
     }
