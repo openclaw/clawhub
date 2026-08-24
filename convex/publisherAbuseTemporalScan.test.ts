@@ -709,7 +709,7 @@ describe("scheduled temporal publisher abuse scan", () => {
     );
   });
 
-  it("archives classified candidates with the completed full-platform benchmark", async () => {
+  it("archives classified candidates before advancing to publisher synchrony", async () => {
     const benchmark = {
       scope: "all_active_skills" as const,
       sampleSize: 1_000,
@@ -756,7 +756,8 @@ describe("scheduled temporal publisher abuse scan", () => {
     ).resolves.toEqual({
       ok: true,
       runId: run._id,
-      completed: true,
+      completed: false,
+      phase: "classifying",
     });
 
     expect(runMutation).toHaveBeenNthCalledWith(
@@ -778,8 +779,123 @@ describe("scheduled temporal publisher abuse scan", () => {
     expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       runId: run._id,
-      todayDay: 100,
     });
+  });
+
+  it("completes only after the final publisher synchrony page succeeds", async () => {
+    const run = temporalRun({
+      phase: "finalizing",
+      temporalPipelinePhase: "synchronizing",
+    });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(run)
+      .mockResolvedValueOnce({ ownerKeys: [], cursor: undefined, isDone: true });
+    const runMutation = vi.fn(async () => ({ applied: true }));
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const handler = runScheduledTemporalPublisherAbuseScanInternalHandler as unknown as (
+      ctx: {
+        runQuery: typeof runQuery;
+        runMutation: typeof runMutation;
+        scheduler: typeof scheduler;
+      },
+      args: { runId?: Id<"publisherAbuseScoreRuns"> },
+    ) => Promise<unknown>;
+
+    await expect(
+      handler({ runQuery, runMutation, scheduler }, { runId: run._id }),
+    ).resolves.toEqual({ ok: true, runId: run._id, completed: true });
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      runId: run._id,
+      expectedCursor: undefined,
+      nextCursor: undefined,
+      isDone: true,
+    });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {});
+  });
+
+  it("routes publisher synchrony failures through the saved retry lifecycle", async () => {
+    const run = temporalRun({
+      phase: "finalizing",
+      temporalPipelinePhase: "synchronizing",
+      temporalSynchronyCursor: "owner-page-2",
+    });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(run)
+      .mockRejectedValueOnce(new Error("owner synchrony query failed"));
+    const runMutation = vi.fn(async () => ({
+      outcome: "retry_scheduled",
+      failureCount: 1,
+    }));
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const handler = runScheduledTemporalPublisherAbuseScanInternalHandler as unknown as (
+      ctx: {
+        runQuery: typeof runQuery;
+        runMutation: typeof runMutation;
+        scheduler: typeof scheduler;
+      },
+      args: { runId?: Id<"publisherAbuseScoreRuns"> },
+    ) => Promise<unknown>;
+
+    await expect(
+      handler({ runQuery, runMutation, scheduler }, { runId: run._id }),
+    ).resolves.toEqual({
+      ok: true,
+      runId: run._id,
+      completed: false,
+      phase: "synchronizing",
+      retrying: true,
+    });
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      runId: run._id,
+      expectedUpdatedAt: run.updatedAt,
+      errorMessage: "owner synchrony query failed",
+    });
+  });
+
+  it("keeps the run active when classification hands off to synchrony", async () => {
+    const run = temporalRun({
+      phase: "finalizing",
+      temporalPipelinePhase: "classifying",
+      temporalBenchmark: {
+        scope: "all_active_skills",
+        sampleSize: 100,
+        downloads30dAverage: 10,
+        downloads30dMedian: 5,
+        downloads30dP95: 20,
+        downloads30dP99: 30,
+        spikeMultiplier7dP95: 2,
+        spikeMultiplier7dP99: 3,
+        excess7DownloadsP95: 20,
+        excess7DownloadsP99: 30,
+      },
+    });
+    const patch = vi.fn(async () => null);
+    const ctx = { db: { get: vi.fn(async () => run), patch } };
+
+    await expect(
+      advanceScheduledTemporalCandidatesInternalHandler(ctx as unknown as MutationCtx, {
+        runId: run._id,
+        expectedCursor: undefined,
+        nextCursor: undefined,
+        isDone: true,
+        candidates: [],
+      }),
+    ).resolves.toEqual({ applied: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      run._id,
+      expect.objectContaining({
+        temporalPipelinePhase: "synchronizing",
+        temporalScanComplete: false,
+        status: "running",
+        phase: "finalizing",
+        completedAt: undefined,
+      }),
+    );
   });
 
   it("does not archive or revive a scan that has already failed", async () => {
