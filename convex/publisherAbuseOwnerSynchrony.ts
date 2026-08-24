@@ -419,6 +419,35 @@ export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
     todayDay: number;
   },
 ) {
+  const page = await scanPublisherAbuseOwnerSynchronyPage(ctx, args);
+  if (!page.isDone) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.publisherAbuseOwnerSynchrony.runPublisherAbuseOwnerSynchronyScanInternal,
+      {
+        ...(args.runId ? { runId: args.runId } : {}),
+        cursor: page.cursor,
+        todayDay: args.todayDay,
+      },
+    );
+  } else {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
+      {},
+    );
+  }
+  return { matchedOwners: page.matchedOwners, isDone: page.isDone };
+}
+
+export async function scanPublisherAbuseOwnerSynchronyPage(
+  ctx: Pick<ActionCtx, "runQuery" | "runMutation">,
+  args: {
+    runId?: Id<"publisherAbuseScoreRuns">;
+    cursor?: string;
+    todayDay: number;
+  },
+) {
   const page: { ownerKeys: string[]; cursor?: string; isDone: boolean } = await ctx.runQuery(
     internal.publisherAbuseOwnerSynchrony.readPublisherAbuseOwnerKeysPageInternal,
     args.cursor ? { cursor: args.cursor } : {},
@@ -441,24 +470,7 @@ export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
     );
   }
 
-  if (!page.isDone) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuseOwnerSynchrony.runPublisherAbuseOwnerSynchronyScanInternal,
-      {
-        ...(args.runId ? { runId: args.runId } : {}),
-        cursor: page.cursor,
-        todayDay: args.todayDay,
-      },
-    );
-  } else {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-      {},
-    );
-  }
-  return { matchedOwners, isDone: page.isDone };
+  return { matchedOwners, cursor: page.cursor, isDone: page.isDone };
 }
 
 export const runPublisherAbuseOwnerSynchronyScanInternal = internalAction({

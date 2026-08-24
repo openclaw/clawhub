@@ -18,6 +18,7 @@ import {
   archiveTemporalPublisherAbuseSignals,
   type TemporalSkillCandidate,
 } from "./publisherAbuse";
+import { scanPublisherAbuseOwnerSynchronyPage } from "./publisherAbuseOwnerSynchrony";
 
 // Leave room for up to 60 daily-stat rows plus publisher exclusion reads per skill.
 const SOURCE_PAGE_SIZE = 50;
@@ -589,11 +590,11 @@ export async function advanceScheduledTemporalCandidatesInternalHandler(
   const finalizedScores = run.finalizedScores + args.candidates.length;
   await ctx.db.patch(run._id, {
     temporalCandidateCursor: args.isDone ? undefined : args.nextCursor,
-    temporalPipelinePhase: args.isDone ? "completed" : "classifying",
-    temporalScanComplete: args.isDone,
-    status: args.isDone ? "completed" : "running",
-    phase: args.isDone ? "completed" : "finalizing",
-    completedAt: args.isDone ? now : undefined,
+    temporalPipelinePhase: args.isDone ? "synchronizing" : "classifying",
+    temporalScanComplete: false,
+    status: "running",
+    phase: "finalizing",
+    completedAt: undefined,
     finalizedScores,
     reviewCount: finalizedScores,
     transientErrorCount: 0,
@@ -614,6 +615,49 @@ export const advanceScheduledTemporalCandidatesInternal = internalMutation({
     candidates: v.array(temporalCandidateValidator),
   },
   handler: advanceScheduledTemporalCandidatesInternalHandler,
+});
+
+export async function advanceScheduledTemporalSynchronyInternalHandler(
+  ctx: MutationCtx,
+  args: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    expectedCursor?: string;
+    nextCursor?: string;
+    isDone: boolean;
+  },
+) {
+  const run = await getScheduledTemporalScanStateInternalHandler(ctx, { runId: args.runId });
+  const now = Date.now();
+  if (!isActiveScheduledTemporalRun(run, now) || run.temporalPipelinePhase !== "synchronizing") {
+    return { applied: false as const };
+  }
+  if ((run.temporalSynchronyCursor ?? null) !== (args.expectedCursor ?? null)) {
+    return { applied: false as const };
+  }
+  await ctx.db.patch(run._id, {
+    temporalSynchronyCursor: args.isDone ? undefined : args.nextCursor,
+    temporalPipelinePhase: args.isDone ? "completed" : "synchronizing",
+    temporalScanComplete: args.isDone,
+    status: args.isDone ? "completed" : "running",
+    phase: args.isDone ? "completed" : "finalizing",
+    completedAt: args.isDone ? now : undefined,
+    transientErrorCount: 0,
+    lastTransientError: undefined,
+    lastTransientErrorAt: undefined,
+    nextTransientRetryAt: undefined,
+    updatedAt: now,
+  });
+  return { applied: true as const };
+}
+
+export const advanceScheduledTemporalSynchronyInternal = internalMutation({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    expectedCursor: v.optional(v.string()),
+    nextCursor: v.optional(v.string()),
+    isDone: v.boolean(),
+  },
+  handler: advanceScheduledTemporalSynchronyInternalHandler,
 });
 
 export async function failExpiredScheduledTemporalScanInternalHandler(
@@ -991,14 +1035,35 @@ async function runScheduledTemporalPublisherAbuseScanStep(
         alreadyRunning: true,
       };
     }
+  } else if (run.temporalPipelinePhase === "synchronizing") {
+    const page = await scanPublisherAbuseOwnerSynchronyPage(ctx, {
+      runId: run._id,
+      cursor: run.temporalSynchronyCursor,
+      todayDay: run.temporalTodayDay ?? toDayKey(Date.now()),
+    });
+    const advanced: { applied: boolean } = await ctx.runMutation(
+      internal.publisherAbuseTemporalScan.advanceScheduledTemporalSynchronyInternal,
+      {
+        runId: run._id,
+        expectedCursor: run.temporalSynchronyCursor,
+        nextCursor: page.cursor,
+        isDone: page.isDone,
+      },
+    );
+    if (!advanced.applied) {
+      return {
+        ok: true,
+        runId: run._id,
+        completed: false,
+        phase: run.temporalPipelinePhase,
+        alreadyRunning: true,
+      };
+    }
     if (page.isDone) {
       await ctx.scheduler.runAfter(
         0,
-        internal.publisherAbuseOwnerSynchrony.runPublisherAbuseOwnerSynchronyScanInternal,
-        {
-          runId: run._id,
-          todayDay: run.temporalTodayDay ?? toDayKey(Date.now()),
-        },
+        internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
+        {},
       );
       return { ok: true as const, runId: run._id, completed: true as const };
     }
