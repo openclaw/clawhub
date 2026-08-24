@@ -215,7 +215,7 @@ describe("publisher abuse owner synchrony signal", () => {
     );
   });
 
-  it("re-notifies an open synchrony signal when unchanged members gain material traffic", async () => {
+  it("marks stronger synchrony evidence changed without routine Hermit noise", async () => {
     const now = 1_700_000_000_000;
     const existing = {
       ...snoozedSignal(now),
@@ -247,7 +247,7 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(patch).toHaveBeenCalledWith(
       existing._id,
       expect.objectContaining({
-        needsNotification: true,
+        needsNotification: false,
         lastChangedAt: now,
         notificationBaselineDownloads: repeatedCandidate.allTimeDownloads,
         notificationBaselineInstalls: repeatedCandidate.allTimeInstalls,
