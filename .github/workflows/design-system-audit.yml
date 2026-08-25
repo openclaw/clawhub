@@ -202,12 +202,38 @@ jobs:
           git commit -m "chore: apply weekly design audit"
           git push --force-with-lease origin "HEAD:$AUDIT_BRANCH"
 
+      - uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        id: app-token
+        continue-on-error: true
+        if: steps.finalize.outputs.open_pr == 'true'
+        with:
+          app-id: "2729701"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+
+      - uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        id: app-token-fallback
+        continue-on-error: true
+        if: steps.finalize.outputs.open_pr == 'true' && steps.app-token.outcome == 'failure'
+        with:
+          app-id: "2971289"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+
       - name: Open or update draft pull request
         if: steps.finalize.outputs.open_pr == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token }}
         run: |
           set -euo pipefail
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Unable to create a Barnacle GitHub App token. Check the primary GH_APP_PRIVATE_KEY and fallback GH_APP_PRIVATE_KEY_FALLBACK credentials and their pull-request permissions." >&2
+            exit 1
+          fi
           open_pr="$(
             gh pr list \
               --repo "$GITHUB_REPOSITORY" \

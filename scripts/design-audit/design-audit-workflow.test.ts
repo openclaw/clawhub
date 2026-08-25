@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 type Step = {
+  "continue-on-error"?: boolean;
+  env?: Record<string, unknown>;
+  id?: string;
   name?: string;
   if?: string;
   run?: string;
@@ -38,15 +41,59 @@ describe("weekly design-system audit workflow", () => {
     expect(createPr?.run).toContain("gh pr edit");
     expect(createPr?.run).toContain('--head "$AUDIT_BRANCH"');
 
+    const primaryToken = steps.find((step) => step.id === "app-token");
+    expect(primaryToken).toMatchObject({
+      uses: "actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3",
+      "continue-on-error": true,
+      if: "steps.finalize.outputs.open_pr == 'true'",
+      with: {
+        "app-id": "2729701",
+        "private-key": "${{ secrets.GH_APP_PRIVATE_KEY }}",
+        owner: "${{ github.repository_owner }}",
+        repositories: "${{ github.event.repository.name }}",
+        "permission-pull-requests": "write",
+      },
+    });
+
+    const fallbackToken = steps.find((step) => step.id === "app-token-fallback");
+    expect(fallbackToken).toMatchObject({
+      uses: "actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3",
+      "continue-on-error": true,
+      if: "steps.finalize.outputs.open_pr == 'true' && steps.app-token.outcome == 'failure'",
+      with: {
+        "app-id": "2971289",
+        "private-key": "${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}",
+        owner: "${{ github.repository_owner }}",
+        repositories: "${{ github.event.repository.name }}",
+        "permission-pull-requests": "write",
+      },
+    });
+
+    expect(createPr?.env).toEqual({
+      GH_TOKEN: "${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token }}",
+    });
+    const createPrRun = createPr?.run ?? "";
+    const tokenGuard = 'if [[ -z "${GH_TOKEN:-}" ]]';
+    expect(createPrRun).toContain(tokenGuard);
+    expect(createPrRun).toContain("primary GH_APP_PRIVATE_KEY");
+    expect(createPrRun).toContain("fallback GH_APP_PRIVATE_KEY_FALLBACK");
+    expect(createPrRun.indexOf(tokenGuard)).toBeLessThan(createPrRun.indexOf("gh pr list"));
+    expect(JSON.stringify(createPr)).not.toContain("github.token");
+    expect(createPrRun).not.toContain("git push");
+
+    const commit = steps.find((step) => step.name === "Commit audit branch");
+    expect(commit?.run).toContain('git push --force-with-lease origin "HEAD:$AUDIT_BRANCH"');
+    expect(JSON.stringify(commit)).not.toContain("steps.app-token");
+
     const closeClean = steps.find(
       (step) => step.name === "Close obsolete clean audit pull request",
     );
     expect(closeClean?.if).toContain("steps.validation.outcome == 'success'");
     expect(closeClean?.run).toContain("gh pr close");
+    expect(closeClean?.env).toEqual({ GH_TOKEN: "${{ github.token }}" });
+    expect(JSON.stringify(closeClean)).not.toContain("steps.app-token");
 
-    expect(steps.some((step) => step.name === "Create repository token")).toBe(false);
     expect(source).not.toContain("DESIGN_SYSTEM_READ_TOKEN");
-    expect(source).not.toContain("steps.app-token.outputs.token");
   });
 
   it("preserves artifacts and suppresses PRs when validation fails", async () => {
