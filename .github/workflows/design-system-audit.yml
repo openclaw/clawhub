@@ -20,7 +20,7 @@ env:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 75
     permissions:
       contents: write

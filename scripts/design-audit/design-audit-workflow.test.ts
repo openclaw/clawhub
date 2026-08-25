@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { readFile } from "node:fs/promises";
+import { parseConfigFileTextToJson } from "typescript";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
@@ -20,10 +21,11 @@ describe("weekly design-system audit workflow", () => {
         workflow_dispatch: unknown;
       };
       env: Record<string, string>;
-      jobs: { audit: { steps: Step[] } };
+      jobs: { audit: { "runs-on": string; steps: Step[] } };
     };
     const steps = workflow.jobs.audit.steps;
 
+    expect(workflow.jobs.audit["runs-on"]).toBe("blacksmith-8vcpu-ubuntu-2404");
     expect(workflow.on.schedule).toEqual([{ cron: "17 15 * * 1" }]);
     expect(workflow.on.workflow_dispatch).toBeDefined();
     expect(workflow.env.AUDIT_BRANCH).toBe("automation/design-system-audit");
@@ -63,6 +65,31 @@ describe("weekly design-system audit workflow", () => {
     expect(upload?.uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
     expect(commit?.if).toBe("steps.finalize.outputs.open_pr == 'true'");
     expect(failure?.if).toContain("steps.validation.outcome == 'failure'");
+  });
+
+  it("keeps Codex workspace-scoped with restricted networking", async () => {
+    const runCodex = await readFile("scripts/design-audit/run-codex.ts", "utf8");
+    const forbiddenOverrides = [
+      "danger-full-access",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "use_legacy_landlock=true",
+      "use_legacy_landlock = true",
+      "network_access=true",
+      "network_access = true",
+    ];
+
+    expect(runCodex).toContain('"--sandbox",\n    "workspace-write"');
+    for (const override of forbiddenOverrides) {
+      expect(runCodex).not.toContain(override);
+    }
+  });
+
+  it("excludes generated audit artifacts from the root TypeScript project", async () => {
+    const source = await readFile("tsconfig.json", "utf8");
+    const parsed = parseConfigFileTextToJson("tsconfig.json", source);
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.config.exclude).toContain("artifacts/**");
   });
 
   it("enforces the agent change boundary before running repository scripts", async () => {
