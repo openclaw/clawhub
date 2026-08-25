@@ -273,7 +273,7 @@ describe("pre-publication worker", () => {
     );
   });
 
-  it("rescans exact artifacts when the reusable verdict predates A.I.G", async () => {
+  it("rescans exact artifacts when cached A.I.G and ClawScan runs differ", async () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),
     };
@@ -302,6 +302,14 @@ describe("pre-publication worker", () => {
         "worker-token",
         {
           ...attempt,
+          existingAigAnalysis: {
+            checkedAt: 122,
+            findings: [],
+            issueCount: 0,
+            scannerVersion: "0.2.1",
+            status: "clean",
+            summary: "A.I.G reported 0 findings.",
+          },
           existingClawscanAnalysis: {
             checkedAt: 123,
             confidence: "high",
@@ -819,6 +827,61 @@ JSON
         check: {
           status: "clean",
           summary: "Native ClawScan passed.",
+        },
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it("fails closed when a completed skill scan omits a required scanner", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              _id: String(attempt.attemptId),
+              attempts: 1,
+              hasMaliciousSignal: false,
+              leaseToken: attempt.claimId,
+              source: "pre-publication",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {},
+          },
+          workspace,
+        ),
+      ).resolves.toEqual({
+        check: {
+          status: "failed",
+          summary: "ClawScan scanner did not complete: skillspector=missing",
         },
       });
     } finally {

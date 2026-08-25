@@ -443,10 +443,9 @@ function storedAnalysisFromClawScanArtifact(
   const judgeStatus = readString(judge, ["status"]);
   const judgeError = readString(judge, ["error"]);
   const requireAig = targetKind !== "packageRelease";
-  const scannerFailures = collectClawScanScannerFailures(
-    asRecord(record?.scanners),
-    requireAig ? REQUIRED_SKILL_SCANNERS : REQUIRED_PACKAGE_SCANNERS,
-  );
+  const scanners = asRecord(record?.scanners);
+  const requiredScanners = requireAig ? REQUIRED_SKILL_SCANNERS : REQUIRED_PACKAGE_SCANNERS;
+  const scannerFailures = collectClawScanScannerFailures(scanners, requiredScanners);
   if (scannerFailures.length > 0) {
     return { error: `ClawScan scanner did not complete: ${scannerFailures.join(", ")}` };
   }
@@ -456,6 +455,14 @@ function storedAnalysisFromClawScanArtifact(
         `ClawScan judge status was ${judgeStatus ?? "missing"}`,
         ...(judgeError ? [judgeError] : []),
       ].join(": "),
+    };
+  }
+  const missingScanners = requiredScanners.filter((scanner) => scanners?.[scanner] === undefined);
+  if (missingScanners.length > 0) {
+    return {
+      error: `ClawScan scanner did not complete: ${missingScanners
+        .map((scanner) => `${scanner}=missing`)
+        .join(", ")}`,
     };
   }
   const verdict = readString(result, ["verdict", "status"]);
@@ -697,13 +704,16 @@ export async function processPrePublicationAttempt(
     let clawscan: WorkerCheckResult;
     let clawscanAnalysis: StoredLlmAnalysis | undefined;
     let aigAnalysis: AigAnalysis | undefined;
+    const existingClawscanAnalysis = attempt.existingClawscanAnalysis;
+    const existingAigAnalysis = attempt.existingAigAnalysis;
     if (
-      attempt.existingClawscanAnalysis &&
-      attempt.existingAigAnalysis &&
-      attempt.existingAigAnalysis.status !== "error"
+      existingClawscanAnalysis &&
+      (attempt.kind === "package" ||
+        (existingAigAnalysis?.status !== "error" &&
+          existingAigAnalysis?.checkedAt === existingClawscanAnalysis.checkedAt))
     ) {
-      clawscanAnalysis = attempt.existingClawscanAnalysis;
-      aigAnalysis = attempt.existingAigAnalysis;
+      clawscanAnalysis = existingClawscanAnalysis;
+      aigAnalysis = attempt.kind === "skill" ? existingAigAnalysis : undefined;
       clawscan = clawScanCheckResult(clawscanAnalysis);
       logger.info(
         {
