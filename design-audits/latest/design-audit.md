@@ -1,17 +1,17 @@
 # ClawHub design audit
 
-- Design system: `v0.0.1`
-- ClawHub commit: `274c5b71ef2abef87dcf7442a086629a6ea71992`
-- Comparison base: `735e1c4d`
-- Generated: 2026-07-08T23:59:54.797Z
+- Carapace: `v0.6.1`
+- ClawHub commit: `85865573e9e6e26bc0dc59fdeab20587024d3015`
+- Comparison base: `4117154ecac49bd054026f1cf6ae4278b6eff72a`
+- Generated: 2026-08-25T19:25:20.268Z
 - Validation: passed
 
 ## Summary
 
 - Errors: 0
-- Warnings: 1
-- Informational: 0
-- Safe source fixes: 2
+- Warnings: 22
+- Informational: 1
+- Safe source fixes: 1
 
 ## Validation
 
@@ -29,10 +29,44 @@
 
 ## Findings
 
-### WARNING: `layout/overflow`
+### WARNING: `token/legacy-alias`
 
-- Evidence: [src/styles.css](../../src/styles.css#L29470)
+- Evidence: [src/styles.css](../../src/styles.css#L11000)
 - Kind: mechanical
-- Finding: Mobile /skills used the shared equal-width browse-tab rule with min-width: 0; in the supplied light/dark mobile screenshots, “Most starred” visually runs into “Featured”.
-- Remediation: Fixed by adding a skills-browse-page route class and route-scoped mobile CSS so skills tabs size to their content within the existing horizontal-scroll tab strip.
-- Contract: `openclaw-design-audit/references/rubric.md layout/overflow; openclaw-marketing-pages/references/page-patterns.md Responsive Checks`
+- Finding: New code depends on migration-only alias --ink.
+- Remediation: Use the equivalent canonical --oc-* semantic token.
+- Contract: `openclaw-design-system/references/consumer-adapters.md`
+
+### WARNING: `token/legacy-alias`
+
+- Evidence: [src/styles.css](../../src/styles.css#L11000)
+- Kind: mechanical
+- Finding: Confirmed pre-fix: new code used migration-only alias --ink for skill evaluation heading text. Fixed to var(--oc-text-primary).
+- Remediation: Use canonical semantic text tokens for new code.
+- Contract: `openclaw-design-system/references/tokens.md`
+
+### WARNING: `token/legacy-alias`
+
+- Evidence: [src/styles.css](../../src/styles.css#L11007)
+- Kind: mechanical
+- Finding: New code depends on migration-only alias --ink-soft.
+- Remediation: Use the equivalent canonical --oc-* semantic token.
+- Contract: `openclaw-design-system/references/consumer-adapters.md`
+
+### WARNING: `token/legacy-alias`
+
+- Evidence: [src/styles.css](../../src/styles.css#L11007)
+- Kind: mechanical
+- Finding: Confirmed pre-fix: new code used migration-only alias --ink-soft for skill evaluation body text. Fixed to var(--oc-text-secondary).
+- Remediation: Use canonical semantic text tokens for new code.
+- Contract: `openclaw-design-system/references/tokens.md`
+
+### WARNING: `token/legacy-alias`
+
+- Evidence: [src/styles.css](../../src/styles.css#L11022)
+- Kind: mechanical
+- Finding: New code depends on migration-only alias --ink.
+- Remediation: Use the equivalent canonical --oc-* semantic token.
+- Contract: `openclaw-design-system/references/consumer-adapters.md`
+
+18 additional non-error findings are retained in JSON.

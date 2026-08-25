@@ -10997,14 +10997,14 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .skill-evaluation-header h2 {
   margin: 0;
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-size: var(--fs-xl);
 }
 
 .skill-evaluation-header p {
   max-width: 72ch;
   margin: var(--space-2) 0 0;
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: var(--fs-sm);
   line-height: 1.55;
 }
@@ -11019,7 +11019,7 @@ a.skills-sh-security-audit-row:focus-visible {
 .skill-evaluation-overview h3,
 .skill-evaluation-section-heading h3 {
   margin: 0;
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-size: var(--fs-md);
 }
 
@@ -11028,7 +11028,7 @@ a.skills-sh-security-audit-row:focus-visible {
   gap: var(--space-2);
   margin: 0;
   padding: 0;
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-size: var(--fs-sm);
   list-style: none;
 }
@@ -11041,7 +11041,7 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .skill-evaluation-overview-list dt {
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-weight: 650;
 }
 
@@ -11097,14 +11097,14 @@ a.skills-sh-security-audit-row:focus-visible {
 
 .skill-evaluation-section-heading p {
   margin: var(--space-1) 0 0;
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: var(--fs-xs);
   line-height: 1.5;
 }
 
 .skill-evaluation-table-wrap {
   overflow-x: auto;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--oc-border-subtle) 82%, transparent);
   border-radius: var(--r-md);
 }
 
@@ -11117,7 +11117,7 @@ a.skills-sh-security-audit-row:focus-visible {
 .skill-evaluation-table th,
 .skill-evaluation-table td {
   padding: var(--space-3) var(--space-4);
-  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--oc-border-subtle) 72%, transparent);
   text-align: right;
   white-space: nowrap;
 }
@@ -11127,18 +11127,18 @@ a.skills-sh-security-audit-row:focus-visible {
 }
 
 .skill-evaluation-table thead th {
-  color: var(--ink-soft);
+  color: var(--oc-text-secondary);
   font-size: var(--fs-xs);
   font-weight: 650;
 }
 
 .skill-evaluation-table tbody th {
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-weight: 650;
 }
 
 .skill-evaluation-table td {
-  color: var(--ink);
+  color: var(--oc-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
