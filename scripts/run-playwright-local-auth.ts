@@ -22,6 +22,7 @@ import {
 const DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_PORT = 4173;
 const DEFAULT_E2E_WORKER_TOKEN = "local-e2e-worker-token";
+const DEFAULT_E2E_TRAFFIC_EXPLANATION_TOKEN_SECRET = "a".repeat(64);
 const DEFAULT_START_TIMEOUT_MS = 300_000;
 const DEFAULT_REACHABILITY_REQUEST_TIMEOUT_MS = 5_000;
 const STOP_TIMEOUT_MS = 30_000;
@@ -482,6 +483,9 @@ async function main() {
     CLAWHUB_DISABLE_CRONS: "1",
     CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
     CLAWHUB_EMAIL_CAPTURE_FILE: process.env.CLAWHUB_EMAIL_CAPTURE_FILE ?? emailCaptureFile,
+    CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET:
+      process.env.CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET ??
+      DEFAULT_E2E_TRAFFIC_EXPLANATION_TOKEN_SECRET,
     CONVEX_AGENT_MODE: process.env.CONVEX_AGENT_MODE ?? "anonymous",
     CONVEX_SITE_URL: convexSiteUrl,
     DEV_AUTH_ENABLED: "1",
@@ -509,6 +513,7 @@ async function main() {
       "CLAWHUB_EXPERIMENTAL_CLAWS=1",
       "CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test",
       `CLAWHUB_EMAIL_CAPTURE_FILE=${e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE}`,
+      `CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET=${e2eEnv.CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET}`,
       ...(deployment ? [`CONVEX_DEPLOYMENT=${deployment}`] : []),
       `CONVEX_SITE_URL=${convexSiteUrl}`,
       ...(deployment ? [`DEV_AUTH_CONVEX_DEPLOYMENT=${devAuthDeploymentMarker(deployment)}`] : []),
@@ -559,6 +564,12 @@ async function main() {
     { name: "CLAWHUB_EXPERIMENTAL_CLAWS", value: "1" },
     { name: "CLAWHUB_SKILLS_SH_ROLLOUT_MODE", value: "test" },
     { name: "CLAWHUB_EMAIL_CAPTURE_FILE", value: e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE ?? "" },
+    {
+      name: "CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET",
+      value:
+        e2eEnv.CLAWHUB_TRAFFIC_EXPLANATION_TOKEN_SECRET ??
+        DEFAULT_E2E_TRAFFIC_EXPLANATION_TOKEN_SECRET,
+    },
     { name: "CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES", value: "1" },
     { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: localAuthDeployment },
     { name: "DEV_AUTH_ENABLED", value: "1" },

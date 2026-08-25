@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { expect, test, type TestInfo } from "@playwright/test";
 import {
   expectNoFatalErrorUi,
@@ -20,7 +21,19 @@ type SeededSignal = {
   attentionState?: string;
   contactState?: string;
   notificationState?: string;
+  ownerUserId?: string;
   skillDisplayName: string;
+};
+
+type SeededCommunication = {
+  signalId: string;
+  request: {
+    attemptCount?: number;
+    requestedAt: number;
+    tokenHash?: string;
+    state?: string;
+    deliveryError?: string;
+  };
 };
 
 function runConvex(args: string[]) {
@@ -43,6 +56,20 @@ function seedSignals() {
   return JSON.parse(
     runConvex(["data", "publisherAbuseSignals", "--limit", "20", "--format", "json"]),
   ) as SeededSignal[];
+}
+
+function readCommunications() {
+  return JSON.parse(
+    runConvex(["data", "publisherAbuseSignalCommunications", "--limit", "20", "--format", "json"]),
+  ) as SeededCommunication[];
+}
+
+function capturedEmailCount() {
+  const captureFile = process.env.CLAWHUB_EMAIL_CAPTURE_FILE;
+  if (!captureFile || !existsSync(captureFile)) return 0;
+  return readFileSync(captureFile, "utf8")
+    .split("\n")
+    .filter((line) => line.trim().length > 0).length;
 }
 
 async function capture(
@@ -153,4 +180,79 @@ test("proves the owner response and staff communication-state workflow", async (
 
   await expectNoFatalErrorUi(page);
   await expectNoRuntimeErrors(page, runtimeErrors);
+});
+
+test("cancels a claimed delivery after reassignment before provider I/O", async ({}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium", "one real Convex boundary trace is sufficient");
+
+  const signals = seedSignals();
+  const queued = signals.find((signal) => signal.contactState === "queued");
+  if (!queued?.ownerUserId) throw new Error("Expected the queued owner-contact proof fixture");
+  const communication = readCommunications().find((row) => row.signalId === queued._id);
+  if (!communication?.request.tokenHash) {
+    throw new Error("Expected the queued owner-contact communication fixture");
+  }
+  const providerRequestsBefore = capturedEmailCount();
+
+  runConvex([
+    "run",
+    "--typecheck",
+    "disable",
+    "--codegen",
+    "disable",
+    "publisherAbuseTrafficExplanation:beginDeliveryAttemptInternal",
+    JSON.stringify({
+      signalId: queued._id,
+      requestedAt: communication.request.requestedAt,
+      attemptedAt: Date.now(),
+      expectedAttemptCount: communication.request.attemptCount ?? 0,
+      tokenHash: communication.request.tokenHash,
+      recipientUserId: queued.ownerUserId,
+      recipientEmail: "redacted@example.invalid",
+      subject: "Redacted traffic explanation proof",
+      templateVersion: "traffic-explanation.v1",
+      reasonBullets: ["Redacted proof reason"],
+      redactedTextSnapshot: "[SECURE EXPLANATION LINK]",
+    }),
+  ]);
+  runConvex([
+    "run",
+    "--typecheck",
+    "disable",
+    "--codegen",
+    "disable",
+    "publisherAbuseDevSeed:reassignTrafficExplanationOwnerForProof",
+    JSON.stringify({ signalId: queued._id }),
+  ]);
+  const actionResult = JSON.parse(
+    runConvex([
+      "run",
+      "--typecheck",
+      "disable",
+      "--codegen",
+      "disable",
+      "emailsNode:sendPublisherAbuseTrafficExplanationInternal",
+      JSON.stringify({ signalId: queued._id }),
+    ]),
+  ) as { ok: boolean; reason?: string };
+  const finalCommunication = readCommunications().find((row) => row.signalId === queued._id);
+  const providerRequests = capturedEmailCount() - providerRequestsBefore;
+  const trace = {
+    actionResult,
+    claimed: true,
+    deliveryError: finalCommunication?.request.deliveryError ?? null,
+    finalState: finalCommunication?.request.state ?? null,
+    providerRequests,
+    reassigned: true,
+  };
+  console.log(`Owner reassignment boundary trace: ${JSON.stringify(trace)}`);
+
+  expect(trace).toEqual({
+    actionResult: { ok: false, reason: "skill_owner_changed" },
+    claimed: true,
+    deliveryError: "skill_owner_changed",
+    finalState: "cancelled",
+    providerRequests: 0,
+    reassigned: true,
+  });
 });

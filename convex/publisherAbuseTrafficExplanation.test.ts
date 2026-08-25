@@ -9,6 +9,7 @@ import {
 } from "./lib/publisherAbuseTrafficExplanation";
 
 vi.mock("./functions", () => ({
+  action: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalMutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalQuery: (def: { handler: unknown }) => ({ _handler: def.handler }),
   mutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
@@ -27,7 +28,17 @@ const { requireUser } = await import("./lib/access");
 type Handler<TArgs, TResult> = (ctx: unknown, args: TArgs) => Promise<TResult>;
 type Wrapped<TArgs, TResult> = { _handler: Handler<TArgs, TResult> };
 
-const getForOwnerHandler = (
+const getForOwnerInternalHandler = (
+  trafficExplanation.getForOwnerInternal as unknown as Wrapped<
+    { signalId: string; token: string; now: number },
+    {
+      skillDisplayName: string;
+      response: unknown;
+    } | null
+  >
+)._handler;
+
+const getForOwnerActionHandler = (
   trafficExplanation.getForOwner as unknown as Wrapped<
     { signalId: string; token: string },
     {
@@ -36,6 +47,10 @@ const getForOwnerHandler = (
     } | null
   >
 )._handler;
+
+function getForOwnerHandler(ctx: unknown, args: { signalId: string; token: string }) {
+  return getForOwnerInternalHandler(ctx, { ...args, now: 1_700_000_100_000 });
+}
 
 const submitHandler = (
   trafficExplanation.submit as unknown as Wrapped<
@@ -246,6 +261,47 @@ describe("publisher abuse traffic explanations", () => {
     ).resolves.toMatchObject({
       skillDisplayName: "Legacy Skill",
       response: null,
+    });
+  });
+
+  it("hides an expired request before retention cleanup deletes it", async () => {
+    const expirationTime = 1_700_000_100_000;
+    const { ctx, owner } = makeFixture({
+      expirationTime,
+      response: {
+        kind: "expected",
+        message: "Private retained context",
+        submittedAt: 1_700_000_000_000,
+        submittedByUserId: "users:owner",
+      },
+    });
+    vi.mocked(requireUser).mockResolvedValue({ userId: owner._id, user: owner });
+
+    await expect(
+      getForOwnerInternalHandler(ctx, {
+        signalId: "publisherAbuseSignals:traffic",
+        token: VALID_TOKEN,
+        now: expirationTime,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("uses server time for the owner read boundary", async () => {
+    const now = 1_700_000_100_000;
+    const runQuery = vi.fn(async () => null);
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    await expect(
+      getForOwnerActionHandler(
+        { runQuery },
+        { signalId: "publisherAbuseSignals:traffic", token: VALID_TOKEN },
+      ),
+    ).resolves.toBeNull();
+
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      signalId: "publisherAbuseSignals:traffic",
+      token: VALID_TOKEN,
+      now,
     });
   });
 

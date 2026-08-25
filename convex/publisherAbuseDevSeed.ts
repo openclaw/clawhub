@@ -1,3 +1,4 @@
+import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 // DEV-ONLY seed: use the un-wrapped mutation builder (not convex/functions.ts) so
@@ -411,6 +412,28 @@ export const clearSeed = internalMutation({
   handler: async (ctx): Promise<ClearSeedResult> => {
     assertLocalDevSeedAllowed("Publisher abuse");
     return await clearDemoRows(ctx);
+  },
+});
+
+export const reassignTrafficExplanationOwnerForProof = internalMutation({
+  args: { signalId: v.id("publisherAbuseSignals") },
+  returns: v.object({ ok: v.literal(true) }),
+  handler: async (ctx, args) => {
+    assertLocalDevSeedAllowed("Publisher abuse");
+    const signal = await ctx.db.get(args.signalId);
+    if (!signal || signal.skillSlug !== TEMPORAL_DEMO_SKILL_SLUG) {
+      throw new Error("Traffic explanation proof fixture not found");
+    }
+    const replacementOwner = await ctx.db
+      .query("users")
+      .withIndex("handle", (q) => q.eq("handle", "local-admin"))
+      .unique();
+    if (!replacementOwner) throw new Error("Local admin proof owner not found");
+    await ctx.db.patch(signal.skillId, {
+      ownerUserId: replacementOwner._id,
+      ownerPublisherId: undefined,
+    });
+    return { ok: true as const };
   },
 });
 

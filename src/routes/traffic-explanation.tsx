@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { CheckCircle2, CircleHelp, ShieldCheck } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import { Container } from "../components/layout/Container";
 import { SignInPrompt } from "../components/SignInPrompt";
@@ -58,10 +58,39 @@ function responseKindLabel(kind: TrafficExplanationKind) {
 function TrafficExplanationPage() {
   const search = Route.useSearch();
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
-  const request = useQuery(
-    api.publisherAbuseTrafficExplanation.getForOwner,
-    me && search.signal && search.token ? { signalId: search.signal, token: search.token } : "skip",
+  const getOwnerRequest = useAction(api.publisherAbuseTrafficExplanation.getForOwner);
+  const [loadedRequest, setLoadedRequest] = useState<{
+    userId: string;
+    signalId: string;
+    token: string;
+    value: Awaited<ReturnType<typeof getOwnerRequest>>;
+  } | null>(null);
+  const loadOwnerRequest = useCallback(
+    async (userId: string, signalId: string, token: string) => {
+      try {
+        const value = await getOwnerRequest({ signalId, token });
+        setLoadedRequest({ userId, signalId, token, value });
+      } catch {
+        setLoadedRequest({ userId, signalId, token, value: null });
+      }
+    },
+    [getOwnerRequest],
   );
+  const ownerUserId = me?._id;
+
+  useEffect(() => {
+    if (!ownerUserId || !search.signal || !search.token) return;
+    void loadOwnerRequest(ownerUserId, search.signal, search.token);
+  }, [loadOwnerRequest, ownerUserId, search.signal, search.token]);
+
+  const request =
+    !ownerUserId || !search.signal || !search.token
+      ? null
+      : loadedRequest?.userId === ownerUserId &&
+          loadedRequest.signalId === search.signal &&
+          loadedRequest.token === search.token
+        ? loadedRequest.value
+        : undefined;
   const submitExplanation = useMutation(api.publisherAbuseTrafficExplanation.submit);
   const [kind, setKind] = useState<TrafficExplanationKind | null>(null);
   const [message, setMessage] = useState("");
@@ -194,16 +223,19 @@ function TrafficExplanationPage() {
           className="flex flex-col gap-6 border-t border-[color:var(--oc-border-subtle)] pt-6"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!kind || !search.signal || !search.token || !canSubmit) return;
+            const signalId = search.signal;
+            const token = search.token;
+            if (!kind || !ownerUserId || !signalId || !token || !canSubmit) return;
             setIsSubmitting(true);
             setError(null);
             const normalizedMessage = message.trim();
             void submitExplanation({
-              signalId: search.signal,
-              token: search.token,
+              signalId,
+              token,
               kind,
               ...(normalizedMessage ? { message: normalizedMessage } : {}),
             })
+              .then(() => loadOwnerRequest(ownerUserId, signalId, token))
               .catch((submitError: unknown) => {
                 setError(
                   getUserFacingConvexError(submitError, "Your response could not be submitted."),

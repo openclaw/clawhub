@@ -5,14 +5,14 @@ import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./traffic-explanation";
 
-const useQueryMock = vi.fn();
+const getRequestMock = vi.fn();
 const submitMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const searchMock = vi.fn();
 const VALID_TOKEN = "a".repeat(64);
 
 vi.mock("convex/react", () => ({
-  useQuery: (...args: unknown[]) => useQueryMock(...args),
+  useAction: () => getRequestMock,
   useMutation: () => submitMock,
 }));
 
@@ -50,15 +50,16 @@ describe("traffic explanation page", () => {
       isLoading: false,
       me: { _id: "users:owner", handle: "owner" },
     });
-    useQueryMock.mockReturnValue(request);
+    getRequestMock.mockReset();
+    getRequestMock.mockResolvedValue(request);
     submitMock.mockReset();
     submitMock.mockResolvedValue({ ok: true });
   });
 
-  it("makes clear that the request is not enforcement", () => {
+  it("makes clear that the request is not enforcement", async () => {
     render(<TrafficExplanationPage />);
 
-    expect(screen.getByText("No action taken")).toBeTruthy();
+    expect(await screen.findByText("No action taken")).toBeTruthy();
     expect(screen.getByText("Help us understand this traffic")).toBeTruthy();
     expect(screen.getByText(/unusually high download activity/)).toBeTruthy();
     expect(screen.queryByText(/330,000/)).toBeNull();
@@ -69,8 +70,8 @@ describe("traffic explanation page", () => {
     expect(screen.queryByText(/ban/i)).toBeNull();
   });
 
-  it("presents a publisher-wide request without exposing detection thresholds", () => {
-    useQueryMock.mockReturnValue({
+  it("presents a publisher-wide request without exposing detection thresholds", async () => {
+    getRequestMock.mockResolvedValue({
       ...request,
       scope: "publisher",
       publisherHandle: "portfolio-owner",
@@ -79,7 +80,7 @@ describe("traffic explanation page", () => {
 
     render(<TrafficExplanationPage />);
 
-    expect(screen.getByText(/across skills published by/)).toBeTruthy();
+    expect(await screen.findByText(/across skills published by/)).toBeTruthy();
     expect(screen.getByText("@portfolio-owner")).toBeTruthy();
     expect(screen.queryByText(/98%/)).toBeNull();
     expect(screen.queryByText(/60 days/)).toBeNull();
@@ -90,14 +91,14 @@ describe("traffic explanation page", () => {
 
     render(<TrafficExplanationPage />);
 
-    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), "skip");
+    expect(getRequestMock).not.toHaveBeenCalled();
     expect(screen.getByText("This traffic request is unavailable")).toBeTruthy();
   });
 
   it("requires context when the owner expected the traffic", async () => {
     render(<TrafficExplanationPage />);
 
-    fireEvent.click(screen.getByRole("radio", { name: /Yes, I expected it/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Yes, I expected it/ }));
     const submitButton = screen.getByRole("button", { name: "Submit explanation" });
     expect((submitButton as HTMLButtonElement).disabled).toBe(true);
     expect(
@@ -122,7 +123,7 @@ describe("traffic explanation page", () => {
   it("accepts an unrecognized-traffic response without invented details", async () => {
     render(<TrafficExplanationPage />);
 
-    fireEvent.click(screen.getByRole("radio", { name: /No, I don't recognize it/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /No, I don't recognize it/ }));
     fireEvent.click(screen.getByRole("button", { name: "Submit explanation" }));
 
     await waitFor(() =>

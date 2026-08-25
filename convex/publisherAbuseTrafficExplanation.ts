@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, mutation, query } from "./functions";
+import { action, internalMutation, internalQuery, mutation } from "./functions";
 import { requireUser } from "./lib/access";
 import {
   PUBLISHER_ABUSE_TRAFFIC_EXPLANATION_MAX_LENGTH,
@@ -20,6 +20,36 @@ import {
 const TRAFFIC_EXPLANATION_PUBLISHER_ROLES = ["admin"] satisfies PublisherRole[];
 const TRAFFIC_EXPLANATION_RECIPIENT_LIMIT = 20;
 const MAX_SAFE_DELIVERY_REASON_LENGTH = 500;
+
+const trafficExplanationOwnerResponseValidator = v.object({
+  kind: publisherAbuseTrafficExplanationKindValidator,
+  message: v.optional(v.string()),
+  submittedAt: v.number(),
+  submittedByUserId: v.id("users"),
+});
+
+const trafficExplanationOwnerViewValidator = v.union(
+  v.object({
+    signalId: v.id("publisherAbuseSignals"),
+    scope: v.union(v.literal("publisher"), v.literal("skill")),
+    skillDisplayName: v.string(),
+    skillSlug: v.string(),
+    publisherHandle: v.string(),
+    allPublisherSkills: v.boolean(),
+    response: v.union(trafficExplanationOwnerResponseValidator, v.null()),
+  }),
+  v.null(),
+);
+
+type TrafficExplanationOwnerView = {
+  signalId: Id<"publisherAbuseSignals">;
+  scope: "publisher" | "skill";
+  skillDisplayName: string;
+  skillSlug: string;
+  publisherHandle: string;
+  allPublisherSkills: boolean;
+  response: NonNullable<Doc<"publisherAbuseSignalCommunications">["response"]> | null;
+} | null;
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 
@@ -86,15 +116,15 @@ async function getTrafficExplanationForUser(
   return { signal, skill, communication };
 }
 
-export const getForOwner = query({
-  args: { signalId: v.string(), token: v.string() },
-  returns: v.any(),
+export const getForOwnerInternal = internalQuery({
+  args: { signalId: v.string(), token: v.string(), now: v.number() },
+  returns: trafficExplanationOwnerViewValidator,
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     const signalId = ctx.db.normalizeId("publisherAbuseSignals", args.signalId);
     if (!signalId) return null;
     const result = await getTrafficExplanationForUser(ctx, signalId, user, args.token);
-    if (!result) return null;
+    if (!result || result.communication.expirationTime <= args.now) return null;
 
     return {
       signalId: result.signal._id,
@@ -108,6 +138,18 @@ export const getForOwner = query({
       allPublisherSkills: result.signal.portfolioEvidence?.allPublisherSkills ?? false,
       response: result.communication.response ?? null,
     };
+  },
+});
+
+export const getForOwner = action({
+  args: { signalId: v.string(), token: v.string() },
+  returns: trafficExplanationOwnerViewValidator,
+  handler: async (ctx, args): Promise<TrafficExplanationOwnerView> => {
+    const result: TrafficExplanationOwnerView = await ctx.runQuery(
+      internal.publisherAbuseTrafficExplanation.getForOwnerInternal,
+      { ...args, now: Date.now() },
+    );
+    return result;
   },
 });
 
