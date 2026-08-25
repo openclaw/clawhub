@@ -35,6 +35,7 @@ export default defineConfig({
     exclude: [
       "**/node_modules/**",
       "**/.artifacts/**",
+      "artifacts/**",
       "**/.vercel/output/**",
       "**/.output/**",
       "**/.nitro/**",
