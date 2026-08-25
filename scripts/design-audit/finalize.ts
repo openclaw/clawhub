@@ -92,6 +92,8 @@ async function main() {
     ...parseFindings(codex),
   ]);
   const report: AuditReport = {
+    schemaVersion: 2,
+    carapaceVersion: release,
     designSystemVersion: release,
     consumerSha,
     auditBaseSha: baseSha,

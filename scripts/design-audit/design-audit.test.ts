@@ -4,6 +4,7 @@ import { validateSafeChanges } from "./finalize";
 import {
   curatedFindings,
   renderAuditMarkdown,
+  renderPullRequestBody,
   shouldOpenAuditPullRequest,
   sortAndDedupeFindings,
   summarizeFindings,
@@ -57,7 +58,9 @@ describe("design audit reporting", () => {
 
   it("renders immutable audit provenance", () => {
     const report: AuditReport = {
-      designSystemVersion: "v0.0.3",
+      schemaVersion: 2,
+      carapaceVersion: "v0.0.3",
+      designSystemVersion: "v0.0.2",
       consumerSha: "consumer",
       auditBaseSha: "base",
       generatedAt: "2026-07-08T00:00:00.000Z",
@@ -70,6 +73,12 @@ describe("design audit reporting", () => {
       validationPassed: true,
     };
     const markdown = renderAuditMarkdown(report);
+    const pullRequestBody = renderPullRequestBody(report, "https://example.test/run");
+    expect(report.schemaVersion).toBe(2);
+    expect(markdown).toContain("Carapace: `v0.0.3`");
+    expect(markdown).not.toContain("`v0.0.2`");
+    expect(pullRequestBody).toContain("Carapace: `v0.0.3`");
+    expect(pullRequestBody).not.toContain("`v0.0.2`");
     expect(markdown).toContain("`v0.0.3`");
     expect(markdown).toContain("`consumer`");
     expect(markdown).toContain("No significant design-system drift was found.");

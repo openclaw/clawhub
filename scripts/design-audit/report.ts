@@ -21,6 +21,8 @@ export type AuditSummary = {
 };
 
 export type AuditReport = {
+  schemaVersion: 2;
+  carapaceVersion: string;
   designSystemVersion: string;
   consumerSha: string;
   auditBaseSha: string;
@@ -130,7 +132,7 @@ export function renderAuditMarkdown(report: AuditReport) {
   const lines = [
     "# ClawHub design audit",
     "",
-    `- Design system: \`${report.designSystemVersion}\``,
+    `- Carapace: \`${report.carapaceVersion}\``,
     `- ClawHub commit: \`${report.consumerSha}\``,
     `- Comparison base: \`${report.auditBaseSha}\``,
     `- Generated: ${report.generatedAt}`,
@@ -173,7 +175,7 @@ export function renderPullRequestBody(report: AuditReport, runUrl: string) {
   const lines = [
     "## Audit",
     "",
-    `- Design system: \`${report.designSystemVersion}\``,
+    `- Carapace: \`${report.carapaceVersion}\``,
     `- Audited ClawHub SHA: \`${report.consumerSha}\``,
     `- Comparison base: \`${report.auditBaseSha}\``,
     `- Findings: ${report.summary.errors} errors, ${report.summary.warnings} warnings, ${report.summary.info} informational`,
