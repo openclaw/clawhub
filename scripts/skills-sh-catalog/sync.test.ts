@@ -562,7 +562,7 @@ describe("skills.sh synchronization runner", () => {
           }
           return response(completedRun("leaderboard"));
         case "run":
-          return response(running);
+          return response({ ...running, batchLeaseExpiresAt: 0 });
         case "start-trending":
           return response(completedRun("trending"));
         case "verify-activate":
@@ -604,6 +604,233 @@ describe("skills.sh synchronization runner", () => {
       "configure",
       "status",
     ]);
+  });
+
+  it("waits for a live batch lease to clear before retrying the exact cursor", async () => {
+    let now = 1_000;
+    let runReads = 0;
+    let stepAttempts = 0;
+    const sleep = vi.fn(async (ms: number) => {
+      now += ms;
+    });
+    const running = {
+      runId: "run-leaderboard",
+      snapshotId: "skills-sh:leaderboard:live-lease",
+      sourceView: "leaderboard",
+      sourceTotal: 1,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
+      page: 9,
+      offset: 50,
+      status: "running",
+      startedAt: 1,
+    };
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      if (body.operation === "status") {
+        return response({ runs: [], invariants: { publicVisible: true } });
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      if (body.operation === "start") return response(running);
+      if (body.operation === "step") {
+        stepAttempts += 1;
+        if (stepAttempts === 1) {
+          throw new DOMException("The operation timed out.", "TimeoutError");
+        }
+        return response(completedRun("leaderboard"));
+      }
+      if (body.operation === "run") {
+        runReads += 1;
+        return response({
+          ...running,
+          batchLeaseExpiresAt: runReads === 1 ? now + 5_000 : null,
+        });
+      }
+      if (body.operation === "start-trending") return response(completedRun("trending"));
+      if (body.operation === "verify-activate") return response({ ok: true, activated: true });
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled recovery",
+        fetchImpl,
+        sleep,
+        now: () => now,
+      }),
+    ).resolves.toMatchObject({
+      leaderboard: {
+        syncProof: {
+          steps: 1,
+          transportTimeouts: 1,
+          leaseReconcilePolls: 1,
+          leaseReconcileWaitMs: 5_000,
+        },
+      },
+    });
+    expect(stepAttempts).toBe(2);
+    expect(runReads).toBe(2);
+    expect(sleep).toHaveBeenCalledExactlyOnceWith(5_000);
+  });
+
+  it("follows a renewed lease until the original step advances", async () => {
+    let now = 1_000;
+    let runReads = 0;
+    const stepCursors: string[] = [];
+    const sleep = vi.fn(async (ms: number) => {
+      now += ms;
+    });
+    const running = {
+      runId: "run-leaderboard",
+      snapshotId: "skills-sh:leaderboard:renewed-lease",
+      sourceView: "leaderboard",
+      sourceTotal: 1,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
+      page: 9,
+      offset: 50,
+      status: "running",
+      startedAt: 1,
+    };
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      if (body.operation === "status") {
+        return response({ runs: [], invariants: { publicVisible: true } });
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      if (body.operation === "start") return response(running);
+      if (body.operation === "step") {
+        stepCursors.push(`${body.page}:${body.offset}`);
+        if (body.offset === 50) {
+          throw new DOMException("The operation timed out.", "TimeoutError");
+        }
+        return response(completedRun("leaderboard"));
+      }
+      if (body.operation === "run") {
+        runReads += 1;
+        if (runReads < 3) {
+          return response({
+            ...running,
+            batchLeaseExpiresAt: now + (runReads === 1 ? 5_000 : 10_000),
+          });
+        }
+        return response({ ...running, offset: 100, batchLeaseExpiresAt: null });
+      }
+      if (body.operation === "start-trending") return response(completedRun("trending"));
+      if (body.operation === "verify-activate") return response({ ok: true, activated: true });
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled recovery",
+        fetchImpl,
+        sleep,
+        now: () => now,
+      }),
+    ).resolves.toMatchObject({
+      leaderboard: {
+        syncProof: {
+          steps: 2,
+          transportTimeouts: 1,
+          leaseReconcilePolls: 2,
+          leaseReconcileWaitMs: 10_000,
+        },
+      },
+    });
+    expect(stepCursors).toEqual(["9:50", "9:100"]);
+    expect(runReads).toBe(3);
+  });
+
+  it("fails closed when an unchanged cursor retains a permanently renewed lease", async () => {
+    let now = 1_000;
+    let runReads = 0;
+    const running = {
+      runId: "run-leaderboard",
+      snapshotId: "skills-sh:leaderboard:stuck-lease",
+      sourceView: "leaderboard",
+      sourceTotal: 1,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
+      page: 9,
+      offset: 50,
+      status: "running",
+      startedAt: 1,
+    };
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      if (body.operation === "status") {
+        return response({ runs: [], invariants: { publicVisible: true } });
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      if (body.operation === "start") return response(running);
+      if (body.operation === "step") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "run") {
+        runReads += 1;
+        return response({ ...running, batchLeaseExpiresAt: now + 60_000 });
+      }
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled recovery",
+        fetchImpl,
+        sleep: async (ms) => {
+          now += ms;
+        },
+        now: () => now,
+      }),
+    ).rejects.toThrow("retained a live lease after 360 polls and 1800000ms");
+    expect(runReads).toBe(361);
+  });
+
+  it.each([
+    ["missing", {}],
+    ["malformed", { batchLeaseExpiresAt: "later" }],
+  ])("fails closed on %s durable lease state", async (_label, leaseState) => {
+    const running = {
+      runId: "run-leaderboard",
+      snapshotId: "skills-sh:leaderboard:invalid-lease",
+      sourceView: "leaderboard",
+      sourceTotal: 1,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-08-25T06:00:00.000Z",
+      page: 9,
+      offset: 50,
+      status: "running",
+      startedAt: 1,
+    };
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      if (body.operation === "status") {
+        return response({ runs: [], invariants: { publicVisible: true } });
+      }
+      if (body.operation === "configure") return response({ ok: true });
+      if (body.operation === "start") return response(running);
+      if (body.operation === "step") {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }
+      if (body.operation === "run") return response({ ...running, ...leaseState });
+      throw new Error(`unexpected operation ${String(body.operation)}`);
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled recovery",
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/batchLeaseExpiresAt/);
   });
 
   it("continues from the authoritative cursor when a timed-out step already committed", async () => {

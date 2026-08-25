@@ -496,6 +496,10 @@ export function skillsShSourceRetryAfterSeconds(error: unknown) {
     : null;
 }
 
+function isRetryableSkillsShHttpStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
 async function fetchSkillsShApiResponse(
   path: string,
   options: SkillsShFetchOptions,
@@ -517,7 +521,7 @@ async function fetchSkillsShApiResponse(
     }
     const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
     if (
-      (response.status !== 429 && response.status < 500) ||
+      !isRetryableSkillsShHttpStatus(response.status) ||
       attempt === MAX_SOURCE_ATTEMPTS - 1 ||
       (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
     ) {
@@ -890,7 +894,7 @@ async function fetchSkillsShIdentityPage(
         return failure("identity-page-http-404");
       }
       if (!response.ok) {
-        if (response.status === 429 || response.status >= 500) {
+        if (isRetryableSkillsShHttpStatus(response.status)) {
           const retryAfterMs =
             response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
           if (
@@ -1793,7 +1797,7 @@ async function fetchSkillsShProofText(
     }
     const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
     if (
-      (response.status !== 429 && response.status < 500) ||
+      !isRetryableSkillsShHttpStatus(response.status) ||
       attempt === MAX_SOURCE_ATTEMPTS - 1 ||
       (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
     ) {
@@ -2320,7 +2324,7 @@ export async function fetchSkillsShMirrorControlledBatch(
           response = null;
         }
         if (response?.ok) break;
-        if (response && response.status !== 429 && response.status < 500) {
+        if (response && !isRetryableSkillsShHttpStatus(response.status)) {
           await cancelResponseBody(response);
           throw new Error(
             `controlled skills.sh mirror source returned HTTP ${response.status}: ${supplement.externalId}`,

@@ -1086,19 +1086,26 @@ describe("skills.sh external mirror", () => {
     await configure(t);
     const { runId } = await startRun(t, "snapshot:lease", 1);
 
-    await expect(
-      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
-        runId,
-        page: 0,
-        offset: 0,
-        leaseToken: "lease:first",
-      }),
-    ).resolves.toMatchObject({
+    const claimed = await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+      runId,
+      page: 0,
+      offset: 0,
+      leaseToken: "lease:first",
+    });
+    expect(claimed).toMatchObject({
       runId,
       page: 0,
       offset: 0,
       leaseExpiresAt: expect.any(Number),
     });
+    await expect(t.query(internal.skillsShMirror.getRunInternal, { runId })).resolves.toMatchObject(
+      {
+        batchLeaseExpiresAt: claimed.leaseExpiresAt,
+      },
+    );
+    expect(await t.query(internal.skillsShMirror.getRunInternal, { runId })).not.toHaveProperty(
+      "batchLeaseToken",
+    );
     await expect(
       t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
         runId,

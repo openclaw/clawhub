@@ -15,6 +15,9 @@ const MAX_RATE_LIMIT_RETRIES = 30;
 const MAX_RATE_LIMIT_WAIT_MS = 30 * 60 * 1_000;
 const MAX_TRANSPORT_TIMEOUTS = 3;
 const MAX_AUTHORIZATION_RETRIES = 3;
+const BATCH_LEASE_RECONCILE_POLL_MS = 5_000;
+const MAX_BATCH_LEASE_RECONCILE_POLLS = 360;
+const MAX_BATCH_LEASE_RECONCILE_WAIT_MS = 30 * 60 * 1_000;
 const MAX_NATIVE_TRENDING_RECONCILE_POLLS = 360;
 const ACTIVATION_RECONCILE_POLL_MS = 5_000;
 const MAX_ACTIVATION_RECONCILE_POLLS = 360;
@@ -53,6 +56,18 @@ function requiredInteger(value: unknown, name: string) {
 
 function optionalRecord(value: unknown) {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function batchLeaseExpiresAt(run: MirrorRun) {
+  if (!Object.hasOwn(run, "batchLeaseExpiresAt")) {
+    throw new Error("durable mirror run is missing batchLeaseExpiresAt");
+  }
+  const value = run.batchLeaseExpiresAt;
+  if (value === null) return null;
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new Error("durable mirror run has invalid batchLeaseExpiresAt");
+  }
+  return Number(value);
 }
 
 function assertReadyNativeTrending(value: unknown, unavailableMessage: string) {
@@ -170,10 +185,12 @@ export async function runSkillsShSync(options: {
   reason: string;
   fetchImpl?: SyncFetch;
   sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
 }) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const sleep =
     options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const now = options.now ?? Date.now;
   const callRaw = async (body: Record<string, unknown>, forceAuthorizationRefresh = false) => {
     const authorization =
       typeof options.authorization === "string"
@@ -222,6 +239,61 @@ export async function runSkillsShSync(options: {
     let rateLimitWaitMs = 0;
     let transportTimeouts = 0;
     let authorizationRetries = 0;
+    let leaseReconcilePolls = 0;
+    let leaseReconcileWaitMs = 0;
+    const readExactRun = async (request: {
+      operation: string;
+      runId: string;
+      page: number;
+      offset: number;
+    }) => {
+      const authoritativeRun = mirrorRunFromPayload(
+        await call({ operation: "run", runId: request.runId }),
+        "run",
+      );
+      if (
+        requiredString(authoritativeRun.runId, "runId") !== request.runId ||
+        (authoritativeRun.sourceView ?? "leaderboard") !== sourceView
+      ) {
+        throw new Error(`${request.operation} reconciled to a different durable run`);
+      }
+      return authoritativeRun;
+    };
+    const reconcileTimedOutStep = async (request: {
+      operation: string;
+      runId: string;
+      page: number;
+      offset: number;
+    }) => {
+      let authoritativeRun = await readExactRun(request);
+      while (
+        authoritativeRun.status === "running" &&
+        authoritativeRun.page === request.page &&
+        authoritativeRun.offset === request.offset
+      ) {
+        const leaseExpiresAt = batchLeaseExpiresAt(authoritativeRun);
+        if (leaseExpiresAt === null || leaseExpiresAt <= now()) break;
+        if (
+          leaseReconcilePolls >= MAX_BATCH_LEASE_RECONCILE_POLLS ||
+          leaseReconcileWaitMs >= MAX_BATCH_LEASE_RECONCILE_WAIT_MS
+        ) {
+          throw new Error(
+            `${request.operation} durable cursor ${request.page}:${request.offset} retained a live lease after ${leaseReconcilePolls} polls and ${leaseReconcileWaitMs}ms`,
+          );
+        }
+        const delayMs = Math.min(
+          BATCH_LEASE_RECONCILE_POLL_MS,
+          leaseExpiresAt - now(),
+          MAX_BATCH_LEASE_RECONCILE_WAIT_MS - leaseReconcileWaitMs,
+        );
+        if (delayMs <= 0) break;
+        leaseReconcilePolls += 1;
+        leaseReconcileWaitMs += delayMs;
+        await sleep(delayMs);
+        authoritativeRun = await readExactRun(request);
+      }
+      return authoritativeRun;
+    };
     if (run.status === "paused") {
       run = mirrorRunFromPayload(
         await call({
@@ -247,17 +319,7 @@ export async function runSkillsShSync(options: {
       } catch (error) {
         if (!isTransportTimeout(error)) throw error;
         transportTimeouts += 1;
-        const authoritativeRun = mirrorRunFromPayload(
-          await call({ operation: "run", runId: request.runId }),
-          "run",
-        );
-        if (
-          requiredString(authoritativeRun.runId, "runId") !== request.runId ||
-          (authoritativeRun.sourceView ?? "leaderboard") !== sourceView
-        ) {
-          throw new Error(`timed-out ${request.operation} reconciled to a different durable run`);
-        }
-        run = authoritativeRun;
+        run = await reconcileTimedOutStep(request);
         const cursorAdvanced = run.page !== request.page || run.offset !== request.offset;
         if (cursorAdvanced) steps += 1;
         if (
@@ -336,6 +398,8 @@ export async function runSkillsShSync(options: {
         rateLimitWaitMs,
         transportTimeouts,
         authorizationRetries,
+        leaseReconcilePolls,
+        leaseReconcileWaitMs,
       },
     };
   };
@@ -411,7 +475,7 @@ export async function runSkillsShSync(options: {
     throw new Error("timed-out native Trending preflight did not release its exact durable lock");
   };
 
-  const startedAt = Date.now();
+  const startedAt = now();
   const before = await call({ operation: "status" });
   const publicVisible = (before.invariants as Record<string, unknown> | undefined)?.publicVisible;
   if (typeof publicVisible !== "boolean") {
@@ -472,8 +536,8 @@ export async function runSkillsShSync(options: {
     return {
       ok: true as const,
       startedAt: new Date(startedAt).toISOString(),
-      completedAt: new Date().toISOString(),
-      durationMs: Date.now() - startedAt,
+      completedAt: new Date(now()).toISOString(),
+      durationMs: now() - startedAt,
       before,
       ...(nativeBefore ? { nativeBefore } : {}),
       ...(recovered ? { recovered } : {}),

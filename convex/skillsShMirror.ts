@@ -961,6 +961,7 @@ type SummarizableMirrorRun = Pick<
   | "sourceDurationMs"
   | "page"
   | "offset"
+  | "batchLeaseExpiresAt"
   | "counts"
   | "operations"
   | "activatedTrendingRunId"
@@ -985,6 +986,7 @@ function summarizeRun(run: SummarizableMirrorRun) {
     sourceDurationMs: run.sourceDurationMs ?? 0,
     page: run.page,
     offset: run.offset,
+    batchLeaseExpiresAt: run.batchLeaseExpiresAt ?? null,
     counts: runCounts(run.counts),
     operations: run.operations,
     activatedTrendingRunId: run.activatedTrendingRunId ?? null,

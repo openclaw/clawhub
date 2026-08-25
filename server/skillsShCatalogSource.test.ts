@@ -24,6 +24,56 @@ import {
   validateSkillsShCatalogGitHubOwnerProof,
 } from "./skillsShCatalogSource";
 
+const proofMetadataRow = {
+  id: "owner/repo/skill",
+  installUrl: "https://github.com/owner/repo",
+  installs: 1,
+  name: "Skill",
+  slug: "skill",
+  source: "owner/repo",
+  sourceType: "github",
+  url: "https://www.skills.sh/owner/repo/skill",
+};
+
+function proofMetadataFetch(metadataResponse: () => Response) {
+  return vi.fn(async (input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("/api/v1/skills?page=0")) {
+      return new Response(
+        JSON.stringify({
+          data: [proofMetadataRow],
+          pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+        }),
+      );
+    }
+    if (url.includes("/api/v1/skills?page=1")) {
+      return new Response(
+        JSON.stringify({
+          data: [],
+          pagination: { page: 1, perPage: 500, total: 1, hasMore: false },
+        }),
+      );
+    }
+    if (url.includes("/api/v1/skills/search?")) {
+      return new Response(JSON.stringify({ data: [proofMetadataRow] }));
+    }
+    if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
+      return new Response(
+        JSON.stringify({
+          files: [],
+          hash: "a".repeat(64),
+          id: proofMetadataRow.id,
+          installs: proofMetadataRow.installs,
+          slug: proofMetadataRow.slug,
+          source: proofMetadataRow.source,
+        }),
+      );
+    }
+    if (url === proofMetadataRow.url) return metadataResponse();
+    throw new Error(`unexpected URL ${url}`);
+  });
+}
+
 describe("skills.sh Vercel source boundary", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -214,7 +264,15 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("delegates long controlled-source Retry-After waits to durable recovery", async () => {
+    let attempts = 0;
     const fetchImpl = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response("request timeout", {
+          status: 408,
+          headers: { "retry-after": "0" },
+        });
+      }
       return new Response("rate limited", {
         status: 429,
         headers: { "retry-after": "120" },
@@ -234,7 +292,31 @@ describe("skills.sh Vercel source boundary", () => {
     ).catch((value: unknown) => value);
 
     expect(skillsShSourceRetryAfterSeconds(error)).toBe(120);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("exhausts controlled-source request timeout retries", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response("request timeout", {
+        status: 408,
+        headers: { "retry-after": "0" },
+      });
+    });
+
+    await expect(
+      fetchSkillsShMirrorControlledBatch(
+        {
+          page: 0,
+          offset: 0,
+          limit: 1,
+          maxDetailBytes: 64,
+          sourceTotal: 1,
+          externalIds: ["patrick-erichsen/skills/html"],
+        },
+        { fetchImpl: fetchImpl as typeof fetch },
+      ),
+    ).rejects.toThrow("controlled skills.sh mirror source fetch failed");
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 
   it("does not sleep after the final controlled-source rate-limit attempt", async () => {
@@ -485,58 +567,19 @@ describe("skills.sh Vercel source boundary", () => {
   });
 
   it("delegates long proof-metadata Retry-After waits to durable recovery", async () => {
-    const row = {
-      id: "owner/repo/skill",
-      installUrl: "https://github.com/owner/repo",
-      installs: 1,
-      name: "Skill",
-      slug: "skill",
-      source: "owner/repo",
-      sourceType: "github",
-      url: "https://www.skills.sh/owner/repo/skill",
-    };
     let metadataAttempts = 0;
-    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (url.includes("/api/v1/skills?page=0")) {
-        return new Response(
-          JSON.stringify({
-            data: [row],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
-      }
-      if (url.includes("/api/v1/skills?page=1")) {
-        return new Response(
-          JSON.stringify({
-            data: [],
-            pagination: { page: 1, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
-      }
-      if (url.includes("/api/v1/skills/search?")) {
-        return new Response(JSON.stringify({ data: [row] }));
-      }
-      if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
-        return new Response(
-          JSON.stringify({
-            files: [],
-            hash: "a".repeat(64),
-            id: row.id,
-            installs: row.installs,
-            slug: row.slug,
-            source: row.source,
-          }),
-        );
-      }
-      if (url === row.url) {
-        metadataAttempts += 1;
-        return new Response("rate limited", {
-          status: 429,
-          headers: { "retry-after": "120" },
+    const fetchImpl = proofMetadataFetch(() => {
+      metadataAttempts += 1;
+      if (metadataAttempts === 1) {
+        return new Response("request timeout", {
+          status: 408,
+          headers: { "retry-after": "0" },
         });
       }
-      throw new Error(`unexpected URL ${url}`);
+      return new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "120" },
+      });
     });
 
     const error = await measureSkillsShMirrorProofSource({
@@ -546,7 +589,27 @@ describe("skills.sh Vercel source boundary", () => {
     }).catch((value: unknown) => value);
 
     expect(skillsShSourceRetryAfterSeconds(error)).toBe(120);
-    expect(metadataAttempts).toBe(1);
+    expect(metadataAttempts).toBe(2);
+  });
+
+  it("exhausts proof-metadata request timeout retries", async () => {
+    let metadataAttempts = 0;
+    const fetchImpl = proofMetadataFetch(() => {
+      metadataAttempts += 1;
+      return new Response("request timeout", {
+        status: 408,
+        headers: { "retry-after": "0" },
+      });
+    });
+
+    await expect(
+      measureSkillsShMirrorProofSource({
+        oidcToken: "oidc-token",
+        fetchImpl: fetchImpl as typeof fetch,
+        minimumApiRequestIntervalMs: 0,
+      }),
+    ).rejects.toThrow("skills.sh proof metadata returned HTTP 408");
+    expect(metadataAttempts).toBe(4);
   });
 
   it("hashes captured leaderboard rows independently of upstream object key order", async () => {
@@ -1761,85 +1824,88 @@ describe("skills.sh Vercel source boundary", () => {
     );
   });
 
-  it("fetches the exact ambiguous source page only for identity resolution", async () => {
-    let identityPageAttempts = 0;
-    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
-      const url = String(urlInput);
-      if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
-      }
-      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
-        identityPageAttempts += 1;
-        if (identityPageAttempts === 1) {
-          return new Response("retry", {
-            status: 503,
-            headers: { "retry-after": "0" },
-          });
+  it.each([408, 503])(
+    "fetches the exact ambiguous source page after transient HTTP %s",
+    async (retryStatus) => {
+      let identityPageAttempts = 0;
+      const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+        const url = String(urlInput);
+        if (url.includes("?page=0&per_page=500")) {
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "larksuite/cli/lark-doc",
+                  installUrl: null,
+                  installs: 383_123,
+                  name: "lark-doc",
+                  slug: "lark-doc",
+                  source: "larksuite/cli",
+                  sourceType: "well-known",
+                  url: "https://www.skills.sh/larksuite/cli/lark-doc",
+                },
+              ],
+              pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+            }),
+          );
         }
-        return new Response(
-          `<main><section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/larksuite/cli.git">larksuite/cli</a></section></main>`,
-          { headers: { "content-type": "text/html; charset=utf-8" } },
-        );
-      }
-      if (url.includes("/api/v1/skills/audit/")) {
-        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
-      }
-      if (url.includes("/api/v1/skills/larksuite/cli/lark-doc")) {
-        return new Response(
-          JSON.stringify({
-            id: "larksuite/cli/lark-doc",
-            source: "larksuite/cli",
-            slug: "lark-doc",
-            installs: 383_123,
-            hash: "c".repeat(64),
-            files: [{ path: "skills/lark-doc/SKILL.md", contents: "# Lark Doc" }],
-          }),
-        );
-      }
-      return new Response("unexpected request", { status: 500 });
-    });
+        if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+          identityPageAttempts += 1;
+          if (identityPageAttempts === 1) {
+            return new Response("retry", {
+              status: retryStatus,
+              headers: { "retry-after": "0" },
+            });
+          }
+          return new Response(
+            `<main><section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/larksuite/cli.git">larksuite/cli</a></section></main>`,
+            { headers: { "content-type": "text/html; charset=utf-8" } },
+          );
+        }
+        if (url.includes("/api/v1/skills/audit/")) {
+          return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+        }
+        if (url.includes("/api/v1/skills/larksuite/cli/lark-doc")) {
+          return new Response(
+            JSON.stringify({
+              id: "larksuite/cli/lark-doc",
+              source: "larksuite/cli",
+              slug: "lark-doc",
+              installs: 383_123,
+              hash: "c".repeat(64),
+              files: [{ path: "skills/lark-doc/SKILL.md", contents: "# Lark Doc" }],
+            }),
+          );
+        }
+        return new Response("unexpected request", { status: 500 });
+      });
 
-    const batch = await fetchSkillsShMirrorBatch(
-      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      {
-        oidcToken: "request-bound-oidc",
-        fetchImpl: fetchImpl as typeof fetch,
-        githubLocatorResolver: null,
-      },
-    );
+      const batch = await fetchSkillsShMirrorBatch(
+        { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+        {
+          oidcToken: "request-bound-oidc",
+          fetchImpl: fetchImpl as typeof fetch,
+          githubLocatorResolver: null,
+        },
+      );
 
-    expect(batch.rows).toEqual([
-      expect.objectContaining({
-        externalId: "larksuite/cli/lark-doc",
-        sourceType: "github",
-        upstreamSourceType: "well-known",
-        owner: "larksuite",
-        repo: "cli",
-        canonicalRepoUrl: "https://github.com/larksuite/cli",
-      }),
-    ]);
-    expect(batch.sourceRequests).toBe(5);
-    expect(fetchImpl).toHaveBeenCalledWith("https://www.skills.sh/larksuite/cli/lark-doc", {
-      headers: { Accept: "text/html" },
-      redirect: "manual",
-    });
-  });
+      expect(batch.rows).toEqual([
+        expect.objectContaining({
+          externalId: "larksuite/cli/lark-doc",
+          sourceType: "github",
+          upstreamSourceType: "well-known",
+          owner: "larksuite",
+          repo: "cli",
+          canonicalRepoUrl: "https://github.com/larksuite/cli",
+        }),
+      ]);
+      expect(batch.sourceRequests).toBe(5);
+      expect(fetchImpl).toHaveBeenCalledWith("https://www.skills.sh/larksuite/cli/lark-doc", {
+        headers: { Accept: "text/html" },
+        redirect: "manual",
+      });
+    },
+  );
 
   it("delegates long identity-page Retry-After waits to durable recovery", async () => {
     vi.useFakeTimers();
@@ -2268,59 +2334,62 @@ describe("skills.sh Vercel source boundary", () => {
     expect(batch.sourceBytes).toBeGreaterThan(64 * 1024);
   });
 
-  it("quarantines exhausted identity-page 5xx retries as a transient fetch failure", async () => {
-    let identityPageAttempts = 0;
-    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
-      const url = String(urlInput);
-      if (url.includes("?page=0&per_page=500")) {
-        return new Response(
-          JSON.stringify({
-            data: [
-              {
-                id: "larksuite/cli/lark-doc",
-                installUrl: null,
-                installs: 383_123,
-                name: "lark-doc",
-                slug: "lark-doc",
-                source: "larksuite/cli",
-                sourceType: "well-known",
-                url: "https://www.skills.sh/larksuite/cli/lark-doc",
-              },
-            ],
-            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
-          }),
-        );
-      }
-      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
-        identityPageAttempts += 1;
-        return new Response("unavailable", {
-          status: 503,
-          headers: { "retry-after": "0" },
-        });
-      }
-      return new Response("unexpected request", { status: 500 });
-    });
+  it.each([408, 503])(
+    "quarantines exhausted identity-page HTTP %s retries as a transient fetch failure",
+    async (retryStatus) => {
+      let identityPageAttempts = 0;
+      const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+        const url = String(urlInput);
+        if (url.includes("?page=0&per_page=500")) {
+          return new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "larksuite/cli/lark-doc",
+                  installUrl: null,
+                  installs: 383_123,
+                  name: "lark-doc",
+                  slug: "lark-doc",
+                  source: "larksuite/cli",
+                  sourceType: "well-known",
+                  url: "https://www.skills.sh/larksuite/cli/lark-doc",
+                },
+              ],
+              pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+            }),
+          );
+        }
+        if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+          identityPageAttempts += 1;
+          return new Response("unavailable", {
+            status: retryStatus,
+            headers: { "retry-after": "0" },
+          });
+        }
+        return new Response("unexpected request", { status: 500 });
+      });
 
-    const batch = await fetchSkillsShMirrorBatch(
-      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      {
-        oidcToken: "request-bound-oidc",
-        fetchImpl: fetchImpl as typeof fetch,
-        githubLocatorResolver: null,
-      },
-    );
+      const batch = await fetchSkillsShMirrorBatch(
+        { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+        {
+          oidcToken: "request-bound-oidc",
+          fetchImpl: fetchImpl as typeof fetch,
+          githubLocatorResolver: null,
+        },
+      );
 
-    expect(batch.rows).toEqual([
-      {
-        quarantined: true,
-        externalId: "larksuite/cli/lark-doc",
-        upstreamSourceType: "well-known",
-        reason: "identity-page-fetch-failed",
-      },
-    ]);
-    expect(identityPageAttempts).toBe(4);
-    expect(batch.sourceRequests).toBe(5);
-  });
+      expect(batch.rows).toEqual([
+        {
+          quarantined: true,
+          externalId: "larksuite/cli/lark-doc",
+          upstreamSourceType: "well-known",
+          reason: "identity-page-fetch-failed",
+        },
+      ]);
+      expect(identityPageAttempts).toBe(4);
+      expect(batch.sourceRequests).toBe(5);
+    },
+  );
 
   it("quarantines an identity page without an explicit HTML content type", async () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
@@ -2704,6 +2773,50 @@ describe("skills.sh Vercel source boundary", () => {
     await vi.advanceTimersByTimeAsync(1);
     await pagePromise;
     expect(attempts).toBe(2);
+  });
+
+  it("recovers an authenticated API request after HTTP 408", async () => {
+    let attempts = 0;
+    const fetchImpl = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response("request timeout", {
+          status: 408,
+          headers: { "retry-after": "0" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          data: [],
+          pagination: { page: 0, perPage: 500, total: 0, hasMore: false },
+        }),
+      );
+    });
+
+    await expect(
+      fetchSkillsShCatalogPage(
+        { page: 0, perPage: 500 },
+        { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      ),
+    ).resolves.toMatchObject({ pagination: { total: 0 } });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("exhausts authenticated API request timeout retries", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response("request timeout", {
+        status: 408,
+        headers: { "retry-after": "0" },
+      });
+    });
+
+    await expect(
+      fetchSkillsShCatalogPage(
+        { page: 0, perPage: 500 },
+        { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      ),
+    ).rejects.toThrow("skills.sh catalog source returned HTTP 408");
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 
   it("preserves Retry-After when bounded source retries are exhausted", async () => {
