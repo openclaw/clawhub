@@ -185,6 +185,7 @@ const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CLAWSCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector", "aig"];
+const REQUIRED_CLAWHUB_PACKAGE_SCANNERS = ["clawscan-static", "skillspector"];
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
@@ -1778,10 +1779,19 @@ function readClawScanScannerStatuses(
   return scannerStatuses;
 }
 
-function clawScanDiagnosticMapping(artifact: Record<string, unknown>) {
+function requiredClawHubScanners(targetKind: ClaimedJob["job"]["targetKind"]) {
+  return targetKind === "packageRelease"
+    ? REQUIRED_CLAWHUB_PACKAGE_SCANNERS
+    : REQUIRED_CLAWHUB_SCANNERS;
+}
+
+function clawScanDiagnosticMapping(
+  artifact: Record<string, unknown>,
+  scannerSet = REQUIRED_CLAWHUB_SCANNERS,
+) {
   const judge = asRecord(artifact.judge);
   const result = asRecord(judge?.result);
-  const scannerStatuses = readClawScanScannerStatuses(artifact);
+  const scannerStatuses = readClawScanScannerStatuses(artifact, scannerSet);
   return {
     judge: {
       outputSchemaSha256: readString(judge ?? {}, ["outputSchemaSha256", "outputSchemaSHA"]),
@@ -1797,7 +1807,10 @@ function clawScanDiagnosticMapping(artifact: Record<string, unknown>) {
   };
 }
 
-function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unknown>) {
+function validateClawScanArtifactForClawHubProfile(
+  artifact: Record<string, unknown>,
+  scannerSet = REQUIRED_CLAWHUB_SCANNERS,
+) {
   const schemaVersion = readString(artifact, ["schemaVersion"]);
   if (schemaVersion !== "clawscan-run-v1") {
     throw new Error(`ClawScan artifact schemaVersion was ${schemaVersion ?? "missing"}`);
@@ -1807,7 +1820,7 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
     throw new Error(`ClawScan artifact profile was ${profile ?? "missing"}`);
   }
 
-  const scannerStatuses = readClawScanScannerStatuses(artifact);
+  const scannerStatuses = readClawScanScannerStatuses(artifact, scannerSet);
   const allowedScannerStatuses: Record<string, Set<string>> = {
     "clawscan-static": new Set(["completed"]),
     aig: new Set(["completed"]),
@@ -1844,22 +1857,24 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const rawSkillSpector =
     typeof skillSpector.raw === "string" ? skillSpector.raw : JSON.stringify(skillSpector.raw);
 
-  const aig = asRecord(scanners?.aig);
-  if (!aig || aig.raw === undefined) {
-    throw new Error("ClawScan aig scanner output was missing");
-  }
-  const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
-
   const checkedAt = artifactCompletedAtMs(artifact);
-  const aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
-  if (aigAnalysis.status === "error") {
-    throw new Error(aigAnalysis.error ?? "A.I.G returned unusable scanner output");
+  let aigAnalysis: AigAnalysis | undefined;
+  if (scannerSet.includes("aig")) {
+    const aig = asRecord(scanners?.aig);
+    if (!aig || aig.raw === undefined) {
+      throw new Error("ClawScan aig scanner output was missing");
+    }
+    const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
+    aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
+    if (aigAnalysis.status === "error") {
+      throw new Error(aigAnalysis.error ?? "A.I.G returned unusable scanner output");
+    }
   }
 
   return {
     aigAnalysis,
     llmAnalysis: toStoredLlmAnalysis(parsed, checkedAt),
-    mapping: clawScanDiagnosticMapping(artifact),
+    mapping: clawScanDiagnosticMapping(artifact, scannerSet),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),
   };
 }
@@ -1872,6 +1887,7 @@ export async function runClawScan(
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
   const target = await resolveClawScanTarget(workspace, job);
+  const scannerSet = requiredClawHubScanners(job.job.targetKind);
   const args = [target, "--profile", "clawhub"];
   if (job.job.targetKind === "packageRelease") {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
@@ -1900,7 +1916,7 @@ export async function runClawScan(
       return undefined;
     }
     const artifact = asRecord(parsedArtifact);
-    if (artifact) onDiagnostic({ mapping: clawScanDiagnosticMapping(artifact) });
+    if (artifact) onDiagnostic({ mapping: clawScanDiagnosticMapping(artifact, scannerSet) });
     return artifact;
   };
 
@@ -1931,7 +1947,7 @@ export async function runClawScan(
   const artifact = await captureArtifact();
   if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
-  const mapped = validateClawScanArtifactForClawHubProfile(artifact);
+  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet);
   onDiagnostic({ mapping: mapped.mapping });
   return mapped;
 }

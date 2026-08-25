@@ -185,6 +185,7 @@ function clawScanArtifactJson(options?: {
   completedAt?: string;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
+  omitAigRaw?: boolean;
   scannerStatuses?: Partial<Record<"aig" | "clawscan-static" | "skillspector", string>>;
   verdict?: ClawScanVerdict;
 }) {
@@ -201,22 +202,26 @@ function clawScanArtifactJson(options?: {
     scanners: {
       aig: {
         status: scannerStatuses.aig,
-        raw: options?.aigRaw ?? {
-          version: "2.1.0",
-          runs: [
-            {
-              tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } },
-              results: [
-                {
-                  ruleId: "T04",
-                  level: "error",
-                  message: { text: "Embedded payload" },
-                  properties: { remediation: "Remove the payload." },
-                },
-              ],
-            },
-          ],
-        },
+        ...(options?.omitAigRaw
+          ? {}
+          : {
+              raw: options?.aigRaw ?? {
+                version: "2.1.0",
+                runs: [
+                  {
+                    tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } },
+                    results: [
+                      {
+                        ruleId: "T04",
+                        level: "error",
+                        message: { text: "Embedded payload" },
+                        properties: { remediation: "Remove the payload." },
+                      },
+                    ],
+                  },
+                ],
+              },
+            }),
       },
       skillspector: {
         status: scannerStatuses.skillspector,
@@ -661,6 +666,7 @@ JSON`,
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
       const filesLog = join(workspace, "clawscan-files.log");
+      const isPackageRelease = targetKind === "packageRelease";
       await writeFakeClawScanCommand(
         fakeClawScan,
         `target="$1"
@@ -680,7 +686,10 @@ out=""
 done
 mkdir -p "$(dirname "$out")"
 cat > "$out" <<'JSON'
-${clawScanArtifactJson()}
+${clawScanArtifactJson({
+  omitAigRaw: isPackageRelease,
+  scannerStatuses: isPackageRelease ? { aig: "skipped" } : undefined,
+})}
 JSON`,
       );
 
@@ -717,14 +726,18 @@ JSON`,
             status: "clean",
             verdict: "benign",
           },
-          aigAnalysis: {
-            issueCount: 1,
-            status: "suspicious",
-          },
           skillSpectorAnalysis: {
             issueCount: 1,
             status: "suspicious",
           },
+          ...(isPackageRelease
+            ? { aigAnalysis: undefined }
+            : {
+                aigAnalysis: {
+                  issueCount: 1,
+                  status: "suspicious",
+                },
+              }),
         });
 
         const invocationArgs = (await readFile(argsLog, "utf8")).trim().split("\n");

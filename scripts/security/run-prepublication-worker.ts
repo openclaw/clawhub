@@ -94,6 +94,8 @@ const DEFAULT_TRUFFLEHOG_IMAGE =
 const TRUFFLEHOG_SECRET_EXIT_CODE = 183;
 const MAX_TRUFFLEHOG_FINDINGS = 10;
 const MAX_PUBLIC_SUMMARY_CHARS = 600;
+const REQUIRED_SKILL_SCANNERS = ["clawscan-static", "skillspector", "aig"];
+const REQUIRED_PACKAGE_SCANNERS = ["clawscan-static", "skillspector"];
 const logger = createWorkerLogger({ name: "prepublication-worker" });
 
 export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env) {
@@ -412,10 +414,14 @@ function verdictToStoredStatus(verdict: string | undefined): StoredLlmAnalysis["
   return "pending";
 }
 
-function collectClawScanScannerFailures(scanners: Record<string, unknown> | undefined) {
-  if (!scanners) return [];
+function collectClawScanScannerFailures(
+  scanners: Record<string, unknown> | undefined,
+  scannerSet: readonly string[],
+) {
   const failures: string[] = [];
-  for (const [scanner, value] of Object.entries(scanners)) {
+  for (const scanner of scannerSet) {
+    const value = scanners?.[scanner];
+    if (value === undefined) continue;
     const scannerRecord = asRecord(value);
     const status = readString(scannerRecord, ["status"]) ?? "unknown";
     if (status !== "completed") failures.push(`${scanner}=${status}`);
@@ -423,7 +429,10 @@ function collectClawScanScannerFailures(scanners: Record<string, unknown> | unde
   return failures;
 }
 
-function storedAnalysisFromClawScanArtifact(artifact: unknown): {
+function storedAnalysisFromClawScanArtifact(
+  artifact: unknown,
+  targetKind: ClaimedJob["job"]["targetKind"],
+): {
   analysis?: StoredLlmAnalysis;
   aigAnalysis?: AigAnalysis;
   error?: string;
@@ -433,7 +442,11 @@ function storedAnalysisFromClawScanArtifact(artifact: unknown): {
   const result = asRecord(judge?.result);
   const judgeStatus = readString(judge, ["status"]);
   const judgeError = readString(judge, ["error"]);
-  const scannerFailures = collectClawScanScannerFailures(asRecord(record?.scanners));
+  const requireAig = targetKind !== "packageRelease";
+  const scannerFailures = collectClawScanScannerFailures(
+    asRecord(record?.scanners),
+    requireAig ? REQUIRED_SKILL_SCANNERS : REQUIRED_PACKAGE_SCANNERS,
+  );
   if (scannerFailures.length > 0) {
     return { error: `ClawScan scanner did not complete: ${scannerFailures.join(", ")}` };
   }
@@ -457,14 +470,17 @@ function storedAnalysisFromClawScanArtifact(artifact: unknown): {
   const model = readString(result, ["model"]);
   const summary = readString(result, ["summary"]);
   const checkedAt = Date.now();
-  const aig = asRecord(asRecord(record?.scanners)?.aig);
-  if (!aig || aig.raw === undefined) {
-    return { error: "ClawScan aig scanner output was missing" };
-  }
-  const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
-  const aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
-  if (aigAnalysis.status === "error") {
-    return { error: aigAnalysis.error ?? "A.I.G returned unusable scanner output" };
+  let aigAnalysis: AigAnalysis | undefined;
+  if (requireAig) {
+    const aig = asRecord(asRecord(record?.scanners)?.aig);
+    if (!aig || aig.raw === undefined) {
+      return { error: "ClawScan aig scanner output was missing" };
+    }
+    const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
+    aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
+    if (aigAnalysis.status === "error") {
+      return { error: aigAnalysis.error ?? "A.I.G returned unusable scanner output" };
+    }
   }
   return {
     aigAnalysis,
@@ -547,7 +563,7 @@ export async function runNativeClawScan(
   }
 
   const raw = await readFile(artifactPath, "utf8");
-  const parsed = storedAnalysisFromClawScanArtifact(JSON.parse(raw) as unknown);
+  const parsed = storedAnalysisFromClawScanArtifact(JSON.parse(raw) as unknown, job.job.targetKind);
   if (parsed.error || !parsed.analysis) {
     return {
       check: {
