@@ -51,11 +51,14 @@ describe("weekly design-system audit workflow", () => {
     const workflow = parseYaml(
       await readFile(".github/workflows/design-system-audit.yml", "utf8"),
     ) as { jobs: { audit: { steps: Step[] } } };
+    const vitestConfig = await readFile("vitest.config.ts", "utf8");
     const steps = workflow.jobs.audit.steps;
     const upload = steps.find((step) => step.name === "Upload audit artifacts");
     const commit = steps.find((step) => step.name === "Commit audit branch");
     const failure = steps.find((step) => step.name === "Fail unsuccessful audit");
 
+    expect(vitestConfig).toContain('"artifacts/**"');
+    expect(vitestConfig).not.toContain('"**/artifacts/**"');
     expect(upload?.if).toBe("always()");
     expect(upload?.uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
     expect(commit?.if).toBe("steps.finalize.outputs.open_pr == 'true'");
