@@ -178,6 +178,29 @@ test("proves the owner response and staff communication-state workflow", async (
     page.getByText("Demo Communication — Staff alert failed", { exact: true }),
   ).toBeVisible();
 
+  runConvex([
+    "run",
+    "--typecheck",
+    "disable",
+    "--codegen",
+    "disable",
+    "publisherAbuseDevSeed:expireTrafficExplanationForProof",
+    JSON.stringify({ signalId: queued._id }),
+  ]);
+  await signInAsLocalPersona(page, "abusePublisher");
+  await page.goto(explanationUrl, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(
+    page.getByRole("heading", { name: "This traffic request is unavailable" }),
+  ).toBeVisible();
+  const expiredCommunicationRetained = readCommunications().some(
+    (communication) => communication.signalId === queued._id,
+  );
+  console.log(
+    `Owner expiration boundary trace: ${JSON.stringify({ ownerView: "unavailable", retainedCommunication: expiredCommunicationRetained })}`,
+  );
+  expect(expiredCommunicationRetained).toBe(true);
+
   await expectNoFatalErrorUi(page);
   await expectNoRuntimeErrors(page, runtimeErrors);
 });

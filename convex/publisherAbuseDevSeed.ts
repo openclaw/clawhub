@@ -437,6 +437,21 @@ export const reassignTrafficExplanationOwnerForProof = internalMutation({
   },
 });
 
+export const expireTrafficExplanationForProof = internalMutation({
+  args: { signalId: v.id("publisherAbuseSignals") },
+  returns: v.object({ ok: v.literal(true) }),
+  handler: async (ctx, args) => {
+    assertLocalDevSeedAllowed("Publisher abuse");
+    const communication = await ctx.db
+      .query("publisherAbuseSignalCommunications")
+      .withIndex("by_signal_id", (q) => q.eq("signalId", args.signalId))
+      .unique();
+    if (!communication) throw new Error("Traffic explanation proof communication not found");
+    await ctx.db.patch(communication._id, { expirationTime: Date.now() - 1 });
+    return { ok: true as const };
+  },
+});
+
 async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number }) {
   const now = args.now;
   const todayDay = Math.floor(now / DAY_MS);
