@@ -2,12 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   Ban,
-  Clock3,
   Copy,
   ExternalLink,
   Power,
   RefreshCcw,
-  RotateCcw,
   Search,
   ShieldCheck,
   ShieldOff,
@@ -41,12 +39,9 @@ import {
   type PublisherAbuseReviewItem,
   type PublisherAbuseReviewScore,
   type PublisherAbuseSignalEntry,
-  type PublisherAbuseSignalStatus,
   type PublisherAbuseTab,
   USER_BAN_REASON_MAX_LENGTH,
 } from "./managementShared";
-
-const MAX_BULK_SIGNAL_SELECTION = 50;
 
 export function AbusePage({
   admin,
@@ -63,23 +58,16 @@ export function AbusePage({
   signalItems,
   signalLoadedCount,
   signalPageStatus,
-  signalStatus,
   tab,
   onBanOwner,
   onChangeNotes,
   onChangeSearch,
-  onChangeSignalStatus,
   onChangeTab,
   onClose,
-  onDismissSignal,
-  onDismissSignals,
   onMarkReviewed,
   onLoadMore,
   onRefresh,
-  onReopenSignal,
   onSelect,
-  onSnoozeSignal,
-  onSnoozeSignals,
   onToggleAutoban,
 }: {
   admin: boolean;
@@ -102,30 +90,20 @@ export function AbusePage({
   signalItems: PublisherAbuseSignalEntry[];
   signalLoadedCount: number;
   signalPageStatus: string;
-  signalStatus: PublisherAbuseSignalStatus;
   tab: PublisherAbuseTab;
   onBanOwner: (item: PublisherAbuseReviewItem) => void;
   onChangeNotes: (value: string) => void;
   onChangeSearch: (value: string) => void;
-  onChangeSignalStatus: (value: PublisherAbuseSignalStatus) => void;
   onChangeTab: (value: PublisherAbuseTab) => void;
   onClose: () => void;
-  onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
-  onDismissSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onMarkReviewed: (item: PublisherAbuseReviewItem) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
-  onReopenSignal: (item: PublisherAbuseSignalEntry) => void;
   onSelect: (value: Id<"publisherAbuseReviewNominations">) => void;
-  onSnoozeSignal: (item: PublisherAbuseSignalEntry) => void;
-  onSnoozeSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onToggleAutoban: () => void;
 }) {
   const [selectedSignalItem, setSelectedSignalItem] = useState<PublisherAbuseSignalEntry | null>(
     null,
-  );
-  const [selectedSignalIds, setSelectedSignalIds] = useState<Set<Id<"publisherAbuseSignals">>>(
-    new Set(),
   );
   const selectedSignalId = selectedSignalItem?.signal._id ?? null;
   useEffect(() => {
@@ -143,16 +121,6 @@ export function AbusePage({
       setSelectedSignalItem(null);
     }
   }, [selectedSignalId, signalItems, signalPageStatus, tab]);
-  useEffect(() => {
-    setSelectedSignalIds(new Set());
-  }, [signalStatus, tab]);
-  useEffect(() => {
-    const visibleSignalIds = new Set(signalItems.map((item) => item.signal._id));
-    setSelectedSignalIds((current) => {
-      const next = new Set([...current].filter((signalId) => visibleSignalIds.has(signalId)));
-      return next.size === current.size ? current : next;
-    });
-  }, [signalItems]);
   const latestRun = dashboard?.latestRun ?? null;
   const latestSignalRun = dashboard?.latestSignalRun ?? null;
   const displayedRun = tab === "signals" ? latestSignalRun : latestRun;
@@ -458,52 +426,13 @@ export function AbusePage({
           />
         </label>
         {tab === "signals" ? (
-          <div className="pa-signal-status-tabs" role="group" aria-label="Signal status">
-            {(["open", "snoozed", "dismissed"] as const).map((status) => (
-              <button
-                key={status}
-                type="button"
-                className={signalStatus === status ? "active" : ""}
-                aria-pressed={signalStatus === status}
-                onClick={() => onChangeSignalStatus(status)}
-              >
-                {formatPublisherAbuseSignalStatus(status)}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {tab === "signals" ? (
           <PublisherAbuseSignalsTable
             canLoadMore={signalsCanLoadMore || signalsLoadingMore}
             items={signalItems}
             loaded={signalsLoaded}
             selectedSignalId={selectedSignalItem?.signal._id ?? null}
-            selectedSignalIds={selectedSignalIds}
-            status={signalStatus}
             searchActive={search.trim().length > 0}
-            onClearSignalSelection={() => setSelectedSignalIds(new Set())}
-            onDismissSignals={onDismissSignals}
             onSelectSignal={setSelectedSignalItem}
-            onSnoozeSignals={onSnoozeSignals}
-            onToggleAllSignals={(checked) => {
-              setSelectedSignalIds(
-                checked
-                  ? new Set(
-                      signalItems
-                        .slice(0, MAX_BULK_SIGNAL_SELECTION)
-                        .map((item) => item.signal._id),
-                    )
-                  : new Set(),
-              );
-            }}
-            onToggleSignal={(signalId, checked) => {
-              setSelectedSignalIds((current) => {
-                const next = new Set(current);
-                if (checked && next.size < MAX_BULK_SIGNAL_SELECTION) next.add(signalId);
-                else next.delete(signalId);
-                return next;
-              });
-            }}
           />
         ) : (
           <div className="pa-table-wrap">
@@ -830,14 +759,7 @@ export function AbusePage({
         }}
       >
         <SheetContent side="right" className="pa-sheet w-[600px] max-w-[92vw]">
-          {selectedSignalItem ? (
-            <PublisherAbuseSignalInspector
-              item={selectedSignalItem}
-              onDismissSignal={onDismissSignal}
-              onReopenSignal={onReopenSignal}
-              onSnoozeSignal={onSnoozeSignal}
-            />
-          ) : null}
+          {selectedSignalItem ? <PublisherAbuseSignalInspector item={selectedSignalItem} /> : null}
         </SheetContent>
       </Sheet>
     </section>
@@ -930,232 +852,106 @@ function PublisherAbuseSignalsTable({
   items,
   loaded,
   selectedSignalId,
-  selectedSignalIds,
-  status,
   searchActive,
-  onClearSignalSelection,
-  onDismissSignals,
   onSelectSignal,
-  onSnoozeSignals,
-  onToggleAllSignals,
-  onToggleSignal,
 }: {
   canLoadMore: boolean;
   items: PublisherAbuseSignalEntry[];
   loaded: boolean;
   selectedSignalId: Id<"publisherAbuseSignals"> | null;
-  selectedSignalIds: Set<Id<"publisherAbuseSignals">>;
-  status: PublisherAbuseSignalStatus;
   searchActive: boolean;
-  onClearSignalSelection: () => void;
-  onDismissSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onSelectSignal: (item: PublisherAbuseSignalEntry) => void;
-  onSnoozeSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
-  onToggleAllSignals: (checked: boolean) => void;
-  onToggleSignal: (signalId: Id<"publisherAbuseSignals">, checked: boolean) => void;
 }) {
-  const emptyState = publisherAbuseSignalEmptyState(searchActive, canLoadMore, status);
-  const bulkSelectionEnabled = status === "open" && loaded && items.length > 0;
-  const selectedIds = [...selectedSignalIds];
-  const selectedCount = selectedIds.length;
-  const selectionAtLimit = selectedCount >= MAX_BULK_SIGNAL_SELECTION;
-  const selectableItems = items.slice(0, MAX_BULK_SIGNAL_SELECTION);
-  const allLoadedSelected =
-    bulkSelectionEnabled &&
-    selectableItems.length > 0 &&
-    selectableItems.every((item) => selectedSignalIds.has(item.signal._id));
+  const emptyState = publisherAbuseSignalEmptyState(searchActive, canLoadMore);
   return (
-    <>
-      {bulkSelectionEnabled ? (
-        <div className="pa-signal-bulk-bar" aria-label="Bulk signal actions">
-          <span className="pa-signal-bulk-count" aria-live="polite">
-            {formatWholeNumber(selectedCount)} selected
-            {selectionAtLimit ? ` · ${MAX_BULK_SIGNAL_SELECTION} maximum` : null}
-          </span>
-          <div className="pa-signal-bulk-actions">
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              disabled={selectedCount === 0}
-              onClick={() => onSnoozeSignals(selectedIds)}
-            >
-              <Clock3 size={14} aria-hidden="true" />
-              {bulkSignalActionLabel("Snooze", selectedCount)}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              disabled={selectedCount === 0}
-              onClick={() => onDismissSignals(selectedIds)}
-            >
-              <XCircle size={14} aria-hidden="true" />
-              {bulkSignalActionLabel("Dismiss", selectedCount)}
-            </Button>
-            {selectedCount > 0 ? (
-              <Button type="button" variant="ghost" size="xs" onClick={onClearSignalSelection}>
-                Clear
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      <div className="pa-table-wrap">
-        <table className="pa-table pa-signals-table">
-          <thead>
-            <tr>
-              {bulkSelectionEnabled ? (
-                <th className="pa-signal-select-cell">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all loaded signals"
-                    checked={allLoadedSelected}
-                    onChange={(event) => onToggleAllSignals(event.target.checked)}
-                  />
-                </th>
-              ) : null}
-              <th>Severity</th>
-              <th>Signal</th>
-              <th>Subject</th>
-              <th className="pa-num">Evidence</th>
-              <th>Last seen</th>
+    <div className="pa-table-wrap">
+      <table className="pa-table pa-signals-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Signal</th>
+            <th>Subject</th>
+            <th className="pa-num">Evidence</th>
+            <th>Last seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {!loaded ? (
+            <PublisherAbuseTableSkeletonRows columns={5} label="Loading publisher abuse signals" />
+          ) : items.length === 0 ? (
+            <tr className="pa-empty-row">
+              <td colSpan={5}>
+                <strong>{emptyState.title}</strong>
+                {emptyState.body}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {!loaded ? (
-              <PublisherAbuseTableSkeletonRows
-                columns={5}
-                label="Loading publisher abuse signals"
-              />
-            ) : items.length === 0 ? (
-              <tr className="pa-empty-row">
-                <td colSpan={bulkSelectionEnabled ? 6 : 5}>
-                  <strong>{emptyState.title}</strong>
-                  {emptyState.body}
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => {
-                const selected = item.signal._id === selectedSignalId;
-                const bulkSelected = selectedSignalIds.has(item.signal._id);
-                const recurrenceCount = item.signal.recurrenceCount ?? 0;
-                const isPortfolioSignal =
-                  item.signal.signalType === "owner_synchronized_download_trends";
-                return (
-                  <tr
-                    key={item.signal._id}
-                    className={
-                      [selected ? "is-selected" : "", bulkSelected ? "is-bulk-selected" : ""]
-                        .filter(Boolean)
-                        .join(" ") || undefined
-                    }
-                    onClick={() => onSelectSignal(item)}
-                  >
-                    {bulkSelectionEnabled ? (
-                      <td className="pa-signal-select-cell">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${item.signal.skillDisplayName}`}
-                          checked={bulkSelected}
-                          disabled={selectionAtLimit && !bulkSelected}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) =>
-                            onToggleSignal(item.signal._id, event.target.checked)
-                          }
-                        />
-                      </td>
-                    ) : null}
-                    <td>
-                      <Badge
-                        variant={publisherAbuseSignalSeverityVariant(
-                          item.signal.signalType,
-                          recurrenceCount,
-                        )}
-                        size="sm"
-                      >
-                        {formatPublisherAbuseSignalSeverity(
-                          item.signal.signalType,
-                          recurrenceCount,
-                        )}
-                      </Badge>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="pa-signal-summary pa-row-button"
-                        aria-label={`Open details for ${item.signal.skillDisplayName}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onSelectSignal(item);
-                        }}
-                      >
-                        <strong className="pa-signal-name">
-                          {formatPublisherAbuseSignalType(item.signal.signalType)}
-                        </strong>
-                        <span>
-                          {formatPublisherAbuseSignalStatus(signalReviewStatus(item))}
-                          {" · "}Seen {formatWholeNumber(item.signal.seenCount)}x
-                        </span>
-                      </button>
-                      {recurrenceCount > 0 ? (
-                        <div className="pa-signal-repeat is-recurring">Repeat after snooze</div>
-                      ) : item.signal.snoozedUntil ? (
-                        <div className="pa-signal-repeat">
-                          {formatPublisherAbuseSnoozeState(item.signal.snoozedUntil)}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      <div className="pa-signal-subject">
-                        <strong>
-                          {isPortfolioSignal
-                            ? `@${item.signal.handleSnapshot} portfolio`
-                            : item.signal.skillDisplayName}
-                        </strong>
-                        <span>
-                          {isPortfolioSignal
-                            ? `${formatWholeNumber(item.signal.portfolioEvidence?.skillCount ?? 0)} synchronized skills`
-                            : `@${item.signal.handleSnapshot} / ${item.signal.skillSlug}`}
-                        </span>
-                      </div>
-                    </td>
-                    <PublisherAbuseSignalRatioCell
-                      downloads={item.signal.recent30Downloads}
-                      installs={item.signal.recent30Installs}
-                      ratio={item.signal.recent30InstallDownloadRatio}
-                    />
-                    <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </>
+          ) : (
+            items.map((item) => {
+              const selected = item.signal._id === selectedSignalId;
+              const isPortfolioSignal =
+                item.signal.signalType === "owner_synchronized_download_trends";
+              return (
+                <tr
+                  key={item.signal._id}
+                  className={selected ? "is-selected" : undefined}
+                  onClick={() => onSelectSignal(item)}
+                >
+                  <td>
+                    <Badge
+                      variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)}
+                      size="sm"
+                    >
+                      {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
+                    </Badge>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="pa-signal-summary pa-row-button"
+                      aria-label={`Open details for ${item.signal.skillDisplayName}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelectSignal(item);
+                      }}
+                    >
+                      <strong className="pa-signal-name">
+                        {formatPublisherAbuseSignalType(item.signal.signalType)}
+                      </strong>
+                      <span>Seen {formatWholeNumber(item.signal.seenCount)} times</span>
+                    </button>
+                  </td>
+                  <td>
+                    <div className="pa-signal-subject">
+                      <strong>
+                        {isPortfolioSignal
+                          ? `@${item.signal.handleSnapshot} portfolio`
+                          : item.signal.skillDisplayName}
+                      </strong>
+                      <span>
+                        {isPortfolioSignal
+                          ? `${formatWholeNumber(item.signal.portfolioEvidence?.skillCount ?? 0)} synchronized skills`
+                          : `@${item.signal.handleSnapshot} / ${item.signal.skillSlug}`}
+                      </span>
+                    </div>
+                  </td>
+                  <PublisherAbuseSignalRatioCell
+                    downloads={item.signal.recent30Downloads}
+                    installs={item.signal.recent30Installs}
+                    ratio={item.signal.recent30InstallDownloadRatio}
+                  />
+                  <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function bulkSignalActionLabel(action: "Snooze" | "Dismiss", count: number) {
-  if (count <= 0) return `${action} selected`;
-  return `${action} ${formatWholeNumber(count)} ${count === 1 ? "signal" : "signals"}`;
-}
-
-function PublisherAbuseSignalInspector({
-  item,
-  onDismissSignal,
-  onReopenSignal,
-  onSnoozeSignal,
-}: {
-  item: PublisherAbuseSignalEntry;
-  onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
-  onReopenSignal: (item: PublisherAbuseSignalEntry) => void;
-  onSnoozeSignal: (item: PublisherAbuseSignalEntry) => void;
-}) {
-  const status = signalReviewStatus(item);
+function PublisherAbuseSignalInspector({ item }: { item: PublisherAbuseSignalEntry }) {
   const publisherHandle = signalPublisherHandle(item);
-  const recurrenceCount = item.signal.recurrenceCount ?? 0;
   const isPortfolioSignal = item.signal.signalType === "owner_synchronized_download_trends";
   const activityTrend = useQuery(
     api.publisherAbuse.getSignalActivityTrend,
@@ -1166,9 +962,6 @@ function PublisherAbuseSignalInspector({
           endDay: getActivityTrendEndDay(item.signal.lastSeenAt),
         },
   );
-  const hasFreshEvidence =
-    typeof item.signal.freshDownloadsSinceSnooze === "number" &&
-    typeof item.signal.freshInstallsSinceSnooze === "number";
   return (
     <>
       <SheetHeader className="pa-sheet-head">
@@ -1178,20 +971,13 @@ function PublisherAbuseSignalInspector({
             : item.signal.skillDisplayName}
         </SheetTitle>
         <SheetDescription className="sr-only">
-          Publisher abuse signal evidence, linked skill and publisher, and available review actions.
+          Publisher abuse signal evidence with links to the skill and publisher.
         </SheetDescription>
         <div className="pa-pills">
-          <Badge variant="default" size="sm">
-            {formatPublisherAbuseSignalStatus(status)}
+          <Badge variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)} size="sm">
+            {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
           </Badge>
-          <Badge
-            variant={publisherAbuseSignalSeverityVariant(item.signal.signalType, recurrenceCount)}
-            size="sm"
-          >
-            {formatPublisherAbuseSignalSeverity(item.signal.signalType, recurrenceCount)}
-          </Badge>
-          <Badge variant="compact">Seen {formatWholeNumber(item.signal.seenCount)}x</Badge>
-          {recurrenceCount > 0 ? <Badge variant="warning">Repeat signal</Badge> : null}
+          <Badge variant="compact">Seen {formatWholeNumber(item.signal.seenCount)} times</Badge>
         </div>
         <div className="pa-idline">
           {!isPortfolioSignal ? (
@@ -1342,17 +1128,6 @@ function PublisherAbuseSignalInspector({
               installs={item.signal.allTimeInstalls}
               ratio={item.signal.allTimeInstallDownloadRatio}
             />
-            {hasFreshEvidence ? (
-              <PublisherAbuseSignalEvidenceMetric
-                label="Since snooze"
-                downloads={item.signal.freshDownloadsSinceSnooze ?? 0}
-                installs={item.signal.freshInstallsSinceSnooze ?? 0}
-                ratio={installDownloadRatioForDisplay({
-                  downloads: item.signal.freshDownloadsSinceSnooze ?? 0,
-                  installs: item.signal.freshInstallsSinceSnooze ?? 0,
-                })}
-              />
-            ) : null}
           </div>
           {item.signal.temporalBenchmark?.scope === "all_active_skills" ? (
             <p className="pa-hint">
@@ -1365,7 +1140,7 @@ function PublisherAbuseSignalInspector({
         </section>
 
         <section className="pa-zone">
-          <div className="pa-section-label">Review state</div>
+          <div className="pa-section-label">Observation history</div>
           <div className="pa-metrics">
             <PublisherAbuseSignalMeta
               label="First seen"
@@ -1375,66 +1150,6 @@ function PublisherAbuseSignalInspector({
               label="Last seen"
               value={formatShortTimestamp(item.signal.lastSeenAt)}
             />
-            <PublisherAbuseSignalMeta
-              label="Snoozed until"
-              value={
-                item.signal.snoozedUntil ? formatShortTimestamp(item.signal.snoozedUntil) : "—"
-              }
-            />
-            <PublisherAbuseSignalMeta
-              label="Last reviewed"
-              value={item.signal.reviewedAt ? formatShortTimestamp(item.signal.reviewedAt) : "—"}
-            />
-          </div>
-          {item.signal.reviewNote ? <p className="pa-hint">{item.signal.reviewNote}</p> : null}
-          {recurrenceCount > 0 ? (
-            <p className="pa-hint">
-              Reopened because fresh activity crossed the lower repeat threshold after the prior
-              evidence was acknowledged.
-            </p>
-          ) : status === "snoozed" ? (
-            <p className="pa-hint">
-              The evidence shown at snooze time is acknowledged. After the quiet period, only fresh
-              suspicious activity can reopen this signal.
-            </p>
-          ) : null}
-        </section>
-
-        <section className="pa-zone pa-review">
-          <div className="pa-section-label">Actions</div>
-          <div className="pa-actions">
-            {status === "open" ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onSnoozeSignal(item)}
-                >
-                  <Clock3 size={14} />
-                  Snooze 14 days
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onDismissSignal(item)}
-                >
-                  <XCircle size={14} />
-                  Dismiss signal
-                </Button>
-              </>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onReopenSignal(item)}
-              >
-                <RotateCcw size={14} />
-                Reopen signal
-              </Button>
-            )}
           </div>
         </section>
       </div>
@@ -1473,11 +1188,7 @@ function PublisherAbuseSignalEvidenceMetric({
   );
 }
 
-function publisherAbuseSignalEmptyState(
-  searchActive: boolean,
-  canLoadMore: boolean,
-  status: PublisherAbuseSignalStatus,
-) {
+function publisherAbuseSignalEmptyState(searchActive: boolean, canLoadMore: boolean) {
   if (searchActive) {
     return {
       title: "No matching signals",
@@ -1493,11 +1204,8 @@ function publisherAbuseSignalEmptyState(
     };
   }
   return {
-    title: `No ${formatPublisherAbuseSignalStatus(status).toLowerCase()} signals`,
-    body:
-      status === "open"
-        ? "No actionable publisher abuse signals need review."
-        : "No durable publisher abuse evidence matches this status.",
+    title: "No signals",
+    body: "No stored publisher traffic anomalies are currently visible.",
   };
 }
 
@@ -1522,16 +1230,6 @@ function PublisherAbuseSignalRatioCell({
 
 function signalPublisherHandle(item: PublisherAbuseSignalEntry) {
   return item.publisher?.handle || item.signal.handleSnapshot;
-}
-
-function signalReviewStatus(item: PublisherAbuseSignalEntry): PublisherAbuseSignalStatus {
-  return item.signal.reviewStatus ?? "open";
-}
-
-function formatPublisherAbuseSignalStatus(status: PublisherAbuseSignalStatus) {
-  if (status === "open") return "Open";
-  if (status === "snoozed") return "Snoozed";
-  return "Dismissed";
 }
 
 function PublisherAbuseIdentity({ label, value }: { label: string; value: string }) {
@@ -1802,7 +1500,6 @@ export function filterPublisherAbuseSignals(items: PublisherAbuseSignalEntry[], 
       item.signal.ownerKey,
       item.signal.ownerPublisherId,
       item.signal.ownerUserId,
-      item.signal.reviewStatus,
       item.publisher?.displayName,
       item.publisher?.handle,
       item.ownerUser?.handle,
@@ -1877,7 +1574,7 @@ function describePublisherAbuseSignalType(signalType: string) {
     return "The 7-day rise and excess downloads are both unusually high while installs stayed flat.";
   }
   if (signalType === "sustained_abnormal_download_days") {
-    return "Downloads stayed unusually high on most days in the review window while installs stayed flat.";
+    return "Downloads stayed unusually high on most days in the measurement window while installs stayed flat.";
   }
   if (signalType === "sustained_downloads_flat_installs") {
     return "Downloads stayed high over the review window while installs stayed flat.";
@@ -1885,33 +1582,19 @@ function describePublisherAbuseSignalType(signalType: string) {
   if (signalType === "owner_synchronized_download_trends") {
     return "Several already-anomalous skills under this publisher have nearly identical download trends and similarly sized peaks.";
   }
-  return "Archived publisher abuse signal for manual review.";
+  return "Stored publisher traffic anomaly visible to staff.";
 }
 
-function formatPublisherAbuseSignalSeverity(signalType: string, recurrenceCount = 0) {
-  if (recurrenceCount > 0) return "High";
+function formatPublisherAbuseSignalSeverity(signalType: string) {
   if (signalType === "high_install_download_ratio") return "High";
-  if (signalType === "sustained_downloads_flat_installs") return "Review";
-  return "Review";
+  return "Watch";
 }
 
 function publisherAbuseSignalSeverityVariant(
   signalType: string,
-  recurrenceCount = 0,
 ): NonNullable<BadgeProps["variant"]> {
-  if (recurrenceCount > 0) return "warning";
   if (signalType === "high_install_download_ratio") return "warning";
   return "review";
-}
-
-function formatPublisherAbuseSnoozeState(snoozedUntil: number) {
-  if (snoozedUntil > Date.now()) return `quiet until ${formatShortTimestamp(snoozedUntil)}`;
-  return "Old evidence acknowledged · watching fresh activity";
-}
-
-function installDownloadRatioForDisplay(input: { downloads: number; installs: number }) {
-  if (input.downloads <= 0) return input.installs > 0 ? 1 : 0;
-  return input.installs / input.downloads;
 }
 
 function formatPublisherAbuseStatus(status: string) {

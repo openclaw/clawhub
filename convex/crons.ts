@@ -147,13 +147,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
-    "publisher-abuse-signal-notifications",
-    { hours: 1 },
-    internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-    {},
-  );
-
-  crons.interval(
     "publisher-abuse-autobans",
     { hours: 24 },
     internal.publisherAbuse.processPublisherAbuseAutobansInternal,

@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => {
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
-  const publisherAbuseSignalNotificationsRef = Symbol("publisher-abuse-signal-notifications");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
   const publisherTemporalAbuseScanPruneRef = Symbol("publisher-temporal-abuse-scan-prune");
@@ -30,7 +29,6 @@ const mocks = vi.hoisted(() => {
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
-    publisherAbuseSignalNotificationsRef,
     publisherAbuseScoreRefreshRef,
     publisherTemporalAbuseScanRef,
     publisherTemporalAbuseScanPruneRef,
@@ -89,7 +87,6 @@ vi.mock("./_generated/api", () => ({
     },
     publisherAbuse: {
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
-      notifyPublisherAbuseSignalChangesInternal: mocks.publisherAbuseSignalNotificationsRef,
       processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
     },
     publisherAbuseTemporalScan: {
@@ -330,12 +327,6 @@ describe("crons", () => {
         batchSize: 1,
         maxPages: 50,
       },
-    );
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "publisher-abuse-signal-notifications",
-      { hours: 1 },
-      mocks.publisherAbuseSignalNotificationsRef,
-      {},
     );
   });
 

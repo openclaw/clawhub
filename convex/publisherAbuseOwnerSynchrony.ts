@@ -8,7 +8,6 @@ import {
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
-import { freshPublisherAbuseEvidenceCrossesRepeatThreshold } from "./lib/publisherAbuseSignalLifecycle";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -92,10 +91,9 @@ const ownerSynchronyCandidateValidator = v.object({
 
 function isDownloadAnomalySignal(signal: Doc<"publisherAbuseSignals">) {
   return (
-    signal.reviewStatus !== "dismissed" &&
-    (signal.signalType === "sustained_downloads_flat_installs" ||
-      signal.signalType === "download_spike_flat_installs" ||
-      signal.signalType === "sustained_abnormal_download_days")
+    signal.signalType === "sustained_downloads_flat_installs" ||
+    signal.signalType === "download_spike_flat_installs" ||
+    signal.signalType === "sustained_abnormal_download_days"
   );
 }
 
@@ -308,91 +306,15 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
   };
 
   if (existing) {
-    const previousStatus = existing.reviewStatus;
-    const snoozeExpired =
-      previousStatus === "snoozed" &&
-      typeof existing.snoozedUntil === "number" &&
-      existing.snoozedUntil <= args.now;
-    const hasEvidenceCheckpoint =
-      typeof existing.evidenceBaselineDownloads === "number" &&
-      typeof existing.evidenceBaselineInstalls === "number";
-    const evidenceBaselineDownloads =
-      existing.evidenceBaselineDownloads ?? candidate.allTimeDownloads;
-    const evidenceBaselineInstalls = existing.evidenceBaselineInstalls ?? candidate.allTimeInstalls;
-    const freshDownloadsSinceSnooze = Math.max(
-      0,
-      candidate.allTimeDownloads - evidenceBaselineDownloads,
-    );
-    const freshInstallsSinceSnooze = Math.max(
-      0,
-      candidate.allTimeInstalls - evidenceBaselineInstalls,
-    );
-    const recurringAfterSnooze =
-      snoozeExpired &&
-      hasEvidenceCheckpoint &&
-      freshPublisherAbuseEvidenceCrossesRepeatThreshold(OWNER_SYNCHRONY_SIGNAL_TYPE, {
-        downloads: freshDownloadsSinceSnooze,
-        installs: freshInstallsSinceSnooze,
-      });
-    const evidenceChanged =
-      JSON.stringify(existing.portfolioEvidence?.skillSlugs ?? []) !==
-        JSON.stringify(candidate.portfolioEvidence.skillSlugs) ||
-      existing.portfolioEvidence?.allPublisherSkills !==
-        candidate.portfolioEvidence.allPublisherSkills;
-    const notificationBaselineDownloads =
-      existing.notificationBaselineDownloads ?? existing.allTimeDownloads;
-    const notificationBaselineInstalls =
-      existing.notificationBaselineInstalls ?? existing.allTimeInstalls;
-    const materiallyStrongerEvidence =
-      previousStatus === "open" &&
-      freshPublisherAbuseEvidenceCrossesRepeatThreshold(OWNER_SYNCHRONY_SIGNAL_TYPE, {
-        downloads: Math.max(0, candidate.allTimeDownloads - notificationBaselineDownloads),
-        installs: Math.max(0, candidate.allTimeInstalls - notificationBaselineInstalls),
-      });
-    const nextStatus = recurringAfterSnooze ? "open" : previousStatus;
-    const shouldNotify =
-      recurringAfterSnooze ||
-      (previousStatus === "open" && (evidenceChanged || materiallyStrongerEvidence));
     await ctx.db.patch(existing._id, {
       ...snapshot,
-      reviewStatus: nextStatus,
-      snoozedUntil: nextStatus === "snoozed" ? existing.snoozedUntil : undefined,
-      evidenceAcknowledgedAt:
-        previousStatus === "snoozed"
-          ? (existing.evidenceAcknowledgedAt ?? args.now)
-          : existing.evidenceAcknowledgedAt,
-      evidenceBaselineDownloads:
-        previousStatus === "snoozed"
-          ? evidenceBaselineDownloads
-          : existing.evidenceBaselineDownloads,
-      evidenceBaselineInstalls:
-        previousStatus === "snoozed" ? evidenceBaselineInstalls : existing.evidenceBaselineInstalls,
-      freshDownloadsSinceSnooze:
-        previousStatus === "snoozed"
-          ? freshDownloadsSinceSnooze
-          : existing.freshDownloadsSinceSnooze,
-      freshInstallsSinceSnooze:
-        previousStatus === "snoozed" ? freshInstallsSinceSnooze : existing.freshInstallsSinceSnooze,
-      recurrenceCount: recurringAfterSnooze
-        ? (existing.recurrenceCount ?? 0) + 1
-        : existing.recurrenceCount,
-      notificationBaselineDownloads: shouldNotify
-        ? candidate.allTimeDownloads
-        : notificationBaselineDownloads,
-      notificationBaselineInstalls: shouldNotify
-        ? candidate.allTimeInstalls
-        : notificationBaselineInstalls,
       lastSeenAt: args.now,
       seenCount: existing.seenCount + 1,
-      lastChangedAt: shouldNotify ? args.now : existing.lastChangedAt,
-      needsNotification: shouldNotify ? true : (existing.needsNotification ?? false),
-      notificationClaimedAt: shouldNotify ? undefined : existing.notificationClaimedAt,
-      lastNotificationError: shouldNotify ? undefined : existing.lastNotificationError,
     });
     return {
       signalId: existing._id,
       created: false as const,
-      changed: shouldNotify,
+      changed: false as const,
     };
   }
 
@@ -401,11 +323,6 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
     firstSeenAt: args.now,
     lastSeenAt: args.now,
     seenCount: 1,
-    reviewStatus: "open",
-    notificationBaselineDownloads: candidate.allTimeDownloads,
-    notificationBaselineInstalls: candidate.allTimeInstalls,
-    lastChangedAt: args.now,
-    needsNotification: true,
   });
   return {
     signalId,
@@ -441,12 +358,6 @@ export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
         cursor: page.cursor,
         todayDay: args.todayDay,
       },
-    );
-  } else {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-      {},
     );
   }
   return { matchedOwners: page.matchedOwners, isDone: page.isDone };

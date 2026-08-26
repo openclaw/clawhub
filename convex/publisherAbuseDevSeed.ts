@@ -673,7 +673,6 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     allTimeDownloads: temporalDownloads30d,
     allTimeInstalls: temporalInstalls30d,
     allTimeInstallDownloadRatio: temporalInstalls30d / temporalDownloads30d,
-    reviewStatus: "open",
   });
   await ctx.db.insert("publisherAbuseSignals", {
     signalType: "high_install_download_ratio",
@@ -698,7 +697,6 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     allTimeDownloads: 2_400,
     allTimeInstalls: 288,
     allTimeInstallDownloadRatio: 0.12,
-    reviewStatus: "open",
   });
 }
 

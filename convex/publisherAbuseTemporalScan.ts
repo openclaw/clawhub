@@ -740,16 +740,6 @@ export async function recordScheduledTemporalScanFailureInternalHandler(
       errorMessage: args.errorMessage,
       nextTransientRetryAt: undefined,
     });
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuse.notifyPublisherAbuseSignalScanFailureInternal,
-      {
-        runId: run._id,
-        failureCount,
-        errorMessage: args.errorMessage,
-        failedAt: now,
-      },
-    );
     console.error("[publisher-temporal-abuse-scan] retry budget exhausted", {
       event: "publisher_temporal_abuse_scan_failed",
       runId: run._id,
@@ -1060,11 +1050,6 @@ async function runScheduledTemporalPublisherAbuseScanStep(
       };
     }
     if (page.isDone) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-        {},
-      );
       return { ok: true as const, runId: run._id, completed: true as const };
     }
   }

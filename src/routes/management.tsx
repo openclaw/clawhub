@@ -51,7 +51,6 @@ import {
   type PluginByNameResult,
   type PublisherAbuseSignalEntry,
   type PublisherAbuseReviewItem,
-  type PublisherAbuseSignalStatus,
   type PublisherAbuseTab,
   type PromotionEntry,
   type PromotionInput,
@@ -281,12 +280,6 @@ export function Management() {
   const setPublisherAbuseAutobanEnabled = useMutation(
     api.publisherAbuse.setPublisherAbuseAutobanEnabled,
   );
-  const snoozePublisherAbuseSignal = useMutation(api.publisherAbuse.snoozePublisherAbuseSignal);
-  const dismissPublisherAbuseSignal = useMutation(api.publisherAbuse.dismissPublisherAbuseSignal);
-  const reviewPublisherAbuseSignalsBatch = useMutation(
-    api.publisherAbuse.reviewPublisherAbuseSignalsBatch,
-  );
-  const reopenPublisherAbuseSignal = useMutation(api.publisherAbuse.reopenPublisherAbuseSignal);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
   const startPublisherAbuseSignalScan = useAction(
     api.publisherAbuseTemporalScan.startPublisherAbuseSignalScan,
@@ -308,8 +301,6 @@ export function Management() {
   );
   const [publisherAbuseSearch, setPublisherAbuseSearch] = useState("");
   const [publisherAbuseNotes, setPublisherAbuseNotes] = useState("");
-  const [publisherAbuseSignalStatus, setPublisherAbuseSignalStatus] =
-    useState<PublisherAbuseSignalStatus>("open");
   const [selectedPublisherAbuseNominationId, setSelectedPublisherAbuseNominationId] =
     useState<Id<"publisherAbuseReviewNominations"> | null>(null);
   const {
@@ -329,9 +320,7 @@ export function Management() {
     loadMore: loadMorePublisherAbuseSignals,
   } = usePaginatedQuery(
     api.publisherAbuse.listSignalsPage,
-    staff && abuseViewActive && publisherAbuseTab === "signals"
-      ? { reviewStatus: publisherAbuseSignalStatus }
-      : "skip",
+    staff && abuseViewActive && publisherAbuseTab === "signals" ? {} : "skip",
     { initialNumItems: 25 },
   );
 
@@ -635,23 +624,6 @@ export function Management() {
     });
   };
 
-  const requestSnoozePublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
-    setConfirmRequest({
-      title: `Snooze ${item.signal.skillDisplayName}?`,
-      body: "Hides this signal for at least 14 days and acknowledges the evidence shown now. It reopens only if fresh activity crosses the lower repeat threshold.",
-      confirmLabel: "Snooze 14 days",
-      reason: {
-        label: "Note (optional)",
-        placeholder: "Why are you snoozing this signal?",
-      },
-      onConfirm: (note) => {
-        void snoozePublisherAbuseSignal({ signalId: item.signal._id, note, days: 14 })
-          .then(() => toast.success("Signal snoozed."))
-          .catch((error) => toast.error(formatMutationError(error)));
-      },
-    });
-  };
-
   const requestMarkPublisherAbuseNominationReviewed = (item: PublisherAbuseReviewItem) => {
     const label = item.nomination.handleSnapshot;
     const note = publisherAbuseNotes.trim() || undefined;
@@ -671,87 +643,6 @@ export function Management() {
             setPublisherAbuseNotes("");
             setSelectedPublisherAbuseNominationId(null);
           })
-          .catch((error) => toast.error(formatMutationError(error)));
-      },
-    });
-  };
-
-  const requestDismissPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
-    setConfirmRequest({
-      title: `Dismiss ${item.signal.skillDisplayName}?`,
-      body: "Dismissed signals stay archived but are hidden from the default review queue and will not notify Hermit unless reopened.",
-      confirmLabel: "Dismiss signal",
-      destructive: true,
-      reason: {
-        label: "Note (optional)",
-        placeholder: "Why are you dismissing this signal?",
-      },
-      onConfirm: (note) => {
-        void dismissPublisherAbuseSignal({ signalId: item.signal._id, note })
-          .then(() => toast.success("Signal dismissed."))
-          .catch((error) => toast.error(formatMutationError(error)));
-      },
-    });
-  };
-
-  const requestSnoozePublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
-    const count = signalIds.length;
-    if (count === 0) return;
-    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
-    setConfirmRequest({
-      title: `Snooze ${label}?`,
-      body: "Hides the selected signals for 14 days and acknowledges the evidence shown now. Each signal reopens only if fresh activity crosses the repeat threshold.",
-      confirmLabel: `Snooze ${label}`,
-      reason: {
-        label: "Note (optional)",
-        placeholder: "Why are you snoozing these signals?",
-      },
-      onConfirm: (note) => {
-        void reviewPublisherAbuseSignalsBatch({
-          signalIds,
-          status: "snoozed",
-          note,
-          days: 14,
-        })
-          .then((result) => toast.success(`${result.updated} signals snoozed.`))
-          .catch((error) => toast.error(formatMutationError(error)));
-      },
-    });
-  };
-
-  const requestDismissPublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
-    const count = signalIds.length;
-    if (count === 0) return;
-    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
-    setConfirmRequest({
-      title: `Dismiss ${label}?`,
-      body: "Archives the selected signals and removes them from the Open queue. They will not notify Hermit unless a moderator reopens them.",
-      confirmLabel: `Dismiss ${label}`,
-      destructive: true,
-      reason: {
-        label: "Note (optional)",
-        placeholder: "Why are you dismissing these signals?",
-      },
-      onConfirm: (note) => {
-        void reviewPublisherAbuseSignalsBatch({ signalIds, status: "dismissed", note })
-          .then((result) => toast.success(`${result.updated} signals dismissed.`))
-          .catch((error) => toast.error(formatMutationError(error)));
-      },
-    });
-  };
-
-  const requestReopenPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
-    setConfirmRequest({
-      title: `Reopen ${item.signal.skillDisplayName}?`,
-      body: "Returns this signal to the default review queue and queues a Hermit digest notification.",
-      confirmLabel: "Reopen signal",
-      reason: {
-        label: "Note (optional)",
-        placeholder: "Why are you reopening this signal?",
-      },
-      onConfirm: (note) => {
-        void reopenPublisherAbuseSignal({ signalId: item.signal._id, note })
-          .then(() => toast.success("Signal reopened."))
           .catch((error) => toast.error(formatMutationError(error)));
       },
     });
@@ -855,12 +746,10 @@ export function Management() {
             signalItems={filteredPublisherAbuseSignals}
             signalLoadedCount={publisherAbuseSignalItems.length}
             signalPageStatus={publisherAbuseSignalPageStatus}
-            signalStatus={publisherAbuseSignalStatus}
             tab={publisherAbuseTab}
             onBanOwner={banPublisherAbuseOwner}
             onChangeNotes={setPublisherAbuseNotes}
             onChangeSearch={setPublisherAbuseSearch}
-            onChangeSignalStatus={setPublisherAbuseSignalStatus}
             onChangeTab={(nextTab) => {
               setPublisherAbuseTab(nextTab);
               if (nextTab === "signals") {
@@ -878,8 +767,6 @@ export function Management() {
               });
             }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
-            onDismissSignal={requestDismissPublisherAbuseSignal}
-            onDismissSignals={requestDismissPublisherAbuseSignals}
             onMarkReviewed={requestMarkPublisherAbuseNominationReviewed}
             onLoadMore={() => {
               if (publisherAbuseTab === "signals") {
@@ -923,13 +810,10 @@ export function Management() {
               setPublisherAbuseNotes("");
               setSelectedPublisherAbuseNominationId(null);
             }}
-            onReopenSignal={requestReopenPublisherAbuseSignal}
             onSelect={(nominationId) => {
               setPublisherAbuseNotes("");
               setSelectedPublisherAbuseNominationId(nominationId);
             }}
-            onSnoozeSignal={requestSnoozePublisherAbuseSignal}
-            onSnoozeSignals={requestSnoozePublisherAbuseSignals}
           />
         ) : null}
 

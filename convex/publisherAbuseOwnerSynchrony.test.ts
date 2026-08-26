@@ -44,7 +44,7 @@ function candidate() {
   };
 }
 
-function snoozedSignal(now: number) {
+function existingSignal(now: number) {
   const value = candidate();
   return {
     _id: "publisherAbuseSignals:portfolio",
@@ -54,18 +54,9 @@ function snoozedSignal(now: number) {
     skillSlug: value.representativeSkillSlug,
     skillDisplayName: value.representativeSkillDisplayName,
     signalType: "owner_synchronized_download_trends" as const,
-    reviewStatus: "snoozed" as const,
-    snoozedUntil: now - 1,
-    evidenceAcknowledgedAt: now - 10_000,
-    evidenceBaselineDownloads: value.allTimeDownloads,
-    evidenceBaselineInstalls: value.allTimeInstalls,
-    notificationBaselineDownloads: value.allTimeDownloads,
-    notificationBaselineInstalls: value.allTimeInstalls,
     firstSeenAt: now - 20_000,
     lastSeenAt: now - 10_000,
     seenCount: 2,
-    lastChangedAt: now - 10_000,
-    needsNotification: false,
   };
 }
 
@@ -102,7 +93,6 @@ describe("publisher abuse owner synchrony signal", () => {
       expect.objectContaining({
         signalType: "owner_synchronized_download_trends",
         ownerKey: "publisher:publishers:portfolio",
-        reviewStatus: "open",
         reasonCodes: [
           "multiple_skills_have_anomalous_downloads",
           "skills_share_synchronized_download_trends",
@@ -119,10 +109,15 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("keeps expired snoozes closed when no fresh evidence crosses the repeat threshold", async () => {
+  it("refreshes existing portfolio evidence in place", async () => {
     const now = 1_700_000_000_000;
-    const existing = snoozedSignal(now);
-    const patch = vi.fn(async () => null);
+    const existing = existingSignal(now);
+    const updatedCandidate = {
+      ...candidate(),
+      recent7Downloads: 42_000,
+      allTimeDownloads: 325_000,
+    };
+    const patch = vi.fn(async (_id: string, _value: Record<string, unknown>) => null);
     const ctx = {
       db: {
         query: vi.fn(() => ({
@@ -134,7 +129,7 @@ describe("publisher abuse owner synchrony signal", () => {
 
     await expect(
       upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
-        candidate: candidate(),
+        candidate: updatedCandidate,
         now,
       }),
     ).resolves.toMatchObject({ created: false, changed: false });
@@ -142,91 +137,10 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(patch).toHaveBeenCalledWith(
       existing._id,
       expect.objectContaining({
-        reviewStatus: "snoozed",
-        snoozedUntil: existing.snoozedUntil,
-        freshDownloadsSinceSnooze: 0,
-        freshInstallsSinceSnooze: 0,
-        needsNotification: false,
-      }),
-    );
-  });
-
-  it("reopens an expired snooze when fresh synchronized traffic crosses the repeat threshold", async () => {
-    const now = 1_700_000_000_000;
-    const existing = snoozedSignal(now);
-    const repeatedCandidate = {
-      ...candidate(),
-      allTimeDownloads: existing.evidenceBaselineDownloads + 1_500,
-      allTimeInstalls: existing.evidenceBaselineInstalls + 3,
-    };
-    const patch = vi.fn(async () => null);
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: () => ({ first: async () => existing }),
-        })),
-        patch,
-      },
-    };
-
-    await expect(
-      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
-        candidate: repeatedCandidate,
-        now,
-      }),
-    ).resolves.toMatchObject({ created: false, changed: true });
-
-    expect(patch).toHaveBeenCalledWith(
-      existing._id,
-      expect.objectContaining({
-        reviewStatus: "open",
-        snoozedUntil: undefined,
-        freshDownloadsSinceSnooze: 1_500,
-        freshInstallsSinceSnooze: 3,
-        recurrenceCount: 1,
-        needsNotification: true,
-        notificationBaselineDownloads: repeatedCandidate.allTimeDownloads,
-        notificationBaselineInstalls: repeatedCandidate.allTimeInstalls,
-      }),
-    );
-  });
-
-  it("re-notifies an open synchrony signal when unchanged members gain material traffic", async () => {
-    const now = 1_700_000_000_000;
-    const existing = {
-      ...snoozedSignal(now),
-      reviewStatus: "open" as const,
-      snoozedUntil: undefined,
-    };
-    const repeatedCandidate = {
-      ...candidate(),
-      allTimeDownloads: existing.notificationBaselineDownloads + 1_500,
-      allTimeInstalls: existing.notificationBaselineInstalls + 3,
-    };
-    const patch = vi.fn(async () => null);
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: () => ({ first: async () => existing }),
-        })),
-        patch,
-      },
-    };
-
-    await expect(
-      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
-        candidate: repeatedCandidate,
-        now,
-      }),
-    ).resolves.toMatchObject({ created: false, changed: true });
-
-    expect(patch).toHaveBeenCalledWith(
-      existing._id,
-      expect.objectContaining({
-        needsNotification: true,
-        lastChangedAt: now,
-        notificationBaselineDownloads: repeatedCandidate.allTimeDownloads,
-        notificationBaselineInstalls: repeatedCandidate.allTimeInstalls,
+        recent7Downloads: 42_000,
+        allTimeDownloads: 325_000,
+        lastSeenAt: now,
+        seenCount: 3,
       }),
     );
   });

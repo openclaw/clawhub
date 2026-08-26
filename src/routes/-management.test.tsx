@@ -104,7 +104,6 @@ function makePublisherAbuseSignal(signalOverrides: Record<string, unknown> = {})
       firstSeenAt: 1715900000000,
       lastSeenAt: 1716000000000,
       seenCount: 2,
-      reviewStatus: "open",
       recent7Downloads: 800,
       recent7Installs: 96,
       recent7InstallDownloadRatio: 0.12,
@@ -439,7 +438,7 @@ describe("Management", () => {
     expect(screen.getByText("review-pub")).toBeTruthy();
   });
 
-  it("shows archived publisher abuse signals without querying nominations for the signals tab", () => {
+  it("shows stored publisher abuse signals without querying nominations for the signals tab", () => {
     const signal = makePublisherAbuseSignal();
     const potentialBanItem = makePublisherAbuseItem();
     const reviewItem = makePublisherAbuseItem({
@@ -529,7 +528,6 @@ describe("Management", () => {
     expect(screen.queryByRole("columnheader", { name: "All-time ratio" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
     expect(screen.getByText("High install/download ratio")).toBeTruthy();
-    expect(screen.getAllByText("Open").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("High")).toBeTruthy();
     expect(screen.getByText("Ratio Skill")).toBeTruthy();
     expect(screen.getByText("@ratio-owner / ratio-skill")).toBeTruthy();
@@ -537,26 +535,7 @@ describe("Management", () => {
     expect(screen.queryByRole("link", { name: "Open publisher ratio-owner" })).toBeNull();
     expect(screen.getAllByText("12%")).toHaveLength(1);
     expect(screen.getByText("Showing 1 signals")).toBeTruthy();
-    expect(screen.getByRole("group", { name: "Signal status" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Open" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.queryByRole("button", { name: /^Snooze 14 days$/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Dismiss signal$/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Snoozed" }));
-    expect(
-      usePaginatedQueryMock.mock.calls.some(
-        ([query, args]) =>
-          getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
-          JSON.stringify(args) === JSON.stringify({ reviewStatus: "snoozed" }),
-      ),
-    ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Dismissed" }));
-    expect(
-      usePaginatedQueryMock.mock.calls.some(
-        ([query, args]) =>
-          getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
-          JSON.stringify(args) === JSON.stringify({ reviewStatus: "dismissed" }),
-      ),
-    ).toBe(true);
+    expect(screen.queryByRole("group", { name: "Signal status" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Open details for Ratio Skill" }));
     expect(screen.getByRole("heading", { name: "Ratio Skill" })).toBeTruthy();
     const skillLink = screen.getByRole("link", { name: "Open skill Ratio Skill" });
@@ -580,8 +559,8 @@ describe("Management", () => {
     expect(
       screen.getByText(/Platform 30d downloads across all 1,000 active skills: P95 900, P99 3,000/),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Snooze 14 days$/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Dismiss signal$/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Snooze/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Dismiss signal$/ })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Z-score" })).toBeNull();
     expect(
       usePaginatedQueryMock.mock.calls.some(
@@ -593,7 +572,7 @@ describe("Management", () => {
       usePaginatedQueryMock.mock.calls.some(
         ([query, args]) =>
           getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
-          JSON.stringify(args) === JSON.stringify({ reviewStatus: "open" }),
+          JSON.stringify(args) === JSON.stringify({}),
       ),
     ).toBe(true);
     expect(
@@ -652,229 +631,8 @@ describe("Management", () => {
       usePaginatedQueryMock.mock.calls.some(
         ([query, args]) =>
           getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
-          JSON.stringify(args) === JSON.stringify({ reviewStatus: "open" }),
+          JSON.stringify(args) === JSON.stringify({}),
       ),
-    ).toBe(true);
-  });
-
-  it("triages publisher abuse signals from the management signal drawer", async () => {
-    searchState = { view: "abuse", tab: "signals" };
-    const snoozeSignal = vi.fn(async () => ({ ok: true, status: "snoozed" }));
-    const dismissSignal = vi.fn(async () => ({ ok: true, status: "dismissed" }));
-    const reopenSignal = vi.fn(async () => ({ ok: true, status: "open" }));
-    const openSignal = makePublisherAbuseSignal();
-    const snoozedSignal = {
-      ...openSignal,
-      signal: {
-        ...openSignal.signal,
-        reviewStatus: "snoozed",
-        snoozedUntil: 1717000000000,
-      },
-    };
-    let signalResults = [openSignal];
-    useMutationMock.mockImplementation((mutation) => {
-      const name = getFunctionName(mutation);
-      if (name === "publisherAbuse:snoozePublisherAbuseSignal") return snoozeSignal;
-      if (name === "publisherAbuse:dismissPublisherAbuseSignal") return dismissSignal;
-      if (name === "publisherAbuse:reopenPublisherAbuseSignal") return reopenSignal;
-      return vi.fn(async () => ({ ok: true }));
-    });
-    useQueryMock.mockImplementation((query, args) => {
-      if (args === "skip") return undefined;
-      const name = getFunctionName(query);
-      if (name === "skills:listRecentVersions") return [];
-      if (name === "skills:listReportedSkills") return [];
-      if (name === "skills:listDuplicateCandidates") return [];
-      if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-          signalCount: signalResults.length,
-          signalCountHasMore: false,
-        };
-      }
-      if (name === "users:list") return { items: [], total: 0 };
-      return undefined;
-    });
-    usePaginatedQueryMock.mockImplementation((query, args) => ({
-      results:
-        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
-          ? signalResults
-          : [],
-      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
-      loadMore: vi.fn(),
-    }));
-
-    const view = render(<Management />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Open details for Ratio Skill" }));
-    fireEvent.click(screen.getByRole("button", { name: /^Snooze 14 days$/ }));
-    fireEvent.click(screen.getAllByRole("button", { name: /^Snooze 14 days$/ }).at(-1)!);
-
-    await waitFor(() => {
-      expect(snoozeSignal).toHaveBeenCalledWith({
-        signalId: "publisherAbuseSignals:ratio",
-        note: undefined,
-        days: 14,
-      });
-    });
-
-    signalResults = [];
-    view.rerender(<Management />);
-    await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: "Ratio Skill" })).toBeNull();
-    });
-
-    signalResults = [openSignal];
-    view.rerender(<Management />);
-    fireEvent.click(screen.getByRole("button", { name: "Open details for Ratio Skill" }));
-    fireEvent.click(screen.getByRole("button", { name: /^Dismiss signal$/ }));
-    fireEvent.click(screen.getAllByRole("button", { name: /^Dismiss signal$/ }).at(-1)!);
-
-    await waitFor(() => {
-      expect(dismissSignal).toHaveBeenCalledWith({
-        signalId: "publisherAbuseSignals:ratio",
-        note: undefined,
-      });
-    });
-
-    signalResults = [snoozedSignal];
-    view.rerender(<Management />);
-    fireEvent.click(screen.getByRole("button", { name: /^Reopen signal$/ }));
-    fireEvent.click(screen.getAllByRole("button", { name: /^Reopen signal$/ }).at(-1)!);
-
-    await waitFor(() => {
-      expect(reopenSignal).toHaveBeenCalledWith({
-        signalId: "publisherAbuseSignals:ratio",
-        note: undefined,
-      });
-    });
-  });
-
-  it("bulk snoozes and dismisses selected open publisher abuse signals", async () => {
-    searchState = { view: "abuse", tab: "signals" };
-    const reviewSignalsBatch = vi.fn(async () => ({ ok: true, status: "snoozed", updated: 2 }));
-    const firstSignal = makePublisherAbuseSignal();
-    const secondSignal = makePublisherAbuseSignal({
-      _id: "publisherAbuseSignals:sustained",
-      signalType: "sustained_abnormal_download_days",
-      skillId: "skills:sustained",
-      skillSlug: "sustained-skill",
-      skillDisplayName: "Sustained Skill",
-    });
-    useMutationMock.mockImplementation((mutation) => {
-      if (getFunctionName(mutation) === "publisherAbuse:reviewPublisherAbuseSignalsBatch") {
-        return reviewSignalsBatch;
-      }
-      return vi.fn(async () => ({ ok: true }));
-    });
-    useQueryMock.mockImplementation((query, args) => {
-      if (args === "skip") return undefined;
-      const name = getFunctionName(query);
-      if (name === "skills:listRecentVersions") return [];
-      if (name === "skills:listReportedSkills") return [];
-      if (name === "skills:listDuplicateCandidates") return [];
-      if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-          signalCount: 2,
-          signalCountHasMore: false,
-        };
-      }
-      if (name === "users:list") return { items: [], total: 0 };
-      return undefined;
-    });
-    usePaginatedQueryMock.mockImplementation((query, args) => ({
-      results:
-        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
-          ? [firstSignal, secondSignal]
-          : [],
-      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
-      loadMore: vi.fn(),
-    }));
-
-    render(<Management />);
-
-    expect(screen.getByText("Sustained unusual downloads")).toBeTruthy();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Ratio Skill" }));
-    expect(screen.getByText("1 selected")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Snooze 1 signal" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Snooze 1 signal" }).at(-1)!);
-    await waitFor(() => {
-      expect(reviewSignalsBatch).toHaveBeenCalledWith({
-        signalIds: ["publisherAbuseSignals:ratio"],
-        status: "snoozed",
-        note: undefined,
-        days: 14,
-      });
-    });
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Sustained Skill" }));
-    expect(screen.getByText("2 selected")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss 2 signals" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss 2 signals" }).at(-1)!);
-    await waitFor(() => {
-      expect(reviewSignalsBatch).toHaveBeenCalledWith({
-        signalIds: ["publisherAbuseSignals:ratio", "publisherAbuseSignals:sustained"],
-        status: "dismissed",
-        note: undefined,
-      });
-    });
-  });
-
-  it("caps bulk signal selection at the backend batch limit", () => {
-    searchState = { view: "abuse", tab: "signals" };
-    const signalResults = Array.from({ length: 51 }, (_, index) =>
-      makePublisherAbuseSignal({
-        _id: `publisherAbuseSignals:bulk-${index}`,
-        skillId: `skills:bulk-${index}`,
-        skillSlug: `bulk-${index}`,
-        skillDisplayName: `Bulk Skill ${index}`,
-      }),
-    );
-    useQueryMock.mockImplementation((query, args) => {
-      if (args === "skip") return undefined;
-      const name = getFunctionName(query);
-      if (name === "skills:listRecentVersions") return [];
-      if (name === "skills:listReportedSkills") return [];
-      if (name === "skills:listDuplicateCandidates") return [];
-      if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-          signalCount: signalResults.length,
-          signalCountHasMore: false,
-        };
-      }
-      if (name === "users:list") return { items: [], total: 0 };
-      return undefined;
-    });
-    usePaginatedQueryMock.mockImplementation((query, args) => ({
-      results:
-        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
-          ? signalResults
-          : [],
-      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
-      loadMore: vi.fn(),
-    }));
-
-    render(<Management />);
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select all loaded signals" }));
-    expect(screen.getByText("50 selected · 50 maximum")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Dismiss 50 signals" })).toBeTruthy();
-    expect(
-      (screen.getByRole("checkbox", { name: "Select Bulk Skill 50" }) as HTMLInputElement).disabled,
     ).toBe(true);
   });
 
@@ -1225,32 +983,6 @@ describe("Management", () => {
     expect(screen.queryByText("Scored")).toBeNull();
     expect(screen.queryByText("Auto-ban is off")).toBeNull();
     expect(screen.queryByLabelText("Publisher abuse auto-ban")).toBeNull();
-  });
-
-  it("elevates a signal that returns after its evidence was snoozed", () => {
-    searchState = { view: "abuse", tab: "signals" };
-    const recurringSignal = makePublisherAbuseSignal({
-      signalType: "sustained_downloads_flat_installs",
-      recurrenceCount: 1,
-      freshDownloadsSinceSnooze: 2_000,
-      freshInstallsSinceSnooze: 0,
-    });
-    usePaginatedQueryMock.mockImplementation((query, args) => ({
-      results:
-        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
-          ? [recurringSignal]
-          : [],
-      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
-      loadMore: vi.fn(),
-    }));
-
-    render(<Management />);
-
-    expect(screen.getByText("Repeat after snooze")).toBeTruthy();
-    expect(screen.getByText("High")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Open details for Ratio Skill" }));
-    expect(screen.getByText("Repeat signal")).toBeTruthy();
-    expect(screen.getByText("0 installs / 2,000 downloads")).toBeTruthy();
   });
 
   it("shows the terminal signal scan error after five failed attempts", () => {

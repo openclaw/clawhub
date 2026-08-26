@@ -652,15 +652,7 @@ describe("scheduled temporal publisher abuse scan", () => {
         errorMessage: "fifth failure",
       }),
     );
-    expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
-    const [delay, _target, alertArgs] = scheduler.runAfter.mock.calls[0] ?? [];
-    expect(delay).toBe(0);
-    expect(alertArgs).toEqual({
-      runId: run._id,
-      failureCount: 5,
-      errorMessage: "fifth failure",
-      failedAt: expect.any(Number),
-    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("schedules the next saved-page attempt after a non-terminal failure", async () => {
@@ -812,7 +804,7 @@ describe("scheduled temporal publisher abuse scan", () => {
       nextCursor: undefined,
       isDone: true,
     });
-    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {});
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("routes publisher synchrony failures through the saved retry lifecycle", async () => {

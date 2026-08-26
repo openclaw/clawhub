@@ -39,7 +39,6 @@ import {
   type SkillTemporalAbuseScore,
   type TemporalAbuseCohortBenchmark,
 } from "./lib/publisherAbuseScoring";
-import { freshPublisherAbuseEvidenceCrossesRepeatThreshold } from "./lib/publisherAbuseSignalLifecycle";
 import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
@@ -78,14 +77,6 @@ const MAX_TEMPORAL_SIGNAL_ARCHIVE_BATCH_SIZE = 100;
 const DEFAULT_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 5;
 const MAX_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 50;
 const MAX_TEMPORAL_SIGNAL_ARCHIVE_CONTINUATION_CANDIDATES = 250;
-const DEFAULT_PUBLISHER_ABUSE_SIGNAL_SNOOZE_DAYS = 14;
-const MAX_PUBLISHER_ABUSE_SIGNAL_BATCH_SIZE = 50;
-const MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH = 1000;
-const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_BATCH_SIZE = 10;
-const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_MAX_BATCH_SIZE = 25;
-const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_RETRY_MS = 60 * 60 * 1000;
-const PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_RETRY_MS = 5 * 60 * 1000;
-const MAX_PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_ATTEMPTS = 5;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN = 100;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_READS_PER_PAGE = 2_000;
 const STAFF_PUBLISHER_MANAGER_ROLES = ["owner", "admin"] as const;
@@ -111,7 +102,6 @@ const FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE =
 const FAILED_TEMPORAL_RUN_NOMINATION_NOTE =
   "Publisher abuse temporal score run failed before completion; rerun required.";
 const PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY = "publisherAbuseAutobanEnabled" as const;
-const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_CLAIM_STALE_MS = 15 * 60 * 1000;
 const FAILED_TEMPORAL_CLEANUP_LABELS = [
   "potential_ban_candidate",
   "review",
@@ -124,7 +114,6 @@ type ScoreRun = Doc<"publisherAbuseScoreRuns">;
 type ScoreDoc = Doc<"publisherAbuseScores">;
 type PublisherAbuseSignalDoc = Doc<"publisherAbuseSignals">;
 type PublisherAbuseSignalType = PublisherAbuseSignalDoc["signalType"];
-type PublisherAbuseSignalReviewStatus = NonNullable<PublisherAbuseSignalDoc["reviewStatus"]>;
 type RunPhase = ScoreRun["phase"];
 type TemporalAbuseMode = "current" | "backfill";
 
@@ -140,11 +129,6 @@ const publisherAbuseSignalTypeValidator = v.union(
   v.literal("download_spike_flat_installs"),
   v.literal("sustained_abnormal_download_days"),
   v.literal("owner_synchronized_download_trends"),
-);
-const publisherAbuseSignalReviewStatusValidator = v.union(
-  v.literal("open"),
-  v.literal("snoozed"),
-  v.literal("dismissed"),
 );
 
 type RunState = {
@@ -445,7 +429,6 @@ export const listReviewItemsPage = query({
 export const listSignalsPage = query({
   args: {
     signalType: v.optional(publisherAbuseSignalTypeValidator),
-    reviewStatus: v.optional(publisherAbuseSignalReviewStatusValidator),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -464,39 +447,25 @@ export const listSignalsPage = query({
       MAX_REVIEW_DASHBOARD_PAGE_SIZE,
     );
     const signalType = args.signalType;
-    const reviewStatus = args.reviewStatus;
-    if (signalType && reviewStatus) {
-      throw new Error("Filter by signalType or reviewStatus, not both.");
-    }
     const paginationOpts: PublisherAbuseReviewPaginationOpts = {
       cursor: args.paginationOpts.cursor ?? null,
       numItems: requestedItems,
     };
-    const page =
-      reviewStatus && !signalType
-        ? await ctx.db
-            .query("publisherAbuseSignals")
-            .withIndex("by_review_status_and_last_seen_at", (q) =>
-              q.eq("reviewStatus", reviewStatus),
-            )
-            .order("desc")
-            .paginate(paginationOpts)
-        : signalType
-          ? await ctx.db
-              .query("publisherAbuseSignals")
-              .withIndex("by_signal_type_and_last_seen_at", (q) => q.eq("signalType", signalType))
-              .order("desc")
-              .paginate(paginationOpts)
-          : await ctx.db
-              .query("publisherAbuseSignals")
-              .withIndex("by_last_seen_at")
-              .order("desc")
-              .paginate(paginationOpts);
+    const page = signalType
+      ? await ctx.db
+          .query("publisherAbuseSignals")
+          .withIndex("by_signal_type_and_last_seen_at", (q) => q.eq("signalType", signalType))
+          .order("desc")
+          .paginate(paginationOpts)
+      : await ctx.db
+          .query("publisherAbuseSignals")
+          .withIndex("by_last_seen_at")
+          .order("desc")
+          .paginate(paginationOpts);
 
     return {
       page: await summarizeVisiblePublisherAbuseSignals(ctx, page.page, {
         staffManagerExclusionBudget: createStaffPublisherManagerExclusionBudget(),
-        reviewStatus: reviewStatus ?? "open",
       }),
       isDone: page.isDone,
       continueCursor: page.continueCursor,
@@ -657,137 +626,6 @@ export const setPublisherAbuseAutobanEnabled = mutation({
   },
 });
 
-export const snoozePublisherAbuseSignal = mutation({
-  args: {
-    signalId: v.id("publisherAbuseSignals"),
-    note: v.optional(v.string()),
-    days: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertModerator(user);
-    const signal = await ctx.db.get(args.signalId);
-    if (!signal) throw new Error("Publisher abuse signal not found");
-    const now = Date.now();
-    const days = clampInt(args.days ?? DEFAULT_PUBLISHER_ABUSE_SIGNAL_SNOOZE_DAYS, 1, 90);
-    await setPublisherAbuseSignalReviewStatusWithActor(ctx, {
-      signal,
-      status: "snoozed",
-      actorUserId: user._id,
-      note: normalizePublisherAbuseSignalReviewNote(args.note),
-      snoozedUntil: now + days * 24 * 60 * 60 * 1000,
-      now,
-    });
-    return { ok: true, status: "snoozed" as const };
-  },
-});
-
-export const dismissPublisherAbuseSignal = mutation({
-  args: {
-    signalId: v.id("publisherAbuseSignals"),
-    note: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertModerator(user);
-    const signal = await ctx.db.get(args.signalId);
-    if (!signal) throw new Error("Publisher abuse signal not found");
-    await setPublisherAbuseSignalReviewStatusWithActor(ctx, {
-      signal,
-      status: "dismissed",
-      actorUserId: user._id,
-      note: normalizePublisherAbuseSignalReviewNote(args.note),
-      now: Date.now(),
-    });
-    return { ok: true, status: "dismissed" as const };
-  },
-});
-
-export const reviewPublisherAbuseSignalsBatch = mutation({
-  args: {
-    signalIds: v.array(v.id("publisherAbuseSignals")),
-    status: v.union(v.literal("snoozed"), v.literal("dismissed")),
-    note: v.optional(v.string()),
-    days: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertModerator(user);
-    const signalIds = [...new Set(args.signalIds)];
-    if (signalIds.length === 0) throw new Error("Select at least one publisher abuse signal");
-    if (signalIds.length > MAX_PUBLISHER_ABUSE_SIGNAL_BATCH_SIZE) {
-      throw new Error(
-        `Review at most ${MAX_PUBLISHER_ABUSE_SIGNAL_BATCH_SIZE} publisher abuse signals at once`,
-      );
-    }
-
-    const signals: PublisherAbuseSignalDoc[] = [];
-    for (const signalId of signalIds) {
-      const signal = await ctx.db.get(signalId);
-      if (!signal) throw new Error("Publisher abuse signal not found");
-      signals.push(signal);
-    }
-    if (signals.some((signal) => publisherAbuseSignalReviewStatus(signal) !== "open")) {
-      throw new Error("One or more selected signals are no longer open; refresh and try again");
-    }
-
-    const now = Date.now();
-    const note = normalizePublisherAbuseSignalReviewNote(args.note);
-    const snoozedUntil =
-      args.status === "snoozed"
-        ? now +
-          clampInt(args.days ?? DEFAULT_PUBLISHER_ABUSE_SIGNAL_SNOOZE_DAYS, 1, 90) *
-            24 *
-            60 *
-            60 *
-            1000
-        : undefined;
-    for (const signal of signals) {
-      await setPublisherAbuseSignalReviewStatusWithActor(ctx, {
-        signal,
-        status: args.status,
-        actorUserId: user._id,
-        note,
-        snoozedUntil,
-        now,
-      });
-    }
-
-    return { ok: true, status: args.status, updated: signals.length };
-  },
-});
-
-export const reopenPublisherAbuseSignal = mutation({
-  args: {
-    signalId: v.id("publisherAbuseSignals"),
-    note: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
-    assertModerator(user);
-    const signal = await ctx.db.get(args.signalId);
-    if (!signal) throw new Error("Publisher abuse signal not found");
-    if (publisherAbuseSignalReviewStatus(signal) === "open") {
-      return { ok: true, status: "open" as const, alreadyOpen: true as const };
-    }
-    const now = Date.now();
-    await setPublisherAbuseSignalReviewStatusWithActor(ctx, {
-      signal,
-      status: "open",
-      actorUserId: user._id,
-      note: normalizePublisherAbuseSignalReviewNote(args.note),
-      notify: true,
-      now,
-    });
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-      {},
-    );
-    return { ok: true, status: "open" as const };
-  },
-});
-
 export const banPublisherAbuseOwner = mutation({
   args: {
     nominationId: v.id("publisherAbuseReviewNominations"),
@@ -917,72 +755,6 @@ async function setPublisherAbuseReviewStatusWithActor(
     notes: args.notes,
     createdAt: args.now,
   });
-}
-
-async function setPublisherAbuseSignalReviewStatusWithActor(
-  ctx: Pick<MutationCtx, "db">,
-  args: {
-    signal: PublisherAbuseSignalDoc;
-    status: PublisherAbuseSignalReviewStatus;
-    note: string | undefined;
-    actorUserId: Id<"users">;
-    now: number;
-    snoozedUntil?: number;
-    notify?: boolean;
-  },
-) {
-  const previousStatus = publisherAbuseSignalReviewStatus(args.signal);
-  await ctx.db.patch(args.signal._id, {
-    reviewStatus: args.status,
-    reviewedByUserId: args.actorUserId,
-    reviewedAt: args.now,
-    reviewNote: args.note,
-    snoozedUntil: args.status === "snoozed" ? args.snoozedUntil : undefined,
-    evidenceAcknowledgedAt: args.status === "snoozed" ? args.now : undefined,
-    evidenceBaselineDownloads: args.status === "snoozed" ? args.signal.allTimeDownloads : undefined,
-    evidenceBaselineInstalls: args.status === "snoozed" ? args.signal.allTimeInstalls : undefined,
-    freshDownloadsSinceSnooze: args.status === "snoozed" ? 0 : undefined,
-    freshInstallsSinceSnooze: args.status === "snoozed" ? 0 : undefined,
-    snoozeCount:
-      args.status === "snoozed" ? (args.signal.snoozeCount ?? 0) + 1 : args.signal.snoozeCount,
-    notificationBaselineDownloads: args.notify
-      ? args.signal.allTimeDownloads
-      : args.signal.notificationBaselineDownloads,
-    notificationBaselineInstalls: args.notify
-      ? args.signal.allTimeInstalls
-      : args.signal.notificationBaselineInstalls,
-    needsNotification: args.notify === true,
-    lastChangedAt: args.notify ? args.now : args.signal.lastChangedAt,
-    notificationClaimedAt: undefined,
-    lastNotificationError: undefined,
-  });
-  await ctx.db.insert("publisherAbuseSignalReviewEvents", {
-    signalId: args.signal._id,
-    ownerKey: args.signal.ownerKey,
-    actorUserId: args.actorUserId,
-    eventType:
-      args.status === "snoozed"
-        ? "snoozed"
-        : args.status === "dismissed"
-          ? "dismissed"
-          : "reopened",
-    previousStatus,
-    nextStatus: args.status,
-    note: args.note,
-    snoozedUntil: args.status === "snoozed" ? args.snoozedUntil : undefined,
-    createdAt: args.now,
-  });
-}
-
-function normalizePublisherAbuseSignalReviewNote(note: string | undefined) {
-  const trimmed = note?.trim();
-  if (!trimmed) return undefined;
-  if (trimmed.length > MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH) {
-    throw new Error(
-      `Signal review note must be ${MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH} characters or fewer.`,
-    );
-  }
-  return trimmed;
 }
 
 function normalizePublisherAbuseReviewNote(note: string | undefined) {
@@ -1725,85 +1497,8 @@ export const archiveTemporalPublisherAbuseSignalsInternal = internalAction({
     offset: v.optional(v.number()),
     batchSize: v.optional(v.number()),
     maxPages: v.optional(v.number()),
-    notifyHermit: v.optional(v.boolean()),
   },
   handler: archiveTemporalPublisherAbuseSignalsInternalHandler,
-});
-
-export const claimPublisherAbuseSignalNotificationsInternal = internalMutation({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: claimPublisherAbuseSignalNotificationsInternalHandler,
-});
-
-export const markPublisherAbuseSignalNotificationsSucceededInternal = internalMutation({
-  args: {
-    signalIds: v.array(v.id("publisherAbuseSignals")),
-    claimedAt: v.number(),
-    now: v.number(),
-  },
-  handler: async (ctx, args) => {
-    for (const signalId of args.signalIds) {
-      const signal = await ctx.db.get(signalId);
-      if (
-        !signal ||
-        signal.notificationClaimedAt !== args.claimedAt ||
-        signal.needsNotification !== false
-      ) {
-        continue;
-      }
-      await ctx.db.patch(signalId, {
-        needsNotification: false,
-        notificationClaimedAt: undefined,
-        lastNotifiedAt: args.now,
-        lastNotificationError: undefined,
-      });
-    }
-  },
-});
-
-export const markPublisherAbuseSignalNotificationsFailedInternal = internalMutation({
-  args: {
-    signalIds: v.array(v.id("publisherAbuseSignals")),
-    claimedAt: v.number(),
-    error: v.string(),
-  },
-  handler: async (ctx, args) => {
-    for (const signalId of args.signalIds) {
-      const signal = await ctx.db.get(signalId);
-      if (
-        !signal ||
-        signal.notificationClaimedAt !== args.claimedAt ||
-        signal.needsNotification !== false
-      ) {
-        continue;
-      }
-      await ctx.db.patch(signalId, {
-        needsNotification: true,
-        notificationClaimedAt: undefined,
-        lastNotificationError: args.error.slice(0, 500),
-      });
-    }
-  },
-});
-
-export const notifyPublisherAbuseSignalChangesInternal = internalAction({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: notifyPublisherAbuseSignalChangesInternalHandler,
-});
-
-export const notifyPublisherAbuseSignalScanFailureInternal = internalAction({
-  args: {
-    runId: v.id("publisherAbuseScoreRuns"),
-    failureCount: v.number(),
-    errorMessage: v.string(),
-    failedAt: v.number(),
-    deliveryAttempt: v.optional(v.number()),
-  },
-  handler: notifyPublisherAbuseSignalScanFailureInternalHandler,
 });
 
 export const processPublisherAbuseAutobansInternal = internalAction({
@@ -2636,7 +2331,6 @@ export async function archiveTemporalPublisherAbuseSignalsInternalHandler(
     offset?: number;
     batchSize?: number;
     maxPages?: number;
-    notifyHermit?: boolean;
   },
 ) {
   return await archiveTemporalPublisherAbuseSignalPages(ctx, args);
@@ -2651,7 +2345,6 @@ async function archiveTemporalPublisherAbuseSignalPages(
     offset?: number;
     batchSize?: number;
     maxPages?: number;
-    notifyHermit?: boolean;
   },
 ) {
   const batchSize = clampInt(
@@ -2709,18 +2402,9 @@ async function archiveTemporalPublisherAbuseSignalPages(
           offset: 0,
           batchSize,
           maxPages,
-          notifyHermit: args.notifyHermit,
         },
       );
     }
-  }
-
-  if (args.notifyHermit && changedSignals > 0) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-      {},
-    );
   }
 
   return {
@@ -2732,281 +2416,6 @@ async function archiveTemporalPublisherAbuseSignalPages(
     isDone: offset >= args.candidates.length,
     offset,
   };
-}
-
-export async function claimPublisherAbuseSignalNotificationsInternalHandler(
-  ctx: MutationCtx,
-  args: { limit?: number },
-) {
-  const limit = clampInt(
-    args.limit ?? PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_BATCH_SIZE,
-    1,
-    PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_MAX_BATCH_SIZE,
-  );
-  const now = Date.now();
-  const hasMoreStaleClaims = await requeueStalePublisherAbuseSignalNotificationClaims(ctx, {
-    limit,
-    staleBefore: now - PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_CLAIM_STALE_MS,
-  });
-  const pendingSignals = await ctx.db
-    .query("publisherAbuseSignals")
-    .withIndex("by_needs_notification_and_last_changed_at", (q) => q.eq("needsNotification", true))
-    .order("desc")
-    .take(limit + 1);
-  const signals = pendingSignals.slice(0, limit).filter((signal) => {
-    return publisherAbuseSignalReviewStatus(signal) === "open";
-  });
-  for (const signal of pendingSignals.slice(0, limit)) {
-    if (publisherAbuseSignalReviewStatus(signal) !== "open") {
-      await ctx.db.patch(signal._id, {
-        needsNotification: false,
-        notificationClaimedAt: undefined,
-      });
-      continue;
-    }
-    await ctx.db.patch(signal._id, {
-      needsNotification: false,
-      notificationClaimedAt: now,
-    });
-  }
-  return {
-    signals,
-    hasMore: pendingSignals.length > limit || hasMoreStaleClaims,
-    claimedAt: now,
-  };
-}
-
-async function requeueStalePublisherAbuseSignalNotificationClaims(
-  ctx: Pick<MutationCtx, "db">,
-  args: { limit: number; staleBefore: number },
-) {
-  const staleClaims = await ctx.db
-    .query("publisherAbuseSignals")
-    .withIndex("by_needs_notification_and_notification_claimed_at", (q) =>
-      q
-        .eq("needsNotification", false)
-        .gte("notificationClaimedAt", 1)
-        .lt("notificationClaimedAt", args.staleBefore),
-    )
-    .take(args.limit + 1);
-  for (const signal of staleClaims.slice(0, args.limit)) {
-    await ctx.db.patch(signal._id, {
-      needsNotification: true,
-      notificationClaimedAt: undefined,
-      lastNotificationError: "Retrying after stale Hermit notification claim.",
-    });
-  }
-  return staleClaims.length > args.limit;
-}
-
-export async function notifyPublisherAbuseSignalChangesInternalHandler(
-  ctx: Pick<ActionCtx, "runMutation" | "scheduler">,
-  args: { limit?: number },
-) {
-  const config = getHermitPublisherAbuseSignalConfig();
-  if (!config) {
-    console.info("[publisher-abuse-signals] Hermit notification skipped: missing config");
-    return { ok: false as const, skipped: true as const };
-  }
-
-  const claimed: {
-    signals: PublisherAbuseSignalDoc[];
-    hasMore: boolean;
-    claimedAt: number;
-  } = await ctx.runMutation(
-    internal.publisherAbuse.claimPublisherAbuseSignalNotificationsInternal,
-    {
-      limit: args.limit,
-    },
-  );
-  if (claimed.signals.length === 0) {
-    if (claimed.hasMore) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-        { limit: args.limit },
-      );
-    }
-    return { ok: true as const, sent: false as const };
-  }
-
-  const signalIds = claimed.signals.map((signal) => signal._id);
-  const payload = buildHermitPublisherAbuseSignalDigest(claimed.signals, claimed.hasMore, config);
-  try {
-    const response = await fetch(config.digestUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Hermit publisher abuse digest failed: ${response.status} ${body}`);
-    }
-    const now = Date.now();
-    await ctx.runMutation(
-      internal.publisherAbuse.markPublisherAbuseSignalNotificationsSucceededInternal,
-      {
-        signalIds,
-        claimedAt: claimed.claimedAt,
-        now,
-      },
-    );
-    if (claimed.hasMore) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-        { limit: args.limit },
-      );
-    }
-    return { ok: true as const, sent: true as const, count: signalIds.length };
-  } catch (error) {
-    const message = errorMessageFromUnknown(error);
-    console.error("[publisher-abuse-signals] Hermit notification failed", {
-      count: signalIds.length,
-      message,
-    });
-    await ctx.runMutation(
-      internal.publisherAbuse.markPublisherAbuseSignalNotificationsFailedInternal,
-      {
-        signalIds,
-        claimedAt: claimed.claimedAt,
-        error: message,
-      },
-    );
-    await ctx.scheduler.runAfter(
-      PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_RETRY_MS,
-      internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
-      { limit: args.limit },
-    );
-    return { ok: false as const, sent: false as const, error: message };
-  }
-}
-
-export async function notifyPublisherAbuseSignalScanFailureInternalHandler(
-  ctx: Pick<ActionCtx, "scheduler">,
-  args: {
-    runId: Id<"publisherAbuseScoreRuns">;
-    failureCount: number;
-    errorMessage: string;
-    failedAt: number;
-    deliveryAttempt?: number;
-  },
-) {
-  const config = getHermitPublisherAbuseSignalConfig();
-  if (!config) {
-    console.error("[publisher-temporal-abuse-scan] Hermit failure alert skipped: missing config", {
-      runId: args.runId,
-    });
-    return { ok: false as const, sent: false as const, skipped: true as const };
-  }
-
-  const payload = {
-    kind: "publisher_abuse_signal_scan_failed" as const,
-    runId: args.runId,
-    failureCount: args.failureCount,
-    errorMessage: args.errorMessage,
-    failedAt: args.failedAt,
-    dashboardUrl: `${config.siteUrl}/management?view=abuse&tab=signals`,
-  };
-  try {
-    const response = await fetch(config.digestUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Hermit publisher abuse scan alert failed: ${response.status} ${body}`);
-    }
-    return { ok: true as const, sent: true as const };
-  } catch (error) {
-    const message = errorMessageFromUnknown(error);
-    const deliveryAttempt = (args.deliveryAttempt ?? 0) + 1;
-    console.error("[publisher-temporal-abuse-scan] Hermit failure alert failed", {
-      runId: args.runId,
-      deliveryAttempt,
-      message,
-    });
-    if (deliveryAttempt < MAX_PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_ATTEMPTS) {
-      await ctx.scheduler.runAfter(
-        PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_RETRY_MS,
-        internal.publisherAbuse.notifyPublisherAbuseSignalScanFailureInternal,
-        { ...args, deliveryAttempt },
-      );
-    }
-    return { ok: false as const, sent: false as const, error: message };
-  }
-}
-
-function getHermitPublisherAbuseSignalConfig() {
-  const token =
-    process.env.CLAWHUB_HERMIT_TOKEN?.trim() || process.env.CLAWHUB_BAN_APPEALS_TOKEN?.trim() || "";
-  const baseUrl =
-    process.env.HERMIT_PUBLISHER_ABUSE_BASE_URL?.trim() ||
-    process.env.HERMIT_CONTENT_RIGHTS_BASE_URL?.trim() ||
-    "https://forms.openclaw.ai";
-  if (!token || !baseUrl) return null;
-  const siteUrl = (process.env.SITE_URL?.trim() || "https://clawhub.ai").replace(/\/$/, "");
-  return {
-    token,
-    siteUrl,
-    digestUrl: `${baseUrl.replace(/\/$/, "")}/api/clawhub-publisher-abuse/signals/digest`,
-  };
-}
-
-function buildHermitPublisherAbuseSignalDigest(
-  signals: PublisherAbuseSignalDoc[],
-  hasMore: boolean,
-  config: { siteUrl: string },
-) {
-  return {
-    kind: "publisher_abuse_signals_changed",
-    changedCount: signals.length,
-    hasMore,
-    dashboardUrl: `${config.siteUrl}/management?view=abuse&tab=signals`,
-    topSignals: signals.map((signal) => ({
-      signalId: signal._id,
-      signalType: signal.signalType,
-      severity: publisherAbuseSignalSeverity(signal.signalType, signal.recurrenceCount),
-      publisher: signal.handleSnapshot,
-      skillSlug: signal.skillSlug,
-      skillDisplayName: signal.skillDisplayName,
-      seenCount: signal.seenCount,
-      firstSeenAt: signal.firstSeenAt,
-      lastSeenAt: signal.lastSeenAt,
-      recent7Downloads: signal.recent7Downloads,
-      recent7Installs: signal.recent7Installs,
-      recent7InstallDownloadRatio: signal.recent7InstallDownloadRatio,
-      recent30Downloads: signal.recent30Downloads,
-      recent30Installs: signal.recent30Installs,
-      recent30InstallDownloadRatio: signal.recent30InstallDownloadRatio,
-      allTimeDownloads: signal.allTimeDownloads,
-      allTimeInstalls: signal.allTimeInstalls,
-      allTimeInstallDownloadRatio: signal.allTimeInstallDownloadRatio,
-      recurrenceCount: signal.recurrenceCount ?? 0,
-      freshDownloadsSinceSnooze: signal.freshDownloadsSinceSnooze ?? 0,
-      freshInstallsSinceSnooze: signal.freshInstallsSinceSnooze ?? 0,
-      skillUrl: `${config.siteUrl}/${routeSegment(signal.handleSnapshot)}/skills/${routeSegment(
-        signal.skillSlug,
-      )}`,
-      publisherUrl: `${config.siteUrl}/${routeSegment(signal.handleSnapshot)}`,
-    })),
-  };
-}
-
-function publisherAbuseSignalSeverity(signalType: PublisherAbuseSignalType, recurrenceCount = 0) {
-  if (recurrenceCount > 0) return "high";
-  return signalType === "high_install_download_ratio" ? "high" : "review";
-}
-
-function routeSegment(value: string) {
-  return encodeURIComponent(value.trim().replace(/^@+/, ""));
 }
 
 function chunkArray<T>(values: T[], chunkSize: number) {
@@ -3188,7 +2597,6 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
       await archiveTemporalPublisherAbuseSignalPages(ctx, {
         candidates: highTemporalCandidates,
         now: Date.now(),
-        notifyHermit: (args.trigger ?? "cron") === "cron",
       });
     }
     return {
@@ -3292,7 +2700,6 @@ async function finishTemporalPublisherAbuseScan(
       runId: saved.runId,
       candidates: highTemporalCandidates,
       now: Date.now(),
-      notifyHermit: args.trigger === "cron",
     });
     await processPublisherAbuseAutobanPages(ctx, {});
   }
@@ -3605,8 +3012,8 @@ async function findExistingTemporalPublisherAbuseSignal(
   const currentSignal = await findByType(signalType);
   if (currentSignal || signalType !== "sustained_abnormal_download_days") return currentSignal;
 
-  // v2 replaced the broad legacy sustained type. Reuse that row so an
-  // operator's existing snooze or dismissal cannot be bypassed by the rename.
+  // v2 replaced the broad legacy sustained type. Reuse that row so the same
+  // observation keeps one stable identity across detector versions.
   return await findByType("sustained_downloads_flat_installs");
 }
 
@@ -3653,76 +3060,12 @@ async function upsertPublisherAbuseSignal(
   const snapshot = publisherAbuseSignalSnapshot(args);
 
   if (signal) {
-    const previousStatus = publisherAbuseSignalReviewStatus(signal);
-    const snoozeExpired =
-      previousStatus === "snoozed" &&
-      typeof signal.snoozedUntil === "number" &&
-      signal.snoozedUntil <= args.now;
-    const hasEvidenceCheckpoint =
-      typeof signal.evidenceBaselineDownloads === "number" &&
-      typeof signal.evidenceBaselineInstalls === "number";
-    const evidenceBaselineDownloads = signal.evidenceBaselineDownloads ?? snapshot.allTimeDownloads;
-    const evidenceBaselineInstalls = signal.evidenceBaselineInstalls ?? snapshot.allTimeInstalls;
-    const freshDownloadsSinceSnooze = Math.max(
-      0,
-      snapshot.allTimeDownloads - evidenceBaselineDownloads,
-    );
-    const freshInstallsSinceSnooze = Math.max(
-      0,
-      snapshot.allTimeInstalls - evidenceBaselineInstalls,
-    );
-    const recurringAfterSnooze =
-      snoozeExpired &&
-      hasEvidenceCheckpoint &&
-      freshPublisherAbuseEvidenceCrossesRepeatThreshold(args.signalType, {
-        downloads: freshDownloadsSinceSnooze,
-        installs: freshInstallsSinceSnooze,
-      });
-    const notificationBaselineDownloads =
-      signal.notificationBaselineDownloads ?? signal.allTimeDownloads;
-    const notificationBaselineInstalls =
-      signal.notificationBaselineInstalls ?? signal.allTimeInstalls;
-    const materiallyStrongerEvidence =
-      previousStatus === "open" &&
-      freshPublisherAbuseEvidenceCrossesRepeatThreshold(args.signalType, {
-        downloads: Math.max(0, snapshot.allTimeDownloads - notificationBaselineDownloads),
-        installs: Math.max(0, snapshot.allTimeInstalls - notificationBaselineInstalls),
-      });
-    const nextStatus = recurringAfterSnooze ? "open" : previousStatus;
-    const shouldNotify = recurringAfterSnooze || materiallyStrongerEvidence;
     await ctx.db.patch(signal._id, {
       ...snapshot,
-      reviewStatus: nextStatus,
-      snoozedUntil: nextStatus === "snoozed" ? signal.snoozedUntil : undefined,
-      evidenceAcknowledgedAt:
-        previousStatus === "snoozed"
-          ? (signal.evidenceAcknowledgedAt ?? args.now)
-          : signal.evidenceAcknowledgedAt,
-      evidenceBaselineDownloads:
-        previousStatus === "snoozed" ? evidenceBaselineDownloads : signal.evidenceBaselineDownloads,
-      evidenceBaselineInstalls:
-        previousStatus === "snoozed" ? evidenceBaselineInstalls : signal.evidenceBaselineInstalls,
-      freshDownloadsSinceSnooze:
-        previousStatus === "snoozed" ? freshDownloadsSinceSnooze : signal.freshDownloadsSinceSnooze,
-      freshInstallsSinceSnooze:
-        previousStatus === "snoozed" ? freshInstallsSinceSnooze : signal.freshInstallsSinceSnooze,
-      recurrenceCount: recurringAfterSnooze
-        ? (signal.recurrenceCount ?? 0) + 1
-        : signal.recurrenceCount,
-      notificationBaselineDownloads: shouldNotify
-        ? snapshot.allTimeDownloads
-        : notificationBaselineDownloads,
-      notificationBaselineInstalls: shouldNotify
-        ? snapshot.allTimeInstalls
-        : notificationBaselineInstalls,
       lastSeenAt: args.now,
       seenCount: signal.seenCount + 1,
-      lastChangedAt: shouldNotify ? args.now : signal.lastChangedAt,
-      needsNotification: shouldNotify ? true : (signal.needsNotification ?? false),
-      notificationClaimedAt: shouldNotify ? undefined : signal.notificationClaimedAt,
-      lastNotificationError: shouldNotify ? undefined : signal.lastNotificationError,
     });
-    return { changed: shouldNotify };
+    return { changed: false };
   }
 
   await ctx.db.insert("publisherAbuseSignals", {
@@ -3730,11 +3073,6 @@ async function upsertPublisherAbuseSignal(
     firstSeenAt: args.now,
     lastSeenAt: args.now,
     seenCount: 1,
-    reviewStatus: "open",
-    notificationBaselineDownloads: snapshot.allTimeDownloads,
-    notificationBaselineInstalls: snapshot.allTimeInstalls,
-    lastChangedAt: args.now,
-    needsNotification: true,
   });
   return { changed: true };
 }
@@ -4381,7 +3719,6 @@ type PublisherAbuseReviewVisibilityOptions = {
   staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
   includeInactiveTargets?: boolean;
   includeScoreDetails?: boolean;
-  reviewStatus?: PublisherAbuseSignalReviewStatus;
 };
 
 type PublisherAbuseReviewPaginationOpts = {
@@ -4540,9 +3877,6 @@ async function summarizeVisiblePublisherAbuseSignals(
 ) {
   const items = [];
   for (const signal of signals) {
-    if (options.reviewStatus && publisherAbuseSignalReviewStatus(signal) !== options.reviewStatus) {
-      continue;
-    }
     const [publisher, ownerUser] = await Promise.all([
       signal.ownerPublisherId ? ctx.db.get(signal.ownerPublisherId) : null,
       signal.ownerUserId ? ctx.db.get(signal.ownerUserId) : null,
@@ -4694,7 +4028,7 @@ async function isVisiblePublisherAbuseNominationCountTarget(
 async function getPublisherAbuseSignalCountSummary(ctx: QueryCtx) {
   const signals = await ctx.db
     .query("publisherAbuseSignals")
-    .withIndex("by_review_status_and_last_seen_at", (q) => q.eq("reviewStatus", "open"))
+    .withIndex("by_last_seen_at")
     .order("desc")
     .take(DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT + 1);
   const scannedSignals = signals.slice(0, DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT);
@@ -4715,12 +4049,6 @@ async function getPublisherAbuseSignalCountSummary(ctx: QueryCtx) {
     signalCount: Math.min(visibleCount, DASHBOARD_SIGNAL_COUNT_LIMIT),
     signalCountHasMore,
   };
-}
-
-function publisherAbuseSignalReviewStatus(
-  signal: Pick<PublisherAbuseSignalDoc, "reviewStatus">,
-): PublisherAbuseSignalReviewStatus {
-  return signal.reviewStatus ?? "open";
 }
 
 async function summarizePublisherAbuseReviewNominationListItem(

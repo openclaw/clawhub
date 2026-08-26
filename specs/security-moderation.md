@@ -72,8 +72,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   failure count. A watchdog treats fifteen minutes without persisted progress as
   a failed attempt. After five consecutive failed attempts, the run becomes
   terminal, retains the last error for the staff UI, emits the structured
-  `publisher_temporal_abuse_scan_failed` operator event, and sends a Hermit
-  alert to the configured ClawHub review channel.
+  `publisher_temporal_abuse_scan_failed` operator event.
   Moderators can start this same full signal pipeline from the staff Signals tab.
   New manual starts record the actor; requests made while a temporal scan is
   already active return that run without starting a competing worker. Stale
@@ -100,7 +99,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   exclusions apply only to review candidates, not to the platform benchmark.
   Partial scans must not archive signals or present their top-download slice as
   a platform percentile.
-- Flat-install temporal review signals compare each skill with both its own
+- Flat-install temporal signals compare each skill with both its own
   frozen history and the full active-skill population. A 7-day surge requires
   both its growth multiple and its absolute downloads above the frozen baseline
   to exceed the platform P99, with at most 2 installs. Requiring both prevents a
@@ -113,19 +112,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   in the 14-day window. This catches traffic that arrives at a steady abnormal
   rate after a cold start instead of only detecting a spike on the day it
   begins. These
-  signals indicate anomalous traffic for manual review, not publisher
-  attribution.
+  signals record anomalous traffic for staff visibility, not publisher
+  attribution or an enforcement decision.
 - The completed temporal pipeline also checks for publisher-wide synchronization
-  among skills that already have a non-dismissed download anomaly signal.
+  among skills that already have a download anomaly signal.
   The synchronized group must cover at least 15% of the publisher's currently
   published skills. Every pair of trailing 60-day download curves must have
   Pearson correlation of at least 0.98, and the largest seven-day rolling peak
   must be no more than 1.25 times the smallest. At least two skills are required
   only because a trend comparison needs a pair; there is no fixed catalogue-size
   threshold. This produces one `owner_synchronized_download_trends` signal for
-  the publisher, not one extra signal per skill. Snoozed skill signals remain
-  eligible as historical evidence; dismissed signals do not. The similar-peak
-  requirement avoids treating shared direction alone as evidence.
+  the publisher, not one extra signal per skill. The similar-peak requirement
+  avoids treating shared direction alone as evidence.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score
@@ -138,39 +136,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse automatic bans must still use the account ban flow, including
   token revocation, owned listing hiding, audit logging, and the normal
   suspension/appeal email.
-- Publisher abuse Signals are manual-review telemetry only. They must not feed
-  automatic ban pressure. Staff can keep a signal `open`, `snoozed`, or
-  `dismissed`; there is no separate escalation state. Active snoozed and
-  dismissed signals stay out of the default Signals queue. Snoozing acknowledges
-  the current all-time download/install counters and starts a minimum quiet
-  period. The same rolling-window evidence must not reopen the signal after the
-  deadline. A snoozed signal reopens only when fresh post-snooze activity crosses
-  the lower repeat threshold: at least 1,500 downloads with at most 5 installs
-  for flat-install volume, or at least 500 downloads and 50 installs at a 10%
-  install/download ratio. Reopened repeat signals are elevated to high severity.
-  Staff may snooze or dismiss up to 50 selected open signals in one atomic
-  action. Bulk review must apply the same evidence checkpoint and write the same
-  per-signal review event as the corresponding single-signal action. The signal
-  inspector must show the selected skill's daily downloads and installs across
-  the same trailing 30-day window, loaded on demand from the bounded daily-stat
-  index so staff can judge whether the evidence is sustained or spiky.
-  When a model version renames an equivalent signal type, it must reuse the
-  existing signal row and preserve its snoozed/dismissed state; a type rename
-  must never bypass an operator decision or create a fresh owner email.
+- Publisher abuse Signals are read-only staff telemetry. They must not feed
+  automatic ban pressure, create a review queue, notify staff or publishers, or
+  expose workflow actions. The Signals view lists every stored observation and
+  shows bounded evidence in a detail drawer. For skill-level signals, the drawer
+  loads daily downloads and installs for the trailing 30 days from the bounded
+  daily-stat index. When a model version renames an equivalent signal type, it
+  must reuse the existing row so one observation keeps a stable identity across
+  detector versions.
 - Every `publisher-abuse-temporal.*` model version, including legacy rows,
   remains ineligible for warning-first automatic enforcement. A future decision
   to enforce temporal traffic signals requires an explicit policy and code
   change; increasing a temporal score cannot silently cross the existing
   pressure-model autoban boundary.
-- Hermit owns Discord notification delivery for publisher abuse Signals.
-  ClawHub queues Hermit digests only for changed open signals: newly archived
-  signals, manual reopens, expired snoozes with qualifying fresh evidence, and
-  open signals whose evidence has materially increased since the previous
-  notification. A higher seen count alone is not a change. Material increases
-  use the same lower repeat thresholds as post-snooze recurrence, and the
-  notification checkpoint advances only when a notification is queued so
-  smaller changes accumulate across scans. Active snoozed or dismissed signals
-  must update their metric snapshot without notifying Hermit.
 - Aggregate publisher spam-abuse labels start at the 200-skill pivot. Below
   that pivot, publishers can contribute to the population baseline, but they
   cannot receive aggregate spam reason codes or be nominated by this score path.

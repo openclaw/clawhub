@@ -33,8 +33,6 @@ export type PublisherAbuseTab =
   | "all_pending"
   | "resolved"
   | "signals";
-export type PublisherAbuseSignalStatus = "open" | "snoozed" | "dismissed";
-
 export type ManagementView =
   | "overview"
   | "abuse"
