@@ -1087,6 +1087,51 @@ describe("SkillsIndex", () => {
     },
   );
 
+  it("dispatches one first-page request when Try again is activated twice before it settles", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let settleRetry: (page: unknown) => void = () => {};
+      convexHttpMock.query
+        .mockRejectedValueOnce(new Error("temporary failure"))
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              settleRetry = resolve;
+            }),
+        )
+        .mockRejectedValue(new Error("duplicate retry dispatched"));
+
+      render(<SkillsIndex />);
+      await act(async () => {});
+
+      const retryButton = screen.getByRole("button", { name: "Try again" });
+      await act(async () => {
+        fireEvent.click(retryButton);
+        fireEvent.click(retryButton);
+      });
+
+      // Both activations land before React rerenders, so only the guard can keep the second
+      // one from starting a rival request that outlives the first.
+      expect(convexHttpMock.query).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        settleRetry({
+          page: [makeListResult("recovered-skill", "Recovered Skill")],
+          hasMore: false,
+          nextCursor: null,
+        });
+      });
+
+      expect(convexHttpMock.query).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Recovered Skill")).toBeTruthy();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
   it("keeps the first-page failure state when the retry fails again", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

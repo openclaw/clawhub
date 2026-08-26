@@ -121,6 +121,7 @@ export function useSkillsBrowseModel({
   const searchRequest = useRef(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
+  const retryInFlightRef = useRef(false);
   const navigateTimer = useRef<number>(0);
 
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
@@ -531,9 +532,12 @@ export function useSkillsBrowseModel({
     }
   }, [canLoadMore, fetchPage, hasQuery, isLoadingMore, listCursor]);
 
-  // The failed first page never advanced a cursor, so a retry just replays it.
+  // The failed first page never advanced a cursor, so a retry just replays it. Two activations
+  // can reach this callback before a rerender clears the failure, and both would replay the
+  // first page under the same generation, so an older reply could overwrite the newer one.
   const retryLoad = useCallback(() => {
-    if (!listFailed) return;
+    if (retryInFlightRef.current || !listFailed) return;
+    retryInFlightRef.current = true;
     setListStatus("loading");
     void fetchPage(null, fetchGeneration.current);
   }, [fetchPage, listFailed]);
@@ -543,6 +547,12 @@ export function useSkillsBrowseModel({
       loadMoreInFlightRef.current = false;
     }
   }, [isLoadingMore]);
+
+  useEffect(() => {
+    if (!isLoadingSkills) {
+      retryInFlightRef.current = false;
+    }
+  }, [isLoadingSkills]);
 
   useEffect(() => {
     return () => window.clearTimeout(navigateTimer.current);
