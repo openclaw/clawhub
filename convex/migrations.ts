@@ -1883,30 +1883,31 @@ export const runSkillManualOverrideCleanup: ReturnType<typeof internalAction> = 
     ok: true;
     dryRun: boolean;
     confirmRequired?: string;
-    before: SkillManualOverrideCleanupPreview;
-    after: SkillManualOverrideCleanupPreview;
+    before?: SkillManualOverrideCleanupPreview;
+    after?: SkillManualOverrideCleanupPreview;
   }> => {
     const dryRun = args.dryRun !== false;
     if (!dryRun && args.confirm !== REMOVE_SKILL_MANUAL_OVERRIDES_CONFIRM) {
       throw new ConvexError(`Pass confirm="${REMOVE_SKILL_MANUAL_OVERRIDES_CONFIRM}" to apply.`);
     }
 
-    const before = await previewSkillManualOverrideCleanup(ctx);
     if (!dryRun) {
       await runToCompletion(
         ctx,
         components.migrations,
         internal.migrations.removeSkillManualOverrides,
       );
+      return { ok: true as const, dryRun: false };
     }
-    const after = dryRun ? before : await previewSkillManualOverrideCleanup(ctx);
+
+    const before = await previewSkillManualOverrideCleanup(ctx);
 
     return {
       ok: true as const,
-      dryRun,
-      confirmRequired: dryRun ? REMOVE_SKILL_MANUAL_OVERRIDES_CONFIRM : undefined,
+      dryRun: true,
+      confirmRequired: REMOVE_SKILL_MANUAL_OVERRIDES_CONFIRM,
       before,
-      after,
+      after: before,
     };
   },
 });
