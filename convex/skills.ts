@@ -13723,7 +13723,7 @@ async function setSkillSoftDeletedByActor(
     ]);
     const hasSecurityLock =
       isMalwareBlocked || isSkillSuspicious(skill) || isSkillReviewFlagged(skill);
-    if (hasSecurityLock && !restoreVersion) {
+    if (!restoreVersion && (skill.latestVersionId || hasSecurityLock)) {
       throw new ConvexError(
         "Forbidden: This skill's scanner state cannot be reconstructed, so it cannot be restored.",
       );

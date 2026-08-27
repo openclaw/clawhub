@@ -712,6 +712,29 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
+  it("rejects admin restore when a clean-looking skill references a missing scanner source", async () => {
+    const skill = makeSkill({
+      latestVersionId: "skillVersions:missing",
+      moderationStatus: "active",
+      moderationVerdict: "clean",
+      moderationReason: "manual.override.okay",
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:admin", role: "admin" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:admin",
+        slug: "demo",
+        deleted: false,
+      }),
+    ).rejects.toThrow("scanner state cannot be reconstructed");
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("does not let a moderator note clear a scanner malware block", async () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
