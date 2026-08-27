@@ -118,22 +118,14 @@ describe("getBySlug public moderation info", () => {
     vi.mocked(getAuthUserId).mockReset();
   });
 
-  it("does not expose manual override notes to non-owners", async () => {
+  it("ignores legacy manual override metadata for non-owners", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
 
     const { ctx } = makeCtx();
     const result = (await getBySlugHandler(ctx, {
       slug: "padel",
-    })) as {
-      moderationInfo: {
-        overrideActive: boolean;
-        summary: string | null;
-      } | null;
-    };
+    })) as { moderationInfo: unknown | null };
 
-    expect(result.moderationInfo?.overrideActive).toBe(true);
-    expect(result.moderationInfo?.summary).toBe(
-      "Security findings were reviewed by moderators and cleared for public use.",
-    );
+    expect(result.moderationInfo).toBeNull();
   });
 });

@@ -715,7 +715,7 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     );
   });
 
-  it("lets moderators unhide scanner-blocked skills as a manual clean override", async () => {
+  it("does not let a moderator note clear a scanner malware block", async () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
     const skill = makeSkill({
@@ -747,25 +747,16 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
       "skills:1",
       expect.objectContaining({
         softDeletedAt: undefined,
-        moderationStatus: "active",
-        moderationReason: "manual.override.clean",
-        moderationFlags: undefined,
-        moderationVerdict: "clean",
-        moderationReasonCodes: undefined,
-        moderationEvidence: undefined,
-        moderationEngineVersion: undefined,
-        moderationSourceVersionId: undefined,
+        moderationStatus: "hidden",
         moderationNotes: "VT false positive; reanalysis clean",
-        hiddenAt: undefined,
+        hiddenAt: now,
         hiddenBy: undefined,
-        manualOverride: expect.objectContaining({
-          verdict: "clean",
-          note: "VT false positive; reanalysis clean",
-          reviewerUserId: "users:mod",
-          updatedAt: now,
-        }),
       }),
     );
+    const patchPayload = (
+      patch.mock.calls as unknown as Array<[string, Record<string, unknown>]>
+    )[0]?.[1];
+    expect(patchPayload).not.toHaveProperty("manualOverride");
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({

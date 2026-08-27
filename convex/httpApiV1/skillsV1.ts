@@ -773,7 +773,6 @@ type SecurityVerdictTargetResult = {
     summary?: string;
     engineVersion?: string;
     updatedAt?: number;
-    overrideActive?: boolean;
   } | null;
   version:
     | (VerifySecurityVersion &
@@ -902,7 +901,6 @@ function buildVerifyReasons(args: {
       isMalwareBlocked: args.isMalwareBlocked,
       securityPassed: args.securityPassed,
       securityStatus: args.securityStatus,
-      staffCleared: false,
     }),
   );
   return [...new Set(reasons)];
@@ -912,15 +910,12 @@ function buildSecurityVerdictReasons(args: {
   isMalwareBlocked: boolean;
   securityPassed: boolean;
   securityStatus: NormalizedSecurityStatus;
-  staffCleared: boolean;
 }) {
   const reasons: string[] = [];
   if (args.isMalwareBlocked) reasons.push("moderation.malware_blocked");
-  if (!args.staffCleared) {
-    if (!args.securityPassed) reasons.push("security.status_not_clean");
-    if (args.securityStatus === "pending") reasons.push("security.pending");
-    if (args.securityStatus === "error") reasons.push("security.error");
-  }
+  if (!args.securityPassed) reasons.push("security.status_not_clean");
+  if (args.securityStatus === "pending") reasons.push("security.pending");
+  if (args.securityStatus === "error") reasons.push("security.error");
   return [...new Set(reasons)];
 }
 
@@ -979,45 +974,6 @@ function buildSecurityVerdictSummary(security: ReturnType<typeof buildVerifySecu
       dependencyRegistry: null,
     },
   };
-}
-
-type SecurityVerdictModerationInfo = NonNullable<SecurityVerdictTargetResult>["moderationInfo"];
-
-function isStaffClearedSecurityVerdict(moderationInfo: SecurityVerdictModerationInfo) {
-  return Boolean(
-    moderationInfo?.overrideActive &&
-    moderationInfo.verdict === "clean" &&
-    !moderationInfo.isMalwareBlocked,
-  );
-}
-
-function buildEffectiveSecurityVerdictSummary(
-  security: ReturnType<typeof buildVerifySecurity>,
-  moderationInfo: SecurityVerdictModerationInfo,
-) {
-  const summary = buildSecurityVerdictSummary(security);
-  if (!isStaffClearedSecurityVerdict(moderationInfo)) return summary;
-
-  return {
-    ...summary,
-    status: "clean" as const,
-    passed: true,
-    verdict: "clean",
-    summary: moderationInfo?.summary ?? summary.summary,
-    checkedAt: getEffectiveSecurityVerdictCheckedAt(security, moderationInfo),
-  };
-}
-
-function getEffectiveSecurityVerdictCheckedAt(
-  security: ReturnType<typeof buildVerifySecurity>,
-  moderationInfo: SecurityVerdictModerationInfo,
-) {
-  const candidates = [getVerifySecurityCheckedAt(security)];
-  if (isStaffClearedSecurityVerdict(moderationInfo)) {
-    candidates.push(moderationInfo?.updatedAt ?? null);
-  }
-  const checkedAt = candidates.filter((value): value is number => typeof value === "number");
-  return checkedAt.length > 0 ? Math.max(...checkedAt) : null;
 }
 
 function isValidRequestedVersion(version: string) {
@@ -1232,12 +1188,10 @@ async function buildSecurityVerdictItem(
   }
 
   const security = buildVerifySecurity(version);
-  const staffCleared = isStaffClearedSecurityVerdict(result.moderationInfo);
   const reasons = buildSecurityVerdictReasons({
     isMalwareBlocked: result.moderationInfo?.isMalwareBlocked ?? false,
     securityPassed: security.passed,
     securityStatus: security.status,
-    staffCleared,
   });
 
   return {
@@ -1253,7 +1207,7 @@ async function buildSecurityVerdictItem(
     requestedVersion: item.version,
     version: version.version,
     createdAt: version.createdAt,
-    checkedAt: getEffectiveSecurityVerdictCheckedAt(security, result.moderationInfo),
+    checkedAt: getVerifySecurityCheckedAt(security),
     skillUrl: buildSkillPageUrl(request, result.owner, result.skill.slug),
     securityAuditUrl: buildSecurityAuditUrl(
       request,
@@ -1261,7 +1215,7 @@ async function buildSecurityVerdictItem(
       result.skill.slug,
       version.version,
     ),
-    security: buildEffectiveSecurityVerdictSummary(security, result.moderationInfo),
+    security: buildSecurityVerdictSummary(security),
   };
 }
 

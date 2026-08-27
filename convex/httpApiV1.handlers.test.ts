@@ -6933,7 +6933,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("honors staff-cleared bulk security verdicts", async () => {
+  it("does not let legacy staff clearance replace the version scanner verdict", async () => {
     const runQuery = vi.fn(async () => ({
       skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
       owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
@@ -6974,16 +6974,16 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items[0]).toMatchObject({
-      ok: true,
-      decision: "pass",
-      reasons: [],
-      checkedAt: 20,
+      ok: false,
+      decision: "fail",
+      reasons: ["security.status_not_clean"],
+      checkedAt: 10,
       security: {
-        status: "clean",
-        passed: true,
-        verdict: "clean",
-        summary: "Security findings were reviewed by moderators and cleared for public use.",
-        checkedAt: 20,
+        status: "suspicious",
+        passed: false,
+        verdict: "suspicious",
+        summary: "Scanner found review-worthy behavior.",
+        checkedAt: 10,
       },
     });
   });

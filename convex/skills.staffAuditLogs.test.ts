@@ -181,7 +181,6 @@ describe("getBySlugForStaff audit logs", () => {
       auditLogLimit: 5,
     })) as {
       owner: { handle?: string | null } | null;
-      overrideReviewer: { handle?: string | null } | null;
       auditLogs: Array<{
         actor: { handle?: string | null } | null;
         action: string;
@@ -191,7 +190,6 @@ describe("getBySlugForStaff audit logs", () => {
     expect(getSkillBadgeMap).toHaveBeenCalled();
     expect(auditTake).toHaveBeenCalledWith(5);
     expect(result.owner?.handle).toBe("local-publisher");
-    expect(result.overrideReviewer?.handle).toBe("moddy");
     expect(result.auditLogs).toHaveLength(2);
     expect(result.auditLogs[0]?.action).toBe("skill.manual_override.set");
     expect(result.auditLogs[0]?.actor?.handle).toBe("moddy");
