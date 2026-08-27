@@ -806,6 +806,15 @@ describe("skill manual override cleanup migration", () => {
         moderationReason: "scanner.llm.malicious",
       }),
     ).toBe(false);
+    expect(
+      shouldPreserveSkillModerationLock({
+        ...makeSkillDoc(),
+        softDeletedAt: 50,
+        moderationStatus: "hidden",
+        moderationReason: "manual.override.okay",
+        hiddenBy: ownerUserId,
+      }),
+    ).toBe(true);
   });
 
   it("fails closed when the latest version cannot be loaded", async () => {

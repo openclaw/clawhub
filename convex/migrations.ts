@@ -93,6 +93,7 @@ export const migrations = new Migrations(components.migrations, {
 });
 
 export function shouldPreserveSkillModerationLock(skill: Doc<"skills">) {
+  if (skill.softDeletedAt) return true;
   if (skill.moderationStatus !== "hidden") return false;
   const reason = skill.moderationReason;
   return !(
