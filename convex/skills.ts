@@ -13720,6 +13720,22 @@ async function setSkillSoftDeletedByActor(
     }
   }
 
+  let restoreVersion: Doc<"skillVersions"> | null = null;
+  let restoreOwner: Doc<"users"> | null = null;
+  if (!args.deleted) {
+    [restoreVersion, restoreOwner] = await Promise.all([
+      skill.latestVersionId ? ctx.db.get(skill.latestVersionId) : null,
+      skill.ownerUserId ? ctx.db.get(skill.ownerUserId) : null,
+    ]);
+    const hasSecurityLock =
+      isMalwareBlocked || isSkillSuspicious(skill) || isSkillReviewFlagged(skill);
+    if (hasSecurityLock && !restoreVersion) {
+      throw new ConvexError(
+        "Forbidden: This skill's scanner state cannot be reconstructed, so it cannot be restored.",
+      );
+    }
+  }
+
   const now = Date.now();
   const note = args.reason ? trimModerationNote(args.reason) : undefined;
   const slugReservedUntil =
@@ -13736,19 +13752,17 @@ async function setSkillSoftDeletedByActor(
     updatedAt: now,
   };
   if (note) patch.moderationNotes = note;
-  if (!args.deleted && skill.latestVersionId) {
-    const [latestVersion, owner] = await Promise.all([
-      ctx.db.get(skill.latestVersionId),
-      skill.ownerUserId ? ctx.db.get(skill.ownerUserId) : null,
-    ]);
-    if (latestVersion) {
-      Object.assign(
-        patch,
-        buildScannerModerationPatchFromVersion({ owner, version: latestVersion, now }),
-        { softDeletedAt: undefined, updatedAt: now },
-      );
-      if (note) patch.moderationNotes = note;
-    }
+  if (!args.deleted && restoreVersion) {
+    Object.assign(
+      patch,
+      buildScannerModerationPatchFromVersion({
+        owner: restoreOwner,
+        version: restoreVersion,
+        now,
+      }),
+      { softDeletedAt: undefined, updatedAt: now },
+    );
+    if (note) patch.moderationNotes = note;
   }
   // Data hygiene: when an owner/org manager deletes, reset any stale
   // `moderationReason` that may have survived from prior moderation metadata.

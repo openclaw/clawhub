@@ -741,32 +741,10 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         deleted: false,
         reason: "VT false positive; reanalysis clean",
       }),
-    ).resolves.toEqual({ ok: true });
+    ).rejects.toThrow("scanner state cannot be reconstructed");
 
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        softDeletedAt: undefined,
-        moderationStatus: "hidden",
-        moderationNotes: "VT false positive; reanalysis clean",
-        hiddenAt: now,
-        hiddenBy: undefined,
-      }),
-    );
-    const patchPayload = (
-      patch.mock.calls as unknown as Array<[string, Record<string, unknown>]>
-    )[0]?.[1];
-    expect(patchPayload).not.toHaveProperty("manualOverride");
-    expect(insert).toHaveBeenCalledWith(
-      "auditLogs",
-      expect.objectContaining({
-        action: "skill.undelete",
-        metadata: expect.objectContaining({
-          reason: "VT false positive; reanalysis clean",
-          actorRole: "moderator",
-        }),
-      }),
-    );
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("still allows owner to soft-delete (deleted=true) their own skill regardless of gate", async () => {
