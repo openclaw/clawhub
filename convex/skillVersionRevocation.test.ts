@@ -106,7 +106,6 @@ describe("buildSkillVersionRevocationPlan", () => {
       moderationNotes: "confirmed unsafe artifact",
       hiddenAt: 200,
       hiddenBy: "users:moderator",
-      manualOverride: undefined,
     });
   });
 

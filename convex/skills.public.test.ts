@@ -1570,10 +1570,14 @@ describe("skill artifact moderation", () => {
       expect.objectContaining({
         softDeletedAt: undefined,
         moderationStatus: "active",
-        moderationReason: "manual.override.clean",
+        moderationReason: undefined,
         moderationFlags: undefined,
       }),
     );
+    const restoredSkillPatch = (
+      patch.mock.calls as unknown as Array<[string, Record<string, unknown>]>
+    ).find(([id]) => id === "skills:1")?.[1];
+    expect(restoredSkillPatch).not.toHaveProperty("manualOverride");
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({

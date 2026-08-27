@@ -124,7 +124,7 @@ describe("getBySlug public moderation info", () => {
     const { ctx } = makeCtx();
     const result = (await getBySlugHandler(ctx, {
       slug: "padel",
-    })) as { moderationInfo: unknown | null };
+    })) as { moderationInfo: unknown };
 
     expect(result.moderationInfo).toBeNull();
   });
