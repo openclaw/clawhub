@@ -12,7 +12,7 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import { syncPackageSearchDigestForPackageId } from "./functions";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { derivePluginManifestSummary, normalizePackageName } from "./lib/packageRegistry";
-import { adjustPublisherStatsForSkillChange } from "./lib/publisherStats";
+import { adjustPublisherStatsForSkillChange, recomputePublisherStats } from "./lib/publisherStats";
 import {
   buildSkillDownloadBackfillPatch,
   calculatePublishedWeeks,
@@ -182,8 +182,12 @@ export const removeSkillManualOverrides = migrations.define({
 
     const globalDelta = getPublicSkillVisibilityDelta(skill, nextSkill);
     await adjustGlobalPublicSkillsCount(ctx, globalDelta);
-    await adjustPublisherStatsForSkillChange(ctx, skill, nextSkill);
-    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+    if (skill.ownerPublisherId) {
+      await ctx.db.patch(
+        skill.ownerPublisherId,
+        await recomputePublisherStats(ctx, skill.ownerPublisherId),
+      );
+    }
     await setSkillEmbeddingsSoftDeleted(
       ctx,
       skill._id,
