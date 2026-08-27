@@ -741,7 +741,15 @@ describe("skill manual override cleanup migration", () => {
   const previewPage = {
     scanned: 1,
     affected: 1,
-    outcomes: { preserved: 0, clean: 0, review: 1, suspicious: 0, malicious: 0 },
+    outcomes: {
+      preserved: 0,
+      clean: 0,
+      pending: 0,
+      error: 0,
+      review: 1,
+      suspicious: 0,
+      malicious: 0,
+    },
     samples: [
       {
         skillId,
@@ -800,7 +808,7 @@ describe("skill manual override cleanup migration", () => {
     ).toBe(false);
   });
 
-  it("preserves moderation when the latest version cannot be loaded", async () => {
+  it("fails closed when the latest version cannot be loaded", async () => {
     const result = await buildSkillModerationAfterOverrideRemoval(
       { db: { get: vi.fn().mockResolvedValue(null) } } as never,
       {
@@ -810,7 +818,26 @@ describe("skill manual override cleanup migration", () => {
       100,
     );
 
-    expect(result).toEqual({ latestVersion: null, patch: undefined });
+    expect(result).toEqual({
+      latestVersion: null,
+      patch: {
+        moderationStatus: "hidden",
+        moderationReason: "pending.scan.stale",
+        moderationNotes: undefined,
+        moderationFlags: undefined,
+        moderationVerdict: undefined,
+        moderationReasonCodes: ["review.scanner_source_missing"],
+        moderationEvidence: undefined,
+        moderationSummary: "Scanner source version is unavailable; hidden pending a new scan.",
+        moderationEngineVersion: undefined,
+        moderationEvaluatedAt: 100,
+        moderationSourceVersionId: undefined,
+        isSuspicious: false,
+        hiddenAt: 100,
+        hiddenBy: undefined,
+        lastReviewedAt: 100,
+      },
+    });
   });
 });
 

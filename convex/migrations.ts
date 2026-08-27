@@ -103,6 +103,52 @@ export function shouldPreserveSkillModerationLock(skill: Doc<"skills">) {
   );
 }
 
+function buildMissingVersionModerationPatch(
+  skill: Doc<"skills">,
+  now: number,
+): Partial<Doc<"skills">> {
+  if (
+    skill.moderationVerdict === "malicious" ||
+    skill.moderationFlags?.some((flag) => flag === "blocked.malware")
+  ) {
+    return {
+      moderationStatus: "hidden",
+      moderationReason: skill.moderationReason ?? "scanner.llm.malicious",
+      moderationNotes: skill.moderationNotes,
+      moderationFlags: skill.moderationFlags,
+      moderationVerdict: "malicious",
+      moderationReasonCodes: skill.moderationReasonCodes,
+      moderationEvidence: skill.moderationEvidence,
+      moderationSummary:
+        skill.moderationSummary ?? "Malicious scanner verdict retained; source version is missing.",
+      moderationEngineVersion: skill.moderationEngineVersion,
+      moderationEvaluatedAt: now,
+      moderationSourceVersionId: undefined,
+      isSuspicious: true,
+      hiddenAt: skill.hiddenAt ?? now,
+      hiddenBy: skill.hiddenBy,
+      lastReviewedAt: now,
+    };
+  }
+  return {
+    moderationStatus: "hidden",
+    moderationReason: "pending.scan.stale",
+    moderationNotes: undefined,
+    moderationFlags: undefined,
+    moderationVerdict: undefined,
+    moderationReasonCodes: ["review.scanner_source_missing"],
+    moderationEvidence: undefined,
+    moderationSummary: "Scanner source version is unavailable; hidden pending a new scan.",
+    moderationEngineVersion: undefined,
+    moderationEvaluatedAt: now,
+    moderationSourceVersionId: undefined,
+    isSuspicious: false,
+    hiddenAt: now,
+    hiddenBy: undefined,
+    lastReviewedAt: now,
+  };
+}
+
 export async function buildSkillModerationAfterOverrideRemoval(
   ctx: Pick<MutationCtx, "db"> | Pick<QueryCtx, "db">,
   skill: Doc<"skills">,
@@ -116,7 +162,7 @@ export async function buildSkillModerationAfterOverrideRemoval(
     latestVersion: latestVersion?.version ?? null,
     patch: latestVersion
       ? buildScannerModerationPatchFromVersion({ owner, version: latestVersion, now })
-      : undefined,
+      : buildMissingVersionModerationPatch(skill, now),
   };
 }
 
@@ -131,10 +177,6 @@ export const removeSkillManualOverrides = migrations.define({
     }
     const now = Date.now();
     const { patch } = await buildSkillModerationAfterOverrideRemoval(ctx, skill, now);
-    if (!patch) {
-      await ctx.db.patch(skill._id, { manualOverride: undefined });
-      return;
-    }
     const nextSkill = { ...skill, ...patch, manualOverride: undefined } as Doc<"skills">;
     await ctx.db.patch(skill._id, { ...patch, manualOverride: undefined });
 
@@ -155,6 +197,8 @@ export const removeSkillManualOverrides = migrations.define({
 type SkillManualOverrideCleanupOutcome =
   | "preserved"
   | "clean"
+  | "pending"
+  | "error"
   | "review"
   | "suspicious"
   | "malicious";
@@ -182,6 +226,8 @@ type SkillManualOverrideCleanupPreview = Omit<
 function classifySkillManualOverrideCleanupOutcome(
   patch: Partial<Doc<"skills">>,
 ): SkillManualOverrideCleanupOutcome {
+  if (patch.moderationReason?.includes("error")) return "error";
+  if (patch.moderationReason?.startsWith("pending.")) return "pending";
   if (patch.moderationVerdict === "malicious") return "malicious";
   if (patch.moderationVerdict === "suspicious") return "suspicious";
   if (patch.moderationReasonCodes?.some((code) => code.startsWith("review."))) return "review";
@@ -201,6 +247,8 @@ export const previewSkillManualOverrideCleanupPageInternal = internalQuery({
     const outcomes: Record<SkillManualOverrideCleanupOutcome, number> = {
       preserved: 0,
       clean: 0,
+      pending: 0,
+      error: 0,
       review: 0,
       suspicious: 0,
       malicious: 0,
@@ -227,19 +275,6 @@ export const previewSkillManualOverrideCleanupPageInternal = internalQuery({
         skill,
         Date.now(),
       );
-      if (!patch) {
-        outcomes.preserved += 1;
-        if (samples.length < 20) {
-          samples.push({
-            skillId: skill._id,
-            slug: skill.slug,
-            latestVersion,
-            currentVerdict: skill.moderationVerdict ?? "unknown",
-            nextOutcome: "preserved",
-          });
-        }
-        continue;
-      }
       const nextOutcome = classifySkillManualOverrideCleanupOutcome(patch);
       outcomes[nextOutcome] += 1;
       if (samples.length < 20) {
@@ -271,7 +306,15 @@ async function previewSkillManualOverrideCleanup(
   const preview: SkillManualOverrideCleanupPreview = {
     scanned: 0,
     affected: 0,
-    outcomes: { preserved: 0, clean: 0, review: 0, suspicious: 0, malicious: 0 },
+    outcomes: {
+      preserved: 0,
+      clean: 0,
+      pending: 0,
+      error: 0,
+      review: 0,
+      suspicious: 0,
+      malicious: 0,
+    },
     samples: [],
   };
 
@@ -282,7 +325,15 @@ async function previewSkillManualOverrideCleanup(
     );
     preview.scanned += page.scanned;
     preview.affected += page.affected;
-    for (const outcome of ["preserved", "clean", "review", "suspicious", "malicious"] as const) {
+    for (const outcome of [
+      "preserved",
+      "clean",
+      "pending",
+      "error",
+      "review",
+      "suspicious",
+      "malicious",
+    ] as const) {
       preview.outcomes[outcome] += page.outcomes[outcome];
     }
     preview.samples.push(...page.samples.slice(0, 20 - preview.samples.length));
