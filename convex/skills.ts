@@ -4549,25 +4549,14 @@ async function applySkillAppealFinalAction(
   const latestVersion = params.skill.latestVersionId
     ? await ctx.db.get(params.skill.latestVersionId)
     : null;
-  const moderationPatch: SkillModerationPatch = latestVersion
-    ? buildScannerModerationPatchFromVersion({ owner, version: latestVersion, now: params.now })
-    : {
-        moderationStatus: "active",
-        moderationReason: undefined,
-        moderationNotes: undefined,
-        moderationFlags: undefined,
-        moderationVerdict: "clean",
-        moderationReasonCodes: undefined,
-        moderationEvidence: undefined,
-        moderationSummary: "No suspicious patterns detected.",
-        moderationEngineVersion: undefined,
-        moderationEvaluatedAt: params.now,
-        moderationSourceVersionId: undefined,
-        isSuspicious: false,
-        hiddenAt: undefined,
-        hiddenBy: undefined,
-        lastReviewedAt: undefined,
-      };
+  if (!latestVersion) {
+    throw new ConvexError("Cannot restore appeal: latest scanner version is unavailable.");
+  }
+  const moderationPatch = buildScannerModerationPatchFromVersion({
+    owner,
+    version: latestVersion,
+    now: params.now,
+  });
   const patch: Partial<Doc<"skills">> = {
     softDeletedAt: undefined,
     ...moderationPatch,
@@ -4576,7 +4565,12 @@ async function applySkillAppealFinalAction(
   const nextSkill = { ...params.skill, ...patch };
   await ctx.db.patch(params.skill._id, patch);
   await adjustGlobalPublicCountForSkillChange(ctx, params.skill, nextSkill);
-  await setSkillEmbeddingsSoftDeleted(ctx, params.skill._id, false, params.now);
+  await setSkillEmbeddingsSoftDeleted(
+    ctx,
+    params.skill._id,
+    nextSkill.moderationStatus === "hidden",
+    params.now,
+  );
 
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,

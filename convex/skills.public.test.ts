@@ -1502,6 +1502,7 @@ describe("skill artifact moderation", () => {
 
   it("can restore a skill while accepting an appeal", async () => {
     const skill = makeSkill({
+      latestVersionId: "skillVersions:1",
       softDeletedAt: 123,
       moderationStatus: "hidden",
       moderationReason: "scanner.llm.suspicious",
@@ -1526,6 +1527,18 @@ describe("skill artifact moderation", () => {
               };
             }
             if (id === "skills:1") return skill;
+            if (id === "skillVersions:1") {
+              return {
+                _id: id,
+                version: "1.0.0",
+                llmAnalysis: {
+                  status: "clean",
+                  verdict: "clean",
+                  summary: "No suspicious behavior found.",
+                  checkedAt: 10,
+                },
+              };
+            }
             return null;
           }),
           patch,
@@ -1570,7 +1583,7 @@ describe("skill artifact moderation", () => {
       expect.objectContaining({
         softDeletedAt: undefined,
         moderationStatus: "active",
-        moderationReason: undefined,
+        moderationReason: "scanner.llm.clean",
         moderationFlags: undefined,
       }),
     );
