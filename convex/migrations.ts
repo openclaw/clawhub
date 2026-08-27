@@ -1838,13 +1838,7 @@ export const runSkillManualOverrideCleanup: ReturnType<typeof internalAction> = 
     }
 
     const before = await previewSkillManualOverrideCleanup(ctx);
-    if (dryRun) {
-      await ctx.runMutation(internal.migrations.run, {
-        fn: "migrations:removeSkillManualOverrides",
-        dryRun: true,
-        reset: true,
-      });
-    } else {
+    if (!dryRun) {
       await runToCompletion(
         ctx,
         components.migrations,

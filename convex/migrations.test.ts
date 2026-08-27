@@ -754,7 +754,7 @@ describe("skill manual override cleanup migration", () => {
     isDone: true,
   };
 
-  it("dry-runs through the tracked migration and reports affected verdicts", async () => {
+  it("previews affected verdicts without invoking the write runner", async () => {
     const runMutation = vi.fn().mockResolvedValue({});
     const runQuery = vi.fn().mockResolvedValue(previewPage);
     const handler = (
@@ -763,11 +763,7 @@ describe("skill manual override cleanup migration", () => {
 
     const result = await handler({ runMutation, runQuery }, {});
 
-    expect(runMutation).toHaveBeenCalledWith(internal.migrations.run, {
-      fn: "migrations:removeSkillManualOverrides",
-      dryRun: true,
-      reset: true,
-    });
+    expect(runMutation).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       ok: true,
       dryRun: true,
