@@ -37,7 +37,7 @@ import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
-import { buildScannerModerationPatchFromVersion } from "./skills";
+import { buildScannerModerationPatchFromVersion, setSkillEmbeddingsSoftDeleted } from "./skills";
 
 const CANONICALIZE_CATALOG_METADATA_CONFIRM = "canonicalize-catalog-metadata";
 const APPLY_SKILL_INSTALL_BACKFILL_CONFIRM = "apply-skill-install-backfill";
@@ -92,6 +92,17 @@ export const migrations = new Migrations(components.migrations, {
   defaultBatchSize: 25,
 });
 
+export function shouldPreserveSkillModerationLock(skill: Doc<"skills">) {
+  if (skill.moderationStatus !== "hidden") return false;
+  const reason = skill.moderationReason;
+  return !(
+    reason === "pending.scan" ||
+    reason === "pending.scan.stale" ||
+    reason?.startsWith("scanner.") ||
+    reason?.startsWith("manual.override.")
+  );
+}
+
 function buildNoVersionModerationPatch(now: number): Partial<Doc<"skills">> {
   return {
     moderationStatus: "active",
@@ -134,7 +145,12 @@ export const removeSkillManualOverrides = migrations.define({
   batchSize: 25,
   migrateOne: async (ctx, skill) => {
     if (!skill.manualOverride) return;
-    const { patch } = await buildSkillModerationAfterOverrideRemoval(ctx, skill, Date.now());
+    if (shouldPreserveSkillModerationLock(skill)) {
+      await ctx.db.patch(skill._id, { manualOverride: undefined });
+      return;
+    }
+    const now = Date.now();
+    const { patch } = await buildSkillModerationAfterOverrideRemoval(ctx, skill, now);
     const nextSkill = { ...skill, ...patch, manualOverride: undefined } as Doc<"skills">;
     await ctx.db.patch(skill._id, { ...patch, manualOverride: undefined });
 
@@ -142,11 +158,22 @@ export const removeSkillManualOverrides = migrations.define({
     await adjustGlobalPublicSkillsCount(ctx, globalDelta);
     await adjustPublisherStatsForSkillChange(ctx, skill, nextSkill);
     await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+    await setSkillEmbeddingsSoftDeleted(
+      ctx,
+      skill._id,
+      Boolean(nextSkill.softDeletedAt || nextSkill.moderationStatus === "hidden"),
+      now,
+    );
     await syncSkillSearchDigestForSkill(ctx, nextSkill);
   },
 });
 
-type SkillManualOverrideCleanupOutcome = "clean" | "review" | "suspicious" | "malicious";
+type SkillManualOverrideCleanupOutcome =
+  | "preserved"
+  | "clean"
+  | "review"
+  | "suspicious"
+  | "malicious";
 
 type SkillManualOverrideCleanupPreviewPage = {
   scanned: number;
@@ -188,6 +215,7 @@ export const previewSkillManualOverrideCleanupPageInternal = internalQuery({
       numItems: Math.min(Math.max(Math.trunc(args.pageSize ?? 250), 10), 500),
     });
     const outcomes: Record<SkillManualOverrideCleanupOutcome, number> = {
+      preserved: 0,
       clean: 0,
       review: 0,
       suspicious: 0,
@@ -197,6 +225,19 @@ export const previewSkillManualOverrideCleanupPageInternal = internalQuery({
 
     for (const skill of result.page) {
       if (!skill.manualOverride) continue;
+      if (shouldPreserveSkillModerationLock(skill)) {
+        outcomes.preserved += 1;
+        if (samples.length < 20) {
+          samples.push({
+            skillId: skill._id,
+            slug: skill.slug,
+            latestVersion: null,
+            currentVerdict: skill.moderationVerdict ?? "unknown",
+            nextOutcome: "preserved",
+          });
+        }
+        continue;
+      }
       const { latestVersion, patch } = await buildSkillModerationAfterOverrideRemoval(
         ctx,
         skill,
@@ -233,7 +274,7 @@ async function previewSkillManualOverrideCleanup(
   const preview: SkillManualOverrideCleanupPreview = {
     scanned: 0,
     affected: 0,
-    outcomes: { clean: 0, review: 0, suspicious: 0, malicious: 0 },
+    outcomes: { preserved: 0, clean: 0, review: 0, suspicious: 0, malicious: 0 },
     samples: [],
   };
 
@@ -244,7 +285,7 @@ async function previewSkillManualOverrideCleanup(
     );
     preview.scanned += page.scanned;
     preview.affected += page.affected;
-    for (const outcome of ["clean", "review", "suspicious", "malicious"] as const) {
+    for (const outcome of ["preserved", "clean", "review", "suspicious", "malicious"] as const) {
       preview.outcomes[outcome] += page.outcomes[outcome];
     }
     preview.samples.push(...page.samples.slice(0, 20 - preview.samples.length));

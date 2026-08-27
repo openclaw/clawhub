@@ -17,6 +17,7 @@ import {
   runPluginManifestSummaryBackfillPage,
   runSkillManualOverrideCleanup,
   runSkillInstallBackfill,
+  shouldPreserveSkillModerationLock,
 } from "./migrations";
 
 type InstallBackfillWrappedHandler = {
@@ -739,7 +740,7 @@ describe("skill manual override cleanup migration", () => {
   const previewPage = {
     scanned: 1,
     affected: 1,
-    outcomes: { clean: 0, review: 1, suspicious: 0, malicious: 0 },
+    outcomes: { preserved: 0, clean: 0, review: 1, suspicious: 0, malicious: 0 },
     samples: [
       {
         skillId,
@@ -783,6 +784,23 @@ describe("skill manual override cleanup migration", () => {
     await expect(
       handler({ runMutation: vi.fn(), runQuery: vi.fn() }, { dryRun: false }),
     ).rejects.toThrow('Pass confirm="remove-skill-manual-overrides" to apply.');
+  });
+
+  it("preserves unrelated moderation quarantines while removing override metadata", () => {
+    expect(
+      shouldPreserveSkillModerationLock({
+        ...makeSkillDoc(),
+        moderationStatus: "hidden",
+        moderationReason: "quality.low",
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveSkillModerationLock({
+        ...makeSkillDoc(),
+        moderationStatus: "hidden",
+        moderationReason: "scanner.llm.malicious",
+      }),
+    ).toBe(false);
   });
 });
 
