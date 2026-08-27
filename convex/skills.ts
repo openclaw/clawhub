@@ -972,10 +972,6 @@ function stripSuspiciousFlag(flags: string[] | undefined) {
   return next.length ? next : undefined;
 }
 
-function hasMalwareBlock(flags: string[] | undefined) {
-  return flags?.includes("blocked.malware") ?? false;
-}
-
 function isScannerManagedReason(reason: string | undefined) {
   if (!reason) return false;
   return (
