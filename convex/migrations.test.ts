@@ -15,6 +15,7 @@ import {
   runCatalogMetadataCanonicalization,
   runPluginManifestSummaryBackfill,
   runPluginManifestSummaryBackfillPage,
+  runSkillManualOverrideCleanup,
   runSkillInstallBackfill,
 } from "./migrations";
 
@@ -50,6 +51,10 @@ type PluginManifestSummaryBackfillPageWrappedHandler = {
 };
 
 type CatalogMetadataCanonicalizationWrappedHandler = {
+  _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
+};
+
+type SkillManualOverrideCleanupWrappedHandler = {
   _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
 };
 
@@ -727,6 +732,57 @@ describe("skill install backfill migration", () => {
         }),
       }),
     );
+  });
+});
+
+describe("skill manual override cleanup migration", () => {
+  const previewPage = {
+    scanned: 1,
+    affected: 1,
+    outcomes: { clean: 0, review: 1, suspicious: 0, malicious: 0 },
+    samples: [
+      {
+        skillId,
+        slug: "release-validation",
+        latestVersion: "0.1.3",
+        currentVerdict: "clean",
+        nextOutcome: "review",
+      },
+    ],
+    continueCursor: "done",
+    isDone: true,
+  };
+
+  it("dry-runs through the tracked migration and reports affected verdicts", async () => {
+    const runMutation = vi.fn().mockResolvedValue({});
+    const runQuery = vi.fn().mockResolvedValue(previewPage);
+    const handler = (
+      runSkillManualOverrideCleanup as unknown as SkillManualOverrideCleanupWrappedHandler
+    )._handler;
+
+    const result = await handler({ runMutation, runQuery }, {});
+
+    expect(runMutation).toHaveBeenCalledWith(internal.migrations.run, {
+      fn: "migrations:removeSkillManualOverrides",
+      dryRun: true,
+      reset: true,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "remove-skill-manual-overrides",
+      before: { affected: 1, outcomes: { review: 1 } },
+    });
+  });
+
+  it("requires explicit confirmation before deleting stored overrides", async () => {
+    const handler = (
+      runSkillManualOverrideCleanup as unknown as SkillManualOverrideCleanupWrappedHandler
+    )._handler;
+
+    await expect(
+      handler({ runMutation: vi.fn(), runQuery: vi.fn() }, { dryRun: false }),
+    ).rejects.toThrow('Pass confirm="remove-skill-manual-overrides" to apply.');
   });
 });
 

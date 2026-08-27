@@ -961,6 +961,8 @@ const skills = defineTable({
   moderationEngineVersion: v.optional(v.string()),
   moderationEvaluatedAt: v.optional(v.number()),
   moderationSourceVersionId: v.optional(v.id("skillVersions")),
+  // Deprecated compatibility field. The cleanup migration removes stored
+  // values before this field and its validator are removed in a follow-up.
   manualOverride: v.optional(manualModerationOverride),
   quality: v.optional(
     v.object({
