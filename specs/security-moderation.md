@@ -419,6 +419,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   and version form the dedupe identity, and qualified success or failure results
   echo the normalized requested owner. Unqualified reads retain legacy slug
   resolution, including fail-closed ambiguity, for older clients.
+- Security verdicts are version-scoped scanner results. ClawHub has no manual
+  trust override: staff moderation may change availability or resolve an appeal,
+  but it must not replace a version's scanner verdict or let a later publish
+  inherit an earlier review decision. Historical staff actions remain in the
+  audit log only.
 - ClawScan verdicts treat purpose-aligned notes as user guidance, not a
   suspicious verdict. Medium-only material concerns are visible
   `flagged.review` guidance and must not set `isSuspicious`; high or critical
