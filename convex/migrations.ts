@@ -103,27 +103,7 @@ export function shouldPreserveSkillModerationLock(skill: Doc<"skills">) {
   );
 }
 
-function buildNoVersionModerationPatch(now: number): Partial<Doc<"skills">> {
-  return {
-    moderationStatus: "active",
-    moderationReason: undefined,
-    moderationNotes: undefined,
-    moderationFlags: undefined,
-    moderationVerdict: "clean",
-    moderationReasonCodes: undefined,
-    moderationEvidence: undefined,
-    moderationSummary: "No suspicious patterns detected.",
-    moderationEngineVersion: undefined,
-    moderationEvaluatedAt: now,
-    moderationSourceVersionId: undefined,
-    isSuspicious: false,
-    hiddenAt: undefined,
-    hiddenBy: undefined,
-    lastReviewedAt: undefined,
-  };
-}
-
-async function buildSkillModerationAfterOverrideRemoval(
+export async function buildSkillModerationAfterOverrideRemoval(
   ctx: Pick<MutationCtx, "db"> | Pick<QueryCtx, "db">,
   skill: Doc<"skills">,
   now: number,
@@ -136,7 +116,7 @@ async function buildSkillModerationAfterOverrideRemoval(
     latestVersion: latestVersion?.version ?? null,
     patch: latestVersion
       ? buildScannerModerationPatchFromVersion({ owner, version: latestVersion, now })
-      : buildNoVersionModerationPatch(now),
+      : undefined,
   };
 }
 
@@ -151,6 +131,10 @@ export const removeSkillManualOverrides = migrations.define({
     }
     const now = Date.now();
     const { patch } = await buildSkillModerationAfterOverrideRemoval(ctx, skill, now);
+    if (!patch) {
+      await ctx.db.patch(skill._id, { manualOverride: undefined });
+      return;
+    }
     const nextSkill = { ...skill, ...patch, manualOverride: undefined } as Doc<"skills">;
     await ctx.db.patch(skill._id, { ...patch, manualOverride: undefined });
 
@@ -243,6 +227,19 @@ export const previewSkillManualOverrideCleanupPageInternal = internalQuery({
         skill,
         Date.now(),
       );
+      if (!patch) {
+        outcomes.preserved += 1;
+        if (samples.length < 20) {
+          samples.push({
+            skillId: skill._id,
+            slug: skill.slug,
+            latestVersion,
+            currentVerdict: skill.moderationVerdict ?? "unknown",
+            nextOutcome: "preserved",
+          });
+        }
+        continue;
+      }
       const nextOutcome = classifySkillManualOverrideCleanupOutcome(patch);
       outcomes[nextOutcome] += 1;
       if (samples.length < 20) {

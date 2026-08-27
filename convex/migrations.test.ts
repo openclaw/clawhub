@@ -11,6 +11,7 @@ import {
   backfillOneNvidiaGitHubDownloadCount,
   backfillOneSkillInstallEstimate,
   buildCanonicalCatalogMetadataPatch,
+  buildSkillModerationAfterOverrideRemoval,
   runNvidiaGitHubDownloadBackfill,
   runCatalogMetadataCanonicalization,
   runPluginManifestSummaryBackfill,
@@ -797,6 +798,19 @@ describe("skill manual override cleanup migration", () => {
         moderationReason: "scanner.llm.malicious",
       }),
     ).toBe(false);
+  });
+
+  it("preserves moderation when the latest version cannot be loaded", async () => {
+    const result = await buildSkillModerationAfterOverrideRemoval(
+      { db: { get: vi.fn().mockResolvedValue(null) } } as never,
+      {
+        ...makeSkillDoc(),
+        latestVersionId: testId("skillVersions", "skillVersions:missing"),
+      },
+      100,
+    );
+
+    expect(result).toEqual({ latestVersion: null, patch: undefined });
   });
 });
 
