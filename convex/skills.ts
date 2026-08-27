@@ -3061,16 +3061,10 @@ export const getBySlugForStaff = query({
       .take(auditLogLimit);
 
     const staffUserIds = new Set<Id<"users">>();
-    if (skill.manualOverride?.reviewerUserId) {
-      staffUserIds.add(skill.manualOverride.reviewerUserId);
-    }
     for (const log of rawAuditLogs) {
       if (log.actorUserId) staffUserIds.add(log.actorUserId);
     }
     const publicUsers = await loadPublicUsersById(ctx, [...staffUserIds]);
-    const overrideReviewer = skill.manualOverride?.reviewerUserId
-      ? (publicUsers.get(skill.manualOverride.reviewerUserId) ?? null)
-      : null;
     const auditLogs: StaffSkillAuditLogEntry[] = rawAuditLogs.map((log) => ({
       ...log,
       actor: log.actorUserId ? (publicUsers.get(log.actorUserId) ?? null) : null,
@@ -3098,7 +3092,6 @@ export const getBySlugForStaff = query({
       skill: { ...skill, badges },
       latestVersion: latestVersion ? { ...latestVersion, generatedSkillCard } : null,
       owner,
-      overrideReviewer,
       auditLogs,
       forkOf: forkOfSkill
         ? {
@@ -10881,22 +10874,6 @@ export const setSkillFeaturedForUserInternal = internalMutation({
       args.featured ? "highlighted" : undefined,
     );
     return { ...result, ownerHandle: args.ownerHandle ?? null };
-  },
-});
-
-// Temporary compatibility endpoints for the first layer of the stacked rollout.
-// They fail closed until the UI callers are removed by the next layer.
-export const setSkillManualOverride = mutation({
-  args: { skillId: v.id("skills"), note: v.string() },
-  handler: async () => {
-    throw new ConvexError("Manual skill overrides are no longer supported.");
-  },
-});
-
-export const clearSkillManualOverride = mutation({
-  args: { skillId: v.id("skills"), note: v.string() },
-  handler: async () => {
-    throw new ConvexError("Manual skill overrides are no longer supported.");
   },
 });
 
