@@ -8610,7 +8610,7 @@ async function restoreSkillEmbeddingsVisibility(
   }
 }
 
-async function setSkillEmbeddingsSoftDeleted(
+export async function setSkillEmbeddingsSoftDeleted(
   ctx: MutationCtx,
   skillId: Id<"skills">,
   deleted: boolean,
