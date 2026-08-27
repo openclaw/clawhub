@@ -188,6 +188,7 @@ export const removeSkillManualOverrides = migrations.define({
         await recomputePublisherStats(ctx, skill.ownerPublisherId),
       );
     }
+    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
     await setSkillEmbeddingsSoftDeleted(
       ctx,
       skill._id,
