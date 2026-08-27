@@ -694,7 +694,7 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
     );
   });
 
-  it("allows admin to undelete moderator-hidden skill", async () => {
+  it("rejects admin restore when suspicious scanner state cannot be reconstructed", async () => {
     const skill = makeSkill({ moderationReason: "scanner.vt.suspicious" });
     const { ctx, patch } = makeCtx({
       skill,
@@ -707,12 +707,9 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         slug: "demo",
         deleted: false,
       }),
-    ).resolves.toEqual({ ok: true });
+    ).rejects.toThrow("scanner state cannot be reconstructed");
 
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({ moderationStatus: "active" }),
-    );
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("does not let a moderator note clear a scanner malware block", async () => {
