@@ -1507,7 +1507,7 @@ describe("SkillDetailPage", () => {
     ).toBeTruthy();
   });
 
-  it("applies staff-cleared moderation overrides to the public security summary", async () => {
+  it("shows the version scanner verdict even with legacy clean moderation metadata", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       return undefined;
@@ -1584,7 +1584,6 @@ describe("SkillDetailPage", () => {
               isSuspicious: false,
               isHiddenByMod: false,
               isRemoved: false,
-              overrideActive: true,
               verdict: "clean",
               reasonCodes: ["suspicious.dynamic_code_execution"],
               summary: "Security findings were reviewed by staff and cleared for public use.",
@@ -1601,10 +1600,10 @@ describe("SkillDetailPage", () => {
     );
 
     expect((await screen.findAllByText("Security audit")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Cleared").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" })).toBeTruthy();
     expect(screen.queryByText(/reviewed by staff and cleared/i)).toBeNull();
-    expect(screen.queryByRole("link", { name: /Suspicious/i })).toBeNull();
+    expect(screen.queryByText("Cleared")).toBeNull();
   });
 
   it("does not show a scanner rerun action on the settings page for owned skills", async () => {

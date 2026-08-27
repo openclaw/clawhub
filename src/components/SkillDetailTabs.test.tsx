@@ -40,8 +40,6 @@ function renderReadme(readmeContent: string) {
       diffVersions={undefined}
       versions={undefined}
       nixPlugin={false}
-      suppressVersionScanResults={false}
-      scanResultsSuppressedMessage={null}
       clawdis={undefined}
       osLabels={[]}
     />,
@@ -66,8 +64,6 @@ function renderReadmeForOwner(readmeContent: string) {
       diffVersions={undefined}
       versions={undefined}
       nixPlugin={false}
-      suppressVersionScanResults={false}
-      scanResultsSuppressedMessage={null}
       clawdis={undefined}
       osLabels={[]}
     />,
@@ -92,8 +88,6 @@ describe("SkillDetailTabs README links", () => {
         diffVersions={undefined}
         versions={undefined}
         nixPlugin={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
       />,
@@ -118,8 +112,6 @@ describe("SkillDetailTabs README links", () => {
         diffVersions={undefined}
         versions={undefined}
         nixPlugin={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
       />,
@@ -157,8 +149,6 @@ describe("SkillDetailTabs README links", () => {
         versions={undefined}
         nixPlugin={false}
         showArchiveTabs={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
       />,
@@ -220,8 +210,6 @@ describe("SkillDetailTabs README links", () => {
         diffVersions={undefined}
         versions={undefined}
         nixPlugin={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
       />,
@@ -261,8 +249,6 @@ describe("SkillDetailTabs README links", () => {
           } as unknown as Doc<"skillVersions">,
         ]}
         nixPlugin={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
       />,
@@ -293,8 +279,6 @@ describe("SkillDetailTabs README links", () => {
         diffVersions={undefined}
         versions={undefined}
         nixPlugin={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
         readmeHrefResolver={(href) => `https://github.com/NVIDIA/skills/blob/abc/${href}`}
@@ -325,8 +309,6 @@ describe("SkillDetailTabs README links", () => {
           diffVersions={undefined}
           versions={undefined}
           nixPlugin={false}
-          suppressVersionScanResults={false}
-          scanResultsSuppressedMessage={null}
           osLabels={["macOS"]}
           clawdis={
             {
@@ -380,8 +362,6 @@ describe("SkillDetailTabs README links", () => {
         diffVersions={undefined}
         versions={undefined}
         nixPlugin={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
       />,
@@ -413,8 +393,6 @@ describe("SkillDetailTabs README links", () => {
         diffVersions={undefined}
         versions={undefined}
         nixPlugin={false}
-        suppressVersionScanResults={false}
-        scanResultsSuppressedMessage={null}
         clawdis={undefined}
         osLabels={[]}
       />,
@@ -454,8 +432,6 @@ describe("SkillDetailTabs evaluation tab", () => {
           versions={undefined}
           nixPlugin={false}
           showArchiveTabs={false}
-          suppressVersionScanResults={false}
-          scanResultsSuppressedMessage={null}
           clawdis={undefined}
           osLabels={[]}
           evaluationContent={<div>Native SkillEvaluator report</div>}

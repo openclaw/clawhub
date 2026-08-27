@@ -64,8 +64,6 @@ type SkillDetailTabsProps = {
   versions: Doc<"skillVersions">[] | undefined;
   nixPlugin: boolean;
   showArchiveTabs?: boolean;
-  suppressVersionScanResults: boolean;
-  scanResultsSuppressedMessage: string | null;
   clawdis: ClawdisSkillMetadata | undefined;
   osLabels: string[];
   readmeHrefResolver?: (href: string) => string;
@@ -91,8 +89,6 @@ export function SkillDetailTabs({
   versions,
   nixPlugin,
   showArchiveTabs = true,
-  suppressVersionScanResults,
-  scanResultsSuppressedMessage,
   clawdis,
   osLabels,
   readmeHrefResolver,
@@ -380,8 +376,6 @@ export function SkillDetailTabs({
             nixPlugin={nixPlugin}
             skillSlug={skill.slug}
             ownerHandle={ownerHandle}
-            suppressScanResults={suppressVersionScanResults}
-            suppressedMessage={scanResultsSuppressedMessage}
           />
         </div>
       ) : null}

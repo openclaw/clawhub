@@ -41,7 +41,6 @@ type SkillModerationInfo = {
   isSuspicious: boolean;
   isHiddenByMod: boolean;
   isRemoved: boolean;
-  overrideActive?: boolean;
   verdict?: "clean" | "suspicious" | "malicious";
   reason?: string;
 };

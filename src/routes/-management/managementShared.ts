@@ -14,7 +14,7 @@ export type ReportedSkillEntry = FunctionReturnType<typeof api.skills.listReport
 export type DuplicateCandidateEntry = FunctionReturnType<
   typeof api.skills.listDuplicateCandidates
 >[number];
-export type ManagementUserSummary = NonNullable<NonNullable<SkillBySlugResult>["overrideReviewer"]>;
+export type ManagementUserSummary = ManagementUserListResult["items"][number];
 
 export type PublisherAbuseReviewDashboard = FunctionReturnType<
   typeof api.publisherAbuse.listReviewDashboard
@@ -119,24 +119,6 @@ export function formatScore(value: number) {
 
 export function formatMutationError(error: unknown) {
   return getUserFacingConvexError(error, "Request failed.");
-}
-
-export function formatManualOverrideState(
-  override:
-    | {
-        verdict: string;
-        note: string;
-        reviewerUserId: string;
-        updatedAt: number;
-      }
-    | null
-    | undefined,
-  reviewer?: ManagementUserSummary | null,
-) {
-  if (!override) return "No override.";
-  return `${formatVerdictLabel(override.verdict)} · reviewer ${formatManagementUserLabel(reviewer, override.reviewerUserId)} · updated ${formatTimestamp(
-    override.updatedAt,
-  )} · ${override.note}`;
 }
 
 export function formatManagementUserLabel(

@@ -440,14 +440,6 @@ export function SkillDetailPage({
 
   const forkOf = result?.forkOf ?? null;
   const canonical = result?.canonical ?? null;
-  const suppressVersionScanResults =
-    !isStaff &&
-    Boolean(modInfo?.overrideActive) &&
-    !modInfo?.isMalwareBlocked &&
-    !modInfo?.isSuspicious;
-  const scanResultsSuppressedMessage = suppressVersionScanResults
-    ? "Security findings on these releases were reviewed by staff and cleared for public use."
-    : null;
   const forkOfLabel = forkOf?.kind === "duplicate" ? "duplicate of" : "fork of";
   const forkOfOwnerHandle = forkOf?.owner?.handle ?? null;
   const forkOfOwnerId = forkOf?.owner?.userId ?? null;
@@ -837,7 +829,6 @@ export function SkillDetailPage({
         vtAnalysis={latestVersion?.vtAnalysis ?? null}
         llmAnalysis={latestVersion?.llmAnalysis ?? null}
         githubScanStatus={githubScanStatus}
-        suppressScanResults={suppressVersionScanResults}
       />
     ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
@@ -1014,8 +1005,6 @@ export function SkillDetailPage({
         versions={versions}
         nixPlugin={Boolean(nixPlugin)}
         showArchiveTabs={!isGitHubBackedSkill}
-        suppressVersionScanResults={suppressVersionScanResults}
-        scanResultsSuppressedMessage={scanResultsSuppressedMessage}
         clawdis={clawdis}
         osLabels={osLabels}
         readmeHrefResolver={readmeHrefResolver}

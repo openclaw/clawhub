@@ -274,8 +274,6 @@ export function Management() {
   const setDuplicate = useMutation(api.skills.setDuplicate);
   const setOfficialBadge = useMutation(api.skills.setOfficialBadge);
   const setDeprecatedBadge = useMutation(api.skills.setDeprecatedBadge);
-  const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
-  const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
   const banPublisherAbuseOwnerMutation = useMutation(api.publisherAbuse.banPublisherAbuseOwner);
   const markPublisherAbuseNominationReviewed = useMutation(
     api.publisherAbuse.markPublisherAbuseNominationReviewed,
@@ -304,7 +302,6 @@ export function Management() {
   const [ownerSearchDebounced, setOwnerSearchDebounced] = useState("");
   const [pluginSearch, setPluginSearch] = useState(selectedPluginName ?? "");
   const [skillSearch, setSkillSearch] = useState(selectedSlug ?? "");
-  const [skillOverrideNote, setSkillOverrideNote] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ManagementConfirmRequest | null>(null);
   const [publisherAbuseTab, setPublisherAbuseTab] = useState<PublisherAbuseTab>(
     abuseViewActive ? (search.tab ?? "potential_ban_candidate") : "potential_ban_candidate",
@@ -396,10 +393,6 @@ export function Management() {
     setSelectedDuplicate(selectedCanonicalSlug);
     setSelectedOwner(selectedOwnerUserId);
   }, [selectedCanonicalSlug, selectedOwnerUserId, selectedSkillId]);
-
-  useEffect(() => {
-    setSkillOverrideNote("");
-  }, [selectedSkillId]);
 
   useEffect(() => {
     setPluginSearch(selectedPluginName ?? "");
@@ -523,32 +516,6 @@ export function Management() {
         : "No users yet."
       : ""
     : "Loading users…";
-
-  const applySkillOverride = () => {
-    if (!selectedSkill?.skill) return;
-    void setSkillManualOverride({
-      skillId: selectedSkill.skill._id,
-      note: skillOverrideNote,
-    })
-      .then(() => {
-        setSkillOverrideNote("");
-        toast.success("Skill marked okay.");
-      })
-      .catch((error) => toast.error(formatMutationError(error)));
-  };
-
-  const clearSkillOverride = () => {
-    if (!selectedSkill?.skill?.manualOverride) return;
-    void clearSkillManualOverride({
-      skillId: selectedSkill.skill._id,
-      note: skillOverrideNote,
-    })
-      .then(() => {
-        setSkillOverrideNote("");
-        toast.success("Override cleared.");
-      })
-      .catch((error) => toast.error(formatMutationError(error)));
-  };
 
   const managePlugin = () => {
     const name = pluginSearch.trim();
@@ -991,10 +958,8 @@ export function Management() {
             selectedOwner={selectedOwner}
             selectedSkill={selectedSkill}
             selectedSlug={selectedSlug}
-            skillOverrideNote={skillOverrideNote}
             skillSearch={skillSearch}
             staff={staff}
-            onApplySkillOverride={applySkillOverride}
             onBanUser={requestBanUser}
             onChangeOwner={(skillId, ownerUserId) => {
               void changeOwner({ skillId, ownerUserId });
@@ -1002,9 +967,7 @@ export function Management() {
             onChangeOwnerSearch={setOwnerSearch}
             onChangeSelectedDuplicate={setSelectedDuplicate}
             onChangeSelectedOwner={setSelectedOwner}
-            onChangeSkillOverrideNote={setSkillOverrideNote}
             onChangeSkillSearch={setSkillSearch}
-            onClearSkillOverride={clearSkillOverride}
             onHardDeleteSkill={requestHardDeleteSkill}
             onManageSkill={manageSkill}
             onSetBatch={(skillId, batch) => {

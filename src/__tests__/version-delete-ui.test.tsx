@@ -132,8 +132,6 @@ function makeSkillVersionsPanel({
       canDeleteVersions={canDeleteVersions}
       nixPlugin={false}
       skillSlug={skillSlug}
-      suppressScanResults={false}
-      suppressedMessage={null}
     />
   );
 }
@@ -437,8 +435,6 @@ describe("version Delete UI", () => {
         canDeleteVersions
         nixPlugin={false}
         skillSlug="weather"
-        suppressScanResults={false}
-        suppressedMessage={null}
       />,
     );
 

@@ -153,8 +153,6 @@ export function getScanStatusInfo(status: string) {
     case "clean":
     case "undetected-only-fallback":
       return { label: "Pass", className: "scan-status-clean", badgeVariant: "success" };
-    case "cleared":
-      return { label: "Cleared", className: "scan-status-clean", badgeVariant: "success" };
     case "malicious":
       return {
         label: "Malicious",

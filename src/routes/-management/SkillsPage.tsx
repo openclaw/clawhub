@@ -19,7 +19,6 @@ import {
   formatAuditActionLabel,
   formatAuditMetadataSummary,
   formatManagementUserLabel,
-  formatManualOverrideState,
   formatTimestamp,
   resolveOwnerParam,
   SKILL_AUDIT_LOG_LIMIT,
@@ -39,18 +38,14 @@ export function SkillsPage({
   selectedOwner,
   selectedSkill,
   selectedSlug,
-  skillOverrideNote,
   skillSearch,
   staff,
-  onApplySkillOverride,
   onBanUser,
   onChangeOwner,
   onChangeOwnerSearch,
   onChangeSelectedDuplicate,
   onChangeSelectedOwner,
-  onChangeSkillOverrideNote,
   onChangeSkillSearch,
-  onClearSkillOverride,
   onHardDeleteSkill,
   onManageSkill,
   onSetBatch,
@@ -69,18 +64,14 @@ export function SkillsPage({
   selectedOwner: Id<"users"> | "";
   selectedSkill: SkillBySlugResult | undefined;
   selectedSlug: string | undefined;
-  skillOverrideNote: string;
   skillSearch: string;
   staff: boolean;
-  onApplySkillOverride: () => void;
   onBanUser: (userId: Id<"users">, label: string) => void;
   onChangeOwner: (skillId: Id<"skills">, ownerUserId: Id<"users">) => void;
   onChangeOwnerSearch: (value: string) => void;
   onChangeSelectedDuplicate: (value: string) => void;
   onChangeSelectedOwner: (value: Id<"users"> | "") => void;
-  onChangeSkillOverrideNote: (value: string) => void;
   onChangeSkillSearch: (value: string) => void;
-  onClearSkillOverride: () => void;
   onHardDeleteSkill: (skill: Doc<"skills">) => void;
   onManageSkill: () => void;
   onSetBatch: (skillId: Id<"skills">, batch: "highlighted" | undefined) => void;
@@ -93,7 +84,7 @@ export function SkillsPage({
     <div className="management-view">
       <h2 className="section-title text-[1.2rem] m-0">Skill tools</h2>
       <p className="section-subtitle m-0 mt-1">
-        Look up a skill by slug to manage moderation overrides and view its audit history.
+        Look up a skill by slug to manage it and view its audit history.
       </p>
       <div className="management-controls">
         <div className="management-control management-search">
@@ -141,8 +132,7 @@ export function SkillsPage({
           <div className="management-empty">No skill found for "{selectedSlug}".</div>
         ) : (
           (() => {
-            const { skill, latestVersion, owner, canonical, overrideReviewer, auditLogs } =
-              selectedSkill;
+            const { skill, latestVersion, owner, canonical, auditLogs } = selectedSkill;
             const ownerParam = resolveOwnerParam(
               owner?.handle ?? null,
               owner?._id ?? skill.ownerUserId,
@@ -179,58 +169,6 @@ export function SkillsPage({
                       ))}
                     </div>
                   ) : null}
-                  <div className="management-sublist">
-                    <div className="section-subtitle m-0">Manual overrides</div>
-                    <section className="management-override-panel">
-                      <div className="management-report-item">
-                        <span className="management-report-meta">Current override</span>
-                        <span>
-                          {formatManualOverrideState(skill.manualOverride, overrideReviewer)}
-                        </span>
-                      </div>
-                      <div className="management-report-item">
-                        <span className="management-report-meta">Latest version</span>
-                        <span>
-                          {latestVersion ? `v${latestVersion.version}` : "No published version."}
-                        </span>
-                      </div>
-                      <div className="management-report-item">
-                        <span className="management-report-meta">Behavior</span>
-                        <span>Applies to the full skill until a moderator clears it.</span>
-                      </div>
-                      <textarea
-                        className="form-input management-textarea"
-                        rows={4}
-                        placeholder={
-                          skill.manualOverride
-                            ? "Audit note required to update or clear the okay override"
-                            : "Audit note required to mark this skill okay"
-                        }
-                        value={skillOverrideNote}
-                        onChange={(event) => onChangeSkillOverrideNote(event.target.value)}
-                      />
-                      <div className="management-actions management-actions-start">
-                        <Button
-                          className="management-action-btn"
-                          type="button"
-                          disabled={!skillOverrideNote.trim()}
-                          onClick={onApplySkillOverride}
-                        >
-                          {skill.manualOverride ? "Update okay override" : "Mark skill okay"}
-                        </Button>
-                        {skill.manualOverride ? (
-                          <Button
-                            className="management-action-btn"
-                            type="button"
-                            disabled={!skillOverrideNote.trim()}
-                            onClick={onClearSkillOverride}
-                          >
-                            Clear skill override
-                          </Button>
-                        ) : null}
-                      </div>
-                    </section>
-                  </div>
                   <div className="management-sublist">
                     <div className="section-subtitle m-0">Recent audit activity</div>
                     <section className="management-override-panel management-audit-panel">

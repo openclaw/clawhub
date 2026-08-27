@@ -22,8 +22,6 @@ type SkillVersionsPanelProps = {
   nixPlugin: boolean;
   skillSlug: string;
   ownerHandle?: string | null;
-  suppressScanResults: boolean;
-  suppressedMessage: string | null;
 };
 
 function mergeSkillVersions(...groups: Doc<"skillVersions">[][]) {
@@ -58,7 +56,6 @@ export function SkillVersionsPanel({
   nixPlugin,
   skillSlug,
   ownerHandle,
-  suppressedMessage,
 }: SkillVersionsPanelProps) {
   const deleteOwnedVersion = useMutation(api.skills.deleteOwnedVersion);
   const restoreOwnedVersion = useMutation(api.skills.restoreOwnedVersion);
@@ -164,9 +161,6 @@ export function SkillVersionsPanel({
       <div className="tab-body skill-versions-panel">
         <div className="skill-versions-header">
           <h2>Versions</h2>
-          {suppressedMessage ? (
-            <p className="skill-versions-suppressed-message">{suppressedMessage}</p>
-          ) : null}
         </div>
         <div className="skill-versions-scroll">
           <div className="skill-versions-list skill-versions-list-skills">

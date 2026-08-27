@@ -8,7 +8,6 @@ type DetailSecuritySummaryProps = {
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   githubScanStatus?: string | null;
-  suppressScanResults?: boolean;
 };
 
 export function auditVerdictMeterLevel(status: string) {
@@ -22,7 +21,6 @@ export function auditVerdictMeterLevel(status: string) {
       return 2;
     case "benign":
     case "clean":
-    case "cleared":
       return 3;
     default:
       return 0;
@@ -34,15 +32,10 @@ export function DetailSecuritySummary({
   vtAnalysis,
   llmAnalysis,
   githubScanStatus,
-  suppressScanResults = false,
 }: DetailSecuritySummaryProps) {
   const hasVersionScanResult = Boolean(vtAnalysis || llmAnalysis);
   const auditVerdict = hasVersionScanResult
-    ? aggregateAuditVerdict({
-        vtAnalysis,
-        llmAnalysis,
-        suppressScanResults,
-      })
+    ? aggregateAuditVerdict({ vtAnalysis, llmAnalysis })
     : (githubScanStatus ?? "pending");
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   const meterLevel = auditVerdictMeterLevel(auditVerdict);

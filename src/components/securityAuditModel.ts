@@ -19,7 +19,6 @@ type SecurityAuditSignals = {
     findings?: unknown[] | null;
     checkedAt?: number | null;
   } | null;
-  suppressScanResults?: boolean;
 };
 
 export const AUDIT_SCANNER_LABELS: Record<AuditScannerKind, string> = {
@@ -35,7 +34,6 @@ const SUPPORTING_AUDIT_SCANNER_ORDER: AuditScannerKind[] = DEFAULT_AUDIT_SCANNER
 );
 
 export function aggregateAuditVerdict(signals: SecurityAuditSignals) {
-  if (signals.suppressScanResults) return "cleared";
   const clawScanStatus = getClawScanDisplayStatus(signals.llmAnalysis);
   const staticStatus = signals.staticScan?.status?.trim().toLowerCase();
   if (clawScanStatus === "malicious" || staticStatus === "malicious") return "malicious";
@@ -57,14 +55,9 @@ export function aggregateAuditVerdict(signals: SecurityAuditSignals) {
 
 export function getSecurityAuditOverviewCopy({
   llmAnalysis,
-  suppressScanResults,
-  suppressedMessage,
 }: {
   llmAnalysis?: LlmAnalysis | null;
-  suppressScanResults?: boolean;
-  suppressedMessage?: string | null;
 }) {
-  if (suppressScanResults && suppressedMessage?.trim()) return [suppressedMessage.trim()];
   return [
     llmAnalysis?.summary?.trim() || "No security analysis has been recorded yet.",
     llmAnalysis?.guidance?.trim() || null,

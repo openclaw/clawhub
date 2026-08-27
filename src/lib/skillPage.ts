@@ -25,7 +25,6 @@ export type SkillBySlugResult = {
     isSuspicious: boolean;
     isHiddenByMod: boolean;
     isRemoved: boolean;
-    overrideActive?: boolean;
     verdict?: "clean" | "suspicious" | "malicious";
     reasonCodes?: string[];
     summary?: string | null;

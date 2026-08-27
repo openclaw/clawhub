@@ -48,18 +48,16 @@ describe("DetailSecuritySummary", () => {
     expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("0");
   });
 
-  it("shows staff-cleared public scan summaries as cleared", () => {
+  it("shows suspicious version scans without a clearance path", () => {
     render(
       <DetailSecuritySummary
         auditHref="/suka233/kmind-markdown-to-mindmap/security-audit"
         vtAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
         llmAnalysis={{ status: "suspicious", verdict: "suspicious", checkedAt: 1 }}
-        suppressScanResults
       />,
     );
 
-    expect(screen.getByText("Cleared")).toBeTruthy();
-    expect(screen.queryByText("Warn")).toBeNull();
+    expect(screen.getByText("Review")).toBeTruthy();
   });
 
   it("rolls ClawScan review and warning states into the compact verdict", () => {

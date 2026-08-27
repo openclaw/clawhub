@@ -11984,17 +11984,6 @@ a.skills-sh-security-audit-row:focus-visible {
   min-width: 0;
 }
 
-.skill-versions-suppressed-message {
-  min-width: 0;
-  color: var(--ink-soft);
-  font-size: 0.86rem;
-  line-height: 1.4;
-}
-
-.skill-versions-suppressed-message {
-  margin: 0;
-}
-
 .skill-versions-scroll {
   overflow: visible;
 }
