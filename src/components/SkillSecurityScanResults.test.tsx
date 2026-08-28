@@ -562,6 +562,51 @@ describe("SecurityScanResults static guidance", () => {
     expect(await screen.findByText("matched line")).toBeTruthy();
   });
 
+  it("preserves complete SkillSpector evidence when a location fetch is narrower", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("first\n<!-- validation-guidance:start -->\nthird\n"));
+    const analysis: SkillSpectorAnalysis = {
+      ...skillSpectorAnalysis,
+      issues: [
+        {
+          ...skillSpectorAnalysis.issues[0],
+          issueId: "P2",
+          file: "SKILL.md",
+          startLine: 2,
+          endLine: undefined,
+          codeSnippet:
+            "<!-- validation-guidance:start -->\nFollow these visible validation instructions.\n<!-- validation-guidance:end -->",
+          finding: "<!-- validation-guidance:end --> into the private worksheet",
+          explanation:
+            "The scanner interpreted visible validation guidance as hidden instructions.",
+        },
+      ],
+    };
+
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Release Validation",
+          name: "release-validation",
+          version: "0.1.3",
+          detailPath: "/openclaw/release-validation",
+        }}
+        skillSpectorAnalysis={analysis}
+      />,
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Follow these visible validation instructions/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The scanner interpreted visible validation guidance as hidden instructions.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/into the private worksheet/)).toBeNull();
+  });
+
   it("uses ClawScan only for the security audit outcome", () => {
     const { container } = render(
       <SecurityAuditPage

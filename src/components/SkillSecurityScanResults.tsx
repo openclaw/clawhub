@@ -420,7 +420,7 @@ function SkillSpectorFindingCard({
   issue: SkillSpectorIssue;
 }) {
   const confidence = formatSkillSpectorConfidence(issue.confidence);
-  const trimmedSnippet = contentSnippet?.trim() || issue.codeSnippet?.trim();
+  const trimmedSnippet = issue.codeSnippet?.trim() || contentSnippet?.trim();
 
   return (
     <article className="static-analysis-finding">
@@ -453,7 +453,7 @@ function SkillSpectorFindingCard({
         ) : null}
         <div>
           <dt>Finding</dt>
-          <dd>{issue.finding || issue.explanation}</dd>
+          <dd>{issue.explanation || issue.finding}</dd>
         </div>
       </dl>
     </article>
