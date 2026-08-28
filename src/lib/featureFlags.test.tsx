@@ -7,14 +7,14 @@ import { FeatureFlagProvider, useFeatureFlag } from "./featureFlags";
 const fetchMock = vi.fn<typeof fetch>();
 
 function evalResponse(value: unknown): Response {
-  return new Response(JSON.stringify({ flags: { souls: { value } } }), {
+  return new Response(JSON.stringify({ flags: { homepageTestMessage: { value } } }), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
 }
 
 function FlagProbe() {
-  return <span>{useFeatureFlag("souls") ? "has soul" : "safe default"}</span>;
+  return <span>{useFeatureFlag("homepageTestMessage") ? "test enabled" : "safe default"}</span>;
 }
 
 describe("feature flags", () => {
@@ -33,7 +33,7 @@ describe("feature flags", () => {
     const observedValues: boolean[] = [];
 
     function FirstRenderProbe() {
-      observedValues.push(useFeatureFlag("souls"));
+      observedValues.push(useFeatureFlag("homepageTestMessage"));
       return <FlagProbe />;
     }
 
@@ -42,14 +42,14 @@ describe("feature flags", () => {
         baseUrl="https://flags.openclaw.ai"
         contextKey="user-123"
         evalKey="ks_clawhub_production_public"
-        initialValues={{ souls: true }}
+        initialValues={{ homepageTestMessage: true }}
       >
         <FirstRenderProbe />
       </FeatureFlagProvider>,
     );
 
     expect(observedValues[0]).toBe(true);
-    expect(screen.getByText("has soul")).toBeTruthy();
+    expect(screen.getByText("test enabled")).toBeTruthy();
   });
 
   it("applies a successful browser refresh after hydration", async () => {
@@ -60,13 +60,13 @@ describe("feature flags", () => {
         baseUrl="https://flags.openclaw.ai"
         contextKey="user-123"
         evalKey="ks_clawhub_production_public"
-        initialValues={{ souls: true }}
+        initialValues={{ homepageTestMessage: true }}
       >
         <FlagProbe />
       </FeatureFlagProvider>,
     );
 
-    expect(screen.getByText("has soul")).toBeTruthy();
+    expect(screen.getByText("test enabled")).toBeTruthy();
     await act(async () => {
       await Promise.resolve();
     });

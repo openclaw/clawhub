@@ -1,7 +1,7 @@
 export const FEATURE_FLAG_DEFAULTS: FeatureFlagValues = {
-  souls: false,
+  homepageTestMessage: false,
 };
 
 export type FeatureFlagValues = {
-  souls: boolean;
+  homepageTestMessage: boolean;
 };

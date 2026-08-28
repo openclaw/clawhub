@@ -49,7 +49,7 @@ function SkillsHome() {
 }
 
 function SkillsHomeContent({ initialListing }: { initialListing: HomeListingInitialData | null }) {
-  const hasSoul = useFeatureFlag("souls");
+  const showTestMessage = useFeatureFlag("homepageTestMessage");
 
   return (
     <main className="home-v2-main oc-app-surface">
@@ -64,8 +64,8 @@ function SkillsHomeContent({ initialListing }: { initialListing: HomeListingInit
         </h1>
 
         <p className="home-v2-sub oc-hero-lede">
-          {hasSoul
-            ? "Discover skills and plugins built with soul"
+          {showTestMessage
+            ? "Feature flag test is enabled."
             : "Discover skills and plugins from top creators"}
         </p>
       </section>

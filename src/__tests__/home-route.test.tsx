@@ -42,6 +42,7 @@ const initialFeatureFlagsFixture = {
 const homeListingSectionMock = vi.fn();
 const fetchInitialHomeListingMock = vi.fn(() => Promise.resolve(initialListingFixture));
 const loadInitialFeatureFlagsMock = vi.fn(() => Promise.resolve(initialFeatureFlagsFixture));
+let featureFlagEnabled = false;
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component?: unknown }) => {
@@ -63,7 +64,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("../lib/featureFlags", () => ({
   FeatureFlagProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-  useFeatureFlag: () => false,
+  useFeatureFlag: () => featureFlagEnabled,
 }));
 
 vi.mock("../lib/featureFlags.functions", () => ({
@@ -101,6 +102,7 @@ describe("home route", () => {
     homeListingSectionMock.mockClear();
     fetchInitialHomeListingMock.mockClear();
     loadInitialFeatureFlagsMock.mockClear();
+    featureFlagEnabled = false;
   });
 
   async function renderHome() {
@@ -135,6 +137,15 @@ describe("home route", () => {
       "Discover skills and plugins from top creators",
     );
     expect(screen.queryByRole("link", { name: "200k+ publishers" })).toBeNull();
+  });
+
+  it("shows an unmistakable test message when the proof flag is enabled", async () => {
+    featureFlagEnabled = true;
+
+    await renderHome();
+
+    expect(screen.getByText("Feature flag test is enabled.")).toBeTruthy();
+    expect(screen.queryByText("Discover skills and plugins from top creators")).toBeNull();
   });
 
   it("renders the catalog and new homepage sections without the old hero search", async () => {

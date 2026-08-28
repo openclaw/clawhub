@@ -30,7 +30,7 @@ Keep ClawHub's adapter limited to runtime configuration and app-specific flags.
 
 ## Initial proof flag
 
-The `souls` boolean flag defaults to `false`. When enabled, the home hero
-subtitle changes from “Discover skills and plugins from top creators” to
-“Discover skills and plugins built with soul.” This is intentionally a safe,
+The `homepageTestMessage` boolean flag defaults to `false`. When enabled, the
+home hero subtitle changes from “Discover skills and plugins from top creators”
+to “Feature flag test is enabled.” This is intentionally an obvious, temporary,
 copy-only proof that can be toggled without changing application behavior.

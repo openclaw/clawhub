@@ -10,7 +10,7 @@ describe("server feature flag evaluation", () => {
 
   it("evaluates the manifest with the stable SSR context", async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ flags: { souls: { value: true } } }), {
+      new Response(JSON.stringify({ flags: { homepageTestMessage: { value: true } } }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
@@ -24,7 +24,7 @@ describe("server feature flag evaluation", () => {
         evalKey: "ks_clawhub_production_public",
         signal: new AbortController().signal,
       }),
-    ).resolves.toEqual({ souls: true });
+    ).resolves.toEqual({ homepageTestMessage: true });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://flags.openclaw.ai/v1/eval",
