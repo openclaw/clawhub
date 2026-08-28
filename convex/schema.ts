@@ -4099,6 +4099,12 @@ const publisherAbuseSignalTypeValidator = v.union(
   v.literal("owner_synchronized_download_trends"),
 );
 
+const publisherAbuseSignalReviewStatusValidator = v.union(
+  v.literal("open"),
+  v.literal("snoozed"),
+  v.literal("dismissed"),
+);
+
 const publisherAbuseSignals = defineTable({
   signalType: publisherAbuseSignalTypeValidator,
   ownerKey: v.string(),
@@ -4160,13 +4166,63 @@ const publisherAbuseSignals = defineTable({
       windowEndDay: v.number(),
     }),
   ),
+  // The workflow is retired, but production rows keep this data until a
+  // separately approved migration exports or removes it.
+  reviewStatus: v.optional(publisherAbuseSignalReviewStatusValidator),
+  snoozedUntil: v.optional(v.number()),
+  evidenceAcknowledgedAt: v.optional(v.number()),
+  evidenceBaselineDownloads: v.optional(v.number()),
+  evidenceBaselineInstalls: v.optional(v.number()),
+  freshDownloadsSinceSnooze: v.optional(v.number()),
+  freshInstallsSinceSnooze: v.optional(v.number()),
+  snoozeCount: v.optional(v.number()),
+  recurrenceCount: v.optional(v.number()),
+  notificationBaselineDownloads: v.optional(v.number()),
+  notificationBaselineInstalls: v.optional(v.number()),
+  reviewedByUserId: v.optional(v.id("users")),
+  reviewedAt: v.optional(v.number()),
+  reviewNote: v.optional(v.string()),
+  lastChangedAt: v.optional(v.number()),
+  needsNotification: v.optional(v.boolean()),
+  notificationClaimedAt: v.optional(v.number()),
+  lastNotifiedAt: v.optional(v.number()),
+  lastNotificationError: v.optional(v.string()),
 })
   .index("by_last_seen_at", ["lastSeenAt"])
   .index("by_signal_type_and_last_seen_at", ["signalType", "lastSeenAt"])
   .index("by_owner_key_and_last_seen_at", ["ownerKey", "lastSeenAt"])
   .index("by_owner_key_and_signal_type", ["ownerKey", "signalType"])
   .index("by_skill_and_signal_type", ["skillId", "signalType"])
-  .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"]);
+  .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"])
+  .index("by_review_status_and_last_seen_at", ["reviewStatus", "lastSeenAt"])
+  .index("by_needs_notification_and_last_changed_at", ["needsNotification", "lastChangedAt"])
+  .index("by_needs_notification_and_notification_claimed_at", [
+    "needsNotification",
+    "notificationClaimedAt",
+  ]);
+
+const publisherAbuseSignalReviewEventTypeValidator = v.union(
+  v.literal("snoozed"),
+  v.literal("dismissed"),
+  v.literal("reopened"),
+);
+
+// Kept only so existing audit rows remain valid. No active function reads or
+// writes this table after the workflow retirement.
+const publisherAbuseSignalReviewEvents = defineTable({
+  signalId: v.id("publisherAbuseSignals"),
+  ownerKey: v.string(),
+  actorUserId: v.id("users"),
+  eventType: publisherAbuseSignalReviewEventTypeValidator,
+  previousStatus: publisherAbuseSignalReviewStatusValidator,
+  nextStatus: publisherAbuseSignalReviewStatusValidator,
+  note: v.optional(v.string()),
+  snoozedUntil: v.optional(v.number()),
+  createdAt: v.number(),
+})
+  .index("by_signal_and_created_at", ["signalId", "createdAt"])
+  .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
+  .index("by_actor_and_created_at", ["actorUserId", "createdAt"]);
 
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),
@@ -4491,6 +4547,7 @@ export default defineSchema({
   publisherAbuseReviewNominations,
   publisherAbuseReviewEvents,
   publisherAbuseSignals,
+  publisherAbuseSignalReviewEvents,
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,

@@ -144,4 +144,46 @@ describe("publisher abuse owner synchrony signal", () => {
       }),
     );
   });
+
+  it("records a synchrony observation only once when a run page is replayed", async () => {
+    const now = 1_700_000_000_000;
+    const runId = "publisherAbuseScoreRuns:signals" as Id<"publisherAbuseScoreRuns">;
+    const existing = {
+      ...existingSignal(now),
+      latestRunId: "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">,
+    };
+    const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => {
+      Object.assign(existing, value);
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({ first: async () => existing }),
+        })),
+        patch,
+      },
+    };
+
+    await expect(
+      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
+        runId,
+        candidate: candidate(),
+        now,
+      }),
+    ).resolves.toMatchObject({ alreadyRecorded: false });
+    await expect(
+      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
+        runId,
+        candidate: candidate(),
+        now: now + 1_000,
+      }),
+    ).resolves.toMatchObject({ alreadyRecorded: true });
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(existing).toMatchObject({
+      latestRunId: runId,
+      lastSeenAt: now,
+      seenCount: 3,
+    });
+  });
 });

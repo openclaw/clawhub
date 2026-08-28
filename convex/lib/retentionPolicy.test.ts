@@ -84,6 +84,9 @@ describe("retention policies", () => {
     expect(getRetentionPolicy("publisherAbuseSignals")).toMatchObject({
       classification: "permanent",
     });
+    expect(getRetentionPolicy("publisherAbuseSignalReviewEvents")).toMatchObject({
+      classification: "permanent",
+    });
   });
 
   it("documents package stat events as processed-event retention", () => {

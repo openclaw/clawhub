@@ -114,6 +114,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   begins. These
   signals record anomalous traffic for staff visibility, not publisher
   attribution or an enforcement decision.
+- The Signals tab is read-only telemetry. The retired snooze, dismissal, and
+  notification fields and their audit-event table remain schema-compatible so
+  existing production records survive this rollout, but no active function
+  reads or writes them. Removing that stored history requires a separate,
+  explicitly approved production migration.
 - The completed temporal pipeline also checks for publisher-wide synchronization
   among skills that already have a download anomaly signal.
   The synchronized group must cover at least 15% of the publisher's currently

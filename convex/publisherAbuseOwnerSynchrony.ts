@@ -306,6 +306,14 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
   };
 
   if (existing) {
+    if (args.runId && existing.latestRunId === args.runId) {
+      return {
+        signalId: existing._id,
+        created: false as const,
+        changed: false as const,
+        alreadyRecorded: true as const,
+      };
+    }
     await ctx.db.patch(existing._id, {
       ...snapshot,
       lastSeenAt: args.now,
@@ -315,6 +323,7 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
       signalId: existing._id,
       created: false as const,
       changed: false as const,
+      alreadyRecorded: false as const,
     };
   }
 
@@ -328,6 +337,7 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
     signalId,
     created: true as const,
     changed: true,
+    alreadyRecorded: false as const,
   };
 }
 
