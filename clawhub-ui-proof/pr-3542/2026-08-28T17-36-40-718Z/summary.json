@@ -1,0 +1,43 @@
+{
+  "baseline": "origin/main",
+  "candidate": "worktree",
+  "generatedAt": "2026-08-28T17:36:40.719Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub.codex-fix-skillspector-finding-display/.artifacts/clawhub-ui-proof/2026-08-28T17-36-40-718Z/baseline",
+      "name": "baseline",
+      "ref": "origin/main",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "baseline SkillSpector finding display",
+          "screenshot": "screenshots/baseline-skillspector-finding-display.png",
+          "slug": "baseline-skillspector-finding-display",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub.codex-fix-skillspector-finding-display/.artifacts/clawhub-ui-proof/2026-08-28T17-36-40-718Z/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "candidate SkillSpector finding display",
+          "screenshot": "screenshots/candidate-skillspector-finding-display.png",
+          "slug": "candidate-skillspector-finding-display",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub.codex-fix-skillspector-finding-display/.artifacts/clawhub-ui-proof/2026-08-28T17-36-40-718Z",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub.codex-fix-skillspector-finding-display/.artifacts/proof-scenarios/skillspector-finding-display.pw.ts",
+  "status": "pass"
+}
