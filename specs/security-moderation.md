@@ -99,12 +99,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   exclusions apply only to review candidates, not to the platform benchmark.
   Partial scans must not archive signals or present their top-download slice as
   a platform percentile.
-- Flat-install temporal signals compare each skill with both its own
-  frozen history and the full active-skill population. A 7-day surge requires
-  both its growth multiple and its absolute downloads above the frozen baseline
-  to exceed the platform P99, with at most 2 installs. Requiring both prevents a
-  tiny baseline from turning modest traffic into a signal solely because the
-  multiplier is large. Sustained traffic uses the 30 days before the current
+- Temporal download signals compare each skill with both its own frozen history
+  and the full active-skill population. A 7-day surge requires both its growth
+  multiple and its absolute downloads above the frozen baseline to exceed the
+  platform P99, regardless of install count. Requiring both prevents a tiny
+  baseline from turning modest traffic into a signal solely because the
+  multiplier is large. The stored `download_spike_flat_installs` identifier is
+  retained only so existing signal rows keep their identity. Sustained traffic
+  uses the 30 days before the current
   30-day observation period as a frozen baseline, so a month-long rise cannot
   raise its own comparison point. Each of the latest 14 days is compared with a
   threshold derived from the platform P95 growth multiple and P95 absolute

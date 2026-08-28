@@ -1553,7 +1553,7 @@ function formatPublisherAbuseLabel(label: string) {
 
 function formatPublisherAbuseSignalType(signalType: string) {
   if (signalType === "high_install_download_ratio") return "High install/download ratio";
-  if (signalType === "download_spike_flat_installs") return "Download surge, flat installs";
+  if (signalType === "download_spike_flat_installs") return "Sudden download spike";
   if (signalType === "owner_synchronized_download_trends") {
     return "Synchronized publisher downloads";
   }
@@ -1571,7 +1571,7 @@ function describePublisherAbuseSignalType(signalType: string) {
     return "Install counts are unusually high compared with download counts for this skill.";
   }
   if (signalType === "download_spike_flat_installs") {
-    return "The 7-day rise and excess downloads are both unusually high while installs stayed flat.";
+    return "The 7-day rise and excess downloads are both unusually high.";
   }
   if (signalType === "sustained_abnormal_download_days") {
     return "Downloads stayed unusually high on most days in the measurement window while installs stayed flat.";
@@ -1626,7 +1626,7 @@ function formatReasonCode(reason: string) {
     .replace("Low / Installs / Per / Skill", "Low Installs / Skill")
     .replace("Low / Stars / Per / Skill", "Low Bookmarks / Skill")
     .replace("Low / Downloads / Per / Skill", "Low Downloads / Skill")
-    .replace("Temporal / Download / Spike / Flat / Installs", "Temporal Spike, Flat Installs")
+    .replace("Temporal / Download / Spike / Flat / Installs", "Temporal Download Spike")
     .replace(
       "Temporal / Sustained / Abnormal / Download / Days",
       "Temporal Sustained Unusual Downloads",
@@ -1654,7 +1654,7 @@ function describeReasonCode(reason: string) {
     return "Downloads per skill are far below the platform median.";
   }
   if (reason === "temporal_download_spike_flat_installs") {
-    return "The skill's 7-day rise and excess downloads are both above the platform P99 while installs stayed flat.";
+    return "The skill's 7-day rise and excess downloads are both above the platform P99.";
   }
   if (reason === "temporal_sustained_abnormal_download_days") {
     return "The skill exceeded its frozen daily threshold on at least 10 of 14 days while installs stayed flat.";

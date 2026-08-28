@@ -454,6 +454,27 @@ describe("publisher abuse scoring", () => {
     expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
   });
 
+  it("flags an extreme 7-day download spike regardless of install count", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        spikeMultiplier7dP95: 5,
+        spikeMultiplier7dP99: 20,
+        excess7DownloadsP95: 1_000,
+        excess7DownloadsP99: 2_000,
+      }),
+      dailyStats: [
+        ...dailyRange(64, 30, { downloads: 5, installs: 0 }),
+        ...dailyRange(94, 7, { downloads: 10_000, installs: 100 }),
+      ],
+    });
+
+    expect(score.recent7Downloads).toBe(70_000);
+    expect(score.recent7Installs).toBe(700);
+    expect(score.nearConversion).toBe(false);
+    expect(score.spike).toBe(true);
+  });
+
   it("does not flag a large multiplier without unusually high excess downloads", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay: 100,

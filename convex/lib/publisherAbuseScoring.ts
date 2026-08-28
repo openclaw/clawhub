@@ -155,7 +155,6 @@ const TEMPORAL_SPIKE_RECENT_DAYS = 7;
 const TEMPORAL_SPIKE_BASELINE_DAYS = 30;
 const TEMPORAL_SUSTAINED_DAYS = 14;
 const TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS = 10;
-const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
@@ -474,13 +473,14 @@ export function classifySkillTemporalAbuseScore(
     score.spikeMultiplier / Math.max(1, benchmark.spikeMultiplier7dP95);
   const excess7DownloadsVsPeerP95 =
     score.excess7Downloads / Math.max(1, benchmark.excess7DownloadsP95);
-  const lowSpikeInstalls = score.recent7Installs <= TEMPORAL_MAX_SPIKE_INSTALLS;
-  const spikeMultiplierCohortBand = lowSpikeInstalls
-    ? p99Band({ value: score.spikeMultiplier, p99: benchmark.spikeMultiplier7dP99 })
-    : undefined;
-  const excess7DownloadsCohortBand = lowSpikeInstalls
-    ? p99Band({ value: score.excess7Downloads, p99: benchmark.excess7DownloadsP99 })
-    : undefined;
+  const spikeMultiplierCohortBand = p99Band({
+    value: score.spikeMultiplier,
+    p99: benchmark.spikeMultiplier7dP99,
+  });
+  const excess7DownloadsCohortBand = p99Band({
+    value: score.excess7Downloads,
+    p99: benchmark.excess7DownloadsP99,
+  });
   const spike = Boolean(spikeMultiplierCohortBand && excess7DownloadsCohortBand);
   const sustainedDailyDownloadThreshold = Math.max(
     Math.max(
@@ -501,6 +501,7 @@ export function classifySkillTemporalAbuseScore(
     ? Math.max(score.installDownloadExcessZScore7, score.installDownloadExcessZScore30)
     : 0;
   const reasonCodes: string[] = [];
+  // Keep the legacy identifier so existing stored signals retain one stable identity.
   if (spike) reasonCodes.push("temporal_download_spike_flat_installs");
   if (sustained) reasonCodes.push("temporal_sustained_abnormal_download_days");
   if (nearConversion) reasonCodes.push("temporal_installs_track_downloads");
