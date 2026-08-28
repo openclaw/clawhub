@@ -23,7 +23,6 @@ import {
   isBannedAccountAuthError,
   normalizeAuthErrorMessage,
 } from "../lib/authErrorMessage";
-import { loadInitialFeatureFlags } from "../lib/featureFlags.functions";
 import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "../lib/site";
 import { getThemeModeFromCookieHeader, normalizeThemeMode } from "../lib/themeCookie";
 import designSystemCss from "../design-system.css?url";
@@ -31,7 +30,6 @@ import appCss from "../styles.css?url";
 
 const OG_IMAGE_VERSION = "20260723-1";
 export const Route = createRootRoute({
-  loader: () => loadInitialFeatureFlags(),
   beforeLoad: ({ location }) => {
     if (location.pathname === BANNED_ACCOUNT_PATH) return;
     const authError = getAuthErrorDescription(location);
@@ -167,7 +165,6 @@ function getSearchStringValue(search: unknown, key: string) {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const initialFeatureFlags = Route.useLoaderData();
   const initialThemeMode = normalizeThemeMode(
     (router.options.context as { initialThemeMode?: unknown } | undefined)?.initialThemeMode ??
       (typeof document === "undefined" ? undefined : getThemeModeFromCookieHeader(document.cookie)),
@@ -196,10 +193,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <AppProviders
-          featureFlagContextKey={initialFeatureFlags.contextKey}
-          initialFeatureFlags={initialFeatureFlags.values}
-        >
+        <AppProviders>
           <div className="app-shell">
             <PromotionsBar />
             <Header />

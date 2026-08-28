@@ -4,13 +4,27 @@ import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
-import { useFeatureFlag } from "../lib/featureFlags";
+import { FeatureFlagProvider, useFeatureFlag } from "../lib/featureFlags";
+import { loadInitialFeatureFlags, type InitialFeatureFlags } from "../lib/featureFlags.functions";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
+type HomeRouteLoaderData = {
+  initialFeatureFlags: InitialFeatureFlags;
+  initialListing: HomeListingInitialData | null;
+};
+
 export const Route = createFileRoute("/")({
-  loader: loadInitialHomeListing,
+  loader: loadHomeRoute,
   component: SkillsHome,
 });
+
+async function loadHomeRoute(): Promise<HomeRouteLoaderData> {
+  const [initialFeatureFlags, initialListing] = await Promise.all([
+    loadInitialFeatureFlags(),
+    loadInitialHomeListing(),
+  ]);
+  return { initialFeatureFlags, initialListing };
+}
 
 async function loadInitialHomeListing(): Promise<HomeListingInitialData | null> {
   try {
@@ -22,7 +36,19 @@ async function loadInitialHomeListing(): Promise<HomeListingInitialData | null> 
 }
 
 function SkillsHome() {
-  const initialListing = Route.useLoaderData();
+  const { initialFeatureFlags, initialListing } = Route.useLoaderData();
+
+  return (
+    <FeatureFlagProvider
+      contextKey={initialFeatureFlags.contextKey}
+      initialValues={initialFeatureFlags.values}
+    >
+      <SkillsHomeContent initialListing={initialListing} />
+    </FeatureFlagProvider>
+  );
+}
+
+function SkillsHomeContent({ initialListing }: { initialListing: HomeListingInitialData | null }) {
   const hasSoul = useFeatureFlag("souls");
 
   return (

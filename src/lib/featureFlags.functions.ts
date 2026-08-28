@@ -11,7 +11,7 @@ const SSR_EVALUATION_TIMEOUT_MS = 200;
 
 const evaluateFlags = createKrillswitchEvaluator(FEATURE_FLAG_DEFAULTS);
 
-type InitialFeatureFlags = {
+export type InitialFeatureFlags = {
   contextKey: string;
   values: FeatureFlagValues | null;
 };

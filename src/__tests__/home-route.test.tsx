@@ -34,14 +34,23 @@ const initialListingFixture = {
   hasMore: false,
 };
 
+const initialFeatureFlagsFixture = {
+  contextKey: "anon-test-context",
+  values: null,
+};
+
 const homeListingSectionMock = vi.fn();
 const fetchInitialHomeListingMock = vi.fn(() => Promise.resolve(initialListingFixture));
+const loadInitialFeatureFlagsMock = vi.fn(() => Promise.resolve(initialFeatureFlagsFixture));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component?: unknown }) => {
     const route = {
       __config: config,
-      useLoaderData: () => initialListingFixture,
+      useLoaderData: () => ({
+        initialFeatureFlags: initialFeatureFlagsFixture,
+        initialListing: initialListingFixture,
+      }),
     };
     return route;
   },
@@ -50,6 +59,15 @@ vi.mock("@tanstack/react-router", () => ({
       {children}
     </a>
   ),
+}));
+
+vi.mock("../lib/featureFlags", () => ({
+  FeatureFlagProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useFeatureFlag: () => false,
+}));
+
+vi.mock("../lib/featureFlags.functions", () => ({
+  loadInitialFeatureFlags: () => loadInitialFeatureFlagsMock(),
 }));
 
 vi.mock("../components/HomeListingSection", () => ({
@@ -82,6 +100,7 @@ describe("home route", () => {
     vi.restoreAllMocks();
     homeListingSectionMock.mockClear();
     fetchInitialHomeListingMock.mockClear();
+    loadInitialFeatureFlagsMock.mockClear();
   });
 
   async function renderHome() {
@@ -138,11 +157,15 @@ describe("home route", () => {
     });
   });
 
-  it("loads the default home listing in the route loader", async () => {
+  it("loads the default home listing and feature flags in the route loader", async () => {
     const loader = await getRouteLoader();
 
-    await expect(loader()).resolves.toBe(initialListingFixture);
+    await expect(loader()).resolves.toEqual({
+      initialFeatureFlags: initialFeatureFlagsFixture,
+      initialListing: initialListingFixture,
+    });
     expect(fetchInitialHomeListingMock).toHaveBeenCalledTimes(1);
+    expect(loadInitialFeatureFlagsMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not prioritize offscreen app icons in the route head", async () => {
@@ -159,7 +182,10 @@ describe("home route", () => {
     fetchInitialHomeListingMock.mockRejectedValueOnce(new Error("offline"));
     const loader = await getRouteLoader();
 
-    await expect(loader()).resolves.toBeNull();
+    await expect(loader()).resolves.toEqual({
+      initialFeatureFlags: initialFeatureFlagsFixture,
+      initialListing: null,
+    });
     expect(errorSpy).toHaveBeenCalledWith(
       "Failed to load initial home listing:",
       expect.any(Error),

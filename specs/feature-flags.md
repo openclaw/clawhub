@@ -7,10 +7,11 @@ and HTTP handlers.
 
 ## Runtime contract
 
-- The root server loader calls `POST https://flags.openclaw.ai/v1/eval` using the
+- The home route loader calls `POST https://flags.openclaw.ai/v1/eval` using the
   public environment evaluation key from `VITE_KRILLSWITCH_EVAL_KEY`, then
-  serializes those values for hydration. Visible flagged content must not render
-  a different code default before hydration.
+  serializes those values for hydration. Unrelated routes do not evaluate or
+  poll Krill Switch. Visible flagged content must not render a different code
+  default before hydration.
 - `VITE_KRILLSWITCH_BASE_URL` can override the evaluation origin for local
   testing. It defaults to the production evaluation host.
 - Missing configuration, network errors, invalid payloads, and incompatible
@@ -20,8 +21,8 @@ and HTTP handlers.
   cookie and passed to the hydrated provider. The server and browser must use
   the same key so targeting and percentage rollouts remain stable. Do not add
   personal or sensitive attributes without documenting why targeting needs them.
-- Values refresh when the page becomes visible and every 60 seconds. ETags
-  avoid retransmitting unchanged evaluations.
+- While the home route is mounted, values refresh when the page becomes visible
+  and every 60 seconds. ETags avoid retransmitting unchanged evaluations.
 
 The official `@openclaw/krillswitch-react` SDK owns response validation, typed
 manifest merging, SSR evaluation, hydration bootstrap, caching, and polling.

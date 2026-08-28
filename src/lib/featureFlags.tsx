@@ -6,7 +6,6 @@ import { getRuntimeEnv } from "./runtimeEnv";
 const DEFAULT_KRILLSWITCH_BASE_URL = "https://flags.openclaw.ai";
 const krill = createKrillswitch(FEATURE_FLAG_DEFAULTS);
 
-export type { FeatureFlagValues } from "./featureFlagManifest";
 export const useFeatureFlag = krill.useFeatureFlag;
 
 export function FeatureFlagProvider({
