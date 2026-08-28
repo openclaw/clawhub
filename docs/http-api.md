@@ -485,6 +485,7 @@ Notes:
 - Qualified success and failure items echo the normalized owner as `requestedOwnerHandle`; unqualified items omit that field.
 - Results are per item; one missing skill, owner-qualified skill, or version does not fail the whole response.
 - The response is security-only. It does not include Skill Card data, generated card status, artifact file lists, or detailed scanner payloads.
+- Successful items include top-level `overview`, the canonical audit-page text composed from the ClawScan summary and guidance. Install clients may present this text without reconstructing it from scanner fields.
 - `security.signals` contains status-level supporting evidence only; use `/scan` or the ClawHub security-audit page for full scanner details.
 - `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
 - Skill Card absence does not affect this endpoint's `ok`, `decision`, or `reasons`; clients should read installed `skill-card.md` locally when they need card content.
@@ -512,6 +513,7 @@ Response:
       "checkedAt": 0,
       "skillUrl": "https://clawhub.ai/steipete/skills/gifgrep",
       "securityAuditUrl": "https://clawhub.ai/steipete/skills/gifgrep/security-audit?version=1.2.3",
+      "overview": "ClawScan found no material security concerns.\n\nUse least-privileged credentials when configuring this skill.",
       "security": {
         "status": "clean",
         "passed": true,

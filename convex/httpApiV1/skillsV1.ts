@@ -12,6 +12,7 @@ import {
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
   SkillVersionRevokeRequestSchema,
+  formatSecurityAuditOverview,
   normalizeContentType,
   parseArk,
   type SkillAppealListStatus,
@@ -733,7 +734,7 @@ type VerifySecurityVersion = {
   >;
   llmAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["llmAnalysis"]>,
-    "status" | "verdict" | "confidence" | "summary" | "model" | "checkedAt"
+    "status" | "verdict" | "confidence" | "summary" | "guidance" | "model" | "checkedAt"
   >;
   vtAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["vtAnalysis"]>,
@@ -1215,6 +1216,7 @@ async function buildSecurityVerdictItem(
       result.skill.slug,
       version.version,
     ),
+    overview: formatSecurityAuditOverview({ llmAnalysis: version.llmAnalysis }),
     security: buildSecurityVerdictSummary(security),
   };
 }

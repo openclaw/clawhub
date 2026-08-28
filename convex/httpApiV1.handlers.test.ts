@@ -6746,6 +6746,7 @@ describe("httpApiV1 handlers", () => {
         verdict: "clean",
         confidence: "high",
         summary: "ClawScan clean.",
+        guidance: "Use least-privileged credentials.",
         checkedAt: 3,
         model: "gpt-test",
       },
@@ -6804,6 +6805,7 @@ describe("httpApiV1 handlers", () => {
           checkedAt: 3,
           skillUrl: "https://example.com/acme/skills/demo",
           securityAuditUrl: "https://example.com/acme/skills/demo/security-audit?version=1.0.0",
+          overview: "ClawScan clean.\n\nUse least-privileged credentials.",
           security: {
             status: "clean",
             passed: true,

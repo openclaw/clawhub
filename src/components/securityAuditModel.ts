@@ -53,17 +53,6 @@ export function aggregateAuditVerdict(signals: SecurityAuditSignals) {
   return staticStatus || clawScanStatus;
 }
 
-export function getSecurityAuditOverviewCopy({
-  llmAnalysis,
-}: {
-  llmAnalysis?: LlmAnalysis | null;
-}) {
-  return [
-    llmAnalysis?.summary?.trim() || "No security analysis has been recorded yet.",
-    llmAnalysis?.guidance?.trim() || null,
-  ].filter((copy): copy is string => Boolean(copy));
-}
-
 export function getAuditScannerOrder(signals?: SecurityAuditSignals): AuditScannerKind[] {
   const hasStaticScanReview = Boolean(
     signals?.staticScan?.summary?.trim() || signals?.staticScan?.findings?.length,

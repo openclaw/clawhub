@@ -1,3 +1,4 @@
+import { getSecurityAuditOverviewCopy } from "clawhub-schema";
 import {
   ArrowLeft,
   Check,
@@ -22,7 +23,6 @@ import {
   SECURITY_AUDIT_SUBTEXT,
   getAuditScannerOrder,
   getLatestAuditCheckedAt,
-  getSecurityAuditOverviewCopy,
   type AuditScannerKind,
 } from "./securityAuditModel";
 import { SidebarMetadata } from "./SidebarMetadata";

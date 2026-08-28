@@ -13,6 +13,7 @@ export * from "./packages.js";
 export * from "./pluginCategories.js";
 export * from "./promotionsFeed.js";
 export * from "./rolloutCapabilities.js";
+export * from "./securityAudit.js";
 export { ApiRoutes, LegacyApiRoutes } from "./routes.js";
 export * from "./schemas.js";
 export * from "./textFiles.js";
