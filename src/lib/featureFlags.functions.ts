@@ -12,7 +12,7 @@ const SSR_EVALUATION_TIMEOUT_MS = 200;
 const evaluateFlags = createKrillswitchEvaluator(FEATURE_FLAG_DEFAULTS);
 
 export type InitialFeatureFlags = {
-  contextKey: string;
+  contextKey: string | null;
   values: FeatureFlagValues | null;
 };
 
@@ -47,9 +47,10 @@ export async function evaluateInitialFeatureFlags(args: {
 
 export const loadInitialFeatureFlags = createServerFn({ method: "GET" }).handler(
   async (): Promise<InitialFeatureFlags> => {
-    const contextKey = getOrCreateContextKey();
     const evalKey = getRuntimeEnv("VITE_KRILLSWITCH_EVAL_KEY");
-    if (!evalKey) return { contextKey, values: null };
+    if (!evalKey) return { contextKey: null, values: null };
+
+    const contextKey = getOrCreateContextKey();
 
     try {
       const values = await evaluateInitialFeatureFlags({

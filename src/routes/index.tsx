@@ -40,7 +40,7 @@ function SkillsHome() {
 
   return (
     <FeatureFlagProvider
-      contextKey={initialFeatureFlags.contextKey}
+      contextKey={initialFeatureFlags.contextKey ?? undefined}
       initialValues={initialFeatureFlags.values}
     >
       <SkillsHomeContent initialListing={initialListing} />

@@ -14,6 +14,8 @@ and HTTP handlers.
   default before hydration.
 - `VITE_KRILLSWITCH_BASE_URL` can override the evaluation origin for local
   testing. It defaults to the production evaluation host.
+- When `VITE_KRILLSWITCH_EVAL_KEY` is absent, the homepage uses code defaults
+  without creating a rollout context cookie or contacting Krill Switch.
 - Missing configuration, network errors, invalid payloads, and incompatible
   remote value types preserve code-owned defaults. Server evaluation has a
   200 ms budget and must not block rendering beyond it.
