@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { assertProofEnvironment } from "./ui-proof-backend.mjs";
 
 const DEFAULT_BASELINE = "origin/main";
 const DEFAULT_CANDIDATE = "worktree";
@@ -137,6 +138,7 @@ export function parseProofUiArgs(argv = []) {
     if (opts.baselineUrl) assertLocalProofUrl(opts.baselineUrl, "--baseline-url");
     assertLocalProofUrl(opts.candidateUrl, "--candidate-url");
   }
+  if (opts.runner === "crabbox") assertProofEnvironment(opts.env);
   return opts;
 }
 
@@ -286,103 +288,8 @@ function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
 }
 
-function renderExportEnv(env) {
-  return Object.entries(env)
-    .map(([key, value]) => `export ${key}=${shellQuote(value)}`)
-    .join("\n");
-}
-
-function laneLocalConvexEnv(lane, opts) {
-  const appUrl = `http://127.0.0.1:${lane.port}`;
-  const convexUrl = `http://127.0.0.1:${lane.convexCloudPort}`;
-  const convexSiteUrl = `http://127.0.0.1:${lane.convexSitePort}`;
-  const deployment = `local:anonymous-clawhub-ui-proof-${lane.name}`;
-  return {
-    CONVEX_DEPLOYMENT: deployment,
-    CONVEX_SITE_URL: convexSiteUrl,
-    SITE_URL: appUrl,
-    VITE_CONVEX_SITE_URL: convexSiteUrl,
-    VITE_CONVEX_URL: convexUrl,
-    VITE_SITE_URL: appUrl,
-    ...(opts.devAuth
-      ? {
-          DEV_AUTH_CONVEX_DEPLOYMENT: deployment,
-          DEV_AUTH_ENABLED: "1",
-          VITE_ENABLE_DEV_AUTH: "1",
-        }
-      : {}),
-    ...opts.env,
-  };
-}
-
-function renderWaitForUrl(url, label) {
-  return `bun -e ${shellQuote(`const url = ${JSON.stringify(url)};
-const label = ${JSON.stringify(label)};
-const started = Date.now();
-async function tick() {
-  try {
-    const res = await fetch(url);
-    if (res.status < 500) process.exit(0);
-  } catch {}
-  if (Date.now() - started > 60000) {
-    console.error(label + " did not become ready: " + url);
-    process.exit(1);
-  }
-  setTimeout(tick, 500);
-}
-tick();`)}`;
-}
-
-function renderLocalConvexSetup({ lane, opts }) {
-  const env = laneLocalConvexEnv(lane, opts);
-  const envFileLines = Object.entries(env)
-    .map(([key, value]) => `${key}=${value}`)
-    .join("\n");
-  const convexUrl = env.VITE_CONVEX_URL;
-  const devAuthDeploymentExport = opts.devAuth
-    ? `export DEV_AUTH_CONVEX_DEPLOYMENT="$CONVEX_DEPLOYMENT"`
-    : "";
-  const seedCommand = opts.seedCommand
-    ? `(cd "$app_root" && ${opts.seedCommand} > "$remote_out/seed.log" 2>&1)`
-    : `: > "$remote_out/seed.log"`;
-  return `
-lane_env_file="$remote_out/.env.local"
-cat > "$lane_env_file" <<'CLAWHUB_UI_PROOF_ENV'
-${envFileLines}
-CLAWHUB_UI_PROOF_ENV
-rm -rf "$app_root/.convex/local/default"
-(cd "$app_root" && bunx convex dev --local --env-file "$lane_env_file" --typecheck disable --codegen disable --local-cloud-port ${lane.convexCloudPort} --local-site-port ${lane.convexSitePort} > "$remote_out/convex.log" 2>&1 & echo $! > "$remote_out/convex.pid")
-convex_pid="$(cat "$remote_out/convex.pid")"
-${renderWaitForUrl(convexUrl, "local Convex")}
-for _ in $(seq 1 120); do
-  if [ -f "$app_root/.env.local" ] && grep -q '^CONVEX_DEPLOYMENT=' "$app_root/.env.local"; then
-    break
-  fi
-  sleep 0.5
-done
-if [ ! -f "$app_root/.env.local" ] || ! grep -q '^CONVEX_DEPLOYMENT=' "$app_root/.env.local"; then
-  echo "local Convex did not write $app_root/.env.local" >&2
-  exit 1
-fi
-if [ -f "$app_root/.env.local" ]; then
-  set -a
-  . "$app_root/.env.local"
-  set +a
-fi
-export CONVEX_SITE_URL=${shellQuote(env.CONVEX_SITE_URL)}
-export SITE_URL=${shellQuote(env.SITE_URL)}
-export VITE_CONVEX_SITE_URL=${shellQuote(env.VITE_CONVEX_SITE_URL)}
-export VITE_CONVEX_URL=${shellQuote(env.VITE_CONVEX_URL)}
-export VITE_SITE_URL=${shellQuote(env.VITE_SITE_URL)}
-${devAuthDeploymentExport}
-(cd "$app_root" && bunx convex run --push --typecheck disable --codegen disable appMeta:getDeploymentInfo '{}' >> "$remote_out/convex.log" 2>&1)
-${seedCommand}
-`;
-}
-
 export function renderRemoteLaneScript({ lane, opts, plan, scenarioText }) {
-  const scenarioB64 = Buffer.from(scenarioText, "utf8").toString("base64");
-  const runtimePath = path.join("scripts", "ui-proof-runtime.mjs");
+  assertProofEnvironment(opts.env);
   const laneRemoteDir = `.artifacts/clawhub-ui-proof/remote-${path.basename(plan.outputDir)}/${lane.name}`;
   const appRootSetup =
     lane.name === "baseline"
@@ -394,128 +301,24 @@ export function renderRemoteLaneScript({ lane, opts, plan, scenarioText }) {
           `app_root="$PWD/.artifacts/clawhub-ui-proof/worktrees/${lane.name}"`,
         ].join("\n")
       : `app_root="$PWD"`;
-  const envExports = renderExportEnv(laneLocalConvexEnv(lane, opts));
-  const localConvexSetup = renderLocalConvexSetup({ lane, opts });
-
+  const config = JSON.stringify({
+    lane,
+    devAuth: opts.devAuth,
+    env: opts.env,
+    seedCommand: opts.seedCommand,
+    skipInstall: opts.skipInstall,
+    videoDuration: opts.videoDuration,
+    scenarioText,
+  });
   return `set -euo pipefail
-export DISPLAY="\${DISPLAY:-:99}"
+wrapper_root="$PWD"
 remote_out="$PWD/${laneRemoteDir}"
 rm -rf "$remote_out"
 mkdir -p "$remote_out"
 echo "__CLAWHUB_UI_PROOF_REMOTE_OUTPUT__=$remote_out"
-convex_pid=""
-video_pid=""
-cleanup_proof_processes() {
-  if [ -n "$video_pid" ]; then
-    kill -INT "$video_pid" >/dev/null 2>&1 || true
-    wait "$video_pid" >/dev/null 2>&1 || true
-    video_pid=""
-  fi
-  if [ -f "$remote_out/preview.pid" ]; then
-    kill "$(cat "$remote_out/preview.pid")" >/dev/null 2>&1 || true
-    rm -f "$remote_out/preview.pid"
-  fi
-  if [ -n "$convex_pid" ]; then
-    kill "$convex_pid" >/dev/null 2>&1 || true
-    wait "$convex_pid" >/dev/null 2>&1 || true
-    convex_pid=""
-  elif [ -f "$remote_out/convex.pid" ]; then
-    kill "$(cat "$remote_out/convex.pid")" >/dev/null 2>&1 || true
-    rm -f "$remote_out/convex.pid"
-  fi
-  return 0
-}
-trap cleanup_proof_processes EXIT
-scenario_file="$remote_out/scenario.mjs"
-printf %s ${shellQuote(scenarioB64)} | base64 -d > "$scenario_file"
 ${appRootSetup}
-${envExports}
-export CLAWHUB_UI_PROOF_LANE=${shellQuote(lane.name)}
-export BUN_INSTALL="\${BUN_INSTALL:-$HOME/.bun}"
-export PATH="$BUN_INSTALL/bin:$PATH"
-if ! command -v bun >/dev/null 2>&1; then
-  if ! command -v unzip >/dev/null 2>&1; then
-    if command -v apt-get >/dev/null 2>&1; then
-      if command -v sudo >/dev/null 2>&1; then
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y unzip >/dev/null
-      else
-        DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null
-        DEBIAN_FRONTEND=noninteractive apt-get install -y unzip >/dev/null
-      fi
-    else
-      echo "bun is not installed on this Crabbox image and unzip is unavailable." >&2
-      exit 127
-    fi
-  fi
-  if ! command -v curl >/dev/null 2>&1; then
-    echo "bun is not installed on this Crabbox image and curl is unavailable to install it." >&2
-    exit 127
-  fi
-  curl -fsSL https://bun.sh/install | bash
-fi
-export PATH="$BUN_INSTALL/bin:$PATH"
-if [ ${opts.skipInstall ? "1" : "0"} -ne 1 ]; then
-  bun install --frozen-lockfile
-  if [ "$app_root" != "$PWD" ]; then
-    (cd "$app_root" && bun install --frozen-lockfile)
-  fi
-  bunx playwright install chromium > "$remote_out/playwright-install.log" 2>&1
-fi
-${localConvexSetup}
-(cd "$app_root" && bun run build > "$remote_out/build.log" 2>&1)
-(cd "$app_root" && bun run preview -- --host 127.0.0.1 --port ${lane.port} > "$remote_out/preview.log" 2>&1 & echo $! > "$remote_out/preview.pid")
-${renderWaitForUrl(`http://127.0.0.1:${lane.port}`, "preview")}
-if command -v ffmpeg >/dev/null 2>&1; then
-  display_input="$DISPLAY"
-  case "$display_input" in
-    *.*) ;;
-    *) display_input="$display_input.0" ;;
-  esac
-  ffmpeg -hide_banner -loglevel error -y -f x11grab -framerate 15 -i "$display_input" -t ${shellQuote(
-    opts.videoDuration,
-  )} -pix_fmt yuv420p "$remote_out/full-run.mp4" > "$remote_out/ffmpeg.log" 2>&1 &
-  video_pid=$!
-else
-  echo "ffmpeg missing; full-run.mp4 skipped" > "$remote_out/ffmpeg.log"
-fi
-status=0
-bun ${shellQuote(runtimePath)} run-scenario \
-  --scenario "$scenario_file" \
-  --base-url ${shellQuote(`http://127.0.0.1:${lane.port}`)} \
-  --lane ${shellQuote(lane.name)} \
-  --output-dir "$remote_out" || status=$?
-manifest_status=""
-if [ -f "$remote_out/proof-steps.json" ]; then
-  manifest_status="$(CLAWHUB_UI_PROOF_MANIFEST="$remote_out/proof-steps.json" bun -e 'const fs = require("fs"); const path = process.env.CLAWHUB_UI_PROOF_MANIFEST; process.stdout.write(JSON.parse(fs.readFileSync(path, "utf8")).status || "unknown");' 2>/dev/null || true)"
-  if [ "$manifest_status" = "pass" ]; then
-    status=0
-  elif [ "$manifest_status" = "fail" ] && [ "$status" -eq 0 ]; then
-    status=1
-  fi
-fi
-if [ -n "$video_pid" ]; then
-  kill -INT "$video_pid" >/dev/null 2>&1 || true
-  wait "$video_pid" >/dev/null 2>&1 || true
-  video_pid=""
-fi
-if [ -f "$remote_out/preview.pid" ]; then
-  kill "$(cat "$remote_out/preview.pid")" >/dev/null 2>&1 || true
-  rm -f "$remote_out/preview.pid"
-fi
-if [ -n "$convex_pid" ]; then
-  kill "$convex_pid" >/dev/null 2>&1 || true
-  wait "$convex_pid" >/dev/null 2>&1 || true
-  convex_pid=""
-fi
-cat > "$remote_out/lane-summary.json" <<CLAWHUB_UI_PROOF_SUMMARY
-{
-  "lane": ${JSON.stringify(lane.name)},
-  "ref": ${JSON.stringify(lane.ref)},
-  "baseURL": ${JSON.stringify(`http://127.0.0.1:${lane.port}`)}
-}
-CLAWHUB_UI_PROOF_SUMMARY
-exit "$status"
+# Replace the wrapper: the helper owns and awaits all backend/proof process groups.
+exec env -i PATH="$PATH" DISPLAY="\${DISPLAY:-:99}" node "$wrapper_root/scripts/ui-proof-backend.mjs" ${shellQuote(config)} "$app_root" "$wrapper_root" "$remote_out"
 `;
 }
 
@@ -558,9 +361,9 @@ function renderReport(summary) {
   return `${lines.join("\n")}\n`;
 }
 
-async function readLaneManifest(localOutputDir) {
+async function readLaneManifest(localOutputDir, name = "proof-steps.json") {
   try {
-    const raw = await fs.readFile(path.join(localOutputDir, "proof-steps.json"), "utf8");
+    const raw = await fs.readFile(path.join(localOutputDir, name), "utf8");
     return JSON.parse(raw);
   } catch {
     return {};
@@ -705,8 +508,19 @@ async function runLane({
     repoRoot,
   });
   const manifest = await readLaneManifest(lane.outputDir);
-  const status = manifest.status ?? (error ? "fail" : "pass");
-  const laneError = status === "pass" ? undefined : (manifest.error ?? error);
+  const bootstrap = await readLaneManifest(lane.outputDir, "bootstrap-summary.json");
+  const status = manifest.status === "pass" && bootstrap.status === "pass" ? "pass" : "fail";
+  const bootstrapError =
+    bootstrap.status === "pass"
+      ? undefined
+      : (bootstrap.error ?? "Backend bootstrap did not write a successful completion manifest.");
+  const laneError =
+    status === "pass"
+      ? undefined
+      : (manifest.error ??
+        bootstrapError ??
+        error ??
+        "UI proof did not write a passing result manifest.");
   return {
     error: laneError,
     localOutputDir: lane.outputDir,
