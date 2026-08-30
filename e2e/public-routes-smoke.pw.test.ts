@@ -242,6 +242,77 @@ for (const route of publicRouteCases()) {
   });
 }
 
+test("skill hero metadata keeps semantic wrap groups on mobile", async ({ page }) => {
+  const errors = trackRuntimeErrors(page);
+  await page.route("**/_vercel/image?**", (route) => route.fulfill({ status: 204 }));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/skills-sh/skills-101/superpowers/ai-video-generation", {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForHydration(page);
+
+  const taxonomy = page.getByLabel("Skill metadata");
+  const source = taxonomy.locator(".skill-hero-taxonomy-prefix");
+  const category = taxonomy.locator(".skill-category-meta-link").first();
+  const topics = taxonomy.locator(".skill-hero-topic");
+  const creatorName = page.locator(".skill-hero-creator .user-name");
+  const creatorHandle = page.locator(".skill-hero-creator .user-handle");
+
+  await expect(taxonomy).toBeVisible();
+  await expect(source).toContainText("Synced from skills.sh");
+  await expect(category).toBeVisible();
+  await expect(topics.first()).toBeVisible();
+  await expect(creatorName).toBeVisible();
+  await expect(creatorHandle).toBeVisible();
+
+  const taxonomyWeights = await taxonomy
+    .locator(".skills-sh-sync-source-label, .skill-category-meta-link, .skill-hero-topic")
+    .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontWeight));
+  expect(new Set(taxonomyWeights)).toEqual(new Set(["400"]));
+  await expect(creatorHandle).toHaveCSS("font-weight", "400");
+  await expect(creatorName).not.toHaveCSS("font-weight", "400");
+  await expect(taxonomy.locator(".skill-hero-taxonomy-separator").first()).not.toHaveCSS(
+    "display",
+    "none",
+  );
+
+  await page.setViewportSize({ width: 600, height: 900 });
+  const fittingGroupTops = await Promise.all(
+    [source, category, topics.first()].map(async (locator) => (await locator.boundingBox())?.y),
+  );
+  expect(fittingGroupTops.every((top) => top !== undefined)).toBe(true);
+  expect(
+    Math.max(...(fittingGroupTops as number[])) - Math.min(...(fittingGroupTops as number[])),
+  ).toBeLessThanOrEqual(1);
+  await expect(taxonomy.locator(".skill-hero-taxonomy-separator").first()).toHaveCSS(
+    "display",
+    "none",
+  );
+
+  await page.setViewportSize({ width: 320, height: 900 });
+  const wrappedGroupTops = await Promise.all(
+    [source, category, topics.first()].map(async (locator) => (await locator.boundingBox())?.y),
+  );
+  expect(wrappedGroupTops.every((top) => top !== undefined)).toBe(true);
+  expect(
+    Math.max(...(wrappedGroupTops as number[])) - Math.min(...(wrappedGroupTops as number[])),
+  ).toBeGreaterThan(1);
+
+  const semanticUnitLineCounts = await taxonomy
+    .locator(
+      ".skills-sh-sync-source-label, .skill-category-meta-link > span:last-child, .skill-hero-topic",
+    )
+    .evaluateAll((elements) => elements.map((element) => element.getClientRects().length));
+  expect(semanticUnitLineCounts.every((lineCount) => lineCount === 1)).toBe(true);
+
+  const overflow = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
+  await expectHealthyPage(page, errors);
+});
+
 test("removed creators route renders not found", async ({ page }) => {
   await stubExternalMediaInVitePreview(page);
   await page.goto("/creators", { waitUntil: "domcontentloaded" });

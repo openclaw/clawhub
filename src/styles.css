@@ -7057,6 +7057,14 @@ code {
   line-height: 1;
 }
 
+.skill-detail-page .skill-hero-taxonomy-row,
+.skill-detail-page .skills-sh-sync-source-label,
+.skill-detail-page .skill-category-meta-link,
+.skill-detail-page .skill-hero-topic,
+.skill-detail-page .skill-hero-creator .user-handle {
+  font-weight: 400;
+}
+
 .skill-hero-taxonomy-prefix {
   display: inline-flex;
   align-items: center;
@@ -7141,18 +7149,24 @@ code {
 }
 
 @media (max-width: 600px) {
-  .skill-hero-taxonomy-row {
+  .skill-detail-page .skill-hero-taxonomy-row {
     display: flex;
     flex-wrap: wrap;
     row-gap: 10px;
   }
 
-  .skill-hero-taxonomy-separator {
+  /* These groups wrap between items; their labels remain indivisible. */
+  .skill-detail-page .skill-hero-taxonomy-prefix,
+  .skill-detail-page .skill-category-meta-link {
+    white-space: nowrap;
+  }
+
+  .skill-detail-page .skill-hero-taxonomy-separator {
     display: none;
   }
 
-  .skill-hero-topic-list {
-    flex-basis: 100%;
+  .skill-detail-page .skill-hero-topic-list {
+    display: contents;
   }
 }
 
