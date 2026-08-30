@@ -1,0 +1,61 @@
+{
+  "status": "pass",
+  "mode": "before-after",
+  "scenario": "mobile homepage search trigger placement",
+  "provider": "local production proxy",
+  "baseline": "https://clawhub.ai/",
+  "candidate": "13627e5158b43ac766c869bbeca5fae3d6eab1c5",
+  "proofTier": "Real production page plus local HTTP proxy injecting the exact mobile toolbar CSS extracted from the candidate SHA; no candidate build was run.",
+  "lanes": [
+    {
+      "name": "baseline",
+      "ref": "production",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Production mobile collapsed",
+          "slug": "mobile-collapsed",
+          "status": "pass",
+          "screenshot": "mobile-collapsed.png"
+        },
+        {
+          "name": "Production mobile open and focused",
+          "slug": "mobile-open-focused",
+          "status": "pass",
+          "screenshot": "mobile-open-focused.png"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "ref": "13627e5158b43ac766c869bbeca5fae3d6eab1c5",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Candidate mobile collapsed",
+          "slug": "mobile-collapsed",
+          "status": "pass",
+          "screenshot": "mobile-collapsed.png"
+        },
+        {
+          "name": "Candidate mobile open and focused",
+          "slug": "mobile-open-focused",
+          "status": "pass",
+          "screenshot": "mobile-open-focused.png"
+        },
+        {
+          "name": "Candidate mobile dark mode",
+          "slug": "mobile-dark",
+          "status": "pass",
+          "screenshot": "mobile-dark.png"
+        },
+        {
+          "name": "Candidate desktop control",
+          "slug": "desktop-control",
+          "status": "pass",
+          "screenshot": "desktop-control.png"
+        }
+      ]
+    }
+  ]
+}
