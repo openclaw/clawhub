@@ -1,0 +1,71 @@
+{
+  "baseline": "origin/main",
+  "candidate": "worktree",
+  "generatedAt": "2026-08-30T23:30:00.000Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/vyctor/.codex/worktrees/5a5a/clawhub/.artifacts/clawhub-ui-proof/issue-3554/baseline",
+      "name": "baseline",
+      "ref": "origin/main",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "desktop skill hero",
+          "screenshot": "screenshots/desktop-skill-hero.png",
+          "slug": "desktop-skill-hero",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "mobile metadata when groups fit",
+          "screenshot": "screenshots/mobile-metadata-when-groups-fit.png",
+          "slug": "mobile-metadata-when-groups-fit",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "mobile metadata at narrow width",
+          "screenshot": "screenshots/mobile-metadata-at-narrow-width.png",
+          "slug": "mobile-metadata-at-narrow-width",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/vyctor/.codex/worktrees/5a5a/clawhub/.artifacts/clawhub-ui-proof/issue-3554/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "desktop skill hero",
+          "screenshot": "screenshots/desktop-skill-hero.png",
+          "slug": "desktop-skill-hero",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "mobile metadata when groups fit",
+          "screenshot": "screenshots/mobile-metadata-when-groups-fit.png",
+          "slug": "mobile-metadata-when-groups-fit",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "mobile metadata at narrow width",
+          "screenshot": "screenshots/mobile-metadata-at-narrow-width.png",
+          "slug": "mobile-metadata-at-narrow-width",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/vyctor/.codex/worktrees/5a5a/clawhub/.artifacts/clawhub-ui-proof/issue-3554",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/vyctor/.codex/worktrees/5a5a/clawhub/.artifacts/proof-scenarios/skill-hero-metadata-wrap.pw.ts",
+  "status": "pass"
+}
