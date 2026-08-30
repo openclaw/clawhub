@@ -3,6 +3,7 @@ import {
   loadPluginSecurityAudit,
   PluginSecurityAuditPage,
   pluginSecurityAuditHead,
+  parsePluginSecurityAuditSearch,
   type PluginSecurityAuditLoaderData,
 } from "../../$name/security-audit";
 import {
@@ -17,13 +18,18 @@ function packageNameFromParams(params: { scope: string; name: string }) {
 }
 
 export const Route = createFileRoute("/plugins/$scope/$name/security-audit")({
-  beforeLoad: ({ params }) => {
+  validateSearch: parsePluginSecurityAuditSearch,
+  loaderDeps: ({ search }) => ({ version: search.version }),
+  beforeLoad: ({ params, search }) => {
     throw redirect({
-      href: buildPluginSecurityAuditHref(packageNameFromParams(params)),
+      href: buildPluginSecurityAuditHref(packageNameFromParams(params), {
+        version: search.version,
+      }),
       statusCode: 308,
     });
   },
-  loader: async ({ params }) => loadPluginSecurityAudit(packageNameFromParams(params)),
+  loader: async ({ params, deps }) =>
+    loadPluginSecurityAudit(packageNameFromParams(params), deps.version),
   head: ({ params, loaderData }) =>
     pluginSecurityAuditHead(packageNameFromParams(params), loaderData),
   component: ScopedPluginSecurityAuditRoute,

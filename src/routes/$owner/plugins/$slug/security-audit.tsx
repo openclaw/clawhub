@@ -7,6 +7,7 @@ import {
   loadPluginSecurityAudit,
   PluginSecurityAuditPage,
   pluginSecurityAuditHead,
+  parsePluginSecurityAuditSearch,
   type PluginSecurityAuditLoaderData,
 } from "../../../plugins/$name/security-audit";
 
@@ -16,15 +17,18 @@ function packageNameFromParams(params: { owner: string; slug: string }) {
   return packageName;
 }
 
-async function loadPublisherPluginSecurityAudit(params: {
-  owner: string;
-  slug: string;
-}): Promise<PluginSecurityAuditLoaderData> {
+async function loadPublisherPluginSecurityAudit(
+  params: {
+    owner: string;
+    slug: string;
+  },
+  version?: string,
+): Promise<PluginSecurityAuditLoaderData> {
   const scopedName = packageNameFromParams(params);
-  const scopedData = await loadPluginSecurityAudit(scopedName);
+  const scopedData = await loadPluginSecurityAudit(scopedName, version);
   if (scopedData.detail.package) return scopedData;
 
-  const unscopedData = await loadPluginSecurityAudit(params.slug);
+  const unscopedData = await loadPluginSecurityAudit(params.slug, version);
   if (unscopedData.detail.package?.name && unscopedData.detail.owner?.handle === params.owner) {
     return unscopedData;
   }
@@ -33,16 +37,24 @@ async function loadPublisherPluginSecurityAudit(params: {
 }
 
 export const Route = createFileRoute("/$owner/plugins/$slug/security-audit")({
+  validateSearch: parsePluginSecurityAuditSearch,
+  loaderDeps: ({ search }) => ({ version: search.version }),
   beforeLoad: ({ params }) => {
     packageNameFromParams(params);
   },
-  loader: async ({ params }) => {
-    const data = await loadPublisherPluginSecurityAudit(params);
+  loader: async ({ params, deps }) => {
+    const data = await loadPublisherPluginSecurityAudit(params, deps.version);
     const ownerHandle = data.detail.owner?.handle ?? params.owner;
     const packageName = data.detail.package?.name ?? packageNameFromParams(params);
-    const canonicalHref = buildPluginSecurityAuditHref(packageName, { ownerHandle });
+    const canonicalHref = buildPluginSecurityAuditHref(packageName, {
+      ownerHandle,
+      version: deps.version,
+    });
 
-    if (canonicalHref !== buildPluginSecurityAuditHref(packageNameFromParams(params))) {
+    if (
+      canonicalHref !==
+      buildPluginSecurityAuditHref(packageNameFromParams(params), { version: deps.version })
+    ) {
       throw redirect({
         href: canonicalHref,
         replace: true,

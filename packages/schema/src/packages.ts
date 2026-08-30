@@ -563,6 +563,8 @@ export const ApiV1PackageArtifactResponseSchema = type({
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
 
 export const ApiV1PackageSecurityResponseSchema = type({
+  overview: "string",
+  securityAuditUrl: "string",
   package: type({
     name: "string",
     displayName: "string",

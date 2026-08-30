@@ -782,6 +782,8 @@ export declare const ApiV1PackageArtifactResponseSchema: import("arktype/interna
 }, {}>;
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
 export declare const ApiV1PackageSecurityResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    overview: string;
+    securityAuditUrl: string;
     package: {
         name: string;
         displayName: string;

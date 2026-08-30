@@ -18,6 +18,7 @@ export function displayPluginPackageName(name: string) {
 
 type PluginRouteOptions = {
   ownerHandle?: string | null;
+  version?: string | null;
 };
 
 function cleanOwnerHandle(ownerHandle: string | null | undefined) {
@@ -44,7 +45,10 @@ export function buildPluginDetailHref(name: string, options: PluginRouteOptions 
 }
 
 export function buildPluginSecurityAuditHref(name: string, options: PluginRouteOptions = {}) {
-  return `${buildPluginDetailHref(name, options)}/security-audit`;
+  const href = `${buildPluginDetailHref(name, options)}/security-audit`;
+  if (!options.version) return href;
+  const search = new URLSearchParams({ version: options.version });
+  return `${href}?${search.toString()}`;
 }
 
 export function buildPluginCanonicalHrefForRequestedPath(

@@ -18,6 +18,7 @@ import {
   PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
+  formatSecurityAuditOverview,
   normalizeContentType,
   isPluginCategorySlug,
   parseArk,
@@ -678,6 +679,7 @@ function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
 }
 
 function toPackageReleaseSecurityResponse(params: {
+  request: Request;
   pkg: PublicPackageDocLike;
   release: ReleaseLike;
 }) {
@@ -687,6 +689,12 @@ function toPackageReleaseSecurityResponse(params: {
   const reasons = getPackageTrustReasons(params.release, scanStatus);
   if (packageBlockedFromDownload) reasons.push("package:malicious");
   return {
+    overview: formatSecurityAuditOverview({ llmAnalysis: params.release.llmAnalysis }),
+    securityAuditUrl: buildPackageSecurityAuditUrl(
+      params.request,
+      params.pkg.name,
+      params.release.version,
+    ),
     package: {
       name: params.pkg.name,
       displayName: params.pkg.displayName,
@@ -712,6 +720,17 @@ function toPackageReleaseSecurityResponse(params: {
       stale: isPackageReleaseTrustStale(params.release),
     },
   };
+}
+
+function buildPackageSecurityAuditUrl(request: Request, packageName: string, version: string) {
+  const [scope, scopedName] = packageName.split("/");
+  const path =
+    scope?.startsWith("@") && scopedName
+      ? `/${encodeURIComponent(scope.slice(1))}/plugins/${encodeURIComponent(scopedName)}/security-audit`
+      : `/plugins/${encodeURIComponent(packageName)}/security-audit`;
+  const url = new URL(path, publicApiOrigin(request));
+  url.searchParams.set("version", version);
+  return url.toString();
 }
 
 function encodePackagePath(name: string) {
@@ -4074,7 +4093,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!result) return text("Package security not found", 404, rate.headers);
     const parsed = parseArk(
       ApiV1PackageSecurityResponseSchema,
-      toPackageReleaseSecurityResponse({ pkg: result.package, release: result.version }),
+      toPackageReleaseSecurityResponse({
+        request,
+        pkg: result.package,
+        release: result.version,
+      }),
       "Package security response",
     );
     return json(parsed, 200, rate.headers);

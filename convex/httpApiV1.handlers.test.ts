@@ -13478,6 +13478,8 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.trust).not.toHaveProperty("moderationReason");
     expect(json).toEqual({
+      overview: "No security analysis has been recorded yet.",
+      securityAuditUrl: "https://example.com/plugins/demo-plugin/security-audit?version=1.0.0",
       package: {
         name: "demo-plugin",
         displayName: "Demo Plugin",
@@ -13755,13 +13757,13 @@ describe("httpApiV1 handlers", () => {
         pending: false,
       },
     },
-  ])("package security endpoint reports $name trust state", async ({ release, expected }) => {
+  ])("package security endpoint reports $name trust state", async ({ name, release, expected }) => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
         return {
           package: {
             _id: "packages:demo-plugin",
-            name: "demo-plugin",
+            name: "@demo/demo-plugin",
             displayName: "Demo Plugin",
             family: "code-plugin",
             tags: { latest: "packageReleases:1" },
@@ -13779,7 +13781,7 @@ describe("httpApiV1 handlers", () => {
         return {
           package: {
             _id: "packages:demo-plugin",
-            name: "demo-plugin",
+            name: "@demo/demo-plugin",
             displayName: "Demo Plugin",
             family: "code-plugin",
             channel: "community",
@@ -13805,7 +13807,9 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages/demo-plugin/versions/1.0.0/security"),
+      new Request(
+        "https://example.com/api/v1/packages/%40demo%2Fdemo-plugin/versions/1.0.0/security",
+      ),
     );
 
     expect(response.status).toBe(200);
@@ -13822,6 +13826,14 @@ describe("httpApiV1 handlers", () => {
       stale: false,
       ...expected,
     });
+    expect(json.overview).toEqual(expect.any(String));
+    expect(json.overview.length).toBeGreaterThan(0);
+    if (name === "malicious") {
+      expect(json.overview).toBe("ClawScan found malicious behavior.");
+    }
+    expect(json.securityAuditUrl).toBe(
+      "https://example.com/demo/plugins/demo-plugin/security-audit?version=1.0.0",
+    );
     expect(json.trust).not.toHaveProperty("moderationReason");
   });
 

@@ -23,8 +23,14 @@ export type PluginSecurityAuditLoaderData = {
   rateLimited: boolean;
 };
 
+export function parsePluginSecurityAuditSearch(search: Record<string, unknown>) {
+  const version = typeof search.version === "string" ? search.version.trim() : "";
+  return version ? { version } : {};
+}
+
 export async function loadPluginSecurityAudit(
   requestedName: string,
+  requestedVersion?: string,
 ): Promise<PluginSecurityAuditLoaderData> {
   const candidateNames = getOpenClawPackageCandidateNames(requestedName);
 
@@ -48,12 +54,13 @@ export async function loadPluginSecurityAudit(
     }
   }
 
-  if (!detail.package?.latestVersion) {
+  const versionToLoad = requestedVersion ?? detail.package?.latestVersion;
+  if (!versionToLoad) {
     return { detail, version: null, resolvedName, rateLimited: false };
   }
 
   try {
-    const version = await fetchPackageVersion(resolvedName, detail.package.latestVersion);
+    const version = await fetchPackageVersion(resolvedName, versionToLoad);
     return { detail, version, resolvedName, rateLimited: false };
   } catch (error) {
     if (isRateLimitedPackageApiError(error)) {
@@ -78,22 +85,27 @@ export function pluginSecurityAuditHead(name: string, loaderData?: PluginSecurit
 }
 
 export const Route = createFileRoute("/plugins/$name/security-audit")({
-  beforeLoad: ({ params }) => {
+  validateSearch: parsePluginSecurityAuditSearch,
+  loaderDeps: ({ search }) => ({ version: search.version }),
+  beforeLoad: ({ params, search }) => {
     if (parseScopedPackageName(params.name)) {
       throw redirect({
-        href: buildPluginSecurityAuditHref(params.name),
+        href: buildPluginSecurityAuditHref(params.name, { version: search.version }),
         statusCode: 308,
       });
     }
   },
-  loader: async ({ params }) => {
-    const data = await loadPluginSecurityAudit(params.name);
+  loader: async ({ params, deps }) => {
+    const data = await loadPluginSecurityAudit(params.name, deps.version);
     const ownerHandle = data.detail.owner?.handle ?? null;
     const packageName = data.detail.package?.name ?? null;
 
     if (packageName && ownerHandle) {
       throw redirect({
-        href: buildPluginSecurityAuditHref(packageName, { ownerHandle }),
+        href: buildPluginSecurityAuditHref(packageName, {
+          ownerHandle,
+          version: deps.version,
+        }),
         replace: true,
       });
     }

@@ -809,6 +809,8 @@ Response:
 
 ```json
 {
+  "overview": "ClawScan found no material security concerns.\n\nUse least-privileged credentials when configuring this plugin.",
+  "securityAuditUrl": "https://clawhub.ai/openclaw/plugins/example-plugin/security-audit?version=1.2.3",
   "package": {
     "name": "@openclaw/example-plugin",
     "displayName": "Example Plugin",
@@ -837,6 +839,10 @@ Response:
 
 Response fields:
 
+- `overview` is the canonical summary-and-guidance text shown by the package
+  security-audit page. Install clients may present it without reconstructing
+  audit text from scanner fields.
+- `securityAuditUrl` links to the exact release's package security-audit page.
 - `package.name`, `package.displayName`, and `package.family` identify the
   resolved registry package.
 - `release.releaseId`, `release.version`, and `release.createdAt` identify the

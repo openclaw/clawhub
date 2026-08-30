@@ -14,6 +14,9 @@ describe("plugin routes", () => {
     expect(buildPluginSecurityAuditHref("@openclaw/codex")).toBe(
       "/openclaw/plugins/codex/security-audit",
     );
+    expect(buildPluginSecurityAuditHref("@openclaw/codex", { version: "1.2.3+build" })).toBe(
+      "/openclaw/plugins/codex/security-audit?version=1.2.3%2Bbuild",
+    );
   });
 
   it("keeps unscoped package routes single-segment encoded", () => {

@@ -2,7 +2,15 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PluginSecurityAuditPage } from "../routes/plugins/$name/security-audit";
+import {
+  loadPluginSecurityAudit,
+  PluginSecurityAuditPage,
+} from "../routes/plugins/$name/security-audit";
+
+const { fetchPackageDetailMock, fetchPackageVersionMock } = vi.hoisted(() => ({
+  fetchPackageDetailMock: vi.fn(),
+  fetchPackageVersionMock: vi.fn(),
+}));
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
@@ -21,6 +29,12 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("convex/react", () => ({
   useMutation: (...args: unknown[]) => useMutationMock(...args),
   useQuery: (...args: unknown[]) => useQueryMock(...args),
+}));
+
+vi.mock("../lib/packageApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/packageApi")>()),
+  fetchPackageDetail: fetchPackageDetailMock,
+  fetchPackageVersion: fetchPackageVersionMock,
 }));
 
 function makeLoaderData() {
@@ -53,6 +67,24 @@ describe("plugin security audit route", () => {
     });
     useMutationMock.mockReset();
     useMutationMock.mockReturnValue(vi.fn().mockResolvedValue({ ok: true }));
+    fetchPackageDetailMock.mockReset();
+    fetchPackageVersionMock.mockReset();
+  });
+
+  it("loads the requested historical release instead of the latest release", async () => {
+    fetchPackageDetailMock.mockResolvedValue({
+      package: {
+        name: "@demo/demo-plugin",
+        latestVersion: "2.0.0",
+      },
+      owner: { handle: "demo" },
+    });
+    fetchPackageVersionMock.mockResolvedValue({ version: { version: "1.0.0" } });
+
+    const result = await loadPluginSecurityAudit("@demo/demo-plugin", "1.0.0");
+
+    expect(fetchPackageVersionMock).toHaveBeenCalledWith("@demo/demo-plugin", "1.0.0");
+    expect(result.version?.version?.version).toBe("1.0.0");
   });
 
   it("wires authorized plugin rescans to the package rescan mutation", async () => {

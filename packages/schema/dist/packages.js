@@ -436,6 +436,8 @@ export const ApiV1PackageArtifactResponseSchema = type({
     }),
 });
 export const ApiV1PackageSecurityResponseSchema = type({
+    overview: "string",
+    securityAuditUrl: "string",
     package: type({
         name: "string",
         displayName: "string",

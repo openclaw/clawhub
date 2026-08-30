@@ -199,6 +199,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   audit explanation list, for example `manual:quarantined`, `scan:malicious`,
   or `package:malicious`; public trust responses must not expose open report
   counts.
+- Successful exact package-release security reads expose the audit page's
+  canonical summary-and-guidance copy as top-level `overview` and link the
+  exact release through `securityAuditUrl`; neither field changes trust decisions.
 - The legacy skill/package appeal tables and backend routes remain for
   compatibility, but the first-class CLI and docs surface is deprecated.
   Publisher recovery for false positives should use reports or out-of-band
