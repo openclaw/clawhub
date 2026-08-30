@@ -29042,7 +29042,11 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   background: var(--hv2-bg);
 }
 [data-theme-resolved="light"] .home-v2-hero-bg {
-  opacity: 0;
+  opacity: 1;
+}
+[data-theme-resolved="light"] .home-v2-hero-bg::before {
+  background-image: url("/home-hero-claw-light.webp");
+  filter: none;
 }
 
 /* --- INSET SHADOW PATTERN — both modes ---

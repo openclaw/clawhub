@@ -191,6 +191,21 @@ describe("restored UI design contract", () => {
     expect(cliBand).toContain("max-width: none");
   });
 
+  it("uses a dedicated hero image in light mode", () => {
+    const css = styles();
+
+    expect(existsSync(join(root, "public/home-hero-claw-light.webp"))).toBe(true);
+    expect(cssRule(css, '[data-theme-resolved="light"] .home-v2-hero-bg')).toContain(
+      "opacity: 1",
+    );
+    expect(cssRule(css, '[data-theme-resolved="light"] .home-v2-hero-bg::before')).toContain(
+      'background-image: url("/home-hero-claw-light.webp")',
+    );
+    expect(cssRule(css, '[data-theme-resolved="light"] .home-v2-hero-bg::before')).toContain(
+      "filter: none",
+    );
+  });
+
   it("keeps browse segmented labels stable across active state changes", () => {
     const css = styles();
 
