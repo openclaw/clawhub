@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- API: delete unpublished skill blobs when multipart publish fails validation or returns 400 after upload.
 - UI proof: supervise isolated loopback backend and browser proof together without writing project dotenv, preserving diagnostics and private-state cleanup on failure.
 - CI: authenticate weekly design-audit pull request mutations with the Barnacle GitHub App while retaining the workflow token for branch publication and clean-audit closure.
 - API: record skipped and failed skill evaluation outcomes without passing worker tokens to internal mutations.
