@@ -153,6 +153,8 @@ describe("HomeListingSection", () => {
     expect(divider?.nextElementSibling?.contains(catalogTabs)).toBe(true);
     expect(primary?.lastElementChild?.contains(catalogTabs)).toBe(true);
     expect(toolbar?.lastElementChild?.classList.contains("home-v2-listing-actions")).toBe(true);
+    const searchPanel = document.querySelector(".browse-search-panel");
+    expect(toolbar?.nextElementSibling).toBe(searchPanel);
     expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
       "Skills",
       "Plugins",
@@ -184,6 +186,13 @@ describe("HomeListingSection", () => {
         ?.getAttribute("src"),
     ).toBe(featuredPlugin.icon);
     expect(document.querySelector(".home-v2-listing-row-stats svg")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    const searchInput = screen.getByRole("searchbox", { name: "Search plugins" });
+    await waitFor(() => expect(document.activeElement).toBe(searchInput));
+    expect(searchPanel?.hasAttribute("hidden")).toBe(false);
+    expect(searchPanel?.contains(searchInput)).toBe(true);
+    expect(screen.getByRole("button", { name: "Close search" })).toBeTruthy();
   });
 
   it("keeps the initial Skills skeleton iconless", () => {

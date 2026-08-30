@@ -459,12 +459,21 @@ describe("restored UI design contract", () => {
       ".home-v2-listing-primary {",
       ".home-v2-listing-actions {",
     ]);
-    expect(mobileCatalog).toMatch(/\.home-v2-listing-toolbar \{[^}]*flex-direction:\s*column/s);
-    expect(mobileCatalog).toMatch(/\.home-v2-listing-primary \{[^}]*flex-direction:\s*column/s);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-toolbar \{[^}]*display:\s*grid/s);
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-toolbar \{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/s,
+    );
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-primary \{[^}]*display:\s*contents/s);
     expect(mobileCatalog).toMatch(
       /\.home-v2-listing-primary > \.browse-controls-divider \{[^}]*display:\s*none/s,
     );
-    expect(mobileCatalog).toMatch(/\.home-v2-listing-actions \{[^}]*width:\s*100%/s);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-actions \{[^}]*display:\s*contents/s);
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-actions \.browse-search-trigger \{[^}]*grid-column:\s*3[^}]*grid-row:\s*1/s,
+    );
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-sort \{[^}]*grid-column:\s*1\s*\/\s*-1[^}]*grid-row:\s*2/s,
+    );
     expect(cssRule(css, ".home-v2-listing-row::before")).toContain("border-radius: 0");
   });
 
