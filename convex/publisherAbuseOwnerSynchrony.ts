@@ -115,16 +115,12 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
 ) {
   const page = await ctx.db
     .query("publisherAbuseSignals")
-    .withIndex("by_last_seen_at")
+    .withIndex("by_latest_run_id_and_last_seen_at", (q) => q.eq("latestRunId", args.runId))
     .order("desc")
     .paginate({ cursor: args.cursor ?? null, numItems: OWNER_KEY_PAGE_SIZE });
   return {
     ownerKeys: [
-      ...new Set(
-        page.page
-          .filter((signal) => signal.latestRunId === args.runId && isDownloadAnomalySignal(signal))
-          .map((signal) => signal.ownerKey),
-      ),
+      ...new Set(page.page.filter(isDownloadAnomalySignal).map((signal) => signal.ownerKey)),
     ],
     cursor: page.isDone ? undefined : page.continueCursor,
     isDone: page.isDone,

@@ -64,31 +64,30 @@ function existingSignal(now: number) {
 }
 
 describe("publisher abuse owner synchrony signal", () => {
-  it("discovers owners only from anomaly signals recorded by the current run", async () => {
+  it("discovers owners through the current-run signal index", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const current = {
       ...existingSignal(1_700_000_000_000),
       latestRunId: runId,
       signalType: "download_spike_flat_installs" as const,
     };
-    const stale = {
-      ...current,
-      _id: "publisherAbuseSignals:stale",
-      ownerKey: "publisher:publishers:stale",
-      latestRunId: "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">,
-    };
+    const eq = vi.fn(() => "run-range");
+    const withIndex = vi.fn((_name: string, range: (query: { eq: typeof eq }) => unknown) => {
+      range({ eq });
+      return {
+        order: () => ({
+          paginate: async () => ({
+            page: [current],
+            isDone: true,
+            continueCursor: "unused",
+          }),
+        }),
+      };
+    });
     const ctx = {
       db: {
         query: vi.fn(() => ({
-          withIndex: () => ({
-            order: () => ({
-              paginate: async () => ({
-                page: [stale, current],
-                isDone: true,
-                continueCursor: "unused",
-              }),
-            }),
-          }),
+          withIndex,
         })),
       },
     };
@@ -100,6 +99,11 @@ describe("publisher abuse owner synchrony signal", () => {
       cursor: undefined,
       isDone: true,
     });
+    expect(withIndex).toHaveBeenCalledWith(
+      "by_latest_run_id_and_last_seen_at",
+      expect.any(Function),
+    );
+    expect(eq).toHaveBeenCalledWith("latestRunId", runId);
   });
 
   it("does not build synchrony evidence from an owner's stale anomaly signals", async () => {
