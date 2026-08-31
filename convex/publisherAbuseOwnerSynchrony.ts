@@ -111,7 +111,7 @@ function sumSkillWindow(skills: OwnerSynchronySkill[], field: keyof OwnerSynchro
 
 export async function readPublisherAbuseOwnerKeysPageInternalHandler(
   ctx: Pick<QueryCtx, "db">,
-  args: { cursor?: string },
+  args: { runId: Id<"publisherAbuseScoreRuns">; cursor?: string },
 ) {
   const page = await ctx.db
     .query("publisherAbuseSignals")
@@ -120,7 +120,11 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
     .paginate({ cursor: args.cursor ?? null, numItems: OWNER_KEY_PAGE_SIZE });
   return {
     ownerKeys: [
-      ...new Set(page.page.filter(isDownloadAnomalySignal).map((signal) => signal.ownerKey)),
+      ...new Set(
+        page.page
+          .filter((signal) => signal.latestRunId === args.runId && isDownloadAnomalySignal(signal))
+          .map((signal) => signal.ownerKey),
+      ),
     ],
     cursor: page.isDone ? undefined : page.continueCursor,
     isDone: page.isDone,
@@ -128,13 +132,13 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
 }
 
 export const readPublisherAbuseOwnerKeysPageInternal = internalQuery({
-  args: { cursor: v.optional(v.string()) },
+  args: { runId: v.id("publisherAbuseScoreRuns"), cursor: v.optional(v.string()) },
   handler: readPublisherAbuseOwnerKeysPageInternalHandler,
 });
 
 export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
   ctx: Pick<QueryCtx, "db">,
-  args: { ownerKey: string; todayDay: number },
+  args: { runId: Id<"publisherAbuseScoreRuns">; ownerKey: string; todayDay: number },
 ): Promise<OwnerSynchronyCandidate | null> {
   const signals = await ctx.db
     .query("publisherAbuseSignals")
@@ -145,7 +149,11 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
 
   const uniqueSignals = new Map<Id<"skills">, Doc<"publisherAbuseSignals">>();
   for (const signal of signals) {
-    if (isDownloadAnomalySignal(signal) && !uniqueSignals.has(signal.skillId)) {
+    if (
+      signal.latestRunId === args.runId &&
+      isDownloadAnomalySignal(signal) &&
+      !uniqueSignals.has(signal.skillId)
+    ) {
       uniqueSignals.set(signal.skillId, signal);
     }
   }
@@ -254,7 +262,11 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
 }
 
 export const getPublisherAbuseOwnerSynchronyCandidateInternal = internalQuery({
-  args: { ownerKey: v.string(), todayDay: v.number() },
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    ownerKey: v.string(),
+    todayDay: v.number(),
+  },
   handler: getPublisherAbuseOwnerSynchronyCandidateInternalHandler,
 });
 
@@ -353,7 +365,7 @@ export const upsertPublisherAbuseOwnerSynchronySignalInternal = internalMutation
 export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
   ctx: ActionCtx,
   args: {
-    runId?: Id<"publisherAbuseScoreRuns">;
+    runId: Id<"publisherAbuseScoreRuns">;
     cursor?: string;
     todayDay: number;
   },
@@ -364,7 +376,7 @@ export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
       0,
       internal.publisherAbuseOwnerSynchrony.runPublisherAbuseOwnerSynchronyScanInternal,
       {
-        ...(args.runId ? { runId: args.runId } : {}),
+        runId: args.runId,
         cursor: page.cursor,
         todayDay: args.todayDay,
       },
@@ -376,27 +388,27 @@ export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
 export async function scanPublisherAbuseOwnerSynchronyPage(
   ctx: Pick<ActionCtx, "runQuery" | "runMutation">,
   args: {
-    runId?: Id<"publisherAbuseScoreRuns">;
+    runId: Id<"publisherAbuseScoreRuns">;
     cursor?: string;
     todayDay: number;
   },
 ) {
   const page: { ownerKeys: string[]; cursor?: string; isDone: boolean } = await ctx.runQuery(
     internal.publisherAbuseOwnerSynchrony.readPublisherAbuseOwnerKeysPageInternal,
-    args.cursor ? { cursor: args.cursor } : {},
+    args.cursor ? { runId: args.runId, cursor: args.cursor } : { runId: args.runId },
   );
   let matchedOwners = 0;
   for (const ownerKey of page.ownerKeys) {
     const candidate: OwnerSynchronyCandidate | null = await ctx.runQuery(
       internal.publisherAbuseOwnerSynchrony.getPublisherAbuseOwnerSynchronyCandidateInternal,
-      { ownerKey, todayDay: args.todayDay },
+      { runId: args.runId, ownerKey, todayDay: args.todayDay },
     );
     if (!candidate) continue;
     matchedOwners += 1;
     await ctx.runMutation(
       internal.publisherAbuseOwnerSynchrony.upsertPublisherAbuseOwnerSynchronySignalInternal,
       {
-        ...(args.runId ? { runId: args.runId } : {}),
+        runId: args.runId,
         candidate,
         now: Date.now(),
       },
@@ -408,7 +420,7 @@ export async function scanPublisherAbuseOwnerSynchronyPage(
 
 export const runPublisherAbuseOwnerSynchronyScanInternal = internalAction({
   args: {
-    runId: v.optional(v.id("publisherAbuseScoreRuns")),
+    runId: v.id("publisherAbuseScoreRuns"),
     cursor: v.optional(v.string()),
     todayDay: v.number(),
   },

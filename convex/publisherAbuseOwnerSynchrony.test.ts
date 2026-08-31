@@ -10,8 +10,11 @@ vi.mock("./functions", () => ({
   internalQuery: (definition: { handler: unknown }) => ({ _handler: definition.handler }),
 }));
 
-const { upsertPublisherAbuseOwnerSynchronySignalInternalHandler } =
-  await import("./publisherAbuseOwnerSynchrony");
+const {
+  getPublisherAbuseOwnerSynchronyCandidateInternalHandler,
+  readPublisherAbuseOwnerKeysPageInternalHandler,
+  upsertPublisherAbuseOwnerSynchronySignalInternalHandler,
+} = await import("./publisherAbuseOwnerSynchrony");
 
 function candidate() {
   return {
@@ -61,6 +64,83 @@ function existingSignal(now: number) {
 }
 
 describe("publisher abuse owner synchrony signal", () => {
+  it("discovers owners only from anomaly signals recorded by the current run", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const current = {
+      ...existingSignal(1_700_000_000_000),
+      latestRunId: runId,
+      signalType: "download_spike_flat_installs" as const,
+    };
+    const stale = {
+      ...current,
+      _id: "publisherAbuseSignals:stale",
+      ownerKey: "publisher:publishers:stale",
+      latestRunId: "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({
+            order: () => ({
+              paginate: async () => ({
+                page: [stale, current],
+                isDone: true,
+                continueCursor: "unused",
+              }),
+            }),
+          }),
+        })),
+      },
+    };
+
+    await expect(
+      readPublisherAbuseOwnerKeysPageInternalHandler(ctx as never, { runId }),
+    ).resolves.toEqual({
+      ownerKeys: [current.ownerKey],
+      cursor: undefined,
+      isDone: true,
+    });
+  });
+
+  it("does not build synchrony evidence from an owner's stale anomaly signals", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const staleRunId = "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">;
+    const staleSignals = [
+      {
+        ...existingSignal(1_700_000_000_000),
+        latestRunId: staleRunId,
+        signalType: "download_spike_flat_installs" as const,
+      },
+      {
+        ...existingSignal(1_700_000_000_000),
+        _id: "publisherAbuseSignals:stale-second",
+        skillId: "skills:second" as Id<"skills">,
+        latestRunId: staleRunId,
+        signalType: "sustained_abnormal_download_days" as const,
+      },
+    ];
+    const get = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({
+            order: () => ({ take: async () => staleSignals }),
+          }),
+        })),
+        get,
+      },
+    };
+
+    await expect(
+      getPublisherAbuseOwnerSynchronyCandidateInternalHandler(ctx as never, {
+        runId,
+        ownerKey: staleSignals[0].ownerKey,
+        todayDay: 20_683,
+      }),
+    ).resolves.toBeNull();
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it("creates one publisher-level signal with portfolio evidence", async () => {
     const inserted: Array<Record<string, unknown>> = [];
     const scheduler = { runAfter: vi.fn(async () => null) };
