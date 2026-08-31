@@ -1,20 +1,12 @@
 #!/usr/bin/env bun
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildLocalAuthTrendingSnapshotArgs,
+  createLocalAuthTempDir,
   resolveLocalAuthDeployment,
   resolveLocalAuthRunnerConfig,
 } from "./playwright-local-auth-config";
@@ -44,7 +36,7 @@ type LocalDeploymentConfig = {
 };
 
 const managedChildren = new Set<ChildProcess>();
-const tempDir = mkdtempSync(join(tmpdir(), "clawhub-pw-local-auth-"));
+const tempDir = createLocalAuthTempDir();
 const envFile = join(tempDir, ".env.local");
 const emailCaptureFile = join(tempDir, "emails.jsonl");
 const localConvexStateBackupDir = join(tempDir, "convex-local-default.backup");
@@ -296,7 +288,12 @@ function restoreLocalState() {
   }
 }
 
-async function cleanup() {
+let cleanupPromise: Promise<void> | undefined;
+function cleanup() {
+  return (cleanupPromise ??= cleanupOwnedResources());
+}
+
+async function cleanupOwnedResources() {
   try {
     await stopManagedChildren();
     await Promise.all([
@@ -311,15 +308,16 @@ async function cleanup() {
   }
 }
 
-function runRequired(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  const result = spawnSync(command, args, {
-    cwd: process.cwd(),
-    env,
-    stdio: "inherit",
+async function runRequired(command: string, args: string[], env: NodeJS.ProcessEnv) {
+  const child = spawnManaged(command, args, env);
+  // Keep signal handlers runnable while builds and browser tests are active.
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${command} failed with exit code ${code}.`));
+    });
   });
-  if ((result.status ?? 1) !== 0) {
-    throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status ?? 1}.`);
-  }
 }
 
 function runBuffered(command: string, args: string[], env: NodeJS.ProcessEnv) {
@@ -448,7 +446,7 @@ async function runConvexFunctionWhenReady(
 async function main() {
   if (!existsSync("node_modules/.bin/vite")) {
     console.log("Installing dependencies for the Playwright local-auth e2e runner...");
-    runRequired("bun", ["install", "--frozen-lockfile"], process.env);
+    await runRequired("bun", ["install", "--frozen-lockfile"], process.env);
   }
 
   const runnerConfig = resolveLocalAuthRunnerConfig(process.env, process.argv.slice(2));
@@ -477,6 +475,7 @@ async function main() {
   );
   const e2eEnv: NodeJS.ProcessEnv = {
     ...process.env,
+    TMPDIR: tempDir,
     AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID ?? "local-dev",
     AUTH_GITHUB_SECRET: process.env.AUTH_GITHUB_SECRET ?? "local-dev",
     CLAWHUB_DISABLE_CRONS: "1",
@@ -527,24 +526,24 @@ async function main() {
   );
 
   console.log(`Starting local Convex at ${convexUrl} with isolated e2e state.`);
-  await startLocalConvex(
-    [
-      "convex",
-      "dev",
-      "--env-file",
-      envFile,
-      "--typecheck",
-      "disable",
-      "--codegen",
-      "disable",
-      "--local-cloud-port",
-      convexCloudPort,
-      "--local-site-port",
-      convexSitePort,
-    ],
-    e2eEnv,
-    convexUrl,
-  );
+  const convexArgs = [
+    "convex",
+    "dev",
+    "--env-file",
+    envFile,
+    "--typecheck",
+    "disable",
+    "--codegen",
+    "disable",
+    "--local-cloud-port",
+    convexCloudPort,
+    "--local-site-port",
+    convexSitePort,
+  ];
+  // HTTP readiness precedes the initial schema/index/module push. Let the CLI
+  // finish that owned lifecycle before starting function-readiness checks.
+  await runRequired("bunx", [...convexArgs, "--once"], e2eEnv);
+  await startLocalConvex(convexArgs, e2eEnv, convexUrl);
   activeConvexUrl = convexUrl;
 
   console.log("Configuring local Convex environment for local-auth Playwright e2e.");
@@ -589,7 +588,7 @@ async function main() {
   );
 
   console.log("Building ClawHub for local-auth Playwright e2e.");
-  runRequired("bun", ["run", "build"], e2eEnv);
+  await runRequired("bun", ["run", "build"], e2eEnv);
 
   console.log(`Starting preview server at ${appUrl}.`);
   const previewProcess = spawnManaged(
@@ -599,7 +598,7 @@ async function main() {
   );
   await waitUntilReachable(previewReadyUrl, "Preview server", previewProcess);
 
-  runRequired("bunx", ["playwright", "test", ...runnerConfig.playwrightArgs], {
+  await runRequired("bunx", ["playwright", "test", ...runnerConfig.playwrightArgs], {
     ...e2eEnv,
     PLAYWRIGHT_BASE_URL: appUrl,
     PLAYWRIGHT_WORKERS: "1",

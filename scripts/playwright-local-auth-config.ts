@@ -1,3 +1,7 @@
+import { accessSync, constants, mkdtempSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
 const DEFAULT_CONVEX_URL = "http://127.0.0.1:3210";
 const DEFAULT_CONVEX_SITE_URL = "http://127.0.0.1:3211";
 export const DEFAULT_LOCAL_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
@@ -75,4 +79,29 @@ export function resolveLocalAuthRunnerConfig(
       playwrightArgs.length > 0 ? playwrightArgs : DEFAULT_PLAYWRIGHT_ARGS,
     ),
   };
+}
+
+export function createLocalAuthTempDir() {
+  const workspaceDevice = statSync(process.cwd()).dev;
+  let base = tmpdir();
+  if (statSync(base).dev !== workspaceDevice) {
+    base = process.cwd();
+    for (
+      let ancestor = dirname(base);
+      statSync(ancestor).dev === workspaceDevice;
+      ancestor = dirname(ancestor)
+    ) {
+      try {
+        accessSync(ancestor, constants.W_OK | constants.X_OK);
+        base = ancestor;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") throw error;
+      }
+      if (ancestor === dirname(ancestor)) break;
+    }
+  }
+  // Convex renames prepared modules into local storage and binds Unix sockets under TMPDIR.
+  // Use the shortest writable same-volume ancestor; mount roots need not be user-writable.
+  return mkdtempSync(join(base, "clawhub-pw-"));
 }

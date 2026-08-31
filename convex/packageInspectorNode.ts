@@ -209,8 +209,33 @@ export const runPackageInspectorForPublishInternal = internalAction({
   }),
   handler: async (ctx, args) => {
     let workspaceRoot: string | undefined;
+    let stage = "workspace";
+    let result = normalizeInspectorReportForPublish({});
+    const enterStage = (nextStage: string) => {
+      stage = nextStage;
+      // Convex attaches the action request id; record no file contents, credentials, or scratch paths.
+      console.info("Plugin Inspector stage", {
+        stage,
+        packageName: args.packageName,
+        version: args.version,
+      });
+    };
+    const recordFailure = (error: unknown, code: string) => {
+      const message = error instanceof Error ? error.message : String(error);
+      result.status = "fail";
+      result.summary.breakageCount += 1;
+      result.summary.issueCount += 1;
+      result.breakages.push({
+        code,
+        severity: "P0",
+        level: "breakage",
+        message: `Plugin Inspector could not inspect ${args.packageName}@${args.version} (${stage}): ${message}`,
+      });
+    };
     try {
+      enterStage("workspace");
       workspaceRoot = await createPackageInspectorWorkspace();
+      enterStage("package files");
       const root = path.join(workspaceRoot, "package");
       await mkdir(root, { recursive: true });
       for (const file of args.files) {
@@ -225,6 +250,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
       await writeSyntheticInspectorConfigIfNeeded(root, args.files, args.packageName);
 
       const { openClawTargets, pluginRoot } = await import("@openclaw/plugin-inspector");
+      enterStage("OpenClaw target preparation");
       const targetOpenClaw = await preparePublishInspectorOpenClawTarget(
         workspaceRoot,
         openClawTargets,
@@ -234,37 +260,24 @@ export const runPackageInspectorForPublishInternal = internalAction({
         new Date().toISOString(),
         targetOpenClaw,
       );
+      enterStage("inspection");
       const { report } = await pluginRoot.runCheck(runCheckOptions);
 
-      return normalizeInspectorReportForPublish(report);
+      result = normalizeInspectorReportForPublish(report);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        status: "fail" as const,
-        summary: {
-          breakageCount: 1,
-          warningCount: 0,
-          deprecationWarningCount: 0,
-          issueCount: 1,
-        },
-        breakages: [
-          {
-            code: "plugin-inspector-error",
-            severity: "P0",
-            level: "breakage",
-            message: `Plugin Inspector could not inspect ${args.packageName}@${args.version}: ${message}`,
-          },
-        ],
-        warnings: [],
-        metadata: {
-          inspectorVersion: getBundledInspectorVersion(),
-        },
-      };
+      recordFailure(error, "plugin-inspector-error");
     } finally {
       if (workspaceRoot) {
-        await rm(workspaceRoot, { recursive: true, force: true });
+        enterStage("workspace cleanup");
+        try {
+          await rm(workspaceRoot, { recursive: true, force: true });
+        } catch (error) {
+          // Cleanup must block publication without erasing the original inspection findings.
+          recordFailure(error, "plugin-inspector-cleanup-error");
+        }
       }
     }
+    return result;
   },
 });
 

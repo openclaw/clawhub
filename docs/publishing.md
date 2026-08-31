@@ -175,6 +175,13 @@ to keep out of public issues.
 - Expect new releases to stay out of public install surfaces until automated
   security checks and verification finish.
 
+An inspector operational failure reports the failing stage. A temporary-workspace
+cleanup failure also blocks publication and appears alongside any original
+inspection findings; it does not erase the primary error. These failures are
+distinct from plugin policy findings. Report the stage and Convex request id
+when asking maintainers to investigate; do not include credentials or package
+contents in diagnostic reports.
+
 ### Trusted Publishing for Packages
 
 Package trusted publishing is a two-step setup:

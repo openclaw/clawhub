@@ -9,6 +9,10 @@
 
 ### Fixes
 
+- GitHub Actions: accept complete release inventories in parent authorization receipts up to the backend's 64 KiB limit while retaining 8 KiB identity and recovery limits.
+- API: preserve inspector findings when workspace cleanup fails, report the failing stage, and keep cleanup failures publication-blocking.
+- API: bound runtime-identity checks to the owning publisher, reject collisions during personal-principal recovery, and prevent malicious-release quarantine from restoring a historical runtime identity that was administratively replaced.
+- Browser tests: use a supported manifest warning fixture and prepare local Convex fully with short scratch paths on the backend's volume before starting authenticated flows.
 - API: scope code-plugin runtime identity claims to the owning publisher so community and official packages can retain their manifest ids under distinct scoped names, while rejecting same-owner collisions during publication, transfer, restore, and administrative repair.
 - UI proof: supervise isolated loopback backend and browser proof together without writing project dotenv, preserving diagnostics and private-state cleanup on failure.
 - CI: authenticate weekly design-audit pull request mutations with the Barnacle GitHub App while retaining the workflow token for branch publication and clean-audit closure.

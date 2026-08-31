@@ -62,17 +62,15 @@ async function writePluginZip(
     kind: PluginFixtureKind;
   },
 ) {
-  const entrypoint =
-    args.kind === "warning"
-      ? 'export function activate(api) { api.on("before_agent_start", () => {}); }\n'
-      : "export const demo = true;\n";
+  const entrypoint = "export const demo = true;\n";
   const zipBytes = zipSync({
     [`${args.name}/package.json`]: strToU8(pluginPackageJson(args)),
     [`${args.name}/openclaw.plugin.json`]: strToU8(
       JSON.stringify(
         {
           id: args.name,
-          name: args.displayName,
+          // Missing display metadata remains a warning as runtime hook contracts evolve.
+          ...(args.kind === "warning" ? {} : { name: args.displayName }),
           configSchema: { type: "object", additionalProperties: false },
         },
         null,
@@ -92,6 +90,17 @@ async function uploadPluginZip(page: Page, zipPath: string) {
   await page.locator('input[type="file"]').first().setInputFiles(zipPath);
   await waitForHydration(page);
   await recoverFromTransientErrorScreen(page);
+}
+
+async function submitPluginForChecks(page: Page, displayName: string) {
+  await page.locator("#pluginDisplayName").fill(displayName);
+  const publishButton = page.getByRole("button", { name: "Publish plugin" });
+  await expect(publishButton).toBeEnabled({ timeout: 60_000 });
+  await publishButton.click({ timeout: 15_000 });
+  // The inspector resolves and prepares its target before the staged attempt exists.
+  await expect(
+    page.getByText("Publish received. Security checks are running.", { exact: true }),
+  ).toBeVisible({ timeout: 60_000 });
 }
 
 async function captureProof(page: Page, testInfo: TestInfo, name: string) {
@@ -287,9 +296,7 @@ async function publishWarningPluginWithRetry(args: {
       );
       await expect(args.page.locator("#pluginName")).toHaveValue(warningName);
       await args.page.locator("#pluginSourceCommit").fill("abc123");
-      const publishButton = args.page.getByRole("button", { name: "Publish plugin" });
-      await expect(publishButton).toBeEnabled({ timeout: 60_000 });
-      await publishButton.click({ timeout: 15_000 });
+      await submitPluginForChecks(args.page, warningDisplayName);
       const claim = await claimMockPrePublicationChecks({
         kind: "package",
         slug: warningName,
@@ -378,9 +385,7 @@ test("plugin publish stays private until mocked TruffleHog and ClawScan pass", a
   );
   await expect(page.locator("#pluginName")).toHaveValue(name);
   await page.locator("#pluginSourceCommit").fill("abc123");
-  const publishButton = page.getByRole("button", { name: "Publish plugin" });
-  await expect(publishButton).toBeEnabled({ timeout: 60_000 });
-  await publishButton.click({ timeout: 15_000 });
+  await submitPluginForChecks(page, displayName);
   const claim = await claimMockPrePublicationChecks({
     kind: "package",
     slug: name,
@@ -434,9 +439,7 @@ test("malicious ClawScan verdict keeps a staged plugin private", async ({
   );
   await expect(page.locator("#pluginName")).toHaveValue(name);
   await page.locator("#pluginSourceCommit").fill("abc123");
-  const publishButton = page.getByRole("button", { name: "Publish plugin" });
-  await expect(publishButton).toBeEnabled({ timeout: 60_000 });
-  await publishButton.click({ timeout: 15_000 });
+  await submitPluginForChecks(page, displayName);
   const claim = await claimMockPrePublicationChecks({
     kind: "package",
     slug: name,
@@ -486,12 +489,11 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   await expectValidationSectionVisible(page, warningName);
   await expect(
     page.locator(".plugin-warning-item-code").filter({
-      hasText: /^legacy-before-agent-start$/,
+      hasText: /^manifest-name-missing$/,
     }),
   ).toBeVisible();
-  await expect(page.getByText(/Deprecated API/)).toBeVisible();
-  await expect(page.getByText(/legacy-before-agent-start/)).toBeVisible();
-  await expect(page.getByText(/before_agent_start hook compatibility/i)).toBeVisible();
+  await expect(page.getByText(/manifest-name-missing/)).toBeVisible();
+  await expect(page.getByText(/manifest display name is missing/i)).toBeVisible();
   await captureProof(page, testInfo, "04-plugin-public-warnings");
 
   await expectHealthyInspectorPage(page, errors);
