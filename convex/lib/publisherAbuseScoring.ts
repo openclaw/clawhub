@@ -483,13 +483,20 @@ export function classifySkillTemporalAbuseScore(
     value: score.excess7Downloads,
     p99: benchmark.excess7DownloadsP99,
   });
-  const spike = Boolean(spikeMultiplierCohortBand && excess7DownloadsCohortBand);
   // The per-day threshold becomes too permissive when platform P95 traffic is low.
   // Require an order-of-magnitude more traffic than the platform P99 so broad
-  // crawler traffic does not become a publisher-specific sustained signal.
+  // crawler traffic does not become a publisher-specific temporal signal.
   const sustainedDownloadsThreshold = Math.max(
     TEMPORAL_MIN_SUSTAINED_30D_DOWNLOADS,
     benchmark.downloads30dP99 * TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER,
+  );
+  const spikeDownloadsThreshold = Math.ceil(
+    (sustainedDownloadsThreshold * TEMPORAL_SPIKE_RECENT_DAYS) / 30,
+  );
+  const spike = Boolean(
+    score.recent7Downloads >= spikeDownloadsThreshold &&
+    spikeMultiplierCohortBand &&
+    excess7DownloadsCohortBand,
   );
   const sustainedDownloadsCohortBand =
     score.recent30Downloads >= sustainedDownloadsThreshold

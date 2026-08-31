@@ -102,11 +102,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Temporal download signals compare each skill with both its own frozen history
   and the full active-skill population. A 7-day surge requires both its growth
   multiple and its absolute downloads above the frozen baseline to exceed the
-  platform P99, regardless of install count. Requiring both prevents a tiny
-  baseline from turning modest traffic into a signal solely because the
-  multiplier is large. The stored `download_spike_flat_installs` identifier is
-  retained only so existing signal rows keep their identity. Sustained traffic
-  uses the 30 days before the current
+  platform P99, regardless of install count. It must also reach the 7-day share
+  of the same extreme-volume floor used for sustained traffic: at least 7/30 of
+  6,400 downloads or 7/30 of ten times the platform 30-day download P99,
+  whichever is higher. These requirements prevent a tiny baseline or a low
+  platform percentile from turning modest traffic into a signal. The stored
+  `download_spike_flat_installs` identifier is retained only so existing signal
+  rows keep their identity. Sustained traffic uses the 30 days before the current
   30-day observation period as a frozen baseline, so a month-long rise cannot
   raise its own comparison point. Each of the latest 14 days is compared with a
   threshold derived from the platform P95 growth multiple and P95 absolute

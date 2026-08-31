@@ -428,8 +428,8 @@ describe("publisher abuse scoring", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
       benchmark: temporalBenchmark({
-        downloads30dP95: 2_000,
-        downloads30dP99: 5_000,
+        downloads30dP95: 500,
+        downloads30dP99: 600,
         spikeMultiplier7dP95: 5,
         spikeMultiplier7dP99: 20,
         excess7DownloadsP95: 1_000,
@@ -452,6 +452,41 @@ describe("publisher abuse scoring", () => {
     expect(score.spikeMultiplierCohortBand).toBe("p99");
     expect(score.excess7DownloadsCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
+  });
+
+  it("does not flag a 7-day spike below the proportional extreme-traffic floor", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP99: 636,
+        spikeMultiplier7dP99: 1,
+        excess7DownloadsP99: 76.5,
+      }),
+      dailyStats: dailyRange(94, 7, { downloads: 180, installs: 0 }),
+    });
+
+    expect(score.recent7Downloads).toBe(1_260);
+    expect(score.spikeMultiplierCohortBand).toBe("p99");
+    expect(score.excess7DownloadsCohortBand).toBe("p99");
+    expect(score.spike).toBe(false);
+    expect(score.reasonCodes).not.toContain("temporal_download_spike_flat_installs");
+  });
+
+  it("raises the proportional 7-day floor when the platform P99 rises", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP99: 1_000,
+        spikeMultiplier7dP99: 1,
+        excess7DownloadsP99: 76.5,
+      }),
+      dailyStats: dailyRange(94, 7, { downloads: 300, installs: 0 }),
+    });
+
+    expect(score.recent7Downloads).toBe(2_100);
+    expect(score.spikeMultiplierCohortBand).toBe("p99");
+    expect(score.excess7DownloadsCohortBand).toBe("p99");
+    expect(score.spike).toBe(false);
   });
 
   it("flags an extreme 7-day download spike regardless of install count", () => {
