@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@clack/prompts": "1.7.0",
-    "@openclaw/plugin-inspector": "0.3.21",
+    "@openclaw/plugin-inspector": "0.3.22",
     "arktype": "2.2.3",
     "commander": "15.0.0",
     "croner": "10.0.1",
