@@ -4,9 +4,8 @@ Pull requests are validated by `.github/workflows/ci.yml`.
 
 ## PR Checks
 
-The `CI` workflow keeps the public required status checks stable while bundling
-the short non-browser gates into one Blacksmith runner registration. The
-`pr-gates` job runs the actual command steps for:
+The `CI` workflow runs the non-browser gates as independent jobs so their wall
+times overlap and each required check reports its own failure:
 
 - `static` runs peer dependency validation, dependency audit, formatting, lint,
   and dead-code checks.
@@ -21,10 +20,12 @@ the short non-browser gates into one Blacksmith runner registration. The
   window fits the five-second CI budget. Longer rate limits and deterministic
   client errors such as a missing repository fail immediately.
 
-The `static`, `unit`, `packages`, `types-build`, and `e2e-http` jobs are
-hosted-runner compatibility mirrors of `pr-gates` so existing branch protection
-rules do not need to change. Inspect the `pr-gates` step logs for the exact
-failing command.
+The CPU-heavy `unit` job uses one 32-vCPU Blacksmith registration and records
+the runner's actual CPU, memory, and cgroup allocation before coverage. The
+short `static`, `packages`, `types-build`, and `e2e-http` jobs run on GitHub-hosted
+Ubuntu runners, so this parallel layout keeps the same one-Blacksmith-registration
+budget as the former serial `pr-gates` job. Every non-browser gate has a
+five-minute timeout to enforce the pull-request feedback target.
 
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.

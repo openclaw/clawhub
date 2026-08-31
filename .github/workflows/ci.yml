@@ -17,10 +17,10 @@ env:
   VITE_CONVEX_URL: https://example.invalid
 
 jobs:
-  pr-gates:
-    name: pr-gates
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 45
+  static:
+    name: static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -31,18 +31,6 @@ jobs:
 
       - name: Static checks
         run: bun run ci:static
-
-      - name: Unit coverage
-        run: bun run ci:unit
-
-      - name: Package checks
-        run: bun run ci:packages
-
-      - name: Typecheck and build
-        run: bun run ci:types-build
-
-      - name: HTTP e2e
-        run: bun run ci:e2e-http
 
   claws-openclaw-contract:
     name: claws-openclaw-contract
@@ -80,75 +68,71 @@ jobs:
           OPENCLAW_CLAWS_CHECKOUT: ${{ github.workspace }}/.artifacts/openclaw-contract
         run: bunx vitest run scripts/claws-feed-openclaw-e2e.test.ts --maxWorkers=1
 
-  static:
-    name: static
-    runs-on: ubuntu-latest
-    needs: pr-gates
-    if: ${{ always() }}
-    timeout-minutes: 5
-
-    steps:
-      - name: Mirror pr-gates result
-        env:
-          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
-        run: |
-          test "$PR_GATES_RESULT" = "success"
-
   unit:
     name: unit
-    runs-on: ubuntu-latest
-    needs: pr-gates
-    if: ${{ always() }}
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 5
 
     steps:
-      - name: Mirror pr-gates result
-        env:
-          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Record runner capacity
         run: |
-          test "$PR_GATES_RESULT" = "success"
+          printf 'logical_cpus='
+          nproc
+          printf 'memory_total_kib='
+          awk '/^MemTotal:/ { print $2 }' /proc/meminfo
+          if [[ -r /sys/fs/cgroup/cpu.max ]]; then
+            printf 'cpu_max='
+            cat /sys/fs/cgroup/cpu.max
+          fi
+          if [[ -r /sys/fs/cgroup/cpu.stat ]]; then
+            cat /sys/fs/cgroup/cpu.stat
+          fi
+
+      - name: Unit coverage
+        run: bun run ci:unit
 
   packages:
     name: packages
-    runs-on: ubuntu-latest
-    needs: pr-gates
-    if: ${{ always() }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
-      - name: Mirror pr-gates result
-        env:
-          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
-        run: |
-          test "$PR_GATES_RESULT" = "success"
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Package checks
+        run: bun run ci:packages
 
   types-build:
     name: types-build
-    runs-on: ubuntu-latest
-    needs: pr-gates
-    if: ${{ always() }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
-      - name: Mirror pr-gates result
-        env:
-          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
-        run: |
-          test "$PR_GATES_RESULT" = "success"
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Typecheck and build
+        run: bun run ci:types-build
 
   e2e-http:
     name: e2e-http
-    runs-on: ubuntu-latest
-    needs: pr-gates
-    if: ${{ always() }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     steps:
-      - name: Mirror pr-gates result
-        env:
-          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
-        run: |
-          test "$PR_GATES_RESULT" = "success"
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: HTTP e2e
+        run: bun run ci:e2e-http
 
   playwright-smoke:
     name: playwright-smoke
