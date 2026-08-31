@@ -38,6 +38,11 @@ exactly:
 - `authorizationRoute`: `automated-awaited` or `automated-detached`
 - non-empty `packages`: exact `{name, version, inventoryDigest}` transactions
 
+The parent receipt is bounded at 64 KiB of UTF-8 JSON, matching the backend,
+with at most 512 package transactions. Workflow file preflight and JSON parsing
+both enforce that limit. Child identity and recovery approval receipts retain
+their separate 8 KiB workflow bounds.
+
 The inventory digest is SHA-256 over package files sorted by path. Each line is
 `<path>\0<size>\0<lowercase file sha256>`, joined with `\n`.
 

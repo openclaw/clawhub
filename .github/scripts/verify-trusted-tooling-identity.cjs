@@ -1,6 +1,7 @@
 const { lstatSync, readFileSync } = require("node:fs");
 
 const MAX_JSON_BYTES = 8 * 1024;
+const MAX_PARENT_RECEIPT_BYTES = 64 * 1024;
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
@@ -94,12 +95,12 @@ function requireMatchingRef(ref, fullRef, name) {
   }
 }
 
-function parseExactJson(raw, { name, keys, version }) {
+function parseExactJson(raw, { name, keys, version, maxBytes = MAX_JSON_BYTES }) {
   if (typeof raw !== "string" || !raw.trim()) {
     fail(`${name} JSON is required`);
   }
-  if (Buffer.byteLength(raw, "utf8") > MAX_JSON_BYTES) {
-    fail(`${name} JSON exceeds the 8 KiB limit`);
+  if (Buffer.byteLength(raw, "utf8") > maxBytes) {
+    fail(`${name} JSON exceeds the ${maxBytes / 1024} KiB limit`);
   }
 
   let value;
@@ -192,6 +193,7 @@ function parseParentAuthorizationReceipt(raw) {
     name: "release parent authorization receipt",
     keys: PARENT_RECEIPT_KEYS,
     version: 2,
+    maxBytes: MAX_PARENT_RECEIPT_BYTES,
   });
   const receipt = {
     version: 2,
@@ -561,10 +563,10 @@ function validateMainLineage(identity, comparison) {
   }
 }
 
-function readBoundedReceipt(path, name) {
+function readBoundedReceipt(path, name, maxBytes = MAX_JSON_BYTES) {
   const receiptPath = requireString(path, `${name} path`);
   const stat = lstatSync(receiptPath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_JSON_BYTES) {
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes) {
     fail(`${name} file is not a bounded regular file`);
   }
   return readFileSync(receiptPath, "utf8");
@@ -666,6 +668,7 @@ async function main() {
     rawParentReceipt: readBoundedReceipt(
       process.env.PARENT_AUTHORIZATION_RECEIPT_PATH,
       "release parent authorization receipt",
+      MAX_PARENT_RECEIPT_BYTES,
     ),
     rawRecoveryReceipt,
     env: process.env,

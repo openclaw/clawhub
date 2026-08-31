@@ -1,9 +1,14 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const { spawnSync } = require("node:child_process");
+const { mkdtempSync, rmSync, writeFileSync } = require("node:fs");
+const { tmpdir } = require("node:os");
+const { join } = require("node:path");
 const {
   deriveAuthorizationRoute,
   parentArtifactName,
   parseParentAuthorizationReceipt,
+  parseRecoveryApprovalReceipt,
   parseTrustedToolingIdentity,
   recoveryArtifactName,
   validateArtifactResponse,
@@ -25,6 +30,53 @@ const botActor = "github-actions[bot]";
 const humanActor = "release-maintainer";
 const digest = `sha256:${"d".repeat(64)}`;
 const inventoryDigest = "e".repeat(64);
+
+test("accepts a complete 89-package parent authorization inventory", () => {
+  const packages = Array.from({ length: 89 }, (_, index) => ({
+    name: `@openclaw/release-plugin-${index}`,
+    version: "2026.8.2",
+    inventoryDigest,
+  }));
+  const raw = JSON.stringify(parentReceipt(protectedIdentity(), { packages }));
+  assert.ok(Buffer.byteLength(raw) > 8 * 1024);
+  assert.deepEqual(parseParentAuthorizationReceipt(raw).packages, packages);
+});
+
+test("bounds parent receipts at 64 KiB while identity and recovery stay at 8 KiB", () => {
+  for (const [parse, value, limit] of [
+    [parseParentAuthorizationReceipt, parentReceipt(protectedIdentity()), 64 * 1024],
+    [parseTrustedToolingIdentity, protectedIdentity(), 8 * 1024],
+    [parseRecoveryApprovalReceipt, recoveryReceipt(protectedIdentity()), 8 * 1024],
+  ]) {
+    const raw = JSON.stringify(value);
+    const exact = raw + " ".repeat(limit - Buffer.byteLength(raw));
+    assert.doesNotThrow(() => parse(exact));
+    assert.throws(() => parse(`${exact} `), new RegExp(`${limit / 1024} KiB limit`));
+  }
+});
+
+test("applies the parent-only 64 KiB limit before reading receipt files", () => {
+  const directory = mkdtempSync(join(tmpdir(), "clawhub-receipt-limit-"));
+  try {
+    const receiptPath = join(directory, "receipt.json");
+    for (const [variable, limit] of [
+      ["PARENT_AUTHORIZATION_RECEIPT_PATH", 64 * 1024],
+      ["RECOVERY_APPROVAL_RECEIPT_PATH", 8 * 1024],
+    ]) {
+      const run = () =>
+        spawnSync(process.execPath, [require.resolve("./verify-trusted-tooling-identity.cjs")], {
+          env: { GH_TOKEN: "fixture", [variable]: receiptPath },
+          encoding: "utf8",
+        });
+      writeFileSync(receiptPath, " ".repeat(limit));
+      assert.doesNotMatch(run().stderr, /not a bounded regular file/);
+      writeFileSync(receiptPath, " ".repeat(limit + 1));
+      assert.match(run().stderr, /not a bounded regular file/);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 function protectedIdentity(overrides = {}) {
   return {
