@@ -88,6 +88,7 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
+import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
   getPackageTrustReasons,
@@ -817,39 +818,6 @@ function getRequestedPackageOwnerKey(args: {
   ownerPublisherId?: Id<"publishers">;
 }) {
   return args.ownerPublisherId ? `publisher:${args.ownerPublisherId}` : `user:${args.ownerUserId}`;
-}
-
-async function getRuntimeIdentityOwnerKey(
-  ctx: DbReaderCtx,
-  owner: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId">,
-) {
-  if (!owner.ownerPublisherId) return `user:${owner.ownerUserId}`;
-  const publisher = await ctx.db.get(owner.ownerPublisherId);
-  // A personal publisher and its pre-publisher user records are one namespace.
-  return publisher?.kind === "user" && publisher.linkedUserId
-    ? `user:${publisher.linkedUserId}`
-    : `publisher:${owner.ownerPublisherId}`;
-}
-
-async function assertPackageRuntimeIdAvailable(
-  ctx: DbReaderCtx,
-  identity: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId" | "runtimeId"> & {
-    _id?: Id<"packages">;
-  },
-) {
-  if (!identity.runtimeId) return;
-  const ownerKey = await getRuntimeIdentityOwnerKey(ctx, identity);
-  const candidates = ctx.db
-    .query("packages")
-    .withIndex("by_runtime_id", (q) => q.eq("runtimeId", identity.runtimeId));
-  for await (const candidate of candidates) {
-    if (candidate._id === identity._id || candidate.softDeletedAt) continue;
-    if ((await getRuntimeIdentityOwnerKey(ctx, candidate)) === ownerKey) {
-      throw new ConvexError(
-        `Plugin id "${identity.runtimeId}" is already claimed by another package in this publisher namespace`,
-      );
-    }
-  }
 }
 
 function derivePackagePublisherChannel(args: {

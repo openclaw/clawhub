@@ -2279,9 +2279,13 @@ function makeInsertReleaseCtx(
                   },
                 };
                 buildQuery?.(query);
-                if (indexName === "by_runtime_id") {
-                  const runtimeId = filters.get("runtimeId");
-                  const matches = runtimePackages.filter((pkg) => pkg.runtimeId === runtimeId);
+                if (
+                  indexName === "by_owner_runtime" ||
+                  indexName === "by_owner_publisher_runtime"
+                ) {
+                  const matches = runtimePackages.filter((pkg) =>
+                    [...filters].every(([field, value]) => pkg[field] === value),
+                  );
                   return {
                     async *[Symbol.asyncIterator]() {
                       yield* matches;

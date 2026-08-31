@@ -153,6 +153,11 @@ publication finalization, owner transfer, undelete, and administrative runtime
 repair validate this owner-scoped claim transactionally. Existing package
 ownership checks and per-package runtime-id immutability still apply.
 
+Runtime claim lookups use exact owner/runtime/active indexes, including a
+separate legacy user-owner lookup for personal publishers. They must not scan
+other publishers' claims for the same runtime id. These indexes use existing
+ownership fields; no denormalized owner key or data backfill is needed.
+
 Follow-up: administrative runtime repair can leave historical release manifests
 inconsistent with the parent package identity. Reproduction: repair a parent
 from id `voice` to `voice-next`, publish another same-owner package claiming

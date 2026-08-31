@@ -11,8 +11,8 @@ const modules = import.meta.glob("./**/*.ts");
 type Backend = ReturnType<typeof convexTest>;
 type Owner = { ownerUserId: Id<"users">; ownerPublisherId?: Id<"publishers"> };
 
-async function fixture() {
-  const t = convexTest({ schema, modules, transactionLimits: true });
+async function fixture(transactionLimits: true | { documentsRead: number } = true) {
+  const t = convexTest({ schema, modules, transactionLimits });
   const owners = await t.run(async (ctx) => {
     const admin = await ctx.db.insert("users", { role: "admin", handle: "operator" });
     const user = await ctx.db.insert("users", { handle: "community" });
@@ -76,6 +76,37 @@ async function publish(
 }
 
 describe("owner-scoped package runtime identity", () => {
+  it.each(["organization", "personal"])(
+    "does not read other publishers' runtime claims when publishing for a %s",
+    async (kind) => {
+      const { t, admin, canonical, community, another } = await fixture({ documentsRead: 100 });
+      const original = await publish(t, admin, another, "@another/voice-provider");
+      await t.run(async (ctx) => {
+        const originalPackage = await ctx.db.get(original.packageId);
+        if (!originalPackage) throw new Error("missing fixture package");
+        const { _id, _creationTime, ...fields } = originalPackage;
+        for (let index = 0; index < 150; index += 1) {
+          const publisherId = await ctx.db.insert("publishers", {
+            kind: "org",
+            handle: `other-${index}`,
+            displayName: "Other publisher",
+            createdAt: 1,
+            updatedAt: 1,
+          });
+          await ctx.db.insert("packages", {
+            ...fields,
+            ownerPublisherId: publisherId,
+            name: `@other-${index}/voice`,
+            normalizedName: `@other-${index}/voice`,
+          });
+        }
+      });
+      await expect(
+        publish(t, admin, kind === "organization" ? canonical : community, "@destination/voice"),
+      ).resolves.toMatchObject({ ok: true });
+    },
+  );
+
   it("separates organizations even when the uploader is the same", async () => {
     const { t, admin, canonical, another } = await fixture();
     await publish(t, admin, canonical, "@canonical/voice-provider");
