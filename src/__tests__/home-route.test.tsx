@@ -35,7 +35,6 @@ const initialListingFixture = {
 };
 
 const initialFeatureFlagsFixture = {
-  contextKey: "anon-test-context",
   values: null,
 };
 

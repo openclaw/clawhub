@@ -40,7 +40,6 @@ describe("feature flags", () => {
     render(
       <FeatureFlagProvider
         baseUrl="https://flags.openclaw.ai"
-        contextKey="user-123"
         evalKey="ks_clawhub_production_public"
         initialValues={{ homepageTestMessage: true }}
       >
@@ -58,7 +57,6 @@ describe("feature flags", () => {
     render(
       <FeatureFlagProvider
         baseUrl="https://flags.openclaw.ai"
-        contextKey="user-123"
         evalKey="ks_clawhub_production_public"
         initialValues={{ homepageTestMessage: true }}
       >
@@ -71,6 +69,12 @@ describe("feature flags", () => {
       await Promise.resolve();
     });
     expect(screen.getByText("safe default")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://flags.openclaw.ai/v1/eval",
+      expect.objectContaining({
+        body: JSON.stringify({ context: { key: "clawhub-homepage" } }),
+      }),
+    );
   });
 
   it("renders code defaults without contacting Krill when no evaluation key is configured", () => {

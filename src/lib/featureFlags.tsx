@@ -1,6 +1,10 @@
 import { createKrillswitch } from "@openclaw/krillswitch-react";
 import type { ReactNode } from "react";
-import { FEATURE_FLAG_DEFAULTS, type FeatureFlagValues } from "./featureFlagManifest";
+import {
+  FEATURE_FLAG_CONTEXT_KEY,
+  FEATURE_FLAG_DEFAULTS,
+  type FeatureFlagValues,
+} from "./featureFlagManifest";
 import { getRuntimeEnv } from "./runtimeEnv";
 
 const DEFAULT_KRILLSWITCH_BASE_URL = "https://flags.openclaw.ai";
@@ -11,14 +15,12 @@ export const useFeatureFlag = krill.useFeatureFlag;
 export function FeatureFlagProvider({
   baseUrl,
   children,
-  contextKey,
   evalKey,
   initialValues,
   pollIntervalMs,
 }: {
   baseUrl?: string;
   children: ReactNode;
-  contextKey?: string;
   evalKey?: string;
   initialValues?: Partial<FeatureFlagValues> | null;
   pollIntervalMs?: number;
@@ -31,7 +33,7 @@ export function FeatureFlagProvider({
       baseUrl={
         baseUrl ?? getRuntimeEnv("VITE_KRILLSWITCH_BASE_URL") ?? DEFAULT_KRILLSWITCH_BASE_URL
       }
-      contextKey={contextKey}
+      contextKey={FEATURE_FLAG_CONTEXT_KEY}
       evalKey={resolvedEvalKey}
       initialValues={initialValues}
       pollIntervalMs={pollIntervalMs}

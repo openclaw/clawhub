@@ -15,14 +15,14 @@ and HTTP handlers.
 - `VITE_KRILLSWITCH_BASE_URL` can override the evaluation origin for local
   testing. It defaults to the production evaluation host.
 - When `VITE_KRILLSWITCH_EVAL_KEY` is absent, the homepage uses code defaults
-  without creating a rollout context cookie or contacting Krill Switch.
+  without contacting Krill Switch.
 - Missing configuration, network errors, invalid payloads, and incompatible
   remote value types preserve code-owned defaults. Server evaluation has a
   200 ms budget and must not block rendering beyond it.
-- Evaluations use an anonymous context key persisted in a first-party HTTP-only
-  cookie and passed to the hydrated provider. The server and browser must use
-  the same key so targeting and percentage rollouts remain stable. Do not add
-  personal or sensitive attributes without documenting why targeting needs them.
+- Evaluations use the service-wide `clawhub-homepage` context on both the server
+  and browser. The initial proof flag is a global toggle: ClawHub does not create
+  or transmit a per-visitor rollout identifier. Introducing visitor targeting or
+  percentage rollouts requires a separate privacy and product decision.
 - While the home route is mounted, values refresh when the page becomes visible
   and every 60 seconds. ETags avoid retransmitting unchanged evaluations.
 

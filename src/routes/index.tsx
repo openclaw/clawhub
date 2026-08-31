@@ -39,10 +39,7 @@ function SkillsHome() {
   const { initialFeatureFlags, initialListing } = Route.useLoaderData();
 
   return (
-    <FeatureFlagProvider
-      contextKey={initialFeatureFlags.contextKey ?? undefined}
-      initialValues={initialFeatureFlags.values}
-    >
+    <FeatureFlagProvider initialValues={initialFeatureFlags.values}>
       <SkillsHomeContent initialListing={initialListing} />
     </FeatureFlagProvider>
   );

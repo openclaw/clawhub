@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { evaluateInitialFeatureFlags, loadInitialFeatureFlags } from "./featureFlags.functions";
 
-const { getCookieMock, getRuntimeEnvMock, setCookieMock } = vi.hoisted(() => ({
-  getCookieMock: vi.fn(),
+const { getRuntimeEnvMock } = vi.hoisted(() => ({
   getRuntimeEnvMock: vi.fn(),
-  setCookieMock: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -13,14 +11,8 @@ vi.mock("@tanstack/react-start", () => ({
   }),
 }));
 
-vi.mock("@tanstack/react-start/server", () => ({
-  getCookie: getCookieMock,
-  setCookie: setCookieMock,
-}));
-
 vi.mock("./runtimeEnv", () => ({
   getRuntimeEnv: getRuntimeEnvMock,
-  isDevRuntime: () => true,
 }));
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -28,21 +20,20 @@ const fetchMock = vi.fn<typeof fetch>();
 describe("server feature flag evaluation", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    getCookieMock.mockReset();
+    fetchMock.mockReset();
     getRuntimeEnvMock.mockReset();
-    setCookieMock.mockReset();
   });
 
-  it("does not create a rollout cookie when evaluation is disabled", async () => {
+  it("does not contact Krill when evaluation is disabled", async () => {
     getRuntimeEnvMock.mockReturnValue(undefined);
+    vi.stubGlobal("fetch", fetchMock);
 
-    await expect(loadInitialFeatureFlags()).resolves.toEqual({ contextKey: null, values: null });
+    await expect(loadInitialFeatureFlags()).resolves.toEqual({ values: null });
 
-    expect(getCookieMock).not.toHaveBeenCalled();
-    expect(setCookieMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("evaluates the manifest with the stable SSR context", async () => {
+  it("evaluates the manifest with a shared non-visitor SSR context", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ flags: { homepageTestMessage: { value: true } } }), {
         status: 200,
@@ -54,7 +45,6 @@ describe("server feature flag evaluation", () => {
     await expect(
       evaluateInitialFeatureFlags({
         baseUrl: "https://flags.openclaw.ai",
-        contextKey: "anon-stable-context",
         evalKey: "ks_clawhub_production_public",
         signal: new AbortController().signal,
       }),
@@ -63,7 +53,7 @@ describe("server feature flag evaluation", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://flags.openclaw.ai/v1/eval",
       expect.objectContaining({
-        body: JSON.stringify({ context: { key: "anon-stable-context" } }),
+        body: JSON.stringify({ context: { key: "clawhub-homepage" } }),
         headers: expect.objectContaining({
           authorization: "Bearer ks_clawhub_production_public",
         }),
