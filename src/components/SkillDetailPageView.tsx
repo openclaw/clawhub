@@ -26,7 +26,6 @@ import { DetailHero, DetailPageShell, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPa
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
 import { InlineCodeSummary } from "./InlineCodeSummary";
-import { MarketplaceIcon } from "./MarketplaceIcon";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -499,15 +498,6 @@ export function SkillDetailPageView({
                     </div>
                   ) : null}
                   <div className="skill-hero-title-row">
-                    {skill.icon ? (
-                      <MarketplaceIcon
-                        kind="skill"
-                        label={displayName}
-                        imageUrl={skill.icon}
-                        skill={skill}
-                        size="md"
-                      />
-                    ) : null}
                     <h1 className="skill-page-title">{displayName}</h1>
                     {showTitleBadges ? (
                       <div className="skill-title-badges">

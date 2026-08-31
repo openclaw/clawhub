@@ -102,8 +102,10 @@ describe("SkillDetailPageView", () => {
     expect(taxonomy?.querySelector(".skill-hero-taxonomy-separator")).toBeTruthy();
   });
 
-  it("renders the supplied title icon", () => {
-    const icon = `/api/v1/skill-icons/${"a".repeat(64)}`;
+  it.each([
+    ["legacy", "brain"],
+    ["hosted", `/api/v1/skill-icons/${"a".repeat(64)}`],
+  ])("omits the title icon for %s skill icon data", (_kind, icon) => {
     const { container } = render(
       <TooltipProvider>
         <SkillDetailPageView
@@ -112,11 +114,13 @@ describe("SkillDetailPageView", () => {
             ...makeMinimalProps().skill,
             icon,
           }}
+          categories={[{ slug: "development", label: "Development", icon: "wrench", keywords: [] }]}
         />
       </TooltipProvider>,
     );
 
-    expect(container.querySelector(".marketplace-icon img")?.getAttribute("src")).toBe(icon);
+    expect(container.querySelector(".skill-hero-title-row .marketplace-icon")).toBeNull();
+    expect(container.querySelector(".skill-hero-taxonomy-row .skill-category-icon")).toBeTruthy();
   });
 });
 
