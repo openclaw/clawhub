@@ -7060,8 +7060,12 @@ code {
 .skill-detail-page .skill-hero-taxonomy-row,
 .skill-detail-page .skills-sh-sync-source-label,
 .skill-detail-page .skill-category-meta-link,
-.skill-detail-page .skill-hero-topic,
+.skill-detail-page .skill-hero-topic {
+  font-weight: 400;
+}
+
 .skill-detail-page .skill-hero-creator .user-handle {
+  font-size: var(--fs-xs);
   font-weight: 400;
 }
 
@@ -7157,16 +7161,41 @@ code {
 
   /* These groups wrap between items; their labels remain indivisible. */
   .skill-detail-page .skill-hero-taxonomy-prefix,
-  .skill-detail-page .skill-category-meta-link {
+  .skill-detail-page .skill-category-meta-link,
+  .skill-detail-page .skill-hero-topic {
+    flex: 0 0 auto;
     white-space: nowrap;
+  }
+
+  .skill-detail-page .skill-hero-topic {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .skill-detail-page .skill-hero-taxonomy-separator {
     display: none;
   }
 
+  .skill-detail-page .skill-category-meta-list,
   .skill-detail-page .skill-hero-topic-list {
     display: contents;
+  }
+
+  /* The divider belongs to the following unit, so it cannot wrap by itself. */
+  .skill-detail-page
+    .skill-hero-taxonomy-row:has(.skill-hero-taxonomy-prefix)
+    .skill-category-meta-link:first-child::before,
+  .skill-detail-page .skill-category-meta-link + .skill-category-meta-link::before,
+  .skill-detail-page
+    .skill-hero-taxonomy-row:has(.skill-hero-taxonomy-prefix, .skill-category-meta-link)
+    .skill-hero-topic:first-child::before,
+  .skill-detail-page .skill-hero-topic + .skill-hero-topic::before {
+    content: "";
+    width: 1px;
+    height: 14px;
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--ink-soft) 28%, transparent);
   }
 }
 
