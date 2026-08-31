@@ -1,0 +1,73 @@
+{
+  "baseline": "https://clawhub.ai",
+  "candidate": "a01a2b88149da380ce29b6680a7b195527262329",
+  "generatedAt": "2026-08-30T21:04:00-03:00",
+  "mode": "before-after",
+  "provider": "local-system-chrome",
+  "scenario": "skill detail title icons",
+  "status": "pass",
+  "lanes": [
+    {
+      "name": "baseline",
+      "ref": "https://clawhub.ai",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Native skill detail - desktop",
+          "screenshot": "screenshots/native-session-migrate-desktop.png",
+          "slug": "native-session-migrate-desktop",
+          "status": "pass"
+        },
+        {
+          "name": "Native skill detail - mobile",
+          "screenshot": "screenshots/native-session-migrate-mobile.png",
+          "slug": "native-session-migrate-mobile",
+          "status": "pass"
+        },
+        {
+          "name": "skills.sh detail - desktop",
+          "screenshot": "screenshots/skills-sh-ai-video-generation-desktop.png",
+          "slug": "skills-sh-ai-video-generation-desktop",
+          "status": "pass"
+        },
+        {
+          "name": "skills.sh detail - mobile",
+          "screenshot": "screenshots/skills-sh-ai-video-generation-mobile.png",
+          "slug": "skills-sh-ai-video-generation-mobile",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "ref": "a01a2b88149da380ce29b6680a7b195527262329",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Native skill detail - desktop",
+          "screenshot": "screenshots/native-session-migrate-desktop.png",
+          "slug": "native-session-migrate-desktop",
+          "status": "pass"
+        },
+        {
+          "name": "Native skill detail - mobile",
+          "screenshot": "screenshots/native-session-migrate-mobile.png",
+          "slug": "native-session-migrate-mobile",
+          "status": "pass"
+        },
+        {
+          "name": "skills.sh detail - desktop",
+          "screenshot": "screenshots/skills-sh-ai-video-generation-desktop.png",
+          "slug": "skills-sh-ai-video-generation-desktop",
+          "status": "pass"
+        },
+        {
+          "name": "skills.sh detail - mobile",
+          "screenshot": "screenshots/skills-sh-ai-video-generation-mobile.png",
+          "slug": "skills-sh-ai-video-generation-mobile",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}
