@@ -1,6 +1,6 @@
 {
   "baseline": "https://clawhub.ai",
-  "candidate": "a01a2b88149da380ce29b6680a7b195527262329",
+  "candidate": "558053c6fd479f75591a744bb7ca4f0eb094eb07",
   "generatedAt": "2026-08-30T21:04:00-03:00",
   "mode": "before-after",
   "provider": "local-system-chrome",
@@ -40,7 +40,7 @@
     },
     {
       "name": "candidate",
-      "ref": "a01a2b88149da380ce29b6680a7b195527262329",
+      "ref": "558053c6fd479f75591a744bb7ca4f0eb094eb07",
       "status": "pass",
       "steps": [
         {
