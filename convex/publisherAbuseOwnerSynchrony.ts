@@ -141,7 +141,6 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
     .withIndex("by_owner_key_and_last_seen_at", (q) => q.eq("ownerKey", args.ownerKey))
     .order("desc")
     .take(MAX_OWNER_TRAFFIC_SIGNALS + 1);
-  if (signals.length > MAX_OWNER_TRAFFIC_SIGNALS) return null;
 
   const uniqueSignals = new Map<Id<"skills">, Doc<"publisherAbuseSignals">>();
   for (const signal of signals) {
@@ -153,6 +152,7 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
       uniqueSignals.set(signal.skillId, signal);
     }
   }
+  if (uniqueSignals.size > MAX_OWNER_TRAFFIC_SIGNALS) return null;
   if (uniqueSignals.size < 2 || uniqueSignals.size > MAX_OWNER_SYNCHRONY_SKILLS) return null;
 
   const firstSignal = uniqueSignals.values().next().value;

@@ -145,6 +145,48 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("applies the owner signal cap after excluding stale-run rows", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const staleRunId = "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">;
+    const firstCurrent = {
+      ...existingSignal(1_700_000_000_000),
+      latestRunId: runId,
+      signalType: "download_spike_flat_installs" as const,
+    };
+    const secondCurrent = {
+      ...firstCurrent,
+      _id: "publisherAbuseSignals:current-second",
+      skillId: "skills:current-second" as Id<"skills">,
+      signalType: "sustained_abnormal_download_days" as const,
+    };
+    const staleSignals = Array.from({ length: 99 }, (_, index) => ({
+      ...firstCurrent,
+      _id: `publisherAbuseSignals:stale-${index}`,
+      skillId: `skills:stale-${index}` as Id<"skills">,
+      latestRunId: staleRunId,
+    }));
+    const get = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: () => ({
+            order: () => ({ take: async () => [firstCurrent, secondCurrent, ...staleSignals] }),
+          }),
+        })),
+        get,
+      },
+    };
+
+    await expect(
+      getPublisherAbuseOwnerSynchronyCandidateInternalHandler(ctx as never, {
+        runId,
+        ownerKey: firstCurrent.ownerKey,
+        todayDay: 20_683,
+      }),
+    ).resolves.toBeNull();
+    expect(get).toHaveBeenCalledWith(firstCurrent.ownerPublisherId);
+  });
+
   it("creates one publisher-level signal with portfolio evidence", async () => {
     const inserted: Array<Record<string, unknown>> = [];
     const scheduler = { runAfter: vi.fn(async () => null) };
