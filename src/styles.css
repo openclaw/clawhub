@@ -8803,7 +8803,7 @@ a.skills-sh-security-audit-row:focus-visible {
   }
 
   .skill-detail-page .detail-mobile-install {
-    margin-top: 14px;
+    margin-top: 0;
   }
 
   .detail-mobile-install .skill-install-command-card {
@@ -8843,6 +8843,11 @@ a.skills-sh-security-audit-row:focus-visible {
   .detail-mobile-install .skill-install-command-card > * {
     position: relative;
     z-index: 1;
+  }
+
+  .skill-detail-page .detail-mobile-install .skill-install-command-card::before,
+  .skill-detail-page .detail-mobile-install .skill-install-command-card::after {
+    content: none;
   }
 
   .detail-mobile-install .skill-install-command-header {
@@ -8979,6 +8984,15 @@ a.skills-sh-security-audit-row:focus-visible {
     gap: 14px;
   }
 
+  .skill-detail-page .skill-hero-main-extra {
+    display: grid;
+    gap: 0;
+    overflow: hidden;
+    border: var(--detail-mobile-surface-border);
+    border-radius: var(--detail-mobile-surface-radius);
+    background: var(--detail-mobile-surface-bg);
+  }
+
   .plugin-detail-page .skill-hero-main-extra {
     gap: var(--space-5);
   }
@@ -9019,7 +9033,8 @@ a.skills-sh-security-audit-row:focus-visible {
   }
 
   .skill-detail-page .skill-hero-creator-star .skill-sidebar-star-action {
-    min-height: 0;
+    min-height: 44px;
+    padding-inline: 4px;
     justify-content: flex-end;
   }
 
@@ -9044,6 +9059,10 @@ a.skills-sh-security-audit-row:focus-visible {
     min-width: 0;
   }
 
+  .skill-detail-page .detail-mobile-master-tabs {
+    gap: 0;
+  }
+
   .detail-mobile-master-tab-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9051,6 +9070,10 @@ a.skills-sh-security-audit-row:focus-visible {
     min-width: 0;
     width: 100%;
     border-bottom: 1px solid var(--line);
+  }
+
+  .skill-detail-page .detail-mobile-master-tab-list {
+    border-top: 1px solid var(--line);
   }
 
   .detail-mobile-master-tab {
@@ -9110,6 +9133,22 @@ a.skills-sh-security-audit-row:focus-visible {
     min-width: 0;
   }
 
+  .skill-detail-page .detail-mobile-master-panel-content {
+    gap: 0;
+  }
+
+  .skill-detail-page .detail-mobile-tabs {
+    margin-top: 0;
+  }
+
+  .skill-detail-page .skill-detail-tabs-card.detail-mobile-tabs {
+    gap: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
   .detail-mobile-master-stats {
     display: grid;
     gap: 0;
@@ -9123,8 +9162,9 @@ a.skills-sh-security-audit-row:focus-visible {
 
   .skill-detail-page .skill-detail-tabs-card.detail-mobile-tabs .tab-header {
     gap: 8px;
-    padding: 10px var(--detail-mobile-surface-padding);
-    border-bottom: 0;
+    flex-wrap: nowrap;
+    padding: 8px var(--detail-mobile-surface-padding);
+    border-bottom: 1px solid var(--line);
     overflow-x: auto;
     background: transparent;
   }
@@ -9132,7 +9172,7 @@ a.skills-sh-security-audit-row:focus-visible {
   .skill-detail-page .skill-detail-tabs-card.detail-mobile-tabs .tab-button {
     flex: 0 0 auto;
     justify-content: center;
-    min-height: 32px;
+    min-height: 44px;
     margin: 0;
     padding: 0 10px;
     border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
@@ -20271,7 +20311,7 @@ body:has(.browse-page-borderless-header) .navbar {
     -webkit-line-clamp: 2;
   }
 
-  :is(.skill-detail-page, .plugin-detail-page) .detail-mobile-tabs.tab-card {
+  .plugin-detail-page .detail-mobile-tabs.tab-card {
     gap: 0;
     overflow: hidden;
     border: var(--detail-mobile-surface-border);
@@ -20283,7 +20323,7 @@ body:has(.browse-page-borderless-header) .navbar {
     overflow: visible;
   }
 
-  :is(.skill-detail-page, .plugin-detail-page) .detail-mobile-tabs .tab-header {
+  .plugin-detail-page .detail-mobile-tabs .tab-header {
     gap: 16px;
     padding: 0 var(--detail-mobile-surface-padding);
     overflow-x: auto;
@@ -20301,7 +20341,7 @@ body:has(.browse-page-borderless-header) .navbar {
     justify-content: center;
   }
 
-  :is(.skill-detail-page, .plugin-detail-page) .detail-mobile-tabs .tab-body {
+  .plugin-detail-page .detail-mobile-tabs .tab-body {
     gap: 16px;
     padding: var(--detail-mobile-surface-padding);
     border: 0;

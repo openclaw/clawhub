@@ -242,6 +242,72 @@ for (const route of publicRouteCases()) {
   });
 }
 
+test("skill detail mobile hierarchy stays coherent at representative widths", async ({ page }) => {
+  await stubExternalMediaInVitePreview(page);
+  const errors = trackRuntimeErrors(page);
+
+  for (const width of [320, 375, 430]) {
+    await page.setViewportSize({ width, height: 1_100 });
+    await page.goto("/vyctorbrzezowski/skills/session-migrate", {
+      waitUntil: "domcontentloaded",
+    });
+    await waitForHydration(page);
+    await expect(page.getByRole("heading", { name: "Session Migrate" }).first()).toBeVisible();
+    await expect(page.locator(".skill-hero-creator-star")).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      const detailSurface = document.querySelector<HTMLElement>(
+        ".skill-detail-page .skill-hero-main-extra",
+      );
+      const bookmark = document.querySelector<HTMLElement>(
+        ".skill-hero-creator-star .skill-sidebar-star-action",
+      );
+      const detailTabHeader = document.querySelector<HTMLElement>(
+        ".skill-detail-tabs-card .tab-header",
+      );
+      const detailTab = document.querySelector<HTMLElement>(".skill-detail-tabs-card .tab-button");
+
+      if (!detailSurface || !bookmark || !detailTabHeader || !detailTab) {
+        throw new Error("skill detail mobile surface is incomplete");
+      }
+
+      const detailSurfaceStyle = getComputedStyle(detailSurface);
+      const detailTabHeaderStyle = getComputedStyle(detailTabHeader);
+
+      return {
+        bookmarkHeight: bookmark.getBoundingClientRect().height,
+        detailSurfaceBorderBottom: Number.parseFloat(detailSurfaceStyle.borderBottomWidth),
+        detailSurfaceRadius: Number.parseFloat(detailSurfaceStyle.borderTopLeftRadius),
+        detailTabFlexWrap: detailTabHeaderStyle.flexWrap,
+        detailTabHeight: detailTab.getBoundingClientRect().height,
+        scrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: document.documentElement.clientWidth,
+      };
+    });
+
+    expect(metrics.bookmarkHeight).toBeGreaterThanOrEqual(44);
+    expect(metrics.detailSurfaceBorderBottom).toBeGreaterThanOrEqual(1);
+    expect(metrics.detailSurfaceRadius).toBeGreaterThan(0);
+    expect(metrics.detailTabFlexWrap).toBe("nowrap");
+    expect(metrics.detailTabHeight).toBeGreaterThanOrEqual(44);
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.viewportWidth + 1);
+
+    const detailTabs = page.locator(".skill-detail-tabs-card");
+    const versionsTab = detailTabs.getByRole("tab", { name: "Versions" });
+    await versionsTab.click();
+    await expect(versionsTab).toHaveAttribute("aria-selected", "true");
+    await detailTabs.getByRole("tab", { name: "SKILL.md" }).click();
+
+    const masterTabs = page.locator(".detail-mobile-master-tabs");
+    const statsTab = masterTabs.getByRole("tab", { name: "Stats & details" });
+    await statsTab.click();
+    await expect(statsTab).toHaveAttribute("aria-selected", "true");
+    await masterTabs.getByRole("tab", { name: "SKILL.md" }).click();
+  }
+
+  await expectHealthyPage(page, errors);
+});
+
 test("removed creators route renders not found", async ({ page }) => {
   await stubExternalMediaInVitePreview(page);
   await page.goto("/creators", { waitUntil: "domcontentloaded" });
