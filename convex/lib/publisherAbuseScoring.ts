@@ -156,6 +156,7 @@ const TEMPORAL_SPIKE_BASELINE_DAYS = 30;
 const TEMPORAL_SUSTAINED_DAYS = 14;
 const TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS = 10;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
+const TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER = 6;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
 const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 1_000;
@@ -482,6 +483,13 @@ export function classifySkillTemporalAbuseScore(
     p99: benchmark.excess7DownloadsP99,
   });
   const spike = Boolean(spikeMultiplierCohortBand && excess7DownloadsCohortBand);
+  // The per-day threshold becomes too permissive when platform P95 traffic is low.
+  // Keep the established six-times-P99 total-volume gate as the high-confidence floor.
+  const sustainedDownloadsCohortBand =
+    score.recent30Downloads >
+    benchmark.downloads30dP99 * TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER
+      ? p99Band({ value: score.recent30Downloads, p99: benchmark.downloads30dP99 })
+      : undefined;
   const sustainedDailyDownloadThreshold = Math.max(
     Math.max(
       TEMPORAL_MIN_BASELINE_7_DOWNLOADS / TEMPORAL_SPIKE_RECENT_DAYS,
@@ -494,6 +502,7 @@ export function classifySkillTemporalAbuseScore(
     (downloads) => downloads > sustainedDailyDownloadThreshold,
   ).length;
   const sustained =
+    Boolean(sustainedDownloadsCohortBand) &&
     score.sustainedWindowInstalls <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
     sustainedDaysAboveThreshold >= TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS;
   const nearConversion = score.nearConversion;
@@ -513,10 +522,10 @@ export function classifySkillTemporalAbuseScore(
     nearConversion,
     pressure: Math.max(
       spike ? Math.min(spikeMultiplierVsPeerP95, excess7DownloadsVsPeerP95) : 0,
-      sustained ? sustainedDaysAboveThreshold / TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS : 0,
+      sustained ? downloads30dVsPeerP95 : 0,
       nearConversionPressure,
     ),
-    downloads30dCohortBand: undefined,
+    downloads30dCohortBand: sustainedDownloadsCohortBand,
     spikeMultiplierCohortBand,
     excess7DownloadsCohortBand,
     downloads30dVsPeerP95,

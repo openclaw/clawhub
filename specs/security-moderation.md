@@ -110,10 +110,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   30-day observation period as a frozen baseline, so a month-long rise cannot
   raise its own comparison point. Each of the latest 14 days is compared with a
   threshold derived from the platform P95 growth multiple and P95 absolute
-  excess; at least 10 days must exceed that threshold, with at most 5 installs
-  in the 14-day window. This catches traffic that arrives at a steady abnormal
-  rate after a cold start instead of only detecting a spike on the day it
-  begins. These
+  excess; at least 10 days must exceed that threshold. The same skill must also
+  exceed six times the platform 30-day download P99 and have at most 5 installs
+  in the 14-day window. The six-times-P99 gate prevents ordinary low-conversion
+  traffic from producing hundreds of weak signals in a large catalogue. This
+  catches traffic that arrives at a steady, exceptionally high rate after a
+  cold start instead of only detecting a spike on the day it begins. These
   signals record anomalous traffic for staff visibility, not publisher
   attribution or an enforcement decision.
 - The Signals tab is read-only telemetry. The retired snooze, dismissal, and
