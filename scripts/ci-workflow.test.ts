@@ -7,7 +7,12 @@ type WorkflowJob = {
   "runs-on": string;
   "timeout-minutes": number;
   needs?: string;
-  steps: Array<{ name?: string; run?: string; uses?: string }>;
+  steps: Array<{
+    name?: string;
+    run?: string;
+    uses?: string;
+    with?: Record<string, number | string>;
+  }>;
 };
 
 describe("CI workflow", () => {
@@ -32,6 +37,12 @@ describe("CI workflow", () => {
     }
 
     expect(workflow.jobs.unit["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404");
+    expect(workflow.jobs.unit.steps).toContainEqual(
+      expect.objectContaining({
+        uses: "actions/checkout@v7.0.1",
+        with: { "fetch-depth": 2 },
+      }),
+    );
     for (const name of ["static", "packages", "types-build", "e2e-http"]) {
       expect(workflow.jobs[name]["runs-on"]).toBe("ubuntu-24.04");
     }

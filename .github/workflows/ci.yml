@@ -75,6 +75,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 2
 
       - uses: ./.github/actions/setup-bun
 
