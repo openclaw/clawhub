@@ -1,0 +1,28 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "session-migrate mobile skill detail hierarchy",
+  "provider": "local system Chrome",
+  "baseline": "origin/main@78efe6e32e55157160a75bbf84d6e7eba42df3c7",
+  "candidate": "a0a01990925467bc08049b27d854468bda41a6ff",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        { "name": "Before at 320 px", "slug": "320", "screenshot": "320.png", "status": "passed" },
+        { "name": "Before at 375 px", "slug": "375", "screenshot": "375.png", "status": "passed" },
+        { "name": "Before at 430 px", "slug": "430", "screenshot": "430.png", "status": "passed" },
+        { "name": "Before at 1280 px", "slug": "1280", "screenshot": "1280.png", "status": "passed" }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        { "name": "After at 320 px", "slug": "320", "screenshot": "320.png", "status": "passed" },
+        { "name": "After at 375 px", "slug": "375", "screenshot": "375.png", "status": "passed" },
+        { "name": "After at 430 px", "slug": "430", "screenshot": "430.png", "status": "passed" },
+        { "name": "After at 1280 px", "slug": "1280", "screenshot": "1280.png", "status": "passed" }
+      ]
+    }
+  ]
+}
