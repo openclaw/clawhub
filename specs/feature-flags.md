@@ -30,6 +30,23 @@ The official `@openclaw/krillswitch-react` SDK owns response validation, typed
 manifest merging, SSR evaluation, hydration bootstrap, caching, and polling.
 Keep ClawHub's adapter limited to runtime configuration and app-specific flags.
 
+## Homepage pilot decision
+
+ClawHub adopts Krill Switch for a bounded, global homepage-copy pilot. The
+production contract is:
+
+- OpenClaw owns the Krill Switch service and published SDK packages.
+- The integration is opt-in through `VITE_KRILLSWITCH_EVAL_KEY`; removing that
+  setting disables evaluation without a code rollback.
+- The homepage may wait up to 200 ms for server evaluation, then renders code
+  defaults. Krill availability must not make the homepage unavailable.
+- The pilot uses one non-identifying `clawhub-homepage` context. Per-visitor
+  targeting, attributes, or percentage rollouts are outside the approved scope.
+- Flags control presentation only. Authorization and security decisions remain
+  enforced by application and backend code.
+- SDK upgrades require normal dependency, integrity, and changed-behavior
+  review before production adoption.
+
 ## Initial proof flag
 
 The `homepageTestMessage` boolean flag defaults to `false`. When enabled, the
