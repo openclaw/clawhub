@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- API: scope code-plugin runtime identity claims to the owning publisher so community and official packages can retain their manifest ids under distinct scoped names, while rejecting same-owner collisions during publication, transfer, restore, and administrative repair.
 - UI proof: supervise isolated loopback backend and browser proof together without writing project dotenv, preserving diagnostics and private-state cleanup on failure.
 - CI: authenticate weekly design-audit pull request mutations with the Barnacle GitHub App while retaining the workflow token for branch publication and clean-audit closure.
 - API: record skipped and failed skill evaluation outcomes without passing worker tokens to internal mutations.

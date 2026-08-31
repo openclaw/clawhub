@@ -114,6 +114,12 @@ This means official OpenClaw aliases are reserved before skills at the root.
 That is intentional: `https://clawhub.ai/codex` must show the official OpenClaw
 Codex plugin even if a skill named `codex` exists.
 
+Plugin manifest runtime ids do not determine these routes. Different publisher
+namespaces may distribute packages with the same runtime id. Explicit scoped
+package names keep resolving to their original publisher, while a known bare
+OpenClaw alias selects the canonical official package. Moving a bare alias does
+not rename a community manifest, rewrite its archives, or transfer its owner.
+
 Publisher handle creation and rename paths reserve the full official alias set.
 This prevents new profiles from taking over those top-level plugin shortcuts.
 

@@ -2283,6 +2283,9 @@ function makeInsertReleaseCtx(
                   const runtimeId = filters.get("runtimeId");
                   const matches = runtimePackages.filter((pkg) => pkg.runtimeId === runtimeId);
                   return {
+                    async *[Symbol.asyncIterator]() {
+                      yield* matches;
+                    },
                     collect: vi.fn().mockResolvedValue(matches),
                     unique: vi.fn().mockResolvedValue(matches[0] ?? null),
                   };
@@ -2558,6 +2561,9 @@ function makeTransferPackageOwnerCtx(options?: {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(pkg),
                 collect: vi.fn().mockResolvedValue(pkg ? [pkg] : []),
+                async *[Symbol.asyncIterator]() {
+                  if (pkg) yield pkg;
+                },
               })),
             };
           }

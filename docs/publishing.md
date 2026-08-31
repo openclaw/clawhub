@@ -157,6 +157,11 @@ to keep out of public issues.
 ### Before Publishing a Plugin
 
 - Pick an owner that matches the package scope.
+- A code plugin's manifest `id` must be unique within that publisher's packages.
+  Different publishers can distribute the same runtime id under distinct scoped
+  package names. Choose the explicit scoped name to install a community package;
+  known bare OpenClaw aliases select the official package. One OpenClaw
+  installation still uses one plugin for each runtime id.
 - Include `openclaw.plugin.json`. Code plugins also need `package.json` with
   `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
 - To show a custom plugin catalog icon on the homepage and plugin list pages,

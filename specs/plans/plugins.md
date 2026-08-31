@@ -133,7 +133,7 @@ Package rules:
 
 - one package belongs to exactly one family
 - one code-plugin package maps to exactly one plugin id
-- one plugin id maps to exactly one live code-plugin package identity
+- within one publisher namespace, one plugin id maps to exactly one live code-plugin package identity; different publishers may distribute distinct packages with the same manifest id
 - if a publisher wants multiple code plugins, they publish multiple packages
 - package display casing can be preserved for UI, but uniqueness and routing
   must use the canonical normalized package key
@@ -141,6 +141,27 @@ Package rules:
   the oldest publish wins unless a moderator explicitly intervenes
 - plugin id transfer or replacement must be an explicit moderated workflow, not
   an accidental publish collision
+
+Runtime identity belongs to the artifact and is not a global package-name claim.
+Scoped package names and canonical official aliases select the distribution;
+the manifest id remains unchanged and still identifies the plugin in one
+OpenClaw installation. This does not permit installing two packages with the
+same runtime id into the same installation. Personal publisher records and
+their linked legacy user records share a namespace; organization namespaces
+remain distinct even when one user uploads for both. Publication, pending
+publication finalization, owner transfer, undelete, and administrative runtime
+repair validate this owner-scoped claim transactionally. Existing package
+ownership checks and per-package runtime-id immutability still apply.
+
+Follow-up: administrative runtime repair can leave historical release manifests
+inconsistent with the parent package identity. Reproduction: repair a parent
+from id `voice` to `voice-next`, publish another same-owner package claiming
+`voice`, then quarantine a malicious latest release on the repaired package.
+The existing quarantine fallback may restore an older release's `voice` id.
+This predates owner-scoped claims. Keep security quarantine operational; do not
+add a table trigger that throws on this fallback and rolls back quarantine.
+An identity-aware historical-release repair/fallback design remains separate
+work; this change neither rewrites archives nor changes quarantine behavior.
 
 Current OpenClaw evidence supports this:
 
@@ -846,7 +867,7 @@ Policy integration:
 - decide shared package identity model across skills/code plugins/bundle plugins
 - decide canonical internal package key vs public route/CLI locator rules
 - decide canonical package-name normalization rules and reserved-name policy
-- add global code-plugin `pluginId` uniqueness rules and transfer policy
+- add publisher-scoped code-plugin `pluginId` uniqueness rules and transfer policy
 - separate `pluginApiVersion` semver validation from publisher-defined package
   version validation
 - require semver package versions for code-plugin publishing

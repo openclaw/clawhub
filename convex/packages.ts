@@ -819,6 +819,39 @@ function getRequestedPackageOwnerKey(args: {
   return args.ownerPublisherId ? `publisher:${args.ownerPublisherId}` : `user:${args.ownerUserId}`;
 }
 
+async function getRuntimeIdentityOwnerKey(
+  ctx: DbReaderCtx,
+  owner: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId">,
+) {
+  if (!owner.ownerPublisherId) return `user:${owner.ownerUserId}`;
+  const publisher = await ctx.db.get(owner.ownerPublisherId);
+  // A personal publisher and its pre-publisher user records are one namespace.
+  return publisher?.kind === "user" && publisher.linkedUserId
+    ? `user:${publisher.linkedUserId}`
+    : `publisher:${owner.ownerPublisherId}`;
+}
+
+async function assertPackageRuntimeIdAvailable(
+  ctx: DbReaderCtx,
+  identity: Pick<PackageDoc, "ownerUserId" | "ownerPublisherId" | "runtimeId"> & {
+    _id?: Id<"packages">;
+  },
+) {
+  if (!identity.runtimeId) return;
+  const ownerKey = await getRuntimeIdentityOwnerKey(ctx, identity);
+  const candidates = ctx.db
+    .query("packages")
+    .withIndex("by_runtime_id", (q) => q.eq("runtimeId", identity.runtimeId));
+  for await (const candidate of candidates) {
+    if (candidate._id === identity._id || candidate.softDeletedAt) continue;
+    if ((await getRuntimeIdentityOwnerKey(ctx, candidate)) === ownerKey) {
+      throw new ConvexError(
+        `Plugin id "${identity.runtimeId}" is already claimed by another package in this publisher namespace`,
+      );
+    }
+  }
+}
+
 function derivePackagePublisherChannel(args: {
   requestedChannel?: PackageChannel;
   currentChannel?: PackageChannel;
@@ -5976,6 +6009,8 @@ async function restorePackageDoc(
     );
   }
 
+  if (pkg.family === "code-plugin") await assertPackageRuntimeIdAvailable(ctx, pkg);
+
   const releases = await ctx.db
     .query("packageReleases")
     .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
@@ -9858,6 +9893,10 @@ async function patchPackageOwnerWithAudit(
     updatedAt: now,
   };
 
+  if (args.pkg.family === "code-plugin") {
+    await assertPackageRuntimeIdAvailable(ctx, { ...args.pkg, ...nextPackageFields });
+  }
+
   await ctx.db.patch(args.pkg._id, nextPackageFields);
   await upsertPackageSearchDigest(ctx, {
     ...extractPackageDigestFields(args.pkg),
@@ -10102,16 +10141,7 @@ export const repairPackageIdentityInternal = internalMutation({
     if (typeof args.nextRuntimeId === "string") {
       const nextRuntimeId = args.nextRuntimeId.trim();
       if (!nextRuntimeId) throw new ConvexError("Runtime id required");
-      const runtimeCollisions = await ctx.db
-        .query("packages")
-        .withIndex("by_runtime_id", (q) => q.eq("runtimeId", nextRuntimeId))
-        .collect();
-      const runtimeCollision = runtimeCollisions.find(
-        (candidate) => candidate._id !== pkg._id && !candidate.softDeletedAt,
-      );
-      if (runtimeCollision) {
-        throw new ConvexError(`Plugin id "${nextRuntimeId}" is already claimed by another package`);
-      }
+      await assertPackageRuntimeIdAvailable(ctx, { ...pkg, runtimeId: nextRuntimeId });
       patch.runtimeId = nextRuntimeId;
       metadata.previousRuntimeId = pkg.runtimeId;
       metadata.nextRuntimeId = nextRuntimeId;
@@ -11247,6 +11277,14 @@ export const publishPendingReleaseInternal = internalMutation({
       candidateVersion: release.version,
       requestedTags: stringArrayPendingField(metadata, "tags") ?? release.distTags ?? [],
     });
+    // Staging does not freeze ownership or administrative identity repairs.
+    // Recheck the effective claim in the transaction that makes it public.
+    if (packageFamily === "code-plugin") {
+      await assertPackageRuntimeIdAvailable(ctx, {
+        ...pkg,
+        runtimeId: release.runtimeId,
+      });
+    }
     const scanStatus = resolvePackageReleaseScanStatus(release);
     const releaseVerification = release.verification
       ? { ...release.verification, scanStatus }
@@ -11529,7 +11567,6 @@ export const insertReleaseInternal = internalMutation({
       publisherOfficial,
     });
     const nextIsOfficial = nextChannel === "official";
-    const nextRuntimeIdLabel = typeof args.runtimeId === "string" ? args.runtimeId : "<unknown>";
     const nextVersionLabel = typeof args.version === "string" ? args.version : "<unknown>";
     if (existing) {
       const existingOwnerKey = getPackageOwnerKey(existing, {
@@ -11561,18 +11598,12 @@ export const insertReleaseInternal = internalMutation({
       );
     }
     if (args.family === "code-plugin" && args.runtimeId) {
-      const runtimeCollisions = await ctx.db
-        .query("packages")
-        .withIndex("by_runtime_id", (q) => q.eq("runtimeId", args.runtimeId))
-        .collect();
-      const runtimeCollision = runtimeCollisions.find(
-        (candidate) => candidate._id !== existing?._id && !candidate.softDeletedAt,
-      );
-      if (runtimeCollision) {
-        throw new ConvexError(
-          `Plugin id "${nextRuntimeIdLabel}" is already claimed by another package`,
-        );
-      }
+      await assertPackageRuntimeIdAvailable(ctx, {
+        _id: existing?._id,
+        ownerUserId: args.ownerUserId,
+        ownerPublisherId: args.ownerPublisherId ?? existing?.ownerPublisherId,
+        runtimeId: args.runtimeId,
+      });
     }
 
     const createdNewParent = !existing;
