@@ -8092,13 +8092,13 @@ describe("publisher abuse dry-run persistence", () => {
     });
     candidate.temporalScore.spike = false;
     candidate.temporalScore.sustained = false;
-    candidate.temporalScore.recent30Downloads = 3_370;
+    candidate.temporalScore.recent30Downloads = 6_400;
     candidate.temporalScore.recent30Installs = 4;
     candidate.temporalScore.spikeMultiplier = 1;
     candidate.temporalScore.excess7Downloads = 0;
     candidate.temporalScore.sustainedWindowInstalls = 4;
     candidate.temporalScore.sustainedDailyDownloads = [
-      ...Array.from({ length: 10 }, () => 200),
+      ...Array.from({ length: 10 }, () => 640),
       0,
       0,
       0,
@@ -8164,13 +8164,13 @@ describe("publisher abuse dry-run persistence", () => {
     });
     candidate.temporalScore.spike = false;
     candidate.temporalScore.sustained = false;
-    candidate.temporalScore.recent30Downloads = 3_370;
+    candidate.temporalScore.recent30Downloads = 6_400;
     candidate.temporalScore.recent30Installs = 4;
     candidate.temporalScore.spikeMultiplier = 1;
     candidate.temporalScore.excess7Downloads = 0;
     candidate.temporalScore.sustainedWindowInstalls = 4;
     candidate.temporalScore.sustainedDailyDownloads = [
-      ...Array.from({ length: 10 }, () => 200),
+      ...Array.from({ length: 10 }, () => 640),
       0,
       0,
       0,

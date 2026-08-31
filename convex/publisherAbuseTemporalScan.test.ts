@@ -722,10 +722,10 @@ describe("scheduled temporal publisher abuse scan", () => {
     const candidate = temporalCandidate(
       "skills:anysearch" as Id<"skills">,
       temporalScore({
-        recent30Downloads: 3_700,
+        recent30Downloads: 7_000,
         recent30Installs: 4,
         sustainedWindowInstalls: 4,
-        sustainedDailyDownloads: [...Array.from({ length: 10 }, () => 100), 0, 0, 0, 0],
+        sustainedDailyDownloads: [...Array.from({ length: 10 }, () => 700), 0, 0, 0, 0],
       }),
     );
     const runQuery = vi

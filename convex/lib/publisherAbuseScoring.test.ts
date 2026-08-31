@@ -505,7 +505,7 @@ describe("publisher abuse scoring", () => {
       }),
       dailyStats: [
         ...dailyRange(41, 30, { downloads: 5, installs: 0 }),
-        ...dailyRange(87, 10, { downloads: 400, installs: 0 }),
+        ...dailyRange(87, 10, { downloads: 640, installs: 0 }),
         ...dailyRange(97, 4, { downloads: 0, installs: 0 }),
       ],
     });
@@ -538,7 +538,28 @@ describe("publisher abuse scoring", () => {
     expect(score.sustained).toBe(false);
   });
 
-  it("keeps sustained traffic at exactly six times platform P99 below the signal", () => {
+  it("does not call shared scraper-like traffic a publisher-specific sustained signal", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 280,
+        downloads30dP99: 636,
+        spikeMultiplier7dP95: 0.6,
+        excess7DownloadsP95: 6.03,
+      }),
+      dailyStats: [
+        ...dailyRange(41, 30, { downloads: 12, installs: 0 }),
+        ...dailyRange(71, 30, { downloads: 150, installs: 0 }),
+      ],
+    });
+
+    expect(score.sustainedDaysAboveThreshold).toBe(14);
+    expect(score.recent30Downloads).toBe(4_500);
+    expect(score.downloads30dCohortBand).toBeUndefined();
+    expect(score.sustained).toBe(false);
+  });
+
+  it("keeps sustained traffic below the 6,400-download floor below the signal", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay: 100,
       benchmark: temporalBenchmark({
@@ -546,11 +567,11 @@ describe("publisher abuse scoring", () => {
         spikeMultiplier7dP95: 5,
         excess7DownloadsP95: 500,
       }),
-      dailyStats: dailyRange(87, 10, { downloads: 360, installs: 0 }),
+      dailyStats: dailyRange(87, 10, { downloads: 639, installs: 0 }),
     });
 
     expect(score.sustainedDaysAboveThreshold).toBe(10);
-    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.recent30Downloads).toBe(6_390);
     expect(score.downloads30dCohortBand).toBeUndefined();
     expect(score.sustained).toBe(false);
   });

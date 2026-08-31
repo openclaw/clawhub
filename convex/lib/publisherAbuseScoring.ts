@@ -156,7 +156,8 @@ const TEMPORAL_SPIKE_BASELINE_DAYS = 30;
 const TEMPORAL_SUSTAINED_DAYS = 14;
 const TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS = 10;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
-const TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER = 6;
+const TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER = 10;
+const TEMPORAL_MIN_SUSTAINED_30D_DOWNLOADS = 6_400;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
 const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 1_000;
@@ -484,10 +485,14 @@ export function classifySkillTemporalAbuseScore(
   });
   const spike = Boolean(spikeMultiplierCohortBand && excess7DownloadsCohortBand);
   // The per-day threshold becomes too permissive when platform P95 traffic is low.
-  // Keep the established six-times-P99 total-volume gate as the high-confidence floor.
+  // Require an order-of-magnitude more traffic than the platform P99 so broad
+  // crawler traffic does not become a publisher-specific sustained signal.
+  const sustainedDownloadsThreshold = Math.max(
+    TEMPORAL_MIN_SUSTAINED_30D_DOWNLOADS,
+    benchmark.downloads30dP99 * TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER,
+  );
   const sustainedDownloadsCohortBand =
-    score.recent30Downloads >
-    benchmark.downloads30dP99 * TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER
+    score.recent30Downloads >= sustainedDownloadsThreshold
       ? p99Band({ value: score.recent30Downloads, p99: benchmark.downloads30dP99 })
       : undefined;
   const sustainedDailyDownloadThreshold = Math.max(
