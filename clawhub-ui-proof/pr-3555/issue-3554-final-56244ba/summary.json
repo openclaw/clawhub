@@ -1,0 +1,74 @@
+{
+  "baseline": "https://clawhub.ai",
+  "candidate": "56244ba1aa18bfacb2356ea8249e7169be2367dd (exact-head CSS overlay)",
+  "generatedAt": "2026-08-31T14:34:39Z",
+  "lanes": [
+    {
+      "name": "baseline",
+      "ref": "https://clawhub.ai",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Desktop separators and creator hierarchy",
+          "screenshot": "screenshots/desktop-hero-with-separators.png",
+          "slug": "desktop-hero-with-separators",
+          "status": "pass"
+        },
+        {
+          "name": "Mobile groups when they fit",
+          "screenshot": "screenshots/mobile-groups-fit.png",
+          "slug": "mobile-groups-fit",
+          "status": "pass"
+        },
+        {
+          "name": "Mobile semantic wrapping at 320px",
+          "screenshot": "screenshots/mobile-narrow-wrap.png",
+          "slug": "mobile-narrow-wrap",
+          "status": "pass"
+        },
+        {
+          "name": "Mobile source plus three categories and topic at 320px",
+          "screenshot": "screenshots/mobile-three-categories.png",
+          "slug": "mobile-three-categories",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "ref": "56244ba1aa18bfacb2356ea8249e7169be2367dd",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Desktop separators and creator hierarchy",
+          "screenshot": "screenshots/desktop-hero-with-separators.png",
+          "slug": "desktop-hero-with-separators",
+          "status": "pass"
+        },
+        {
+          "name": "Mobile groups when they fit",
+          "screenshot": "screenshots/mobile-groups-fit.png",
+          "slug": "mobile-groups-fit",
+          "status": "pass"
+        },
+        {
+          "name": "Mobile semantic wrapping at 320px",
+          "screenshot": "screenshots/mobile-narrow-wrap.png",
+          "slug": "mobile-narrow-wrap",
+          "status": "pass"
+        },
+        {
+          "name": "Mobile source plus three categories and topic at 320px",
+          "screenshot": "screenshots/mobile-three-categories.png",
+          "slug": "mobile-three-categories",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "provider": "public-baseline/exact-head-css-overlay",
+  "runner": "system-chrome",
+  "scenario": "https://clawhub.ai/skills-sh/skills-101/superpowers/ai-video-generation",
+  "status": "pass"
+}
