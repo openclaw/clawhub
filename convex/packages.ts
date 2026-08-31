@@ -11907,7 +11907,11 @@ async function quarantineMaliciousLatestPackageRelease(
     .map((candidate) => (candidate._id === release._id ? quarantinedRelease : candidate))
     .filter(
       (candidate) =>
-        !candidate.softDeletedAt && resolvePackageReleaseScanStatus(candidate) !== "malicious",
+        !candidate.softDeletedAt &&
+        resolvePackageReleaseScanStatus(candidate) !== "malicious" &&
+        // Administrative identity repairs do not rewrite historical artifacts. Never promote an
+        // incompatible historical id, but always commit quarantine of the malicious release.
+        (pkg.family !== "code-plugin" || !pkg.runtimeId || candidate.runtimeId === pkg.runtimeId),
     );
   const nextLatest = getPreferredRestoredPackageRelease(pkg.family, activeNonMaliciousReleases);
   const nextTags = rebuildPackageTagsFromActiveReleases(activeNonMaliciousReleases);
@@ -11929,7 +11933,8 @@ async function quarantineMaliciousLatestPackageRelease(
     summary: nextLatest?.summary,
     icon: nextLatest?.icon,
     sourceRepo: restoredSourceRepo,
-    runtimeId: restoredRuntimeId,
+    runtimeId:
+      pkg.family === "code-plugin" ? (pkg.runtimeId ?? restoredRuntimeId) : restoredRuntimeId,
     compatibility: nextLatest?.compatibility,
     verification: nextLatest?.verification,
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : "malicious",

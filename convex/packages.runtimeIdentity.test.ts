@@ -76,6 +76,88 @@ async function publish(
 }
 
 describe("owner-scoped package runtime identity", () => {
+  it.each([true, false])(
+    "rejects principal recovery into a conflicting legacy namespace (dryRun=%s)",
+    async (dryRun) => {
+      const { t, admin, community } = await fixture();
+      const original = await publish(t, admin, community, "@community/voice");
+      await publish(t, admin, { ownerUserId: admin }, "legacy-voice");
+      await t.run(async (ctx) => {
+        await ctx.db.insert("authAccounts", {
+          userId: community.ownerUserId,
+          provider: "github",
+          providerAccountId: "111",
+        });
+        await ctx.db.insert("authAccounts", {
+          userId: admin,
+          provider: "github",
+          providerAccountId: "222",
+        });
+      });
+      const before = await t.run(async (ctx) => ({
+        publisher: await ctx.db.get(community.ownerPublisherId),
+        pkg: await ctx.db.get(original.packageId),
+        release: await ctx.db.get(original.releaseId),
+      }));
+      await expect(
+        t.mutation(internal.publishers.recoverPersonalPublisherInternal, {
+          actorUserId: admin,
+          publisherHandle: "community",
+          previousGitHubProviderAccountId: "111",
+          nextGitHubProviderAccountId: "222",
+          reason: "Recover verified principal",
+          confirmIdentityVerified: true,
+          dryRun,
+        }),
+      ).rejects.toThrow("already claimed");
+      expect(
+        await t.run(async (ctx) => ({
+          publisher: await ctx.db.get(community.ownerPublisherId),
+          pkg: await ctx.db.get(original.packageId),
+          release: await ctx.db.get(original.releaseId),
+        })),
+      ).toEqual(before);
+    },
+  );
+
+  it("quarantines malicious latest without restoring a historical runtime claimed by another package", async () => {
+    const { t, admin, community } = await fixture();
+    const historical = await publish(t, admin, community, "@community/repaired");
+    const malicious = await publish(t, admin, community, "@community/repaired", {
+      version: "2.0.0",
+    });
+    const originalRelease = await t.run(async (ctx) => ctx.db.get(historical.releaseId));
+    await t.mutation(internal.packages.repairPackageIdentityInternal, {
+      actorUserId: admin,
+      name: "@community/repaired",
+      nextRuntimeId: "voice-next",
+      reason: "Repair identity",
+    });
+    const other = await publish(t, admin, community, "@community/other");
+    await t.mutation(internal.packages.updateReleaseLlmAnalysisInternal, {
+      releaseId: malicious.releaseId,
+      llmAnalysis: {
+        status: "malicious",
+        verdict: "malicious",
+        confidence: "high",
+        summary: "Fixture policy violation",
+        guidance: "Remove unsafe behavior",
+        checkedAt: 100,
+      },
+    });
+    const rows = await t.run(async (ctx) => ({
+      pkg: await ctx.db.get(historical.packageId),
+      historical: await ctx.db.get(historical.releaseId),
+      malicious: await ctx.db.get(malicious.releaseId),
+      other: await ctx.db.get(other.packageId),
+    }));
+    expect(rows.malicious?.softDeletedAt).toBeTypeOf("number");
+    expect(rows.pkg).toMatchObject({ runtimeId: "voice-next", scanStatus: "malicious", tags: {} });
+    expect(rows.pkg?.latestReleaseId).toBeUndefined();
+    expect(rows.historical).toEqual(originalRelease);
+    expect(rows.other?.runtimeId).toBe("voice");
+  });
+
   it.each(["organization", "personal"])(
     "does not read other publishers' runtime claims when publishing for a %s",
     async (kind) => {

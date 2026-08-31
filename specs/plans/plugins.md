@@ -158,15 +158,18 @@ separate legacy user-owner lookup for personal publishers. They must not scan
 other publishers' claims for the same runtime id. These indexes use existing
 ownership fields; no denormalized owner key or data backfill is needed.
 
-Follow-up: administrative runtime repair can leave historical release manifests
-inconsistent with the parent package identity. Reproduction: repair a parent
-from id `voice` to `voice-next`, publish another same-owner package claiming
-`voice`, then quarantine a malicious latest release on the repaired package.
-The existing quarantine fallback may restore an older release's `voice` id.
-This predates owner-scoped claims. Keep security quarantine operational; do not
-add a table trigger that throws on this fallback and rolls back quarantine.
-An identity-aware historical-release repair/fallback design remains separate
-work; this change neither rewrites archives nor changes quarantine behavior.
+Personal-principal recovery validates the destination legacy namespace before
+relinking the publisher, including during dry runs. It must reject conflicting
+live runtime claims atomically without changing owners or historical releases.
+
+Administrative runtime repair does not rewrite historical release manifests.
+If a parent is repaired from `voice` to `voice-next` and another package claims
+`voice`, malicious-latest quarantine must preserve the repaired parent id.
+Only historical code-plugin releases matching that canonical id may regain
+distribution tags or latest promotion. If none match, the package has no
+latest release and remains malicious. Never throw a collision error that
+rolls back the malicious release's quarantine. Historical artifacts remain
+unchanged; bundle-plugin fallback retains its release-derived identity.
 
 Current OpenClaw evidence supports this:
 

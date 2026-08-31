@@ -8,6 +8,7 @@ import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/acc
 import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
@@ -1572,6 +1573,16 @@ async function getPersonalPublisherRecoveryOwnerMigrationPlan(
     throw new ConvexError(
       `Publisher resource ${first.table}:${first.id} belongs to another user; manual reconciliation required`,
     );
+  }
+  for (const pkg of packages) {
+    if (pkg.family === "code-plugin" && !pkg.softDeletedAt) {
+      // Relinking a personal publisher merges its claims with the destination's legacy namespace.
+      await assertPackageRuntimeIdAvailable(ctx, {
+        ...pkg,
+        ownerUserId: nextUserId,
+        ownerPublisherId: undefined,
+      });
+    }
   }
   if (
     activeHandleReservation &&
