@@ -1771,8 +1771,17 @@ const packages = defineTable({
   .index("by_family_channel_updated", ["family", "channel", "updatedAt"])
   .index("by_family_official_updated", ["family", "isOfficial", "updatedAt"])
   .index("by_runtime_id", ["runtimeId"])
-  .index("by_owner_runtime", ["ownerUserId", "ownerPublisherId", "runtimeId", "softDeletedAt"])
-  .index("by_owner_publisher_runtime", ["ownerPublisherId", "runtimeId", "softDeletedAt"])
+  .index("by_ownerUserId_ownerPublisherId_runtimeId_softDeletedAt", [
+    "ownerUserId",
+    "ownerPublisherId",
+    "runtimeId",
+    "softDeletedAt",
+  ])
+  .index("by_ownerPublisherId_runtimeId_softDeletedAt", [
+    "ownerPublisherId",
+    "runtimeId",
+    "softDeletedAt",
+  ])
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
   .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"])
   .index("by_active_family_downloads", ["softDeletedAt", "family", "stats.downloads", "updatedAt"])

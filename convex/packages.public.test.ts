@@ -2280,8 +2280,8 @@ function makeInsertReleaseCtx(
                 };
                 buildQuery?.(query);
                 if (
-                  indexName === "by_owner_runtime" ||
-                  indexName === "by_owner_publisher_runtime"
+                  indexName === "by_ownerUserId_ownerPublisherId_runtimeId_softDeletedAt" ||
+                  indexName === "by_ownerPublisherId_runtimeId_softDeletedAt"
                 ) {
                   const matches = runtimePackages.filter((pkg) =>
                     [...filters].every(([field, value]) => pkg[field] === value),

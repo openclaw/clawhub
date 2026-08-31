@@ -30,7 +30,7 @@ export async function assertPackageRuntimeIdAvailable(
     claims.push(
       ctx.db
         .query("packages")
-        .withIndex("by_owner_runtime", (q) =>
+        .withIndex("by_ownerUserId_ownerPublisherId_runtimeId_softDeletedAt", (q) =>
           q
             .eq("ownerUserId", userId)
             .eq("ownerPublisherId", undefined)
@@ -43,7 +43,7 @@ export async function assertPackageRuntimeIdAvailable(
     claims.push(
       ctx.db
         .query("packages")
-        .withIndex("by_owner_publisher_runtime", (q) =>
+        .withIndex("by_ownerPublisherId_runtimeId_softDeletedAt", (q) =>
           q
             .eq("ownerPublisherId", publisherId)
             .eq("runtimeId", runtimeId)
