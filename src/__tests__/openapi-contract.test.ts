@@ -80,4 +80,15 @@ describe("OpenAPI contract", () => {
     expect(property(property(handoffSchema, "properties"), "scan")).toBeUndefined();
     expect(property(property(handoffSchema, "properties"), "scanStatus")).toBeUndefined();
   });
+
+  it("documents package security audit metadata", async () => {
+    const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
+    const spec: unknown = JSON.parse(await readFile(specPath, "utf8"));
+    const schemas = property(property(spec, "components"), "schemas");
+    const packageSecurity = property(schemas, "PackageSecurityResponse");
+    const properties = property(packageSecurity, "properties");
+
+    expect(property(properties, "overview")).toEqual({ type: "string" });
+    expect(property(properties, "securityAuditUrl")).toEqual({ type: "string" });
+  });
 });

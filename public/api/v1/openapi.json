@@ -596,6 +596,12 @@
       "PackageSecurityResponse": {
         "type": "object",
         "properties": {
+          "overview": {
+            "type": "string"
+          },
+          "securityAuditUrl": {
+            "type": "string"
+          },
           "package": {
             "type": "object",
             "properties": {
