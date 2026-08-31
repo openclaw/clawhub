@@ -30,6 +30,7 @@ This note preserves the complete UI direction established during the June 2026 d
 - Follow categories with a vertical separator and up to five topics.
 - Render topics lowercase, prefixed with `#`, and muted.
 - Keep category/topic typography compact and muted.
+- Skill detail heroes are title-first: do not render a skill presentation icon in the title row, even when legacy or hosted icon metadata exists. Category icons remain in taxonomy metadata; creator avatars and icons outside the hero title keep their existing surfaces.
 - Use a 36 px desktop detail title with deliberate breathing room below the taxonomy row.
 - Render the summary at 14 px, muted/approximately 82% opacity, clamped to two lines.
 - Use `Read more`, not `See more`, to expand the hero summary.
