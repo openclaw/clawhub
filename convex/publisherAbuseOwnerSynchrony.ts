@@ -3,15 +3,16 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
+import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   detectPublisherAbuseOwnerSynchrony,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
-import { computeBoundedPublisherSkillMetrics } from "./lib/publisherStats";
 
 const OWNER_KEY_PAGE_SIZE = 50;
 const OWNER_CANDIDATE_PAGE_SIZE = 50;
+const OWNER_SKILL_COUNT_PAGE_SIZE = 100;
 const MAX_OWNER_SYNCHRONY_CANDIDATES = 8_000;
 const OWNER_SYNCHRONY_SIGNAL_TYPE = "owner_synchronized_download_trends" as const;
 const OWNER_SYNCHRONY_REASON_CODES = [
@@ -42,7 +43,13 @@ type OwnerSynchronyPublisher = {
   publisherId: Id<"publishers">;
   linkedUserId?: Id<"users">;
   handle: string;
-  publishedSkills: number;
+  publishedSkills?: number;
+};
+
+type OwnerSkillCountPage = {
+  publicSkillCount: number;
+  cursor?: string;
+  isDone: boolean;
 };
 
 type OwnerSynchronyCandidate = {
@@ -207,25 +214,43 @@ export const readPublisherAbuseOwnerCandidatesPageInternal = internalQuery({
   handler: readPublisherAbuseOwnerCandidatesPageInternalHandler,
 });
 
+export async function readPublisherAbuseOwnerSkillCountPageInternalHandler(
+  ctx: Pick<QueryCtx, "db">,
+  args: { ownerPublisherId: Id<"publishers">; cursor?: string },
+): Promise<OwnerSkillCountPage> {
+  const page = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", args.ownerPublisherId).eq("softDeletedAt", undefined),
+    )
+    .paginate({ cursor: args.cursor ?? null, numItems: OWNER_SKILL_COUNT_PAGE_SIZE });
+
+  return {
+    publicSkillCount: page.page.filter(isPublicSkillDoc).length,
+    cursor: page.isDone ? undefined : page.continueCursor,
+    isDone: page.isDone,
+  };
+}
+
+export const readPublisherAbuseOwnerSkillCountPageInternal = internalQuery({
+  args: { ownerPublisherId: v.id("publishers"), cursor: v.optional(v.string()) },
+  handler: readPublisherAbuseOwnerSkillCountPageInternalHandler,
+});
+
 export async function getPublisherAbuseOwnerSynchronyPublisherInternalHandler(
   ctx: Pick<QueryCtx, "db">,
   args: { ownerPublisherId: Id<"publishers"> },
 ): Promise<OwnerSynchronyPublisher | null> {
   const publisher = await ctx.db.get(args.ownerPublisherId);
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
-  const metrics =
-    typeof publisher.publishedSkills === "number"
-      ? null
-      : await computeBoundedPublisherSkillMetrics(ctx, publisher._id);
-  const publishedSkills = publisher.publishedSkills ?? metrics?.publishedSkills;
-  if (publishedSkills === undefined) {
-    throw new Error(`Publisher skill count fallback limit exceeded for ${publisher._id}.`);
-  }
   return {
     publisherId: publisher._id,
     linkedUserId: publisher.linkedUserId ?? undefined,
     handle: publisher.handle,
-    publishedSkills: Math.max(0, publishedSkills),
+    publishedSkills:
+      typeof publisher.publishedSkills === "number"
+        ? Math.max(0, publisher.publishedSkills)
+        : undefined,
   };
 }
 
@@ -233,6 +258,33 @@ export const getPublisherAbuseOwnerSynchronyPublisherInternal = internalQuery({
   args: { ownerPublisherId: v.id("publishers") },
   handler: getPublisherAbuseOwnerSynchronyPublisherInternalHandler,
 });
+
+async function countLegacyPublisherPublicSkills(
+  ctx: Pick<ActionCtx, "runQuery">,
+  ownerPublisherId: Id<"publishers">,
+  candidateCount: number,
+) {
+  const maxRelevantSkillCount = Math.floor(
+    candidateCount / PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
+  );
+  // Current publishers use the cached count. For a legacy row, stop once the
+  // bounded read can no longer prove that the 15% coverage rule passes.
+  const maxPages = Math.ceil((maxRelevantSkillCount + 1) / OWNER_SKILL_COUNT_PAGE_SIZE);
+  let publicSkillCount = 0;
+  let cursor: string | undefined;
+  for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+    const page: OwnerSkillCountPage = await ctx.runQuery(
+      internal.publisherAbuseOwnerSynchrony.readPublisherAbuseOwnerSkillCountPageInternal,
+      cursor ? { ownerPublisherId, cursor } : { ownerPublisherId },
+    );
+    publicSkillCount += page.publicSkillCount;
+    if (publicSkillCount > maxRelevantSkillCount) return null;
+    if (page.isDone) return publicSkillCount;
+    if (!page.cursor) throw new Error("Publisher skill count page did not return a cursor");
+    cursor = page.cursor;
+  }
+  return null;
+}
 
 export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
   ctx: Pick<ActionCtx, "runQuery">,
@@ -274,7 +326,10 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
     { ownerPublisherId },
   );
   if (!publisher) return null;
-  const publisherSkillCount = publisher.publishedSkills;
+  const publisherSkillCount =
+    publisher.publishedSkills ??
+    (await countLegacyPublisherPublicSkills(ctx, ownerPublisherId, uniqueCandidates.size));
+  if (publisherSkillCount === null) return null;
   if (
     publisherSkillCount < 2 ||
     uniqueCandidates.size / publisherSkillCount <

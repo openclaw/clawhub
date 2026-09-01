@@ -15,6 +15,7 @@ const {
   getPublisherAbuseOwnerSynchronyPublisherInternalHandler,
   readPublisherAbuseOwnerCandidatesPageInternalHandler,
   readPublisherAbuseOwnerKeysPageInternalHandler,
+  readPublisherAbuseOwnerSkillCountPageInternalHandler,
   scanPublisherAbuseOwnerSynchronyPage,
   upsertPublisherAbuseOwnerSynchronySignalInternalHandler,
 } = await import("./publisherAbuseOwnerSynchrony");
@@ -112,32 +113,14 @@ function storedCandidate(
 }
 
 describe("publisher abuse owner synchrony signal", () => {
-  it("derives the public skill count for legacy publishers", async () => {
+  it("leaves a legacy publisher count for the bounded action fallback", async () => {
     const publisherId = "publishers:legacy" as Id<"publishers">;
-    const eq = vi.fn();
-    const rangeBuilder = { eq };
-    eq.mockReturnValue(rangeBuilder);
-    const makeSkill = (index: number) => ({
-      _id: `skills:public-${index}`,
-      ownerPublisherId: publisherId,
-      softDeletedAt: undefined,
-      statsDownloads: 10,
-      statsInstallsAllTime: 1,
-      statsStars: 0,
-    });
-    const take = vi.fn(async () => Array.from({ length: 2 }, (_, index) => makeSkill(index)));
     const ctx = {
       db: {
         get: vi.fn(async () => ({
           _id: publisherId,
           handle: "legacy",
           linkedUserId: "users:legacy",
-        })),
-        query: vi.fn(() => ({
-          withIndex: vi.fn((_name: string, range: (query: { eq: typeof eq }) => unknown) => {
-            range({ eq });
-            return { take };
-          }),
         })),
       },
     };
@@ -146,15 +129,39 @@ describe("publisher abuse owner synchrony signal", () => {
       getPublisherAbuseOwnerSynchronyPublisherInternalHandler(ctx as never, {
         ownerPublisherId: publisherId,
       }),
-    ).resolves.toMatchObject({ publishedSkills: 2 });
-    expect(take).toHaveBeenCalledWith(501);
+    ).resolves.toMatchObject({ publishedSkills: undefined });
+  });
 
-    take.mockResolvedValue(Array.from({ length: 501 }, (_, index) => makeSkill(index)));
+  it("counts public legacy skills in bounded pages", async () => {
+    const publisherId = "publishers:legacy" as Id<"publishers">;
+    const eq = vi.fn();
+    const rangeBuilder = { eq };
+    eq.mockReturnValue(rangeBuilder);
+    const paginate = vi.fn(async () => ({
+      page: [
+        { _id: "skills:public", softDeletedAt: undefined },
+        { _id: "skills:hidden", softDeletedAt: undefined, moderationStatus: "hidden" },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    }));
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn((_name: string, range: (query: { eq: typeof eq }) => unknown) => {
+            range({ eq });
+            return { paginate };
+          }),
+        })),
+      },
+    };
+
     await expect(
-      getPublisherAbuseOwnerSynchronyPublisherInternalHandler(ctx as never, {
+      readPublisherAbuseOwnerSkillCountPageInternalHandler(ctx as never, {
         ownerPublisherId: publisherId,
       }),
-    ).rejects.toThrow("Publisher skill count fallback limit exceeded");
+    ).resolves.toEqual({ publicSkillCount: 1, cursor: "next-page", isDone: false });
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 100 });
   });
 
   it("discovers owners through the current-run synchrony candidate index", async () => {
@@ -330,6 +337,51 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(result?.portfolioEvidence.catalogCoverage).toBe(1);
     expect(signalPageIndex).toBe(3);
     expect(runQuery).toHaveBeenCalledTimes(4);
+  });
+
+  it("pages a legacy publisher count beyond 500 skills without stopping the scan", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const ownerPublisherId = "publishers:legacy" as Id<"publishers">;
+    const signals = Array.from({ length: 101 }, (_, index) => ownerSignal(index, ownerPublisherId));
+    const signalPages = [
+      { candidates: signals.slice(0, 50), cursor: "signals-2", isDone: false },
+      { candidates: signals.slice(50, 100), cursor: "signals-3", isDone: false },
+      { candidates: signals.slice(100), cursor: undefined, isDone: true },
+    ];
+    let signalPageIndex = 0;
+    let publisherRead = false;
+    let skillCountPages = 0;
+    const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
+      if ("ownerKey" in args) return signalPages[signalPageIndex++];
+      if (!publisherRead) {
+        publisherRead = true;
+        return {
+          publisherId: ownerPublisherId,
+          linkedUserId: "users:legacy" as Id<"users">,
+          handle: "legacy-owner",
+          publishedSkills: undefined,
+        };
+      }
+      skillCountPages += 1;
+      return {
+        publicSkillCount: 100,
+        cursor: skillCountPages === 6 ? undefined : `count-${skillCountPages + 1}`,
+        isDone: skillCountPages === 6,
+      };
+    });
+
+    const result = await getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
+      { runQuery } as never,
+      {
+        runId,
+        ownerKey: "publisher:publishers:legacy",
+        todayDay: 20_683,
+      },
+    );
+
+    expect(result?.portfolioEvidence.publisherSkillCount).toBe(600);
+    expect(result?.portfolioEvidence.catalogCoverage).toBeCloseTo(101 / 600);
+    expect(skillCountPages).toBe(6);
   });
 
   it("processes 8,000 embedded signal curves in bounded pages", async () => {
