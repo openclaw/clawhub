@@ -88,24 +88,24 @@ describe("canonical mixed skill search ranking", () => {
     expect(summary).toMatchObject({ tier: 4 });
   });
 
-  it("uses official and featured only after lexical relevance is tied", () => {
-    const betterLexical = candidate("clawhub:better", {
+  it("orders matching official and featured skills before community matches", () => {
+    const community = candidate("clawhub:community", {
       relevance: { tier: 1, lexicalScore: 96, semanticScore: 0 },
     });
     const official = candidate("clawhub:official", {
-      relevance: { tier: 1, lexicalScore: 95, semanticScore: 0 },
+      relevance: { tier: 3, lexicalScore: 60, semanticScore: 0 },
       official: true,
-      featured: true,
     });
-    const tiedCommunity = candidate("clawhub:community", {
-      relevance: { tier: 1, lexicalScore: 95, semanticScore: 0 },
+    const featured = candidate("clawhub:featured", {
+      relevance: { tier: 4, lexicalScore: 40, semanticScore: 0 },
+      featured: true,
     });
 
     expect(
-      [official, betterLexical, tiedCommunity]
+      [featured, community, official]
         .sort(compareCanonicalSkillSearchCandidates)
         .map((row) => row.id),
-    ).toEqual(["clawhub:better", "clawhub:official", "clawhub:community"]);
+    ).toEqual(["clawhub:official", "clawhub:featured", "clawhub:community"]);
   });
 
   it("uses rolling adoption, bookmarks, and freshness for comparable matches", () => {

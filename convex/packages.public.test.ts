@@ -1360,6 +1360,7 @@ function makeDigestCtx(options: {
   }>;
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
+  officialDigests?: Array<Record<string, unknown>>;
   publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
   highlightedBadges?: Array<Record<string, unknown>>;
@@ -1758,6 +1759,28 @@ function makeDigestCtx(options: {
                   );
                   return {
                     take: vi.fn().mockResolvedValue(matches),
+                  };
+                }
+                if (options.officialDigests !== undefined && indexName.includes("_official_")) {
+                  let family = "";
+                  const queryBuilder = {
+                    eq: (field: string, value: string | undefined) => {
+                      if (field === "family") family = value ?? "";
+                      return queryBuilder;
+                    },
+                    gte: () => queryBuilder,
+                    lt: () => queryBuilder,
+                  };
+                  builder?.(queryBuilder);
+                  const matches = (options.officialDigests ?? []).filter(
+                    (digest) => !family || digest.family === family,
+                  );
+                  return {
+                    take: vi.fn(async (limit: number) => matches.slice(0, limit)),
+                    order: vi.fn(() => ({
+                      paginate: getPaginate(table),
+                      take: vi.fn(async (limit: number) => matches.slice(0, limit)),
+                    })),
                   };
                 }
                 if (indexName.includes("_family_")) {
@@ -5133,8 +5156,14 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["react-exact"]);
   });
 
-  it("does not let official status make unrelated packages eligible for search", async () => {
+  it("does not let official or featured status make unrelated packages eligible for search", async () => {
+    const featured = makeDigest("featured-nostr", {
+      displayName: "Featured Nostr",
+      summary: "Protocol integration.",
+    });
     const { ctx } = makeDigestCtx({
+      highlightedBadges: [{ packageId: featured.packageId, at: 100 }],
+      exactDigests: [featured],
       pages: [
         {
           page: [
@@ -5143,6 +5172,7 @@ describe("packages public queries", () => {
               isOfficial: true,
               summary: "Protocol integration.",
             }),
+            featured,
           ],
           isDone: true,
           continueCursor: "",
@@ -5229,24 +5259,22 @@ describe("packages public queries", () => {
     expect(result).toEqual([]);
   });
 
-  it("orders lexical matches before summary-only matches without exposing rank metadata", async () => {
+  it("orders matching official packages before stronger community matches", async () => {
+    const community = makeDigest("email", {
+      displayName: "Email",
+      summary: "Mailbox tools.",
+    });
+    const agentMail = makeDigest("agentmail", {
+      displayName: "AgentMail",
+      isOfficial: true,
+      summary: "Official email plugin and email channel for OpenClaw.",
+      topics: ["email", "inbox"],
+    });
     const { ctx } = makeDigestCtx({
+      officialDigests: [agentMail],
       pages: [
         {
-          page: [
-            makeDigest("official-helper", {
-              displayName: "Official Helper",
-              isOfficial: true,
-              summary: "Ghost CMS integration.",
-              updatedAt: 100,
-            }),
-            makeDigest("ghost-tools", {
-              displayName: "Ghost Tools",
-              isOfficial: false,
-              summary: "CMS helper.",
-              updatedAt: 1,
-            }),
-          ],
+          page: [community],
           isDone: true,
           continueCursor: "",
         },
@@ -5254,13 +5282,42 @@ describe("packages public queries", () => {
     });
 
     const result = await searchPublicHandler(ctx, {
-      query: "ghost",
+      query: "email",
+      limit: 2,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["agentmail", "email"]);
+    expect(result[0]).not.toHaveProperty("rankTier");
+    expect(result[0]).not.toHaveProperty("matchReason");
+  });
+
+  it("orders matching featured packages before stronger community matches", async () => {
+    const community = makeDigest("email", {
+      displayName: "Email",
+      summary: "Mailbox tools.",
+    });
+    const featured = makeDigest("agentmail", {
+      displayName: "AgentMail",
+      summary: "Email inboxes for agents.",
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [{ packageId: featured.packageId, at: 100 }],
+      exactDigests: [community, featured],
+      pages: [
+        {
+          page: [community, featured],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "email",
       limit: 10,
     });
 
-    expect(result.map((entry) => entry.package.name)).toEqual(["ghost-tools", "official-helper"]);
-    expect(result[0]).not.toHaveProperty("rankTier");
-    expect(result[0]).not.toHaveProperty("matchReason");
+    expect(result.map((entry) => entry.package.name)).toEqual(["agentmail", "email"]);
   });
 
   it("allows org collaborators to search their private packages", async () => {
@@ -5348,7 +5405,12 @@ describe("packages public queries", () => {
       ]),
     );
     expect(new Set(indexNames)).toEqual(
-      new Set(["by_active_topic_updated", "by_active_category_updated", "by_active_updated"]),
+      new Set([
+        "by_active_topic_updated",
+        "by_active_category_updated",
+        "by_active_official_updated",
+        "by_active_updated",
+      ]),
     );
   });
 
@@ -6127,8 +6189,14 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["api-demo"]);
-    expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
-    expect(indexNames).toEqual(["by_active_category_updated"]);
+    expect(tableNames).toEqual([
+      "packagePluginCategorySearchDigest",
+      "packagePluginCategorySearchDigest",
+    ]);
+    expect(indexNames).toEqual([
+      "by_active_official_category_updated",
+      "by_active_category_updated",
+    ]);
   });
 
   it("uses topic digests for topic-filtered search", async () => {
@@ -6398,8 +6466,9 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).toHaveBeenCalledTimes(6);
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(2);
     expect(take).toHaveBeenCalledWith(20);
+    expect(take).toHaveBeenCalledWith(200);
   });
 
   it("recalls exact author topics without an explicit topic filter", async () => {
@@ -6479,7 +6548,7 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledTimes(4);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
@@ -6505,7 +6574,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
-    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledTimes(4);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -6532,7 +6601,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["runtime-demo"]);
-    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledTimes(4);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -6596,7 +6665,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-prefix"]);
-    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledTimes(4);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -6651,7 +6720,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["alpha", "beta"]);
-    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledTimes(4);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
@@ -6749,7 +6818,7 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledTimes(4);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(200);
   });

@@ -12391,23 +12391,41 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("plugins search sorts by rank tier before score without exposing rank metadata", async () => {
+  it("plugins search keeps matching official and featured results first across families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (args.family === "code-plugin") {
         return [
           {
+            score: 10,
+            rankTier: 1,
+            package: makeCatalogItem("name-plugin", { family: "code-plugin", updatedAt: 100 }),
+          },
+          {
             score: 20,
             rankTier: 3,
-            package: makeCatalogItem("summary-plugin", { family: "code-plugin", updatedAt: 100 }),
+            package: {
+              ...makeCatalogItem("featured-summary-plugin", {
+                family: "code-plugin",
+                updatedAt: 75,
+              }),
+              featuredAt: 75,
+            },
           },
         ];
       }
       if (args.family === "bundle-plugin") {
         return [
           {
-            score: 10,
-            rankTier: 1,
-            package: makeCatalogItem("name-plugin", { family: "bundle-plugin", updatedAt: 50 }),
+            score: 15,
+            rankTier: 2,
+            package: {
+              ...makeCatalogItem("official-topic-plugin", {
+                family: "bundle-plugin",
+                updatedAt: 50,
+              }),
+              channel: "official",
+              isOfficial: true,
+            },
           },
         ];
       }
@@ -12417,14 +12435,15 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=2"),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=3"),
     );
 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.results.map((entry: { package: { name: string } }) => entry.package.name)).toEqual([
+      "official-topic-plugin",
+      "featured-summary-plugin",
       "name-plugin",
-      "summary-plugin",
     ]);
     expect(body.results[0]).not.toHaveProperty("rankTier");
     expect(body.results[0]).not.toHaveProperty("matchReason");

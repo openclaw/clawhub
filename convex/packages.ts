@@ -1900,11 +1900,13 @@ function packageSearchMatch(
 
 function packageTrustSignals(pkg: {
   isOfficial: boolean;
+  featuredAt?: number;
   verificationTier?: PackageDigestLike["verificationTier"] | null;
   stats?: { downloads: number; installs: number; stars: number } | null;
 }): SearchTrustSignals {
   return {
     isOfficial: pkg.isOfficial,
+    featured: typeof pkg.featuredAt === "number",
     verificationTier: pkg.verificationTier,
     downloads: pkg.stats?.downloads,
     installs: pkg.stats?.installs,
@@ -1915,6 +1917,7 @@ function comparePackageSearchMatches<
   T extends PackageSearchMatch & {
     package: {
       isOfficial: boolean;
+      featuredAt?: number;
       updatedAt: number;
       verificationTier?: PackageDigestLike["verificationTier"] | null;
       stats?: { downloads: number; installs: number; stars: number } | null;
@@ -4930,39 +4933,61 @@ async function searchPackagesImpl(
     !args.family && !experimentalClawsEnabled()
       ? ([...STABLE_PACKAGE_FAMILIES] as PackageFamily[])
       : [args.family];
-  const buildSearchDigestQuery = (family: PackageFamily | undefined) =>
+  const buildSearchDigestQuery = (
+    family: PackageFamily | undefined,
+    isOfficial = args.isOfficial,
+  ) =>
     topic
       ? buildPackageTopicDigestQuery(ctx, {
           topic,
           family,
           channel: args.channel,
-          isOfficial: args.isOfficial,
+          isOfficial,
         })
       : category
         ? buildPackagePluginCategoryDigestQuery(ctx, {
             category,
             family,
             channel: args.channel,
-            isOfficial: args.isOfficial,
+            isOfficial,
           })
         : buildPackageDigestQuery(ctx, {
             family,
             channel: args.channel,
-            isOfficial: args.isOfficial,
+            isOfficial,
           });
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
-  const directDigests =
+  const shouldRecallOfficial =
+    args.isOfficial === undefined && args.channel !== "community" && args.channel !== "private";
+  const [highlightedEntries, officialDigestGroups, directDigests] = await Promise.all([
+    fetchHighlightedPackageEntries(ctx, { ...args, category, topic }),
+    shouldRecallOfficial
+      ? Promise.all(
+          searchFamilies.map(async (family) =>
+            buildSearchDigestQuery(family, true).order("desc").take(MAX_PUBLIC_LIST_PAGE_SIZE),
+          ),
+        )
+      : Promise.resolve([]),
     category && !topic
-      ? []
-      : (
-          await Promise.all(
-            searchFamilies.map(
-              async (family) => await resolveDirectPackageSearchDigests(ctx, queryText, family),
-            ),
-          )
-        ).flat();
-  for (const digest of directDigests) {
+      ? Promise.resolve([])
+      : Promise.all(
+          searchFamilies.map(
+            async (family) => await resolveDirectPackageSearchDigests(ctx, queryText, family),
+          ),
+        ).then((results) => results.flat()),
+  ]);
+  const featuredAtByPackage = new Map(
+    highlightedEntries.map(({ digest, featuredAt }) => [String(digest.packageId), featuredAt]),
+  );
+  // Curated recall is still subject to the same filters and text matcher below.
+  // It only ensures Official and Featured matches are present before the result limit is applied.
+  const candidateDigests = [
+    ...highlightedEntries.map(({ digest }) => digest),
+    ...officialDigestGroups.flat().filter((digest) => digest.isOfficial),
+    ...directDigests,
+  ];
+  for (const digest of candidateDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
     const match = packageSearchMatch(digest, queryText);
@@ -4970,7 +4995,11 @@ async function searchPackagesImpl(
     seen.add(digest.packageId);
     matches.push({
       ...match,
-      package: await toPublicPackageListItem(ctx, digest),
+      package: await toPublicPackageListItem(
+        ctx,
+        digest,
+        featuredAtByPackage.get(String(digest.packageId)),
+      ),
     });
   }
 
@@ -4992,7 +5021,11 @@ async function searchPackagesImpl(
         seen.add(digest.packageId);
         matches.push({
           ...match,
-          package: await toPublicPackageListItem(ctx, digest),
+          package: await toPublicPackageListItem(
+            ctx,
+            digest,
+            featuredAtByPackage.get(String(digest.packageId)),
+          ),
         });
       }
     };

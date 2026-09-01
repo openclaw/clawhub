@@ -6341,6 +6341,7 @@ type PublicSkillCatalogItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion: string | null;
+  featuredAt?: number;
   verificationTier: null;
   stats: { downloads: number; installs: number; stars: number; versions: number };
 };
@@ -6470,6 +6471,9 @@ async function toPublicSkillCatalogItem(
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: latestVersion?.version ?? null,
+    ...(digest.badges?.highlighted?.at === undefined
+      ? {}
+      : { featuredAt: digest.badges.highlighted.at }),
     verificationTier: null,
     stats: {
       // CLAW-561 changes presentation only. Download indexes and ranking remain
@@ -6663,13 +6667,14 @@ function skillCatalogSearchMatch(
   return { rankTier, score };
 }
 
-// Skills have no verification tiers, so official flag + adoption are the
+// Skills have no verification tiers, so curated status + adoption are the
 // only trust signals feeding the shared squat gate.
 function skillTrustSignals(
-  pkg: Pick<PublicSkillCatalogItem, "isOfficial" | "stats">,
+  pkg: Pick<PublicSkillCatalogItem, "isOfficial" | "featuredAt" | "stats">,
 ): SearchTrustSignals {
   return {
     isOfficial: pkg.isOfficial,
+    featured: typeof pkg.featuredAt === "number",
     downloads: pkg.stats.downloads,
     installs: pkg.stats.installs,
   };
@@ -6677,7 +6682,7 @@ function skillTrustSignals(
 
 function compareSkillCatalogSearchMatches<
   T extends SkillCatalogSearchMatch & {
-    package: Pick<PublicSkillCatalogItem, "isOfficial" | "updatedAt" | "stats">;
+    package: Pick<PublicSkillCatalogItem, "isOfficial" | "featuredAt" | "updatedAt" | "stats">;
   },
 >(a: T, b: T) {
   return (
@@ -6852,6 +6857,30 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
   const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
   const matches: Array<SkillCatalogSearchMatch & { package: PublicSkillCatalogItem }> = [];
   const seen = new Set<string>();
+
+  // Curated rows have their own bounded projection, so recall them before the
+  // result quota can be filled by recent community matches. Eligibility still
+  // comes exclusively from the normal filters and text matcher below.
+  const curatedDigests = await ctx.db
+    .query("curatedSkillSearchDigest")
+    .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+    .order("desc")
+    .take(MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE);
+  for (const curatedDigest of curatedDigests) {
+    const digest = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_skill", (q) => q.eq("skillId", curatedDigest.skillId))
+      .unique();
+    if (!digest || !isCuratedSkillDigest(digest) || !skillCatalogMatchesFilters(digest, filters)) {
+      continue;
+    }
+    const match = skillCatalogSearchMatch(digest, queryText);
+    if (!match || seen.has(digest.skillId)) continue;
+    const catalogItem = await toPublicSkillCatalogItem(ctx, digest);
+    if (!catalogItem) continue;
+    seen.add(digest.skillId);
+    matches.push({ ...match, package: catalogItem });
+  }
 
   const exactSkill = await resolveSkillBySlugOrAlias(ctx, queryText);
   if (exactSkill.skill) {

@@ -1,3 +1,4 @@
+import { isCuratedSearchResult } from "./searchRanking";
 import { tokenize } from "./searchText";
 
 export type CanonicalSkillSearchDocument = {
@@ -100,6 +101,8 @@ export function compareCanonicalSkillSearchCandidates(
   right: CanonicalSkillSearchCandidate,
 ) {
   return (
+    Number(isCuratedSearchResult({ isOfficial: right.official, featured: right.featured })) -
+      Number(isCuratedSearchResult({ isOfficial: left.official, featured: left.featured })) ||
     left.relevance.tier - right.relevance.tier ||
     right.relevance.lexicalScore - left.relevance.lexicalScore ||
     right.relevance.semanticScore - left.relevance.semanticScore ||

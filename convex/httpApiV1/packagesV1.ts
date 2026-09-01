@@ -64,6 +64,7 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
 import { compareRecommendationStats } from "../lib/recommendationScore";
+import { isCuratedSearchResult } from "../lib/searchRanking";
 import {
   getPublicSkillVersionAccessBlock,
   getPublicSkillVersionDownloadBlock,
@@ -873,6 +874,7 @@ type CatalogListItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion?: string | null;
+  featuredAt?: number;
   verificationTier?: string | null;
   stats?: { downloads: number; installs: number; stars: number; versions: number };
 };
@@ -1178,6 +1180,18 @@ function compareCatalogItemsForSort(
 
 function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
   return (
+    Number(
+      isCuratedSearchResult({
+        isOfficial: b.package.isOfficial,
+        featured: typeof b.package.featuredAt === "number",
+      }),
+    ) -
+      Number(
+        isCuratedSearchResult({
+          isOfficial: a.package.isOfficial,
+          featured: typeof a.package.featuredAt === "number",
+        }),
+      ) ||
     (a.rankTier ?? Number.POSITIVE_INFINITY) - (b.rankTier ?? Number.POSITIVE_INFINITY) ||
     b.score - a.score ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||

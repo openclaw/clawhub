@@ -12,6 +12,7 @@ type SearchTextMatch = {
 
 export type SearchTrustSignals = {
   isOfficial: boolean;
+  featured?: boolean;
   verificationTier?:
     | "structural"
     | "source-linked"
@@ -21,6 +22,12 @@ export type SearchTrustSignals = {
   downloads?: number | null;
   installs?: number | null;
 };
+
+export function isCuratedSearchResult(
+  signals: Pick<SearchTrustSignals, "isOfficial" | "featured">,
+): boolean {
+  return signals.isOfficial || Boolean(signals.featured);
+}
 
 export function verificationRank(tier: SearchTrustSignals["verificationTier"]): number {
   if (tier === "rebuild-verified") return 4;
@@ -35,7 +42,7 @@ export function verificationRank(tier: SearchTrustSignals["verificationTier"]): 
 // source chain. source-linked and structural are self-serve, so they must not
 // open the exact-match squat gate.
 export function hasStrongTrustSignal(signals: SearchTrustSignals): boolean {
-  return signals.isOfficial || verificationRank(signals.verificationTier) >= 3;
+  return isCuratedSearchResult(signals) || verificationRank(signals.verificationTier) >= 3;
 }
 
 const ADOPTION_BUCKET_MAX = 6;
@@ -50,6 +57,7 @@ export function adoptionBucket(signals: SearchTrustSignals): number {
 }
 
 type RankedSearchKey = {
+  curated: boolean;
   tier: number;
   adoption: number;
   score: number;
@@ -66,6 +74,7 @@ export function rankedSearchKey(
   const adoption = adoptionBucket(signals);
   const demoteExact = match.rankTier === 0 && adoption === 0 && !hasStrongTrustSignal(signals);
   return {
+    curated: isCuratedSearchResult(signals),
     tier: demoteExact ? 1 : match.rankTier,
     adoption,
     score: match.score,
@@ -74,7 +83,12 @@ export function rankedSearchKey(
 
 /** Ascending sort: better entries first. Callers append surface tie-breakers. */
 export function compareRankedSearchKeys(a: RankedSearchKey, b: RankedSearchKey): number {
-  return a.tier - b.tier || b.adoption - a.adoption || b.score - a.score;
+  return (
+    Number(b.curated) - Number(a.curated) ||
+    a.tier - b.tier ||
+    b.adoption - a.adoption ||
+    b.score - a.score
+  );
 }
 
 // Collection guard: a demoted exact match must not satisfy "enough results"
