@@ -80,6 +80,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   recovery continues the same durable run instead of replacing it, and
   cursor-guarded writes prevent overlapping late workers from duplicating work.
   Explicitly bounded manual scans remain diagnostic-only.
+  New scan indexes must ship in a staging-only release before any function
+  queries them. Keep the indexes marked `staged: true`, deploy that schema,
+  and wait until Convex reports every index ready. Only a later release may
+  activate and query them. This applies to
+  `by_run_id_and_excess7_downloads`,
+  `by_run_id_and_synchrony_eligible_and_owner_key`, and
+  `by_owner_key_and_signal_type`.
   The `review` label remains a calibration/manual-review signal. The
   `potential_ban_candidate` label is an
   enforcement signal only for pressure-score nominations: the first eligible
