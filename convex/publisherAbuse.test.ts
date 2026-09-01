@@ -8110,7 +8110,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.runMutation).not.toHaveBeenCalled();
   });
 
-  it("keeps near-conversion-only temporal candidates", async () => {
+  it("keeps near-conversion-only public temporal candidates", async () => {
     const indexBuilder = {
       eq: vi.fn(() => indexBuilder),
       gte: vi.fn(() => indexBuilder),
@@ -8145,6 +8145,23 @@ describe("publisher abuse dry-run persistence", () => {
                           slug: "tracked-installs",
                           displayName: "Tracked Installs",
                           softDeletedAt: undefined,
+                          statsDownloads: 1_400,
+                          statsInstallsAllTime: 1_190,
+                          stats: {
+                            downloads: 1_400,
+                            stars: 0,
+                            installsCurrent: 1_190,
+                            installsAllTime: 1_190,
+                          },
+                        },
+                        {
+                          _id: "skills:hidden-traffic",
+                          ownerPublisherId: publisher._id,
+                          slug: "hidden-traffic",
+                          displayName: "Hidden Traffic",
+                          softDeletedAt: undefined,
+                          moderationStatus: "hidden",
+                          moderationFlags: [],
                           statsDownloads: 1_400,
                           statsInstallsAllTime: 1_190,
                           stats: {
@@ -8189,13 +8206,13 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(
       collectTemporalHandler(ctx, {
-        batchSize: 1,
+        batchSize: 2,
         todayDay: 100,
       }),
     ).resolves.toMatchObject({
       cursor: undefined,
       isDone: true,
-      scannedSkills: 1,
+      scannedSkills: 2,
       candidates: [
         {
           slug: "tracked-installs",
@@ -8208,6 +8225,9 @@ describe("publisher abuse dry-run persistence", () => {
         },
       ],
     });
+    expect(ctx.db.query.mock.calls.filter(([table]) => table === "skillDailyStats")).toHaveLength(
+      1,
+    );
   });
 
   it("skips official personal publishers during temporal candidate collection", async () => {

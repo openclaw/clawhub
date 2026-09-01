@@ -18,6 +18,7 @@ import {
   clampActivityTrendEndDay,
   getActivityTrendRangeForEndDay,
 } from "./lib/downloadTrend";
+import { isPublicSkillDoc } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
 import { hasOfficialPublisherRow } from "./lib/officialPublishers";
 import {
@@ -1902,6 +1903,8 @@ export async function collectTemporalPublisherAbuseSkillCandidatesPageInternalHa
   const benchmarkScores: SkillTemporalAbuseScore[] = [];
   const staffManagerExclusionBudget = createStaffPublisherManagerExclusionBudget();
   for (const skill of page.page) {
+    if (!isPublicSkillDoc(skill)) continue;
+
     const dailyStats = await ctx.db
       .query("skillDailyStats")
       .withIndex("by_skill_day", (q) =>
