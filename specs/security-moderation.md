@@ -133,9 +133,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Pearson correlation of at least 0.98, and the largest seven-day rolling peak
   must be no more than 1.25 times the smallest. At least two skills are required
   only because a trend comparison needs a pair; there is no fixed catalogue-size
-  threshold. This produces one `owner_synchronized_download_trends` signal for
-  the publisher, not one extra signal per skill. The similar-peak requirement
-  avoids treating shared direction alone as evidence.
+  threshold. Candidate signals and skill histories are read in bounded pages,
+  and page size never becomes an eligibility ceiling. This produces one
+  `owner_synchronized_download_trends` signal for the publisher, not one extra
+  signal per skill. The similar-peak requirement avoids treating shared direction
+  alone as evidence.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score

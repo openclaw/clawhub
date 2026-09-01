@@ -13,6 +13,7 @@ vi.mock("./functions", () => ({
 const {
   getPublisherAbuseOwnerSynchronyCandidateInternalHandler,
   readPublisherAbuseOwnerKeysPageInternalHandler,
+  readPublisherAbuseOwnerSignalsPageInternalHandler,
   upsertPublisherAbuseOwnerSynchronySignalInternalHandler,
 } = await import("./publisherAbuseOwnerSynchrony");
 
@@ -106,85 +107,98 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(eq).toHaveBeenCalledWith("latestRunId", runId);
   });
 
-  it("does not build synchrony evidence from an owner's stale anomaly signals", async () => {
+  it("keeps owner signal reads paged and excludes stale anomaly signals", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const staleRunId = "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">;
-    const staleSignals = [
-      {
-        ...existingSignal(1_700_000_000_000),
-        latestRunId: staleRunId,
-        signalType: "download_spike_flat_installs" as const,
-      },
-      {
-        ...existingSignal(1_700_000_000_000),
-        _id: "publisherAbuseSignals:stale-second",
-        skillId: "skills:second" as Id<"skills">,
-        latestRunId: staleRunId,
-        signalType: "sustained_abnormal_download_days" as const,
-      },
-    ];
-    const get = vi.fn();
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: () => ({
-            order: () => ({ take: async () => staleSignals }),
-          }),
-        })),
-        get,
-      },
-    };
-
-    await expect(
-      getPublisherAbuseOwnerSynchronyCandidateInternalHandler(ctx as never, {
-        runId,
-        ownerKey: staleSignals[0].ownerKey,
-        todayDay: 20_683,
-      }),
-    ).resolves.toBeNull();
-    expect(get).not.toHaveBeenCalled();
-  });
-
-  it("applies the owner signal cap after excluding stale-run rows", async () => {
-    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
-    const staleRunId = "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">;
-    const firstCurrent = {
+    const current = {
       ...existingSignal(1_700_000_000_000),
       latestRunId: runId,
       signalType: "download_spike_flat_installs" as const,
     };
-    const secondCurrent = {
-      ...firstCurrent,
-      _id: "publisherAbuseSignals:current-second",
-      skillId: "skills:current-second" as Id<"skills">,
-      signalType: "sustained_abnormal_download_days" as const,
-    };
-    const staleSignals = Array.from({ length: 99 }, (_, index) => ({
-      ...firstCurrent,
-      _id: `publisherAbuseSignals:stale-${index}`,
-      skillId: `skills:stale-${index}` as Id<"skills">,
-      latestRunId: staleRunId,
+    const stale = { ...current, latestRunId: staleRunId };
+    const paginate = vi.fn(async () => ({
+      page: [stale, current],
+      isDone: false,
+      continueCursor: "next-page",
     }));
-    const get = vi.fn(async () => null);
     const ctx = {
       db: {
         query: vi.fn(() => ({
           withIndex: () => ({
-            order: () => ({ take: async () => [firstCurrent, secondCurrent, ...staleSignals] }),
+            order: () => ({ paginate }),
           }),
         })),
-        get,
       },
     };
 
     await expect(
-      getPublisherAbuseOwnerSynchronyCandidateInternalHandler(ctx as never, {
+      readPublisherAbuseOwnerSignalsPageInternalHandler(ctx as never, {
         runId,
-        ownerKey: firstCurrent.ownerKey,
-        todayDay: 20_683,
+        ownerKey: current.ownerKey,
       }),
-    ).resolves.toBeNull();
-    expect(get).toHaveBeenCalledWith(firstCurrent.ownerPublisherId);
+    ).resolves.toEqual({
+      signals: [{ skillId: current.skillId, ownerPublisherId: current.ownerPublisherId }],
+      cursor: "next-page",
+      isDone: false,
+    });
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("processes a qualifying current-run portfolio beyond 50 skills and 100 rows", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const ownerPublisherId = "publishers:portfolio" as Id<"publishers">;
+    const signals = Array.from({ length: 101 }, (_, index) => ({
+      skillId: `skills:${index}` as Id<"skills">,
+      ownerPublisherId,
+    }));
+    const signalPages = [
+      { signals: signals.slice(0, 50), cursor: "page-2", isDone: false },
+      { signals: signals.slice(50, 100), cursor: "page-3", isDone: false },
+      { signals: signals.slice(100), cursor: undefined, isDone: true },
+    ];
+    let signalPageIndex = 0;
+    const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
+      if ("ownerKey" in args) return signalPages[signalPageIndex++];
+      if (!("skillId" in args)) {
+        return {
+          publisherId: ownerPublisherId,
+          linkedUserId: "users:portfolio" as Id<"users">,
+          handle: "portfolio-owner",
+          publishedSkills: 101,
+        };
+      }
+      const skillId = args.skillId as Id<"skills">;
+      const index = Number(skillId.split(":").at(-1));
+      const dailyDownloads = Array.from({ length: 60 }, (_, day) =>
+        Math.round((day + 1) * (1 + index * 0.001)),
+      );
+      return {
+        skillId,
+        skillSlug: `skill-${index}`,
+        skillDisplayName: `Skill ${index}`,
+        dailyDownloads,
+        recent7Downloads: dailyDownloads.slice(-7).reduce((sum, value) => sum + value, 0),
+        recent7Installs: 0,
+        recent30Downloads: dailyDownloads.slice(-30).reduce((sum, value) => sum + value, 0),
+        recent30Installs: 0,
+        allTimeDownloads: 10_000 + index,
+        allTimeInstalls: 0,
+      };
+    });
+
+    const result = await getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
+      { runQuery } as never,
+      {
+        runId,
+        ownerKey: "publisher:publishers:portfolio",
+        todayDay: 20_683,
+      },
+    );
+
+    expect(result?.portfolioEvidence.skillCount).toBe(101);
+    expect(result?.portfolioEvidence.catalogCoverage).toBe(1);
+    expect(signalPageIndex).toBe(3);
+    expect(runQuery).toHaveBeenCalledTimes(105);
   });
 
   it("creates one publisher-level signal with portfolio evidence", async () => {

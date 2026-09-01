@@ -12,8 +12,7 @@ import { getSkillPublisherContribution } from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
 const OWNER_KEY_PAGE_SIZE = 50;
-const MAX_OWNER_TRAFFIC_SIGNALS = 100;
-const MAX_OWNER_SYNCHRONY_SKILLS = 50;
+const OWNER_SIGNAL_PAGE_SIZE = 50;
 const OWNER_SYNCHRONY_SIGNAL_TYPE = "owner_synchronized_download_trends" as const;
 const OWNER_SYNCHRONY_REASON_CODES = [
   "multiple_skills_have_anomalous_downloads",
@@ -21,12 +20,32 @@ const OWNER_SYNCHRONY_REASON_CODES = [
 ] as const;
 
 type OwnerSynchronySkill = {
-  skill: Doc<"skills">;
+  skillId: Id<"skills">;
+  skillSlug: string;
+  skillDisplayName: string;
   dailyDownloads: number[];
   recent7Downloads: number;
   recent7Installs: number;
   recent30Downloads: number;
   recent30Installs: number;
+  allTimeDownloads: number;
+  allTimeInstalls: number;
+};
+
+type OwnerSynchronySignalPage = {
+  signals: Array<{
+    skillId: Id<"skills">;
+    ownerPublisherId: Id<"publishers">;
+  }>;
+  cursor?: string;
+  isDone: boolean;
+};
+
+type OwnerSynchronyPublisher = {
+  publisherId: Id<"publishers">;
+  linkedUserId?: Id<"users">;
+  handle: string;
+  publishedSkills: number;
 };
 
 type OwnerSynchronyCandidate = {
@@ -132,34 +151,150 @@ export const readPublisherAbuseOwnerKeysPageInternal = internalQuery({
   handler: readPublisherAbuseOwnerKeysPageInternalHandler,
 });
 
-export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
+export async function readPublisherAbuseOwnerSignalsPageInternalHandler(
   ctx: Pick<QueryCtx, "db">,
-  args: { runId: Id<"publisherAbuseScoreRuns">; ownerKey: string; todayDay: number },
-): Promise<OwnerSynchronyCandidate | null> {
-  const signals = await ctx.db
+  args: { runId: Id<"publisherAbuseScoreRuns">; ownerKey: string; cursor?: string },
+): Promise<OwnerSynchronySignalPage> {
+  const page = await ctx.db
     .query("publisherAbuseSignals")
     .withIndex("by_owner_key_and_last_seen_at", (q) => q.eq("ownerKey", args.ownerKey))
     .order("desc")
-    .take(MAX_OWNER_TRAFFIC_SIGNALS + 1);
+    .paginate({ cursor: args.cursor ?? null, numItems: OWNER_SIGNAL_PAGE_SIZE });
 
-  const uniqueSignals = new Map<Id<"skills">, Doc<"publisherAbuseSignals">>();
-  for (const signal of signals) {
-    if (
-      signal.latestRunId === args.runId &&
-      isDownloadAnomalySignal(signal) &&
-      !uniqueSignals.has(signal.skillId)
-    ) {
-      uniqueSignals.set(signal.skillId, signal);
-    }
-  }
-  if (uniqueSignals.size > MAX_OWNER_TRAFFIC_SIGNALS) return null;
-  if (uniqueSignals.size < 2 || uniqueSignals.size > MAX_OWNER_SYNCHRONY_SKILLS) return null;
+  return {
+    signals: page.page
+      .filter(
+        (signal) =>
+          signal.latestRunId === args.runId &&
+          isDownloadAnomalySignal(signal) &&
+          signal.ownerPublisherId !== null,
+      )
+      .map((signal) => ({
+        skillId: signal.skillId,
+        ownerPublisherId: signal.ownerPublisherId as Id<"publishers">,
+      })),
+    cursor: page.isDone ? undefined : page.continueCursor,
+    isDone: page.isDone,
+  };
+}
 
-  const firstSignal = uniqueSignals.values().next().value;
-  if (!firstSignal?.ownerPublisherId) return null;
-  const publisher = await ctx.db.get(firstSignal.ownerPublisherId);
+export const readPublisherAbuseOwnerSignalsPageInternal = internalQuery({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    ownerKey: v.string(),
+    cursor: v.optional(v.string()),
+  },
+  handler: readPublisherAbuseOwnerSignalsPageInternalHandler,
+});
+
+export async function getPublisherAbuseOwnerSynchronyPublisherInternalHandler(
+  ctx: Pick<QueryCtx, "db">,
+  args: { ownerPublisherId: Id<"publishers"> },
+): Promise<OwnerSynchronyPublisher | null> {
+  const publisher = await ctx.db.get(args.ownerPublisherId);
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
-  const publisherSkillCount = Math.max(0, publisher.publishedSkills ?? 0);
+  return {
+    publisherId: publisher._id,
+    linkedUserId: publisher.linkedUserId ?? undefined,
+    handle: publisher.handle,
+    publishedSkills: Math.max(0, publisher.publishedSkills ?? 0),
+  };
+}
+
+export const getPublisherAbuseOwnerSynchronyPublisherInternal = internalQuery({
+  args: { ownerPublisherId: v.id("publishers") },
+  handler: getPublisherAbuseOwnerSynchronyPublisherInternalHandler,
+});
+
+export async function getPublisherAbuseOwnerSynchronySkillInternalHandler(
+  ctx: Pick<QueryCtx, "db">,
+  args: {
+    ownerPublisherId: Id<"publishers">;
+    skillId: Id<"skills">;
+    todayDay: number;
+  },
+): Promise<OwnerSynchronySkill | null> {
+  const skill = await ctx.db.get(args.skillId);
+  if (
+    !skill ||
+    skill.ownerPublisherId !== args.ownerPublisherId ||
+    getSkillPublisherContribution(skill).publishedSkills === 0
+  ) {
+    return null;
+  }
+
+  const windowStartDay = args.todayDay - PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS + 1;
+  const rows = await ctx.db
+    .query("skillDailyStats")
+    .withIndex("by_skill_day", (q) =>
+      q.eq("skillId", skill._id).gte("day", windowStartDay).lte("day", args.todayDay),
+    )
+    .take(PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS);
+  const rowsByDay = new Map(rows.map((row) => [row.day, row]));
+  const dailyDownloads: number[] = [];
+  const dailyInstalls: number[] = [];
+  for (let day = windowStartDay; day <= args.todayDay; day += 1) {
+    const row = rowsByDay.get(day);
+    dailyDownloads.push(Math.max(0, row?.downloads ?? 0));
+    dailyInstalls.push(Math.max(0, row?.installs ?? 0));
+  }
+
+  return {
+    skillId: skill._id,
+    skillSlug: skill.slug,
+    skillDisplayName: skill.displayName,
+    dailyDownloads,
+    recent7Downloads: dailyDownloads.slice(-7).reduce((sum, value) => sum + value, 0),
+    recent7Installs: dailyInstalls.slice(-7).reduce((sum, value) => sum + value, 0),
+    recent30Downloads: dailyDownloads.slice(-30).reduce((sum, value) => sum + value, 0),
+    recent30Installs: dailyInstalls.slice(-30).reduce((sum, value) => sum + value, 0),
+    allTimeDownloads: readCanonicalStat(skill, "downloads"),
+    allTimeInstalls: readCanonicalStat(skill, "installsAllTime"),
+  };
+}
+
+export const getPublisherAbuseOwnerSynchronySkillInternal = internalQuery({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    skillId: v.id("skills"),
+    todayDay: v.number(),
+  },
+  handler: getPublisherAbuseOwnerSynchronySkillInternalHandler,
+});
+
+export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
+  ctx: Pick<ActionCtx, "runQuery">,
+  args: { runId: Id<"publisherAbuseScoreRuns">; ownerKey: string; todayDay: number },
+): Promise<OwnerSynchronyCandidate | null> {
+  const uniqueSignals = new Map<Id<"skills">, Id<"publishers">>();
+  let cursor: string | undefined;
+  while (true) {
+    const page: OwnerSynchronySignalPage = await ctx.runQuery(
+      internal.publisherAbuseOwnerSynchrony.readPublisherAbuseOwnerSignalsPageInternal,
+      cursor
+        ? { runId: args.runId, ownerKey: args.ownerKey, cursor }
+        : { runId: args.runId, ownerKey: args.ownerKey },
+    );
+    for (const signal of page.signals) {
+      if (!uniqueSignals.has(signal.skillId)) {
+        uniqueSignals.set(signal.skillId, signal.ownerPublisherId);
+      }
+    }
+    if (page.isDone) break;
+    if (!page.cursor) throw new Error("Owner synchrony signal page did not return a cursor");
+    cursor = page.cursor;
+  }
+
+  if (uniqueSignals.size < 2) return null;
+
+  const ownerPublisherId = uniqueSignals.values().next().value;
+  if (!ownerPublisherId) return null;
+  const publisher: OwnerSynchronyPublisher | null = await ctx.runQuery(
+    internal.publisherAbuseOwnerSynchrony.getPublisherAbuseOwnerSynchronyPublisherInternal,
+    { ownerPublisherId },
+  );
+  if (!publisher) return null;
+  const publisherSkillCount = publisher.publishedSkills;
   if (
     publisherSkillCount < 2 ||
     uniqueSignals.size / publisherSkillCount < PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE
@@ -169,43 +304,18 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
 
   const windowStartDay = args.todayDay - PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS + 1;
   const candidateSkills: OwnerSynchronySkill[] = [];
-  for (const signal of uniqueSignals.values()) {
-    const skill = await ctx.db.get(signal.skillId);
-    if (
-      !skill ||
-      skill.ownerPublisherId !== publisher._id ||
-      getSkillPublisherContribution(skill).publishedSkills === 0
-    ) {
-      continue;
-    }
-    const rows = await ctx.db
-      .query("skillDailyStats")
-      .withIndex("by_skill_day", (q) =>
-        q.eq("skillId", skill._id).gte("day", windowStartDay).lte("day", args.todayDay),
-      )
-      .take(PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS);
-    const rowsByDay = new Map(rows.map((row) => [row.day, row]));
-    const dailyDownloads: number[] = [];
-    const dailyInstalls: number[] = [];
-    for (let day = windowStartDay; day <= args.todayDay; day += 1) {
-      const row = rowsByDay.get(day);
-      dailyDownloads.push(Math.max(0, row?.downloads ?? 0));
-      dailyInstalls.push(Math.max(0, row?.installs ?? 0));
-    }
-    candidateSkills.push({
-      skill,
-      dailyDownloads,
-      recent7Downloads: dailyDownloads.slice(-7).reduce((sum, value) => sum + value, 0),
-      recent7Installs: dailyInstalls.slice(-7).reduce((sum, value) => sum + value, 0),
-      recent30Downloads: dailyDownloads.slice(-30).reduce((sum, value) => sum + value, 0),
-      recent30Installs: dailyInstalls.slice(-30).reduce((sum, value) => sum + value, 0),
-    });
+  for (const skillId of uniqueSignals.keys()) {
+    const skill: OwnerSynchronySkill | null = await ctx.runQuery(
+      internal.publisherAbuseOwnerSynchrony.getPublisherAbuseOwnerSynchronySkillInternal,
+      { ownerPublisherId: publisher.publisherId, skillId, todayDay: args.todayDay },
+    );
+    if (skill) candidateSkills.push(skill);
   }
 
   const evidence = detectPublisherAbuseOwnerSynchrony(
-    candidateSkills.map(({ skill, dailyDownloads }) => ({
-      skillId: skill._id,
-      skillSlug: skill.slug,
+    candidateSkills.map(({ skillId, skillSlug, dailyDownloads }) => ({
+      skillId,
+      skillSlug,
       dailyDownloads,
     })),
     publisherSkillCount,
@@ -214,32 +324,26 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
 
   const evidenceSkillIds = new Set(evidence.skillIds);
   const synchronizedSkills = candidateSkills.filter((candidate) =>
-    evidenceSkillIds.has(candidate.skill._id),
+    evidenceSkillIds.has(candidate.skillId),
   );
   const representative = [...synchronizedSkills].sort((left, right) =>
-    left.skill.slug.localeCompare(right.skill.slug),
+    left.skillSlug.localeCompare(right.skillSlug),
   )[0];
   if (!representative) return null;
   return {
     ownerKey: args.ownerKey,
-    ownerPublisherId: publisher._id,
-    ownerUserId: publisher.linkedUserId ?? undefined,
+    ownerPublisherId: publisher.publisherId,
+    ownerUserId: publisher.linkedUserId,
     handleSnapshot: publisher.handle,
-    representativeSkillId: representative.skill._id,
-    representativeSkillSlug: representative.skill.slug,
-    representativeSkillDisplayName: representative.skill.displayName,
+    representativeSkillId: representative.skillId,
+    representativeSkillSlug: representative.skillSlug,
+    representativeSkillDisplayName: representative.skillDisplayName,
     recent7Downloads: sumSkillWindow(synchronizedSkills, "recent7Downloads"),
     recent7Installs: sumSkillWindow(synchronizedSkills, "recent7Installs"),
     recent30Downloads: sumSkillWindow(synchronizedSkills, "recent30Downloads"),
     recent30Installs: sumSkillWindow(synchronizedSkills, "recent30Installs"),
-    allTimeDownloads: synchronizedSkills.reduce(
-      (sum, candidate) => sum + readCanonicalStat(candidate.skill, "downloads"),
-      0,
-    ),
-    allTimeInstalls: synchronizedSkills.reduce(
-      (sum, candidate) => sum + readCanonicalStat(candidate.skill, "installsAllTime"),
-      0,
-    ),
+    allTimeDownloads: sumSkillWindow(synchronizedSkills, "allTimeDownloads"),
+    allTimeInstalls: sumSkillWindow(synchronizedSkills, "allTimeInstalls"),
     portfolioEvidence: {
       skillCount: synchronizedSkills.length,
       publisherSkillCount,
@@ -256,15 +360,6 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
     },
   };
 }
-
-export const getPublisherAbuseOwnerSynchronyCandidateInternal = internalQuery({
-  args: {
-    runId: v.id("publisherAbuseScoreRuns"),
-    ownerKey: v.string(),
-    todayDay: v.number(),
-  },
-  handler: getPublisherAbuseOwnerSynchronyCandidateInternalHandler,
-});
 
 export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
   ctx: MutationCtx,
@@ -395,10 +490,11 @@ export async function scanPublisherAbuseOwnerSynchronyPage(
   );
   let matchedOwners = 0;
   for (const ownerKey of page.ownerKeys) {
-    const candidate: OwnerSynchronyCandidate | null = await ctx.runQuery(
-      internal.publisherAbuseOwnerSynchrony.getPublisherAbuseOwnerSynchronyCandidateInternal,
-      { runId: args.runId, ownerKey, todayDay: args.todayDay },
-    );
+    const candidate = await getPublisherAbuseOwnerSynchronyCandidateInternalHandler(ctx, {
+      runId: args.runId,
+      ownerKey,
+      todayDay: args.todayDay,
+    });
     if (!candidate) continue;
     matchedOwners += 1;
     await ctx.runMutation(
