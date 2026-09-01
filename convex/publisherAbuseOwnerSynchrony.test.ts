@@ -37,7 +37,6 @@ function candidate() {
       skillCount: 23,
       publisherSkillCount: 122,
       allPublisherSkills: false,
-      skillSlugs: ["anchor", "second", "third", "fourth", "fifth"],
       correlationFloor: 0.986,
       correlationMedian: 0.998,
       peak7DownloadsMin: 314,
@@ -327,6 +326,41 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(result?.portfolioEvidence.skillCount).toBe(8_000);
     expect(signalPageReads).toBe(160);
     expect(runQuery).toHaveBeenCalledTimes(161);
+  });
+
+  it("fails clearly before one owner can exceed the supported action workload", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const ownerPublisherId = "publishers:oversized" as Id<"publishers">;
+    const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
+      if ("ownerKey" in args) {
+        const pageIndex = typeof args.cursor === "string" ? Number(args.cursor) : 0;
+        const start = pageIndex * 50;
+        const remaining = 8_001 - start;
+        const pageSize = Math.min(50, remaining);
+        const isDone = remaining <= 50;
+        return {
+          candidates: Array.from({ length: pageSize }, (_, index) =>
+            ownerSignal(start + index, ownerPublisherId),
+          ),
+          cursor: isDone ? undefined : String(pageIndex + 1),
+          isDone,
+        };
+      }
+      return {
+        publisherId: ownerPublisherId,
+        linkedUserId: "users:oversized" as Id<"users">,
+        handle: "oversized-owner",
+        publishedSkills: 8_001,
+      };
+    });
+
+    await expect(
+      getPublisherAbuseOwnerSynchronyCandidateInternalHandler({ runQuery } as never, {
+        runId,
+        ownerKey: "publisher:publishers:oversized",
+        todayDay: 20_683,
+      }),
+    ).rejects.toThrow("Publisher synchrony candidate limit exceeded");
   });
 
   it("evaluates a 101-signal publisher once across three scan source pages", async () => {

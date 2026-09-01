@@ -16,6 +16,7 @@ import {
   recordScheduledTemporalScanFailureInternalHandler,
   percentileIndex,
   pruneExpiredTemporalScanRowsInternalHandler,
+  readScheduledTemporalCandidatesPageInternalHandler,
   runScheduledTemporalPublisherAbuseScanInternalHandler,
   startPublisherAbuseSignalScanHandler,
   storeScheduledTemporalScanPageInternalHandler,
@@ -782,6 +783,47 @@ describe("scheduled temporal publisher abuse scan", () => {
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       runId: run._id,
     });
+  });
+
+  it("preserves the 60-day download curve when reading stored synchrony candidates", async () => {
+    const run = temporalRun();
+    const candidate = temporalCandidate("skills:coordinated" as Id<"skills">);
+    const synchronyDailyDownloads = Array.from({ length: 60 }, (_, day) => day + 1);
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          _id: "publisherAbuseTemporalScanCandidates:coordinated",
+          _creationTime: 1,
+          runId: run._id,
+          expirationTime: 2,
+          ...candidate,
+          synchronyDailyDownloads,
+        },
+      ],
+      continueCursor: "",
+      isDone: true,
+    }));
+    const queryBuilder = {
+      withIndex: vi.fn(() => ({ paginate })),
+    };
+
+    await expect(
+      readScheduledTemporalCandidatesPageInternalHandler(
+        { db: { query: vi.fn(() => queryBuilder) } } as never,
+        { runId: run._id, batchSize: 1 },
+      ),
+    ).resolves.toMatchObject({
+      candidates: [
+        {
+          candidate: {
+            skillId: candidate.skillId,
+            synchronyDailyDownloads,
+          },
+        },
+      ],
+      isDone: true,
+    });
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 1 });
   });
 
   it("keeps a modest spike only as publisher synchrony input", async () => {

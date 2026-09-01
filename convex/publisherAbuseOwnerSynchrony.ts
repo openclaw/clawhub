@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { internalAction, internalMutation, internalQuery } from "./functions";
+import { internalMutation, internalQuery } from "./functions";
 import {
   detectPublisherAbuseOwnerSynchrony,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
@@ -11,6 +11,7 @@ import {
 
 const OWNER_KEY_PAGE_SIZE = 50;
 const OWNER_CANDIDATE_PAGE_SIZE = 50;
+const MAX_OWNER_SYNCHRONY_CANDIDATES = 8_000;
 const OWNER_SYNCHRONY_SIGNAL_TYPE = "owner_synchronized_download_trends" as const;
 const OWNER_SYNCHRONY_REASON_CODES = [
   "multiple_skills_have_anomalous_downloads",
@@ -61,7 +62,6 @@ type OwnerSynchronyCandidate = {
     skillCount: number;
     publisherSkillCount: number;
     allPublisherSkills: boolean;
-    skillSlugs: string[];
     correlationFloor: number;
     correlationMedian: number;
     peak7DownloadsMin: number;
@@ -76,7 +76,6 @@ const portfolioEvidenceValidator = v.object({
   skillCount: v.number(),
   publisherSkillCount: v.number(),
   allPublisherSkills: v.boolean(),
-  skillSlugs: v.array(v.string()),
   correlationFloor: v.number(),
   correlationMedian: v.number(),
   peak7DownloadsMin: v.number(),
@@ -244,6 +243,11 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
     );
     for (const candidate of page.candidates) {
       if (!uniqueCandidates.has(candidate.skillId)) {
+        if (uniqueCandidates.size >= MAX_OWNER_SYNCHRONY_CANDIDATES) {
+          throw new Error(
+            `Publisher synchrony candidate limit exceeded for ${args.ownerKey} (${MAX_OWNER_SYNCHRONY_CANDIDATES}).`,
+          );
+        }
         uniqueCandidates.set(candidate.skillId, candidate);
       }
     }
@@ -312,7 +316,6 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
       publisherSkillCount,
       allPublisherSkills:
         publisherSkillCount > 0 && synchronizedSkills.length === publisherSkillCount,
-      skillSlugs: evidence.skillSlugs,
       correlationFloor: evidence.correlationFloor,
       correlationMedian: evidence.correlationMedian,
       peak7DownloadsMin: evidence.peak7DownloadsMin,
@@ -416,29 +419,6 @@ export const upsertPublisherAbuseOwnerSynchronySignalInternal = internalMutation
   handler: upsertPublisherAbuseOwnerSynchronySignalInternalHandler,
 });
 
-export async function runPublisherAbuseOwnerSynchronyScanInternalHandler(
-  ctx: ActionCtx,
-  args: {
-    runId: Id<"publisherAbuseScoreRuns">;
-    cursor?: string;
-    todayDay: number;
-  },
-) {
-  const page = await scanPublisherAbuseOwnerSynchronyPage(ctx, args);
-  if (!page.isDone) {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.publisherAbuseOwnerSynchrony.runPublisherAbuseOwnerSynchronyScanInternal,
-      {
-        runId: args.runId,
-        cursor: page.cursor,
-        todayDay: args.todayDay,
-      },
-    );
-  }
-  return { matchedOwners: page.matchedOwners, isDone: page.isDone };
-}
-
 export async function scanPublisherAbuseOwnerSynchronyPage(
   ctx: Pick<ActionCtx, "runQuery" | "runMutation">,
   args: {
@@ -472,12 +452,3 @@ export async function scanPublisherAbuseOwnerSynchronyPage(
 
   return { matchedOwners, cursor: page.cursor, isDone: page.isDone };
 }
-
-export const runPublisherAbuseOwnerSynchronyScanInternal = internalAction({
-  args: {
-    runId: v.id("publisherAbuseScoreRuns"),
-    cursor: v.optional(v.string()),
-    todayDay: v.number(),
-  },
-  handler: runPublisherAbuseOwnerSynchronyScanInternalHandler,
-});

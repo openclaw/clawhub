@@ -63,9 +63,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 - Publisher abuse scoring classifies bulk-publishing abuse for staff review and
   warning-first automatic enforcement. Scheduled pressure scoring runs daily.
-  Plain temporal dry runs are read-only. The scheduled temporal scan explicitly
-  opts into archived dry-run signal rows for the staff Signals tab. It persists
-  bounded source pages, exact percentile samples, and review candidates, then
+  Temporal traffic detection has two entrypoints: a read-only bounded preview
+  and one resumable scheduled pipeline that is the sole writer of signal rows.
+  The scheduled pipeline persists bounded source pages, exact percentile
+  samples, and candidate observations, then
   resumes through percentile and classification phases. Temporary scan rows
   expire after seven days. A failed step retries from the last persisted cursor
   with bounded backoff; any successfully persisted page resets the consecutive
@@ -78,7 +79,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   already active return that run without starting a competing worker. Stale
   recovery continues the same durable run instead of replacing it, and
   cursor-guarded writes prevent overlapping late workers from duplicating work.
-  Explicitly bounded manual scans remain diagnostic-only.
+  Explicitly bounded previews remain diagnostic-only.
   New scan indexes must ship in a staging-only release before any function
   queries them. Keep the indexes marked `staged: true`, deploy that schema,
   and wait until Convex reports every index ready. Only a later release may
@@ -123,11 +124,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   cold start instead of only detecting a spike on the day it begins. These
   signals record anomalous traffic for staff visibility, not publisher
   attribution or an enforcement decision.
-- The Signals tab is read-only telemetry. The retired snooze, dismissal, and
-  notification fields and their audit-event table remain schema-compatible so
-  existing production records survive this rollout, but no active function
-  reads or writes them. Removing that stored history requires a separate,
-  explicitly approved production migration.
+- The Signals tab is read-only telemetry. New signal rows do not have snooze,
+  dismissal, notification, ownership, or reply state. Legacy temporal
+  nominations remain readable and remain ineligible for autoban so existing
+  production records survive this rollout; the shared review tables continue
+  to serve aggregate pressure scoring. Removing legacy temporal records requires
+  a separate, explicitly approved production migration.
 - The completed temporal pipeline also checks for publisher-wide synchronization
   among scan candidates that either have a sustained anomaly or clear the lower
   proportional 7-day spike floor plus both platform P99 comparisons.
@@ -140,6 +142,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   is no fixed catalogue-size threshold. The full 60-day curve is captured during
   the existing catalogue read and carried in the temporary scan candidate. Synchrony then
   reads those candidates in bounded pages instead of querying each skill again.
+  A run fails visibly instead of evaluating an incomplete owner portfolio if a
+  single publisher exceeds 8,000 synchrony candidates.
   Page size never
   becomes an eligibility ceiling, and each publisher is evaluated once per run
   even when its candidates span several source pages. Candidate reads use the

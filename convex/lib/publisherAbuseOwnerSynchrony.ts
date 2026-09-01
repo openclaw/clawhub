@@ -11,32 +11,12 @@ export type PublisherAbuseOwnerSynchronyCurve = {
 
 export type PublisherAbuseOwnerSynchronyEvidence = {
   skillIds: string[];
-  skillSlugs: string[];
   correlationFloor: number;
   correlationMedian: number;
   peak7DownloadsMin: number;
   peak7DownloadsMax: number;
   catalogCoverage: number;
 };
-
-function pearsonCorrelation(left: number[], right: number[]) {
-  if (left.length !== right.length || left.length < 2) return null;
-
-  const leftMean = left.reduce((sum, value) => sum + value, 0) / left.length;
-  const rightMean = right.reduce((sum, value) => sum + value, 0) / right.length;
-  let covariance = 0;
-  let leftVariance = 0;
-  let rightVariance = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    const leftDelta = left[index] - leftMean;
-    const rightDelta = right[index] - rightMean;
-    covariance += leftDelta * rightDelta;
-    leftVariance += leftDelta * leftDelta;
-    rightVariance += rightDelta * rightDelta;
-  }
-  if (leftVariance === 0 || rightVariance === 0) return null;
-  return covariance / Math.sqrt(leftVariance * rightVariance);
-}
 
 function peakRollingDownloads(values: number[], windowDays: number) {
   if (values.length === 0) return 0;
@@ -145,7 +125,6 @@ export function detectPublisherAbuseOwnerSynchrony(
   );
   return {
     skillIds: sortedCluster.map(({ curve }) => curve.skillId),
-    skillSlugs: sortedCluster.map(({ curve }) => curve.skillSlug),
     correlationFloor: Math.min(...clusterCorrelations),
     correlationMedian: median(clusterCorrelations),
     peak7DownloadsMin: Math.min(...clusterPeaks),
@@ -153,5 +132,3 @@ export function detectPublisherAbuseOwnerSynchrony(
     catalogCoverage,
   };
 }
-
-export { pearsonCorrelation, peakRollingDownloads };

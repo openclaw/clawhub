@@ -194,21 +194,6 @@ export function isPublisherAbuseCheckEligible(
   return score.publishedSkills >= minPublishedSkills;
 }
 
-export function computeTemporalPublisherAbuseZScore(input: {
-  label: PublisherAbuseLabel;
-  highTemporalSkillCount: number;
-  maxTemporalPressure: number;
-}): number {
-  if (input.label === "pass") return 0;
-
-  const pressureBoost = Math.log10(Math.max(input.maxTemporalPressure, 1) + 1) / 2;
-  const skillCountBoost = Math.max(0, input.highTemporalSkillCount - 2) * 0.2;
-  if (input.label === "potential_ban_candidate") {
-    return 2.5 + Math.min(2, pressureBoost + skillCountBoost);
-  }
-  return 1.5 + Math.min(0.99, pressureBoost);
-}
-
 export function computePublisherAbuseRawScore(
   input: PublisherAbuseInput,
   config: PublisherAbuseModelConfig = DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
@@ -370,77 +355,6 @@ export function computeCurrentSkillTemporalAbuseScore(input: {
     recent30StartDay: input.todayDay - 30 + 1,
   });
   return classifySkillTemporalAbuseScore(score, input.benchmark);
-}
-
-export function computeHistoricalSkillTemporalAbuseScore(input: {
-  dailyStats: SkillTemporalAbuseDailyStat[];
-  benchmark?: TemporalAbuseCohortBenchmark;
-}): SkillTemporalAbuseScore {
-  const statsByDay = aggregateSkillTemporalDailyStats(input.dailyStats);
-  const days = [...statsByDay.keys()];
-  if (days.length === 0) return emptySkillTemporalAbuseScore();
-
-  const minDay = Math.min(...days);
-  const maxDay = Math.max(...days);
-  let bestSpike = emptySkillTemporalAbuseScore();
-  let bestSustained = emptySkillTemporalAbuseScore();
-  let bestNearConversion = emptySkillTemporalAbuseScore();
-
-  for (let startDay = minDay; startDay <= maxDay; startDay += 1) {
-    const score = classifySkillTemporalAbuseScore(
-      computeSkillTemporalAbuseScoreForWindows({
-        statsByDay,
-        spikeStartDay: startDay,
-        sustainedStartDay: startDay,
-        recent30StartDay: startDay,
-      }),
-      input.benchmark,
-    );
-
-    if (startDay + TEMPORAL_SPIKE_RECENT_DAYS - 1 <= maxDay) {
-      if (score.spike && score.spikeMultiplier > bestSpike.spikeMultiplier) {
-        bestSpike = score;
-      }
-      if (
-        score.nearConversion &&
-        score.nearConversionWindowEndDay === startDay + TEMPORAL_SPIKE_RECENT_DAYS - 1 &&
-        score.installDownloadRatio7 > bestNearConversion.installDownloadRatio7
-      ) {
-        bestNearConversion = score;
-      }
-    }
-
-    if (startDay + TEMPORAL_SUSTAINED_DAYS - 1 <= maxDay) {
-      if (
-        score.sustained &&
-        (score.sustainedDaysAboveThreshold > bestSustained.sustainedDaysAboveThreshold ||
-          (score.sustainedDaysAboveThreshold === bestSustained.sustainedDaysAboveThreshold &&
-            score.sustainedWindowDownloads > bestSustained.sustainedWindowDownloads))
-      ) {
-        bestSustained = score;
-      }
-    }
-
-    if (startDay + 30 - 1 <= maxDay) {
-      if (
-        score.nearConversion &&
-        score.nearConversionWindowEndDay === startDay + 30 - 1 &&
-        score.installDownloadRatio30 > bestNearConversion.installDownloadRatio30
-      ) {
-        bestNearConversion = score;
-      }
-    }
-  }
-
-  return mergeTemporalAbuseWindowScores(bestSpike, bestSustained, bestNearConversion);
-}
-
-export function labelForTemporalPublisherAbuse(input: {
-  highTemporalSkillCount: number;
-  p99TemporalSkillCount?: number;
-}): PublisherAbuseLabel {
-  if (input.highTemporalSkillCount >= 1) return "review";
-  return "pass";
 }
 
 export function computeTemporalAbuseCohortBenchmark(
@@ -713,81 +627,6 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
   };
 }
 
-function mergeTemporalAbuseWindowScores(
-  bestSpike: SkillTemporalAbuseScore,
-  bestSustained: SkillTemporalAbuseScore,
-  bestNearConversion: SkillTemporalAbuseScore,
-): SkillTemporalAbuseScore {
-  if (!bestSpike.spike && !bestSustained.sustained && !bestNearConversion.nearConversion) {
-    return emptySkillTemporalAbuseScore();
-  }
-  const reasonCodes: string[] = [];
-  if (bestSpike.spike) reasonCodes.push("temporal_download_spike_flat_installs");
-  if (bestSustained.sustained) reasonCodes.push("temporal_sustained_abnormal_download_days");
-  if (bestNearConversion.nearConversion) reasonCodes.push("temporal_installs_track_downloads");
-
-  return {
-    spike: bestSpike.spike,
-    sustained: bestSustained.sustained,
-    nearConversion: bestNearConversion.nearConversion,
-    pressure: Math.max(bestSpike.pressure, bestSustained.pressure, bestNearConversion.pressure),
-    recent7Downloads: bestSpike.spike
-      ? bestSpike.recent7Downloads
-      : bestNearConversion.recent7Downloads,
-    recent7Installs: bestSpike.spike
-      ? bestSpike.recent7Installs
-      : bestNearConversion.recent7Installs,
-    previous30Downloads: bestSpike.spike
-      ? bestSpike.previous30Downloads
-      : bestNearConversion.previous30Downloads,
-    baseline7Downloads: bestSpike.spike
-      ? bestSpike.baseline7Downloads
-      : bestNearConversion.baseline7Downloads,
-    spikeMultiplier: bestSpike.spike
-      ? bestSpike.spikeMultiplier
-      : bestNearConversion.spikeMultiplier,
-    expected7Downloads: bestSpike.spike
-      ? bestSpike.expected7Downloads
-      : bestNearConversion.expected7Downloads,
-    excess7Downloads: bestSpike.spike
-      ? bestSpike.excess7Downloads
-      : bestNearConversion.excess7Downloads,
-    recent30Downloads: bestSustained.sustained
-      ? bestSustained.recent30Downloads
-      : bestNearConversion.recent30Downloads,
-    recent30Installs: bestSustained.sustained
-      ? bestSustained.recent30Installs
-      : bestNearConversion.recent30Installs,
-    downloadInstallRatio30: bestSustained.sustained
-      ? bestSustained.downloadInstallRatio30
-      : bestNearConversion.downloadInstallRatio30,
-    installDownloadRatio7: bestNearConversion.installDownloadRatio7,
-    installDownloadRatio30: bestNearConversion.installDownloadRatio30,
-    installDownloadExcessZScore7: bestNearConversion.installDownloadExcessZScore7,
-    installDownloadExcessZScore30: bestNearConversion.installDownloadExcessZScore30,
-    downloads30dCohortBand: bestSustained.downloads30dCohortBand,
-    spikeMultiplierCohortBand: bestSpike.spikeMultiplierCohortBand,
-    excess7DownloadsCohortBand: bestSpike.excess7DownloadsCohortBand,
-    downloads30dVsPeerP95: bestSustained.downloads30dVsPeerP95,
-    spikeMultiplierVsPeerP95: bestSpike.spikeMultiplierVsPeerP95,
-    excess7DownloadsVsPeerP95: bestSpike.excess7DownloadsVsPeerP95,
-    sustainedDaysAboveThreshold: bestSustained.sustainedDaysAboveThreshold,
-    sustainedWindowDays: bestSustained.sustainedWindowDays,
-    sustainedDailyDownloadThreshold: bestSustained.sustainedDailyDownloadThreshold,
-    sustainedExpectedDailyDownloads: bestSustained.sustainedExpectedDailyDownloads,
-    sustainedWindowDownloads: bestSustained.sustainedWindowDownloads,
-    sustainedWindowInstalls: bestSustained.sustainedWindowInstalls,
-    sustainedDailyDownloads: bestSustained.sustainedDailyDownloads,
-    spikeWindowStartDay: bestSpike.spikeWindowStartDay,
-    spikeWindowEndDay: bestSpike.spikeWindowEndDay,
-    sustainedWindowStartDay: bestSustained.sustainedWindowStartDay,
-    sustainedWindowEndDay: bestSustained.sustainedWindowEndDay,
-    nearConversionWindowStartDay: bestNearConversion.nearConversionWindowStartDay,
-    nearConversionWindowEndDay: bestNearConversion.nearConversionWindowEndDay,
-    reasonCodes,
-  };
-}
-
 function aggregateSkillTemporalDailyStats(dailyStats: SkillTemporalAbuseDailyStat[]) {
   const byDay = new Map<number, { downloads: number; installs: number }>();
   for (const point of dailyStats) {
@@ -827,37 +666,6 @@ function dailyDownloadsRange(
     downloads.push(statsByDay.get(day)?.downloads ?? 0);
   }
   return downloads;
-}
-
-function emptySkillTemporalAbuseScore(): SkillTemporalAbuseScore {
-  return {
-    spike: false,
-    sustained: false,
-    nearConversion: false,
-    pressure: 0,
-    recent7Downloads: 0,
-    recent7Installs: 0,
-    previous30Downloads: 0,
-    baseline7Downloads: TEMPORAL_MIN_BASELINE_7_DOWNLOADS,
-    spikeMultiplier: 0,
-    expected7Downloads: 0,
-    excess7Downloads: 0,
-    recent30Downloads: 0,
-    recent30Installs: 0,
-    downloadInstallRatio30: 0,
-    installDownloadRatio7: 0,
-    installDownloadRatio30: 0,
-    installDownloadExcessZScore7: 0,
-    installDownloadExcessZScore30: 0,
-    sustainedDaysAboveThreshold: 0,
-    sustainedWindowDays: TEMPORAL_SUSTAINED_DAYS,
-    sustainedDailyDownloadThreshold: 0,
-    sustainedExpectedDailyDownloads: 0,
-    sustainedWindowDownloads: 0,
-    sustainedWindowInstalls: 0,
-    sustainedDailyDownloads: Array.from({ length: TEMPORAL_SUSTAINED_DAYS }, () => 0),
-    reasonCodes: [],
-  };
 }
 
 function installDownloadExcessZScore(input: { downloads: number; installs: number }) {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   detectPublisherAbuseOwnerSynchrony,
-  pearsonCorrelation,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./publisherAbuseOwnerSynchrony";
 
@@ -113,7 +112,13 @@ describe("publisher owner download synchrony", () => {
     expect(result?.skillIds).not.toContain("skills:4");
   });
 
-  it("does not assign a correlation to flat traffic", () => {
-    expect(pearsonCorrelation(Array(60).fill(0), Array(60).fill(0))).toBeNull();
+  it("does not treat flat traffic as a synchronized trend", () => {
+    const flatCurve = (index: number) => ({
+      skillId: `skills:flat-${index}`,
+      skillSlug: `flat-${index}`,
+      dailyDownloads: Array(60).fill(100),
+    });
+
+    expect(detectPublisherAbuseOwnerSynchrony([flatCurve(0), flatCurve(1)], 2)).toBeNull();
   });
 });

@@ -520,12 +520,7 @@ describe("Management", () => {
     expect(screen.getByRole("columnheader", { name: "Severity" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Subject" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeTruthy();
-    expect(screen.queryByRole("columnheader", { name: "Skill" })).toBeNull();
-    expect(screen.queryByRole("columnheader", { name: "Publisher" })).toBeNull();
-    expect(screen.queryByRole("columnheader", { name: "30d ratio" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
-    expect(screen.queryByRole("columnheader", { name: "7d ratio" })).toBeNull();
-    expect(screen.queryByRole("columnheader", { name: "All-time ratio" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
     expect(screen.getByText("High install/download ratio")).toBeTruthy();
     expect(screen.getByText("High")).toBeTruthy();
@@ -561,7 +556,6 @@ describe("Management", () => {
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Snooze/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Dismiss signal$/ })).toBeNull();
-    expect(screen.queryByRole("columnheader", { name: "Z-score" })).toBeNull();
     expect(
       usePaginatedQueryMock.mock.calls.some(
         ([query, args]) =>
@@ -587,6 +581,66 @@ describe("Management", () => {
           typeof args.endDay === "number",
       ),
     ).toBe(true);
+  });
+
+  it("shows the exact threshold evidence behind a download spike", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    const signal = makePublisherAbuseSignal({
+      signalType: "download_spike_flat_installs",
+      skillDisplayName: "Spike Skill",
+      recent7Downloads: 7_000,
+      expected7Downloads: 500,
+      excess7Downloads: 6_500,
+      spikeMultiplier: 14,
+      temporalBenchmark: {
+        scope: "all_active_skills",
+        sampleSize: 1_000,
+        downloads30dAverage: 180,
+        downloads30dMedian: 45,
+        downloads30dP95: 900,
+        downloads30dP99: 3_000,
+        spikeMultiplier7dP95: 4,
+        spikeMultiplier7dP99: 12,
+        excess7DownloadsP95: 2_000,
+        excess7DownloadsP99: 6_000,
+      },
+    });
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+          signalCount: 1,
+          signalCountHasMore: false,
+        };
+      }
+      if (name === "publisherAbuse:getSignalActivityTrend") return makeSignalActivityTrend();
+      if (name === "users:list") return { items: [], total: 0 };
+      return [];
+    });
+    usePaginatedQueryMock.mockImplementation((query, args) => ({
+      results:
+        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
+          ? [signal]
+          : [],
+      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
+      loadMore: vi.fn(),
+    }));
+
+    render(<Management />);
+    fireEvent.click(screen.getByRole("button", { name: "Open details for Spike Skill" }));
+
+    expect(screen.getByText("Why this crossed the spike threshold")).toBeTruthy();
+    expect(screen.getByText("Expected downloads (7d)").nextSibling?.textContent).toBe("500");
+    expect(screen.getByText("Actual downloads (7d)").nextSibling?.textContent).toBe("7,000");
+    expect(screen.getByText("Excess downloads (7d)").nextSibling?.textContent).toBe("6,500");
+    expect(screen.getByText("Increase over baseline").nextSibling?.textContent).toBe("14×");
+    expect(screen.getByText("Platform P99 increase").nextSibling?.textContent).toBe("12×");
+    expect(screen.getByText("Platform P99 excess").nextSibling?.textContent).toBe("6,000");
   });
 
   it("opens the signals tab from the management search param", () => {
@@ -697,7 +751,18 @@ describe("Management", () => {
   });
 
   it("keeps the signals badge on the raw total and loads more signal pages", () => {
-    const signal = makePublisherAbuseSignal();
+    const signal = makePublisherAbuseSignal({
+      signalType: "owner_synchronized_download_trends",
+      portfolioEvidence: {
+        skillCount: 3,
+        publisherSkillCount: 4,
+        catalogCoverage: 0.75,
+        allPublisherSkills: false,
+        correlationFloor: 0.98,
+        peak7DownloadsMin: 1_000,
+        peak7DownloadsMax: 1_100,
+      },
+    });
     const loadMoreSignals = vi.fn();
     useQueryMock.mockImplementation((query, args) => {
       if (args === "skip") return undefined;
@@ -743,6 +808,9 @@ describe("Management", () => {
 
     expect(screen.getByRole("tab", { name: /Signals 25\+/ })).toBeTruthy();
     expect(screen.getByText("Showing 1 of 1+ signals")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Open details for @ratio-owner portfolio" }),
+    ).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("Search signal, skill, publisher, or user"), {
       target: { value: "does-not-match" },

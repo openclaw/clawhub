@@ -541,6 +541,7 @@ function candidateFromScanRow(
     displayName: row.displayName,
     totalDownloads: row.totalDownloads,
     totalInstalls: row.totalInstalls,
+    synchronyDailyDownloads: row.synchronyDailyDownloads,
     temporalScore: {
       ...temporalScore,
       expected7Downloads: temporalScore.expected7Downloads ?? 0,
@@ -905,7 +906,6 @@ async function runScheduledTemporalPublisherAbuseScanStep(
     const sourcePage: TemporalSourcePage = await ctx.runQuery(
       internal.publisherAbuse.collectTemporalPublisherAbuseSkillCandidatesPageInternal,
       {
-        mode: "current",
         cursor: run.temporalSourceCursor,
         batchSize: SOURCE_PAGE_SIZE,
         todayDay: run.temporalTodayDay,

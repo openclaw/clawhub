@@ -4130,7 +4130,6 @@ const publisherAbuseSignals = defineTable({
   allTimeDownloads: v.number(),
   allTimeInstalls: v.number(),
   allTimeInstallDownloadRatio: v.number(),
-  synchronyDailyDownloads: v.optional(v.array(v.number())),
   temporalBenchmark: v.optional(
     v.object({
       scope: v.optional(v.literal("all_active_skills")),
@@ -4147,6 +4146,7 @@ const publisherAbuseSignals = defineTable({
   ),
   expected7Downloads: v.optional(v.number()),
   excess7Downloads: v.optional(v.number()),
+  spikeMultiplier: v.optional(v.number()),
   sustainedDaysAboveThreshold: v.optional(v.number()),
   sustainedWindowDays: v.optional(v.number()),
   sustainedDailyDownloadThreshold: v.optional(v.number()),
@@ -4159,7 +4159,6 @@ const publisherAbuseSignals = defineTable({
       skillCount: v.number(),
       publisherSkillCount: v.number(),
       allPublisherSkills: v.boolean(),
-      skillSlugs: v.array(v.string()),
       correlationFloor: v.number(),
       correlationMedian: v.number(),
       peak7DownloadsMin: v.number(),
@@ -4196,13 +4195,7 @@ const publisherAbuseSignals = defineTable({
   .index("by_owner_key_and_last_seen_at", ["ownerKey", "lastSeenAt"])
   .index("by_owner_key_and_signal_type", ["ownerKey", "signalType"])
   .index("by_skill_and_signal_type", ["skillId", "signalType"])
-  .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"])
-  .index("by_review_status_and_last_seen_at", ["reviewStatus", "lastSeenAt"])
-  .index("by_needs_notification_and_last_changed_at", ["needsNotification", "lastChangedAt"])
-  .index("by_needs_notification_and_notification_claimed_at", [
-    "needsNotification",
-    "notificationClaimedAt",
-  ]);
+  .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"]);
 
 const publisherAbuseSignalReviewEventTypeValidator = v.union(
   v.literal("snoozed"),
@@ -4222,10 +4215,7 @@ const publisherAbuseSignalReviewEvents = defineTable({
   note: v.optional(v.string()),
   snoozedUntil: v.optional(v.number()),
   createdAt: v.number(),
-})
-  .index("by_signal_and_created_at", ["signalId", "createdAt"])
-  .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
-  .index("by_actor_and_created_at", ["actorUserId", "createdAt"]);
+});
 
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),

@@ -908,7 +908,11 @@ function PublisherAbuseSignalsTable({
                     <button
                       type="button"
                       className="pa-signal-summary pa-row-button"
-                      aria-label={`Open details for ${item.signal.skillDisplayName}`}
+                      aria-label={`Open details for ${
+                        isPortfolioSignal
+                          ? `@${item.signal.handleSnapshot} portfolio`
+                          : item.signal.skillDisplayName
+                      }`}
                       onClick={(event) => {
                         event.stopPropagation();
                         onSelectSignal(item);
@@ -1082,6 +1086,66 @@ function PublisherAbuseSignalInspector({ item }: { item: PublisherAbuseSignalEnt
             ) : null}
           </div>
         </section>
+
+        {item.signal.signalType === "download_spike_flat_installs" ? (
+          <section className="pa-zone">
+            <div className="pa-section-label">Why this crossed the spike threshold</div>
+            <div className="pa-metrics">
+              <PublisherAbuseSignalMeta
+                label="Expected downloads (7d)"
+                value={formatWholeNumber(item.signal.expected7Downloads ?? 0)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Actual downloads (7d)"
+                value={formatWholeNumber(item.signal.recent7Downloads)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Excess downloads (7d)"
+                value={formatWholeNumber(item.signal.excess7Downloads ?? 0)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Increase over baseline"
+                value={`${formatRatio(item.signal.spikeMultiplier ?? 0)}×`}
+              />
+              <PublisherAbuseSignalMeta
+                label="Platform P99 increase"
+                value={`${formatRatio(item.signal.temporalBenchmark?.spikeMultiplier7dP99 ?? 0)}×`}
+              />
+              <PublisherAbuseSignalMeta
+                label="Platform P99 excess"
+                value={formatWholeNumber(item.signal.temporalBenchmark?.excess7DownloadsP99 ?? 0)}
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {item.signal.signalType === "sustained_abnormal_download_days" ? (
+          <section className="pa-zone">
+            <div className="pa-section-label">Why this crossed the sustained threshold</div>
+            <div className="pa-metrics">
+              <PublisherAbuseSignalMeta
+                label="Unusual days"
+                value={`${formatWholeNumber(item.signal.sustainedDaysAboveThreshold ?? 0)} of ${formatWholeNumber(item.signal.sustainedWindowDays ?? 14)}`}
+              />
+              <PublisherAbuseSignalMeta
+                label="Daily download threshold"
+                value={formatWholeNumber(item.signal.sustainedDailyDownloadThreshold ?? 0)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Expected downloads / day"
+                value={formatWholeNumber(item.signal.sustainedExpectedDailyDownloads ?? 0)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Window downloads"
+                value={formatWholeNumber(item.signal.sustainedWindowDownloads ?? 0)}
+              />
+              <PublisherAbuseSignalMeta
+                label="Window installs"
+                value={formatWholeNumber(item.signal.sustainedWindowInstalls ?? 0)}
+              />
+            </div>
+          </section>
+        ) : null}
 
         <section className="pa-zone">
           <div className="pa-section-label">

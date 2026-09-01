@@ -69,7 +69,7 @@ describe("publisher abuse signal workflow retirement", () => {
         reviewNote: "Known campaign",
         needsNotification: false,
       });
-      await ctx.db.insert("publisherAbuseSignalReviewEvents", {
+      const reviewEventId = await ctx.db.insert("publisherAbuseSignalReviewEvents", {
         signalId: legacySignalId,
         ownerKey: commonSignal.ownerKey,
         actorUserId,
@@ -87,10 +87,7 @@ describe("publisher abuse signal workflow retirement", () => {
       return {
         legacySignal: await ctx.db.get(legacySignalId),
         newSignal: await ctx.db.get(newSignalId),
-        reviewEvents: await ctx.db
-          .query("publisherAbuseSignalReviewEvents")
-          .withIndex("by_signal_and_created_at", (q) => q.eq("signalId", legacySignalId))
-          .collect(),
+        reviewEvent: await ctx.db.get(reviewEventId),
       };
     });
 
@@ -99,6 +96,9 @@ describe("publisher abuse signal workflow retirement", () => {
       reviewNote: "Known campaign",
     });
     expect(stored.newSignal?.reviewStatus).toBeUndefined();
-    expect(stored.reviewEvents).toHaveLength(1);
+    expect(stored.reviewEvent).toMatchObject({
+      signalId: stored.legacySignal?._id,
+      eventType: "dismissed",
+    });
   });
 });

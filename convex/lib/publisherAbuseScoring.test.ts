@@ -3,14 +3,11 @@
 import { describe, expect, it } from "vitest";
 import {
   computeCurrentSkillTemporalAbuseScore,
-  computeHistoricalSkillTemporalAbuseScore,
   computePublisherAbusePressure,
   computePublisherAbuseRawScore,
   computeTemporalAbuseCohortBenchmark,
-  computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   labelForPublisherAbuseScore,
-  labelForTemporalPublisherAbuse,
   labelForPublisherAbuseZScore,
   isPublisherSynchronyTemporalCandidate,
   scorePublisherAbuseCohort,
@@ -95,40 +92,6 @@ describe("publisher abuse scoring", () => {
 
     expect(score200.pressure).toBeGreaterThan(0);
     expect(score400.pressure / score200.pressure).toBeGreaterThan(2);
-  });
-
-  it("maps temporal labels to review-compatible z-scores", () => {
-    const review = computeTemporalPublisherAbuseZScore({
-      label: "review",
-      highTemporalSkillCount: 1,
-      maxTemporalPressure: 20,
-    });
-    const potentialBan = computeTemporalPublisherAbuseZScore({
-      label: "potential_ban_candidate",
-      highTemporalSkillCount: 2,
-      maxTemporalPressure: 20,
-    });
-
-    expect(
-      computeTemporalPublisherAbuseZScore({
-        label: "pass",
-        highTemporalSkillCount: 0,
-        maxTemporalPressure: 0,
-      }),
-    ).toBe(0);
-    expect(review).toBeGreaterThanOrEqual(1.5);
-    expect(review).toBeLessThan(2.5);
-    expect(potentialBan).toBeGreaterThanOrEqual(2.5);
-    expect(potentialBan).toBeGreaterThan(review);
-  });
-
-  it("keeps P99 temporal hits as review-only signals", () => {
-    expect(
-      labelForTemporalPublisherAbuse({ highTemporalSkillCount: 1, p99TemporalSkillCount: 1 }),
-    ).toBe("review");
-    expect(
-      labelForTemporalPublisherAbuse({ highTemporalSkillCount: 2, p99TemporalSkillCount: 2 }),
-    ).toBe("review");
   });
 
   it("keeps a high-volume publisher with strong usage below low-engagement publishers", () => {
@@ -789,30 +752,6 @@ describe("publisher abuse scoring", () => {
     expect(score.sustained).toBe(false);
     expect(score.pressure).toBe(0);
     expect(score.reasonCodes).toEqual([]);
-  });
-
-  it("finds historical spike and sustained windows for backfill scans", () => {
-    const score = computeHistoricalSkillTemporalAbuseScore({
-      benchmark: temporalBenchmark({
-        downloads30dP95: 284,
-        downloads30dP99: 1_000,
-        spikeMultiplier7dP95: 5,
-        spikeMultiplier7dP99: 25,
-        excess7DownloadsP95: 500,
-        excess7DownloadsP99: 2_000,
-      }),
-      dailyStats: [
-        ...dailyRange(10, 30, { downloads: 3, installs: 0 }),
-        ...dailyRange(40, 7, { downloads: 400, installs: 0 }),
-        ...dailyRange(80, 30, { downloads: 400, installs: 0 }),
-      ],
-    });
-
-    expect(score.spike).toBe(false);
-    expect(score.sustained).toBe(true);
-    expect(score.spikeWindowStartDay).toBeUndefined();
-    expect(score.sustainedWindowStartDay).toBe(80);
-    expect(score.reasonCodes).toEqual(["temporal_sustained_abnormal_download_days"]);
   });
 
   it("computes cohort benchmark percentiles from scanned skill windows", () => {
