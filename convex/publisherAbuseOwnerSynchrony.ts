@@ -10,7 +10,6 @@ import {
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
 
-const OWNER_KEY_PAGE_SIZE = 1;
 const OWNER_CANDIDATE_PAGE_SIZE = 50;
 const OWNER_SKILL_COUNT_PAGE_SIZE = 100;
 const MAX_OWNER_SYNCHRONY_CANDIDATES = 8_000;
@@ -126,41 +125,18 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
   ctx: Pick<QueryCtx, "db">,
   args: { runId: Id<"publisherAbuseScoreRuns">; cursor?: string },
 ) {
-  const page = await ctx.db
+  const candidate = await ctx.db
     .query("publisherAbuseTemporalScanCandidates")
-    .withIndex("by_run_id_and_synchrony_eligible_and_owner_key", (q) =>
-      q.eq("runId", args.runId).eq("synchronyEligible", true),
-    )
-    .paginate({
-      cursor: args.cursor ?? null,
-      numItems: OWNER_KEY_PAGE_SIZE,
-      maximumRowsRead: OWNER_KEY_PAGE_SIZE,
-    });
-
-  const pageOwnerKeys = [...new Set(page.page.map((candidate) => candidate.ownerKey))];
-  const ownerKeys: string[] = [];
-  for (const ownerKey of pageOwnerKeys) {
-    const canonicalCandidate = await ctx.db
-      .query("publisherAbuseTemporalScanCandidates")
-      .withIndex("by_run_id_and_synchrony_eligible_and_owner_key", (q) =>
-        q.eq("runId", args.runId).eq("synchronyEligible", true).eq("ownerKey", ownerKey),
-      )
-      .first();
-
-    // Eligibility is frozen before synchrony starts, so this representative stays
-    // stable for the run and emits the owner on exactly one source page.
-    if (
-      canonicalCandidate &&
-      page.page.some((candidate) => candidate._id === canonicalCandidate._id)
-    ) {
-      ownerKeys.push(ownerKey);
-    }
-  }
+    .withIndex("by_run_id_and_synchrony_eligible_and_owner_key", (q) => {
+      const range = q.eq("runId", args.runId).eq("synchronyEligible", true);
+      return args.cursor ? range.gt("ownerKey", args.cursor) : range;
+    })
+    .first();
 
   return {
-    ownerKeys,
-    cursor: page.isDone ? undefined : page.continueCursor,
-    isDone: page.isDone,
+    ownerKeys: candidate ? [candidate.ownerKey] : [],
+    cursor: candidate?.ownerKey,
+    isDone: candidate === null,
   };
 }
 

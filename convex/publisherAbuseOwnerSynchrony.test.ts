@@ -193,8 +193,8 @@ describe("publisher abuse owner synchrony signal", () => {
       readPublisherAbuseOwnerKeysPageInternalHandler(ctx as never, { runId }),
     ).resolves.toEqual({
       ownerKeys: [current.ownerKey],
-      cursor: undefined,
-      isDone: true,
+      cursor: current.ownerKey,
+      isDone: false,
     });
     expect(withIndex).toHaveBeenCalledWith(
       "by_run_id_and_synchrony_eligible_and_owner_key",
@@ -204,26 +204,44 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(eq).toHaveBeenCalledWith("synchronyEligible", true);
   });
 
-  it("reads one owner source row per action and emits a publisher once", async () => {
+  it("jumps from one owner to the next without scanning the first owner's remaining rows", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
-    const ownerKey = "publisher:publishers:portfolio";
-    const candidates = Array.from({ length: 3 }, (_, index) =>
-      storedCandidate(index, runId, "publishers:portfolio" as Id<"publishers">),
-    );
-    const pages = [
-      { page: candidates.slice(0, 1), continueCursor: "page-2", isDone: false },
-      { page: candidates.slice(1, 2), continueCursor: "page-3", isDone: false },
-      { page: candidates.slice(2), continueCursor: "unused", isDone: true },
+    const firstOwnerId = "publishers:portfolio-a" as Id<"publishers">;
+    const secondOwnerId = "publishers:portfolio-b" as Id<"publishers">;
+    const firstOwnerKey = "publisher:publishers:portfolio-a";
+    const secondOwnerKey = "publisher:publishers:portfolio-b";
+    const candidates = [
+      ...Array.from({ length: 8_000 }, (_, index) => ({
+        ...storedCandidate(index, runId, firstOwnerId),
+        ownerKey: firstOwnerKey,
+      })),
+      { ...storedCandidate(8_000, runId, secondOwnerId), ownerKey: secondOwnerKey },
     ];
-    const paginate = vi.fn(async ({ cursor }: { cursor: string | null }) => {
-      if (cursor === "page-2") return pages[1];
-      if (cursor === "page-3") return pages[2];
-      return pages[0];
-    });
+    const eq = vi.fn();
+    const gt = vi.fn();
+    const withIndex = vi.fn(
+      (_name: string, range: (query: { eq: typeof eq; gt: typeof gt }) => unknown) => {
+        let afterOwnerKey: string | undefined;
+        const rangeBuilder = {
+          eq: eq.mockImplementation(() => rangeBuilder),
+          gt: gt.mockImplementation((_field: string, value: string) => {
+            afterOwnerKey = value;
+            return rangeBuilder;
+          }),
+        };
+        range(rangeBuilder);
+        return {
+          first: async () =>
+            candidates.find(
+              (candidate) => afterOwnerKey === undefined || candidate.ownerKey > afterOwnerKey,
+            ) ?? null,
+        };
+      },
+    );
     const ctx = {
       db: {
         query: vi.fn(() => ({
-          withIndex: () => ({ first: async () => candidates[0], paginate }),
+          withIndex,
         })),
       },
     };
@@ -238,13 +256,15 @@ describe("publisher abuse owner synchrony signal", () => {
       cursor: second.cursor,
     });
 
-    expect([first, second, third].flatMap((page) => page.ownerKeys)).toEqual([ownerKey]);
-    expect(paginate).toHaveBeenCalledTimes(3);
-    expect(paginate).toHaveBeenNthCalledWith(1, {
-      cursor: null,
-      numItems: 1,
-      maximumRowsRead: 1,
-    });
+    expect([first, second, third].flatMap((page) => page.ownerKeys)).toEqual([
+      firstOwnerKey,
+      secondOwnerKey,
+    ]);
+    expect(first.isDone).toBe(false);
+    expect(second.isDone).toBe(false);
+    expect(third).toEqual({ ownerKeys: [], cursor: undefined, isDone: true });
+    expect(withIndex).toHaveBeenCalledTimes(3);
+    expect(gt).toHaveBeenCalledTimes(2);
   });
 
   it("keeps owner candidate reads paged inside the current run index range", async () => {
@@ -508,7 +528,7 @@ describe("publisher abuse owner synchrony signal", () => {
     warning.mockRestore();
   });
 
-  it("evaluates a 101-signal publisher once across three scan source pages", async () => {
+  it("evaluates a 101-signal publisher once across two scheduled actions", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const ownerKey = "publisher:publishers:portfolio";
     const ownerPublisherId = "publishers:portfolio" as Id<"publishers">;
@@ -532,13 +552,8 @@ describe("publisher abuse owner synchrony signal", () => {
           publishedSkills: 101,
         };
       }
-      if (args.cursor === "owner-page-2") {
-        return { ownerKeys: [], cursor: "owner-page-3", isDone: false };
-      }
-      if (args.cursor === "owner-page-3") {
-        return { ownerKeys: [], cursor: undefined, isDone: true };
-      }
-      return { ownerKeys: [ownerKey], cursor: "owner-page-2", isDone: false };
+      if (args.cursor === ownerKey) return { ownerKeys: [], cursor: undefined, isDone: true };
+      return { ownerKeys: [ownerKey], cursor: ownerKey, isDone: false };
     });
     const runMutation = vi.fn(async () => ({ created: true, changed: true }));
     const ctx = { runQuery, runMutation };
@@ -552,13 +567,8 @@ describe("publisher abuse owner synchrony signal", () => {
       cursor: first.cursor,
       todayDay: 20_683,
     });
-    const third = await scanPublisherAbuseOwnerSynchronyPage(ctx as never, {
-      runId,
-      cursor: second.cursor,
-      todayDay: 20_683,
-    });
-
-    expect([first.matchedOwners, second.matchedOwners, third.matchedOwners]).toEqual([1, 0, 0]);
+    expect([first.matchedOwners, second.matchedOwners]).toEqual([1, 0]);
+    expect(second.isDone).toBe(true);
     expect(runMutation).toHaveBeenCalledTimes(1);
     expect(runQuery.mock.calls.filter(([, args]) => "ownerKey" in args)).toHaveLength(3);
     expect(runQuery.mock.calls.filter(([, args]) => "skillId" in args)).toHaveLength(0);
