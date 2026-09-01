@@ -11,6 +11,9 @@ describe("BrowseResultsSkeleton", () => {
 
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       if (variant === "list") {
+        expect(loadingResults.querySelector(".browse-list-head-stat")?.textContent).toBe(
+          "Downloads",
+        );
         expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).not.toBeNull();
         expect(loadingResults.querySelectorAll(".browse-results-skeleton-icon")).toHaveLength(2);
         expect(loadingResults.querySelector(".skill-list-item-no-icon")).toBeNull();

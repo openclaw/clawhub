@@ -308,7 +308,7 @@ export function SkillsResults({
               <span className="browse-list-head-label browse-list-head-category">Category</span>
             )}
             <span className="browse-list-head-label browse-list-head-stat">
-              {showTrendingLayout ? "24h downloads" : "Popularity"}
+              {showTrendingLayout ? "24h downloads" : "Downloads"}
             </span>
           </div>
           <div className="results-list">

@@ -17467,6 +17467,10 @@ a.agentic-risk-finding-title:focus-visible {
   grid-template-columns: auto minmax(0, 1fr) 190px;
 }
 
+.browse-list-head-simple-no-icon {
+  grid-template-columns: minmax(0, 1fr) 190px;
+}
+
 .browse-list-head-publishers {
   grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
 }

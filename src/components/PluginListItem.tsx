@@ -52,10 +52,6 @@ export function PluginListItem({
   const taxonomy = getPluginTaxonomyDisplay(item);
   const categories = getPluginCategories(item);
   const primaryCategory = categories[0] ?? null;
-  const categoryLabel = categories
-    .slice(0, 3)
-    .map((category) => category.label)
-    .join(", ");
   const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
   const displayName = presentationTitle(item.displayName, item.name);
 
@@ -116,11 +112,7 @@ export function PluginListItem({
   }
 
   return (
-    <Link
-      to={pluginHref}
-      className="skill-list-item skill-list-item-with-taxonomy"
-      aria-label={`Plugin: ${displayName}`}
-    >
+    <Link to={pluginHref} className="skill-list-item" aria-label={`Plugin: ${displayName}`}>
       <MarketplaceIcon
         kind="plugin"
         label={displayName}
@@ -143,9 +135,6 @@ export function PluginListItem({
         <p className="skill-list-item-summary">
           {truncateText(item.summary ?? "Plugin package for agent workflows.", 80)}
         </p>
-      </div>
-      <div className="skill-list-item-taxonomy" aria-label="Category">
-        {categoryLabel ? <span className="skill-list-item-category">{categoryLabel}</span> : null}
       </div>
       <div className="skill-list-item-meta">
         <span className="skill-list-item-meta-item">

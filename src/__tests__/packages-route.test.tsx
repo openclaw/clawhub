@@ -913,6 +913,8 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("main").className).toContain("plugins-browse-page");
     expect(screen.getByText("1.2k")).toBeTruthy();
+    expect(document.querySelector(".browse-list-head")?.textContent).toBe("PluginDownloads");
+    expect(document.querySelector(".skill-list-item-taxonomy")).toBeNull();
   });
 
   it("renders the browse shell while the route loader is pending", async () => {
@@ -925,6 +927,8 @@ describe("plugins route", () => {
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("Loading results")).toBeNull();
+    expect(document.querySelector(".browse-list-head")?.textContent).toBe("PluginDownloads");
+    expect(document.querySelector(".skill-list-item-taxonomy")).toBeNull();
   });
 
   it("keeps plugin count copy hidden on non-first browse pages", async () => {

@@ -6,6 +6,7 @@ type BrowseResultsSkeletonProps = {
   showIcon?: boolean;
   variant?: "list" | "grid";
   showColumnHead?: boolean;
+  showCategoryColumn?: boolean;
 };
 
 export function BrowseResultsSkeleton({
@@ -14,6 +15,7 @@ export function BrowseResultsSkeleton({
   showIcon = true,
   variant = "list",
   showColumnHead = true,
+  showCategoryColumn = true,
 }: BrowseResultsSkeletonProps) {
   if (variant === "grid") {
     return (
@@ -53,13 +55,23 @@ export function BrowseResultsSkeleton({
     <div className="browse-list-stack" role="status" aria-label="Loading results">
       {showColumnHead ? (
         <div
-          className={`browse-list-head${showIcon ? "" : " browse-list-head-no-icon"}`}
+          className={`browse-list-head${
+            showCategoryColumn
+              ? showIcon
+                ? ""
+                : " browse-list-head-no-icon"
+              : showIcon
+                ? " browse-list-head-simple"
+                : " browse-list-head-simple-no-icon"
+          }`}
           aria-hidden="true"
         >
           {showIcon ? <span className="browse-list-head-icon-spacer" /> : null}
           <span className="browse-list-head-label">{label}</span>
-          <span className="browse-list-head-label browse-list-head-category">Category</span>
-          <span className="browse-list-head-label browse-list-head-stat">Popularity</span>
+          {showCategoryColumn ? (
+            <span className="browse-list-head-label browse-list-head-category">Category</span>
+          ) : null}
+          <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
         </div>
       ) : null}
       <div className="results-list">
@@ -67,9 +79,9 @@ export function BrowseResultsSkeleton({
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
             key={i}
-            className={`skill-list-item skill-list-item-has-creator browse-results-skeleton-row${
-              showIcon ? "" : " skill-list-item-no-icon"
-            }`}
+            className={`skill-list-item browse-results-skeleton-row${
+              showCategoryColumn ? " skill-list-item-has-creator" : ""
+            }${showIcon ? "" : showCategoryColumn ? " skill-list-item-no-icon" : " skill-list-item-simple-no-icon"}`}
           >
             {showIcon ? (
               <Skeleton className="browse-results-skeleton-icon h-[27px] w-[27px] shrink-0 rounded-[var(--oc-radius-inset)]" />
@@ -81,9 +93,11 @@ export function BrowseResultsSkeleton({
               </div>
               <Skeleton className="h-4 w-80 max-w-full" />
             </div>
-            <div className="skill-list-item-taxonomy">
-              <Skeleton className="h-4 w-24" />
-            </div>
+            {showCategoryColumn ? (
+              <div className="skill-list-item-taxonomy">
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ) : null}
             <div className="skill-list-item-meta">
               <Skeleton className="h-4 w-24 browse-results-skeleton-updated" />
               <Skeleton className="h-4 w-14" />

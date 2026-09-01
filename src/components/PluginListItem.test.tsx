@@ -40,9 +40,15 @@ describe("PluginListItem", () => {
     expect(screen.getByText("#local-models")).toBeTruthy();
     expect(screen.getByText("#inference")).toBeTruthy();
     expect(screen.queryByText("#routing")).toBeNull();
-    expect(screen.getByText("Models")).toBeTruthy();
+    expect(screen.queryByText("Models")).toBeNull();
     expect(screen.getByLabelText("Topics")).toBeTruthy();
-    expect(screen.getByLabelText("Category")).toBeTruthy();
+    expect(screen.queryByLabelText("Category")).toBeNull();
+  });
+
+  it("keeps the category badge on plugin cards", () => {
+    render(<PluginListItem item={makePlugin({ categories: ["models"] })} variant="card" />);
+
+    expect(screen.getByLabelText("Category").textContent).toContain("Models");
   });
 
   it("renders category labels when topics are unavailable", () => {
