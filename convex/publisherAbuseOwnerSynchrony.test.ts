@@ -204,16 +204,16 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(eq).toHaveBeenCalledWith("synchronyEligible", true);
   });
 
-  it("emits a large publisher on only one source page", async () => {
+  it("reads one owner source row per action and emits a publisher once", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const ownerKey = "publisher:publishers:portfolio";
-    const candidates = Array.from({ length: 101 }, (_, index) =>
+    const candidates = Array.from({ length: 3 }, (_, index) =>
       storedCandidate(index, runId, "publishers:portfolio" as Id<"publishers">),
     );
     const pages = [
-      { page: candidates.slice(0, 50), continueCursor: "page-2", isDone: false },
-      { page: candidates.slice(50, 100), continueCursor: "page-3", isDone: false },
-      { page: candidates.slice(100), continueCursor: "unused", isDone: true },
+      { page: candidates.slice(0, 1), continueCursor: "page-2", isDone: false },
+      { page: candidates.slice(1, 2), continueCursor: "page-3", isDone: false },
+      { page: candidates.slice(2), continueCursor: "unused", isDone: true },
     ];
     const paginate = vi.fn(async ({ cursor }: { cursor: string | null }) => {
       if (cursor === "page-2") return pages[1];
@@ -240,6 +240,11 @@ describe("publisher abuse owner synchrony signal", () => {
 
     expect([first, second, third].flatMap((page) => page.ownerKeys)).toEqual([ownerKey]);
     expect(paginate).toHaveBeenCalledTimes(3);
+    expect(paginate).toHaveBeenNthCalledWith(1, {
+      cursor: null,
+      numItems: 1,
+      maximumRowsRead: 1,
+    });
   });
 
   it("keeps owner candidate reads paged inside the current run index range", async () => {
