@@ -17804,7 +17804,7 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .browse-page .skill-list-item-taxonomy,
-  .browse-page .browse-list-head-label:nth-of-type(3) {
+  .browse-page .browse-list-head-category {
     display: none;
   }
 
@@ -20180,7 +20180,7 @@ body:has(.browse-page-borderless-header) .navbar {
   }
 
   .browse-page .browse-list-head-icon-spacer,
-  .browse-page .browse-list-head-label:nth-of-type(3) {
+  .browse-page .browse-list-head-category {
     display: none;
   }
 
