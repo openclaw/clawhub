@@ -19,13 +19,13 @@ export type PublisherAbuseOwnerSynchronyEvidence = {
 };
 
 function peakRollingDownloads(values: number[], windowDays: number) {
-  if (values.length === 0) return 0;
+  if (values.length < windowDays) return 0;
   let rollingTotal = 0;
   let peak = 0;
   for (let index = 0; index < values.length; index += 1) {
     rollingTotal += values[index];
     if (index >= windowDays) rollingTotal -= values[index - windowDays];
-    peak = Math.max(peak, rollingTotal / Math.min(index + 1, windowDays));
+    if (index >= windowDays - 1) peak = Math.max(peak, rollingTotal / windowDays);
   }
   return peak;
 }

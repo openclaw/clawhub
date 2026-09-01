@@ -59,6 +59,20 @@ describe("publisher owner download synchrony", () => {
     expect(result?.catalogCoverage).toBe(1);
   });
 
+  it("compares only complete seven-day peak windows", () => {
+    const curves = [150, 200].map((firstDay, index) => ({
+      skillId: `skills:boundary-${index}`,
+      skillSlug: `boundary-${index}`,
+      dailyDownloads: [firstDay, ...Array(6).fill(0), ...Array(53).fill(116)],
+    }));
+
+    const result = detectPublisherAbuseOwnerSynchrony(curves, 2);
+
+    expect(result?.skillIds).toHaveLength(2);
+    expect(result?.peak7DownloadsMin).toBe(116);
+    expect(result?.peak7DownloadsMax).toBe(116);
+  });
+
   it("rejects a synchronized group that covers too little of the catalogue", () => {
     expect(
       detectPublisherAbuseOwnerSynchrony(
