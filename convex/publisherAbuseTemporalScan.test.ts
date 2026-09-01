@@ -470,7 +470,7 @@ describe("scheduled temporal publisher abuse scan", () => {
       lastTransientErrorAt: Date.now() - 1_000,
       nextTransientRetryAt: Date.now() + 30_000,
     });
-    const insert = vi.fn(async () => "inserted");
+    const insert = vi.fn(async (_table: string, _document: Record<string, unknown>) => "inserted");
     const patch = vi.fn(async () => null);
     const ctx = {
       db: {
@@ -479,7 +479,13 @@ describe("scheduled temporal publisher abuse scan", () => {
         patch,
       },
     };
-    const candidate = temporalCandidate("skills:anysearch" as Id<"skills">);
+    const candidate = {
+      ...temporalCandidate(
+        "skills:anysearch" as Id<"skills">,
+        temporalScore({ sustainedDailyDownloads: Array.from({ length: 14 }, () => 5) }),
+      ),
+      synchronyDailyDownloads: Array.from({ length: 60 }, () => 5),
+    };
 
     await expect(
       storeScheduledTemporalScanPageInternalHandler(ctx as unknown as MutationCtx, {
@@ -504,6 +510,10 @@ describe("scheduled temporal publisher abuse scan", () => {
       "publisherAbuseTemporalScanCandidates",
       expect.objectContaining({ runId: run._id, skillId: candidate.skillId }),
     );
+    const storedCandidate = insert.mock.calls.find(
+      ([table]) => table === "publisherAbuseTemporalScanCandidates",
+    )?.[1];
+    expect(storedCandidate?.temporalScore).not.toHaveProperty("sustainedDailyDownloads");
     expect(patch).toHaveBeenCalledWith(
       run._id,
       expect.objectContaining({
@@ -788,6 +798,7 @@ describe("scheduled temporal publisher abuse scan", () => {
   it("preserves the 60-day download curve when reading stored synchrony candidates", async () => {
     const run = temporalRun();
     const candidate = temporalCandidate("skills:coordinated" as Id<"skills">);
+    const { sustainedDailyDownloads: _omitted, ...storedTemporalScore } = candidate.temporalScore;
     const synchronyDailyDownloads = Array.from({ length: 60 }, (_, day) => day + 1);
     const paginate = vi.fn(async () => ({
       page: [
@@ -797,6 +808,7 @@ describe("scheduled temporal publisher abuse scan", () => {
           runId: run._id,
           expirationTime: 2,
           ...candidate,
+          temporalScore: storedTemporalScore,
           synchronyDailyDownloads,
         },
       ],
@@ -818,6 +830,9 @@ describe("scheduled temporal publisher abuse scan", () => {
           candidate: {
             skillId: candidate.skillId,
             synchronyDailyDownloads,
+            temporalScore: {
+              sustainedDailyDownloads: synchronyDailyDownloads.slice(-14),
+            },
           },
         },
       ],

@@ -244,11 +244,7 @@ describe("publisher abuse owner synchrony signal", () => {
 
   it("keeps owner candidate reads paged inside the current run index range", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
-    const staleRunId = "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">;
     const current = storedCandidate(0, runId, "publishers:portfolio" as Id<"publishers">);
-    const staleCandidates = Array.from({ length: 5_000 }, (_, index) =>
-      storedCandidate(index, staleRunId, "publishers:portfolio" as Id<"publishers">),
-    );
     const paginate = vi.fn(async () => ({
       page: [current],
       isDone: false,
@@ -293,7 +289,6 @@ describe("publisher abuse owner synchrony signal", () => {
       cursor: "next-page",
       isDone: false,
     });
-    expect(staleCandidates).toHaveLength(5_000);
     expect(withIndex).toHaveBeenCalledWith(
       "by_run_id_and_synchrony_eligible_and_owner_key",
       expect.any(Function),
@@ -382,6 +377,42 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(result?.portfolioEvidence.publisherSkillCount).toBe(600);
     expect(result?.portfolioEvidence.catalogCoverage).toBeCloseTo(101 / 600);
     expect(skillCountPages).toBe(6);
+  });
+
+  it("skips a legacy publisher after a bounded hidden-skill scan", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const ownerPublisherId = "publishers:legacy-hidden" as Id<"publishers">;
+    const signals = Array.from({ length: 3 }, (_, index) => ownerSignal(index, ownerPublisherId));
+    let publisherRead = false;
+    let skillCountPages = 0;
+    const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
+      if ("ownerKey" in args) {
+        return { candidates: signals, cursor: undefined, isDone: true };
+      }
+      if (!publisherRead) {
+        publisherRead = true;
+        return {
+          publisherId: ownerPublisherId,
+          handle: "legacy-hidden-owner",
+          publishedSkills: undefined,
+        };
+      }
+      skillCountPages += 1;
+      return {
+        publicSkillCount: 0,
+        cursor: `count-${skillCountPages + 1}`,
+        isDone: false,
+      };
+    });
+
+    await expect(
+      getPublisherAbuseOwnerSynchronyCandidateInternalHandler({ runQuery } as never, {
+        runId,
+        ownerKey: "publisher:publishers:legacy-hidden",
+        todayDay: 20_683,
+      }),
+    ).resolves.toBeNull();
+    expect(skillCountPages).toBe(80);
   });
 
   it("processes 8,000 embedded signal curves in bounded pages", async () => {

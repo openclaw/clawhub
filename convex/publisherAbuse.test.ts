@@ -913,7 +913,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(db.get).not.toHaveBeenCalled();
   });
 
-  it("keeps a resumable legacy signal scan visible behind a newer diagnostic run", async () => {
+  it("keeps resumable legacy and synchronizing signal scans visible", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -935,6 +935,15 @@ describe("publisher abuse dry-run persistence", () => {
       updatedAt: 300,
       temporalPipelinePhase: undefined,
     };
+    const synchronizingRun = {
+      ...legacySignalRun,
+      _id: "publisherAbuseScoreRuns:synchronizing",
+      modelVersion: "publisher-abuse-temporal.v2",
+      startedAt: 400,
+      updatedAt: 400,
+      temporalPipelinePhase: "synchronizing",
+    };
+    let currentModelRun: typeof synchronizingRun | null = null;
     const db = {
       get: vi.fn(async () => null),
       query: vi.fn((table: string) => {
@@ -966,6 +975,9 @@ describe("publisher abuse dry-run persistence", () => {
                         ? legacySignalRun
                         : null;
                     }
+                    if (constraints.modelVersion === "publisher-abuse-temporal.v2") {
+                      return currentModelRun;
+                    }
                     return constraints.modelVersion === "publisher-abuse-temporal.v1"
                       ? newerDiagnosticRun
                       : null;
@@ -988,6 +1000,13 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         latestRun: expect.objectContaining({ _id: legacySignalRun._id }),
         latestSignalRun: expect.objectContaining({ _id: legacySignalRun._id }),
+      }),
+    );
+
+    currentModelRun = synchronizingRun;
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      expect.objectContaining({
+        latestSignalRun: expect.objectContaining({ _id: synchronizingRun._id }),
       }),
     );
   });
@@ -4151,6 +4170,8 @@ describe("publisher abuse dry-run persistence", () => {
       skillSlug: "older-skill",
       skillDisplayName: "Older Skill",
       lastSeenAt: 200,
+      reviewStatus: "dismissed",
+      reviewNote: "Retained legacy decision",
     };
     const signalPaginate = vi.fn(async () => ({
       page: [freshSignal, olderSignal],

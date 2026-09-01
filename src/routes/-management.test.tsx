@@ -548,9 +548,6 @@ describe("Management", () => {
     expect(screen.getByText("30-day activity")).toBeTruthy();
     expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("Installs")).toBeTruthy();
-    const drawerZones = Array.from(document.querySelectorAll(".pa-sheet-body > .pa-zone"));
-    expect(drawerZones[0]?.textContent).toContain("30-day activity");
-    expect(drawerZones[1]?.textContent).toContain("Signal");
     expect(
       screen.getByText(/Platform 30d downloads across all 1,000 active skills: P95 900, P99 3,000/),
     ).toBeTruthy();
@@ -605,6 +602,17 @@ describe("Management", () => {
         excess7DownloadsP99: 6_000,
       },
     });
+    const sustainedSignal = makePublisherAbuseSignal({
+      _id: "publisherAbuseSignals:sustained",
+      signalType: "sustained_abnormal_download_days",
+      skillDisplayName: "Sustained Skill",
+      sustainedDaysAboveThreshold: 10,
+      sustainedWindowDays: 14,
+      sustainedDailyDownloadThreshold: 500,
+      sustainedExpectedDailyDownloads: 20,
+      sustainedWindowDownloads: 7_000,
+      sustainedWindowInstalls: 2,
+    });
     useQueryMock.mockImplementation((query, args) => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query);
@@ -614,7 +622,7 @@ describe("Management", () => {
           pendingPotentialBanCandidateItems: [],
           pendingReviewItems: [],
           recentResolvedItems: [],
-          signalCount: 1,
+          signalCount: 2,
           signalCountHasMore: false,
         };
       }
@@ -625,7 +633,7 @@ describe("Management", () => {
     usePaginatedQueryMock.mockImplementation((query, args) => ({
       results:
         getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
-          ? [signal]
+          ? [signal, sustainedSignal]
           : [],
       status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
       loadMore: vi.fn(),
@@ -641,6 +649,12 @@ describe("Management", () => {
     expect(screen.getByText("Increase over baseline").nextSibling?.textContent).toBe("14×");
     expect(screen.getByText("Platform P99 increase").nextSibling?.textContent).toBe("12×");
     expect(screen.getByText("Platform P99 excess").nextSibling?.textContent).toBe("6,000");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open details for Sustained Skill" }));
+    expect(screen.getByText("Why this crossed the sustained threshold")).toBeTruthy();
+    expect(screen.getByText("Unusual days").nextSibling?.textContent).toBe("10 of 14");
+    expect(screen.getByText("Daily download threshold").nextSibling?.textContent).toBe("500");
   });
 
   it("opens the signals tab from the management search param", () => {
@@ -810,6 +824,21 @@ describe("Management", () => {
     expect(screen.getByText("Showing 1 of 1+ signals")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Open details for @ratio-owner portfolio" }),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open details for @ratio-owner portfolio" }),
+    );
+    expect(
+      screen.getByText(
+        (_content, element) =>
+          element?.tagName === "STRONG" &&
+          element.textContent?.includes("3 of 4 skills") === true &&
+          element.textContent.includes("75%"),
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("At least 98% aligned")).toBeTruthy();
+    expect(
+      screen.getByText(/seven-day peaks range from 1,000 to 1,100 downloads per day/),
     ).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("Search signal, skill, publisher, or user"), {

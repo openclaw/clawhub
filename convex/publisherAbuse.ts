@@ -2846,15 +2846,10 @@ async function getLatestPublisherAbuseSignalRun(ctx: QueryCtx) {
     "collecting",
     "downloads_percentiles",
     "spike_percentiles",
-    "excess_percentiles",
     "classifying",
     "completed",
   ] as const;
-  const legacyModelVersions = [
-    PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
-    ...LEGACY_PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSIONS,
-  ];
-  const [taggedRun, legacyRuns] = await Promise.all([
+  const [taggedRun, currentModelRun, legacyRuns] = await Promise.all([
     ctx.db
       .query("publisherAbuseScoreRuns")
       .withIndex("by_temporal_pipeline_kind_and_started_at", (q) =>
@@ -2862,8 +2857,9 @@ async function getLatestPublisherAbuseSignalRun(ctx: QueryCtx) {
       )
       .order("desc")
       .first(),
+    getLatestPublisherAbuseScoreRunForModel(ctx, PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION),
     Promise.all(
-      legacyModelVersions.flatMap((modelVersion) =>
+      LEGACY_PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSIONS.flatMap((modelVersion) =>
         legacyTemporalPhases.map(
           async (temporalPipelinePhase) =>
             await ctx.db
@@ -2880,8 +2876,16 @@ async function getLatestPublisherAbuseSignalRun(ctx: QueryCtx) {
       ),
     ),
   ]);
-  const legacyRun = legacyRuns.reduce<ScoreRun | null>(newerPublisherAbuseRun, null);
-  return newerPublisherAbuseRun(taggedRun, legacyRun);
+  const untaggedCurrentModelRun =
+    currentModelRun &&
+    currentModelRun.temporalPipelineKind === undefined &&
+    currentModelRun.temporalPipelinePhase
+      ? currentModelRun
+      : null;
+  return [untaggedCurrentModelRun, ...legacyRuns].reduce<ScoreRun | null>(
+    newerPublisherAbuseRun,
+    taggedRun,
+  );
 }
 
 async function getRecentResolvedPublisherAbuseReviewItems(

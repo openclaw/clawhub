@@ -4,7 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 // inserting/deleting demo rows does NOT fire table triggers. The users digest-sync
 // trigger runs a paginated query, and Convex allows only one paginated query per
 // mutation, so deleting several linked demo users through the wrapped builder fails.
-// Demo rows have no real packages/skills, so skipping digest sync is correct here.
+// Demo rows have no real packages, and publisher stats are maintained explicitly.
 import { internalMutation } from "./_generated/server";
 import { assertLocalDevSeedAllowed } from "./lib/devSeed";
 import {
@@ -13,12 +13,14 @@ import {
   PUBLISHER_ABUSE_MODEL_VERSION,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
+import { adjustPublisherStatsForSkillChange } from "./lib/publisherStats";
 
 // DEV-ONLY seed for the publisher-abuse review dashboard. It inserts one
 // completed score run plus a spread of synthetic scores/nominations so every
 // dashboard tab renders with realistic rows. Synthetic rows use the "demo-"
 // owner-key prefix; handles use the demo prefix except for the sign-in-capable
-// local abuse persona. `clearSeed` enumerates both handle forms precisely.
+// local abuse persona. `clearSeed` removes only rows owned by this fixture and
+// preserves that shared persona and its personal publisher.
 
 const DEMO_HANDLE_PREFIX = "demo-abuse-pub-";
 const DEMO_OWNER_KEY_PREFIX = "user:demo-";
@@ -245,10 +247,7 @@ function demoOwnerKey(index: number): string {
   return `${DEMO_OWNER_KEY_PREFIX}${paddedIndex(index)}`;
 }
 
-const DEMO_HANDLES = [
-  ...SEED_PUBLISHERS.map((publisher) => demoHandle(publisher.index)),
-  TEMPORAL_DEMO_HANDLE,
-];
+const DEMO_HANDLES = SEED_PUBLISHERS.map((publisher) => demoHandle(publisher.index));
 const DEMO_OWNER_KEYS = [
   ...SEED_PUBLISHERS.map((publisher) => demoOwnerKey(publisher.index)),
   TEMPORAL_DEMO_OWNER_KEY,
@@ -457,30 +456,42 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     excess7DownloadsP95: 400,
     excess7DownloadsP99: 1_200,
   };
-  const temporalUserId = await ctx.db.insert("users", {
-    handle: TEMPORAL_DEMO_HANDLE,
-    name: "Demo Temporal Abuse Publisher",
-    email: "local-abuse@example.test",
-    role: "user",
-    createdAt: now - DAY_MS,
-    updatedAt: now - DAY_MS,
-  });
-  const temporalPublisherId = await ctx.db.insert("publishers", {
-    kind: "user",
-    handle: TEMPORAL_DEMO_HANDLE,
-    displayName: "Demo Temporal Abuse Publisher",
-    linkedUserId: temporalUserId,
-    publishedSkills: 1,
-    publishedPackages: 0,
-    totalInstalls: temporalInstalls30d,
-    totalDownloads: temporalDownloads30d,
-    totalStars: 0,
-    skillTotalInstalls: temporalInstalls30d,
-    skillTotalDownloads: temporalDownloads30d,
-    skillTotalStars: 0,
-    createdAt: now - DAY_MS,
-    updatedAt: now - HOUR_MS,
-  });
+  const [existingTemporalUser] = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", TEMPORAL_DEMO_HANDLE))
+    .take(1);
+  const temporalUserId =
+    existingTemporalUser?._id ??
+    (await ctx.db.insert("users", {
+      handle: TEMPORAL_DEMO_HANDLE,
+      name: "Demo Temporal Abuse Publisher",
+      email: "local-abuse@example.test",
+      role: "user",
+      createdAt: now - DAY_MS,
+      updatedAt: now - DAY_MS,
+    }));
+  const [existingTemporalPublisher] = await ctx.db
+    .query("publishers")
+    .withIndex("by_handle", (q) => q.eq("handle", TEMPORAL_DEMO_HANDLE))
+    .take(1);
+  const temporalPublisherId =
+    existingTemporalPublisher?._id ??
+    (await ctx.db.insert("publishers", {
+      kind: "user",
+      handle: TEMPORAL_DEMO_HANDLE,
+      displayName: "Demo Temporal Abuse Publisher",
+      linkedUserId: temporalUserId,
+      publishedSkills: 0,
+      publishedPackages: 0,
+      totalInstalls: 0,
+      totalDownloads: 0,
+      totalStars: 0,
+      skillTotalInstalls: 0,
+      skillTotalDownloads: 0,
+      skillTotalStars: 0,
+      createdAt: now - DAY_MS,
+      updatedAt: now - HOUR_MS,
+    }));
   const temporalSkillId = await ctx.db.insert("skills", {
     slug: TEMPORAL_DEMO_SKILL_SLUG,
     displayName: "Demo Temporal Download Burst",
@@ -529,6 +540,13 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     createdAt: now - DAY_MS,
     updatedAt: now - HOUR_MS,
   });
+  const [temporalSkill, ratioSkill] = await Promise.all([
+    ctx.db.get(temporalSkillId),
+    ctx.db.get(ratioSkillId),
+  ]);
+  if (!temporalSkill || !ratioSkill) throw new Error("Temporal demo skills were not created");
+  await adjustPublisherStatsForSkillChange(ctx, null, temporalSkill);
+  await adjustPublisherStatsForSkillChange(ctx, null, ratioSkill);
   for (let offset = 59; offset >= 30; offset -= 1) {
     await ctx.db.insert("skillDailyStats", {
       skillId: temporalSkillId,
@@ -756,7 +774,6 @@ async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
   }
 
   signals += await clearTemporalDemoSkillRows(ctx);
-  await clearTemporalDemoPublisherRows(ctx);
 
   for (const runId of demoRunIds) {
     const run = await ctx.db.get(runId);
@@ -794,6 +811,7 @@ async function clearTemporalDemoSkillRows(ctx: ClearSeedCtx) {
       for (const stat of dailyStats) {
         await ctx.db.delete(stat._id);
       }
+      await adjustPublisherStatsForSkillChange(ctx, skill, null);
       await ctx.db.delete(skill._id);
     }
   }
@@ -823,16 +841,6 @@ async function clearTemporalDemoSignalsForSkill(
     }
   }
   return deleted;
-}
-
-async function clearTemporalDemoPublisherRows(ctx: ClearSeedCtx) {
-  const rows = await ctx.db
-    .query("publishers")
-    .withIndex("by_handle", (q) => q.eq("handle", TEMPORAL_DEMO_HANDLE))
-    .take(CLEAR_SEED_BATCH_SIZE);
-  for (const publisher of rows) {
-    await ctx.db.delete(publisher._id);
-  }
 }
 
 async function queryDemoScoresPage(

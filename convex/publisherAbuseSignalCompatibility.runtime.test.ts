@@ -95,7 +95,10 @@ describe("publisher abuse signal workflow retirement", () => {
       reviewStatus: "dismissed",
       reviewNote: "Known campaign",
     });
-    expect(stored.newSignal?.reviewStatus).toBeUndefined();
+    expect(stored.newSignal).toMatchObject({
+      signalType: "download_spike_flat_installs",
+    });
+    expect(stored.newSignal).not.toHaveProperty("reviewStatus");
     expect(stored.reviewEvent).toMatchObject({
       signalId: stored.legacySignal?._id,
       eventType: "dismissed",

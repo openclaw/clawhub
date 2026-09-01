@@ -267,9 +267,7 @@ async function countLegacyPublisherPublicSkills(
   const maxRelevantSkillCount = Math.floor(
     candidateCount / PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
   );
-  // Current publishers use the cached count. For a legacy row, stop once the
-  // bounded read can no longer prove that the 15% coverage rule passes.
-  const maxPages = Math.ceil((maxRelevantSkillCount + 1) / OWNER_SKILL_COUNT_PAGE_SIZE);
+  const maxPages = Math.ceil(MAX_OWNER_SYNCHRONY_CANDIDATES / OWNER_SKILL_COUNT_PAGE_SIZE);
   let publicSkillCount = 0;
   let cursor: string | undefined;
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {

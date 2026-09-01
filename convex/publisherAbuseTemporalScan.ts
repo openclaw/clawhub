@@ -288,9 +288,12 @@ export async function storeScheduledTemporalScanPageInternalHandler(
     });
   }
   for (const candidate of args.candidates) {
+    const { sustainedDailyDownloads: _derivedFromSynchronyCurve, ...storedTemporalScore } =
+      candidate.temporalScore;
     await ctx.db.insert("publisherAbuseTemporalScanCandidates", {
       runId: run._id,
       ...candidate,
+      temporalScore: storedTemporalScore,
       expirationTime,
     });
   }
@@ -531,6 +534,7 @@ function candidateFromScanRow(
   row: Omit<Doc<"publisherAbuseTemporalScanCandidates">, "expirationTime" | "runId">,
 ): TemporalSkillCandidate {
   const temporalScore = row.temporalScore;
+  const sustainedWindowDays = temporalScore.sustainedWindowDays ?? 14;
   return {
     ownerKey: row.ownerKey,
     ownerPublisherId: row.ownerPublisherId,
@@ -547,12 +551,15 @@ function candidateFromScanRow(
       expected7Downloads: temporalScore.expected7Downloads ?? 0,
       excess7Downloads: temporalScore.excess7Downloads ?? 0,
       sustainedDaysAboveThreshold: temporalScore.sustainedDaysAboveThreshold ?? 0,
-      sustainedWindowDays: temporalScore.sustainedWindowDays ?? 14,
+      sustainedWindowDays,
       sustainedDailyDownloadThreshold: temporalScore.sustainedDailyDownloadThreshold ?? 0,
       sustainedExpectedDailyDownloads: temporalScore.sustainedExpectedDailyDownloads ?? 0,
       sustainedWindowDownloads: temporalScore.sustainedWindowDownloads ?? 0,
       sustainedWindowInstalls: temporalScore.sustainedWindowInstalls ?? 0,
-      sustainedDailyDownloads: temporalScore.sustainedDailyDownloads ?? [],
+      sustainedDailyDownloads:
+        temporalScore.sustainedDailyDownloads ??
+        row.synchronyDailyDownloads?.slice(-sustainedWindowDays) ??
+        [],
     },
   };
 }

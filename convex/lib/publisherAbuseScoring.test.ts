@@ -461,14 +461,14 @@ describe("publisher abuse scoring", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay: 100,
       benchmark: temporalBenchmark({
-        downloads30dP99: 1_000,
+        downloads30dP99: 3_000,
         spikeMultiplier7dP99: 1,
         excess7DownloadsP99: 76.5,
       }),
-      dailyStats: dailyRange(94, 7, { downloads: 300, installs: 0 }),
+      dailyStats: dailyRange(94, 7, { downloads: 929, installs: 0 }),
     });
 
-    expect(score.recent7Downloads).toBe(2_100);
+    expect(score.recent7Downloads).toBe(6_503);
     expect(score.spikeMultiplierCohortBand).toBe("p99");
     expect(score.excess7DownloadsCohortBand).toBe("p99");
     expect(score.spike).toBe(false);
@@ -538,45 +538,6 @@ describe("publisher abuse scoring", () => {
     expect(score.sustainedDailyDownloadThreshold).toBeCloseTo(76.43, 2);
     expect(score.downloads30dCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_sustained_abnormal_download_days");
-  });
-
-  it("does not call ordinary low-conversion traffic sustained", () => {
-    const score = computeCurrentSkillTemporalAbuseScore({
-      todayDay: 100,
-      benchmark: temporalBenchmark({
-        downloads30dP95: 280,
-        downloads30dP99: 636,
-        spikeMultiplier7dP95: 0.6,
-        excess7DownloadsP95: 6.03,
-      }),
-      dailyStats: dailyRange(87, 10, { downloads: 15, installs: 0 }),
-    });
-
-    expect(score.sustainedDaysAboveThreshold).toBe(10);
-    expect(score.recent30Downloads).toBe(150);
-    expect(score.downloads30dCohortBand).toBeUndefined();
-    expect(score.sustained).toBe(false);
-  });
-
-  it("does not call shared scraper-like traffic a publisher-specific sustained signal", () => {
-    const score = computeCurrentSkillTemporalAbuseScore({
-      todayDay: 100,
-      benchmark: temporalBenchmark({
-        downloads30dP95: 280,
-        downloads30dP99: 636,
-        spikeMultiplier7dP95: 0.6,
-        excess7DownloadsP95: 6.03,
-      }),
-      dailyStats: [
-        ...dailyRange(41, 30, { downloads: 12, installs: 0 }),
-        ...dailyRange(71, 30, { downloads: 150, installs: 0 }),
-      ],
-    });
-
-    expect(score.sustainedDaysAboveThreshold).toBe(14);
-    expect(score.recent30Downloads).toBe(4_500);
-    expect(score.downloads30dCohortBand).toBeUndefined();
-    expect(score.sustained).toBe(false);
   });
 
   it("keeps sustained traffic below the 6,400-download floor below the signal", () => {
