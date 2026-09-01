@@ -102,11 +102,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Temporal download signals compare each skill with both its own frozen history
   and the full active-skill population. A 7-day surge requires both its growth
   multiple and its absolute downloads above the frozen baseline to exceed the
-  platform P99, regardless of install count. It must also reach the 7-day share
-  of the same extreme-volume floor used for sustained traffic: at least 7/30 of
-  6,400 downloads or 7/30 of ten times the platform 30-day download P99,
-  whichever is higher. These requirements prevent a tiny baseline or a low
-  platform percentile from turning modest traffic into a signal. The stored
+  platform P99, regardless of install count. A standalone skill signal must also
+  reach at least 6,400 downloads in seven days or 7/30 of ten times the platform
+  30-day download P99, whichever is higher. The lower proportional floor of
+  7/30 of the sustained-traffic threshold is only enough to participate in a
+  publisher-wide synchronization check; it never creates a standalone skill
+  signal. These requirements prevent a tiny baseline or a low platform
+  percentile from turning modest isolated traffic into a signal. The stored
   `download_spike_flat_installs` identifier is retained only so existing signal
   rows keep their identity. Sustained traffic uses the 30 days before the current
   30-day observation period as a frozen baseline, so a month-long rise cannot
@@ -127,18 +129,20 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   reads or writes them. Removing that stored history requires a separate,
   explicitly approved production migration.
 - The completed temporal pipeline also checks for publisher-wide synchronization
-  among skills that already have a download anomaly signal.
+  among scan candidates that either have a sustained anomaly or clear the lower
+  proportional 7-day spike floor plus both platform P99 comparisons.
   The synchronized group must cover at least 15% of the publisher's currently
-  published skills and at least half of its current anomaly signals. Each member's
-  normalized trailing 60-day curve must have Pearson correlation of at least 0.98
-  with the portfolio's median normalized curve, and the largest seven-day rolling
-  peak must be no more than 1.25 times the smallest. At least two skills are
-  required only because a trend comparison needs a group; there is no fixed
-  catalogue-size threshold. The full 60-day curve is captured during the existing
-  catalogue read and carried into the signal snapshot. Synchrony then reads those
-  snapshots in bounded pages instead of querying each skill again. Page size never
+  published skills and at least half of its eligible scan candidates. Each
+  member's normalized trailing 60-day curve must have Pearson correlation of at
+  least 0.98 with the portfolio's median normalized curve, and the largest
+  seven-day rolling peak must be no more than 1.25 times the smallest. At least
+  two skills are required only because a trend comparison needs a group; there
+  is no fixed catalogue-size threshold. The full 60-day curve is captured during
+  the existing catalogue read and carried in the temporary scan candidate. Synchrony then
+  reads those candidates in bounded pages instead of querying each skill again.
+  Page size never
   becomes an eligibility ceiling, and each publisher is evaluated once per run
-  even when its signals span several source pages. Candidate reads use the
+  even when its candidates span several source pages. Candidate reads use the
   publisher-and-run index, so retained observations from older runs do not add
   work to the current scan. Median-reference comparison keeps detector work near
   linear as a portfolio grows. This produces one

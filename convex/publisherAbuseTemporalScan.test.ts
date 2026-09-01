@@ -719,19 +719,28 @@ describe("scheduled temporal publisher abuse scan", () => {
       temporalPipelinePhase: "classifying",
       temporalBenchmark: benchmark,
     });
-    const candidate = temporalCandidate(
-      "skills:anysearch" as Id<"skills">,
-      temporalScore({
-        recent30Downloads: 7_000,
-        recent30Installs: 4,
-        sustainedWindowInstalls: 4,
-        sustainedDailyDownloads: [...Array.from({ length: 10 }, () => 700), 0, 0, 0, 0],
-      }),
-    );
+    const candidate = {
+      ...temporalCandidate(
+        "skills:anysearch" as Id<"skills">,
+        temporalScore({
+          recent30Downloads: 7_000,
+          recent30Installs: 4,
+          sustainedWindowInstalls: 4,
+          sustainedDailyDownloads: [...Array.from({ length: 10 }, () => 700), 0, 0, 0, 0],
+        }),
+      ),
+      synchronyDailyDownloads: Array.from({ length: 60 }, () => 100),
+    };
+    const scanCandidateId =
+      "publisherAbuseTemporalScanCandidates:anysearch" as Id<"publisherAbuseTemporalScanCandidates">;
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(run)
-      .mockResolvedValueOnce({ candidates: [candidate], cursor: undefined, isDone: true });
+      .mockResolvedValueOnce({
+        candidates: [{ scanCandidateId, candidate }],
+        cursor: undefined,
+        isDone: true,
+      });
     const runMutation = vi.fn(async () => ({ applied: true }));
     const scheduler = { runAfter: vi.fn(async () => null) };
     const handler = runScheduledTemporalPublisherAbuseScanInternalHandler as unknown as (
@@ -766,12 +775,75 @@ describe("scheduled temporal publisher abuse scan", () => {
             }),
           }),
         ],
+        synchronyCandidateIds: [scanCandidateId],
       }),
     );
     expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       runId: run._id,
     });
+  });
+
+  it("keeps a modest spike only as publisher synchrony input", async () => {
+    const run = temporalRun({
+      phase: "finalizing",
+      temporalPipelinePhase: "classifying",
+      temporalBenchmark: {
+        scope: "all_active_skills",
+        sampleSize: 79_000,
+        downloads30dAverage: 20,
+        downloads30dMedian: 0,
+        downloads30dP95: 50,
+        downloads30dP99: 636,
+        spikeMultiplier7dP95: 1,
+        spikeMultiplier7dP99: 1,
+        excess7DownloadsP95: 6,
+        excess7DownloadsP99: 76.5,
+      },
+    });
+    const candidate = {
+      ...temporalCandidate(
+        "skills:coordinated" as Id<"skills">,
+        temporalScore({
+          recent7Downloads: 2_042,
+          recent30Downloads: 2_042,
+          spikeMultiplier: 20.42,
+          excess7Downloads: 1_942,
+        }),
+      ),
+      synchronyDailyDownloads: Array.from({ length: 60 }, (_, day) => day + 1),
+    };
+    const scanCandidateId =
+      "publisherAbuseTemporalScanCandidates:coordinated" as Id<"publisherAbuseTemporalScanCandidates">;
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(run)
+      .mockResolvedValueOnce({
+        candidates: [{ scanCandidateId, candidate }],
+        cursor: undefined,
+        isDone: true,
+      });
+    const runMutation = vi.fn(async () => ({ applied: true }));
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const handler = runScheduledTemporalPublisherAbuseScanInternalHandler as unknown as (
+      ctx: {
+        runQuery: typeof runQuery;
+        runMutation: typeof runMutation;
+        scheduler: typeof scheduler;
+      },
+      args: { runId?: Id<"publisherAbuseScoreRuns"> },
+    ) => Promise<unknown>;
+
+    await handler({ runQuery, runMutation, scheduler }, { runId: run._id });
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        candidates: [],
+        synchronyCandidateIds: [scanCandidateId],
+      }),
+    );
   });
 
   it("completes only after the final publisher synchrony page succeeds", async () => {
@@ -875,6 +947,7 @@ describe("scheduled temporal publisher abuse scan", () => {
         nextCursor: undefined,
         isDone: true,
         candidates: [],
+        synchronyCandidateIds: [],
       }),
     ).resolves.toEqual({ applied: true });
 
@@ -888,6 +961,49 @@ describe("scheduled temporal publisher abuse scan", () => {
         completedAt: undefined,
       }),
     );
+  });
+
+  it("marks synchrony candidates on the frozen scan rows", async () => {
+    const run = temporalRun({
+      phase: "finalizing",
+      temporalPipelinePhase: "classifying",
+      temporalBenchmark: {
+        scope: "all_active_skills",
+        sampleSize: 100,
+        downloads30dAverage: 10,
+        downloads30dMedian: 5,
+        downloads30dP95: 20,
+        downloads30dP99: 30,
+        spikeMultiplier7dP95: 2,
+        spikeMultiplier7dP99: 3,
+        excess7DownloadsP95: 20,
+        excess7DownloadsP99: 30,
+      },
+    });
+    const candidateId =
+      "publisherAbuseTemporalScanCandidates:coordinated" as Id<"publisherAbuseTemporalScanCandidates">;
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === run._id ? run : { _id: candidateId, runId: run._id },
+        ),
+        patch,
+      },
+    };
+
+    await expect(
+      advanceScheduledTemporalCandidatesInternalHandler(ctx as unknown as MutationCtx, {
+        runId: run._id,
+        expectedCursor: undefined,
+        nextCursor: "next",
+        isDone: false,
+        candidates: [],
+        synchronyCandidateIds: [candidateId],
+      }),
+    ).resolves.toEqual({ applied: true });
+
+    expect(patch).toHaveBeenCalledWith(candidateId, { synchronyEligible: true });
   });
 
   it("does not archive or revive a scan that has already failed", async () => {
@@ -930,6 +1046,7 @@ describe("scheduled temporal publisher abuse scan", () => {
         nextCursor: undefined,
         isDone: true,
         candidates: [temporalCandidate("skills:anysearch" as Id<"skills">)],
+        synchronyCandidateIds: [],
       }),
     ).resolves.toEqual({ applied: false });
   });

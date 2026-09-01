@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
@@ -10,7 +10,7 @@ import {
 } from "./lib/publisherAbuseOwnerSynchrony";
 
 const OWNER_KEY_PAGE_SIZE = 50;
-const OWNER_SIGNAL_PAGE_SIZE = 50;
+const OWNER_CANDIDATE_PAGE_SIZE = 50;
 const OWNER_SYNCHRONY_SIGNAL_TYPE = "owner_synchronized_download_trends" as const;
 const OWNER_SYNCHRONY_REASON_CODES = [
   "multiple_skills_have_anomalous_downloads",
@@ -30,8 +30,8 @@ type OwnerSynchronySkill = {
   allTimeInstalls: number;
 };
 
-type OwnerSynchronySignalPage = {
-  signals: Array<OwnerSynchronySkill & { ownerPublisherId: Id<"publishers"> }>;
+type OwnerSynchronyCandidatePage = {
+  candidates: Array<OwnerSynchronySkill & { ownerPublisherId: Id<"publishers"> }>;
   cursor?: string;
   isDone: boolean;
 };
@@ -103,14 +103,6 @@ const ownerSynchronyCandidateValidator = v.object({
   portfolioEvidence: portfolioEvidenceValidator,
 });
 
-function isDownloadAnomalySignal(signal: Doc<"publisherAbuseSignals">) {
-  return (
-    signal.signalType === "sustained_downloads_flat_installs" ||
-    signal.signalType === "download_spike_flat_installs" ||
-    signal.signalType === "sustained_abnormal_download_days"
-  );
-}
-
 function installDownloadRatio(downloads: number, installs: number) {
   if (downloads <= 0) return installs > 0 ? 1 : 0;
   return installs / downloads;
@@ -128,33 +120,28 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
   args: { runId: Id<"publisherAbuseScoreRuns">; cursor?: string },
 ) {
   const page = await ctx.db
-    .query("publisherAbuseSignals")
-    .withIndex("by_latest_run_id_and_last_seen_at", (q) => q.eq("latestRunId", args.runId))
-    .order("desc")
+    .query("publisherAbuseTemporalScanCandidates")
+    .withIndex("by_run_id_and_synchrony_eligible_and_owner_key", (q) =>
+      q.eq("runId", args.runId).eq("synchronyEligible", true),
+    )
     .paginate({ cursor: args.cursor ?? null, numItems: OWNER_KEY_PAGE_SIZE });
 
-  const anomalySignals = page.page.filter(isDownloadAnomalySignal);
-  const pageOwnerKeys = [...new Set(anomalySignals.map((signal) => signal.ownerKey))];
+  const pageOwnerKeys = [...new Set(page.page.map((candidate) => candidate.ownerKey))];
   const ownerKeys: string[] = [];
   for (const ownerKey of pageOwnerKeys) {
-    const canonicalSignal = await ctx.db
-      .query("publisherAbuseSignals")
-      .withIndex("by_owner_key_and_latest_run_id_and_last_seen_at", (q) =>
-        q.eq("ownerKey", ownerKey).eq("latestRunId", args.runId),
-      )
-      .order("desc")
-      .filter((q) =>
-        q.or(
-          q.eq(q.field("signalType"), "sustained_downloads_flat_installs"),
-          q.eq(q.field("signalType"), "download_spike_flat_installs"),
-          q.eq(q.field("signalType"), "sustained_abnormal_download_days"),
-        ),
+    const canonicalCandidate = await ctx.db
+      .query("publisherAbuseTemporalScanCandidates")
+      .withIndex("by_run_id_and_synchrony_eligible_and_owner_key", (q) =>
+        q.eq("runId", args.runId).eq("synchronyEligible", true).eq("ownerKey", ownerKey),
       )
       .first();
 
-    // Classification is complete before synchrony starts, so this representative
-    // stays stable for the run and emits the owner on exactly one source page.
-    if (canonicalSignal && anomalySignals.some((signal) => signal._id === canonicalSignal._id)) {
+    // Eligibility is frozen before synchrony starts, so this representative stays
+    // stable for the run and emits the owner on exactly one source page.
+    if (
+      canonicalCandidate &&
+      page.page.some((candidate) => candidate._id === canonicalCandidate._id)
+    ) {
       ownerKeys.push(ownerKey);
     }
   }
@@ -171,40 +158,38 @@ export const readPublisherAbuseOwnerKeysPageInternal = internalQuery({
   handler: readPublisherAbuseOwnerKeysPageInternalHandler,
 });
 
-export async function readPublisherAbuseOwnerSignalsPageInternalHandler(
+export async function readPublisherAbuseOwnerCandidatesPageInternalHandler(
   ctx: Pick<QueryCtx, "db">,
   args: { runId: Id<"publisherAbuseScoreRuns">; ownerKey: string; cursor?: string },
-): Promise<OwnerSynchronySignalPage> {
+): Promise<OwnerSynchronyCandidatePage> {
   const page = await ctx.db
-    .query("publisherAbuseSignals")
-    .withIndex("by_owner_key_and_latest_run_id_and_last_seen_at", (q) =>
-      q.eq("ownerKey", args.ownerKey).eq("latestRunId", args.runId),
+    .query("publisherAbuseTemporalScanCandidates")
+    .withIndex("by_run_id_and_synchrony_eligible_and_owner_key", (q) =>
+      q.eq("runId", args.runId).eq("synchronyEligible", true).eq("ownerKey", args.ownerKey),
     )
-    .order("desc")
-    .paginate({ cursor: args.cursor ?? null, numItems: OWNER_SIGNAL_PAGE_SIZE });
+    .paginate({ cursor: args.cursor ?? null, numItems: OWNER_CANDIDATE_PAGE_SIZE });
 
   return {
-    signals: page.page.flatMap((signal) => {
+    candidates: page.page.flatMap((candidate) => {
       if (
-        !isDownloadAnomalySignal(signal) ||
-        signal.ownerPublisherId === null ||
-        signal.synchronyDailyDownloads?.length !== PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS
+        !candidate.ownerPublisherId ||
+        candidate.synchronyDailyDownloads?.length !== PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS
       ) {
         return [];
       }
       return [
         {
-          skillId: signal.skillId,
-          ownerPublisherId: signal.ownerPublisherId,
-          skillSlug: signal.skillSlug,
-          skillDisplayName: signal.skillDisplayName,
-          dailyDownloads: signal.synchronyDailyDownloads,
-          recent7Downloads: signal.recent7Downloads,
-          recent7Installs: signal.recent7Installs,
-          recent30Downloads: signal.recent30Downloads,
-          recent30Installs: signal.recent30Installs,
-          allTimeDownloads: signal.allTimeDownloads,
-          allTimeInstalls: signal.allTimeInstalls,
+          skillId: candidate.skillId,
+          ownerPublisherId: candidate.ownerPublisherId,
+          skillSlug: candidate.slug,
+          skillDisplayName: candidate.displayName,
+          dailyDownloads: candidate.synchronyDailyDownloads,
+          recent7Downloads: candidate.temporalScore.recent7Downloads,
+          recent7Installs: candidate.temporalScore.recent7Installs,
+          recent30Downloads: candidate.temporalScore.recent30Downloads,
+          recent30Installs: candidate.temporalScore.recent30Installs,
+          allTimeDownloads: candidate.totalDownloads,
+          allTimeInstalls: candidate.totalInstalls,
         },
       ];
     }),
@@ -213,13 +198,13 @@ export async function readPublisherAbuseOwnerSignalsPageInternalHandler(
   };
 }
 
-export const readPublisherAbuseOwnerSignalsPageInternal = internalQuery({
+export const readPublisherAbuseOwnerCandidatesPageInternal = internalQuery({
   args: {
     runId: v.id("publisherAbuseScoreRuns"),
     ownerKey: v.string(),
     cursor: v.optional(v.string()),
   },
-  handler: readPublisherAbuseOwnerSignalsPageInternalHandler,
+  handler: readPublisherAbuseOwnerCandidatesPageInternalHandler,
 });
 
 export async function getPublisherAbuseOwnerSynchronyPublisherInternalHandler(
@@ -245,31 +230,31 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
   ctx: Pick<ActionCtx, "runQuery">,
   args: { runId: Id<"publisherAbuseScoreRuns">; ownerKey: string; todayDay: number },
 ): Promise<OwnerSynchronyCandidate | null> {
-  const uniqueSignals = new Map<
+  const uniqueCandidates = new Map<
     Id<"skills">,
     OwnerSynchronySkill & { ownerPublisherId: Id<"publishers"> }
   >();
   let cursor: string | undefined;
   while (true) {
-    const page: OwnerSynchronySignalPage = await ctx.runQuery(
-      internal.publisherAbuseOwnerSynchrony.readPublisherAbuseOwnerSignalsPageInternal,
+    const page: OwnerSynchronyCandidatePage = await ctx.runQuery(
+      internal.publisherAbuseOwnerSynchrony.readPublisherAbuseOwnerCandidatesPageInternal,
       cursor
         ? { runId: args.runId, ownerKey: args.ownerKey, cursor }
         : { runId: args.runId, ownerKey: args.ownerKey },
     );
-    for (const signal of page.signals) {
-      if (!uniqueSignals.has(signal.skillId)) {
-        uniqueSignals.set(signal.skillId, signal);
+    for (const candidate of page.candidates) {
+      if (!uniqueCandidates.has(candidate.skillId)) {
+        uniqueCandidates.set(candidate.skillId, candidate);
       }
     }
     if (page.isDone) break;
-    if (!page.cursor) throw new Error("Owner synchrony signal page did not return a cursor");
+    if (!page.cursor) throw new Error("Owner synchrony candidate page did not return a cursor");
     cursor = page.cursor;
   }
 
-  if (uniqueSignals.size < 2) return null;
+  if (uniqueCandidates.size < 2) return null;
 
-  const ownerPublisherId = uniqueSignals.values().next().value?.ownerPublisherId;
+  const ownerPublisherId = uniqueCandidates.values().next().value?.ownerPublisherId;
   if (!ownerPublisherId) return null;
   const publisher: OwnerSynchronyPublisher | null = await ctx.runQuery(
     internal.publisherAbuseOwnerSynchrony.getPublisherAbuseOwnerSynchronyPublisherInternal,
@@ -279,13 +264,14 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
   const publisherSkillCount = publisher.publishedSkills;
   if (
     publisherSkillCount < 2 ||
-    uniqueSignals.size / publisherSkillCount < PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE
+    uniqueCandidates.size / publisherSkillCount <
+      PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE
   ) {
     return null;
   }
 
   const windowStartDay = args.todayDay - PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS + 1;
-  const candidateSkills: OwnerSynchronySkill[] = [...uniqueSignals.values()].map(
+  const candidateSkills: OwnerSynchronySkill[] = [...uniqueCandidates.values()].map(
     ({ ownerPublisherId: _ownerPublisherId, ...skill }) => skill,
   );
 

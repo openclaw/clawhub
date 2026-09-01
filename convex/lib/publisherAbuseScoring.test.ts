@@ -12,6 +12,7 @@ import {
   labelForPublisherAbuseScore,
   labelForTemporalPublisherAbuse,
   labelForPublisherAbuseZScore,
+  isPublisherSynchronyTemporalCandidate,
   scorePublisherAbuseCohort,
 } from "./publisherAbuseScoring";
 
@@ -423,25 +424,26 @@ describe("publisher abuse scoring", () => {
     );
   });
 
-  it("flags a current 7-day download spike with flat installs", () => {
+  it("reserves proportional 7-day spikes for publisher synchrony", () => {
     const todayDay = 100;
+    const benchmark = temporalBenchmark({
+      downloads30dP95: 500,
+      downloads30dP99: 600,
+      spikeMultiplier7dP95: 5,
+      spikeMultiplier7dP99: 20,
+      excess7DownloadsP95: 1_000,
+      excess7DownloadsP99: 2_000,
+    });
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
-      benchmark: temporalBenchmark({
-        downloads30dP95: 500,
-        downloads30dP99: 600,
-        spikeMultiplier7dP95: 5,
-        spikeMultiplier7dP99: 20,
-        excess7DownloadsP95: 1_000,
-        excess7DownloadsP99: 2_000,
-      }),
+      benchmark,
       dailyStats: [
         ...dailyRange(64, 30, { downloads: 5, installs: 0 }),
         ...dailyRange(94, 7, { downloads: 400, installs: 0 }),
       ],
     });
 
-    expect(score.spike).toBe(true);
+    expect(score.spike).toBe(false);
     expect(score.sustained).toBe(false);
     expect(score.recent7Downloads).toBe(2_800);
     expect(score.recent7Installs).toBe(0);
@@ -451,7 +453,27 @@ describe("publisher abuse scoring", () => {
     expect(score.excess7Downloads).toBe(2_765);
     expect(score.spikeMultiplierCohortBand).toBe("p99");
     expect(score.excess7DownloadsCohortBand).toBe("p99");
-    expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
+    expect(score.reasonCodes).not.toContain("temporal_download_spike_flat_installs");
+    expect(isPublisherSynchronyTemporalCandidate(score, benchmark)).toBe(true);
+  });
+
+  it("flags a standalone spike at 6,400 downloads in seven days", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP99: 600,
+        spikeMultiplier7dP99: 1,
+        excess7DownloadsP99: 76.5,
+      }),
+      dailyStats: [
+        ...dailyRange(64, 30, { downloads: 1, installs: 0 }),
+        ...dailyRange(94, 6, { downloads: 914, installs: 0 }),
+        { day: 100, downloads: 916, installs: 0 },
+      ],
+    });
+
+    expect(score.recent7Downloads).toBe(6_400);
+    expect(score.spike).toBe(true);
   });
 
   it("does not flag a 7-day spike below the proportional extreme-traffic floor", () => {
@@ -786,14 +808,11 @@ describe("publisher abuse scoring", () => {
       ],
     });
 
-    expect(score.spike).toBe(true);
+    expect(score.spike).toBe(false);
     expect(score.sustained).toBe(true);
-    expect(score.spikeWindowStartDay).toBe(40);
+    expect(score.spikeWindowStartDay).toBeUndefined();
     expect(score.sustainedWindowStartDay).toBe(80);
-    expect(score.reasonCodes).toEqual([
-      "temporal_download_spike_flat_installs",
-      "temporal_sustained_abnormal_download_days",
-    ]);
+    expect(score.reasonCodes).toEqual(["temporal_sustained_abnormal_download_days"]);
   });
 
   it("computes cohort benchmark percentiles from scanned skill windows", () => {

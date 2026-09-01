@@ -3930,10 +3930,11 @@ const publisherAbuseTemporalScanCandidates = defineTable({
   expirationTime: v.number(),
 })
   .index("by_run_id", ["runId"])
-  .index("by_run_id_and_synchrony_eligible_and_owner_key", {
-    fields: ["runId", "synchronyEligible", "ownerKey"],
-    staged: true,
-  })
+  .index("by_run_id_and_synchrony_eligible_and_owner_key", [
+    "runId",
+    "synchronyEligible",
+    "ownerKey",
+  ])
   .index("by_expiration_time", ["expirationTime"]);
 
 const publisherAbuseScores = defineTable({

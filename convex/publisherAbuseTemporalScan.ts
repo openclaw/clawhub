@@ -8,6 +8,7 @@ import { toDayKey } from "./lib/leaderboards";
 import {
   classifySkillTemporalAbuseScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+  isPublisherSynchronyTemporalCandidate,
   normalizeTemporalAbuseCohortBenchmark,
   PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   type SkillTemporalAbuseScore,
@@ -515,8 +516,11 @@ export async function readScheduledTemporalCandidatesPageInternalHandler(
     .withIndex("by_run_id", (q) => q.eq("runId", args.runId))
     .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
   return {
-    candidates: page.page.map(({ expirationTime: _expirationTime, runId: _runId, ...candidate }) =>
-      candidateFromScanRow(candidate),
+    candidates: page.page.map(
+      ({ expirationTime: _expirationTime, runId: _runId, ...candidate }) => ({
+        scanCandidateId: candidate._id,
+        candidate: candidateFromScanRow(candidate),
+      }),
     ),
     cursor: page.isDone ? undefined : page.continueCursor,
     isDone: page.isDone,
@@ -569,6 +573,7 @@ export async function advanceScheduledTemporalCandidatesInternalHandler(
     nextCursor?: string;
     isDone: boolean;
     candidates: TemporalSkillCandidate[];
+    synchronyCandidateIds: Id<"publisherAbuseTemporalScanCandidates">[];
   },
 ) {
   const run = await getScheduledTemporalScanStateInternalHandler(ctx, { runId: args.runId });
@@ -587,6 +592,13 @@ export async function advanceScheduledTemporalCandidatesInternalHandler(
       benchmark: normalizeTemporalAbuseCohortBenchmark(run.temporalBenchmark),
       now,
     });
+  }
+  for (const candidateId of args.synchronyCandidateIds) {
+    const candidate = await ctx.db.get(candidateId);
+    if (!candidate || candidate.runId !== run._id) {
+      throw new Error("Publisher synchrony candidate does not belong to this scan run");
+    }
+    await ctx.db.patch(candidateId, { synchronyEligible: true });
   }
   const finalizedScores = run.finalizedScores + args.candidates.length;
   await ctx.db.patch(run._id, {
@@ -614,6 +626,7 @@ export const advanceScheduledTemporalCandidatesInternal = internalMutation({
     nextCursor: v.optional(v.string()),
     isDone: v.boolean(),
     candidates: v.array(temporalCandidateValidator),
+    synchronyCandidateIds: v.array(v.id("publisherAbuseTemporalScanCandidates")),
   },
   handler: advanceScheduledTemporalCandidatesInternalHandler,
 });
@@ -829,7 +842,14 @@ type TemporalSourcePage = {
 };
 
 type PercentilePage = { values: number[]; cursor?: string; isDone: boolean };
-type CandidatePage = { candidates: TemporalSkillCandidate[]; cursor?: string; isDone: boolean };
+type CandidatePage = {
+  candidates: Array<{
+    scanCandidateId: Id<"publisherAbuseTemporalScanCandidates">;
+    candidate: TemporalSkillCandidate;
+  }>;
+  cursor?: string;
+  isDone: boolean;
+};
 type ScheduledTemporalScanResult =
   | { ok: true; runId: Id<"publisherAbuseScoreRuns">; completed: true }
   | {
@@ -998,15 +1018,26 @@ async function runScheduledTemporalPublisherAbuseScanStep(
         batchSize: CANDIDATE_PAGE_SIZE,
       },
     );
-    const highCandidates = page.candidates
-      .map((candidate) => ({
+    const classifiedCandidates = page.candidates.map(({ scanCandidateId, candidate }) => ({
+      scanCandidateId,
+      candidate: {
         ...candidate,
         temporalScore: classifySkillTemporalAbuseScore(candidate.temporalScore, benchmark),
-      }))
+      },
+    }));
+    const highCandidates = classifiedCandidates
+      .map(({ candidate }) => candidate)
       .filter(
         ({ temporalScore }) =>
           temporalScore.spike || temporalScore.sustained || temporalScore.nearConversion,
       );
+    const synchronyCandidateIds = classifiedCandidates.flatMap(({ scanCandidateId, candidate }) =>
+      candidate.ownerPublisherId &&
+      candidate.synchronyDailyDownloads?.length === 60 &&
+      isPublisherSynchronyTemporalCandidate(candidate.temporalScore, benchmark)
+        ? [scanCandidateId]
+        : [],
+    );
     const advanced: { applied: boolean } = await ctx.runMutation(
       internal.publisherAbuseTemporalScan.advanceScheduledTemporalCandidatesInternal,
       {
@@ -1015,6 +1046,7 @@ async function runScheduledTemporalPublisherAbuseScanStep(
         nextCursor: page.cursor,
         isDone: page.isDone,
         candidates: highCandidates,
+        synchronyCandidateIds,
       },
     );
     if (!advanced.applied) {
