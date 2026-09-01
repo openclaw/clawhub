@@ -65,6 +65,25 @@ function existingSignal(now: number) {
   };
 }
 
+function ownerSignal(index: number, ownerPublisherId: Id<"publishers">) {
+  const dailyDownloads = Array.from({ length: 60 }, (_, day) =>
+    Math.round((day + 1) * (1 + (index % 10) * 0.001)),
+  );
+  return {
+    skillId: `skills:${index}` as Id<"skills">,
+    ownerPublisherId,
+    skillSlug: `skill-${index}`,
+    skillDisplayName: `Skill ${index}`,
+    dailyDownloads,
+    recent7Downloads: dailyDownloads.slice(-7).reduce((sum, value) => sum + value, 0),
+    recent7Installs: 0,
+    recent30Downloads: dailyDownloads.slice(-30).reduce((sum, value) => sum + value, 0),
+    recent30Installs: 0,
+    allTimeDownloads: 10_000 + index,
+    allTimeInstalls: 0,
+  };
+}
+
 describe("publisher abuse owner synchrony signal", () => {
   it("discovers owners through the current-run signal index", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
@@ -72,6 +91,7 @@ describe("publisher abuse owner synchrony signal", () => {
       ...existingSignal(1_700_000_000_000),
       latestRunId: runId,
       signalType: "download_spike_flat_installs" as const,
+      synchronyDailyDownloads: Array.from({ length: 60 }, (_, day) => day + 1),
     };
     const eq = vi.fn();
     const rangeBuilder = { eq };
@@ -180,6 +200,7 @@ describe("publisher abuse owner synchrony signal", () => {
       ...existingSignal(1_700_000_000_000),
       latestRunId: runId,
       signalType: "download_spike_flat_installs" as const,
+      synchronyDailyDownloads: Array.from({ length: 60 }, (_, day) => day + 1),
     };
     const staleSignals = Array.from({ length: 5_000 }, (_, index) => ({
       ...current,
@@ -214,7 +235,21 @@ describe("publisher abuse owner synchrony signal", () => {
         ownerKey: current.ownerKey,
       }),
     ).resolves.toEqual({
-      signals: [{ skillId: current.skillId, ownerPublisherId: current.ownerPublisherId }],
+      signals: [
+        {
+          skillId: current.skillId,
+          ownerPublisherId: current.ownerPublisherId,
+          skillSlug: current.skillSlug,
+          skillDisplayName: current.skillDisplayName,
+          dailyDownloads: current.synchronyDailyDownloads,
+          recent7Downloads: current.recent7Downloads,
+          recent7Installs: current.recent7Installs,
+          recent30Downloads: current.recent30Downloads,
+          recent30Installs: current.recent30Installs,
+          allTimeDownloads: current.allTimeDownloads,
+          allTimeInstalls: current.allTimeInstalls,
+        },
+      ],
       cursor: "next-page",
       isDone: false,
     });
@@ -231,10 +266,7 @@ describe("publisher abuse owner synchrony signal", () => {
   it("processes a qualifying current-run portfolio beyond 50 skills and 100 rows", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const ownerPublisherId = "publishers:portfolio" as Id<"publishers">;
-    const signals = Array.from({ length: 101 }, (_, index) => ({
-      skillId: `skills:${index}` as Id<"skills">,
-      ownerPublisherId,
-    }));
+    const signals = Array.from({ length: 101 }, (_, index) => ownerSignal(index, ownerPublisherId));
     const signalPages = [
       { signals: signals.slice(0, 50), cursor: "page-2", isDone: false },
       { signals: signals.slice(50, 100), cursor: "page-3", isDone: false },
@@ -243,30 +275,11 @@ describe("publisher abuse owner synchrony signal", () => {
     let signalPageIndex = 0;
     const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
       if ("ownerKey" in args) return signalPages[signalPageIndex++];
-      if (!("skillId" in args)) {
-        return {
-          publisherId: ownerPublisherId,
-          linkedUserId: "users:portfolio" as Id<"users">,
-          handle: "portfolio-owner",
-          publishedSkills: 101,
-        };
-      }
-      const skillId = args.skillId as Id<"skills">;
-      const index = Number(skillId.split(":").at(-1));
-      const dailyDownloads = Array.from({ length: 60 }, (_, day) =>
-        Math.round((day + 1) * (1 + index * 0.001)),
-      );
       return {
-        skillId,
-        skillSlug: `skill-${index}`,
-        skillDisplayName: `Skill ${index}`,
-        dailyDownloads,
-        recent7Downloads: dailyDownloads.slice(-7).reduce((sum, value) => sum + value, 0),
-        recent7Installs: 0,
-        recent30Downloads: dailyDownloads.slice(-30).reduce((sum, value) => sum + value, 0),
-        recent30Installs: 0,
-        allTimeDownloads: 10_000 + index,
-        allTimeInstalls: 0,
+        publisherId: ownerPublisherId,
+        linkedUserId: "users:portfolio" as Id<"users">,
+        handle: "portfolio-owner",
+        publishedSkills: 101,
       };
     });
 
@@ -282,17 +295,56 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(result?.portfolioEvidence.skillCount).toBe(101);
     expect(result?.portfolioEvidence.catalogCoverage).toBe(1);
     expect(signalPageIndex).toBe(3);
-    expect(runQuery).toHaveBeenCalledTimes(105);
+    expect(runQuery).toHaveBeenCalledTimes(4);
+  });
+
+  it("processes 8,000 embedded signal curves in bounded pages", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const ownerPublisherId = "publishers:portfolio" as Id<"publishers">;
+    const signals = Array.from({ length: 8_000 }, (_, index) =>
+      ownerSignal(index, ownerPublisherId),
+    );
+    let signalPageReads = 0;
+    const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
+      if ("ownerKey" in args) {
+        const pageIndex = typeof args.cursor === "string" ? Number(args.cursor) : 0;
+        const start = pageIndex * 50;
+        const nextPageIndex = pageIndex + 1;
+        const isDone = start + 50 >= signals.length;
+        signalPageReads += 1;
+        return {
+          signals: signals.slice(start, start + 50),
+          cursor: isDone ? undefined : String(nextPageIndex),
+          isDone,
+        };
+      }
+      return {
+        publisherId: ownerPublisherId,
+        linkedUserId: "users:portfolio" as Id<"users">,
+        handle: "portfolio-owner",
+        publishedSkills: 8_000,
+      };
+    });
+
+    const result = await getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
+      { runQuery } as never,
+      {
+        runId,
+        ownerKey: "publisher:publishers:portfolio",
+        todayDay: 20_683,
+      },
+    );
+
+    expect(result?.portfolioEvidence.skillCount).toBe(8_000);
+    expect(signalPageReads).toBe(160);
+    expect(runQuery).toHaveBeenCalledTimes(161);
   });
 
   it("evaluates a 101-signal publisher once across three scan source pages", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const ownerKey = "publisher:publishers:portfolio";
     const ownerPublisherId = "publishers:portfolio" as Id<"publishers">;
-    const signals = Array.from({ length: 101 }, (_, index) => ({
-      skillId: `skills:${index}` as Id<"skills">,
-      ownerPublisherId,
-    }));
+    const signals = Array.from({ length: 101 }, (_, index) => ownerSignal(index, ownerPublisherId));
     const signalPages = [
       { signals: signals.slice(0, 50), cursor: "signal-page-2", isDone: false },
       { signals: signals.slice(50, 100), cursor: "signal-page-3", isDone: false },
@@ -303,25 +355,6 @@ describe("publisher abuse owner synchrony signal", () => {
         if (args.cursor === "signal-page-2") return signalPages[1];
         if (args.cursor === "signal-page-3") return signalPages[2];
         return signalPages[0];
-      }
-      if ("skillId" in args) {
-        const skillId = args.skillId as Id<"skills">;
-        const index = Number(skillId.split(":").at(-1));
-        const dailyDownloads = Array.from({ length: 60 }, (_, day) =>
-          Math.round((day + 1) * (1 + index * 0.001)),
-        );
-        return {
-          skillId,
-          skillSlug: `skill-${index}`,
-          skillDisplayName: `Skill ${index}`,
-          dailyDownloads,
-          recent7Downloads: dailyDownloads.slice(-7).reduce((sum, value) => sum + value, 0),
-          recent7Installs: 0,
-          recent30Downloads: dailyDownloads.slice(-30).reduce((sum, value) => sum + value, 0),
-          recent30Installs: 0,
-          allTimeDownloads: 10_000 + index,
-          allTimeInstalls: 0,
-        };
       }
       if ("ownerPublisherId" in args) {
         return {
@@ -360,7 +393,7 @@ describe("publisher abuse owner synchrony signal", () => {
     expect([first.matchedOwners, second.matchedOwners, third.matchedOwners]).toEqual([1, 0, 0]);
     expect(runMutation).toHaveBeenCalledTimes(1);
     expect(runQuery.mock.calls.filter(([, args]) => "ownerKey" in args)).toHaveLength(3);
-    expect(runQuery.mock.calls.filter(([, args]) => "skillId" in args)).toHaveLength(101);
+    expect(runQuery.mock.calls.filter(([, args]) => "skillId" in args)).toHaveLength(0);
   });
 
   it("creates one publisher-level signal with portfolio evidence", async () => {

@@ -1072,10 +1072,10 @@ function PublisherAbuseSignalInspector({ item }: { item: PublisherAbuseSignalEnt
                     At least {formatPercent(item.signal.portfolioEvidence.correlationFloor)} aligned
                   </strong>
                   <small>
-                    Pairwise download-trend correlation; the seven-day peaks range from{" "}
-                    {formatWholeNumber(item.signal.portfolioEvidence.peak7DownloadsMin)} to{" "}
-                    {formatWholeNumber(item.signal.portfolioEvidence.peak7DownloadsMax)} downloads
-                    per day.
+                    Correlation with the portfolio's median download trend; the seven-day peaks
+                    range from {formatWholeNumber(item.signal.portfolioEvidence.peak7DownloadsMin)}{" "}
+                    to {formatWholeNumber(item.signal.portfolioEvidence.peak7DownloadsMax)}{" "}
+                    downloads per day.
                   </small>
                 </div>
               </>

@@ -3925,6 +3925,7 @@ const publisherAbuseTemporalScanCandidates = defineTable({
   displayName: v.string(),
   totalDownloads: v.number(),
   totalInstalls: v.number(),
+  synchronyDailyDownloads: v.optional(v.array(v.number())),
   temporalScore: publisherAbuseTemporalScanScoreValidator,
   expirationTime: v.number(),
 })
@@ -4128,6 +4129,7 @@ const publisherAbuseSignals = defineTable({
   allTimeDownloads: v.number(),
   allTimeInstalls: v.number(),
   allTimeInstallDownloadRatio: v.number(),
+  synchronyDailyDownloads: v.optional(v.array(v.number())),
   temporalBenchmark: v.optional(
     v.object({
       scope: v.optional(v.literal("all_active_skills")),

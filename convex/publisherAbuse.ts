@@ -182,6 +182,7 @@ export type TemporalSkillCandidate = {
   displayName: string;
   totalDownloads: number;
   totalInstalls: number;
+  synchronyDailyDownloads?: number[];
   temporalScore: SkillTemporalAbuseScore;
 };
 
@@ -322,6 +323,7 @@ const temporalCandidateValidator = v.object({
   displayName: v.string(),
   totalDownloads: v.number(),
   totalInstalls: v.number(),
+  synchronyDailyDownloads: v.optional(v.array(v.number())),
   temporalScore: temporalScoreValidator,
 });
 
@@ -2213,6 +2215,7 @@ export async function collectTemporalPublisherAbuseSkillCandidatesPageInternalHa
       displayName: skill.displayName,
       totalDownloads: readCanonicalStat(skill, "downloads"),
       totalInstalls: readCanonicalStat(skill, "installsAllTime"),
+      synchronyDailyDownloads: dailyDownloadsForRange(dailyStats, todayDay - 59, todayDay),
       temporalScore,
     });
   }
@@ -2224,6 +2227,18 @@ export async function collectTemporalPublisherAbuseSkillCandidatesPageInternalHa
     benchmarkScores,
     candidates,
   };
+}
+
+function dailyDownloadsForRange(
+  rows: Array<{ day: number; downloads: number }>,
+  startDay: number,
+  endDay: number,
+) {
+  const downloadsByDay = new Map(rows.map((row) => [row.day, Math.max(0, row.downloads)]));
+  return Array.from(
+    { length: endDay - startDay + 1 },
+    (_, index) => downloadsByDay.get(startDay + index) ?? 0,
+  );
 }
 
 export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
@@ -3108,6 +3123,9 @@ function publisherAbuseSignalSnapshot(args: {
     }),
     allTimeDownloads: nonNegative(candidate.totalDownloads),
     allTimeInstalls: nonNegative(candidate.totalInstalls),
+    ...(candidate.synchronyDailyDownloads
+      ? { synchronyDailyDownloads: candidate.synchronyDailyDownloads }
+      : {}),
     temporalBenchmark: args.benchmark,
     expected7Downloads: candidate.temporalScore.expected7Downloads,
     excess7Downloads: candidate.temporalScore.excess7Downloads,

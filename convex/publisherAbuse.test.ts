@@ -93,7 +93,9 @@ const TEST_MODEL_CONFIG = {
 
 type Handler<TArgs, TResult> = (ctx: unknown, args: TArgs) => Promise<TResult>;
 type Wrapped<TArgs, TResult> = { _handler: Handler<TArgs, TResult> };
-type TemporalSkillCandidate = ReturnType<typeof temporalCandidate>;
+type TemporalSkillCandidate = ReturnType<typeof temporalCandidate> & {
+  synchronyDailyDownloads?: number[];
+};
 
 const collectHandler = (
   publisherAbuse.collectPublisherAbuseScoresPageInternal as unknown as Wrapped<
@@ -8678,6 +8680,9 @@ describe("publisher abuse dry-run persistence", () => {
       scannedSkills: 1,
     });
     expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]).toEqual(
+      expect.objectContaining({ synchronyDailyDownloads: Array(60).fill(0) }),
+    );
 
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
     expect(takeDailyStats).toHaveBeenCalledWith(730);
@@ -9123,10 +9128,11 @@ describe("publisher abuse dry-run persistence", () => {
     sustained.temporalScore.recent30Downloads = 5_000;
     sustained.temporalScore.reasonCodes = ["temporal_sustained_abnormal_download_days"];
 
-    const spikeOnly = temporalCandidate("skills:spike", {
+    const spikeOnly: TemporalSkillCandidate = temporalCandidate("skills:spike", {
       slug: "spike",
       displayName: "Spike",
     });
+    spikeOnly.synchronyDailyDownloads = Array.from({ length: 60 }, (_, day) => day + 1);
     const existingSignal = {
       _id: "publisherAbuseSignals:existing-ratio",
       signalType: "high_install_download_ratio",
@@ -9305,6 +9311,7 @@ describe("publisher abuse dry-run persistence", () => {
         signalType: "download_spike_flat_installs",
         skillId: "skills:spike",
         skillSlug: "spike",
+        synchronyDailyDownloads: spikeOnly.synchronyDailyDownloads,
         firstSeenAt: 1_234,
         lastSeenAt: 1_234,
         seenCount: 1,

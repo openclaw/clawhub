@@ -36,6 +36,20 @@ describe("publisher owner download synchrony", () => {
     );
   });
 
+  it("processes the configured 8,000-skill scan maximum without pairwise growth", () => {
+    const curves = Array.from({ length: 8_000 }, (_, index) => ({
+      ...coordinatedCurve(index % 10),
+      skillId: `skills:large-${index}`,
+      skillSlug: `large-${index}`,
+    }));
+
+    const result = detectPublisherAbuseOwnerSynchrony(curves, 8_000);
+
+    expect(result?.skillIds).toHaveLength(8_000);
+    expect(result?.catalogCoverage).toBe(1);
+    expect(result?.correlationFloor).toBeGreaterThanOrEqual(0.98);
+  });
+
   it("uses catalogue coverage rather than a fixed skill count", () => {
     const result = detectPublisherAbuseOwnerSynchrony(
       [coordinatedCurve(0), coordinatedCurve(1)],

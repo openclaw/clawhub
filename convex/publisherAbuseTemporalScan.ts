@@ -82,6 +82,7 @@ const temporalCandidateValidator = v.object({
   displayName: v.string(),
   totalDownloads: v.number(),
   totalInstalls: v.number(),
+  synchronyDailyDownloads: v.optional(v.array(v.number())),
   temporalScore: temporalScoreValidator,
 });
 

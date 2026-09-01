@@ -129,17 +129,22 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - The completed temporal pipeline also checks for publisher-wide synchronization
   among skills that already have a download anomaly signal.
   The synchronized group must cover at least 15% of the publisher's currently
-  published skills. Every pair of trailing 60-day download curves must have
-  Pearson correlation of at least 0.98, and the largest seven-day rolling peak
-  must be no more than 1.25 times the smallest. At least two skills are required
-  only because a trend comparison needs a pair; there is no fixed catalogue-size
-  threshold. Candidate signals and skill histories are read in bounded pages,
-  page size never becomes an eligibility ceiling, and each publisher is evaluated
-  once per run even when its signals span several source pages. Candidate reads
-  use the publisher-and-run index, so retained observations from older runs do not
-  add work to the current scan. This produces one `owner_synchronized_download_trends`
-  signal for the publisher, not one extra signal per skill. The similar-peak
-  requirement avoids treating shared direction alone as evidence.
+  published skills and at least half of its current anomaly signals. Each member's
+  normalized trailing 60-day curve must have Pearson correlation of at least 0.98
+  with the portfolio's median normalized curve, and the largest seven-day rolling
+  peak must be no more than 1.25 times the smallest. At least two skills are
+  required only because a trend comparison needs a group; there is no fixed
+  catalogue-size threshold. The full 60-day curve is captured during the existing
+  catalogue read and carried into the signal snapshot. Synchrony then reads those
+  snapshots in bounded pages instead of querying each skill again. Page size never
+  becomes an eligibility ceiling, and each publisher is evaluated once per run
+  even when its signals span several source pages. Candidate reads use the
+  publisher-and-run index, so retained observations from older runs do not add
+  work to the current scan. Median-reference comparison keeps detector work near
+  linear as a portfolio grows. This produces one
+  `owner_synchronized_download_trends` signal for the publisher, not one extra
+  signal per skill. The majority and similar-peak requirements avoid treating a
+  small coincidental subset or shared direction alone as evidence.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score

@@ -57,10 +57,31 @@ function median(values: number[]) {
   return sorted.length % 2 === 0 ? (sorted[midpoint - 1] + sorted[midpoint]) / 2 : sorted[midpoint];
 }
 
+function normalizedShape(values: number[]) {
+  if (values.length < 2) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const centered = values.map((value) => value - mean);
+  const magnitude = Math.sqrt(centered.reduce((sum, value) => sum + value * value, 0));
+  if (magnitude === 0) return null;
+  return centered.map((value) => value / magnitude);
+}
+
+function correlationWithReference(shape: number[], reference: number[]) {
+  return shape.reduce((sum, value, index) => sum + value * reference[index], 0);
+}
+
+function medianPortfolioReference(shapes: number[][]) {
+  const reference = Array.from({ length: PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS }, (_, day) =>
+    median(shapes.map((shape) => shape[day])),
+  );
+  return normalizedShape(reference);
+}
+
 /**
- * Finds the largest group whose members all move together and reach a similar
- * absolute download peak. Trying every skill as a seed keeps one unrelated
- * outlier from hiding an otherwise coherent portfolio-wide pattern.
+ * Builds one robust reference from the portfolio's median normalized shape,
+ * then finds the largest aligned group with similar absolute peaks. Requiring
+ * the group to contain at least half of the anomalous skills keeps the median
+ * resistant to outliers and bounds work to O(skills × window × log(skills)).
  */
 export function detectPublisherAbuseOwnerSynchrony(
   curves: PublisherAbuseOwnerSynchronyCurve[],
@@ -73,80 +94,58 @@ export function detectPublisherAbuseOwnerSynchrony(
   );
   if (usableCurves.length < 2 || publisherSkillCount < 2) return null;
 
-  const correlations = new Map<string, number | null>();
-  const peaks = new Map(
-    usableCurves.map((curve) => [curve.skillId, peakRollingDownloads(curve.dailyDownloads, 7)]),
-  );
-  const pairKey = (leftId: string, rightId: string) =>
-    leftId < rightId ? `${leftId}\u0000${rightId}` : `${rightId}\u0000${leftId}`;
-  const correlationFor = (
-    left: PublisherAbuseOwnerSynchronyCurve,
-    right: PublisherAbuseOwnerSynchronyCurve,
-  ) => {
-    const key = pairKey(left.skillId, right.skillId);
-    if (!correlations.has(key)) {
-      correlations.set(key, pearsonCorrelation(left.dailyDownloads, right.dailyDownloads));
+  const normalizedCurves = usableCurves.flatMap((curve) => {
+    const shape = normalizedShape(curve.dailyDownloads);
+    return shape ? [{ curve, shape, peak: peakRollingDownloads(curve.dailyDownloads, 7) }] : [];
+  });
+  if (normalizedCurves.length < 2) return null;
+  const reference = medianPortfolioReference(normalizedCurves.map(({ shape }) => shape));
+  if (!reference) return null;
+  const alignedByPeak = normalizedCurves
+    .map(({ curve, shape, peak }) => ({
+      curve,
+      peak,
+      correlation: correlationWithReference(shape, reference),
+    }))
+    .filter(
+      ({ peak, correlation }) =>
+        peak > 0 && correlation >= PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CORRELATION,
+    )
+    .sort(
+      (left, right) =>
+        left.peak - right.peak || left.curve.skillSlug.localeCompare(right.curve.skillSlug),
+    );
+
+  let left = 0;
+  let bestStart = 0;
+  let bestLength = 0;
+  for (let right = 0; right < alignedByPeak.length; right += 1) {
+    while (
+      left < right &&
+      alignedByPeak[right].peak / alignedByPeak[left].peak >
+        PUBLISHER_ABUSE_OWNER_SYNCHRONY_MAX_PEAK_RATIO
+    ) {
+      left += 1;
     }
-    return correlations.get(key) ?? null;
-  };
-
-  let bestCluster: PublisherAbuseOwnerSynchronyCurve[] = [];
-  for (const seed of usableCurves) {
-    const cluster = [seed];
-    const candidates = usableCurves
-      .filter((curve) => curve.skillId !== seed.skillId)
-      .map((curve) => ({ curve, correlation: correlationFor(seed, curve) }))
-      .filter(
-        (
-          candidate,
-        ): candidate is { curve: PublisherAbuseOwnerSynchronyCurve; correlation: number } =>
-          candidate.correlation !== null &&
-          candidate.correlation >= PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CORRELATION,
-      )
-      .sort((left, right) => right.correlation - left.correlation);
-
-    for (const { curve } of candidates) {
-      if (
-        !cluster.every(
-          (member) =>
-            (correlationFor(member, curve) ?? Number.NEGATIVE_INFINITY) >=
-            PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CORRELATION,
-        )
-      ) {
-        continue;
-      }
-      const nextPeaks = [...cluster, curve].map((member) => peaks.get(member.skillId) ?? 0);
-      const minimumPeak = Math.min(...nextPeaks);
-      const maximumPeak = Math.max(...nextPeaks);
-      if (
-        minimumPeak <= 0 ||
-        maximumPeak / minimumPeak > PUBLISHER_ABUSE_OWNER_SYNCHRONY_MAX_PEAK_RATIO
-      ) {
-        continue;
-      }
-      cluster.push(curve);
+    const length = right - left + 1;
+    if (length > bestLength) {
+      bestStart = left;
+      bestLength = length;
     }
-
-    if (cluster.length > bestCluster.length) bestCluster = cluster;
   }
+  const bestCluster = alignedByPeak.slice(bestStart, bestStart + bestLength);
 
-  if (bestCluster.length < 2) return null;
+  if (bestCluster.length < 2 || bestCluster.length * 2 < normalizedCurves.length) return null;
   const catalogCoverage = bestCluster.length / publisherSkillCount;
   if (catalogCoverage < PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE) return null;
-  const clusterCorrelations: number[] = [];
-  for (let leftIndex = 0; leftIndex < bestCluster.length; leftIndex += 1) {
-    for (let rightIndex = leftIndex + 1; rightIndex < bestCluster.length; rightIndex += 1) {
-      const correlation = correlationFor(bestCluster[leftIndex], bestCluster[rightIndex]);
-      if (correlation !== null) clusterCorrelations.push(correlation);
-    }
-  }
-  const clusterPeaks = bestCluster.map((curve) => peaks.get(curve.skillId) ?? 0);
-  const sortedCluster = [...bestCluster].sort((left, right) =>
-    left.skillSlug.localeCompare(right.skillSlug),
+  const clusterCorrelations = bestCluster.map(({ correlation }) => correlation);
+  const clusterPeaks = bestCluster.map(({ peak }) => peak);
+  const sortedCluster = [...bestCluster].sort((candidateA, candidateB) =>
+    candidateA.curve.skillSlug.localeCompare(candidateB.curve.skillSlug),
   );
   return {
-    skillIds: sortedCluster.map((curve) => curve.skillId),
-    skillSlugs: sortedCluster.map((curve) => curve.skillSlug),
+    skillIds: sortedCluster.map(({ curve }) => curve.skillId),
+    skillSlugs: sortedCluster.map(({ curve }) => curve.skillSlug),
     correlationFloor: Math.min(...clusterCorrelations),
     correlationMedian: median(clusterCorrelations),
     peak7DownloadsMin: Math.min(...clusterPeaks),
