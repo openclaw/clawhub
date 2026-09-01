@@ -293,6 +293,16 @@ describe("publisherAbuseDevSeed.seed", () => {
       expect.objectContaining({
         signalType: "sustained_abnormal_download_days",
         skillSlug: "demo-temporal-download-burst",
+        temporalBenchmark: expect.objectContaining({
+          scope: "all_active_skills",
+          sampleSize: 1000,
+        }),
+        sustainedDaysAboveThreshold: 14,
+        sustainedWindowDays: 14,
+        sustainedDailyDownloadThreshold: 61.142857142857146,
+        sustainedExpectedDailyDownloads: 4,
+        sustainedWindowDownloads: 14_269,
+        sustainedWindowInstalls: 8,
       }),
       expect.objectContaining({
         signalType: "high_install_download_ratio",

@@ -434,6 +434,13 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
   const temporalSustainedDaysAboveThreshold = temporalSustainedDailyDownloads.filter(
     (downloads) => downloads > temporalSustainedDailyDownloadThreshold,
   ).length;
+  const temporalSustainedWindowDownloads = temporalSustainedDailyDownloads.reduce(
+    (sum, downloads) => sum + downloads,
+    0,
+  );
+  const temporalSustainedWindowInstalls = temporalInstalls
+    .slice(-14)
+    .reduce((sum, value) => sum + value, 0);
   const ratioDownloads = scaleDailySeries(TEMPORAL_DEMO_ACTIVITY_SHAPE, 2_400);
   const ratioInstalls = scaleDailySeries(TEMPORAL_DEMO_ACTIVITY_SHAPE, 288);
   const ratioDownloads7d = ratioDownloads.slice(-7).reduce((sum, value) => sum + value, 0);
@@ -624,11 +631,8 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
         sustainedWindowDays: 14,
         sustainedDailyDownloadThreshold: temporalSustainedDailyDownloadThreshold,
         sustainedExpectedDailyDownloads: temporalSustainedExpectedDailyDownloads,
-        sustainedWindowDownloads: temporalSustainedDailyDownloads.reduce(
-          (sum, downloads) => sum + downloads,
-          0,
-        ),
-        sustainedWindowInstalls: temporalInstalls.slice(-14).reduce((sum, value) => sum + value, 0),
+        sustainedWindowDownloads: temporalSustainedWindowDownloads,
+        sustainedWindowInstalls: temporalSustainedWindowInstalls,
         sustainedWindowStartDay: todayDay - 13,
         sustainedWindowEndDay: todayDay,
         reasonCodes: ["temporal_sustained_abnormal_download_days"],
@@ -673,6 +677,13 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     allTimeDownloads: temporalDownloads30d,
     allTimeInstalls: temporalInstalls30d,
     allTimeInstallDownloadRatio: temporalInstalls30d / temporalDownloads30d,
+    temporalBenchmark,
+    sustainedDaysAboveThreshold: temporalSustainedDaysAboveThreshold,
+    sustainedWindowDays: 14,
+    sustainedDailyDownloadThreshold: temporalSustainedDailyDownloadThreshold,
+    sustainedExpectedDailyDownloads: temporalSustainedExpectedDailyDownloads,
+    sustainedWindowDownloads: temporalSustainedWindowDownloads,
+    sustainedWindowInstalls: temporalSustainedWindowInstalls,
   });
   await ctx.db.insert("publisherAbuseSignals", {
     signalType: "high_install_download_ratio",
