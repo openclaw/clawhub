@@ -14,6 +14,7 @@ const {
   getPublisherAbuseOwnerSynchronyCandidateInternalHandler,
   readPublisherAbuseOwnerKeysPageInternalHandler,
   readPublisherAbuseOwnerSignalsPageInternalHandler,
+  scanPublisherAbuseOwnerSynchronyPage,
   upsertPublisherAbuseOwnerSynchronySignalInternalHandler,
 } = await import("./publisherAbuseOwnerSynchrony");
 
@@ -73,8 +74,15 @@ describe("publisher abuse owner synchrony signal", () => {
       signalType: "download_spike_flat_installs" as const,
     };
     const eq = vi.fn(() => "run-range");
-    const withIndex = vi.fn((_name: string, range: (query: { eq: typeof eq }) => unknown) => {
+    const withIndex = vi.fn((name: string, range: (query: { eq: typeof eq }) => unknown) => {
       range({ eq });
+      if (name === "by_owner_key_and_last_seen_at") {
+        return {
+          order: () => ({
+            filter: () => ({ first: async () => current }),
+          }),
+        };
+      }
       return {
         order: () => ({
           paginate: async () => ({
@@ -105,6 +113,58 @@ describe("publisher abuse owner synchrony signal", () => {
       expect.any(Function),
     );
     expect(eq).toHaveBeenCalledWith("latestRunId", runId);
+  });
+
+  it("emits a large publisher on only one source page", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const ownerKey = "publisher:publishers:portfolio";
+    const signals = Array.from({ length: 101 }, (_, index) => ({
+      ...existingSignal(1_700_000_000_000 - index),
+      _id: `publisherAbuseSignals:${index}`,
+      ownerKey,
+      skillId: `skills:${index}` as Id<"skills">,
+      latestRunId: runId,
+      signalType: "download_spike_flat_installs" as const,
+    }));
+    const pages = [
+      { page: signals.slice(0, 50), continueCursor: "page-2", isDone: false },
+      { page: signals.slice(50, 100), continueCursor: "page-3", isDone: false },
+      { page: signals.slice(100), continueCursor: "unused", isDone: true },
+    ];
+    const paginate = vi.fn(async ({ cursor }: { cursor: string | null }) => {
+      if (cursor === "page-2") return pages[1];
+      if (cursor === "page-3") return pages[2];
+      return pages[0];
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: (name: string) => {
+            if (name === "by_owner_key_and_last_seen_at") {
+              return {
+                order: () => ({
+                  filter: () => ({ first: async () => signals[0] }),
+                }),
+              };
+            }
+            return { order: () => ({ paginate }) };
+          },
+        })),
+      },
+    };
+
+    const first = await readPublisherAbuseOwnerKeysPageInternalHandler(ctx as never, { runId });
+    const second = await readPublisherAbuseOwnerKeysPageInternalHandler(ctx as never, {
+      runId,
+      cursor: first.cursor,
+    });
+    const third = await readPublisherAbuseOwnerKeysPageInternalHandler(ctx as never, {
+      runId,
+      cursor: second.cursor,
+    });
+
+    expect([first, second, third].flatMap((page) => page.ownerKeys)).toEqual([ownerKey]);
+    expect(paginate).toHaveBeenCalledTimes(3);
   });
 
   it("keeps owner signal reads paged and excludes stale anomaly signals", async () => {
@@ -199,6 +259,84 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(result?.portfolioEvidence.catalogCoverage).toBe(1);
     expect(signalPageIndex).toBe(3);
     expect(runQuery).toHaveBeenCalledTimes(105);
+  });
+
+  it("evaluates a 101-signal publisher once across three scan source pages", async () => {
+    const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
+    const ownerKey = "publisher:publishers:portfolio";
+    const ownerPublisherId = "publishers:portfolio" as Id<"publishers">;
+    const signals = Array.from({ length: 101 }, (_, index) => ({
+      skillId: `skills:${index}` as Id<"skills">,
+      ownerPublisherId,
+    }));
+    const signalPages = [
+      { signals: signals.slice(0, 50), cursor: "signal-page-2", isDone: false },
+      { signals: signals.slice(50, 100), cursor: "signal-page-3", isDone: false },
+      { signals: signals.slice(100), cursor: undefined, isDone: true },
+    ];
+    const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
+      if ("ownerKey" in args) {
+        if (args.cursor === "signal-page-2") return signalPages[1];
+        if (args.cursor === "signal-page-3") return signalPages[2];
+        return signalPages[0];
+      }
+      if ("skillId" in args) {
+        const skillId = args.skillId as Id<"skills">;
+        const index = Number(skillId.split(":").at(-1));
+        const dailyDownloads = Array.from({ length: 60 }, (_, day) =>
+          Math.round((day + 1) * (1 + index * 0.001)),
+        );
+        return {
+          skillId,
+          skillSlug: `skill-${index}`,
+          skillDisplayName: `Skill ${index}`,
+          dailyDownloads,
+          recent7Downloads: dailyDownloads.slice(-7).reduce((sum, value) => sum + value, 0),
+          recent7Installs: 0,
+          recent30Downloads: dailyDownloads.slice(-30).reduce((sum, value) => sum + value, 0),
+          recent30Installs: 0,
+          allTimeDownloads: 10_000 + index,
+          allTimeInstalls: 0,
+        };
+      }
+      if ("ownerPublisherId" in args) {
+        return {
+          publisherId: ownerPublisherId,
+          linkedUserId: "users:portfolio" as Id<"users">,
+          handle: "portfolio-owner",
+          publishedSkills: 101,
+        };
+      }
+      if (args.cursor === "owner-page-2") {
+        return { ownerKeys: [], cursor: "owner-page-3", isDone: false };
+      }
+      if (args.cursor === "owner-page-3") {
+        return { ownerKeys: [], cursor: undefined, isDone: true };
+      }
+      return { ownerKeys: [ownerKey], cursor: "owner-page-2", isDone: false };
+    });
+    const runMutation = vi.fn(async () => ({ created: true, changed: true }));
+    const ctx = { runQuery, runMutation };
+
+    const first = await scanPublisherAbuseOwnerSynchronyPage(ctx as never, {
+      runId,
+      todayDay: 20_683,
+    });
+    const second = await scanPublisherAbuseOwnerSynchronyPage(ctx as never, {
+      runId,
+      cursor: first.cursor,
+      todayDay: 20_683,
+    });
+    const third = await scanPublisherAbuseOwnerSynchronyPage(ctx as never, {
+      runId,
+      cursor: second.cursor,
+      todayDay: 20_683,
+    });
+
+    expect([first.matchedOwners, second.matchedOwners, third.matchedOwners]).toEqual([1, 0, 0]);
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runQuery.mock.calls.filter(([, args]) => "ownerKey" in args)).toHaveLength(3);
+    expect(runQuery.mock.calls.filter(([, args]) => "skillId" in args)).toHaveLength(101);
   });
 
   it("creates one publisher-level signal with portfolio evidence", async () => {

@@ -137,10 +137,36 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
     .withIndex("by_latest_run_id_and_last_seen_at", (q) => q.eq("latestRunId", args.runId))
     .order("desc")
     .paginate({ cursor: args.cursor ?? null, numItems: OWNER_KEY_PAGE_SIZE });
+
+  const anomalySignals = page.page.filter(isDownloadAnomalySignal);
+  const pageOwnerKeys = [...new Set(anomalySignals.map((signal) => signal.ownerKey))];
+  const ownerKeys: string[] = [];
+  for (const ownerKey of pageOwnerKeys) {
+    const canonicalSignal = await ctx.db
+      .query("publisherAbuseSignals")
+      .withIndex("by_owner_key_and_last_seen_at", (q) => q.eq("ownerKey", ownerKey))
+      .order("desc")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("latestRunId"), args.runId),
+          q.or(
+            q.eq(q.field("signalType"), "sustained_downloads_flat_installs"),
+            q.eq(q.field("signalType"), "download_spike_flat_installs"),
+            q.eq(q.field("signalType"), "sustained_abnormal_download_days"),
+          ),
+        ),
+      )
+      .first();
+
+    // Classification is complete before synchrony starts, so this representative
+    // stays stable for the run and emits the owner on exactly one source page.
+    if (canonicalSignal && anomalySignals.some((signal) => signal._id === canonicalSignal._id)) {
+      ownerKeys.push(ownerKey);
+    }
+  }
+
   return {
-    ownerKeys: [
-      ...new Set(page.page.filter(isDownloadAnomalySignal).map((signal) => signal.ownerKey)),
-    ],
+    ownerKeys,
     cursor: page.isDone ? undefined : page.continueCursor,
     isDone: page.isDone,
   };

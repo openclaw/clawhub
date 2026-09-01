@@ -134,7 +134,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   must be no more than 1.25 times the smallest. At least two skills are required
   only because a trend comparison needs a pair; there is no fixed catalogue-size
   threshold. Candidate signals and skill histories are read in bounded pages,
-  and page size never becomes an eligibility ceiling. This produces one
+  page size never becomes an eligibility ceiling, and each publisher is evaluated
+  once per run even when its signals span several source pages. This produces one
   `owner_synchronized_download_trends` signal for the publisher, not one extra
   signal per skill. The similar-peak requirement avoids treating shared direction
   alone as evidence.
