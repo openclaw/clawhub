@@ -8,6 +8,7 @@ import {
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE,
   PUBLISHER_ABUSE_OWNER_SYNCHRONY_WINDOW_DAYS,
 } from "./lib/publisherAbuseOwnerSynchrony";
+import { computeBoundedPublisherSkillMetrics } from "./lib/publisherStats";
 
 const OWNER_KEY_PAGE_SIZE = 50;
 const OWNER_CANDIDATE_PAGE_SIZE = 50;
@@ -212,11 +213,17 @@ export async function getPublisherAbuseOwnerSynchronyPublisherInternalHandler(
 ): Promise<OwnerSynchronyPublisher | null> {
   const publisher = await ctx.db.get(args.ownerPublisherId);
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
+  const metrics =
+    typeof publisher.publishedSkills === "number"
+      ? null
+      : await computeBoundedPublisherSkillMetrics(ctx, publisher._id);
+  const publishedSkills = publisher.publishedSkills ?? metrics?.publishedSkills;
+  if (publishedSkills === undefined) return null;
   return {
     publisherId: publisher._id,
     linkedUserId: publisher.linkedUserId ?? undefined,
     handle: publisher.handle,
-    publishedSkills: Math.max(0, publisher.publishedSkills ?? 0),
+    publishedSkills: Math.max(0, publishedSkills),
   };
 }
 

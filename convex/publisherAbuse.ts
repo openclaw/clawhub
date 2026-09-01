@@ -37,7 +37,10 @@ import {
   type SkillTemporalAbuseScore,
   type TemporalAbuseCohortBenchmark,
 } from "./lib/publisherAbuseScoring";
-import { getSkillPublisherContribution } from "./lib/publisherStats";
+import {
+  computeBoundedPublisherSkillMetrics,
+  type PublisherSkillMetrics,
+} from "./lib/publisherStats";
 import { readCanonicalStat } from "./lib/skillStats";
 
 const DEFAULT_BATCH_SIZE = 250;
@@ -49,7 +52,6 @@ const PUBLISHER_ABUSE_SCORE_RUN_CONTINUATION_DELAY_MS = 5_000;
 const PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRY_BASE_DELAY_MS = 30_000;
 const PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRY_MAX_DELAY_MS = 5 * 60_000;
 const MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES = 5;
-const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
 const MAX_OWNER_NOMINATION_VERSION_SCAN = 20;
 const DEFAULT_REVIEW_DASHBOARD_PAGE_SIZE = 25;
@@ -2417,23 +2419,18 @@ function summarizePublisherAbuseFinalizationCohort(run: ScoreRun) {
   };
 }
 
-type SkillMetricsForScoring = Pick<
-  PublisherAbuseInput,
-  "publishedSkills" | "totalInstalls" | "totalStars" | "totalDownloads"
->;
-
 async function publisherSkillMetricsForScoring(
   ctx: Pick<MutationCtx, "db">,
   publisher: PublisherMetricsDoc,
   publishedPackages: number | undefined,
   options: PublisherSkillMetricsOptions,
-): Promise<SkillMetricsForScoring | null> {
+): Promise<PublisherSkillMetrics | null> {
   const hasPublishedSkillCount = typeof publisher.publishedSkills === "number";
   if (!hasPublishedSkillCount) {
     if (!options.allowActiveSkillScan) return null;
     if (!options.allowMissingPublishedSkillCountScan) return null;
     if (!consumeActiveSkillFallbackBudget(options.activeSkillFallbackBudget)) return null;
-    return await computePublisherSkillMetricsForScoring(ctx, publisher._id);
+    return await computeBoundedPublisherSkillMetrics(ctx, publisher._id);
   }
 
   const publishedSkills = nonNegative(publisher.publishedSkills);
@@ -2475,34 +2472,9 @@ async function publisherSkillMetricsForScoring(
   if (!options.allowActiveSkillScan) return null;
   if (!consumeActiveSkillFallbackBudget(options.activeSkillFallbackBudget)) return null;
 
-  const metrics = await computePublisherSkillMetricsForScoring(ctx, publisher._id);
+  const metrics = await computeBoundedPublisherSkillMetrics(ctx, publisher._id);
   if (!metrics) return null;
   return { ...metrics, publishedSkills };
-}
-
-async function computePublisherSkillMetricsForScoring(
-  ctx: Pick<MutationCtx, "db">,
-  publisherId: Id<"publishers">,
-): Promise<SkillMetricsForScoring | null> {
-  let publishedSkills = 0;
-  let totalInstalls = 0;
-  let totalStars = 0;
-  let totalDownloads = 0;
-  const skills = await ctx.db
-    .query("skills")
-    .withIndex("by_owner_publisher_active_updated", (q) =>
-      q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
-    )
-    .take(MAX_ACTIVE_SKILL_FALLBACK_SCAN + 1);
-  if (skills.length > MAX_ACTIVE_SKILL_FALLBACK_SCAN) return null;
-  for (const skill of skills) {
-    const contribution = getSkillPublisherContribution(skill);
-    publishedSkills += contribution.publishedSkills;
-    totalInstalls += contribution.skillTotalInstalls;
-    totalStars += contribution.skillTotalStars;
-    totalDownloads += contribution.skillTotalDownloads;
-  }
-  return { publishedSkills, totalInstalls, totalStars, totalDownloads };
 }
 
 function consumeActiveSkillFallbackBudget(budget: ActiveSkillFallbackBudget) {

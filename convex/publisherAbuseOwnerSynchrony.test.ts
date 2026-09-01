@@ -12,6 +12,7 @@ vi.mock("./functions", () => ({
 
 const {
   getPublisherAbuseOwnerSynchronyCandidateInternalHandler,
+  getPublisherAbuseOwnerSynchronyPublisherInternalHandler,
   readPublisherAbuseOwnerCandidatesPageInternalHandler,
   readPublisherAbuseOwnerKeysPageInternalHandler,
   scanPublisherAbuseOwnerSynchronyPage,
@@ -111,6 +112,45 @@ function storedCandidate(
 }
 
 describe("publisher abuse owner synchrony signal", () => {
+  it("derives the public skill count for legacy publishers", async () => {
+    const publisherId = "publishers:legacy" as Id<"publishers">;
+    const eq = vi.fn();
+    const rangeBuilder = { eq };
+    eq.mockReturnValue(rangeBuilder);
+    const take = vi.fn(async () =>
+      Array.from({ length: 2 }, (_, index) => ({
+        _id: `skills:public-${index}`,
+        ownerPublisherId: publisherId,
+        softDeletedAt: undefined,
+        statsDownloads: 10,
+        statsInstallsAllTime: 1,
+        statsStars: 0,
+      })),
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: publisherId,
+          handle: "legacy",
+          linkedUserId: "users:legacy",
+        })),
+        query: vi.fn(() => ({
+          withIndex: vi.fn((_name: string, range: (query: { eq: typeof eq }) => unknown) => {
+            range({ eq });
+            return { take };
+          }),
+        })),
+      },
+    };
+
+    await expect(
+      getPublisherAbuseOwnerSynchronyPublisherInternalHandler(ctx as never, {
+        ownerPublisherId: publisherId,
+      }),
+    ).resolves.toMatchObject({ publishedSkills: 2 });
+    expect(take).toHaveBeenCalledWith(501);
+  });
+
   it("discovers owners through the current-run synchrony candidate index", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const current = storedCandidate(0, runId, "publishers:portfolio" as Id<"publishers">);
