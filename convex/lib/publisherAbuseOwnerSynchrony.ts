@@ -60,7 +60,7 @@ function medianPortfolioReference(shapes: number[][]) {
 /**
  * Builds one robust reference from the portfolio's median normalized shape,
  * then finds the largest aligned group with similar absolute peaks. Requiring
- * the group to contain at least half of the anomalous skills keeps the median
+ * the group to contain more than half of the anomalous skills keeps the median
  * resistant to outliers and bounds work to O(skills × window × log(skills)).
  */
 export function detectPublisherAbuseOwnerSynchrony(
@@ -115,7 +115,7 @@ export function detectPublisherAbuseOwnerSynchrony(
   }
   const bestCluster = alignedByPeak.slice(bestStart, bestStart + bestLength);
 
-  if (bestCluster.length < 2 || bestCluster.length * 2 < normalizedCurves.length) return null;
+  if (bestCluster.length < 2 || bestCluster.length * 2 <= normalizedCurves.length) return null;
   const catalogCoverage = bestCluster.length / publisherSkillCount;
   if (catalogCoverage < PUBLISHER_ABUSE_OWNER_SYNCHRONY_MIN_CATALOG_COVERAGE) return null;
   const clusterCorrelations = bestCluster.map(({ correlation }) => correlation);

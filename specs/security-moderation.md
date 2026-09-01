@@ -134,7 +134,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   among scan candidates that either have a sustained anomaly or clear the lower
   proportional 7-day spike floor plus both platform P99 comparisons.
   The synchronized group must cover at least 15% of the publisher's currently
-  published skills and at least half of its eligible scan candidates. Each
+  published skills and more than half of its eligible scan candidates. Each
   member's normalized trailing 60-day curve must have Pearson correlation of at
   least 0.98 with the portfolio's median normalized curve, and the largest
   seven-day rolling peak must be no more than 1.25 times the smallest. At least

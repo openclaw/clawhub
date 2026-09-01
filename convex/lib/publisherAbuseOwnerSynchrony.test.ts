@@ -126,6 +126,17 @@ describe("publisher owner download synchrony", () => {
     expect(result?.skillIds).not.toContain("skills:4");
   });
 
+  it("requires one similar-peak group to contain a strict majority", () => {
+    const base = coordinatedCurve(0).dailyDownloads;
+    const curves = [1, 1, 10, 10].map((scale, index) => ({
+      skillId: `skills:split-${index}`,
+      skillSlug: `split-${index}`,
+      dailyDownloads: base.map((value) => value * scale),
+    }));
+
+    expect(detectPublisherAbuseOwnerSynchrony(curves, 4)).toBeNull();
+  });
+
   it("does not treat flat traffic as a synchronized trend", () => {
     const flatCurve = (index: number) => ({
       skillId: `skills:flat-${index}`,

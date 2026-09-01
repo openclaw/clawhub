@@ -309,6 +309,17 @@ describe("publisherAbuseDevSeed.seed", () => {
         skillSlug: "demo-temporal-install-ratio",
       }),
     ]);
+    expect(tables.publisherAbuseScoreRuns?.find((doc) => doc.temporalBenchmark)?.modelVersion).toBe(
+      "publisher-abuse-temporal.v1",
+    );
+    expect(
+      tables.publisherAbuseScores?.find((doc) => doc.ownerKey === "user:demo-temporal-cohort")
+        ?.modelVersion,
+    ).toBe("publisher-abuse-temporal.v1");
+    expect(
+      tables.publisherAbuseReviewNominations?.find((doc) => doc.handleSnapshot === "local-abuse")
+        ?.modelVersion,
+    ).toBe("publisher-abuse-temporal.v1");
     expect(tables.users?.some((doc) => doc.handle === "local-abuse")).toBe(true);
   });
 

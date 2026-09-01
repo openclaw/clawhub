@@ -11,7 +11,6 @@ import {
   computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   PUBLISHER_ABUSE_MODEL_VERSION,
-  PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
 
@@ -27,6 +26,7 @@ const TEMPORAL_DEMO_HANDLE = "local-abuse";
 const TEMPORAL_DEMO_OWNER_KEY = `${DEMO_OWNER_KEY_PREFIX}temporal-cohort`;
 const TEMPORAL_DEMO_SKILL_SLUG = "demo-temporal-download-burst";
 const TEMPORAL_DEMO_RATIO_SKILL_SLUG = "demo-temporal-install-ratio";
+const LEGACY_TEMPORAL_DEMO_MODEL_VERSION = "publisher-abuse-temporal.v1";
 const CLEAR_SEED_BATCH_SIZE = 100;
 
 // A realistic quiet-baseline → sharp-burst → uneven-tail shape keeps the
@@ -559,7 +559,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
   const temporalStartedAt = now - 35 * 60_000;
   const temporalCompletedAt = now - 30 * 60_000;
   const temporalRunId = await ctx.db.insert("publisherAbuseScoreRuns", {
-    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    modelVersion: LEGACY_TEMPORAL_DEMO_MODEL_VERSION,
     modelConfig: DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
     trigger: "manual",
     status: "completed",
@@ -586,7 +586,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     ownerPublisherId: temporalPublisherId,
     ownerUserId: temporalUserId,
     handleSnapshot: TEMPORAL_DEMO_HANDLE,
-    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    modelVersion: LEGACY_TEMPORAL_DEMO_MODEL_VERSION,
     label: "review",
     rank: 1,
     pressure: 18,
@@ -646,7 +646,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     ownerUserId: temporalUserId,
     handleSnapshot: TEMPORAL_DEMO_HANDLE,
     latestScoreId: temporalScoreId,
-    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    modelVersion: LEGACY_TEMPORAL_DEMO_MODEL_VERSION,
     label: "review",
     status: "pending",
     openedAt: temporalCompletedAt,
