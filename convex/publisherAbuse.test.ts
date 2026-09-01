@@ -198,6 +198,7 @@ const listSignalsPageHandler = (
         | "download_spike_flat_installs"
         | "sustained_abnormal_download_days"
         | "owner_synchronized_download_trends";
+      reviewStatus?: "open" | "snoozed" | "dismissed";
       paginationOpts: {
         numItems: number;
         cursor: string | null;
@@ -4218,6 +4219,7 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(
       listSignalsPageHandler(ctx, {
+        reviewStatus: "dismissed",
         paginationOpts: { numItems: 2, cursor: null },
       }),
     ).resolves.toEqual({

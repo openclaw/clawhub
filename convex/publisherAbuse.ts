@@ -112,6 +112,11 @@ const publisherAbuseSignalTypeValidator = v.union(
   v.literal("sustained_abnormal_download_days"),
   v.literal("owner_synchronized_download_trends"),
 );
+const legacyPublisherAbuseSignalReviewStatusValidator = v.union(
+  v.literal("open"),
+  v.literal("snoozed"),
+  v.literal("dismissed"),
+);
 
 type RunState = {
   runId: Id<"publisherAbuseScoreRuns">;
@@ -327,6 +332,8 @@ export const listReviewItemsPage = query({
 export const listSignalsPage = query({
   args: {
     signalType: v.optional(publisherAbuseSignalTypeValidator),
+    // Accepted but ignored while stale management clients age out.
+    reviewStatus: v.optional(legacyPublisherAbuseSignalReviewStatusValidator),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
