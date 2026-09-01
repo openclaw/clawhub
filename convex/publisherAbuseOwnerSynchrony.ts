@@ -305,9 +305,13 @@ export async function getPublisherAbuseOwnerSynchronyCandidateInternalHandler(
     for (const candidate of page.candidates) {
       if (!uniqueCandidates.has(candidate.skillId)) {
         if (uniqueCandidates.size >= MAX_OWNER_SYNCHRONY_CANDIDATES) {
-          throw new Error(
-            `Publisher synchrony candidate limit exceeded for ${args.ownerKey} (${MAX_OWNER_SYNCHRONY_CANDIDATES}).`,
-          );
+          console.warn("[publisher-temporal-abuse-scan] skipped oversized synchrony publisher", {
+            event: "publisher_temporal_abuse_synchrony_owner_skipped",
+            runId: args.runId,
+            ownerKey: args.ownerKey,
+            candidateLimit: MAX_OWNER_SYNCHRONY_CANDIDATES,
+          });
+          return null;
         }
         uniqueCandidates.set(candidate.skillId, candidate);
       }

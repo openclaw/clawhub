@@ -142,8 +142,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   is no fixed catalogue-size threshold. The full 60-day curve is captured during
   the existing catalogue read and carried in the temporary scan candidate. Synchrony then
   reads those candidates in bounded pages instead of querying each skill again.
-  A run fails visibly instead of evaluating an incomplete owner portfolio if a
-  single publisher exceeds 8,000 synchrony candidates.
+  A publisher above 8,000 synchrony candidates is skipped with the structured
+  `publisher_temporal_abuse_synchrony_owner_skipped` operator event, and the
+  scan continues with later publishers. This bounds one action without turning
+  a single oversized portfolio into a terminal full-scan failure.
   Page size never
   becomes an eligibility ceiling, and each publisher is evaluated once per run
   even when its candidates span several source pages. Candidate reads use the

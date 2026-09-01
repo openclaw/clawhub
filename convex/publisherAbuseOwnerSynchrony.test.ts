@@ -426,9 +426,10 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(runQuery).toHaveBeenCalledTimes(161);
   });
 
-  it("fails clearly before one owner can exceed the supported action workload", async () => {
+  it("skips an oversized owner without failing the full scan", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const ownerPublisherId = "publishers:oversized" as Id<"publishers">;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const runQuery = vi.fn(async (_reference: unknown, args: Record<string, unknown>) => {
       if ("ownerKey" in args) {
         const pageIndex = typeof args.cursor === "string" ? Number(args.cursor) : 0;
@@ -458,7 +459,17 @@ describe("publisher abuse owner synchrony signal", () => {
         ownerKey: "publisher:publishers:oversized",
         todayDay: 20_683,
       }),
-    ).rejects.toThrow("Publisher synchrony candidate limit exceeded");
+    ).resolves.toBeNull();
+    expect(warning).toHaveBeenCalledWith(
+      "[publisher-temporal-abuse-scan] skipped oversized synchrony publisher",
+      {
+        event: "publisher_temporal_abuse_synchrony_owner_skipped",
+        runId,
+        ownerKey: "publisher:publishers:oversized",
+        candidateLimit: 8_000,
+      },
+    );
+    warning.mockRestore();
   });
 
   it("evaluates a 101-signal publisher once across three scan source pages", async () => {
