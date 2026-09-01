@@ -218,7 +218,9 @@ export async function getPublisherAbuseOwnerSynchronyPublisherInternalHandler(
       ? null
       : await computeBoundedPublisherSkillMetrics(ctx, publisher._id);
   const publishedSkills = publisher.publishedSkills ?? metrics?.publishedSkills;
-  if (publishedSkills === undefined) return null;
+  if (publishedSkills === undefined) {
+    throw new Error(`Publisher skill count fallback limit exceeded for ${publisher._id}.`);
+  }
   return {
     publisherId: publisher._id,
     linkedUserId: publisher.linkedUserId ?? undefined,

@@ -117,16 +117,15 @@ describe("publisher abuse owner synchrony signal", () => {
     const eq = vi.fn();
     const rangeBuilder = { eq };
     eq.mockReturnValue(rangeBuilder);
-    const take = vi.fn(async () =>
-      Array.from({ length: 2 }, (_, index) => ({
-        _id: `skills:public-${index}`,
-        ownerPublisherId: publisherId,
-        softDeletedAt: undefined,
-        statsDownloads: 10,
-        statsInstallsAllTime: 1,
-        statsStars: 0,
-      })),
-    );
+    const makeSkill = (index: number) => ({
+      _id: `skills:public-${index}`,
+      ownerPublisherId: publisherId,
+      softDeletedAt: undefined,
+      statsDownloads: 10,
+      statsInstallsAllTime: 1,
+      statsStars: 0,
+    });
+    const take = vi.fn(async () => Array.from({ length: 2 }, (_, index) => makeSkill(index)));
     const ctx = {
       db: {
         get: vi.fn(async () => ({
@@ -149,6 +148,13 @@ describe("publisher abuse owner synchrony signal", () => {
       }),
     ).resolves.toMatchObject({ publishedSkills: 2 });
     expect(take).toHaveBeenCalledWith(501);
+
+    take.mockResolvedValue(Array.from({ length: 501 }, (_, index) => makeSkill(index)));
+    await expect(
+      getPublisherAbuseOwnerSynchronyPublisherInternalHandler(ctx as never, {
+        ownerPublisherId: publisherId,
+      }),
+    ).rejects.toThrow("Publisher skill count fallback limit exceeded");
   });
 
   it("discovers owners through the current-run synchrony candidate index", async () => {
