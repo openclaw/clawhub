@@ -135,10 +135,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   only because a trend comparison needs a pair; there is no fixed catalogue-size
   threshold. Candidate signals and skill histories are read in bounded pages,
   page size never becomes an eligibility ceiling, and each publisher is evaluated
-  once per run even when its signals span several source pages. This produces one
-  `owner_synchronized_download_trends` signal for the publisher, not one extra
-  signal per skill. The similar-peak requirement avoids treating shared direction
-  alone as evidence.
+  once per run even when its signals span several source pages. Candidate reads
+  use the publisher-and-run index, so retained observations from older runs do not
+  add work to the current scan. This produces one `owner_synchronized_download_trends`
+  signal for the publisher, not one extra signal per skill. The similar-peak
+  requirement avoids treating shared direction alone as evidence.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score

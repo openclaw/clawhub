@@ -144,16 +144,15 @@ export async function readPublisherAbuseOwnerKeysPageInternalHandler(
   for (const ownerKey of pageOwnerKeys) {
     const canonicalSignal = await ctx.db
       .query("publisherAbuseSignals")
-      .withIndex("by_owner_key_and_last_seen_at", (q) => q.eq("ownerKey", ownerKey))
+      .withIndex("by_owner_key_and_latest_run_id_and_last_seen_at", (q) =>
+        q.eq("ownerKey", ownerKey).eq("latestRunId", args.runId),
+      )
       .order("desc")
       .filter((q) =>
-        q.and(
-          q.eq(q.field("latestRunId"), args.runId),
-          q.or(
-            q.eq(q.field("signalType"), "sustained_downloads_flat_installs"),
-            q.eq(q.field("signalType"), "download_spike_flat_installs"),
-            q.eq(q.field("signalType"), "sustained_abnormal_download_days"),
-          ),
+        q.or(
+          q.eq(q.field("signalType"), "sustained_downloads_flat_installs"),
+          q.eq(q.field("signalType"), "download_spike_flat_installs"),
+          q.eq(q.field("signalType"), "sustained_abnormal_download_days"),
         ),
       )
       .first();
@@ -183,18 +182,15 @@ export async function readPublisherAbuseOwnerSignalsPageInternalHandler(
 ): Promise<OwnerSynchronySignalPage> {
   const page = await ctx.db
     .query("publisherAbuseSignals")
-    .withIndex("by_owner_key_and_last_seen_at", (q) => q.eq("ownerKey", args.ownerKey))
+    .withIndex("by_owner_key_and_latest_run_id_and_last_seen_at", (q) =>
+      q.eq("ownerKey", args.ownerKey).eq("latestRunId", args.runId),
+    )
     .order("desc")
     .paginate({ cursor: args.cursor ?? null, numItems: OWNER_SIGNAL_PAGE_SIZE });
 
   return {
     signals: page.page
-      .filter(
-        (signal) =>
-          signal.latestRunId === args.runId &&
-          isDownloadAnomalySignal(signal) &&
-          signal.ownerPublisherId !== null,
-      )
+      .filter((signal) => isDownloadAnomalySignal(signal) && signal.ownerPublisherId !== null)
       .map((signal) => ({
         skillId: signal.skillId,
         ownerPublisherId: signal.ownerPublisherId as Id<"publishers">,

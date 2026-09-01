@@ -73,10 +73,12 @@ describe("publisher abuse owner synchrony signal", () => {
       latestRunId: runId,
       signalType: "download_spike_flat_installs" as const,
     };
-    const eq = vi.fn(() => "run-range");
+    const eq = vi.fn();
+    const rangeBuilder = { eq };
+    eq.mockReturnValue(rangeBuilder);
     const withIndex = vi.fn((name: string, range: (query: { eq: typeof eq }) => unknown) => {
       range({ eq });
-      if (name === "by_owner_key_and_last_seen_at") {
+      if (name === "by_owner_key_and_latest_run_id_and_last_seen_at") {
         return {
           order: () => ({
             filter: () => ({ first: async () => current }),
@@ -112,6 +114,10 @@ describe("publisher abuse owner synchrony signal", () => {
       "by_latest_run_id_and_last_seen_at",
       expect.any(Function),
     );
+    expect(withIndex).toHaveBeenCalledWith(
+      "by_owner_key_and_latest_run_id_and_last_seen_at",
+      expect.any(Function),
+    );
     expect(eq).toHaveBeenCalledWith("latestRunId", runId);
   });
 
@@ -140,7 +146,7 @@ describe("publisher abuse owner synchrony signal", () => {
       db: {
         query: vi.fn(() => ({
           withIndex: (name: string) => {
-            if (name === "by_owner_key_and_last_seen_at") {
+            if (name === "by_owner_key_and_latest_run_id_and_last_seen_at") {
               return {
                 order: () => ({
                   filter: () => ({ first: async () => signals[0] }),
@@ -167,7 +173,7 @@ describe("publisher abuse owner synchrony signal", () => {
     expect(paginate).toHaveBeenCalledTimes(3);
   });
 
-  it("keeps owner signal reads paged and excludes stale anomaly signals", async () => {
+  it("keeps owner signal reads paged inside the current run index range", async () => {
     const runId = "publisherAbuseScoreRuns:current" as Id<"publisherAbuseScoreRuns">;
     const staleRunId = "publisherAbuseScoreRuns:previous" as Id<"publisherAbuseScoreRuns">;
     const current = {
@@ -175,18 +181,29 @@ describe("publisher abuse owner synchrony signal", () => {
       latestRunId: runId,
       signalType: "download_spike_flat_installs" as const,
     };
-    const stale = { ...current, latestRunId: staleRunId };
+    const staleSignals = Array.from({ length: 5_000 }, (_, index) => ({
+      ...current,
+      _id: `publisherAbuseSignals:stale-${index}`,
+      latestRunId: staleRunId,
+    }));
     const paginate = vi.fn(async () => ({
-      page: [stale, current],
+      page: [current],
       isDone: false,
       continueCursor: "next-page",
     }));
+    const eq = vi.fn();
+    const rangeBuilder = { eq };
+    eq.mockReturnValue(rangeBuilder);
+    const withIndex = vi.fn((_name: string, range: (query: { eq: typeof eq }) => unknown) => {
+      range({ eq });
+      return {
+        order: () => ({ paginate }),
+      };
+    });
     const ctx = {
       db: {
         query: vi.fn(() => ({
-          withIndex: () => ({
-            order: () => ({ paginate }),
-          }),
+          withIndex,
         })),
       },
     };
@@ -201,6 +218,13 @@ describe("publisher abuse owner synchrony signal", () => {
       cursor: "next-page",
       isDone: false,
     });
+    expect(staleSignals).toHaveLength(5_000);
+    expect(withIndex).toHaveBeenCalledWith(
+      "by_owner_key_and_latest_run_id_and_last_seen_at",
+      expect.any(Function),
+    );
+    expect(eq).toHaveBeenCalledWith("ownerKey", current.ownerKey);
+    expect(eq).toHaveBeenCalledWith("latestRunId", runId);
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
   });
 
