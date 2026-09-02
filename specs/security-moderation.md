@@ -352,6 +352,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   clear ClawHub validation error before hitting Convex's 20MB HTTP action body
   cap. ClawPack tarballs keep the 120MB package tarball cap through staged
   storage uploads.
+- The CLI stages ClawPack requests whose estimated multipart size exceeds 4MB
+  so public publishes remain below the hosting edge's lower request-body limit.
+  This client threshold is intentionally lower than the backend's 18MB cap.
 - For tarball uploads, ClawHub stores the uploaded tarball, derives its
   artifact hashes and npm metadata, and derives package file metadata from the
   tarball contents.

@@ -2371,7 +2371,7 @@ describe("package commands", () => {
     }
   });
 
-  it("stages ClawPack tarballs over the multipart publish budget", async () => {
+  it("stages ClawPack tarballs over the public edge multipart budget", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "oversized-plugin-1.0.0.tgz";
@@ -2383,9 +2383,10 @@ describe("package commands", () => {
         }),
         "package/openclaw.plugin.json": JSON.stringify({ id: "oversized.plugin" }),
         "package/dist/index.js": "export const demo = true;\n",
-        "package/dist/model.bin": randomBytes(24 * 1024 * 1024),
+        "package/dist/model.bin": randomBytes(8 * 1024 * 1024),
       });
-      expect(packBytes.byteLength).toBeGreaterThan(18 * 1024 * 1024);
+      expect(packBytes.byteLength).toBeGreaterThan(4 * 1024 * 1024);
+      expect(packBytes.byteLength).toBeLessThan(18 * 1024 * 1024);
       await writeFile(join(workdir, packName), packBytes);
       httpMocks.apiRequest.mockResolvedValueOnce({
         uploadUrl: "https://upload.local",
