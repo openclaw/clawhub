@@ -664,6 +664,7 @@ describe("publisher abuse dry-run persistence", () => {
       ).resolves.toEqual({
         latestRun: null,
         latestSignalRun: null,
+        latestSignalRunIsCurrentModel: false,
         pendingItems: [],
         pendingPotentialBanCandidateItems: [],
         pendingReviewItems: [],
@@ -730,6 +731,7 @@ describe("publisher abuse dry-run persistence", () => {
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
       latestSignalRun: null,
+      latestSignalRunIsCurrentModel: false,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
@@ -847,6 +849,7 @@ describe("publisher abuse dry-run persistence", () => {
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
       latestSignalRun: null,
+      latestSignalRunIsCurrentModel: false,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
@@ -914,7 +917,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(db.get).not.toHaveBeenCalled();
   });
 
-  it("keeps resumable legacy and synchronizing signal scans visible", async () => {
+  it("keeps signal history visible without making old runs active", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -944,7 +947,23 @@ describe("publisher abuse dry-run persistence", () => {
       updatedAt: 400,
       temporalPipelinePhase: "synchronizing",
     };
+    const pressureRun = {
+      ...legacySignalRun,
+      _id: "publisherAbuseScoreRuns:pressure",
+      modelVersion: "publisher-abuse-pressure.v4",
+      startedAt: 100,
+      updatedAt: 100,
+      temporalPipelinePhase: undefined,
+    };
+    const staleTaggedV1Run = {
+      ...legacySignalRun,
+      _id: "publisherAbuseScoreRuns:stale-v1",
+      temporalPipelineKind: "signals",
+      startedAt: 500,
+      updatedAt: 500,
+    };
     let currentModelRun: typeof synchronizingRun | null = null;
+    let taggedSignalRun: typeof staleTaggedV1Run | null = null;
     const db = {
       get: vi.fn(async () => null),
       query: vi.fn((table: string) => {
@@ -965,7 +984,9 @@ describe("publisher abuse dry-run persistence", () => {
               return {
                 order: () => ({
                   first: async () => {
-                    if (indexName === "by_temporal_pipeline_kind_and_started_at") return null;
+                    if (indexName === "by_temporal_pipeline_kind_and_started_at") {
+                      return taggedSignalRun;
+                    }
                     if (
                       indexName ===
                       "by_model_version_and_temporal_pipeline_kind_and_phase_started_at"
@@ -978,6 +999,9 @@ describe("publisher abuse dry-run persistence", () => {
                     }
                     if (constraints.modelVersion === "publisher-abuse-temporal.v2") {
                       return currentModelRun;
+                    }
+                    if (constraints.modelVersion === "publisher-abuse-pressure.v4") {
+                      return pressureRun;
                     }
                     return constraints.modelVersion === "publisher-abuse-temporal.v1"
                       ? newerDiagnosticRun
@@ -999,63 +1023,37 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
       expect.objectContaining({
-        latestRun: expect.objectContaining({ _id: legacySignalRun._id }),
+        latestRun: expect.objectContaining({ _id: pressureRun._id }),
         latestSignalRun: expect.objectContaining({ _id: legacySignalRun._id }),
+        latestSignalRunIsCurrentModel: false,
       }),
+    );
+    await expect(publisherAbuse.getRunningPublisherAbuseSignalRun({ db } as never)).resolves.toBe(
+      null,
     );
 
     currentModelRun = synchronizingRun;
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
       expect.objectContaining({
         latestSignalRun: expect.objectContaining({ _id: synchronizingRun._id }),
+        latestSignalRunIsCurrentModel: true,
       }),
     );
-  });
+    await expect(
+      publisherAbuse.getRunningPublisherAbuseSignalRun({ db } as never),
+    ).resolves.toMatchObject({ _id: synchronizingRun._id });
 
-  it("never treats a tagged old-model signal run as the active running scan", async () => {
-    vi.mocked(requireUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
-    const staleTaggedV1Run = {
-      _id: "publisherAbuseScoreRuns:stale-v1",
-      modelVersion: "publisher-abuse-temporal.v1",
-      status: "running",
-      phase: "collecting",
-      trigger: "cron",
-      temporalPipelineKind: "signals",
-      temporalPipelinePhase: "collecting",
-      startedAt: 500,
-      updatedAt: 500,
-    };
-    const db = {
-      get: vi.fn(async () => null),
-      query: vi.fn((table: string) => {
-        if (table === "publisherAbuseScoreRuns") {
-          return {
-            withIndex: (indexName: string) => ({
-              order: () => ({
-                first: async () =>
-                  // Only the tagged-signals lookup finds the stale v1 run; every
-                  // model-version and legacy-phase lookup returns nothing.
-                  indexName === "by_temporal_pipeline_kind_and_started_at"
-                    ? staleTaggedV1Run
-                    : null,
-              }),
-            }),
-          };
-        }
-        if (table === "publisherAbuseReviewNominations") {
-          return makePublisherAbuseNominationCountQuery([]);
-        }
-        if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery([]);
-        if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
-        throw new Error(`unexpected table ${table}`);
-      }),
-    };
-
+    currentModelRun = null;
+    taggedSignalRun = staleTaggedV1Run;
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
-      expect.objectContaining({ latestRun: null, latestSignalRun: null }),
+      expect.objectContaining({
+        latestRun: expect.objectContaining({ _id: pressureRun._id }),
+        latestSignalRun: expect.objectContaining({ _id: staleTaggedV1Run._id }),
+        latestSignalRunIsCurrentModel: false,
+      }),
+    );
+    await expect(publisherAbuse.getRunningPublisherAbuseSignalRun({ db } as never)).resolves.toBe(
+      null,
     );
   });
 
@@ -1201,6 +1199,7 @@ describe("publisher abuse dry-run persistence", () => {
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
       latestSignalRun: null,
+      latestSignalRunIsCurrentModel: false,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
@@ -1293,6 +1292,7 @@ describe("publisher abuse dry-run persistence", () => {
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
       latestSignalRun: null,
+      latestSignalRunIsCurrentModel: false,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],

@@ -252,24 +252,28 @@ export function AbusePage({
     : "Auto-ban loading";
   const autobanToggleLabel = autobanEnabled ? "Turn off auto-ban" : "Turn on auto-ban";
   const AutobanStatusIcon = autobanEnabled ? ShieldCheck : ShieldOff;
-  const scanRunning = displayedRun?.status === "running";
-  const runningSignalRunId =
-    tab === "signals" && latestSignalRun?.status === "running" ? latestSignalRun._id : null;
+  const signalScanCurrent = dashboard?.latestSignalRunIsCurrentModel ?? false;
+  const scanRunning =
+    displayedRun?.status === "running" && (tab !== "signals" || signalScanCurrent);
+  const runningSignalRunId = tab === "signals" && scanRunning ? latestSignalRun?._id : null;
+  const scanOutdated =
+    tab === "signals" && latestSignalRun?.status === "running" && !signalScanCurrent;
   const scanCanceled =
     displayedRun?.status === "failed" && (displayedRun.canceledAt ?? null) !== null;
   const signalScanCanceledAt =
     tab === "signals" && latestSignalRun?.status === "failed"
       ? (latestSignalRun.canceledAt ?? null)
       : null;
-  const scanStatusClass = scanCanceled
-    ? "is-canceled"
-    : displayedRun?.status === "completed"
-      ? "is-complete"
-      : displayedRun?.status === "failed"
-        ? "is-failed"
-        : displayedRun?.status === "running"
-          ? "is-running"
-          : "is-idle";
+  const scanStatusClass =
+    scanCanceled || scanOutdated
+      ? "is-canceled"
+      : displayedRun?.status === "completed"
+        ? "is-complete"
+        : displayedRun?.status === "failed"
+          ? "is-failed"
+          : displayedRun?.status === "running"
+            ? "is-running"
+            : "is-idle";
 
   return (
     <section className="pa" aria-labelledby="pa-title">
@@ -295,7 +299,9 @@ export function AbusePage({
               {displayedRun
                 ? scanCanceled
                   ? "Canceled"
-                  : formatPublisherAbuseRunStatus(displayedRun.status)
+                  : scanOutdated
+                    ? "Outdated"
+                    : formatPublisherAbuseRunStatus(displayedRun.status)
                 : dashboardLoaded
                   ? "No scans yet"
                   : "Loading"}
@@ -391,7 +397,10 @@ export function AbusePage({
             </span>
           </div>
         </div>
-      ) : tab === "signals" && latestSignalRun?.status === "running" && signalFailureCount > 0 ? (
+      ) : tab === "signals" &&
+        signalScanCurrent &&
+        latestSignalRun?.status === "running" &&
+        signalFailureCount > 0 ? (
         <div className="pa-scan-retrying" role="status">
           <RefreshCcw aria-hidden="true" size={18} />
           <div>

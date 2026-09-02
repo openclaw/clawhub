@@ -382,6 +382,10 @@ export async function upsertPublisherAbuseOwnerSynchronySignalInternalHandler(
   },
 ) {
   const { candidate } = args;
+  if (args.runId) {
+    const run = await ctx.db.get(args.runId);
+    if (run?.status !== "running") return null;
+  }
   const existing = await ctx.db
     .query("publisherAbuseSignals")
     .withIndex("by_owner_key_and_signal_type", (q) =>

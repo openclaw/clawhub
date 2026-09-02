@@ -669,6 +669,7 @@ describe("publisher abuse owner synchrony signal", () => {
     });
     const ctx = {
       db: {
+        get: vi.fn(async () => ({ status: "running" })),
         query: vi.fn(() => ({
           withIndex: () => ({ first: async () => existing }),
         })),
@@ -697,5 +698,31 @@ describe("publisher abuse owner synchrony signal", () => {
       lastSeenAt: now,
       seenCount: 3,
     });
+  });
+
+  it("does not write synchrony evidence after its scan is canceled", async () => {
+    const query = vi.fn();
+    const insert = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({ status: "failed" })),
+        query,
+        insert,
+        patch,
+      },
+    };
+
+    await expect(
+      upsertPublisherAbuseOwnerSynchronySignalInternalHandler(ctx as unknown as MutationCtx, {
+        runId: "publisherAbuseScoreRuns:canceled" as Id<"publisherAbuseScoreRuns">,
+        candidate: candidate(),
+        now: 1_700_000_000_000,
+      }),
+    ).resolves.toBeNull();
+
+    expect(query).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
   });
 });

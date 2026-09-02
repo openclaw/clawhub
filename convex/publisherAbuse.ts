@@ -91,7 +91,6 @@ const FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE =
 const PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY = "publisherAbuseAutobanEnabled" as const;
 const PUBLISHER_TEMPORAL_ABUSE_MODEL_PREFIX = "publisher-abuse-temporal.";
 const LEGACY_PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSIONS = ["publisher-abuse-temporal.v1"] as const;
-
 type TriageStatus = Doc<"publisherAbuseReviewNominations">["status"];
 type ScoreRun = Doc<"publisherAbuseScoreRuns">;
 type ScoreDoc = Doc<"publisherAbuseScores">;
@@ -260,11 +259,11 @@ export const listReviewDashboard = query({
         getPublisherAbuseReviewNominationCountSummary(ctx),
         getPublisherAbuseSignalCountSummary(ctx),
       ]);
-    const latestRun = newerPublisherAbuseRun(latestPressureRun, latestSignalRun);
-
     return {
-      latestRun: latestRun ? summarizePublisherAbuseRun(latestRun) : null,
+      latestRun: latestPressureRun ? summarizePublisherAbuseRun(latestPressureRun) : null,
       latestSignalRun: latestSignalRun ? summarizePublisherAbuseRun(latestSignalRun) : null,
+      latestSignalRunIsCurrentModel:
+        latestSignalRun?.modelVersion === PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
@@ -463,6 +462,7 @@ function emptyPublisherAbuseReviewDashboard() {
   return {
     latestRun: null,
     latestSignalRun: null,
+    latestSignalRunIsCurrentModel: false,
     pendingItems: [],
     pendingPotentialBanCandidateItems: [],
     pendingReviewItems: [],
@@ -2892,19 +2892,17 @@ export async function getLatestPublisherAbuseSignalRun(ctx: Pick<QueryCtx | Muta
     currentModelRun.temporalPipelinePhase
       ? currentModelRun
       : null;
-  // An old tagged run cannot be resumed by the current worker and must not lock
-  // the dashboard control that starts its replacement.
-  const compatibleTaggedRun =
-    taggedRun?.modelVersion === PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION ? taggedRun : null;
   return [untaggedCurrentModelRun, ...legacyRuns].reduce<ScoreRun | null>(
     newerPublisherAbuseRun,
-    compatibleTaggedRun,
+    taggedRun,
   );
 }
 
 export async function getRunningPublisherAbuseSignalRun(ctx: Pick<QueryCtx | MutationCtx, "db">) {
   const run = await getLatestPublisherAbuseSignalRun(ctx);
-  return run && run.status === "running" ? run : null;
+  return run?.status === "running" && run.modelVersion === PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION
+    ? run
+    : null;
 }
 
 async function getRecentResolvedPublisherAbuseReviewItems(

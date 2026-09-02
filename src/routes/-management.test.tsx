@@ -1044,11 +1044,13 @@ describe("Management", () => {
 
   it("cancels a running signal scan from the Signals tab after confirmation", async () => {
     searchState = { view: "abuse", tab: "signals" };
-    const cancelScan = vi.fn(async () => ({
-      ok: true,
-      canceled: true,
-      runId: "publisherAbuseScoreRuns:running",
-    }));
+    let scanStatus: "running" | "failed" = "running";
+    let canceledAt: number | undefined;
+    const cancelScan = vi.fn(async () => {
+      scanStatus = "failed";
+      canceledAt = 1_700_000_000_000;
+      return { ok: true, canceled: true, runId: "publisherAbuseScoreRuns:running" };
+    });
     useMutationMock.mockImplementation((mutation) =>
       getFunctionName(mutation) === "publisherAbuseTemporalScan:cancelPublisherAbuseSignalScan"
         ? cancelScan
@@ -1063,9 +1065,11 @@ describe("Management", () => {
       if (name === "publisherAbuse:listReviewDashboard") {
         return {
           latestRun: null,
+          latestSignalRunIsCurrentModel: true,
           latestSignalRun: {
             _id: "publisherAbuseScoreRuns:running",
-            status: "running",
+            status: scanStatus,
+            canceledAt,
             temporalPipelineKind: "signals",
             temporalPipelinePhase: "classifying",
             scannedPublishers: 3,
@@ -1084,7 +1088,7 @@ describe("Management", () => {
       return undefined;
     });
 
-    render(<Management />);
+    const { rerender } = render(<Management />);
 
     expect(screen.getByRole("button", { name: "Scanning signals" })).toHaveProperty(
       "disabled",
@@ -1097,6 +1101,51 @@ describe("Management", () => {
     await waitFor(() => {
       expect(cancelScan).toHaveBeenCalledWith({ runId: "publisherAbuseScoreRuns:running" });
     });
+    rerender(<Management />);
+    expect(screen.getByText("Canceled")).toBeTruthy();
+  });
+
+  it("lets staff replace an outdated running signal scan", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          latestSignalRunIsCurrentModel: false,
+          latestSignalRun: {
+            _id: "publisherAbuseScoreRuns:outdated",
+            status: "running",
+            temporalPipelinePhase: "classifying",
+            temporalSampleSize: 60_600,
+            transientErrorCount: 1,
+            lastTransientError: "Old worker stopped.",
+          },
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+          signalCount: 0,
+          signalCountHasMore: false,
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    expect(screen.getByText("Outdated")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rescan signals" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(screen.queryByRole("button", { name: "Cancel scan" })).toBeNull();
+    expect(screen.queryByText(/Retrying after/)).toBeNull();
   });
 
   it("shows a focused signal scan summary without unrelated scoring or auto-ban controls", () => {
@@ -1171,7 +1220,7 @@ describe("Management", () => {
     expect(screen.getByText("Query exceeded the document read limit.")).toBeTruthy();
   });
 
-  it("does not show a retry warning for a completed signal scan", () => {
+  it("shows retry progress for the current running signal scan", () => {
     searchState = { view: "abuse", tab: "signals" };
     useQueryMock.mockImplementation((query, args) => {
       if (args === "skip") return undefined;
@@ -1182,8 +1231,9 @@ describe("Management", () => {
       if (name === "publisherAbuse:listReviewDashboard") {
         return {
           latestRun: null,
+          latestSignalRunIsCurrentModel: true,
           latestSignalRun: {
-            status: "completed",
+            status: "running",
             scannedPublishers: 120,
             scoredPublishers: 12,
             transientErrorCount: 1,
@@ -1201,7 +1251,7 @@ describe("Management", () => {
 
     render(<Management />);
 
-    expect(screen.queryByText("Retrying after 1 of 5 failed attempts")).toBeNull();
+    expect(screen.getByText("Retrying after 1 of 5 failed attempts")).toBeTruthy();
   });
 
   it("shows the number of skills processed by a running signal scan", () => {
@@ -1215,6 +1265,7 @@ describe("Management", () => {
       if (name === "publisherAbuse:listReviewDashboard") {
         return {
           latestRun: null,
+          latestSignalRunIsCurrentModel: true,
           latestSignalRun: {
             status: "running",
             scannedPublishers: 0,
