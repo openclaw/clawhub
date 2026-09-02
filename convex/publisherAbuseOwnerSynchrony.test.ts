@@ -232,9 +232,8 @@ describe("publisher abuse owner synchrony signal", () => {
         range(rangeBuilder);
         return {
           first: async () =>
-            candidates.find(
-              (candidate) => afterOwnerKey === undefined || candidate.ownerKey > afterOwnerKey,
-            ) ?? null,
+            candidates.find((row) => afterOwnerKey === undefined || row.ownerKey > afterOwnerKey) ??
+            null,
         };
       },
     );
