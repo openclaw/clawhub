@@ -1,0 +1,42 @@
+{
+  "baseline": "origin/main",
+  "candidate": "worktree",
+  "generatedAt": "2026-09-02T00:09:50.861Z",
+  "lanes": [
+    {
+      "localOutputDir": "/tmp/clawhub-ui-proof-pr-3572/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Plugins list — Downloads without Category",
+          "screenshot": "screenshots/plugins-list-downloads-without-category.png",
+          "slug": "plugins-list-downloads-without-category",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Plugins responsive list — Downloads remains visible",
+          "screenshot": "screenshots/plugins-responsive-list-downloads-remains-visible.png",
+          "slug": "plugins-responsive-list-downloads-remains-visible",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Skills list — Downloads column heading",
+          "screenshot": "screenshots/skills-list-downloads-column-heading.png",
+          "slug": "skills-list-downloads-column-heading",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": "/tmp/clawhub-ui-proof-pr-3572",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/tmp/clawhub-list-columns-proof.mjs",
+  "status": "pass"
+}
