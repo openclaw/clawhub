@@ -1040,7 +1040,63 @@ describe("Management", () => {
       expect(startSignalScan).toHaveBeenCalledWith({});
     });
     expect(startScoreScan).not.toHaveBeenCalled();
-    expect(screen.getByText("Checks every active skill")).toBeTruthy();
+  });
+
+  it("cancels a running signal scan from the Signals tab after confirmation", async () => {
+    searchState = { view: "abuse", tab: "signals" };
+    const cancelScan = vi.fn(async () => ({
+      ok: true,
+      canceled: true,
+      runId: "publisherAbuseScoreRuns:running",
+    }));
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publisherAbuseTemporalScan:cancelPublisherAbuseSignalScan"
+        ? cancelScan
+        : vi.fn(),
+    );
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          latestSignalRun: {
+            _id: "publisherAbuseScoreRuns:running",
+            status: "running",
+            temporalPipelineKind: "signals",
+            temporalPipelinePhase: "classifying",
+            scannedPublishers: 3,
+            temporalSampleSize: 3,
+            transientErrorCount: 0,
+          },
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+          signalCount: 0,
+          signalCountHasMore: false,
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    expect(screen.getByRole("button", { name: "Scanning signals" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel scan" }));
+    expect(cancelScan).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel scan now" }));
+
+    await waitFor(() => {
+      expect(cancelScan).toHaveBeenCalledWith({ runId: "publisherAbuseScoreRuns:running" });
+    });
   });
 
   it("shows a focused signal scan summary without unrelated scoring or auto-ban controls", () => {
@@ -1075,11 +1131,10 @@ describe("Management", () => {
 
     expect(screen.getByText("Latest signal scan")).toBeTruthy();
     expect(screen.getByText("70,679 skills checked")).toBeTruthy();
-    expect(screen.getByText("Manual review only")).toBeTruthy();
-    expect(screen.getByText("Signals never auto-ban publishers.")).toBeTruthy();
     expect(screen.queryByText("Scored")).toBeNull();
     expect(screen.queryByText("Auto-ban is off")).toBeNull();
     expect(screen.queryByLabelText("Publisher abuse auto-ban")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel scan" })).toBeNull();
   });
 
   it("shows the terminal signal scan error after five failed attempts", () => {

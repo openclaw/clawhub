@@ -1012,6 +1012,53 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("never treats a tagged old-model signal run as the active running scan", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const staleTaggedV1Run = {
+      _id: "publisherAbuseScoreRuns:stale-v1",
+      modelVersion: "publisher-abuse-temporal.v1",
+      status: "running",
+      phase: "collecting",
+      trigger: "cron",
+      temporalPipelineKind: "signals",
+      temporalPipelinePhase: "collecting",
+      startedAt: 500,
+      updatedAt: 500,
+    };
+    const db = {
+      get: vi.fn(async () => null),
+      query: vi.fn((table: string) => {
+        if (table === "publisherAbuseScoreRuns") {
+          return {
+            withIndex: (indexName: string) => ({
+              order: () => ({
+                first: async () =>
+                  // Only the tagged-signals lookup finds the stale v1 run; every
+                  // model-version and legacy-phase lookup returns nothing.
+                  indexName === "by_temporal_pipeline_kind_and_started_at"
+                    ? staleTaggedV1Run
+                    : null,
+              }),
+            }),
+          };
+        }
+        if (table === "publisherAbuseReviewNominations") {
+          return makePublisherAbuseNominationCountQuery([]);
+        }
+        if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery([]);
+        if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      expect.objectContaining({ latestRun: null, latestSignalRun: null }),
+    );
+  });
+
   it("counts only visible publisher abuse nominations on the dashboard", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",

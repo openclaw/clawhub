@@ -79,7 +79,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   already active return that run without starting a competing worker. Stale
   recovery continues the same durable run instead of replacing it, and
   cursor-guarded writes prevent overlapping late workers from duplicating work.
-  Explicitly bounded previews remain diagnostic-only.
+  Explicitly bounded previews remain diagnostic-only. Moderators can cancel the
+  displayed running signal scan without deleting recorded evidence. Cancellation
+  uses the shared terminal state so scheduled work stops, records the actor, and
+  is a no-op if that exact run has already finished or been replaced. A signal run
+  from an older model must not lock the control that starts its replacement.
   New scan indexes must ship in a staging-only release before any function
   queries them. Keep the indexes marked `staged: true`, deploy that schema,
   and wait until Convex reports every index ready. Only a later release may

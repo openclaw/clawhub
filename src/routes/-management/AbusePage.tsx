@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   Ban,
+  CircleStop,
   Copy,
   ExternalLink,
   Power,
@@ -58,8 +59,10 @@ export function AbusePage({
   signalItems,
   signalLoadedCount,
   signalPageStatus,
+  signalScanCancelPending,
   tab,
   onBanOwner,
+  onCancelSignalScan,
   onChangeNotes,
   onChangeSearch,
   onChangeTab,
@@ -90,8 +93,10 @@ export function AbusePage({
   signalItems: PublisherAbuseSignalEntry[];
   signalLoadedCount: number;
   signalPageStatus: string;
+  signalScanCancelPending: boolean;
   tab: PublisherAbuseTab;
   onBanOwner: (item: PublisherAbuseReviewItem) => void;
+  onCancelSignalScan: (runId: Id<"publisherAbuseScoreRuns">) => void;
   onChangeNotes: (value: string) => void;
   onChangeSearch: (value: string) => void;
   onChangeTab: (value: PublisherAbuseTab) => void;
@@ -248,8 +253,17 @@ export function AbusePage({
   const autobanToggleLabel = autobanEnabled ? "Turn off auto-ban" : "Turn on auto-ban";
   const AutobanStatusIcon = autobanEnabled ? ShieldCheck : ShieldOff;
   const scanRunning = displayedRun?.status === "running";
-  const scanStatusClass =
-    displayedRun?.status === "completed"
+  const runningSignalRunId =
+    tab === "signals" && latestSignalRun?.status === "running" ? latestSignalRun._id : null;
+  const scanCanceled =
+    displayedRun?.status === "failed" && (displayedRun.canceledAt ?? null) !== null;
+  const signalScanCanceledAt =
+    tab === "signals" && latestSignalRun?.status === "failed"
+      ? (latestSignalRun.canceledAt ?? null)
+      : null;
+  const scanStatusClass = scanCanceled
+    ? "is-canceled"
+    : displayedRun?.status === "completed"
       ? "is-complete"
       : displayedRun?.status === "failed"
         ? "is-failed"
@@ -269,7 +283,7 @@ export function AbusePage({
           </p>
         </div>
         <div
-          className="pa-run"
+          className={tab === "signals" ? "pa-run pa-run-signals" : "pa-run"}
           aria-label={tab === "signals" ? "Signal scan status" : "Publisher scan status"}
         >
           <div className="pa-run-state">
@@ -279,7 +293,9 @@ export function AbusePage({
             <strong className={`pa-run-status ${scanStatusClass}`}>
               <span className="pa-run-status-dot" aria-hidden="true" />
               {displayedRun
-                ? formatPublisherAbuseRunStatus(displayedRun.status)
+                ? scanCanceled
+                  ? "Canceled"
+                  : formatPublisherAbuseRunStatus(displayedRun.status)
                 : dashboardLoaded
                   ? "No scans yet"
                   : "Loading"}
@@ -300,12 +316,7 @@ export function AbusePage({
               </div>
             ) : null}
           </dl>
-          {tab === "signals" ? (
-            <div className="pa-scan-policy">
-              <strong>Manual review only</strong>
-              <span>Signals never auto-ban publishers.</span>
-            </div>
-          ) : (
+          {tab !== "signals" ? (
             <div className="pa-autoban" aria-label="Publisher abuse auto-ban">
               <span className={autobanEnabled ? "pa-autoban-status is-on" : "pa-autoban-status"}>
                 <AutobanStatusIcon size={14} />
@@ -322,27 +333,51 @@ export function AbusePage({
                 {admin ? autobanToggleLabel : "Admins only"}
               </Button>
             </div>
-          )}
+          ) : null}
           <div className="pa-rescan">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={scanRunning}
-              aria-label={tab === "signals" && scanRunning ? "Scanning signals" : undefined}
-              onClick={onRefresh}
-            >
-              <RefreshCcw className={scanRunning ? "pa-scan-spin" : undefined} size={14} />
-              {scanRunning ? "Scanning…" : tab === "signals" ? "Rescan signals" : "Run new scan"}
-            </Button>
-            <span className="pa-rescan-hint">
-              {tab === "signals" ? "Checks every active skill" : "Re-scores every publisher"}
-            </span>
+            <div className="pa-rescan-actions">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={scanRunning}
+                aria-label={tab === "signals" && scanRunning ? "Scanning signals" : undefined}
+                onClick={onRefresh}
+              >
+                <RefreshCcw className={scanRunning ? "pa-scan-spin" : undefined} size={14} />
+                {scanRunning ? "Scanning…" : tab === "signals" ? "Rescan signals" : "Run new scan"}
+              </Button>
+              {runningSignalRunId ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  loading={signalScanCancelPending}
+                  onClick={() => onCancelSignalScan(runningSignalRunId)}
+                >
+                  {signalScanCancelPending ? "Canceling…" : "Cancel scan"}
+                </Button>
+              ) : null}
+            </div>
+            {tab !== "signals" ? (
+              <span className="pa-rescan-hint">Re-scores every publisher</span>
+            ) : null}
           </div>
         </div>
       </header>
 
-      {tab === "signals" && latestSignalRun?.status === "failed" ? (
+      {signalScanCanceledAt !== null ? (
+        <div className="pa-scan-canceled" role="status">
+          <CircleStop aria-hidden="true" size={18} />
+          <div>
+            <strong>Signal scan canceled</strong>
+            <span>
+              Canceled {formatShortTimestamp(signalScanCanceledAt)}. Signals already recorded are
+              kept — start a new scan when you're ready.
+            </span>
+          </div>
+        </div>
+      ) : tab === "signals" && latestSignalRun?.status === "failed" ? (
         <div className="pa-scan-failure" role="alert">
           <XCircle aria-hidden="true" size={18} />
           <div>

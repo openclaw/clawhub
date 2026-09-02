@@ -2,8 +2,8 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { action, internalAction, internalMutation, internalQuery } from "./functions";
-import { assertModerator, requireUserFromAction } from "./lib/access";
+import { action, internalAction, internalMutation, internalQuery, mutation } from "./functions";
+import { assertModerator, requireUser, requireUserFromAction } from "./lib/access";
 import { toDayKey } from "./lib/leaderboards";
 import {
   classifySkillTemporalAbuseScore,
@@ -17,6 +17,7 @@ import {
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import {
   archiveTemporalPublisherAbuseSignals,
+  getRunningPublisherAbuseSignalRun,
   type TemporalSkillCandidate,
 } from "./publisherAbuse";
 import { scanPublisherAbuseOwnerSynchronyPage } from "./publisherAbuseOwnerSynchrony";
@@ -30,6 +31,9 @@ const TEMPORAL_SCAN_HEARTBEAT_TIMEOUT_MS = 15 * 60 * 1000;
 const TEMPORAL_SCAN_RETRY_BASE_DELAY_MS = 30 * 1000;
 const TEMPORAL_SCAN_RETRY_MAX_DELAY_MS = 5 * 60 * 1000;
 const MAX_TEMPORAL_SCAN_FAILURE_ATTEMPTS = 5;
+
+export const PUBLISHER_ABUSE_SIGNAL_SCAN_CANCELED_MESSAGE =
+  "Signal scan canceled by staff before it finished.";
 
 const temporalCohortBandValidator = v.union(v.literal("p95"), v.literal("p99"));
 const temporalScoreValidator = v.object({
@@ -1227,6 +1231,50 @@ export async function startPublisherAbuseSignalScanHandler(
 export const startPublisherAbuseSignalScan = action({
   args: {},
   handler: startPublisherAbuseSignalScanHandler,
+});
+
+type CancelPublisherAbuseSignalScanResult =
+  | { ok: true; canceled: true; runId: Id<"publisherAbuseScoreRuns"> }
+  | { ok: true; canceled: false };
+
+export async function cancelPublisherAbuseSignalScanHandler(
+  ctx: MutationCtx,
+  args: { runId: Id<"publisherAbuseScoreRuns"> },
+): Promise<CancelPublisherAbuseSignalScanResult> {
+  const { user } = await requireUser(ctx);
+  assertModerator(user);
+
+  const run = await getRunningPublisherAbuseSignalRun(ctx);
+  if (!run || run._id !== args.runId) {
+    return { ok: true, canceled: false };
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(run._id, {
+    status: "failed",
+    temporalScanComplete: false,
+    canceledAt: now,
+    errorMessage: PUBLISHER_ABUSE_SIGNAL_SCAN_CANCELED_MESSAGE,
+    nextTransientRetryAt: undefined,
+    updatedAt: now,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: user._id,
+    action: "publisher_abuse.signal_scan.cancel",
+    targetType: "publisherAbuseScoreRun",
+    targetId: run._id,
+    metadata: {
+      modelVersion: run.modelVersion,
+      phase: run.temporalPipelinePhase ?? run.phase,
+    },
+    createdAt: now,
+  });
+  return { ok: true, canceled: true, runId: run._id };
+}
+
+export const cancelPublisherAbuseSignalScan = mutation({
+  args: { runId: v.id("publisherAbuseScoreRuns") },
+  handler: cancelPublisherAbuseSignalScanHandler,
 });
 
 export async function pruneExpiredTemporalScanRowsInternalHandler(

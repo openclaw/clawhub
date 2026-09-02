@@ -1,21 +1,23 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
-import { assertModerator, requireUserFromAction } from "./lib/access";
+import { assertModerator, requireUser, requireUserFromAction } from "./lib/access";
 import {
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   type SkillTemporalAbuseScore,
 } from "./lib/publisherAbuseScoring";
-import type { TemporalSkillCandidate } from "./publisherAbuse";
+import { getRunningPublisherAbuseSignalRun, type TemporalSkillCandidate } from "./publisherAbuse";
 import {
   advanceScheduledTemporalCandidatesInternalHandler,
+  cancelPublisherAbuseSignalScanHandler,
   getOrStartScheduledTemporalScanInternalHandler,
   markScheduledTemporalScanFailedInternalHandler,
   recordScheduledTemporalScanFailureInternalHandler,
   percentileIndex,
   pruneExpiredTemporalScanRowsInternalHandler,
+  PUBLISHER_ABUSE_SIGNAL_SCAN_CANCELED_MESSAGE,
   readScheduledTemporalCandidatesPageInternalHandler,
   runScheduledTemporalPublisherAbuseScanInternalHandler,
   startPublisherAbuseSignalScanHandler,
@@ -26,8 +28,14 @@ import {
 
 vi.mock("./lib/access", () => ({
   assertModerator: vi.fn(),
+  requireUser: vi.fn(),
   requireUserFromAction: vi.fn(),
 }));
+
+vi.mock("./publisherAbuse", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./publisherAbuse")>();
+  return { ...actual, getRunningPublisherAbuseSignalRun: vi.fn() };
+});
 
 function temporalScore(overrides: Partial<SkillTemporalAbuseScore> = {}): SkillTemporalAbuseScore {
   return {
@@ -1135,5 +1143,99 @@ describe("scheduled temporal publisher abuse scan", () => {
     ).resolves.toEqual({ samplesDeleted: 1, candidatesDeleted: 1, hasMore: false });
     expect(ctx.db.delete).toHaveBeenCalledTimes(2);
     expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+});
+
+describe("cancel publisher abuse signal scan", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("cancels the running signals scan for a moderator and records the actor", async () => {
+    const actorUserId = "users:moderator" as Id<"users">;
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: actorUserId,
+      user: { _id: actorUserId, role: "moderator" },
+    } as never);
+    const run = temporalRun({
+      _id: "publisherAbuseScoreRuns:running" as Id<"publisherAbuseScoreRuns">,
+      status: "running",
+      temporalPipelinePhase: "classifying",
+    });
+    vi.mocked(getRunningPublisherAbuseSignalRun).mockResolvedValue(run);
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async () => "auditLogs:1" as Id<"auditLogs">);
+
+    await expect(
+      cancelPublisherAbuseSignalScanHandler({ db: { patch, insert } } as unknown as MutationCtx, {
+        runId: run._id,
+      }),
+    ).resolves.toEqual({ ok: true, canceled: true, runId: run._id });
+
+    expect(assertModerator).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: actorUserId, role: "moderator" }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      run._id,
+      expect.objectContaining({
+        status: "failed",
+        temporalScanComplete: false,
+        canceledAt: expect.any(Number),
+        errorMessage: PUBLISHER_ABUSE_SIGNAL_SCAN_CANCELED_MESSAGE,
+        nextTransientRetryAt: undefined,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId,
+        action: "publisher_abuse.signal_scan.cancel",
+        targetId: run._id,
+      }),
+    );
+  });
+
+  it("refuses to cancel for non-moderators and writes nothing", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:viewer" as Id<"users">,
+      user: { _id: "users:viewer", role: "user" },
+    } as never);
+    vi.mocked(assertModerator).mockImplementation(() => {
+      throw new Error("Forbidden");
+    });
+    const patch = vi.fn();
+    const insert = vi.fn();
+
+    await expect(
+      cancelPublisherAbuseSignalScanHandler({ db: { patch, insert } } as unknown as MutationCtx, {
+        runId: "publisherAbuseScoreRuns:running" as Id<"publisherAbuseScoreRuns">,
+      }),
+    ).rejects.toThrow("Forbidden");
+    expect(getRunningPublisherAbuseSignalRun).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("does not cancel a replacement scan after the confirmed run finishes", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator" as Id<"users">,
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    vi.mocked(getRunningPublisherAbuseSignalRun).mockResolvedValue(
+      temporalRun({
+        _id: "publisherAbuseScoreRuns:replacement" as Id<"publisherAbuseScoreRuns">,
+        status: "running",
+      }),
+    );
+    const patch = vi.fn();
+    const insert = vi.fn();
+
+    await expect(
+      cancelPublisherAbuseSignalScanHandler({ db: { patch, insert } } as unknown as MutationCtx, {
+        runId: "publisherAbuseScoreRuns:confirmed" as Id<"publisherAbuseScoreRuns">,
+      }),
+    ).resolves.toEqual({ ok: true, canceled: false });
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 });

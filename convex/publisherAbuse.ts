@@ -2840,7 +2840,10 @@ function newerPublisherAbuseRun(left: ScoreRun | null, right: ScoreRun | null) {
   return right.startedAt > left.startedAt ? right : left;
 }
 
-async function getLatestPublisherAbuseScoreRunForModel(ctx: QueryCtx, modelVersion: string) {
+async function getLatestPublisherAbuseScoreRunForModel(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  modelVersion: string,
+) {
   return await ctx.db
     .query("publisherAbuseScoreRuns")
     .withIndex("by_model_version_and_started_at", (q) => q.eq("modelVersion", modelVersion))
@@ -2848,7 +2851,7 @@ async function getLatestPublisherAbuseScoreRunForModel(ctx: QueryCtx, modelVersi
     .first();
 }
 
-async function getLatestPublisherAbuseSignalRun(ctx: QueryCtx) {
+export async function getLatestPublisherAbuseSignalRun(ctx: Pick<QueryCtx | MutationCtx, "db">) {
   const legacyTemporalPhases = [
     "collecting",
     "downloads_percentiles",
@@ -2889,10 +2892,19 @@ async function getLatestPublisherAbuseSignalRun(ctx: QueryCtx) {
     currentModelRun.temporalPipelinePhase
       ? currentModelRun
       : null;
+  // An old tagged run cannot be resumed by the current worker and must not lock
+  // the dashboard control that starts its replacement.
+  const compatibleTaggedRun =
+    taggedRun?.modelVersion === PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION ? taggedRun : null;
   return [untaggedCurrentModelRun, ...legacyRuns].reduce<ScoreRun | null>(
     newerPublisherAbuseRun,
-    taggedRun,
+    compatibleTaggedRun,
   );
+}
+
+export async function getRunningPublisherAbuseSignalRun(ctx: Pick<QueryCtx | MutationCtx, "db">) {
+  const run = await getLatestPublisherAbuseSignalRun(ctx);
+  return run && run.status === "running" ? run : null;
 }
 
 async function getRecentResolvedPublisherAbuseReviewItems(

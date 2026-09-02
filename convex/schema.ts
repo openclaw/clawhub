@@ -3824,6 +3824,8 @@ const publisherAbuseScoreRuns = defineTable({
     }),
   ),
   errorMessage: v.optional(v.string()),
+  // Distinguishes an intentional stop from a scan failure in the staff UI.
+  canceledAt: v.optional(v.number()),
   transientErrorCount: v.optional(v.number()),
   lastTransientError: v.optional(v.string()),
   lastTransientErrorAt: v.optional(v.number()),

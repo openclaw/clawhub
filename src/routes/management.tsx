@@ -284,6 +284,9 @@ export function Management() {
   const startPublisherAbuseSignalScan = useAction(
     api.publisherAbuseTemporalScan.startPublisherAbuseSignalScan,
   );
+  const cancelPublisherAbuseSignalScan = useMutation(
+    api.publisherAbuseTemporalScan.cancelPublisherAbuseSignalScan,
+  );
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState<Id<"users"> | "">("");
@@ -301,6 +304,7 @@ export function Management() {
   );
   const [publisherAbuseSearch, setPublisherAbuseSearch] = useState("");
   const [publisherAbuseNotes, setPublisherAbuseNotes] = useState("");
+  const [signalScanCancelPending, setSignalScanCancelPending] = useState(false);
   const [selectedPublisherAbuseNominationId, setSelectedPublisherAbuseNominationId] =
     useState<Id<"publisherAbuseReviewNominations"> | null>(null);
   const {
@@ -624,6 +628,27 @@ export function Management() {
     });
   };
 
+  const requestCancelPublisherAbuseSignalScan = (runId: Id<"publisherAbuseScoreRuns">) => {
+    if (signalScanCancelPending) return;
+    setConfirmRequest({
+      title: "Cancel the running signal scan?",
+      body: "Stops the in-progress scan and keeps every signal already recorded. You can start a new scan whenever you're ready.",
+      confirmLabel: "Cancel scan now",
+      destructive: true,
+      onConfirm: () => {
+        setSignalScanCancelPending(true);
+        void cancelPublisherAbuseSignalScan({ runId })
+          .then((result) =>
+            toast.success(
+              result.canceled ? "Signal scan canceled." : "No running signal scan to cancel.",
+            ),
+          )
+          .catch((error) => toast.error(formatMutationError(error)))
+          .finally(() => setSignalScanCancelPending(false));
+      },
+    });
+  };
+
   const requestMarkPublisherAbuseNominationReviewed = (item: PublisherAbuseReviewItem) => {
     const label = item.nomination.handleSnapshot;
     const note = publisherAbuseNotes.trim() || undefined;
@@ -746,8 +771,10 @@ export function Management() {
             signalItems={filteredPublisherAbuseSignals}
             signalLoadedCount={publisherAbuseSignalItems.length}
             signalPageStatus={publisherAbuseSignalPageStatus}
+            signalScanCancelPending={signalScanCancelPending}
             tab={publisherAbuseTab}
             onBanOwner={banPublisherAbuseOwner}
+            onCancelSignalScan={requestCancelPublisherAbuseSignalScan}
             onChangeNotes={setPublisherAbuseNotes}
             onChangeSearch={setPublisherAbuseSearch}
             onChangeTab={(nextTab) => {
