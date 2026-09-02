@@ -2374,7 +2374,7 @@ describe("package commands", () => {
     }
   });
 
-  it("stages ClawPack tarballs over the multipart publish budget", async () => {
+  it("stages ClawPack tarballs over the public edge multipart budget", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const packName = "oversized-plugin-1.0.0.tgz";
