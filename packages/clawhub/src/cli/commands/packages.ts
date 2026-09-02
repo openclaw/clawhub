@@ -81,6 +81,8 @@ const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
+// Keep inline ClawPack requests below the clawhub.ai hosting edge's body limit.
+const MAX_PACKAGE_EDGE_MULTIPART_BYTES = 4 * 1024 * 1024;
 const PACKAGE_PUBLISH_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
 const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
@@ -1021,7 +1023,14 @@ export async function cmdPublishPackage(
       form.set("payload", payloadJson);
 
       if (plan.clawpackOnDisk) {
-        if (isPackageMultipartTooLarge(payloadJson, "clawpack", [plan.clawpackOnDisk])) {
+        if (
+          isPackageMultipartTooLarge(
+            payloadJson,
+            "clawpack",
+            [plan.clawpackOnDisk],
+            MAX_PACKAGE_EDGE_MULTIPART_BYTES,
+          )
+        ) {
           const staged = await uploadClawPackToStorage(
             registry,
             publishToken,
@@ -2373,6 +2382,7 @@ function isPackageMultipartTooLarge(
   payloadJson: string,
   fileFieldName: "files" | "clawpack",
   files: PackageFile[],
+  maxBytes = MAX_PACKAGE_MULTIPART_BYTES,
 ) {
   return (
     estimatePackageMultipartUploadBytes({
@@ -2383,7 +2393,7 @@ function isPackageMultipartTooLarge(
         size: file.bytes.byteLength,
         type: file.contentType,
       })),
-    }) > MAX_PACKAGE_MULTIPART_BYTES
+    }) > maxBytes
   );
 }
 
