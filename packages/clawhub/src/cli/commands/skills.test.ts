@@ -175,6 +175,20 @@ describe("explore helpers", () => {
     expect(line).toBe(`openclaw/weather  v?  2h ago  ${"a".repeat(49)}…`);
     nowSpy.mockRestore();
   });
+
+  it("formats legacy registry results without an owner handle", () => {
+    const now = 4 * 60 * 60 * 1000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+
+    expect(
+      formatExploreLine({
+        slug: "weather",
+        updatedAt: now - 2 * 60 * 60 * 1000,
+        latestVersion: { version: "1.0.0" },
+      }),
+    ).toBe("weather  v1.0.0  2h ago");
+    nowSpy.mockRestore();
+  });
 });
 
 describe("cmdExplore", () => {

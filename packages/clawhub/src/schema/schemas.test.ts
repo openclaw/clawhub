@@ -43,6 +43,33 @@ describe("packages/clawhub skill metadata schema", () => {
     expect(response.items[0]?.latestVersion).toBeNull();
   });
 
+  it("parses legacy registry skill list items without an owner handle", () => {
+    const response = parseArk(
+      ApiV1SkillListResponseSchema,
+      {
+        items: [
+          {
+            slug: "legacy-skill",
+            displayName: "Legacy skill",
+            summary: null,
+            description: null,
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersion: null,
+            metadata: null,
+          },
+        ],
+        nextCursor: null,
+      },
+      "Skill list response",
+    );
+
+    expect(response.items[0]?.ownerHandle).toBeUndefined();
+    expect(response.items[0]?.slug).toBe("legacy-skill");
+  });
+
   it("preserves optional env var declarations", () => {
     const parsed = parseArk(
       ClawdisSkillMetadataSchema,
