@@ -2476,7 +2476,7 @@ export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
   });
 }
 
-export function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
+export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
   return json({
     categories: PLUGIN_CATEGORY_DEFINITIONS.map((category, order) => ({
       slug: category.slug,

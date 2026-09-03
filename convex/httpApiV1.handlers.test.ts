@@ -11990,7 +11990,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns plugin categories in canonical order with bare icon keys", async () => {
-    const response = __handlers.listPluginCategoriesV1Handler(
+    const response = await __handlers.listPluginCategoriesV1Handler(
       makeCtx({}),
       new Request("https://example.com/api/v1/plugins/categories"),
     );
