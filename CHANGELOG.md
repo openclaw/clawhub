@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- Dependencies: pin fast-uri to 3.1.6 to fix host confusion and server-side request forgery advisories in URI normalization.
 - GitHub Actions: accept complete release inventories in parent authorization receipts up to the backend's 64 KiB limit while retaining 8 KiB identity and recovery limits.
 - API: preserve inspector findings when workspace cleanup fails, report the failing stage, and keep cleanup failures publication-blocking.
 - API: bound runtime-identity checks to the owning publisher, reject collisions during personal-principal recovery, and prevent malicious-release quarantine from restoring a historical runtime identity that was administratively replaced.
