@@ -517,13 +517,11 @@ describe("Management", () => {
     expect(screen.getByRole("tab", { name: /All flagged 2/ })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /Resolved 0/ })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Signal" })).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: "Severity" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Subject" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
     expect(screen.getByText("High install/download ratio")).toBeTruthy();
-    expect(screen.getByText("High")).toBeTruthy();
     expect(screen.getByText("Ratio Skill")).toBeTruthy();
     expect(screen.getByText("@ratio-owner / ratio-skill")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Open skill Ratio Skill" })).toBeNull();
