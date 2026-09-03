@@ -988,6 +988,29 @@ describe("Management", () => {
     expect(screen.queryByText("Loading publisher abuse nominations…")).toBeNull();
   });
 
+  it("uses Signal-first loading placeholders on the Signals tab", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    usePaginatedQueryMock.mockImplementation((query, args) => ({
+      results: [],
+      status:
+        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
+          ? "LoadingFirstPage"
+          : "Exhausted",
+      loadMore: vi.fn(),
+    }));
+
+    render(<Management />);
+
+    const loadingStatus = screen.getByRole("status", {
+      name: "Loading publisher abuse signals",
+    });
+    const loadingRow = loadingStatus.closest("tr");
+    expect(loadingRow?.querySelectorAll("td")).toHaveLength(4);
+    expect(
+      loadingStatus.parentElement?.querySelector(".pa-table-skeleton-bar")?.getAttribute("style"),
+    ).toBe("width: 148px;");
+  });
+
   it("starts a manual publisher abuse scan without exposing force-new", async () => {
     const startScan = vi.fn(async () => ({
       ok: true,

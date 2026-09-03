@@ -493,7 +493,7 @@ export function AbusePage({
               <tbody>
                 {!loaded ? (
                   <PublisherAbuseTableSkeletonRows
-                    columns={5}
+                    columnWidths={[72, 148, 64, 124, 92]}
                     label="Loading publisher abuse nominations"
                   />
                 ) : items.length === 0 ? (
@@ -848,11 +848,11 @@ function formatAbuseTabCountLabel(count: number, hasMore: boolean | undefined) {
 }
 
 function PublisherAbuseTableSkeletonRows({
-  columns,
+  columnWidths,
   label,
   rows = 5,
 }: {
-  columns: number;
+  columnWidths: readonly number[];
   label: string;
   rows?: number;
 }) {
@@ -864,7 +864,7 @@ function PublisherAbuseTableSkeletonRows({
           className="pa-skeleton-row"
           aria-hidden={rowIndex === 0 ? undefined : true}
         >
-          {Array.from({ length: columns }, (_column, columnIndex) => (
+          {columnWidths.map((baseWidth, columnIndex) => (
             <td key={columnIndex}>
               {rowIndex === 0 && columnIndex === 0 ? (
                 <span className="sr-only" role="status" aria-label={label}>
@@ -874,7 +874,7 @@ function PublisherAbuseTableSkeletonRows({
               <span
                 className="pa-table-skeleton-bar"
                 style={{
-                  width: publisherAbuseSkeletonWidth(columnIndex, rowIndex),
+                  width: publisherAbuseSkeletonWidth(baseWidth, rowIndex),
                 }}
               />
             </td>
@@ -885,10 +885,8 @@ function PublisherAbuseTableSkeletonRows({
   );
 }
 
-function publisherAbuseSkeletonWidth(columnIndex: number, rowIndex: number) {
-  const widths = [72, 148, 64, 124, 92, 84, 92, 100, 100];
-  const base = widths[columnIndex] ?? 96;
-  return Math.max(48, base - (rowIndex % 3) * 14);
+function publisherAbuseSkeletonWidth(baseWidth: number, rowIndex: number) {
+  return Math.max(48, baseWidth - (rowIndex % 3) * 14);
 }
 
 function PublisherAbuseSignalsTable({
@@ -920,7 +918,10 @@ function PublisherAbuseSignalsTable({
         </thead>
         <tbody>
           {!loaded ? (
-            <PublisherAbuseTableSkeletonRows columns={4} label="Loading publisher abuse signals" />
+            <PublisherAbuseTableSkeletonRows
+              columnWidths={[148, 148, 64, 92]}
+              label="Loading publisher abuse signals"
+            />
           ) : items.length === 0 ? (
             <tr className="pa-empty-row">
               <td colSpan={4}>
