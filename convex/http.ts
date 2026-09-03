@@ -23,6 +23,7 @@ import {
   listCodePluginsV1Http,
   listPackagesV1Http,
   listPluginsV1Http,
+  listPluginCategoriesV1Http,
   listSkillsV1Http,
   trendingV1Http,
   mintPublishTokenV1Http,
@@ -152,6 +153,12 @@ http.route({
   path: ApiRoutes.plugins,
   method: "GET",
   handler: listPluginsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.pluginCategories,
+  method: "GET",
+  handler: listPluginCategoriesV1Http,
 });
 
 http.route({
