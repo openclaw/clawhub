@@ -507,7 +507,7 @@ export const ApiV1SearchResponseSchema = type({
 
 export const ApiV1SkillListResponseSchema = type({
   items: type({
-    ownerHandle: "string",
+    ownerHandle: "string?",
     slug: "string",
     displayName: "string",
     summary: "string|null?",
