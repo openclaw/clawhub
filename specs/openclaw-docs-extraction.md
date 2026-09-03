@@ -44,3 +44,36 @@ in OpenClaw unless the owner explicitly asks for a separate extraction:
 For this slice, the ClawHub repo owns the new canonical source file. The
 OpenClaw worktree was read-only, so replacing OpenClaw sections with short links
 is left to the OpenClaw-side worker.
+
+## Published anchor contract
+
+ClawHub owns incoming links in `docs/`; OpenClaw owns plugin target content and
+`scripts/docs-link-audit.mts`; `openclaw/docs` owns the published renderer in
+`scripts/docs-site/mdx-ish.mjs`. Repair links in their canonical source, never
+in a generated mirror. The sync step rewrites relative page paths but preserves
+fragments, so it cannot reconcile renderer differences.
+
+The 2026-09-02 audit of ClawHub `d40547056deee00781721daa24cbc73c497cf2ba`
+found 12 stale links in `docs/plugin-validation-fixes.md`. The published manifest
+IDs are `manifest-versus-package.json` and
+`package.json-fields-that-affect-discovery`. Session and transcript helpers live
+under `runtime-namespaces` in the runtime reference, not `agent-session-state`.
+Keep the precise published section links rather than dropping their fragments
+or choosing checker-only spellings.
+
+At that audit, the publisher used `markdown-it@15.0.0` and
+`markdown-it-anchor@9.2.1`, while the core auditor pinned `mint@4.2.808`.
+Mint predicts hyphens instead of dots for the manifest IDs and counts repeated
+CLI GitHub Actions headings as `github-actions`, `github-actions-2`, and
+`github-actions-3`; the publisher emits `github-actions`, `github-actions-1`,
+and `github-actions-2`. Preserve the live-valid `#github-actions-1` links in
+`docs/cli.md` and `docs/publishing.md`: changing them to `-2` sends readers to
+the wrong section.
+
+Renderer/auditor parity belongs to the core auditor and publisher owners, not
+ClawHub link rewrites. With the 12 source repairs, the pinned Mint audit still
+reports nine renderer-only findings (seven manifest links and two CLI links).
+A parity fix must validate published IDs without hiding genuinely missing
+anchors, with regression coverage for punctuation, duplicate heading order,
+and unique target ownership. Recheck real rendered navigation when either
+renderer or its dependencies change.
