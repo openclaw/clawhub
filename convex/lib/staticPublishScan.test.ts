@@ -82,4 +82,32 @@ describe("runStaticPublishScan", () => {
       content: "storage:200",
     });
   });
+  it("reads storage in overlapping batches and keeps file order for the scan", async () => {
+    const files = Array.from({ length: 70 }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      size: 20,
+      storageId: `storage:${index}`,
+    }));
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const storageGet = vi.fn(async (storageId: string) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      inFlight -= 1;
+      return new Blob([new TextEncoder().encode(`export const id = "${storageId}";\n`)]);
+    });
+
+    const result = await runStaticPublishScan({ storage: { get: storageGet } } as never, {
+      slug: "batched-plugin",
+      displayName: "Batched Plugin",
+      files,
+    });
+
+    expect(storageGet).toHaveBeenCalledTimes(70);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(32);
+    expect(storageGet.mock.calls.map(([id]) => id)).toEqual(files.map((file) => file.storageId));
+    expect(result.status).toBe("clean");
+  });
 });
