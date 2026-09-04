@@ -514,31 +514,103 @@ describe("publisher abuse scoring", () => {
     expect(score.spike).toBe(false);
   });
 
-  it("flags traffic that stays abnormally high for at least 10 of 14 days", () => {
-    const todayDay = 100;
-    const score = computeCurrentSkillTemporalAbuseScore({
-      todayDay,
-      benchmark: temporalBenchmark({
-        downloads30dP99: 600,
-        spikeMultiplier7dP95: 5,
-        excess7DownloadsP95: 500,
-      }),
-      dailyStats: [
-        ...dailyRange(41, 30, { downloads: 5, installs: 0 }),
-        ...dailyRange(87, 10, { downloads: 640, installs: 0 }),
-        ...dailyRange(97, 4, { downloads: 0, installs: 0 }),
-      ],
-    });
+  it.each([
+    { installs: 5, expectedSustained: true },
+    { installs: 6, expectedSustained: false },
+  ])(
+    "checks sustained traffic with $installs recorded installs",
+    ({ installs, expectedSustained }) => {
+      const todayDay = 100;
+      const score = computeCurrentSkillTemporalAbuseScore({
+        todayDay,
+        benchmark: temporalBenchmark({
+          downloads30dP99: 600,
+          spikeMultiplier7dP95: 5,
+          excess7DownloadsP95: 500,
+        }),
+        dailyStats: [
+          ...dailyRange(41, 30, { downloads: 5, installs: 0 }),
+          ...dailyRange(87, 10, { downloads: 640, installs: 0 }),
+          ...dailyRange(97, 4, { downloads: 0, installs: 0 }),
+          { day: 100, downloads: 0, installs },
+        ],
+      });
 
-    expect(score.spike).toBe(false);
-    expect(score.sustained).toBe(true);
-    expect(score.sustainedDaysAboveThreshold).toBe(10);
-    expect(score.sustainedWindowDays).toBe(14);
-    expect(score.sustainedExpectedDailyDownloads).toBe(5);
-    expect(score.sustainedDailyDownloadThreshold).toBeCloseTo(76.43, 2);
-    expect(score.downloads30dCohortBand).toBe("p99");
-    expect(score.reasonCodes).toContain("temporal_sustained_abnormal_download_days");
-  });
+      expect(score.spike).toBe(false);
+      expect(score.sustained).toBe(expectedSustained);
+      expect(score.sustainedDaysAboveThreshold).toBe(10);
+      expect(score.sustainedWindowDays).toBe(14);
+      expect(score.sustainedExpectedDailyDownloads).toBe(5);
+      expect(score.sustainedDailyDownloadThreshold).toBeCloseTo(76.43, 2);
+      expect(score.downloads30dCohortBand).toBe("p99");
+      expect(score.reasonCodes.includes("temporal_sustained_abnormal_download_days")).toBe(
+        expectedSustained,
+      );
+    },
+  );
+
+  it.each([
+    { burstDay: 80, expectedSpike: false, expectedWindowDownloads: 210 },
+    { burstDay: 100, expectedSpike: true, expectedWindowDownloads: 10_210 },
+  ])(
+    "does not call a burst on day $burstDay followed by modest traffic sustained",
+    ({ burstDay, expectedSpike, expectedWindowDownloads }) => {
+      const score = computeCurrentSkillTemporalAbuseScore({
+        todayDay: 100,
+        benchmark: temporalBenchmark({
+          downloads30dP99: 600,
+          spikeMultiplier7dP95: 1,
+          spikeMultiplier7dP99: 1,
+          excess7DownloadsP95: 0,
+          excess7DownloadsP99: 76.5,
+        }),
+        dailyStats: [
+          ...dailyRange(41, 30, { downloads: 5, installs: 0 }),
+          ...dailyRange(87, 14, { downloads: 15, installs: 0 }),
+          { day: burstDay, downloads: 10_000, installs: 0 },
+        ],
+      });
+
+      expect(score.recent30Downloads).toBe(10_210);
+      expect(score.sustainedWindowDownloads).toBe(expectedWindowDownloads);
+      expect(score.sustainedDaysAboveThreshold).toBe(14);
+      expect(score.sustained).toBe(false);
+      expect(score.spike).toBe(expectedSpike);
+      expect(score.reasonCodes).not.toContain("temporal_sustained_abnormal_download_days");
+    },
+  );
+
+  it.each([
+    {
+      downloads30dP99: 600,
+      lowerDailyDownloads: 400,
+      higherDailyDownloads: 700,
+      totalDownloads: 6_800,
+    },
+    {
+      downloads30dP99: 1_000,
+      lowerDailyDownloads: 700,
+      higherDailyDownloads: 1_000,
+      totalDownloads: 11_000,
+    },
+  ])(
+    "keeps uneven but distributed sustained traffic at platform P99 $downloads30dP99",
+    ({ downloads30dP99, lowerDailyDownloads, higherDailyDownloads, totalDownloads }) => {
+      const score = computeCurrentSkillTemporalAbuseScore({
+        todayDay: 100,
+        benchmark: temporalBenchmark({ downloads30dP99 }),
+        dailyStats: [
+          ...dailyRange(87, 10, { downloads: lowerDailyDownloads, installs: 0 }),
+          ...dailyRange(97, 4, { downloads: higherDailyDownloads, installs: 0 }),
+        ],
+      });
+
+      expect(score.recent30Downloads).toBe(totalDownloads);
+      expect(score.sustainedWindowDownloads).toBe(totalDownloads);
+      expect(score.sustainedDaysAboveThreshold).toBe(14);
+      expect(score.sustained).toBe(true);
+    },
+  );
 
   it("keeps sustained traffic below the 6,400-download floor below the signal", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
@@ -566,11 +638,14 @@ describe("publisher abuse scoring", () => {
         excess7DownloadsP95: 500,
       }),
       dailyStats: [
-        ...dailyRange(41, 30, { downloads: 5, installs: 0 }),
-        ...dailyRange(87, 9, { downloads: 500, installs: 0 }),
+        ...dailyRange(41, 30, { downloads: 50, installs: 0 }),
+        ...dailyRange(87, 9, { downloads: 1_000, installs: 0 }),
+        ...dailyRange(96, 5, { downloads: 200, installs: 0 }),
       ],
     });
 
+    expect(score.sustainedWindowDownloads).toBe(10_000);
+    expect(score.sustainedDailyDownloadThreshold).toBe(250);
     expect(score.sustainedDaysAboveThreshold).toBe(9);
     expect(score.sustained).toBe(false);
   });

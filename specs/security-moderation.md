@@ -120,9 +120,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   raise its own comparison point. Each of the latest 14 days is compared with a
   threshold derived from the platform P95 growth multiple and P95 absolute
   excess; at least 10 days must exceed that threshold. The same skill must also
-  reach at least 6,400 downloads and at least ten times the platform 30-day
-  download P99, with at most 5 installs in the 14-day window. This
-  order-of-magnitude gate prevents broad crawler traffic from being presented
+  reach a distributed download total within those same 14 days of at least
+  6,400 or ten times the platform 30-day download P99, whichever is higher.
+  Each day's contribution to this decision is capped at one tenth of that
+  required total; reported download counts remain uncapped. Older downloads
+  cannot satisfy this gate, and one recent burst cannot turn otherwise modest
+  traffic into a sustained signal. Uneven daily traffic may still qualify;
+  there is no additional minimum volume required on each abnormal day.
+  At most 5 installs are allowed in the 14-day window. The standalone surge
+  detector is independent and uses uncapped counts, so one extreme day can
+  still trigger a surge signal without qualifying as sustained. These
+  volume requirements prevent broad crawler traffic from being presented
   as a publisher-specific anomaly. This
   catches traffic that arrives at a steady, exceptionally high rate after a
   cold start instead of only detecting a spike on the day it begins. These

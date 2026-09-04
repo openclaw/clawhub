@@ -157,7 +157,7 @@ const TEMPORAL_SUSTAINED_DAYS = 14;
 const TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS = 10;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
 const TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER = 10;
-const TEMPORAL_MIN_SUSTAINED_30D_DOWNLOADS = 6_400;
+const TEMPORAL_MIN_SUSTAINED_DOWNLOADS = 6_400;
 const TEMPORAL_MIN_STANDALONE_SPIKE_7D_DOWNLOADS = 6_400;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
@@ -381,7 +381,7 @@ export function computeTemporalAbuseCohortBenchmark(
 
 function temporalDownloadThresholds(benchmark: TemporalAbuseCohortBenchmark) {
   const sustained = Math.max(
-    TEMPORAL_MIN_SUSTAINED_30D_DOWNLOADS,
+    TEMPORAL_MIN_SUSTAINED_DOWNLOADS,
     benchmark.downloads30dP99 * TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER,
   );
   return {
@@ -422,7 +422,7 @@ export function classifySkillTemporalAbuseScore(
     spikeMultiplierCohortBand &&
     excess7DownloadsCohortBand,
   );
-  const sustainedDownloadsCohortBand =
+  const downloads30dCohortBand =
     score.recent30Downloads >= thresholds.sustained
       ? p99Band({ value: score.recent30Downloads, p99: benchmark.downloads30dP99 })
       : undefined;
@@ -437,8 +437,13 @@ export function classifySkillTemporalAbuseScore(
   const sustainedDaysAboveThreshold = score.sustainedDailyDownloads.filter(
     (downloads) => downloads > sustainedDailyDownloadThreshold,
   ).length;
+  const sustainedDailyDownloadCap = thresholds.sustained / TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS;
+  const sustainedDistributedDownloads = score.sustainedDailyDownloads.reduce(
+    (total, downloads) => total + Math.min(downloads, sustainedDailyDownloadCap),
+    0,
+  );
   const sustained =
-    Boolean(sustainedDownloadsCohortBand) &&
+    sustainedDistributedDownloads >= thresholds.sustained &&
     score.sustainedWindowInstalls <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
     sustainedDaysAboveThreshold >= TEMPORAL_MIN_SUSTAINED_ABNORMAL_DAYS;
   const nearConversion = score.nearConversion;
@@ -461,7 +466,7 @@ export function classifySkillTemporalAbuseScore(
       sustained ? downloads30dVsPeerP95 : 0,
       nearConversionPressure,
     ),
-    downloads30dCohortBand: sustainedDownloadsCohortBand,
+    downloads30dCohortBand,
     spikeMultiplierCohortBand,
     excess7DownloadsCohortBand,
     downloads30dVsPeerP95,
