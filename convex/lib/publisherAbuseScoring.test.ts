@@ -612,6 +612,40 @@ describe("publisher abuse scoring", () => {
     },
   );
 
+  it.each([
+    {
+      downloads30dP99: 1_000,
+      dailyDownloads: Array<number>(14).fill(500),
+      expectedSustained: false,
+    },
+    {
+      downloads30dP99: 600,
+      dailyDownloads: [...Array<number>(9).fill(700), 639],
+      expectedSustained: false,
+    },
+    {
+      downloads30dP99: 600,
+      dailyDownloads: [...Array<number>(9).fill(700), 640],
+      expectedSustained: true,
+    },
+  ])(
+    "enforces the capped, peer-scaled sustained volume boundary in case %#",
+    ({ downloads30dP99, dailyDownloads, expectedSustained }) => {
+      const score = computeCurrentSkillTemporalAbuseScore({
+        todayDay: 100,
+        benchmark: temporalBenchmark({ downloads30dP99 }),
+        dailyStats: dailyDownloads.map((downloads, index) => ({
+          day: 87 + index,
+          downloads,
+          installs: 0,
+        })),
+      });
+
+      expect(score.sustainedDaysAboveThreshold).toBeGreaterThanOrEqual(10);
+      expect(score.sustained).toBe(expectedSustained);
+    },
+  );
+
   it("keeps sustained traffic below the 6,400-download floor below the signal", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay: 100,
