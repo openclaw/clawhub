@@ -473,5 +473,10 @@ it("reaps a real process tree whose leader exits while a grandchild holds pipes 
       signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
     );
   await expect(proof.run()).rejects.toThrow("Convex backend exited (7)");
-  expect(() => process.kill(-backend.pid, 0)).toThrow();
+  // Cleanup resolves on stdio closure, but the SIGKILLed grandchild stays a zombie (still a
+  // group member) until init reaps it, so the group can outlive run() by a few milliseconds.
+  await vi.waitFor(() => expect(() => process.kill(-backend.pid, 0)).toThrow(/ESRCH/), {
+    timeout: 2000,
+    interval: 10,
+  });
 });
