@@ -122,6 +122,7 @@ Installed from a ClawHub skill page URL.
           // A compatibility run must not resolve or install packages at runtime.
           npm_config_cache: join(projectDir, ".npm"),
           npm_config_offline: "true",
+          npm_config_audit: "false",
         },
       },
     ).catch((error: ExecFileException) => {
