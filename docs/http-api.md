@@ -640,6 +640,12 @@ On the unified `/api/v1/packages` endpoint it is plugin-only; use
 
 Legacy aliases are not accepted as stored or author-declared category values.
 
+### `GET /api/v1/plugins/categories`
+
+Returns the canonical plugin discovery taxonomy in display order. Each category
+contains `slug`, `label`, `description`, a bare Lucide `icon` key, and numeric
+`order`.
+
 ### `GET /api/v1/skills/export`
 
 Bulk export of latest public skills for offline analysis.
@@ -1378,8 +1384,10 @@ Publishes a code-plugin or bundle-plugin release.
 - Use either `files` or `clawpack`, never both in the same request.
 - JSON bodies and caller-supplied `payload.files` / `payload.artifact`
   metadata are rejected.
-- Direct multipart publish requests are capped at 18MB. ClawPack tarballs may
-  use the upload-url flow up to the 120MB tarball cap.
+- Direct multipart publish requests are capped at 4MB because the public API is
+  served through Vercel functions, which reject larger request bodies with
+  `413` before ClawHub sees them. Larger ClawPack tarballs must use the
+  upload-url flow, up to the 120MB tarball cap.
 - Optional payload field: `ownerHandle`. When present, only admins may publish on behalf of that owner.
 
 Validation highlights:

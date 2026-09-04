@@ -18,6 +18,7 @@ import {
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
+const VERCEL_FUNCTION_PAYLOAD_CAP_BYTES = 4.5 * 1024 * 1024;
 const uiMocks = createUiModuleMocks({ interactive: true });
 const inspectorMocks = {
   pluginRoot: {
@@ -69,6 +70,7 @@ const {
   cmdUpsertPackageMigration,
 } = await import("../../../../clawhub-admin/src/commands/packages");
 const { parseClawPack } = await import("../../clawpack");
+const { MAX_PACKAGE_MULTIPART_BYTES } = await import("../../schema/index.js");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -2383,9 +2385,12 @@ describe("package commands", () => {
         }),
         "package/openclaw.plugin.json": JSON.stringify({ id: "oversized.plugin" }),
         "package/dist/index.js": "export const demo = true;\n",
-        "package/dist/model.bin": randomBytes(24 * 1024 * 1024),
+        "package/dist/model.bin": randomBytes(5 * 1024 * 1024),
       });
-      expect(packBytes.byteLength).toBeGreaterThan(18 * 1024 * 1024);
+      // Above the Vercel function payload cap that fronts clawhub.ai, but well inside
+      // the former 18 MiB inline budget that let such publishes fail with 413.
+      expect(packBytes.byteLength).toBeGreaterThan(VERCEL_FUNCTION_PAYLOAD_CAP_BYTES);
+      expect(packBytes.byteLength).toBeLessThan(18 * 1024 * 1024);
       await writeFile(join(workdir, packName), packBytes);
       httpMocks.apiRequest.mockResolvedValueOnce({
         uploadUrl: "https://upload.local",
@@ -2555,7 +2560,7 @@ describe("package commands", () => {
 
       const packPath = join(workdir, "packs", "demo-heavy-plugin-1.0.0.tgz");
       const packed = await readFile(packPath);
-      expect(packed.byteLength).toBeGreaterThan(18 * 1024 * 1024);
+      expect(packed.byteLength).toBeGreaterThan(MAX_PACKAGE_MULTIPART_BYTES);
       expect(parseClawPack(new Uint8Array(packed)).packageName).toBe("demo-heavy-plugin");
     } finally {
       await rm(workdir, { recursive: true, force: true });

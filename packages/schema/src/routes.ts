@@ -23,6 +23,7 @@ export const ApiRoutes = {
   skillsSh: "/api/v1/skills-sh",
   skillScans: "/api/v1/skills/-/scan",
   plugins: "/api/v1/plugins",
+  pluginCategories: "/api/v1/plugins/categories",
   pluginsExport: "/api/v1/plugins/export",
   packages: "/api/v1/packages",
   codePlugins: "/api/v1/code-plugins",

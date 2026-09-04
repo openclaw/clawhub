@@ -21,6 +21,7 @@ import {
   formatSecurityAuditOverview,
   normalizeContentType,
   isPluginCategorySlug,
+  PLUGIN_CATEGORY_DEFINITIONS,
   parseArk,
   type PackagePublishMetadata,
   type PackageAppealListStatus,
@@ -2472,6 +2473,18 @@ export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
     defaultSort: "recommended",
     includeSkills: false,
     pluginFamilies: ["code-plugin", "bundle-plugin"],
+  });
+}
+
+export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
+  return json({
+    categories: PLUGIN_CATEGORY_DEFINITIONS.map((category, order) => ({
+      slug: category.slug,
+      label: category.label,
+      description: category.description,
+      icon: category.icon,
+      order,
+    })),
   });
 }
 

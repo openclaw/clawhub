@@ -11989,6 +11989,45 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("returns plugin categories in canonical order with bare icon keys", async () => {
+    const response = await __handlers.listPluginCategoriesV1Handler(
+      makeCtx({}),
+      new Request("https://example.com/api/v1/plugins/categories"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.categories.map((category: { slug: string }) => category.slug)).toEqual([
+      "channels",
+      "models",
+      "memory",
+      "context",
+      "voice",
+      "media",
+      "web",
+      "tools",
+      "runtime",
+      "gateway",
+      "security",
+      "other",
+    ]);
+    expect(json.categories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "channels",
+          label: "Channels",
+          description: expect.any(String),
+          icon: "message-circle",
+          order: 0,
+        }),
+      ]),
+    );
+    for (const category of json.categories as Array<{ icon: string }>) {
+      expect(category.icon).toMatch(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+      expect(category.icon).not.toContain(":");
+    }
+  });
+
   it("plugins list paginates with separate plugin family cursors", async () => {
     const codeNewest = makeCatalogItem("code-newest", {
       family: "code-plugin",

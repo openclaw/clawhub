@@ -22,6 +22,7 @@ export declare const ApiRoutes: {
     readonly skillsSh: "/api/v1/skills-sh";
     readonly skillScans: "/api/v1/skills/-/scan";
     readonly plugins: "/api/v1/plugins";
+    readonly pluginCategories: "/api/v1/plugins/categories";
     readonly pluginsExport: "/api/v1/plugins/export";
     readonly packages: "/api/v1/packages";
     readonly codePlugins: "/api/v1/code-plugins";
