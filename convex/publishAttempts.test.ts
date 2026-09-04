@@ -1717,6 +1717,12 @@ describe("publishAttempts", () => {
       summary: "Review before installing.",
       checkedAt: now,
     };
+    const aigAnalysis = {
+      status: "clean",
+      issueCount: 0,
+      findings: [],
+      checkedAt: now,
+    };
     const ctx = {
       db: {
         get: vi.fn(async () => ({
@@ -1755,6 +1761,7 @@ describe("publishAttempts", () => {
           redactedFindings: ["status=completed; verdict=suspicious"],
         },
         clawscanAnalysis: llmAnalysis,
+        aigAnalysis,
       }),
     ).resolves.toEqual({
       attemptId: "publishAttempts:demo",
@@ -1770,6 +1777,7 @@ describe("publishAttempts", () => {
           slug: "demo-skill",
           version: "1.0.0",
           llmAnalysis,
+          aigAnalysis,
         },
       }),
     );
@@ -1844,6 +1852,135 @@ describe("publishAttempts", () => {
       "publishAttempts:demo",
       expect.objectContaining({
         skillInsertArgs: expect.objectContaining({ aigAnalysis: existingAigAnalysis }),
+      }),
+    );
+  });
+
+  it("persists fresh AIG evidence when ClawScan analysis is omitted", async () => {
+    const now = Date.now();
+    const aigAnalysis = {
+      status: "clean",
+      issueCount: 0,
+      findings: [],
+      checkedAt: now,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:demo"
+            ? {
+                _id: "publishAttempts:demo",
+                kind: "skill",
+                status: "pending_checks",
+                skillVersionId: "skillVersions:demo",
+                artifactFingerprint: "fingerprint",
+                checkClaimId: "checks:claim",
+                checkClaimExpiresAt: now + 60_000,
+              }
+            : {
+                _id: "skillVersions:demo",
+                fingerprint: "fingerprint",
+              },
+        ),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+        aigAnalysis,
+      }),
+    ).resolves.toMatchObject({ status: "ready_to_finalize" });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("skillVersions:demo", {
+      aigAnalysis,
+      publishAttemptId: "publishAttempts:demo",
+    });
+  });
+
+  it("retries a clean skill completion when AIG evidence is omitted and retained evidence is invalid", async () => {
+    const now = Date.now();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:demo"
+            ? {
+                _id: "publishAttempts:demo",
+                kind: "skill",
+                status: "pending_checks",
+                skillVersionId: "skillVersions:demo",
+                artifactFingerprint: "fingerprint",
+                checkClaimId: "checks:claim",
+                checkClaimExpiresAt: now + 60_000,
+                checks: {
+                  trufflehog: { status: "pending" },
+                  clawscan: { status: "pending" },
+                },
+              }
+            : {
+                _id: "skillVersions:demo",
+                fingerprint: "fingerprint",
+                aigAnalysis: {
+                  status: " CLEAN ",
+                  issueCount: 0,
+                  findings: [],
+                  checkedAt: now - 1_000,
+                },
+              },
+        ),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+        clawscanAnalysis: {
+          status: "completed",
+          verdict: "benign",
+          checkedAt: now,
+        },
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:demo",
+      kind: "skill",
+      status: "pending_checks",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        status: "pending_checks",
+        checkClaimId: undefined,
+        checkClaimLastError: "A.I.G evidence is required before a skill can be published.",
+        checkFailureCount: 1,
       }),
     );
   });

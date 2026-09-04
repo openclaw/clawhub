@@ -11,6 +11,7 @@ const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const MAX_CONSECUTIVE_SCANNER_FAILURES = 3;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
+const MISSING_AIG_EVIDENCE_ERROR = "A.I.G evidence is required before a skill can be published.";
 const ACTIVE_CLAIM_OUTCOME = { outcome: "active_claim" as const };
 const PUBLISH_ATTEMPT_STATUSES = [
   "pending_checks",
@@ -125,6 +126,84 @@ function reusableClawscanAnalysis(value: unknown) {
   if (typeof analysis.checkedAt !== "number") return undefined;
   if (!completed.has(status) && !completed.has(verdict)) return undefined;
   return value;
+}
+
+type StoredAigAnalysis = NonNullable<Doc<"skillVersions">["aigAnalysis"]>;
+
+function reusableAigAnalysis(value: unknown): StoredAigAnalysis | undefined {
+  const analysis = asRecord(value);
+  const status = typeof analysis.status === "string" ? analysis.status : "";
+  if (!new Set(["clean", "suspicious", "malicious"]).has(status)) return undefined;
+  if (
+    typeof analysis.checkedAt !== "number" ||
+    !Number.isFinite(analysis.checkedAt) ||
+    typeof analysis.issueCount !== "number" ||
+    !Number.isInteger(analysis.issueCount) ||
+    analysis.issueCount < 0
+  ) {
+    return undefined;
+  }
+  if (!Array.isArray(analysis.findings)) return undefined;
+  const findings: StoredAigAnalysis["findings"] = [];
+  for (const findingValue of analysis.findings) {
+    const finding = asRecord(findingValue);
+    if (
+      typeof finding.ruleId !== "string" ||
+      typeof finding.level !== "string" ||
+      typeof finding.message !== "string" ||
+      !["title", "description", "file", "remediation"].every(
+        (key) => finding[key] === undefined || typeof finding[key] === "string",
+      ) ||
+      !["startLine", "endLine"].every(
+        (key) =>
+          finding[key] === undefined ||
+          (typeof finding[key] === "number" && Number.isFinite(finding[key])),
+      )
+    ) {
+      return undefined;
+    }
+    findings.push({
+      ruleId: finding.ruleId,
+      level: finding.level,
+      message: finding.message,
+      ...(typeof finding.title === "string" ? { title: finding.title } : {}),
+      ...(typeof finding.description === "string" ? { description: finding.description } : {}),
+      ...(typeof finding.file === "string" ? { file: finding.file } : {}),
+      ...(typeof finding.startLine === "number" ? { startLine: finding.startLine } : {}),
+      ...(typeof finding.endLine === "number" ? { endLine: finding.endLine } : {}),
+      ...(typeof finding.remediation === "string" ? { remediation: finding.remediation } : {}),
+    });
+  }
+  if (
+    !["scannerVersion", "summary", "error"].every(
+      (key) => analysis[key] === undefined || typeof analysis[key] === "string",
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    status,
+    issueCount: analysis.issueCount,
+    findings,
+    ...(typeof analysis.scannerVersion === "string"
+      ? { scannerVersion: analysis.scannerVersion }
+      : {}),
+    ...(typeof analysis.summary === "string" ? { summary: analysis.summary } : {}),
+    ...(typeof analysis.error === "string" ? { error: analysis.error } : {}),
+    checkedAt: analysis.checkedAt,
+  };
+}
+
+async function resolveSkillAigAnalysis(
+  ctx: Pick<MutationCtx, "db">,
+  attempt: Doc<"publishAttempts">,
+) {
+  if (!attempt.skillVersionId) return undefined;
+
+  // Retained evidence is reusable only when the staged version is still the exact scanned artifact.
+  const version = await ctx.db.get(attempt.skillVersionId);
+  if (version?.fingerprint !== attempt.artifactFingerprint) return undefined;
+  return reusableAigAnalysis(version.aigAnalysis);
 }
 
 function scannerFailureSummary(args: {
@@ -853,10 +932,42 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
       };
     }
 
-    if (attempt.kind === "skill" && attempt.skillVersionId && args.clawscanAnalysis) {
+    const submittedAigAnalysis = reusableAigAnalysis(args.aigAnalysis);
+    const effectiveAigAnalysis =
+      attempt.kind === "skill"
+        ? (submittedAigAnalysis ?? (await resolveSkillAigAnalysis(ctx, attempt)))
+        : args.aigAnalysis;
+    // A.I.G is required supporting evidence, but ClawScan remains the sole publication authority.
+    // Preserve suspicious or malicious A.I.G findings for audit display instead of blocking here.
+    if (attempt.kind === "skill" && !effectiveAigAnalysis) {
+      const checkFailureCount = previousScannerFailureCount(attempt) + 1;
+      const terminal = checkFailureCount >= MAX_CONSECUTIVE_SCANNER_FAILURES;
+      await ctx.db.patch(attempt._id, {
+        status: terminal ? "failed" : "pending_checks",
+        checks,
+        checkClaimId: undefined,
+        checkClaimedAt: undefined,
+        checkClaimExpiresAt: terminal ? undefined : now + CHECK_RETRY_BACKOFF_MS,
+        checkClaimLastError: MISSING_AIG_EVIDENCE_ERROR,
+        checkFailureCount,
+        failedAt: terminal ? now : undefined,
+        updatedAt: now,
+      });
+      return {
+        attemptId: attempt._id,
+        kind: attempt.kind,
+        status: terminal ? ("failed" as const) : ("pending_checks" as const),
+      };
+    }
+
+    if (
+      attempt.kind === "skill" &&
+      attempt.skillVersionId &&
+      (args.clawscanAnalysis || submittedAigAnalysis)
+    ) {
       await ctx.db.patch(attempt.skillVersionId, {
-        llmAnalysis: args.clawscanAnalysis,
-        ...(args.aigAnalysis ? { aigAnalysis: args.aigAnalysis } : {}),
+        ...(args.clawscanAnalysis ? { llmAnalysis: args.clawscanAnalysis } : {}),
+        ...(submittedAigAnalysis ? { aigAnalysis: submittedAigAnalysis } : {}),
         publishAttemptId: attempt._id,
       });
     }
@@ -875,7 +986,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         attempt.kind === "skill"
           ? withAigAnalysis(
               withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis),
-              args.aigAnalysis,
+              effectiveAigAnalysis,
             )
           : attempt.skillInsertArgs,
       packageInsertArgs:
