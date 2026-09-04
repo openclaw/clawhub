@@ -294,6 +294,14 @@ async function completeScanJob(
     leaseToken: scanJob.job.leaseToken,
     runId: "playwright-local-auth",
     llmAnalysis,
+    aigAnalysis: {
+      status: "clean" as const,
+      issueCount: 0,
+      findings: [],
+      scannerVersion: "mock-local-e2e",
+      summary: "Mock A.I.G found no issues in the local e2e fixture.",
+      checkedAt: llmAnalysis.checkedAt,
+    },
   };
 
   let sawTimeout = false;
