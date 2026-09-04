@@ -348,6 +348,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   storage-id path must include the matching `clawpackUploadTicket`, and the
   server must reject tickets from a different auth context, expired or used
   tickets, and storage blobs created before the ticket.
+- The inline multipart budget (`MAX_PACKAGE_MULTIPART_BYTES`) must stay below
+  the 4.5 MB request body cap of the Vercel functions that front `clawhub.ai`.
+  Anything larger goes through the upload-url flow, which uploads straight to
+  Convex storage; the CLI picks the route from the same shared constant.
 - Direct package publish multipart bytes are capped at 18MB so callers get a
   clear ClawHub validation error before hitting Convex's 20MB HTTP action body
   cap. ClawPack tarballs keep the 120MB package tarball cap through staged

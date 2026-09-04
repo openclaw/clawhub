@@ -244,7 +244,11 @@ export const PackageTrustedPublisherSchema = type({
 });
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
 
-export const MAX_PACKAGE_MULTIPART_BYTES = 18 * 1024 * 1024;
+// The public registry API is served through Vercel functions, which reject request
+// bodies over 4.5 MB before ClawHub code runs. Inline multipart publishes stay under
+// that cap; larger ClawPacks stage through the upload-url flow straight into storage.
+const MAX_PACKAGE_MULTIPART_MB = 4;
+export const MAX_PACKAGE_MULTIPART_BYTES = MAX_PACKAGE_MULTIPART_MB * 1024 * 1024;
 export const MAX_PACKAGE_CLAWPACK_BYTES = 120 * 1024 * 1024;
 const PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES = 4096;
 const PACKAGE_MULTIPART_PART_OVERHEAD_BYTES = 1024;
@@ -279,7 +283,7 @@ export function isPackageMultipartUploadTooLarge(input: PackageMultipartUploadSi
 }
 
 export function getPackageMultipartSizeError(): string {
-  return "Package upload exceeds 18MB multipart upload limit";
+  return `Package upload exceeds ${MAX_PACKAGE_MULTIPART_MB}MB multipart upload limit`;
 }
 
 function estimateMultipartStringPartBytes(fieldName: string, value: string): number {
