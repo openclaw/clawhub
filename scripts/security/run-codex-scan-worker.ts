@@ -1945,6 +1945,12 @@ export async function runClawScan(
     args.push("--scanner-result", `skillspector=${skillSpectorResultPath}`);
   }
   args.push("--output", artifactPath);
+  const sandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX?.trim();
+  if (sandbox) {
+    args.push("--sandbox", sandbox);
+    const sandboxImage = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX_IMAGE?.trim();
+    if (sandbox === "docker" && sandboxImage) args.push("--sandbox-image", sandboxImage);
+  }
   onDiagnostic({ args: [command, ...args], artifactPath });
 
   const captureArtifact = async () => {

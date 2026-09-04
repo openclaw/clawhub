@@ -283,21 +283,30 @@ JSON`,
     );
 
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX;
     const previousDefaultBaseUrl = process.env.DEFAULT_BASE_URL;
     const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
     const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
     const previousWorkerToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX = "off";
     process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
     process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
     process.env.OPENAI_API_KEY = "mock-provider-key";
     process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-worker-token";
 
     try {
+      const onDiagnostic = vi.fn();
       await runClawScan(
         skillVersionJob("securityScanJobs:restricted-environment"),
         workspace,
-        () => {},
+        onDiagnostic,
+      );
+
+      expect(onDiagnostic).toHaveBeenCalledWith(
+        expect.objectContaining({
+          args: expect.arrayContaining(["--sandbox", "off"]),
+        }),
       );
 
       expect((await readFile(environmentLog, "utf8")).split("\n")).toEqual([
@@ -310,6 +319,8 @@ JSON`,
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      if (previousSandbox === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX = previousSandbox;
       if (previousDefaultBaseUrl === undefined) delete process.env.DEFAULT_BASE_URL;
       else process.env.DEFAULT_BASE_URL = previousDefaultBaseUrl;
       if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;

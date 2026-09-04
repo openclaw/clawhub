@@ -786,7 +786,7 @@ JSON
     const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
     const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
     process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-    delete process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+    process.env.PREPUBLICATION_CLAWSCAN_SANDBOX = "off";
     process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-completion-token";
     process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
     process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
@@ -831,7 +831,7 @@ JSON
       expect(args).toContain("./artifact");
       expect(args).toContain("--profile\nclawhub");
       expect(args).toContain("--output\n");
-      expect(args).not.toContain("--sandbox");
+      expect(args).toContain("--sandbox\noff");
       expect(await readFile(join(workspace, "clawscan-worker-token.txt"), "utf8")).toBe("\n");
       expect(await readFile(join(workspace, "clawscan-default-base-url.txt"), "utf8")).toBe(
         "https://api.openai.com/v1\n",

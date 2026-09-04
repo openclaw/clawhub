@@ -120,6 +120,7 @@ describe("security-scan-codex workflow", () => {
     expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS).toBe(
       "${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}",
     );
+    expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX).toBe("off");
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_MODE");
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_TIMEOUT_MS");
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");

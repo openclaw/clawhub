@@ -116,6 +116,7 @@ describe("pre-publication publish worker workflow", () => {
         "${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
         "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}",
+      PREPUBLICATION_CLAWSCAN_SANDBOX: "off",
       PREPUBLICATION_CHECK_ATTEMPT_ID:
         "${{ github.event.client_payload.attempt_id || inputs['attempt-id'] || '' }}",
       PREPUBLICATION_CHECK_LIMIT:
