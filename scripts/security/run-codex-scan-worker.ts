@@ -186,6 +186,25 @@ const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CLAWSCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector", "aig"];
 const REQUIRED_CLAWHUB_PACKAGE_SCANNERS = ["clawscan-static", "skillspector"];
+const CHILD_RUNTIME_ENV_KEYS = [
+  "PATH",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "COMSPEC",
+  "PATHEXT",
+] as const;
+const SCANNER_PROVIDER_ENV_KEYS = [
+  "CODEX_API_KEY",
+  "DEFAULT_BASE_URL",
+  "DEFAULT_MODEL",
+  "LLM_API_KEY",
+  "OPENAI_API_KEY",
+] as const;
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
@@ -841,20 +860,23 @@ async function fileExists(path: string) {
   }
 }
 
-function codexEnv() {
-  const env = { ...process.env };
+function codexEnv(workspace: string) {
+  const env: NodeJS.ProcessEnv = {
+    NO_COLOR: "1",
+    SKILLSPECTOR_PROVIDER: process.env.SKILLSPECTOR_PROVIDER || "openai",
+    TEMP: workspace,
+    TMP: workspace,
+    TMPDIR: workspace,
+  };
+  for (const key of [...CHILD_RUNTIME_ENV_KEYS, ...SCANNER_PROVIDER_ENV_KEYS]) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
   const codexHome = resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME);
   if (codexHome) {
     mkdirSync(codexHome, { recursive: true });
     env.CODEX_HOME = codexHome;
   }
-  delete env.GH_TOKEN;
-  delete env.GITHUB_TOKEN;
-  delete env.CONVEX_DEPLOY_KEY;
-  delete env.SECURITY_SCAN_WORKER_TOKEN;
-  delete env.HOMEBREW_GITHUB_API_TOKEN;
-  env.NO_COLOR = "1";
-  env.SKILLSPECTOR_PROVIDER = env.SKILLSPECTOR_PROVIDER || "openai";
   return env;
 }
 
@@ -886,7 +908,7 @@ async function runCommand(
   options: { cwd: string; input?: string; omitEnv?: string[]; timeoutMs: number },
 ) {
   return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
-    const env = codexEnv();
+    const env = codexEnv(options.cwd);
     for (const name of options.omitEnv ?? []) delete env[name];
     const child = spawn(command, args, {
       cwd: options.cwd,

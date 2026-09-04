@@ -256,6 +256,71 @@ function clawScanArtifactJson(options?: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it("passes only the approved provider endpoint to ClawScan", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Safe skill\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const environmentLog = join(workspace, "clawscan-environment.log");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" > ${JSON.stringify(environmentLog)}
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+cat > "$out" <<'JSON'
+${clawScanArtifactJson({ verdict: "benign" })}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    const previousDefaultBaseUrl = process.env.DEFAULT_BASE_URL;
+    const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+    const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+    const previousWorkerToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
+    process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
+    process.env.OPENAI_API_KEY = "mock-provider-key";
+    process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-worker-token";
+
+    try {
+      await runClawScan(
+        skillVersionJob("securityScanJobs:restricted-environment"),
+        workspace,
+        () => {},
+      );
+
+      expect((await readFile(environmentLog, "utf8")).split("\n")).toEqual([
+        "https://api.openai.com/v1",
+        "",
+        "mock-provider-key",
+        "",
+        "",
+      ]);
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      if (previousDefaultBaseUrl === undefined) delete process.env.DEFAULT_BASE_URL;
+      else process.env.DEFAULT_BASE_URL = previousDefaultBaseUrl;
+      if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
+      if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+      if (previousWorkerToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousWorkerToken;
+    }
+  });
+
   it.each([
     {
       name: "zero roots",
