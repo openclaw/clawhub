@@ -12935,6 +12935,14 @@ describe("packages public queries", () => {
           categories: ["security"],
           topics: ["Manifest Topic"],
           contracts: { tools: ["demoTool"] },
+          channelConfigs: {
+            inline: {
+              schema: {
+                $schema: "http://json-schema.org/draft-07/schema#",
+                type: "object",
+              },
+            },
+          },
         }),
       ],
       [
@@ -13047,6 +13055,23 @@ describe("packages public queries", () => {
       expect.objectContaining({
         status: "suspicious",
         reasonCodes: expect.arrayContaining(["suspicious.dangerous_exec"]),
+      }),
+    );
+    expect(ctx.runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          pluginManifest: expect.objectContaining({
+            channelConfigs: {
+              inline: {
+                schema: {
+                  dollar_schema: "http://json-schema.org/draft-07/schema#",
+                  type: "object",
+                },
+              },
+            },
+          }),
+        }),
       }),
     );
     expect(ctx.scheduler.runAfter).toHaveBeenNthCalledWith(
