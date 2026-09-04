@@ -5259,6 +5259,41 @@ describe("securityScan", () => {
     },
   );
 
+  it.each(["skillVersion", "skillScanRequest"] as const)(
+    "rejects unsuccessful A.I.G evidence for %s completions",
+    async (targetKind) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+      const runQuery = vi.fn(async () => ({
+        job: {
+          _id: "securityScanJobs:failed-aig",
+          targetKind,
+          leaseToken: "lease-token",
+        },
+      }));
+      const runMutation = vi.fn(async () => ({ ok: true }));
+
+      await expect(
+        completeCodexScanJobHandler(
+          { runMutation, runQuery },
+          {
+            token: "worker-secret",
+            jobId: "securityScanJobs:failed-aig",
+            leaseToken: "lease-token",
+            llmAnalysis: { status: "clean", checkedAt: 123 },
+            aigAnalysis: {
+              status: "error",
+              issueCount: 0,
+              findings: [],
+              checkedAt: 123,
+            },
+          },
+        ),
+      ).rejects.toThrow("A.I.G analysis is required to complete skill scans");
+
+      expect(runMutation).not.toHaveBeenCalled();
+    },
+  );
+
   it("caps SkillSpector findings before storing completed scan results", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const longSnippet = "sensitive SkillSpector artifact text ".repeat(200);

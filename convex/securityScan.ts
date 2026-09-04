@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery, mutation } from "./functions";
 import { applyGitHubSkillVerificationResultHandler } from "./githubSkillSync";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
+import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
@@ -3858,18 +3859,19 @@ export const completeCodexScanJob = action({
     if (!isCatalogScanRequest && target.job.leaseToken !== args.leaseToken) {
       throw new ConvexError("Lease mismatch");
     }
+    const completedAigAnalysis = reusableAigAnalysis(args.aigAnalysis);
     if (
       (target.job.targetKind === "skillVersion" || target.job.targetKind === "skillScanRequest") &&
-      !args.aigAnalysis
+      !completedAigAnalysis
     ) {
       throw new ConvexError("A.I.G analysis is required to complete skill scans");
     }
 
     if (target.job.targetKind === "skillVersion" && target.version) {
-      if (args.aigAnalysis) {
+      if (completedAigAnalysis) {
         await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
           versionId: target.version._id,
-          aigAnalysis: args.aigAnalysis,
+          aigAnalysis: completedAigAnalysis,
         });
       }
       if (args.skillSpectorAnalysis) {
@@ -3906,10 +3908,10 @@ export const completeCodexScanJob = action({
         target.scanRequest.update &&
         target.version
       ) {
-        if (args.aigAnalysis) {
+        if (completedAigAnalysis) {
           await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
             versionId: target.version._id,
-            aigAnalysis: args.aigAnalysis,
+            aigAnalysis: completedAigAnalysis,
           });
         }
         if (args.skillSpectorAnalysis) {
@@ -3932,7 +3934,7 @@ export const completeCodexScanJob = action({
           githubSkillScanId: target.githubScan._id,
           scanStatus: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
           llmAnalysis: args.llmAnalysis,
-          aigAnalysis: args.aigAnalysis,
+          aigAnalysis: completedAigAnalysis,
           skillSpectorAnalysis,
           runId: args.runId,
         });
@@ -3954,7 +3956,7 @@ export const completeCodexScanJob = action({
             verdict: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
             runId: args.runId,
             llmAnalysis: args.llmAnalysis,
-            aigAnalysis: args.aigAnalysis,
+            aigAnalysis: completedAigAnalysis,
             skillSpectorAnalysis,
           },
         );
@@ -3974,7 +3976,7 @@ export const completeCodexScanJob = action({
         jobId: args.jobId,
         runId: args.runId,
         llmAnalysis: args.llmAnalysis,
-        aigAnalysis: args.aigAnalysis,
+        aigAnalysis: completedAigAnalysis,
         skillSpectorAnalysis,
         writtenBack,
       });

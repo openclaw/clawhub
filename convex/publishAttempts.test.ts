@@ -656,6 +656,58 @@ describe("publishAttempts", () => {
     });
   });
 
+  it("omits invalid retained A.I.G evidence so the worker rescans", async () => {
+    const attempt = {
+      _id: "publishAttempts:invalid-aig",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      skillVersionId: "skillVersions:invalid-aig",
+      slug: "invalid-aig-skill",
+      displayName: "Invalid A.I.G Skill",
+      version: "1.0.0",
+      artifactFingerprint: "exact-fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:skill", size: 10, sha256: "sha" }],
+      skillInsertArgs: { staticScan: { status: "clean" } },
+      createdAt: Date.now(),
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "skillVersions:invalid-aig"
+            ? {
+                fingerprint: "exact-fingerprint",
+                aigAnalysis: {
+                  status: "error",
+                  issueCount: 0,
+                  findings: [],
+                  checkedAt: Date.now(),
+                },
+              }
+            : null,
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [attempt]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    const claim = await claimPendingChecksHandler(ctx, { claimId: "checks:claim" });
+
+    expect(claim).toMatchObject({ attemptId: "publishAttempts:invalid-aig" });
+    expect(claim).not.toHaveProperty("existingAigAnalysis");
+  });
+
   it("hydrates staged package attempts with ClawPack URL and review context", async () => {
     const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
     process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";

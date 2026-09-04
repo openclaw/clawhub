@@ -55,6 +55,7 @@ import type * as httpPreflight from "../httpPreflight.js";
 import type * as leaderboards from "../leaderboards.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_agentSkillsDiscovery from "../lib/agentSkillsDiscovery.js";
+import type * as lib_aigAnalysis from "../lib/aigAnalysis.js";
 import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_archiveManifest from "../lib/archiveManifest.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
@@ -275,6 +276,7 @@ declare const fullApi: ApiFromModules<{
   leaderboards: typeof leaderboards;
   "lib/access": typeof lib_access;
   "lib/agentSkillsDiscovery": typeof lib_agentSkillsDiscovery;
+  "lib/aigAnalysis": typeof lib_aigAnalysis;
   "lib/apiTokenAuth": typeof lib_apiTokenAuth;
   "lib/archiveManifest": typeof lib_archiveManifest;
   "lib/artifactModeration": typeof lib_artifactModeration;

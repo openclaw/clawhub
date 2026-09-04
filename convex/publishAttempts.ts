@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
+import { reusableAigAnalysis } from "./lib/aigAnalysis";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 import { requestPublishAttemptDispatch } from "./publishAttemptDispatch";
 
@@ -126,72 +127,6 @@ function reusableClawscanAnalysis(value: unknown) {
   if (typeof analysis.checkedAt !== "number") return undefined;
   if (!completed.has(status) && !completed.has(verdict)) return undefined;
   return value;
-}
-
-type StoredAigAnalysis = NonNullable<Doc<"skillVersions">["aigAnalysis"]>;
-
-function reusableAigAnalysis(value: unknown): StoredAigAnalysis | undefined {
-  const analysis = asRecord(value);
-  const status = typeof analysis.status === "string" ? analysis.status : "";
-  if (!new Set(["clean", "suspicious", "malicious"]).has(status)) return undefined;
-  if (
-    typeof analysis.checkedAt !== "number" ||
-    !Number.isFinite(analysis.checkedAt) ||
-    typeof analysis.issueCount !== "number" ||
-    !Number.isInteger(analysis.issueCount) ||
-    analysis.issueCount < 0
-  ) {
-    return undefined;
-  }
-  if (!Array.isArray(analysis.findings)) return undefined;
-  const findings: StoredAigAnalysis["findings"] = [];
-  for (const findingValue of analysis.findings) {
-    const finding = asRecord(findingValue);
-    if (
-      typeof finding.ruleId !== "string" ||
-      typeof finding.level !== "string" ||
-      typeof finding.message !== "string" ||
-      !["title", "description", "file", "remediation"].every(
-        (key) => finding[key] === undefined || typeof finding[key] === "string",
-      ) ||
-      !["startLine", "endLine"].every(
-        (key) =>
-          finding[key] === undefined ||
-          (typeof finding[key] === "number" && Number.isFinite(finding[key])),
-      )
-    ) {
-      return undefined;
-    }
-    findings.push({
-      ruleId: finding.ruleId,
-      level: finding.level,
-      message: finding.message,
-      ...(typeof finding.title === "string" ? { title: finding.title } : {}),
-      ...(typeof finding.description === "string" ? { description: finding.description } : {}),
-      ...(typeof finding.file === "string" ? { file: finding.file } : {}),
-      ...(typeof finding.startLine === "number" ? { startLine: finding.startLine } : {}),
-      ...(typeof finding.endLine === "number" ? { endLine: finding.endLine } : {}),
-      ...(typeof finding.remediation === "string" ? { remediation: finding.remediation } : {}),
-    });
-  }
-  if (
-    !["scannerVersion", "summary", "error"].every(
-      (key) => analysis[key] === undefined || typeof analysis[key] === "string",
-    )
-  ) {
-    return undefined;
-  }
-  return {
-    status,
-    issueCount: analysis.issueCount,
-    findings,
-    ...(typeof analysis.scannerVersion === "string"
-      ? { scannerVersion: analysis.scannerVersion }
-      : {}),
-    ...(typeof analysis.summary === "string" ? { summary: analysis.summary } : {}),
-    ...(typeof analysis.error === "string" ? { error: analysis.error } : {}),
-    checkedAt: analysis.checkedAt,
-  };
 }
 
 async function resolveSkillAigAnalysis(
@@ -1090,7 +1025,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
         const version = await ctx.db.get(attempt.skillVersionId);
         if (version?.fingerprint === attempt.artifactFingerprint) {
           existingClawscanAnalysis = reusableClawscanAnalysis(version.llmAnalysis);
-          existingAigAnalysis = version.aigAnalysis;
+          existingAigAnalysis = reusableAigAnalysis(version.aigAnalysis);
         }
       } else if (attempt.kind === "package" && attempt.packageReleaseId) {
         const release = await ctx.db.get(attempt.packageReleaseId);
@@ -1099,7 +1034,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
           : release?.integritySha256;
         if (release && releaseFingerprint === attempt.artifactFingerprint) {
           existingClawscanAnalysis = reusableClawscanAnalysis(release.llmAnalysis);
-          existingAigAnalysis = release.aigAnalysis;
+          existingAigAnalysis = reusableAigAnalysis(release.aigAnalysis);
         }
       }
 
