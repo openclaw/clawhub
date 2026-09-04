@@ -270,6 +270,17 @@ export async function completeMockPrePublicationChecks(args: {
             : undefined,
       },
       clawscanAnalysis,
+      aigAnalysis:
+        args.kind === "skill"
+          ? {
+              status: "clean",
+              issueCount: 0,
+              findings: [],
+              scannerVersion: "mock-local-e2e",
+              summary: "Mock A.I.G found no issues in the local e2e fixture.",
+              checkedAt: Date.now(),
+            }
+          : undefined,
     },
   )) as Record<string, unknown>;
   return { ...completion, claim };
