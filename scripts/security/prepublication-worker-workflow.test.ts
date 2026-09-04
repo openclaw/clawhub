@@ -156,6 +156,9 @@ describe("pre-publication publish worker workflow", () => {
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
       "npm install -g @openclaw/clawscan@0.1.7",
     );
+    const skillspectorInstall = steps.find((step) => step.name === "Install SkillSpector")?.run;
+    expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");
+    expect(skillspectorInstall).toContain("skillspector --help");
     expect(steps).toContainEqual(
       expect.objectContaining({
         uses: "actions/setup-python@v7",
@@ -173,7 +176,6 @@ describe("pre-publication publish worker workflow", () => {
       "npm install -g @openai/codex@0.142.3",
     );
     expect(steps.find((step) => step.name === "Authenticate Codex CLI")).toBeUndefined();
-    expect(steps.find((step) => step.name === "Install SkillSpector")).toBeUndefined();
     expect(JSON.stringify(job)).not.toContain("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(runStep?.env).toEqual({
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",

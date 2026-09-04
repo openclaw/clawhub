@@ -1011,6 +1011,62 @@ JSON
     }
   });
 
+  it("preserves a redacted scanner error when a required scanner fails", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"failed","error":"provider rejected request with api_key=secret-value"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed"}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              _id: String(attempt.attemptId),
+              attempts: 1,
+              hasMaliciousSignal: false,
+              leaseToken: attempt.claimId,
+              source: "pre-publication",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {},
+          },
+          workspace,
+        ),
+      ).resolves.toEqual({
+        check: {
+          status: "failed",
+          summary:
+            "ClawScan scanner did not complete: aig=failed (provider rejected request with api_key=[redacted-secret])",
+        },
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
   it("fails closed when completed A.I.G output has no SARIF run", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });

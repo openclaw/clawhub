@@ -461,7 +461,10 @@ function collectClawScanScannerFailures(
     if (value === undefined) continue;
     const scannerRecord = asRecord(value);
     const status = readString(scannerRecord, ["status"]) ?? "unknown";
-    if (status !== "completed") failures.push(`${scanner}=${status}`);
+    if (status !== "completed") {
+      const error = readString(scannerRecord, ["error"]);
+      failures.push(`${scanner}=${status}${error ? ` (${publicText(error, 300)})` : ""}`);
+    }
   }
   return failures;
 }
