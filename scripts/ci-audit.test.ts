@@ -26,7 +26,7 @@ describe("ci-audit", () => {
       .mockReturnValueOnce({ exitCode: 1, output: CONNECTION_DROP })
       .mockReturnValueOnce({ exitCode: 1, output: CONNECTION_DROP })
       .mockReturnValueOnce({ exitCode: 0, output: "No vulnerabilities found\n" });
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
     const log = vi.fn();
 
     await expect(runAuditWithRetry(attempt, sleep, log)).resolves.toBe(0);
@@ -37,7 +37,7 @@ describe("ci-audit", () => {
 
   it("fails immediately on real advisory findings", async () => {
     const attempt = vi.fn(() => ({ exitCode: 1, output: FINDINGS }));
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
 
     await expect(runAuditWithRetry(attempt, sleep, () => {})).resolves.toBe(1);
     expect(attempt).toHaveBeenCalledTimes(1);
@@ -46,7 +46,7 @@ describe("ci-audit", () => {
 
   it("gives up after the retry budget with the last exit code", async () => {
     const attempt = vi.fn(() => ({ exitCode: 3, output: CONNECTION_DROP }));
-    const sleep = vi.fn(async () => {});
+    const sleep = vi.fn(async (_ms: number) => {});
 
     await expect(runAuditWithRetry(attempt, sleep, () => {})).resolves.toBe(3);
     expect(attempt).toHaveBeenCalledTimes(3);
