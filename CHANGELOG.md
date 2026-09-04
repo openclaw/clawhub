@@ -12,6 +12,7 @@
 - Tests: keep the Vitest localStorage shim working on Node 26, whose native `Storage` global has a non-configurable `length`, so `bun run ci:unit` passes on Node 24 and 26.
 - API/GitHub Actions: authorize human release recovery through v2 approval and the original child-bound parent receipt, fail automated attempts when their exact parent fails, and let admins preview or discard orphaned package publish attempts with a publisher-visible reason.
 - CI: warm and cache the npm packages for local Convex "use node" dependencies and raise the isolated backend's push transport timeout so local-auth browser lanes no longer race a 408-retried external-deps build into a deleted build directory.
+- CI: make the UI proof process-tree reaping test exercise KILL escalation deterministically and assert the reaper's signal sequence, so a TERM that lands before the grandchild ignores it can no longer mask a missing KILL.
 - CI: run the pinned Agent Skills CLI from the Bun lockfile without runtime npm access, retain subprocess failure output, and run first-party CLI coverage before third-party compatibility checks.
 - Docs: repair plugin validation remediation links to the published manifest metadata and runtime session helper sections while preserving valid CLI workflow anchors.
 - Dependencies: pin fast-uri to 3.1.6 to fix host confusion and server-side request forgery advisories in URI normalization.

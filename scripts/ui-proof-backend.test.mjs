@@ -458,23 +458,31 @@ it("reaps a real process tree whose leader exits while a grandchild holds pipes 
       [
         "-e",
         `
-      require('node:child_process').spawn(process.execPath, ['-e', 'process.on("SIGTERM",()=>{}); setInterval(()=>{},1000)'], {stdio:'inherit'});
-      setTimeout(()=>process.exit(7),100);
+      // Exit only once the grandchild ignores TERM, so cleanup must escalate to KILL.
+      // The grandchild keeps the inherited stderr pipe open after the leader is gone.
+      const grandchild = require('node:child_process').spawn(process.execPath, ['-e', 'process.on("SIGTERM",()=>{}); process.stdout.write("ready"); setInterval(()=>{},1000)'], {stdio:['ignore','pipe','inherit']});
+      grandchild.stdout.once('data', () => process.exit(7));
     `,
       ],
       settings,
     );
     return backend;
   };
-  proof.io.kill = (pid, signal) =>
-    pid === -backend?.pid ? process.kill(pid, signal) : kill(pid, signal);
+  const groupSignals = [];
+  proof.io.kill = (pid, signal) => {
+    if (pid !== -backend?.pid) return kill(pid, signal);
+    groupSignals.push(signal);
+    return process.kill(pid, signal);
+  };
   proof.io.fetchImpl = (_url, { signal }) =>
     new Promise((_, reject) =>
       signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
     );
   await expect(proof.run()).rejects.toThrow("Convex backend exited (7)");
+  expect(groupSignals).toEqual([0, "SIGTERM", 0, "SIGKILL"]);
   // Cleanup resolves on stdio closure, but the SIGKILLed grandchild stays a zombie (still a
   // group member) until init reaps it, so the group can outlive run() by a few milliseconds.
+  // macOS reports EPERM in that window, so keep polling until ESRCH.
   await vi.waitFor(() => expect(() => process.kill(-backend.pid, 0)).toThrow(/ESRCH/), {
     timeout: 2000,
     interval: 10,
