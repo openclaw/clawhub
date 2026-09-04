@@ -1010,6 +1010,7 @@ async function runStaticPublishScanInNode(
     internalRefs.staticPublishScanNode.runStaticPublishScanInternal,
     stripUndefinedForStoredAttempt({
       ...input,
+      metadata: toConvexSafeJsonValue(input.metadata),
       files: input.files.map(({ path, size, storageId, contentType }) => ({
         path,
         size,
