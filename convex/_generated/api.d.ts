@@ -212,6 +212,7 @@ import type * as skillsShMirrorPublic from "../skillsShMirrorPublic.js";
 import type * as skillsShMirrorVisibility from "../skillsShMirrorVisibility.js";
 import type * as skillsShPublicTestFixtures from "../skillsShPublicTestFixtures.js";
 import type * as stars from "../stars.js";
+import type * as staticPublishScanNode from "../staticPublishScanNode.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
 import type * as tokens from "../tokens.js";
@@ -431,6 +432,7 @@ declare const fullApi: ApiFromModules<{
   skillsShMirrorVisibility: typeof skillsShMirrorVisibility;
   skillsShPublicTestFixtures: typeof skillsShPublicTestFixtures;
   stars: typeof stars;
+  staticPublishScanNode: typeof staticPublishScanNode;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;
   tokens: typeof tokens;

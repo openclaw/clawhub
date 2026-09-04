@@ -70,6 +70,7 @@ import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
+import type { StaticScanResult } from "./lib/moderationEngine";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -132,7 +133,6 @@ import {
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
-import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
 import schema from "./schema";
 
@@ -510,6 +510,9 @@ const internalRefs = internal as unknown as {
   };
   packageInspectorNode: {
     runPackageInspectorForPublishInternal: unknown;
+  };
+  staticPublishScanNode: {
+    runStaticPublishScanInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -988,6 +991,33 @@ async function runActionRef<T>(
   args: unknown,
 ): Promise<T> {
   return (await ctx.runAction(ref as never, args as never)) as T;
+}
+
+// The moderation scan decodes every package file; large ClawPacks exceed the
+// Convex runtime's 64 MiB action ceiling, so it runs in the Node runtime.
+async function runStaticPublishScanInNode(
+  ctx: { runAction: (ref: never, args: never) => Promise<unknown> },
+  input: {
+    slug: string;
+    displayName: string;
+    summary?: string;
+    metadata?: unknown;
+    files: ReadonlyArray<{ path: string; size: number; storageId: string; contentType?: string }>;
+  },
+): Promise<StaticScanResult> {
+  return await runActionRef<StaticScanResult>(
+    ctx,
+    internalRefs.staticPublishScanNode.runStaticPublishScanInternal,
+    stripUndefinedForStoredAttempt({
+      ...input,
+      files: input.files.map(({ path, size, storageId, contentType }) => ({
+        path,
+        size,
+        storageId: storageId as Id<"_storage">,
+        contentType,
+      })),
+    }),
+  );
 }
 
 async function runAfterRef(
@@ -8839,7 +8869,7 @@ async function publishPackageImpl(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
   const topics = normalizedTopics.length ? normalizedTopics : undefined;
-  const staticScan = await runStaticPublishScan(ctx, {
+  const staticScan = await runStaticPublishScanInNode(ctx, {
     slug: name,
     displayName,
     summary,
@@ -12409,7 +12439,7 @@ export const scanPackageReleaseStaticallyInternal = internalAction({
       return { ok: true as const, skipped: "missing_package" as const };
     }
 
-    const staticScan = await runStaticPublishScan(ctx, {
+    const staticScan = await runStaticPublishScanInNode(ctx, {
       slug: pkg.name,
       displayName: pkg.displayName,
       summary: pkg.summary,
