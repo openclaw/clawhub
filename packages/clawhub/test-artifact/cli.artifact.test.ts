@@ -347,6 +347,21 @@ describe("built CLI artifact", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("ClawHub CLI");
+    expect(result.stdout.replace(/\s+/g, " ")).toContain(
+      "registry discovery and device verification",
+    );
+  });
+
+  it.each([["login"], ["auth", "login"]])("describes device approval in %s help", (...command) => {
+    const result = runNode([binPath, ...command, "--help"]);
+    const help = result.stdout.replace(/\s+/g, " ");
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(help).toContain("Log in with device flow or store a token");
+    expect(help).toContain("Use device flow (default)");
+    expect(help).toContain("verification URL");
+    expect(help).not.toMatch(/opens browser|requires --token/);
   });
 
   it("reports a controlled error when the built CLI module is missing", async () => {

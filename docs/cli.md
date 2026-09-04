@@ -29,7 +29,7 @@ clawhub whoami
 
 - `--workdir <dir>`: working directory (default: cwd; falls back to Clawdbot workspace if configured)
 - `--dir <dir>`: install dir under workdir (default: `skills`)
-- `--site <url>`: base URL for browser login (default: `https://clawhub.ai`)
+- `--site <url>`: site base URL for registry discovery and device verification (default: `https://clawhub.ai`)
 - `--registry <url>`: API base URL (default: discovered, else `https://clawhub.ai`)
 - `--no-input`: disable prompts
 
@@ -81,9 +81,18 @@ Stores your API token + cached registry URL.
 
 ### `login` / `auth login`
 
-- Default: opens browser to `<site>/cli/auth` and completes via loopback callback.
-- Headless: `clawhub login --token clh_...`
-- Remote/headless interactive: `clawhub login --device` prints a code and waits while you authorize it at `<site>/cli/device`.
+- Default: prints a one-time code and verification URL. Open the printed URL
+  on this or another device, sign in with GitHub if needed, and select **Authorize**.
+  The CLI polls for approval, verifies the API token via `whoami`, and saves it
+  in your config. It does not open a browser or start a local callback server.
+- `--device`: explicitly selects the default device flow.
+- `--no-browser`: accepted without `--token`; device login already prints the URL.
+- `--label <label>`: labels the token created by device login (default:
+  `CLI device login`). Does not rename a token supplied with `--token`.
+- Unattended/CI: `clawhub login --token <token>` verifies and stores an existing
+  API token. `--no-input` alone still waits for device approval.
+
+See [CLI login](./auth.md#cli-login) for the approval steps and expiry guidance.
 
 ### `whoami`
 
@@ -146,8 +155,8 @@ Stores your API token + cached registry URL.
 ### `uninstall <skill>`
 
 - Removes `<workdir>/<dir>/<slug>` and deletes the lockfile entry.
-- Sends best-effort telemetry while logged in so current install counts can be
-  deactivated.
+- Does not send uninstall telemetry or decrement ClawHub install counts.
+  Running `clawhub sync` does not reconcile removals.
 - Interactive: asks for confirmation.
 - Non-interactive (`--no-input`): requires `--yes`.
 
@@ -426,9 +435,12 @@ clawhub skill tag @owner/example 1.2.3 --yes
 ### `transfer`
 
 - Ownership transfer workflow.
-- Transfers to user handles create a pending request that the recipient accepts.
-- Transfers to org/publisher handles apply immediately only when the actor has
-  admin access to both the current owner and destination publisher.
+- Requests to another user normally create a pending request that the recipient accepts.
+- Requests to an org or your own personal publisher use a direct publisher move.
+  API callers can also select this path explicitly with `toOwner` or `toPublisherHandle`.
+- Direct publisher moves apply immediately and require admin access to both the
+  current owner and destination publisher, unless performed by a platform admin.
+  The destination must be active; moderation restrictions still apply.
 - Subcommands:
   - `transfer request <skill> <handle> [--message "..."] [--yes]`
   - `transfer list [--outgoing]`

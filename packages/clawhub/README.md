@@ -19,7 +19,7 @@ clawhub login
 # or
 clawhub auth login
 
-# Remote/headless browser approval
+# Explicit device approval (same as the default)
 clawhub login --device
 
 # or (token paste / headless)
@@ -31,8 +31,11 @@ clawhub token
 
 Notes:
 
-- Browser login opens `https://clawhub.ai/cli/auth` and completes via a loopback callback.
-- Device login prints a one-time code and waits while you approve it at `https://clawhub.ai/cli/device`.
+- Login defaults to device approval: open the printed verification URL on this or
+  another device, sign in with GitHub if needed, and select **Authorize** for the
+  one-time code. `--device` explicitly selects the same flow.
+- The CLI verifies and stores the token after approval. See the
+  [auth guide](../../docs/auth.md#cli-login) for details.
 - Default config path:
   - macOS: `~/Library/Application Support/clawhub/config.json`
   - Linux/XDG: `$XDG_CONFIG_HOME/clawhub/config.json` or `~/.config/clawhub/config.json`

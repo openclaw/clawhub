@@ -59,6 +59,27 @@ describe("packed admin CLI", () => {
     );
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Usage: clawhub-admin");
+    expect(result.stdout.replace(/\s+/g, " ")).toContain(
+      "registry discovery and device verification",
+    );
+    for (const command of [["login"], ["auth", "login"]]) {
+      const loginHelp = spawnSync(
+        process.execPath,
+        [join(installDir, "package", "bin", "clawhub-admin.js"), ...command, "--help"],
+        {
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: { ...process.env, FORCE_COLOR: "0" },
+        },
+      );
+      const help = loginHelp.stdout.replace(/\s+/g, " ");
+      expect(loginHelp.status).toBe(0);
+      expect(help).toContain("Log in with device flow or store a token");
+      expect(help).toContain("Token label (device flow only)");
+      expect(help).toContain("Admin CLI token");
+      expect(help).toContain("verification URL without opening a browser");
+      expect(help).not.toMatch(/opens browser|requires --token|--device/);
+    }
     const packagesHelp = spawnSync(
       process.execPath,
       [join(installDir, "package", "bin", "clawhub-admin.js"), "packages", "--help"],

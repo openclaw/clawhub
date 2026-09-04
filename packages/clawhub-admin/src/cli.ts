@@ -84,7 +84,7 @@ const program = new Command()
   .version(getAdminCliVersion(), "-V, --cli-version", "Show CLI version")
   .option("--workdir <dir>", "Working directory (default: cwd)")
   .option("--dir <dir>", "Skills directory (relative to workdir, default: skills)")
-  .option("--site <url>", "Site base URL (for browser login)")
+  .option("--site <url>", "Site base URL for registry discovery and device verification")
   .option("--registry <url>", "Registry API base URL")
   .option("--no-input", "Disable prompts")
   .showHelpAfterError()
@@ -161,10 +161,10 @@ async function pathExists(path: string) {
 
 program
   .command("login")
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "Admin CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--label <label>", "Token label (device flow only)", "Admin CLI token")
+  .option("--no-browser", "Device flow prints a verification URL without opening a browser")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -194,10 +194,10 @@ const auth = program
 
 auth
   .command("login")
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "Admin CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--label <label>", "Token label (device flow only)", "Admin CLI token")
+  .option("--no-browser", "Device flow prints a verification URL without opening a browser")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());

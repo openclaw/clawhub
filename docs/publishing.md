@@ -278,9 +278,14 @@ wrong publisher, transfer ownership instead:
 clawhub package transfer @opik/opik-openclaw --to opik
 ```
 
-Use package or skill transfer only when you have admin access to both the
-current owner and the destination publisher. Package transfer does not let you
-publish into a scope you cannot manage.
+Package transfers require admin access to both the current owner and the
+destination publisher, unless performed by a platform admin. Use `--to <owner>`
+to select an existing, active destination publisher. Scoped package names can
+transfer only to the publisher matching their scope. See
+[`package transfer`](./cli.md#package-transfer-name) for details.
+
+Skills use the separate [ownership transfer workflow](./cli.md#transfer).
+Transfers to another user normally require recipient acceptance.
 
 If you do not have access to the current owner but believe your org, project, or
 brand is the rightful namespace owner, open an

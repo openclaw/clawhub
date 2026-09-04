@@ -158,13 +158,13 @@ export CLAWHUB_DISABLE_TELEMETRY=1
 
 Useful environment overrides:
 
-| Variable                      | Effect                                            |
-| ----------------------------- | ------------------------------------------------- |
-| `CLAWHUB_SITE`                | Override the site URL used for browser login.     |
-| `CLAWHUB_REGISTRY`            | Override the registry API URL.                    |
-| `CLAWHUB_CONFIG_PATH`         | Override where the CLI stores token/config state. |
-| `CLAWHUB_WORKDIR`             | Override the default working directory.           |
-| `CLAWHUB_DISABLE_TELEMETRY=1` | Disable install telemetry.                        |
+| Variable                      | Effect                                                                |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `CLAWHUB_SITE`                | Override the site URL for registry discovery and device verification. |
+| `CLAWHUB_REGISTRY`            | Override the registry API URL.                                        |
+| `CLAWHUB_CONFIG_PATH`         | Override where the CLI stores token/config state.                     |
+| `CLAWHUB_WORKDIR`             | Override the default working directory.                               |
+| `CLAWHUB_DISABLE_TELEMETRY=1` | Disable install telemetry.                                            |
 
 See [Telemetry](./telemetry.md), [HTTP API](./http-api.md), and
 [Troubleshooting](./troubleshooting.md) for deeper reference material.

@@ -1656,7 +1656,7 @@ Still supported for older CLI versions:
 - `GET /api/cli/whoami`
 - `POST /api/cli/upload-url`
 - `POST /api/cli/publish`
-- `POST /api/cli/telemetry/install`
+- `POST /api/cli/telemetry/install` — also used by the current CLI for install events.
 - `POST /api/cli/skill/delete`
 - `POST /api/cli/skill/undelete`
 
