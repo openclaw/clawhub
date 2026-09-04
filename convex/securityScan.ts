@@ -3858,6 +3858,12 @@ export const completeCodexScanJob = action({
     if (!isCatalogScanRequest && target.job.leaseToken !== args.leaseToken) {
       throw new ConvexError("Lease mismatch");
     }
+    if (
+      (target.job.targetKind === "skillVersion" || target.job.targetKind === "skillScanRequest") &&
+      !args.aigAnalysis
+    ) {
+      throw new ConvexError("A.I.G analysis is required to complete skill scans");
+    }
 
     if (target.job.targetKind === "skillVersion" && target.version) {
       if (args.aigAnalysis) {
