@@ -761,6 +761,10 @@ describe("pre-publication worker", () => {
       `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "${workspace}/clawscan-args.txt"
+printf '%s\n' "\${SECURITY_SCAN_WORKER_TOKEN-}" > "${workspace}/clawscan-worker-token.txt"
+printf '%s\n' "\${DEFAULT_BASE_URL-}" > "${workspace}/clawscan-default-base-url.txt"
+printf '%s\n' "\${OPENAI_BASE_URL-}" > "${workspace}/clawscan-openai-base-url.txt"
+printf '%s\n' "\${OPENAI_API_KEY-}" > "${workspace}/clawscan-provider-key.txt"
 output=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output" ]; then
@@ -777,8 +781,16 @@ JSON
     await chmod(fakeClawScan, 0o755);
     const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
     const previousSandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+    const previousWorkerToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+    const previousDefaultBaseUrl = process.env.DEFAULT_BASE_URL;
+    const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+    const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
     process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
     delete process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+    process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-completion-token";
+    process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
+    process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
+    process.env.OPENAI_API_KEY = "mock-provider-key";
 
     try {
       await expect(
@@ -820,11 +832,28 @@ JSON
       expect(args).toContain("--profile\nclawhub");
       expect(args).toContain("--output\n");
       expect(args).not.toContain("--sandbox");
+      expect(await readFile(join(workspace, "clawscan-worker-token.txt"), "utf8")).toBe("\n");
+      expect(await readFile(join(workspace, "clawscan-default-base-url.txt"), "utf8")).toBe(
+        "https://api.openai.com/v1\n",
+      );
+      expect(await readFile(join(workspace, "clawscan-openai-base-url.txt"), "utf8")).toBe("\n");
+      expect(await readFile(join(workspace, "clawscan-provider-key.txt"), "utf8")).toBe(
+        "mock-provider-key\n",
+      );
+      expect(process.env.SECURITY_SCAN_WORKER_TOKEN).toBe("mock-completion-token");
     } finally {
       if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
       else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
       if (previousSandbox === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
       else process.env.PREPUBLICATION_CLAWSCAN_SANDBOX = previousSandbox;
+      if (previousWorkerToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousWorkerToken;
+      if (previousDefaultBaseUrl === undefined) delete process.env.DEFAULT_BASE_URL;
+      else process.env.DEFAULT_BASE_URL = previousDefaultBaseUrl;
+      if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
+      if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
     }
   });
 

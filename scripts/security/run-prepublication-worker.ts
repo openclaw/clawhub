@@ -97,6 +97,25 @@ const MAX_TRUFFLEHOG_FINDINGS = 10;
 const MAX_PUBLIC_SUMMARY_CHARS = 600;
 const REQUIRED_SKILL_SCANNERS = ["clawscan-static", "skillspector", "aig"];
 const REQUIRED_PACKAGE_SCANNERS = ["clawscan-static", "skillspector"];
+const CHILD_RUNTIME_ENV_KEYS = [
+  "PATH",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "COMSPEC",
+  "PATHEXT",
+] as const;
+const CLAWSCAN_PROVIDER_ENV_KEYS = [
+  "CODEX_API_KEY",
+  "DEFAULT_BASE_URL",
+  "DEFAULT_MODEL",
+  "LLM_API_KEY",
+  "OPENAI_API_KEY",
+] as const;
 const logger = createWorkerLogger({ name: "prepublication-worker" });
 
 export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env) {
@@ -258,17 +277,14 @@ function parseTruffleHogFindings(stdout: string) {
 async function runCommand(
   command: string,
   args: string[],
-  options: { cwd: string; timeoutMs: number },
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
 ) {
   return await new Promise<{ code: number | null; stdout: string; stderr: string }>(
     (resolvePromise, reject) => {
       const child = spawn(command, args, {
         cwd: options.cwd,
         detached: process.platform !== "win32",
-        env: {
-          ...process.env,
-          NO_COLOR: "1",
-        },
+        env: options.env,
         stdio: ["ignore", "pipe", "pipe"],
       });
       let stdout = "";
@@ -318,6 +334,23 @@ async function runCommand(
   );
 }
 
+function restrictedChildEnvironment(
+  workspace: string,
+  passthroughKeys: readonly string[] = [],
+): NodeJS.ProcessEnv {
+  const childEnv: NodeJS.ProcessEnv = {
+    NO_COLOR: "1",
+    TEMP: workspace,
+    TMP: workspace,
+    TMPDIR: workspace,
+  };
+  for (const key of [...CHILD_RUNTIME_ENV_KEYS, ...passthroughKeys]) {
+    const value = process.env[key];
+    if (value !== undefined) childEnv[key] = value;
+  }
+  return childEnv;
+}
+
 export async function runNativeTruffleHog(workspace: string): Promise<TruffleHogResult> {
   const artifactDir = join(workspace, "artifact");
   const explicitCommand = truffleHogCommand();
@@ -340,6 +373,7 @@ export async function runNativeTruffleHog(workspace: string): Promise<TruffleHog
 
   const output = await runCommand(command, args, {
     cwd: workspace,
+    env: restrictedChildEnvironment(workspace),
     timeoutMs: truffleHogTimeoutMs(),
   });
   if (output.code === 0) {
@@ -560,6 +594,7 @@ export async function runNativeClawScan(
 
   const output = await runCommand(command, args, {
     cwd: workspace,
+    env: restrictedChildEnvironment(workspace, CLAWSCAN_PROVIDER_ENV_KEYS),
     timeoutMs: clawScanTimeoutMs(),
   });
   if (output.code !== 0) {
