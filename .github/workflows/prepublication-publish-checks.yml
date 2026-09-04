@@ -106,6 +106,9 @@ jobs:
       - name: Run pre-publication publish worker
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.5
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
         run: |

@@ -141,6 +141,7 @@ describe("pre-publication publish worker workflow", () => {
     });
     expect(job.env).not.toHaveProperty("CODEX_API_KEY");
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(job.env).not.toHaveProperty("LLM_API_KEY");
     expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(job.env).not.toHaveProperty("CODEX_SECURITY_SCAN_TIMEOUT_MS");
 
@@ -175,6 +176,9 @@ describe("pre-publication publish worker workflow", () => {
     expect(JSON.stringify(job)).not.toContain("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(runStep?.env).toEqual({
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
+      DEFAULT_BASE_URL: "https://api.openai.com/v1",
+      DEFAULT_MODEL: "gpt-5.5",
+      LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
     });
@@ -188,6 +192,9 @@ describe("pre-publication publish worker workflow", () => {
         stepName === "Run pre-publication publish worker",
       );
       expect(stepUsesSecret(step, "OPENAI_API_KEY"), stepName).toBe(
+        stepName === "Run pre-publication publish worker",
+      );
+      expect(stepUsesSecret(step, "LLM_API_KEY"), stepName).toBe(
         stepName === "Run pre-publication publish worker",
       );
       expect(stepUsesSecret(step, "VT_API_KEY"), stepName).toBe(false);

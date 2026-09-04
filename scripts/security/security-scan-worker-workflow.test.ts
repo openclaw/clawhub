@@ -125,12 +125,14 @@ describe("security-scan-codex workflow", () => {
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
     expect(jobEnv).not.toHaveProperty("CODEX_API_KEY");
+    expect(jobEnv).not.toHaveProperty("LLM_API_KEY");
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expectSecretStepAllowlist(steps, "CODEX_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "OPENAI_API_KEY", [
       "Authenticate Codex CLI",
       "Run Codex security worker",
     ]);
+    expectSecretStepAllowlist(steps, "LLM_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "VT_API_KEY", []);
     expect(scanStep?.env ?? {}).not.toHaveProperty("CODEX_API_KEY");
@@ -157,6 +159,9 @@ describe("security-scan-codex workflow", () => {
     expect(skillspectorInstall).not.toContain("git+https://github.com/NVIDIA/skillspector.git'");
     expect(steps.find((step) => step.name === "Run Codex security worker")?.env).toEqual({
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
+      DEFAULT_BASE_URL: "https://api.openai.com/v1",
+      DEFAULT_MODEL: "gpt-5.5",
+      LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
     });
