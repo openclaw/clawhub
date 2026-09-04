@@ -3885,12 +3885,6 @@ export const completeCodexScanJob = action({
         llmAnalysis: args.llmAnalysis,
       });
     } else if (target.job.targetKind === "packageRelease" && target.release) {
-      if (args.aigAnalysis) {
-        await runMutationRef(ctx, internalRefs.packages.updateReleaseAigAnalysisInternal, {
-          releaseId: target.release._id,
-          aigAnalysis: args.aigAnalysis,
-        });
-      }
       await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
         releaseId: target.release._id,
         ...(args.skillSpectorAnalysis

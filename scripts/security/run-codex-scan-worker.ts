@@ -1402,6 +1402,16 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
     prediction = rawResults.length > 0 ? "suspicious" : "clean";
   }
 
+  if (rawResults.some((result) => !asRecord(result))) {
+    return {
+      status: "error",
+      issueCount: 0,
+      findings: [],
+      error: "A.I.G SARIF output contained a malformed result.",
+      checkedAt,
+    };
+  }
+
   const findings = rawResults
     .slice(0, MAX_STORED_AIG_FINDINGS)
     .map((result, index) => normalizeAigFinding(result, index, ruleNames))

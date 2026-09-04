@@ -751,6 +751,42 @@ describe("pre-publication worker", () => {
     );
   });
 
+  it("records deterministic check failures for unsupported Python bytecode", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "failed" }),
+    };
+    const runClawScan = vi.fn();
+    const runTruffleHog = vi.fn();
+
+    const result = await processPrePublicationAttempt(
+      client,
+      "worker-token",
+      {
+        ...attempt,
+        files: [{ ...attempt.files[0], path: "payload.pyc" }],
+      },
+      {
+        runClawScan,
+        runTruffleHog,
+        writeWorkspace: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    expect(result.completed).toBe(false);
+    expect(result.result).toEqual({ status: "failed" });
+
+    expect(runTruffleHog).not.toHaveBeenCalled();
+    expect(runClawScan).not.toHaveBeenCalled();
+    const payload = client.action.mock.calls[0]?.[1] as {
+      clawscan: { status: string; summary?: string };
+      trufflehog: { status: string; summary?: string };
+    };
+    expect(payload.trufflehog.status).toBe("failed");
+    expect(payload.trufflehog.summary).toContain("Python bytecode");
+    expect(payload.clawscan.status).toBe("failed");
+    expect(payload.clawscan.summary).toContain("Python bytecode");
+  });
+
   it("runs native ClawScan as the required non-shadow security gate", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });

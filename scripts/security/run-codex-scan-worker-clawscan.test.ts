@@ -268,6 +268,21 @@ describe("run-codex-scan-worker clawscan authority", () => {
     ]);
   });
 
+  it("rejects malformed A.I.G SARIF results explicitly", () => {
+    expect(
+      normalizeAigAnalysis(
+        '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[null]}]}',
+        123,
+      ),
+    ).toEqual({
+      status: "error",
+      issueCount: 0,
+      findings: [],
+      error: "A.I.G SARIF output contained a malformed result.",
+      checkedAt: 123,
+    });
+  });
+
   it("passes only the approved provider endpoint to ClawScan", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });

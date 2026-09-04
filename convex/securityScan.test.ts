@@ -5517,7 +5517,7 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("preserves plugin AIG results when an older worker omits AIG analysis", async () => {
+  it("ignores package AIG payloads because plugin scanning is out of scope", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: {
@@ -5538,6 +5538,12 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:plugin",
         leaseToken: "lease-token",
         llmAnalysis: { status: "clean", checkedAt: 123 },
+        aigAnalysis: {
+          status: "error",
+          issueCount: 99,
+          findings: [],
+          checkedAt: Number.POSITIVE_INFINITY,
+        },
       },
     );
 
