@@ -16,6 +16,22 @@ type WorkflowJob = {
 };
 
 describe("CI workflow", () => {
+  it("runs first-party CLI and permission coverage before third-party compatibility", async () => {
+    const { scripts } = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const commands = scripts["ci:e2e-http"].split(" && ");
+    const compatibility = commands.findIndex((command) =>
+      command.includes("e2e/agent-skills-discovery.e2e.test.ts"),
+    );
+    expect(compatibility).toBeGreaterThan(-1);
+    for (const suite of ["e2e/clawhub.e2e.test.ts", "e2e/permissions.e2e.test.ts"]) {
+      const firstParty = commands.findIndex((command) => command.includes(suite));
+      expect(firstParty, suite).toBeGreaterThan(-1);
+      expect(firstParty, suite).toBeLessThan(compatibility);
+    }
+  });
+
   it("runs required gates in parallel with one CPU-sized Blacksmith lane", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/ci.yml", "utf8")) as {
       jobs: Record<string, WorkflowJob>;

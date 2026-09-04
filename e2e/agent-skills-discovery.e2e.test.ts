@@ -1,9 +1,10 @@
 /* @vitest-environment node */
 
-import { execFile } from "node:child_process";
+import { execFile, type ExecFileException } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ import { buildAgentSkillsDiscoveryDocument } from "../convex/lib/agentSkillsDisc
 import { buildDeterministicZip } from "../convex/lib/skillZip";
 
 const execFileAsync = promisify(execFile);
+const skillsCli = createRequire(import.meta.url).resolve("skills/bin/cli.mjs");
 const tempDirs: string[] = [];
 const servers: Array<ReturnType<typeof createServer>> = [];
 
@@ -31,7 +33,7 @@ afterEach(async () => {
 });
 
 describe("Agent Skills CLI compatibility", () => {
-  it("installs a ClawHub skill page URL with the real npx skills CLI", async () => {
+  it("installs a ClawHub skill page URL with the real skills CLI without npm access", async () => {
     const skillMarkdown = `---
 name: demo
 description: Demonstrates ClawHub Agent Skills discovery.
@@ -50,7 +52,9 @@ Installed from a ClawHub skill page URL.
     ]);
     const digest = createHash("sha256").update(archive).digest("hex");
 
+    const requests: string[] = [];
     const server = createServer((request, response) => {
+      requests.push(`${request.method} ${request.url}`);
       const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       const url = new URL(request.url ?? "/", origin);
 
@@ -93,10 +97,9 @@ Installed from a ClawHub skill page URL.
 
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const result = await execFileAsync(
-      "npx",
+      "node",
       [
-        "--yes",
-        "skills@1.5.20",
+        skillsCli,
         "add",
         `${origin}/openclaw/skills/demo`,
         "--agent",
@@ -116,11 +119,23 @@ Installed from a ClawHub skill page URL.
           CI: "1",
           DO_NOT_TRACK: "1",
           NO_COLOR: "1",
+          // A compatibility run must not resolve or install packages at runtime.
+          npm_config_cache: join(projectDir, ".npm"),
+          npm_config_offline: "true",
         },
       },
-    );
+    ).catch((error: ExecFileException) => {
+      throw new Error(
+        `${error.message}\ncode=${error.code} signal=${error.signal} killed=${error.killed}\n` +
+          `stdout:\n${error.stdout || "(empty)"}\nstderr:\n${error.stderr || "(empty)"}\n` +
+          `Fixture requests:\n${requests.join("\n") || "(none)"}`,
+        { cause: error },
+      );
+    });
 
     expect(result.stderr).not.toContain("Error");
+    expect(requests).toContain("GET /openclaw/skills/demo/.well-known/agent-skills/index.json");
+    expect(requests).toContain("GET /api/v1/agent-skills/openclaw/demo/archive?version=1.0.0");
     expect(await readFile(join(projectDir, ".agents/skills/demo/SKILL.md"), "utf8")).toContain(
       "Installed from a ClawHub skill page URL.",
     );
