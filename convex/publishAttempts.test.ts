@@ -1507,50 +1507,62 @@ describe("publishAttempts", () => {
     expect(transientCtx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
   });
 
-  it("terminalizes a staged release when its exact OpenClaw parent is cancelled", async () => {
-    const ctx = {
-      db: {
-        delete: vi.fn(),
-        get: vi.fn(async (id: string) =>
-          id === "publishAttempts:cancelled"
-            ? {
-                _id: id,
-                kind: "package",
-                status: "finalizing",
-                packageReleaseId: "packageReleases:pending",
-                packageFollowup: {},
-                finalizationClaimId: "finalize:claim",
-              }
-            : {
-                _id: "packageReleases:pending",
-                publicationStatus: "pending",
-              },
-        ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
-      },
-    };
-    const error =
-      "OpenClaw release parent terminal state completed/cancelled is not authorized by automated-awaited";
+  it.each(["cancelled", "failure"])(
+    "terminalizes a staged release when its exact OpenClaw parent concludes %s",
+    async (conclusion) => {
+      const ctx = {
+        db: {
+          delete: vi.fn(),
+          get: vi.fn(async (id: string) =>
+            id === "publishAttempts:terminal-parent"
+              ? {
+                  _id: id,
+                  kind: "package",
+                  status: "finalizing",
+                  packageReleaseId: "packageReleases:pending",
+                  packageFollowup: {},
+                  finalizationClaimId: "finalize:claim",
+                }
+              : {
+                  _id: "packageReleases:pending",
+                  publicationStatus: "pending",
+                },
+          ),
+          insert: vi.fn(),
+          normalizeId: vi.fn(),
+          patch: vi.fn(),
+          query: vi.fn(),
+          replace: vi.fn(),
+          system: {},
+        },
+      };
+      const error = `OpenClaw release parent terminal state completed/${conclusion} is not authorized by automated-awaited`;
 
-    await expect(
-      releasePackageFinalizationHandler(ctx, {
-        attemptId: "publishAttempts:cancelled",
-        claimId: "finalize:claim",
-        error,
-      }),
-    ).resolves.toEqual({ attemptId: "publishAttempts:cancelled", status: "failed" });
+      await expect(
+        releasePackageFinalizationHandler(ctx, {
+          attemptId: "publishAttempts:terminal-parent",
+          claimId: "finalize:claim",
+          error,
+        }),
+      ).resolves.toEqual({ attemptId: "publishAttempts:terminal-parent", status: "failed" });
 
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "publishAttempts:cancelled",
-      expect.objectContaining({ status: "failed", finalizationLastError: error }),
-    );
-    expect(ctx.db.patch).toHaveBeenCalledOnce();
-  });
+      expect(ctx.db.patch).toHaveBeenCalledWith("publishAttempts:terminal-parent", {
+        status: "failed",
+        checkClaimId: undefined,
+        checkClaimedAt: undefined,
+        checkClaimExpiresAt: undefined,
+        checkClaimLastError: undefined,
+        checkFailureCount: undefined,
+        finalizationClaimId: undefined,
+        finalizationClaimedAt: undefined,
+        finalizationClaimExpiresAt: undefined,
+        finalizationLastError: error,
+        failedAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+      });
+      expect(ctx.db.patch).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each([
     "Staged OpenClaw publish authorization token is missing",

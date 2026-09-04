@@ -30,6 +30,7 @@ const botActor = "github-actions[bot]";
 const humanActor = "release-maintainer";
 const digest = `sha256:${"d".repeat(64)}`;
 const inventoryDigest = "e".repeat(64);
+const originalChild = { runId: "32439999998", runAttempt: "1" };
 
 test("accepts a complete 89-package parent authorization inventory", () => {
   const packages = Array.from({ length: 89 }, (_, index) => ({
@@ -146,7 +147,9 @@ function parentReceipt(identity, overrides = {}) {
 
 function recoveryReceipt(identity, overrides = {}) {
   return {
-    version: 1,
+    version: 2,
+    authorizedChildRunId: originalChild.runId,
+    authorizedChildRunAttempt: originalChild.runAttempt,
     kind: "openclaw-clawhub-recovery-approval",
     repository: identity.repository,
     workflow: identity.workflow,
@@ -234,11 +237,14 @@ function apiFixture({
       return runFixture(identity, actor);
     }
     if (path.includes(`/actions/runs/${identity.parentRunId}/artifacts?`)) {
-      return artifactFixture(
-        parentArtifactName(identity),
-        identity.parentRunId,
-        identity.toolingSha,
-      );
+      const name = parentArtifactName(identity, {
+        runId: receipt.childRunId,
+        runAttempt: receipt.childRunAttempt,
+      });
+      if (new URL(path, "https://api.github.com/").searchParams.get("name") !== name) {
+        return { total_count: 0, artifacts: [] };
+      }
+      return artifactFixture(name, identity.parentRunId, identity.toolingSha);
     }
     if (path.includes(`/actions/runs/${identity.runId}/artifacts?`)) {
       assert.ok(recovery);
@@ -275,8 +281,8 @@ test("binds bot publication to the immutable awaited parent receipt", async () =
   assert.equal(result.authorizationRoute, "automated-awaited");
   assert.deepEqual(calls, [
     `repos/${identity.repository}/actions/runs/${identity.runId}/attempts/${identity.runAttempt}`,
-    `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/artifacts?name=${encodeURIComponent(parentArtifactName(identity))}`,
     `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/attempts/${identity.parentRunAttempt}`,
+    `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/artifacts?name=${encodeURIComponent(parentArtifactName(identity))}`,
     `repos/${identity.repository}/git/ref/tags/${encodeURIComponent(identity.toolingRef)}`,
   ]);
 });
@@ -366,8 +372,6 @@ test("does not infer parent full ref from an unqualified run path", () => {
   assert.doesNotThrow(() =>
     validateReleaseParentRun(
       identity,
-      receipt,
-      receipt.authorizationRoute,
       parentRunFixture(identity, receipt, { path: identity.parentWorkflow }),
     ),
   );
@@ -380,8 +384,6 @@ test("rejects same-name branch parent paths when the receipt proves a tag", () =
     () =>
       validateReleaseParentRun(
         identity,
-        receipt,
-        receipt.authorizationRoute,
         parentRunFixture(identity, receipt, {
           path: `${identity.parentWorkflow}@refs/heads/${identity.toolingRef}`,
         }),
@@ -565,29 +567,29 @@ test("GitHub App actors cannot select recovery without a bot-suffixed login", ()
   );
 });
 
-test("bot publication rejects a live recovery artifact before parent-state evaluation", async () => {
+test("bot publication rejects recovery before artifact resolution", async () => {
   const identity = protectedIdentity();
   const receipt = parentReceipt(identity);
   const recovery = recoveryReceipt(identity, { actor: botActor });
+  const calls = [];
+  const getJson = apiFixture({ identity, receipt, recovery });
   await assert.rejects(
     verifyTrustedToolingIdentity({
       rawIdentity: JSON.stringify(identity),
       rawParentReceipt: JSON.stringify(receipt),
       rawRecoveryReceipt: JSON.stringify(recovery),
       env: callerEnv(identity),
-      getJson: apiFixture({ identity, receipt, recovery }),
+      getJson: async (path) => {
+        calls.push(path);
+        return getJson(path);
+      },
     }),
     /cannot select the recovery route/,
   );
-});
-
-test("normal human-dispatched publication keeps the parent-owned route", () => {
-  const identity = protectedIdentity();
-  const receipt = parseParentAuthorizationReceipt(JSON.stringify(parentReceipt(identity)));
-  assert.equal(
-    deriveAuthorizationRoute(identity, runFixture(identity, humanActor), receipt),
-    "automated-awaited",
-  );
+  assert.deepEqual(calls, [
+    `repos/${identity.repository}/actions/runs/${identity.runId}/attempts/${identity.runAttempt}`,
+    `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/attempts/${identity.parentRunAttempt}`,
+  ]);
 });
 
 for (const [name, overrides, message] of [
@@ -655,39 +657,118 @@ test("detached normal publication permits only active or successful parents", as
   }
 });
 
-test("normal human-dispatched publication does not require recovery evidence", async () => {
+test("human dispatch requires the recovery receipt path and names its artifact", async () => {
   const identity = protectedIdentity();
   const receipt = parentReceipt(identity);
-  const result = await verifyTrustedToolingIdentity({
-    rawIdentity: JSON.stringify(identity),
-    rawParentReceipt: JSON.stringify(receipt),
-    env: callerEnv(identity, humanActor),
-    getJson: apiFixture({ identity, receipt, actor: humanActor }),
-  });
-  assert.equal(result.authorizationRoute, "automated-awaited");
+  await assert.rejects(
+    verifyTrustedToolingIdentity({
+      rawIdentity: JSON.stringify(identity),
+      rawParentReceipt: JSON.stringify(receipt),
+      env: callerEnv(identity, humanActor),
+      getJson: apiFixture({ identity, receipt, actor: humanActor }),
+    }),
+    new RegExp(`RECOVERY_APPROVAL_RECEIPT_PATH is required.*${recoveryArtifactName(identity)}`),
+  );
 });
 
-test("explicit recovery permits a failed parent after protected environment approval", async () => {
+test("human recovery reuses the failed parent's receipt bound to its original bot child", async () => {
   const identity = protectedIdentity();
-  const receipt = parentReceipt(identity);
+  const receipt = parentReceipt(identity, {
+    childRunId: originalChild.runId,
+    childRunAttempt: originalChild.runAttempt,
+  });
   const recovery = recoveryReceipt(identity);
+  const calls = [];
+  const getJson = apiFixture({
+    identity,
+    receipt,
+    actor: humanActor,
+    recovery,
+    parentRun: parentRunFixture(identity, receipt, {
+      status: "completed",
+      conclusion: "failure",
+    }),
+  });
   const result = await verifyTrustedToolingIdentity({
     rawIdentity: JSON.stringify(identity),
     rawParentReceipt: JSON.stringify(receipt),
     rawRecoveryReceipt: JSON.stringify(recovery),
     env: callerEnv(identity, humanActor),
-    getJson: apiFixture({
-      identity,
-      receipt,
-      actor: humanActor,
-      recovery,
-      parentRun: parentRunFixture(identity, receipt, {
-        status: "completed",
-        conclusion: "failure",
-      }),
-    }),
+    getJson: async (path) => {
+      calls.push(path);
+      return getJson(path);
+    },
   });
   assert.equal(result.authorizationRoute, "explicit-recovery");
+  assert.deepEqual(calls, [
+    `repos/${identity.repository}/actions/runs/${identity.runId}/attempts/${identity.runAttempt}`,
+    `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/attempts/${identity.parentRunAttempt}`,
+    `repos/${identity.repository}/actions/runs/${identity.runId}/artifacts?name=${encodeURIComponent(recoveryArtifactName(identity))}`,
+    `repos/${identity.parentRepository}/actions/runs/${identity.parentRunId}/artifacts?name=${encodeURIComponent(parentArtifactName(identity, originalChild))}`,
+    `repos/${identity.repository}/git/ref/tags/${encodeURIComponent(identity.toolingRef)}`,
+  ]);
+});
+
+for (const [name, overrides, message] of [
+  [
+    "authorized child without a parent receipt",
+    { childRunId: callerRunId },
+    /missing or ambiguous/,
+  ],
+  ["child SHA changed", { childHeadSha: "f".repeat(40) }, /child head SHA mismatch/],
+  [
+    "child ref changed",
+    { childRef: "other", childFullRef: "refs/heads/other" },
+    /child ref mismatch/,
+  ],
+]) {
+  test(`recovery fails closed for ${name}`, async () => {
+    const identity = protectedIdentity();
+    const receipt = parentReceipt(identity, {
+      childRunId: originalChild.runId,
+      childRunAttempt: originalChild.runAttempt,
+      ...overrides,
+    });
+    const recovery = recoveryReceipt(identity);
+    await assert.rejects(
+      verifyTrustedToolingIdentity({
+        rawIdentity: JSON.stringify(identity),
+        rawParentReceipt: JSON.stringify(receipt),
+        rawRecoveryReceipt: JSON.stringify(recovery),
+        env: callerEnv(identity, humanActor),
+        getJson: apiFixture({ identity, receipt, actor: humanActor, recovery }),
+      }),
+      message,
+    );
+  });
+}
+
+test("rejects v1 recovery approval and non-positive authorized child attempts", () => {
+  assert.throws(
+    () =>
+      parseRecoveryApprovalReceipt(
+        JSON.stringify(recoveryReceipt(protectedIdentity(), { version: 1 })),
+      ),
+    /version must be 2/,
+  );
+  const legacy = recoveryReceipt(protectedIdentity(), { version: 1 });
+  delete legacy.authorizedChildRunId;
+  delete legacy.authorizedChildRunAttempt;
+  assert.throws(
+    () => parseRecoveryApprovalReceipt(JSON.stringify(legacy)),
+    /v2 must contain exactly/,
+  );
+  for (const field of ["authorizedChildRunId", "authorizedChildRunAttempt"]) {
+    for (const value of ["0", "-1", "1.5", 1]) {
+      assert.throws(
+        () =>
+          parseRecoveryApprovalReceipt(
+            JSON.stringify(recoveryReceipt(protectedIdentity(), { [field]: value })),
+          ),
+        new RegExp(`${field} is invalid`),
+      );
+    }
+  }
 });
 
 for (const [actor, route, recovery, conclusion] of [
@@ -699,7 +780,12 @@ for (const [actor, route, recovery, conclusion] of [
 ]) {
   test(`rejects ${conclusion} parent during approval wait for ${actor}/${route}`, async () => {
     const identity = protectedIdentity();
-    const receipt = parentReceipt(identity, { authorizationRoute: route });
+    const receipt = parentReceipt(identity, {
+      authorizationRoute: route,
+      ...(recovery
+        ? { childRunId: originalChild.runId, childRunAttempt: originalChild.runAttempt }
+        : {}),
+    });
     await assert.rejects(
       verifyTrustedToolingIdentity({
         rawIdentity: JSON.stringify(identity),

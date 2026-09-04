@@ -223,6 +223,9 @@ describe("package publish workflow", () => {
     const recoveryReceiptIndex = steps.findIndex(
       (step) => step.name === "Download recovery environment approval receipt",
     );
+    const resolveIndex = steps.findIndex(
+      (step) => step.name === "Resolve release parent authorization artifact",
+    );
     const publishIndex = steps.findIndex((step) => step.name === "Run package publish");
     const verifyStep = steps[verifyIndex];
     const publishStep = steps[publishIndex];
@@ -237,8 +240,10 @@ describe("package publish workflow", () => {
       default: "",
     });
     expect(parentReceiptIndex).toBeGreaterThan(-1);
-    expect(recoveryReceiptIndex).toBe(parentReceiptIndex + 1);
-    expect(verifyIndex).toBe(recoveryReceiptIndex + 1);
+    expect(recoveryReceiptIndex).toBeGreaterThan(-1);
+    expect(resolveIndex).toBe(recoveryReceiptIndex + 1);
+    expect(parentReceiptIndex).toBe(resolveIndex + 1);
+    expect(verifyIndex).toBe(parentReceiptIndex + 1);
     expect(verifyIndex).toBeGreaterThan(-1);
     expect(verifyIndex + 1).toBe(publishIndex);
     expect(parentReceiptStep).toMatchObject({
@@ -250,13 +255,17 @@ describe("package publish workflow", () => {
         "run-id": "${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}",
       },
     });
-    expect(parentReceiptStep?.with?.name).toContain("openclaw-clawhub-parent-authorization-v2-");
-    expect(parentReceiptStep?.with?.name).toContain(
-      "${{ fromJson(inputs.trusted_tooling_identity_json).runId }}",
+    expect(parentReceiptStep?.with?.name).toBe(
+      "${{ steps.parent_authorization.outputs.artifact_name }}",
     );
-    expect(parentReceiptStep?.with?.name).toContain(
-      "${{ fromJson(inputs.trusted_tooling_identity_json).runAttempt }}",
-    );
+    expect(steps[resolveIndex]).toMatchObject({
+      id: "parent_authorization",
+      if: "inputs.trusted_tooling_identity_json != ''",
+    });
+    expect(steps[resolveIndex]?.run).toContain("parseRecoveryApprovalReceipt");
+    expect(steps[resolveIndex]?.run).toContain("recovery.authorizedChildRunId");
+    expect(steps[resolveIndex]?.run).toContain("recovery.authorizedChildRunAttempt");
+    expect(steps[resolveIndex]?.run).toContain("stat.size > 8 * 1024");
     expect(recoveryReceiptStep).toMatchObject({
       id: "recovery_approval",
       if: "inputs.trusted_tooling_identity_json != ''",

@@ -134,6 +134,7 @@ import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./l
 import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
+import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./publishAttempts";
 import schema from "./schema";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
@@ -11119,33 +11120,77 @@ export const discardPendingPackagePublicationInternal = internalMutation({
     packageId: v.id("packages"),
     releaseId: v.id("packageReleases"),
     createdNewParent: v.optional(v.boolean()),
+    reason: v.optional(v.string()),
+    attemptId: v.optional(v.id("publishAttempts")),
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    deleted: boolean;
+    parentDeleted?: boolean;
+    retiredAttemptIds: Id<"publishAttempts">[];
+  }> => {
     const release = await ctx.db.get(args.releaseId);
     if (
-      !release ||
-      release.packageId !== args.packageId ||
-      release.publicationStatus !== "pending"
+      release &&
+      (release.packageId !== args.packageId || release.publicationStatus !== "pending")
     ) {
-      return { deleted: false };
+      return { deleted: false, retiredAttemptIds: [] };
+    }
+
+    const pkg = await ctx.db.get(args.packageId);
+    const attempts: Doc<"publishAttempts">[] = [];
+    if (args.attemptId) {
+      const attempt = await ctx.db.get(args.attemptId);
+      if (
+        !attempt ||
+        attempt.kind !== "package" ||
+        attempt.packageId !== args.packageId ||
+        attempt.packageReleaseId !== args.releaseId
+      ) {
+        throw new ConvexError("Publish attempt does not own the pending package release");
+      }
+      if (!ACTIVE_PUBLISH_ATTEMPT_STATUSES.some((status) => status === attempt.status)) {
+        return { deleted: false, retiredAttemptIds: [] };
+      }
+      attempts.push(attempt);
+    } else if (pkg) {
+      for (const status of ACTIVE_PUBLISH_ATTEMPT_STATUSES) {
+        // Bound large attempt reads; operators can call this mutation with attemptId for more.
+        const matches = await ctx.db
+          .query("publishAttempts")
+          .withIndex("by_kind_status_slug_version_created", (q) => {
+            const byName = q.eq("kind", "package").eq("status", status).eq("slug", pkg.name);
+            return release ? byName.eq("version", release.version) : byName;
+          })
+          .take(200);
+        attempts.push(...matches.filter((attempt) => attempt.packageReleaseId === args.releaseId));
+      }
     }
 
     const storageIds = new Set<Id<"_storage">>();
-    for (const file of release.files ?? []) {
+    for (const file of release?.files ?? []) {
       if (typeof file.storageId === "string") {
         storageIds.add(file.storageId as Id<"_storage">);
       }
     }
-    if (typeof release.clawpackStorageId === "string") {
+    if (typeof release?.clawpackStorageId === "string") {
       storageIds.add(release.clawpackStorageId as Id<"_storage">);
     }
 
-    await ctx.db.delete(release._id);
+    if (release) await ctx.db.delete(release._id);
     await Promise.allSettled([...storageIds].map((storageId) => ctx.storage.delete(storageId)));
+
+    // This reason is publisher-visible as `error` in the publish attempt status API.
+    const error = args.reason ?? "Pending package release discarded";
+    const now = Date.now();
+    for (const attempt of attempts) {
+      await ctx.db.patch(attempt._id, failedPublishAttemptPatch(attempt.status, error, now));
+    }
 
     let parentDeleted = false;
     if (args.createdNewParent) {
-      const pkg = await ctx.db.get(args.packageId);
       if (pkg && !pkg.latestReleaseId) {
         const remainingReleases = await ctx.db
           .query("packageReleases")
@@ -11158,7 +11203,11 @@ export const discardPendingPackagePublicationInternal = internalMutation({
       }
     }
 
-    return { deleted: true, parentDeleted };
+    return {
+      deleted: Boolean(release),
+      parentDeleted,
+      retiredAttemptIds: attempts.map((attempt) => attempt._id),
+    };
   },
 });
 

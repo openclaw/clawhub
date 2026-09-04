@@ -233,6 +233,29 @@ clawhub package trusted-publisher delete @owner/package-name
 Deleting trusted publisher config is the rollback path. It disables future
 trusted publish token minting until a package manager sets config again.
 
+### OpenClaw release recovery
+
+OpenClaw automated releases stay non-public until their exact release-parent
+attempt succeeds. If that parent fails or is cancelled, the publish attempt
+fails permanently. A human recovery dispatch requires protected environment
+approval and a version 2 recovery receipt identifying the original authorized
+child. Recovery must use the same workflow ref and SHA, candidate, tooling, and
+package inventory; cancelled parents cannot recover.
+
+Operators can preview orphaned package attempts, supplying an exact `version`,
+optional `slugPrefix` or `attemptIds`, and a `reason`:
+
+```sh
+bunx convex run --prod maintenance:discardStalePackagePublishAttemptsInternal \
+  '{"version":"2026.9.1","slugPrefix":"@openclaw/","reason":"Release parent failed after staging"}'
+```
+
+It defaults to a dry run; add `"dryRun":false` to discard each pending release
+and retire its attempt. Signed-in admins can run the same operation as the
+`maintenance:discardStalePackagePublishAttempts` action. The reason appears as
+`error` at `/api/v1/publish/attempts/<id>`, so use publisher-facing wording.
+Published releases and terminal attempts are never discarded by this operation.
+
 ## FAQ
 
 ### Package scope must match selected owner

@@ -21,6 +21,7 @@ const PUBLISH_ATTEMPT_STATUSES = [
   "failed",
   "expired",
 ] as const;
+export const ACTIVE_PUBLISH_ATTEMPT_STATUSES = PUBLISH_ATTEMPT_STATUSES.slice(0, 3);
 
 const publishResultValidator = v.object({
   skillId: v.id("skills"),
@@ -135,6 +136,27 @@ function isTerminalFinalizationConflict(error: string | undefined) {
   );
 }
 
+export function failedPublishAttemptPatch(
+  status: Doc<"publishAttempts">["status"],
+  error: string | undefined,
+  now: number,
+) {
+  return {
+    status: "failed" as const,
+    checkClaimId: undefined,
+    checkClaimedAt: undefined,
+    checkClaimExpiresAt: undefined,
+    checkClaimLastError: status === "pending_checks" ? error : undefined,
+    checkFailureCount: undefined,
+    finalizationClaimId: undefined,
+    finalizationClaimedAt: undefined,
+    finalizationClaimExpiresAt: undefined,
+    finalizationLastError: status === "pending_checks" ? undefined : error,
+    failedAt: now,
+    updatedAt: now,
+  };
+}
+
 function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
   if (!isTerminalFinalizationConflict(error)) {
     return {
@@ -146,20 +168,7 @@ function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
       updatedAt: now,
     };
   }
-  return {
-    status: "failed" as const,
-    checkClaimId: undefined,
-    checkClaimedAt: undefined,
-    checkClaimExpiresAt: undefined,
-    checkClaimLastError: undefined,
-    checkFailureCount: undefined,
-    finalizationClaimId: undefined,
-    finalizationClaimedAt: undefined,
-    finalizationClaimExpiresAt: undefined,
-    finalizationLastError: error,
-    failedAt: now,
-    updatedAt: now,
-  };
+  return failedPublishAttemptPatch("finalizing", error, now);
 }
 
 async function unavailableStagedTargetError(
@@ -184,20 +193,7 @@ async function terminalizeUnavailableStagedTarget(
 ) {
   const error = await unavailableStagedTargetError(ctx, attempt);
   if (!error) return false;
-  const pendingChecks = attempt.status === "pending_checks";
-  await ctx.db.patch(attempt._id, {
-    status: "failed",
-    checkClaimId: undefined,
-    checkClaimedAt: undefined,
-    checkClaimExpiresAt: undefined,
-    checkClaimLastError: pendingChecks ? error : undefined,
-    finalizationClaimId: undefined,
-    finalizationClaimedAt: undefined,
-    finalizationClaimExpiresAt: undefined,
-    finalizationLastError: pendingChecks ? undefined : error,
-    failedAt: now,
-    updatedAt: now,
-  });
+  await ctx.db.patch(attempt._id, failedPublishAttemptPatch(attempt.status, error, now));
   return true;
 }
 

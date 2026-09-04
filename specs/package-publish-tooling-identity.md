@@ -56,21 +56,52 @@ full-ref authority; run metadata must not be used to infer it.
 
 ## Recovery Approval Receipt
 
-Failed-parent recovery is a separate, canonical route. The child must be a
-direct human dispatch and must cross the `clawhub-plugin-release` environment
-through the `approve_plugins_clawhub_release` job. That job uploads:
+The live child actor selects the route. Actors typed as `Bot` or `App`, and
+logins ending in `[bot]`, use the automated parent route and never recovery.
+A human dispatch always uses `explicit-recovery`; the identity cannot select
+or bypass that policy, even while the parent is active or successful.
+
+A human child must cross the `clawhub-plugin-release` environment through the
+`approve_plugins_clawhub_release` job. That job uploads:
 
 `openclaw-clawhub-recovery-approval-<childRunId>-<childRunAttempt>`
 
-The archive contains only `approval.json`, binding the exact child and parent
-attempts, actor, environment, approval job, and `explicit-recovery` route.
-Actors typed as `Bot` or `App`, and logins ending in `[bot]`, cannot recover.
-The identity cannot request recovery.
+The archive contains only `approval.json`, bounded at 8 KiB. Its version 2
+object contains exactly:
+
+- `version`: `2`; `kind`: `openclaw-clawhub-recovery-approval`
+- `repository`, `workflow`, `runId`, `runAttempt`: the recovery child identity
+- `actor`: the live child actor login
+- `environment`: `clawhub-plugin-release`
+- `approvalJob`: `approve_plugins_clawhub_release`
+- `authorizationRoute`: `explicit-recovery`
+- `parentRunId`, `parentRunAttempt`: the identity's exact parent attempt
+- `authorizedChildRunId`, `authorizedChildRunAttempt`: positive-integer strings
+  naming the original child attempt authorized by that parent
+
+Version 1 is rejected. It never supported end-to-end recovery and has no
+shipped release-tag compatibility contract.
+
+A completed parent cannot upload another artifact. Recovery therefore resolves
+the existing parent receipt using the approval's authorized child:
+
+`openclaw-clawhub-parent-authorization-v2-<parentRunId>-<parentRunAttempt>-<authorizedChildRunId>-<authorizedChildRunAttempt>`
+
+Only the receipt's child run ID and attempt may differ from the recovery
+identity. The parent attempt, child repository and workflow, child ref/full
+ref/SHA, candidate repository/SHA, tooling ref/full ref/SHA, and exact package
+transaction must all still match. A human approval cannot authorize different
+workflow code, payload, tooling, package, version, or inventory. The parent
+receipt retains its automated route; the verified human approval establishes
+`explicit-recovery` for this child.
 
 ## State Policy
 
-ClawHub derives parent state policy from the evidenced route. Submission and
-public visibility are separate boundaries:
+ClawHub derives parent state policy from the live actor and verified receipts.
+Automated children use their own child-bound parent receipt and never fetch a
+recovery artifact. Human children require their own recovery artifact before
+resolving the original child-bound parent receipt. Submission and public
+visibility are separate boundaries:
 
 - submission:
   - `automated-awaited`: parent must be active
@@ -92,8 +123,8 @@ Workflow and CLI checks are diagnostics. They do not authorize a registry
 mutation.
 
 For each upload or publish credential request, ClawHub verifies GitHub OIDC,
-the exact v2 identity, the live child and parent attempts, immutable receipts,
-the package transaction, and the current tooling ref. It then mints a
+the exact v2 identity, the live child and parent attempts, actor-derived route,
+immutable receipts, the package transaction, and the current tooling ref. It then mints a
 short-lived credential bound to:
 
 - upload or publish scope
@@ -104,8 +135,12 @@ short-lived credential bound to:
 - receipt artifact id and digest
 - derived authorization route
 
-Each scope can be minted once for an exact authorization transaction. Replay
-and cross-package, cross-version, or changed-inventory minting fail closed.
+Each scope can be minted once for an exact authorization transaction. The
+transaction key includes the recovery child's own run ID and attempt, so a new
+approved recovery child gets a fresh transaction while reuse of the same
+child/scope is rejected. The returned artifact ID and digest identify the
+original parent receipt. Replay and cross-package, cross-version, or
+changed-inventory minting fail closed.
 The server records a first-class transaction key on each scoped credential.
 Large-artifact upload tickets bind to that key, so the upload-scoped credential
 that creates the ticket and the distinct publish-scoped credential that
@@ -140,6 +175,42 @@ authorization.
 
 The package source recorded by the registry comes from
 `candidateRepository`/`candidateSha`, not the tooling workflow SHA.
+
+## Terminal outcomes
+
+An automated-route attempt whose exact parent attempt completed without success
+is terminal: the attempt becomes `failed`, the release remains non-public, and
+finalization never retries it. In particular, a failed bot parent reports
+`OpenClaw release parent terminal state completed/failure is not authorized by automated-awaited`,
+not a missing recovery artifact. Cancellation is terminal on both routes.
+
+## Operator discard
+
+`maintenance:listStalePackagePublishAttemptsInternal` lists non-terminal package
+attempts for an exact version and optional slug prefix. Attempt documents are
+large: a roughly 600-row incident scan exhausted the 16 MiB read budget. The
+query shares a default 200-row budget (maximum 500) across the three active
+statuses, then applies the package/version/prefix filters. It is a bounded
+window, not an exhaustive inventory; explicit attempt IDs use point reads
+through the same filters. Missing releases are returned with a null publication
+status.
+
+`maintenance:discardStalePackagePublishAttemptsInternal` and the admin-only
+`discardStalePackagePublishAttempts` action default to a dry run. Applying
+requires `dryRun: false` and a trimmed, non-empty reason of at most 500
+characters. The result identifies candidates and actual retired attempts,
+including whether each release or newly created empty package was deleted.
+
+The package owner mutation rechecks attempt ownership and non-terminal state
+before deleting a pending release and its storage. It retires the attempt in
+the same mutation, even if the release is already gone, clearing both claim
+families and storing the reason as the publisher-visible attempt status error.
+Without an explicit attempt ID it finds active owners by the package's stored
+name and release version; a missing release allows lookup by name and release
+ID. If both parent and release are gone, an explicit attempt ID is required.
+Terminal attempts, published releases, and publish tokens are outside this
+operation. The worker's missing-target and terminal-finalization paths share
+the same failure patch.
 
 ## Manual Route And Cutover
 

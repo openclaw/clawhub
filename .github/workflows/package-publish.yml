@@ -733,16 +733,6 @@ jobs:
           path: ${{ runner.temp }}/plugin-inspector
           if-no-files-found: ignore
 
-      - name: Download release parent authorization receipt
-        if: inputs.trusted_tooling_identity_json != ''
-        uses: actions/download-artifact@v8
-        with:
-          name: openclaw-clawhub-parent-authorization-v2-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}-${{ fromJson(inputs.trusted_tooling_identity_json).parentRunAttempt }}-${{ fromJson(inputs.trusted_tooling_identity_json).runId }}-${{ fromJson(inputs.trusted_tooling_identity_json).runAttempt }}
-          path: ${{ runner.temp }}/openclaw-clawhub-parent-authorization
-          github-token: ${{ github.token }}
-          repository: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRepository }}
-          run-id: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}
-
       - name: Download recovery environment approval receipt
         id: recovery_approval
         if: inputs.trusted_tooling_identity_json != ''
@@ -754,6 +744,40 @@ jobs:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ github.run_id }}
+
+      - name: Resolve release parent authorization artifact
+        id: parent_authorization
+        if: inputs.trusted_tooling_identity_json != ''
+        env:
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
+          RECOVERY_APPROVAL_RECEIPT_PATH: ${{ steps.recovery_approval.outcome == 'success' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}
+        run: |
+          node <<'NODE'
+          const { appendFileSync, lstatSync, readFileSync } = require("node:fs");
+          const { parentArtifactName, parseTrustedToolingIdentity, parseRecoveryApprovalReceipt } = require(`${process.env.GITHUB_WORKSPACE}/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs`);
+          const identity = parseTrustedToolingIdentity(process.env.TRUSTED_TOOLING_IDENTITY_JSON);
+          let child = identity;
+          const path = process.env.RECOVERY_APPROVAL_RECEIPT_PATH;
+          if (path) {
+            const stat = lstatSync(path);
+            if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8 * 1024) {
+              throw new Error("Recovery approval receipt must be a regular file of at most 8 KiB");
+            }
+            const recovery = parseRecoveryApprovalReceipt(readFileSync(path, "utf8"));
+            child = { runId: recovery.authorizedChildRunId, runAttempt: recovery.authorizedChildRunAttempt };
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `artifact_name=${parentArtifactName(identity, child)}\n`);
+          NODE
+
+      - name: Download release parent authorization receipt
+        if: inputs.trusted_tooling_identity_json != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ steps.parent_authorization.outputs.artifact_name }}
+          path: ${{ runner.temp }}/openclaw-clawhub-parent-authorization
+          github-token: ${{ github.token }}
+          repository: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRepository }}
+          run-id: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}
 
       - name: Revalidate trusted tooling identity
         if: inputs.trusted_tooling_identity_json != ''

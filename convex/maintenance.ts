@@ -32,11 +32,148 @@ import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
+import { ACTIVE_PUBLISH_ATTEMPT_STATUSES } from "./publishAttempts";
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
+
+type StalePackagePublishAttempt = {
+  attemptId: Id<"publishAttempts">;
+  slug: string;
+  version: string;
+  status: Doc<"publishAttempts">["status"];
+  packageId: Id<"packages">;
+  releaseId: Id<"packageReleases">;
+  createdNewParent: boolean;
+  createdAt: number;
+  lastError: string | null;
+  releasePublicationStatus: Doc<"packageReleases">["publicationStatus"] | null;
+};
+
+export const listStalePackagePublishAttemptsInternal = internalQuery({
+  args: {
+    version: v.string(),
+    slugPrefix: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    attemptIds: v.optional(v.array(v.id("publishAttempts"))),
+  },
+  handler: async (ctx, args): Promise<StalePackagePublishAttempt[]> => {
+    // Large attempt rows exhausted 16 MiB at ~600 reads. Share a 200-row default
+    // budget across statuses; point reads let operators target attempts beyond it.
+    const limit = clampInt(args.limit ?? 200, 1, 500);
+    const attempts: Doc<"publishAttempts">[] = [];
+    if (args.attemptIds) {
+      const ids = [...new Set(args.attemptIds)];
+      if (ids.length > limit) throw new ConvexError(`At most ${limit} attemptIds are allowed`);
+      for (const id of ids) {
+        const attempt = await ctx.db.get(id);
+        if (attempt) attempts.push(attempt);
+      }
+    } else {
+      for (const status of ACTIVE_PUBLISH_ATTEMPT_STATUSES) {
+        if (attempts.length === limit) break;
+        attempts.push(
+          ...(await ctx.db
+            .query("publishAttempts")
+            .withIndex("by_status_and_created", (q) => q.eq("status", status))
+            .take(limit - attempts.length)),
+        );
+      }
+    }
+    const candidates: StalePackagePublishAttempt[] = [];
+    for (const attempt of attempts) {
+      if (
+        attempt.kind !== "package" ||
+        attempt.version !== args.version ||
+        !attempt.packageId ||
+        !attempt.packageReleaseId ||
+        !ACTIVE_PUBLISH_ATTEMPT_STATUSES.some((status) => status === attempt.status) ||
+        (args.slugPrefix !== undefined && !attempt.slug.startsWith(args.slugPrefix))
+      )
+        continue;
+      const release = await ctx.db.get(attempt.packageReleaseId);
+      candidates.push({
+        attemptId: attempt._id,
+        slug: attempt.slug,
+        version: attempt.version,
+        status: attempt.status,
+        packageId: attempt.packageId,
+        releaseId: attempt.packageReleaseId,
+        createdNewParent: attempt.createdNewParent ?? false,
+        createdAt: attempt.createdAt,
+        lastError: attempt.finalizationLastError ?? attempt.checkClaimLastError ?? null,
+        releasePublicationStatus: release?.publicationStatus ?? null,
+      });
+    }
+    return candidates;
+  },
+});
+
+const discardStalePackagePublishAttemptsArgs = {
+  version: v.string(),
+  slugPrefix: v.optional(v.string()),
+  attemptIds: v.optional(v.array(v.id("publishAttempts"))),
+  reason: v.string(),
+  dryRun: v.optional(v.boolean()),
+};
+type DiscardStalePackagePublishAttemptsResult = {
+  dryRun: boolean;
+  candidates: StalePackagePublishAttempt[];
+  discarded: Array<{
+    attemptId: Id<"publishAttempts">;
+    releaseDeleted: boolean;
+    parentDeleted: boolean;
+  }>;
+};
+
+export const discardStalePackagePublishAttemptsInternal = internalAction({
+  args: discardStalePackagePublishAttemptsArgs,
+  handler: async (ctx, args): Promise<DiscardStalePackagePublishAttemptsResult> => {
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+    const dryRun = args.dryRun !== false;
+    const candidates: StalePackagePublishAttempt[] = await ctx.runQuery(
+      internal.maintenance.listStalePackagePublishAttemptsInternal,
+      { version: args.version, slugPrefix: args.slugPrefix, attemptIds: args.attemptIds },
+    );
+    const discarded: DiscardStalePackagePublishAttemptsResult["discarded"] = [];
+    if (!dryRun) {
+      for (const candidate of candidates) {
+        const result = await ctx.runMutation(
+          internal.packages.discardPendingPackagePublicationInternal,
+          {
+            packageId: candidate.packageId,
+            releaseId: candidate.releaseId,
+            createdNewParent: candidate.createdNewParent,
+            reason,
+            attemptId: candidate.attemptId,
+          },
+        );
+        if (result.retiredAttemptIds.includes(candidate.attemptId)) {
+          discarded.push({
+            attemptId: candidate.attemptId,
+            releaseDeleted: result.deleted,
+            parentDeleted: result.parentDeleted ?? false,
+          });
+        }
+      }
+    }
+    return { dryRun, candidates, discarded };
+  },
+});
+
+export const discardStalePackagePublishAttempts = action({
+  args: discardStalePackagePublishAttemptsArgs,
+  handler: async (ctx, args): Promise<DiscardStalePackagePublishAttemptsResult> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return ctx.runAction(internal.maintenance.discardStalePackagePublishAttemptsInternal, args);
+  },
+});
+
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;

@@ -102,14 +102,19 @@ describe("package publish reusable workflow", () => {
     const recoveryReceiptIndex = job.steps.findIndex(
       (step) => step.name === "Download recovery environment approval receipt",
     );
+    const resolveIndex = job.steps.findIndex(
+      (step) => step.name === "Resolve release parent authorization artifact",
+    );
     const publishIndex = job.steps.findIndex((step) => step.name === "Run package publish");
     const publishStep = job.steps[publishIndex];
     const verifyStep = job.steps[verifyIndex];
     const parentReceiptStep = job.steps[parentReceiptIndex];
     const recoveryReceiptStep = job.steps[recoveryReceiptIndex];
     expect(parentReceiptIndex).toBeGreaterThan(-1);
-    expect(recoveryReceiptIndex).toBe(parentReceiptIndex + 1);
-    expect(verifyIndex).toBe(recoveryReceiptIndex + 1);
+    expect(recoveryReceiptIndex).toBeGreaterThan(-1);
+    expect(resolveIndex).toBe(recoveryReceiptIndex + 1);
+    expect(parentReceiptIndex).toBe(resolveIndex + 1);
+    expect(verifyIndex).toBe(parentReceiptIndex + 1);
     expect(verifyIndex + 1).toBe(publishIndex);
     expect(parentReceiptStep).toMatchObject({
       if: "inputs.trusted_tooling_identity_json != ''",
@@ -120,15 +125,11 @@ describe("package publish reusable workflow", () => {
         "run-id": "${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}",
       },
     });
-    expect(String(parentReceiptStep?.with?.name)).toContain(
-      "openclaw-clawhub-parent-authorization-v2-",
+    expect(parentReceiptStep?.with?.name).toBe(
+      "${{ steps.parent_authorization.outputs.artifact_name }}",
     );
-    expect(String(parentReceiptStep?.with?.name)).toContain(
-      "${{ fromJson(inputs.trusted_tooling_identity_json).runId }}",
-    );
-    expect(String(parentReceiptStep?.with?.name)).toContain(
-      "${{ fromJson(inputs.trusted_tooling_identity_json).runAttempt }}",
-    );
+    expect(job.steps[resolveIndex]?.run).toContain("parentArtifactName(identity, child)");
+    expect(job.steps[resolveIndex]?.run).toContain("parseRecoveryApprovalReceipt");
     expect(recoveryReceiptStep).toMatchObject({
       id: "recovery_approval",
       if: "inputs.trusted_tooling_identity_json != ''",
