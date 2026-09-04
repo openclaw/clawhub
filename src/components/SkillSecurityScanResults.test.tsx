@@ -578,11 +578,7 @@ describe("SecurityScanResults static guidance", () => {
         ?.getAttribute("src"),
     ).toBe("https://static.www.tencent.com/favicon.ico");
     expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "A.I.G supplies supporting evidence; ClawScan determines the final risk analysis. ClawHub rejects packaged Python bytecode before A.I.G runs.",
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByText(/A\.I\.G supplies supporting evidence/)).toBeNull();
     expect(screen.getByText("Findings (1)")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "T04 · Embedded Malicious Code" })).toBeTruthy();
     expect(screen.getByText("Session data exfiltration")).toBeTruthy();
