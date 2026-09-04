@@ -221,6 +221,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
+      - name: Cache npm packages for local Convex external dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-local-auth-npm-${{ hashFiles('bun.lock', 'convex.json') }}
+          restore-keys: |
+            ${{ runner.os }}-local-auth-npm-
+
       - name: Install Playwright browsers
         run: bunx playwright install chromium
 

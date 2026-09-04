@@ -70,6 +70,18 @@ local Convex process and temporarily moves aside `.env.local` plus
 `.convex/local/default`, then restores them afterward. Stop any already-running
 local Convex process before running it.
 
+The first push builds the external dependencies for Convex `"use node"` functions
+from their installed package versions. A slow cold npm install can exceed the
+backend's default 300-second HTTP timeout: its 408 response prompts a CLI retry
+while the executor keeps building, and overlapping builds corrupt the shared
+`build_deps` directory. The isolated runner sets `HTTP_SERVER_TIMEOUT_SECONDS=900`,
+above the executor's unchanged 605-second dependency-build cap, so that cap fails
+the build before a transport retry can overlap it. Before starting the backend,
+it warms npm's cache with a bounded, best-effort install; warmup and backend both
+use `npm_config_prefer_offline=true`, `npm_config_fetch_timeout=60000`, and
+`npm_config_fetch_retries=5`. CI restores and saves `~/.npm` keyed by `bun.lock`
+and `convex.json`. Action execution limits are not raised.
+
 The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
 local or secret-backed validation; PR CI should not require a developer auth
 token or a local global ClawHub config.

@@ -31,6 +31,8 @@ backend storage volume, with a short path for Unix sockets. The runner owns and
 removes only that scratch directory and its isolated backend state; it restores
 pre-existing local state. Builds and browsers run as awaited managed children
 so signal handlers can stop them; signal and normal-exit cleanup share one run.
+The backend's HTTP transport timeout for the initial push is raised so a slow
+external-deps build cannot be retried into the executor's shared build directory.
 No test timeout or backend execution limit is raised.
 
 The earlier generated-card browser failure included one-second execution

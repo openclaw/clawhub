@@ -10,6 +10,7 @@ const DEFAULT_PLAYWRIGHT_RETRIES = "1";
 const LOCAL_AUTH_TRENDING_SNAPSHOT_ID = "local-auth-canonical-trending-v1";
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const SNAPSHOT_RETENTION_MS = 2 * DAY_MS;
+const LOCAL_AUTH_BACKEND_HTTP_TIMEOUT_SECONDS = 900;
 
 type RunnerEnv = Record<string, string | undefined>;
 
@@ -19,6 +20,56 @@ export type LocalAuthRunnerConfig = {
   convexUrl: string;
   playwrightArgs: string[];
 };
+
+export function buildLocalAuthBackendEnv() {
+  // A 300s backend 408 makes the CLI retry into the executor's shared build_deps directory.
+  // 900s exceeds its 605s build_deps cap, so a stuck install hits the executor timeout first.
+  return {
+    HTTP_SERVER_TIMEOUT_SECONDS: String(LOCAL_AUTH_BACKEND_HTTP_TIMEOUT_SECONDS),
+    npm_config_prefer_offline: "true",
+    npm_config_fetch_timeout: "60000",
+    npm_config_fetch_retries: "5",
+  };
+}
+
+export function resolveLocalAuthExternalNodeDependencies({
+  readFile,
+}: {
+  readFile: (path: string) => string;
+}): Array<{ name: string; version: string }> {
+  let externalPackages: unknown;
+  try {
+    const config = JSON.parse(readFile("convex.json")) as {
+      node?: { externalPackages?: unknown };
+    } | null;
+    externalPackages = config?.node?.externalPackages;
+  } catch {
+    return [];
+  }
+  if (
+    !Array.isArray(externalPackages) ||
+    !externalPackages.every(
+      (name): name is string => typeof name === "string" && name !== "*" && name.length > 0,
+    )
+  ) {
+    return [];
+  }
+
+  const dependencies: Array<{ name: string; version: string }> = [];
+  for (const name of externalPackages) {
+    try {
+      const pkg = JSON.parse(readFile(join("node_modules", name, "package.json"))) as {
+        version?: unknown;
+      } | null;
+      if (typeof pkg?.version === "string" && pkg.version.length > 0) {
+        dependencies.push({ name, version: pkg.version });
+      }
+    } catch {
+      // Missing installed packages are left for the normal Convex push to resolve.
+    }
+  }
+  return dependencies;
+}
 
 export function buildLocalAuthTrendingSnapshotArgs(now: number) {
   const windowEndDay = Math.floor(now / DAY_MS);

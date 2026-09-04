@@ -5,9 +5,11 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { createServer } from "node:net";
 import { join } from "node:path";
 import {
+  buildLocalAuthBackendEnv,
   buildLocalAuthTrendingSnapshotArgs,
   createLocalAuthTempDir,
   resolveLocalAuthDeployment,
+  resolveLocalAuthExternalNodeDependencies,
   resolveLocalAuthRunnerConfig,
 } from "./playwright-local-auth-config";
 
@@ -204,9 +206,14 @@ function getLocalUrlPort(url: string, label: string) {
   return port;
 }
 
-function spawnManaged(command: string, args: string[], env: NodeJS.ProcessEnv) {
+function spawnManaged(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  cwd = process.cwd(),
+) {
   const child = spawn(command, args, {
-    cwd: process.cwd(),
+    cwd,
     detached: process.platform !== "win32",
     env,
     stdio: "inherit",
@@ -318,6 +325,64 @@ async function runRequired(command: string, args: string[], env: NodeJS.ProcessE
       else reject(new Error(`${command} failed with exit code ${code}.`));
     });
   });
+}
+
+async function warmLocalAuthExternalNodeDependencies(env: NodeJS.ProcessEnv) {
+  const dependencies = resolveLocalAuthExternalNodeDependencies({
+    readFile: (path) => readFileSync(path, "utf8"),
+  });
+  if (dependencies.length === 0) return;
+
+  console.log(
+    `Warming the npm cache for local Convex external Node dependencies: ${dependencies.map(({ name, version }) => `${name}@${version}`).join(", ")}`,
+  );
+  const startedAt = Date.now();
+  let child: ChildProcess | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const warmupDir = join(tempDir, "external-deps-warmup");
+    mkdirSync(warmupDir, { recursive: true });
+    writeFileSync(
+      join(warmupDir, "package.json"),
+      JSON.stringify({
+        name: "clawhub-local-auth-external-deps",
+        version: "0.0.0",
+        private: true,
+        dependencies: Object.fromEntries(dependencies.map(({ name, version }) => [name, version])),
+      }),
+    );
+    const warmupChild = spawnManaged(
+      "npm",
+      ["install", "--no-audit", "--no-fund", "--no-package-lock", "--ignore-scripts"],
+      env,
+      warmupDir,
+    );
+    child = warmupChild;
+    await new Promise<void>((resolve, reject) => {
+      timeout = setTimeout(
+        () => reject(new Error(`timed out after ${START_TIMEOUT_MS}ms`)),
+        START_TIMEOUT_MS,
+      );
+      warmupChild.once("error", (error) => {
+        managedChildren.delete(warmupChild);
+        reject(error);
+      });
+      warmupChild.once("exit", (code, signal) => {
+        if (code === 0) resolve();
+        else reject(new Error(`npm exited with ${signal ? `signal ${signal}` : `code ${code}`}`));
+      });
+    });
+    console.log(
+      `External dependency warmup finished in ${((Date.now() - startedAt) / 1_000).toFixed(1)}s.`,
+    );
+  } catch (error) {
+    if (child?.pid) await stopManagedChild(child);
+    console.log(
+      `External dependency warmup failed (${error instanceof Error ? error.message : String(error)}); the local backend will install them during the first push.`,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function runBuffered(command: string, args: string[], env: NodeJS.ProcessEnv) {
@@ -475,6 +540,7 @@ async function main() {
   );
   const e2eEnv: NodeJS.ProcessEnv = {
     ...process.env,
+    ...buildLocalAuthBackendEnv(),
     TMPDIR: tempDir,
     AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID ?? "local-dev",
     AUTH_GITHUB_SECRET: process.env.AUTH_GITHUB_SECRET ?? "local-dev",
@@ -524,6 +590,8 @@ async function main() {
       "",
     ].join("\n"),
   );
+
+  await warmLocalAuthExternalNodeDependencies(e2eEnv);
 
   console.log(`Starting local Convex at ${convexUrl} with isolated e2e state.`);
   const convexArgs = [
