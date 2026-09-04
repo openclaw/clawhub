@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runStaticModerationScan } from "./moderationEngine";
-import { runStaticPublishScan } from "./staticPublishScan";
+import { planStorageReadBatches, runStaticPublishScan } from "./staticPublishScan";
 
 vi.mock("./moderationEngine", () => ({
   runStaticModerationScan: vi.fn(() => ({
@@ -109,5 +109,25 @@ describe("runStaticPublishScan", () => {
     expect(maxInFlight).toBeLessThanOrEqual(32);
     expect(storageGet.mock.calls.map(([id]) => id)).toEqual(files.map((file) => file.storageId));
     expect(result.status).toBe("clean");
+  });
+  it("bounds read batches by declared bytes as well as by file count", () => {
+    const mib = 1024 * 1024;
+    const files = [
+      ...Array.from({ length: 40 }, (_, index) => ({ path: `small-${index}`, size: 1024 })),
+      { path: "big-1", size: 10 * mib },
+      { path: "big-2", size: 10 * mib },
+      { path: "mid-1", size: 5 * mib },
+      { path: "mid-2", size: 3 * mib },
+      { path: "mid-3", size: 3 * mib },
+    ];
+
+    const batches = planStorageReadBatches(files);
+
+    expect(batches.flat()).toEqual(files);
+    expect(batches.map((batch) => batch.length)).toEqual([32, 8, 1, 1, 2, 1]);
+    for (const batch of batches) {
+      const bytes = batch.reduce((total, file) => total + file.size, 0);
+      expect(batch.length === 1 || bytes <= 8 * mib).toBe(true);
+    }
   });
 });
