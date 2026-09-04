@@ -11,8 +11,9 @@ export const runStaticPublishScanInternal = internalAction({
     slug: v.string(),
     displayName: v.string(),
     summary: v.optional(v.string()),
-    frontmatter: v.optional(v.any()),
-    metadata: v.optional(v.any()),
+    // Manifests travel as a JSON string: Convex values reject `$`-prefixed keys
+    // such as package.json `$schema`, and the scan needs the metadata byte-exact.
+    metadataJson: v.optional(v.string()),
     files: v.array(
       v.object({
         path: v.string(),
@@ -22,5 +23,9 @@ export const runStaticPublishScanInternal = internalAction({
       }),
     ),
   },
-  handler: async (ctx, args) => await runStaticPublishScan(ctx, args),
+  handler: async (ctx, { metadataJson, ...input }) =>
+    await runStaticPublishScan(ctx, {
+      ...input,
+      metadata: metadataJson === undefined ? undefined : (JSON.parse(metadataJson) as unknown),
+    }),
 });

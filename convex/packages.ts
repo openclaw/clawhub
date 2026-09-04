@@ -1009,7 +1009,12 @@ async function runStaticPublishScanInNode(
     ctx,
     internalRefs.staticPublishScanNode.runStaticPublishScanInternal,
     stripUndefinedForStoredAttempt({
-      ...input,
+      slug: input.slug,
+      displayName: input.displayName,
+      summary: input.summary,
+      // JSON string, not a Convex object: manifests carry `$schema` keys, which
+      // Convex values reject, and the scan must see the metadata unchanged.
+      metadataJson: input.metadata === undefined ? undefined : JSON.stringify(input.metadata),
       files: input.files.map(({ path, size, storageId, contentType }) => ({
         path,
         size,

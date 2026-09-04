@@ -12,7 +12,6 @@ import {
 } from "./lib/recommendationScore";
 import { buildPackageInventoryDigest } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
-import { runStaticPublishScan } from "./lib/staticPublishScan";
 import {
   backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
@@ -79,6 +78,7 @@ import {
   searchForViewerInternal,
   searchPublic,
 } from "./packages";
+import { runStaticPublishScanInternal } from "./staticPublishScanNode";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -511,17 +511,40 @@ function makePackageManifestStorage() {
 
 type PublishScanStorage = { storage: { get: (storageId: string) => Promise<Blob | null> } };
 
+// Convex rejects action arguments whose object keys start with `$` (package.json
+// `$schema` is the production case); mirror that rule so the mock fails the way
+// the real boundary would.
+function assertConvexValueKeys(value: unknown, path = "args"): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertConvexValueKeys(item, `${path}[${index}]`));
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, nested] of Object.entries(value)) {
+      if (key.startsWith("$")) {
+        throw new Error(`Field name ${key} at ${path} starts with a '$', which is reserved.`);
+      }
+      assertConvexValueKeys(nested, `${path}.${key}`);
+    }
+  }
+}
+
+type StaticScanHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
+
 // Publish actions hop to the Node runtime for the moderation scan; run the real
-// scan against the calling ctx's storage (`ctx.runAction(...)` binds `this`) so
-// scan verdicts stay observable, and answer every other action (the package
-// inspector) with the supplied result.
+// action handler against the calling ctx's storage (`ctx.runAction(...)` binds
+// `this`) so scan verdicts stay observable, and answer every other action (the
+// package inspector) with the supplied result.
 function makePublishRunActionMock(
   inspectorResult: () => unknown = makeCleanPackageInspectorResult,
 ) {
   return vi.fn(async function (this: PublishScanStorage, ref: unknown, args: unknown) {
     const name = getFunctionName(ref as FunctionReference<"action">);
     if (name === "staticPublishScanNode:runStaticPublishScanInternal") {
-      return await runStaticPublishScan(this as never, args as never);
+      assertConvexValueKeys(args);
+      const handler = (runStaticPublishScanInternal as unknown as { _handler: StaticScanHandler })
+        ._handler;
+      return await handler(this, args);
     }
     return inspectorResult();
   });
@@ -12905,6 +12928,7 @@ describe("packages public queries", () => {
       [
         "storage:package",
         JSON.stringify({
+          $schema: "https://json.schemastore.org/package.json",
           name: "demo-plugin",
           keywords: [
             "one",
