@@ -1840,7 +1840,13 @@ describe("publishAttempts", () => {
     const existingAigAnalysis = {
       status: "suspicious",
       issueCount: 1,
-      findings: [],
+      findings: [
+        {
+          ruleId: "T04",
+          level: "error",
+          message: "Embedded payload",
+        },
+      ],
       checkedAt: now - 1_000,
     };
     const ctx = {

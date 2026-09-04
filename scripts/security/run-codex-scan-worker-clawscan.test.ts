@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClaimedJob } from "./run-codex-scan-worker";
 import {
   aggregateSkillSpectorAnalyses,
+  normalizeAigAnalysis,
   processJob,
   resolveBundledSkillSpectorScanInputs,
   runClawScan,
@@ -256,6 +257,17 @@ function clawScanArtifactJson(options?: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
+  it("drops non-finite and invalid A.I.G SARIF line numbers", () => {
+    const analysis = normalizeAigAnalysis(
+      '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[{"ruleId":"T04","message":{"text":"Finding"},"locations":[{"physicalLocation":{"region":{"startLine":1e400,"endLine":-1}}}]}]}]}',
+      123,
+    );
+
+    expect(analysis.findings).toEqual([
+      expect.not.objectContaining({ startLine: expect.anything(), endLine: expect.anything() }),
+    ]);
+  });
+
   it("passes only the approved provider endpoint to ClawScan", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });

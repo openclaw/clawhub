@@ -52,6 +52,13 @@ export function reusableAigAnalysis(value: unknown): StoredAigAnalysis | undefin
       ...(typeof finding.remediation === "string" ? { remediation: finding.remediation } : {}),
     });
   }
+  const expectedStoredFindingCount = Math.min(analysis.issueCount, 25);
+  if (
+    findings.length !== expectedStoredFindingCount ||
+    (status === "clean" && analysis.issueCount !== 0)
+  ) {
+    return undefined;
+  }
   if (
     !["scannerVersion", "summary", "error"].every(
       (key) => analysis[key] === undefined || typeof analysis[key] === "string",

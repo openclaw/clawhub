@@ -109,6 +109,8 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "COMSPEC",
   "PATHEXT",
 ] as const;
+// ClawScan's judge and A.I.G require these provider aliases. The pinned scanner
+// process is the trust boundary; never add worker tokens or ambient endpoints.
 const CLAWSCAN_PROVIDER_ENV_KEYS = [
   "CODEX_API_KEY",
   "DEFAULT_BASE_URL",

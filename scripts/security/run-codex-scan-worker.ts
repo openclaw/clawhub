@@ -198,6 +198,8 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "COMSPEC",
   "PATHEXT",
 ] as const;
+// ClawScan's judge and A.I.G require these provider aliases. The pinned scanner
+// process is the trust boundary; never add worker tokens or ambient endpoints.
 const SCANNER_PROVIDER_ENV_KEYS = [
   "CODEX_API_KEY",
   "DEFAULT_BASE_URL",
@@ -1265,6 +1267,11 @@ function aigResultDescription(result: Record<string, unknown>) {
   );
 }
 
+function readSarifLineNumber(region: Record<string, unknown>, keys: string[]) {
+  const value = readNumber(region, keys);
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
 function normalizeAigFinding(
   input: unknown,
   index: number,
@@ -1303,8 +1310,8 @@ function normalizeAigFinding(
       readString(artifactLocation ?? {}, ["uri", "path"]),
       MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS,
     ),
-    startLine: readNumber(region ?? {}, ["startLine", "start_line"]),
-    endLine: readNumber(region ?? {}, ["endLine", "end_line"]),
+    startLine: readSarifLineNumber(region ?? {}, ["startLine", "start_line"]),
+    endLine: readSarifLineNumber(region ?? {}, ["endLine", "end_line"]),
     remediation: truncateStoredSkillSpectorText(remediation),
   };
 }
