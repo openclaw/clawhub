@@ -1,9 +1,10 @@
 /* @vitest-environment node */
 
-import { execFile } from "node:child_process";
+import { execFile, type ExecFileOptionsWithStringEncoding } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +13,25 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildAgentSkillsDiscoveryDocument } from "../convex/lib/agentSkillsDiscovery";
 import { buildDeterministicZip } from "../convex/lib/skillZip";
 
+const skillsCliPath = createRequire(import.meta.url).resolve("skills/bin/cli.mjs");
 const execFileAsync = promisify(execFile);
+
+async function execFileWithOutput(
+  command: string,
+  args: string[],
+  options: ExecFileOptionsWithStringEncoding,
+) {
+  try {
+    return await execFileAsync(command, args, options);
+  } catch (error) {
+    const failure = error as Error & { stdout?: string; stderr?: string };
+    throw new Error(
+      `${failure.message}\nstdout:\n${failure.stdout ?? ""}\nstderr:\n${failure.stderr ?? ""}`,
+      { cause: error },
+    );
+  }
+}
+
 const tempDirs: string[] = [];
 const servers: Array<ReturnType<typeof createServer>> = [];
 
@@ -31,7 +50,7 @@ afterEach(async () => {
 });
 
 describe("Agent Skills CLI compatibility", () => {
-  it("installs a ClawHub skill page URL with the real npx skills CLI", async () => {
+  it("installs a ClawHub skill page URL with the real skills CLI", async () => {
     const skillMarkdown = `---
 name: demo
 description: Demonstrates ClawHub Agent Skills discovery.
@@ -92,11 +111,11 @@ Installed from a ClawHub skill page URL.
     await writeFile(join(projectDir, "package.json"), '{"private":true}\n', "utf8");
 
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const result = await execFileAsync(
-      "npx",
+    // Provision the pinned CLI through bun.lock, not a networked npx install inside the test.
+    const result = await execFileWithOutput(
+      process.execPath,
       [
-        "--yes",
-        "skills@1.5.20",
+        skillsCliPath,
         "add",
         `${origin}/openclaw/skills/demo`,
         "--agent",
@@ -128,4 +147,26 @@ Installed from a ClawHub skill page URL.
       await readFile(join(projectDir, ".agents/skills/demo/references/proof.txt"), "utf8"),
     ).toBe("supporting file installed");
   }, 120_000);
+});
+
+describe("CLI failure diagnostics", () => {
+  it.each(["exit", "timeout"] as const)("preserves both output streams on %s", async (mode) => {
+    const script = [
+      'console.log("discovery started");',
+      'console.error("diagnostic stderr");',
+      mode === "exit" ? "process.exitCode = 23;" : "setInterval(() => {}, 1000);",
+    ].join(" ");
+
+    await expect(
+      execFileWithOutput(process.execPath, ["-e", script], {
+        encoding: "utf8",
+        timeout: 2_000,
+      }),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining(
+        "stdout:\ndiscovery started\n\nstderr:\ndiagnostic stderr\n",
+      ),
+      cause: mode === "exit" ? { code: 23 } : { killed: true },
+    });
+  });
 });
