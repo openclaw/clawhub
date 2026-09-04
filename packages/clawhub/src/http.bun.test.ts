@@ -209,6 +209,21 @@ describe("bun http client", () => {
     expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/dist/demo.txt"))).toBe(
       true,
     );
+    expect(args.slice(args.indexOf("--max-time"), args.indexOf("--max-time") + 2)).toEqual([
+      "--max-time",
+      "120",
+    ]);
+
+    await client.apiRequestForm<{ ok: boolean }>("https://registry.example", {
+      method: "POST",
+      path: "/upload",
+      form: new FormData(),
+      timeoutMs: 300_000,
+    });
+    const [, longArgs] = spawnImpl.mock.calls[1] as [string, string[]];
+    expect(
+      longArgs.slice(longArgs.indexOf("--max-time"), longArgs.indexOf("--max-time") + 2),
+    ).toEqual(["--max-time", "300"]);
   });
 
   it("keeps binary upload bearer tokens out of curl arguments", async () => {

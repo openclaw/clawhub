@@ -2365,6 +2365,7 @@ describe("package commands", () => {
         expect.objectContaining({
           path: "/api/v1/packages",
           retryCount: 0,
+          timeoutMs: 5 * 60_000,
         }),
         expect.anything(),
       );

@@ -49,9 +49,16 @@ type RequestArgs =
       acceptedStatuses?: number[];
     };
 
+type FormRequestOptions = {
+  method: "POST";
+  token?: string;
+  form: FormData;
+  retryCount?: number;
+  timeoutMs?: number;
+};
 type FormRequestArgs =
-  | { method: "POST"; path: string; token?: string; form: FormData; retryCount?: number }
-  | { method: "POST"; url: string; token?: string; form: FormData; retryCount?: number };
+  | (FormRequestOptions & { path: string })
+  | (FormRequestOptions & { url: string });
 
 type TextRequestArgs = { path: string; token?: string } | { url: string; token?: string };
 type BinaryUploadArgs = {
@@ -244,7 +251,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
           headers,
           body: args.form,
         },
-        UPLOAD_TIMEOUT_MS,
+        args.timeoutMs ?? UPLOAD_TIMEOUT_MS,
       );
       if (!response.ok) {
         throwHttpStatusError(
@@ -813,7 +820,7 @@ async function fetchJsonFormViaCurl(
       "--show-error",
       "--location",
       "--max-time",
-      String(UPLOAD_TIMEOUT_SECONDS),
+      String(Math.ceil((args.timeoutMs ?? UPLOAD_TIMEOUT_MS) / 1000)),
       "--write-out",
       CURL_WRITE_OUT_FORMAT,
       "-X",

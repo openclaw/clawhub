@@ -16395,6 +16395,83 @@ describe("httpApiV1 handlers", () => {
     expect(payload?.files?.map((file) => file.path)).toContain("dist/index.js");
   });
 
+  it("multipart ClawPack publish stores extracted files in bounded concurrent batches", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const storageStore = vi.fn(async (_blob: Blob) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return `storage:${storageStore.mock.calls.length}`;
+    });
+    const fileCount = 40;
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      ...Object.fromEntries(
+        Array.from({ length: fileCount }, (_, index) => [
+          `package/dist/chunk-${String(index).padStart(3, "0")}.js`,
+          `export const chunk = ${index};\n`,
+        ]),
+      ),
+    });
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        name: "demo-plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+      }),
+    );
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    // One tarball store plus every extracted file; batches overlap but stay bounded.
+    expect(storageStore).toHaveBeenCalledTimes(fileCount + 3);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(16);
+    const actionCall = runAction.mock.calls[0] as [
+      unknown,
+      { payload?: { files?: Array<{ path: string }> } },
+    ];
+    const chunkPaths = actionCall[1].payload?.files
+      ?.map((file) => file.path)
+      .filter((path) => path.startsWith("dist/"));
+    expect(chunkPaths).toEqual(
+      Array.from(
+        { length: fileCount },
+        (_, index) => `dist/chunk-${String(index).padStart(3, "0")}.js`,
+      ),
+    );
+  });
+
   it("multipart Claw publish accepts an npm pack without a plugin manifest", async () => {
     vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);

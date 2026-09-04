@@ -83,6 +83,10 @@ const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 const PACKAGE_PUBLISH_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
+// ClawHub unpacks and stores a ClawPack inside one HTTP action before it
+// answers the publish request, so large packages need far more than the
+// default upload timeout; 5 minutes matches the front-end function budget.
+const PACKAGE_PUBLISH_REQUEST_TIMEOUT_MS = 5 * 60_000;
 const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
 const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
   "channel-env-vars":
@@ -1075,6 +1079,7 @@ export async function cmdPublishPackage(
           token: publishToken,
           form,
           retryCount: trustedToolingBoundary ? 0 : PACKAGE_PUBLISH_RETRY_COUNT,
+          timeoutMs: PACKAGE_PUBLISH_REQUEST_TIMEOUT_MS,
         },
         ApiV1PackagePublishResponseSchema,
       );

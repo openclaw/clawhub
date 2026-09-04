@@ -1351,15 +1351,33 @@ async function storeClawPackFile(
   };
 }
 
+// Convex actions have a tight memory ceiling, so bound in-flight Blob copies by
+// bytes as well as count. Storing thousands of small files one at a time
+// otherwise pushes large ClawPacks past clients' publish request timeouts.
+const CLAWPACK_STORE_BATCH_BYTES = 8 * 1024 * 1024;
+const CLAWPACK_STORE_BATCH_FILES = 16;
+
 async function storeClawPackFiles(
   ctx: ActionCtx,
   entries: Array<{ path: string; bytes: Uint8Array }>,
 ) {
   const files: StoredPackagePublishFile[] = [];
-  // Convex HTTP actions have a tight memory ceiling; avoid concurrent Blob work.
+  let batch: Array<{ path: string; bytes: Uint8Array }> = [];
+  let batchBytes = 0;
+  const flush = async () => {
+    files.push(...(await Promise.all(batch.map((entry) => storeClawPackFile(ctx, entry)))));
+    batch = [];
+    batchBytes = 0;
+  };
   for (const entry of entries) {
-    files.push(await storeClawPackFile(ctx, entry));
+    const overflows =
+      batch.length >= CLAWPACK_STORE_BATCH_FILES ||
+      batchBytes + entry.bytes.byteLength > CLAWPACK_STORE_BATCH_BYTES;
+    if (batch.length > 0 && overflows) await flush();
+    batch.push(entry);
+    batchBytes += entry.bytes.byteLength;
   }
+  if (batch.length > 0) await flush();
   return files;
 }
 
