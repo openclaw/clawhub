@@ -339,6 +339,62 @@ describe("pre-publication worker", () => {
     );
   });
 
+  it("rescans legacy skill artifacts that have no cached A.I.G evidence", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "finalized" }),
+    };
+    const runClawScan = vi.fn().mockResolvedValue({
+      aigAnalysis: {
+        checkedAt: 456,
+        findings: [],
+        issueCount: 0,
+        scannerVersion: "0.2.1",
+        status: "clean",
+        summary: "A.I.G reported 0 findings.",
+      },
+      analysis: {
+        checkedAt: 456,
+        confidence: "high",
+        status: "clean",
+        summary: "Fresh ClawScan review.",
+        verdict: "benign",
+      },
+      check: { status: "clean", summary: "Fresh ClawScan review." },
+    });
+
+    await processPrePublicationAttempt(
+      client,
+      "worker-token",
+      {
+        ...attempt,
+        existingClawscanAnalysis: {
+          checkedAt: 123,
+          confidence: "high",
+          status: "clean",
+          summary: "Legacy exact-artifact review.",
+          verdict: "benign",
+        },
+      },
+      {
+        runClawScan,
+        runTruffleHog: vi.fn().mockResolvedValue({
+          status: "clean",
+          summary: "TruffleHog found no verified secrets.",
+        }),
+        writeWorkspace: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    expect(runClawScan).toHaveBeenCalledTimes(1);
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        aigAnalysis: expect.objectContaining({ checkedAt: 456, status: "clean" }),
+        clawscanAnalysis: expect.objectContaining({ checkedAt: 456 }),
+      }),
+    );
+  });
+
   it("publishes suspicious staged artifacts without treating them as malicious", async () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),

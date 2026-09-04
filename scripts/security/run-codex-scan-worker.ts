@@ -1312,11 +1312,8 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
   for (const rawRun of document.runs) {
     const run = asRecord(rawRun);
     const driver = asRecord(asRecord(run?.tool)?.driver);
-    if (
-      !run ||
-      readString(driver ?? {}, ["name"]) !== "aig-skill-scan" ||
-      !Array.isArray(run.results)
-    ) {
+    if (!run || readString(driver ?? {}, ["name"]) !== "aig-skill-scan") continue;
+    if (!Array.isArray(run.results)) {
       return {
         status: "error",
         issueCount: 0,
@@ -1338,6 +1335,15 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
       };
     }
     runs.push(run);
+  }
+  if (runs.length === 0) {
+    return {
+      status: "error",
+      issueCount: 0,
+      findings: [],
+      error: "A.I.G SARIF output did not contain a valid aig-skill-scan run.",
+      checkedAt,
+    };
   }
   const ruleNames = new Map<string, string>();
   let scannerVersion: string | undefined;

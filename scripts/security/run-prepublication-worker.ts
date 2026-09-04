@@ -709,8 +709,9 @@ export async function processPrePublicationAttempt(
     if (
       existingClawscanAnalysis &&
       (attempt.kind === "package" ||
-        (existingAigAnalysis?.status !== "error" &&
-          existingAigAnalysis?.checkedAt === existingClawscanAnalysis.checkedAt))
+        (existingAigAnalysis &&
+          existingAigAnalysis.status !== "error" &&
+          existingAigAnalysis.checkedAt === existingClawscanAnalysis.checkedAt))
     ) {
       clawscanAnalysis = existingClawscanAnalysis;
       aigAnalysis = attempt.kind === "skill" ? existingAigAnalysis : undefined;

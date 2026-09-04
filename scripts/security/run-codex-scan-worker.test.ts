@@ -452,6 +452,32 @@ describe("run-codex-scan-worker diagnostics", () => {
     });
   });
 
+  it("ignores unrelated SARIF runs when a valid A.I.G run is present", () => {
+    const analysis = normalizeAigAnalysis(
+      JSON.stringify({
+        version: "2.1.0",
+        runs: [
+          {
+            tool: { driver: { name: "metadata-generator", version: "1.0.0" } },
+            results: [],
+          },
+          {
+            tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } },
+            results: [],
+          },
+        ],
+      }),
+      123,
+    );
+
+    expect(analysis).toMatchObject({
+      checkedAt: 123,
+      issueCount: 0,
+      scannerVersion: "0.2.1",
+      status: "clean",
+    });
+  });
+
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {
     const workspace = await tempDir();
 
