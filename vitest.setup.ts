@@ -16,7 +16,7 @@ function installLocalStorageShim() {
   if (typeof window === "undefined" || typeof Storage === "undefined") return;
   if (typeof window.localStorage?.clear === "function") return;
 
-  Object.defineProperties(Storage.prototype, {
+  const shim: PropertyDescriptorMap = {
     length: {
       configurable: true,
       get() {
@@ -53,9 +53,21 @@ function installLocalStorageShim() {
         getStorageData(this as Storage).set(String(key), String(value));
       },
     },
-  });
+  };
 
-  const localStorage = Object.create(Storage.prototype) as Storage;
+  // Node 26 ships a native `Storage` global whose `localStorage` is undefined without
+  // `--localstorage-file`, so non-jsdom environments (edge-runtime) reach this shim with
+  // Node's prototype, where `length` is non-configurable and redefining it throws.
+  // Patch what the prototype allows and put the rest directly on the shim instance.
+  const prototypeShim: PropertyDescriptorMap = {};
+  const instanceShim: PropertyDescriptorMap = {};
+  for (const [name, descriptor] of Object.entries(shim)) {
+    const existing = Object.getOwnPropertyDescriptor(Storage.prototype, name);
+    (existing && !existing.configurable ? instanceShim : prototypeShim)[name] = descriptor;
+  }
+  Object.defineProperties(Storage.prototype, prototypeShim);
+
+  const localStorage = Object.create(Storage.prototype, instanceShim) as Storage;
   storageData.set(localStorage, new Map());
   Object.defineProperty(window, "localStorage", {
     configurable: true,
