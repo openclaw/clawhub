@@ -795,6 +795,7 @@ export async function processPrePublicationAttempt(
     logger.info(
       {
         attemptId: attempt.attemptId,
+        clawscanSummary: clawscan.summary,
         clawscanStatus: clawscan.status,
         durationMs: Date.now() - startedAt,
         event: "prepublication_attempt_completed",
