@@ -11,6 +11,7 @@ import {
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
 import {
+  assertAigFilePathsHaveNoCompiledPython,
   normalizeAigAnalysis,
   normalizeSkillSpectorAnalysis,
   publishWorkerHealthSummary,
@@ -476,6 +477,19 @@ describe("run-codex-scan-worker diagnostics", () => {
       scannerVersion: "0.2.1",
       status: "clean",
     });
+  });
+
+  it.each(["pyc", "pyo", "pyd", "PYC"])(
+    "rejects packaged Python .%s files before invoking A.I.G 0.2.1",
+    (extension) => {
+      expect(() =>
+        assertAigFilePathsHaveNoCompiledPython([`scripts/__pycache__/payload.${extension}`]),
+      ).toThrow("CVE-2026-84809");
+    },
+  );
+
+  it("allows source-only Python targets through the A.I.G bytecode guard", () => {
+    expect(() => assertAigFilePathsHaveNoCompiledPython(["scanner.py"])).not.toThrow();
   });
 
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {

@@ -639,6 +639,12 @@ function AigSection(props: SecurityAuditPageProps) {
   const showChecks = !["error", "failed", "loading", "not_found", "pending"].includes(status);
   return (
     <div className="security-report-panel-body security-report-panel-body-findings">
+      <div className="security-report-overview-body">
+        <p>
+          A.I.G supplies supporting evidence; ClawScan determines the final risk analysis. ClawHub
+          rejects packaged Python bytecode before A.I.G runs.
+        </p>
+      </div>
       {!showChecks ? (
         <div className="security-report-overview-body">
           <p>

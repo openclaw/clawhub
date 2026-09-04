@@ -122,6 +122,11 @@ checks agent instructions for vulnerability patterns and supplies supporting
 evidence to ClawScan's artifact-wide review. It does not issue ClawHub's final
 verdict or independently block installation.
 
+A.I.G 0.2.1 cannot inspect packaged Python bytecode. Until Tencent ships its
+[CVE-2026-84809](https://nvd.nist.gov/vuln/detail/CVE-2026-84809) fix, ClawHub
+rejects skills containing `.pyc`, `.pyo`, or `.pyd` files before A.I.G runs.
+ClawScan also detects packaged Python bytecode independently.
+
 ## VirusTotal
 
 ClawHub uses VirusTotal as malware telemetry in the audit stack. VirusTotal is a

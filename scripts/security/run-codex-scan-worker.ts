@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
@@ -191,6 +191,7 @@ const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const MAX_STORED_AIG_FINDINGS = 25;
+const AIG_UNSAFE_BYTECODE_EXTENSIONS = new Set([".pyc", ".pyd", ".pyo"]);
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const logger = createWorkerLogger({ name: "security-scan-worker" });
 
@@ -1390,6 +1391,16 @@ export function normalizeAigAnalysis(raw: string, checkedAt = Date.now()): AigAn
   };
 }
 
+export function assertAigFilePathsHaveNoCompiledPython(filePaths: readonly string[]) {
+  for (const filePath of filePaths) {
+    if (AIG_UNSAFE_BYTECODE_EXTENSIONS.has(extname(filePath).toLowerCase())) {
+      throw new Error(
+        "A.I.G 0.2.1 cannot safely inspect packaged Python bytecode; remove .pyc, .pyo, and .pyd files before publishing (CVE-2026-84809).",
+      );
+    }
+  }
+}
+
 function verdictToStatus(verdict: string) {
   return verdict === "benign" ? "clean" : verdict;
 }
@@ -1894,6 +1905,9 @@ export async function runClawScan(
   const artifactPath = join(workspace, "clawscan-artifact.json");
   const target = await resolveClawScanTarget(workspace, job);
   const scannerSet = requiredClawHubScanners(job.job.targetKind);
+  if (scannerSet.includes("aig")) {
+    assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
+  }
   const args = [target, "--profile", "clawhub"];
   if (job.job.targetKind === "packageRelease") {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest

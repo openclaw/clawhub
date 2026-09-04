@@ -427,6 +427,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   the reviewed, hash-locked worker requirements file. Updating the scanner or a
   dependency requires an explicit lock update; a mutable package-index artifact
   must not enter a credentialed scan worker.
+- A.I.G 0.2.1 is affected by CVE-2026-84809 and cannot inspect packaged Python
+  bytecode. While that version remains pinned, both worker paths must reject
+  skill targets containing `.pyc`, `.pyo`, or `.pyd` files before invoking
+  A.I.G. ClawScan's static scanner independently flags packaged Python bytecode,
+  but that defense does not remove the worker-boundary rejection requirement.
 - In the external Codex security worker, package-release SkillSpector runs scan
   only normalized bundled-skill roots declared by the stored plugin manifest
   summary. The plugin package root is never a fallback SkillSpector target;

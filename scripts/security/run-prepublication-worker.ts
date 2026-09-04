@@ -14,6 +14,7 @@ import {
 } from "../lib/workerRedaction";
 import {
   type AigAnalysis,
+  assertAigFilePathsHaveNoCompiledPython,
   type ClaimedJob,
   normalizeAigAnalysis,
   type StoredLlmAnalysis,
@@ -545,6 +546,9 @@ export async function runNativeClawScan(
 ): Promise<ClawScanResult> {
   const artifactPath = join(workspace, "clawscan-result.json");
   const target = await resolveNativeClawScanTarget(workspace, job);
+  if (job.job.targetKind !== "packageRelease") {
+    assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
+  }
   const command = clawScanCommand();
   const args = [target, "--profile", "clawhub", "--output", artifactPath];
   const sandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX?.trim();
@@ -672,6 +676,9 @@ export async function processPrePublicationAttempt(
   try {
     const job = buildSyntheticScanJob(attempt);
     await writeWorkspace(job, workspace);
+    if (attempt.kind === "skill") {
+      assertAigFilePathsHaveNoCompiledPython(attempt.files.map((file) => file.path));
+    }
     const trufflehog = await runTruffleHog(workspace);
     if (trufflehog.status === "blocked") {
       truffleHogBlocked = true;
