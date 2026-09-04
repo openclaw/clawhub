@@ -147,7 +147,10 @@ describe("security-scan-codex workflow", () => {
     expect(codexInstall).not.toContain("@latest");
     expect(clawScanInstall).toContain("npm install -g @openclaw/clawscan@0.1.7");
     expect(clawScanInstall).not.toContain("@latest");
-    expect(aigInstall).toContain("python -m pip install 'aig-skill-scan==0.2.1'");
+    expect(aigInstall).toContain(
+      "python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt",
+    );
+    expect(aigInstall).not.toContain("pip install 'aig-skill-scan==0.2.1'");
     expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.1"');
     expect(aigInstall).toContain("aig-skill-scan --help");
     expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");

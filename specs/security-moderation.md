@@ -416,7 +416,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   and worker behavior remain separate internally.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
-  SkillSpector and static scan evidence as context.
+  SkillSpector, A.I.G, and static scan evidence as context.
+- ClawScan is the sole authority for the stored risk-analysis verdict and its
+  moderation consequences. A.I.G is required supporting evidence for skill
+  scans: missing, failed, or malformed A.I.G output fails the worker through
+  the normal retry lifecycle, but an A.I.G finding never independently blocks,
+  hides, or changes installability. Package releases skip the skill-only A.I.G
+  scanner.
+- Production workers install A.I.G and its complete Python dependency set from
+  the reviewed, hash-locked worker requirements file. Updating the scanner or a
+  dependency requires an explicit lock update; a mutable package-index artifact
+  must not enter a credentialed scan worker.
 - In the external Codex security worker, package-release SkillSpector runs scan
   only normalized bundled-skill roots declared by the stored plugin manifest
   summary. The plugin package root is never a fallback SkillSpector target;
