@@ -43,7 +43,7 @@ describe("packages/clawhub skill metadata schema", () => {
     expect(response.items[0]?.latestVersion).toBeNull();
   });
 
-  it("parses legacy registry skill list items without an owner handle", () => {
+  it("parses legacy registry skill list items without newer fields", () => {
     const response = parseArk(
       ApiV1SkillListResponseSchema,
       {
@@ -57,7 +57,6 @@ describe("packages/clawhub skill metadata schema", () => {
             stats: {},
             createdAt: 1,
             updatedAt: 2,
-            latestVersion: null,
             metadata: null,
           },
         ],
@@ -67,6 +66,7 @@ describe("packages/clawhub skill metadata schema", () => {
     );
 
     expect(response.items[0]?.ownerHandle).toBeUndefined();
+    expect(response.items[0]?.latestVersion).toBeUndefined();
     expect(response.items[0]?.slug).toBe("legacy-skill");
   });
 

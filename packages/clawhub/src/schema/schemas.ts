@@ -522,7 +522,9 @@ export const ApiV1SkillListResponseSchema = type({
       createdAt: "number",
       changelog: "string",
       license: '"MIT-0"|null?',
-    }).or("null"),
+    })
+      .or("null")
+      .optional(),
     metadata: type({
       setup: type({
         key: "string",
