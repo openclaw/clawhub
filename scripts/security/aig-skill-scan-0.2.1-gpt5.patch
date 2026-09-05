@@ -1,0 +1,19 @@
+diff --git a/skill_scan/utils/llm.py b/skill_scan/utils/llm.py
+--- a/skill_scan/utils/llm.py
++++ b/skill_scan/utils/llm.py
+@@ -44,7 +44,6 @@ class LLM:
+             timeout=60,
+             default_headers=default_headers if default_headers else None,
+         )
+-        self.temperature = 0.7
+         self.context_window = context_window
+ 
+     def chat(self, message: list[dict], p=False, ret_usage=False) -> str | tuple[str, dict]:
+@@ -75,7 +74,6 @@ class LLM:
+         response = self.client.chat.completions.create(
+             model=self.model,
+             messages=message,
+-            temperature=self.temperature,
+             stream=True,
+             stream_options={"include_usage": True},
+         )
