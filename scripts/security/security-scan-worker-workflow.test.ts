@@ -164,7 +164,7 @@ describe("security-scan-codex workflow", () => {
     expect(steps.find((step) => step.name === "Run Codex security worker")?.env).toEqual({
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       DEFAULT_BASE_URL: "https://api.openai.com/v1",
-      DEFAULT_MODEL: "gpt-4.1-2025-04-14",
+      DEFAULT_MODEL: "gpt-5.6",
       LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
