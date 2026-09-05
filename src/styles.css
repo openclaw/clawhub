@@ -29990,6 +29990,12 @@ a[class*="rounded-full"] {
   flex-shrink: 0;
 }
 
+@media (max-width: 760px) {
+  .browse-page .browse-view-toggle {
+    display: none;
+  }
+}
+
 .app-shell:has(.home-v2-main) main.home-v2-main {
   margin-top: -64px;
   padding-bottom: 0;
