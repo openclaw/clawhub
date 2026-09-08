@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- CLI: preserve literal multipart text when publishing with Bun, including semicolons in JSON metadata and values beginning with `@` or `<`, without changing uploaded file bytes.
 - Workers: scan plugin packages containing both skill and plugin manifests without ambiguous-target failures, preserving full-package scanning and bundled-skill paths.
 - CLI/API: recover failed staged plugin publications from their retained artifacts with `clawhub package recover`, fresh security checks, current publisher authorization, and preserved attempt history.
 - Tests: keep the Vitest localStorage shim working on Node 26, whose native `Storage` global has a non-configurable `length`, so `bun run ci:unit` passes on Node 24 and 26.

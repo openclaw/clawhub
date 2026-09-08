@@ -811,7 +811,7 @@ async function fetchJsonFormViaCurl(
         await deps.writeFileImpl(filePath, bytes);
         formArgs.push("-F", `${key}=@${filePath};filename=${filename}`);
       } else {
-        formArgs.push("-F", `${key}=${value}`);
+        formArgs.push("--form-string", `${key}=${value}`);
       }
     }
 

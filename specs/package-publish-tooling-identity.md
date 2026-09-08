@@ -219,6 +219,11 @@ requires v2, including the pre-cutover reusable-workflow revision. The only
 non-v2 OpenClaw route is a directly authenticated ClawHub user supplying an
 explicit manual override.
 
+The CLI must transmit multipart metadata as literal text, including JSON
+containing semicolons and strings beginning with `@` or `<`. Curl's form syntax
+applies only to actual file parts; scalar fields must not become file reads or
+lose text. The upload transport must preserve both metadata and artifact bytes.
+
 OpenClaw must add the v2 identity, post-dispatch parent receipt, package
 inventory list, and child inputs before this server gate is deployed. The v2 child must
 accept the staged response instead of waiting inline for publication, so the
