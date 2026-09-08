@@ -23,6 +23,22 @@ afterEach(() => {
 });
 
 describe("plugin search observations", () => {
+  it.each([
+    { normalizedQuery: "" },
+    { normalizedQuery: " Not normalized " },
+    { normalizedQuery: "x".repeat(257) },
+    { category: "x".repeat(121) },
+    { topic: "x".repeat(121) },
+    { resultCount: -1 },
+    { resultCount: 1.5 },
+    { officialResultCount: 4 },
+  ])("rejects invalid bounded facts before persistence: %j", async (override) => {
+    const t = convexTest(schema, modules);
+    await expect(
+      t.mutation(internal.pluginSearchObservations.recordInternal, { ...observation, ...override }),
+    ).rejects.toThrow();
+    expect(await t.run((ctx) => ctx.db.query("pluginSearchObservations").collect())).toEqual([]);
+  });
   it("persists only the bounded search facts with the server observation time", async () => {
     const now = Date.UTC(2026, 8, 8, 22);
     vi.spyOn(Date, "now").mockReturnValue(now);
