@@ -16,6 +16,15 @@ export function normalizePluginSearchQuery(value: string) {
   return value.trim().replace(/\s+/gu, " ").toLowerCase();
 }
 
+export function isBoundedPluginSearchText(query: string, category?: string, topic?: string) {
+  return (
+    query.length > 0 &&
+    query.length <= 256 &&
+    (category?.length ?? 0) <= 120 &&
+    (topic?.length ?? 0) <= 120
+  );
+}
+
 export function buildPluginSearchObservation(params: {
   source: PluginSearchSource | undefined;
   query: string;
@@ -24,13 +33,15 @@ export function buildPluginSearchObservation(params: {
   results: PluginSearchResult[];
 }) {
   if (!params.source) return null;
+  const normalizedQuery = normalizePluginSearchQuery(params.query);
+  if (!isBoundedPluginSearchText(normalizedQuery, params.category, params.topic)) return null;
   return {
     source: params.source,
     artifactKind: "plugin" as const,
-    normalizedQuery: normalizePluginSearchQuery(params.query),
+    normalizedQuery,
     category: params.category,
     topic: params.topic,
     resultCount: params.results.length,
-    officialResultCount: params.results.filter((entry) => entry.package.isOfficial).length,
+    officialResultCount: params.results.filter((entry) => entry.package.isOfficial === true).length,
   };
 }

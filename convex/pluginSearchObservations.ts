@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation } from "./functions";
+import {
+  isBoundedPluginSearchText,
+  normalizePluginSearchQuery,
+} from "./lib/pluginSearchObservations";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -25,6 +29,18 @@ export const recordInternal = internalMutation({
     officialResultCount: v.number(),
   },
   handler: async (ctx, args) => {
+    if (
+      !isBoundedPluginSearchText(args.normalizedQuery, args.category, args.topic) ||
+      normalizePluginSearchQuery(args.normalizedQuery) !== args.normalizedQuery ||
+      !Number.isSafeInteger(args.resultCount) ||
+      args.resultCount < 0 ||
+      args.resultCount > 100 ||
+      !Number.isSafeInteger(args.officialResultCount) ||
+      args.officialResultCount < 0 ||
+      args.officialResultCount > args.resultCount
+    ) {
+      throw new Error("Invalid bounded plugin search observation");
+    }
     const observedAt = Date.now();
     const id = await ctx.db.insert("pluginSearchObservations", { ...args, observedAt });
     return { id, observedAt };

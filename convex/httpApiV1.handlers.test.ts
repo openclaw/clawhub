@@ -12339,6 +12339,26 @@ describe("httpApiV1 handlers", () => {
   );
 
   it.each([
+    [
+      "oversized marked query",
+      `https://example.com/api/v1/plugins/search?q=${"x".repeat(257)}&searchSource=clawhub-web`,
+      200,
+    ],
+    [
+      "oversized marked topic",
+      `https://example.com/api/v1/plugins/search?q=weather&topic=${"x".repeat(121)}&searchSource=clawhub-web`,
+      200,
+    ],
+    [
+      "marked skill family",
+      "https://example.com/api/v1/plugins/search?q=weather&family=skill&searchSource=clawhub-web",
+      200,
+    ],
+    [
+      "marked claw family",
+      "https://example.com/api/v1/plugins/search?q=weather&family=claw&searchSource=clawhub-web",
+      200,
+    ],
     ["unmarked plugin request", "https://example.com/api/v1/plugins/search?q=weather", 200],
     [
       "unknown plugin source",
@@ -12356,6 +12376,7 @@ describe("httpApiV1 handlers", () => {
       400,
     ],
   ])("does not record %s", async (_case, requestUrl, expectedStatus) => {
+    if (_case === "marked claw family") vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const observationWrites: Record<string, unknown>[] = [];
     const ctx = makeCtx({
       runQuery: vi.fn().mockResolvedValue([]),
@@ -12394,6 +12415,29 @@ describe("httpApiV1 handlers", () => {
         ),
       ),
     ).rejects.toThrow("search unavailable");
+    expect(observationWrites).toEqual([]);
+  });
+
+  it("excludes a request aborted before the completed result is recorded", async () => {
+    const controller = new AbortController();
+    const observationWrites: unknown[] = [];
+    const ctx = makeCtx({
+      runQuery: async () => {
+        controller.abort();
+        return [];
+      },
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        observationWrites.push(args);
+        return null;
+      },
+    });
+    await __handlers.pluginsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/plugins/search?q=weather&searchSource=clawhub-web", {
+        signal: controller.signal,
+      }),
+    );
     expect(observationWrites).toEqual([]);
   });
 

@@ -3952,7 +3952,11 @@ async function searchPackages(
       .slice(0, limit);
   }
   const publicResults = results.map(toPublicCatalogSearchEntry);
-  if (options?.recordPluginSearch) {
+  if (
+    options?.recordPluginSearch &&
+    !request.signal.aborted &&
+    (!family || family === "code-plugin" || family === "bundle-plugin")
+  ) {
     const observation = buildPluginSearchObservation({
       source: parsePluginSearchSource(url.searchParams.get("searchSource")),
       query: queryText,
