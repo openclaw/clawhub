@@ -2286,6 +2286,17 @@ const packageStatEvents = defineTable({
   .index("by_unprocessed", ["processedAt"])
   .index("by_package", ["packageId"]);
 
+const pluginSearchObservations = defineTable({
+  normalizedQuery: v.string(),
+  observedAt: v.number(),
+  source: v.union(v.literal("clawhub-web"), v.literal("openclaw-control-ui")),
+  artifactKind: v.literal("plugin"),
+  category: v.optional(v.string()),
+  topic: v.optional(v.string()),
+  resultCount: v.number(),
+  officialResultCount: v.number(),
+}).index("by_observed_at", ["observedAt"]);
+
 const packageDailyStats = defineTable({
   packageId: v.id("packages"),
   day: v.number(),
@@ -4505,6 +4516,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  pluginSearchObservations,
   packageDailyStats,
   packageLeaderboards,
   packageTrustedPublishers,

@@ -12278,6 +12278,150 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it.each(["clawhub-web", "openclaw-control-ui"] as const)(
+    "records one marked %s plugin search from the exact combined visible response",
+    async (source) => {
+      const observationWrites: Record<string, unknown>[] = [];
+      const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+        if (args.family === "code-plugin") {
+          return [
+            {
+              score: 10,
+              package: {
+                ...makeCatalogItem("weather-code", { family: "code-plugin", updatedAt: 100 }),
+                isOfficial: true,
+              },
+            },
+          ];
+        }
+        if (args.family === "bundle-plugin") {
+          return [
+            {
+              score: 8,
+              package: makeCatalogItem("weather-bundle", {
+                family: "bundle-plugin",
+                updatedAt: 80,
+              }),
+            },
+          ];
+        }
+        throw new Error(`unexpected family ${String(args.family)}`);
+      });
+      const ctx = makeCtx({
+        runQuery,
+        runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+          if (isRateLimitArgs(args)) return okRate();
+          observationWrites.push(args);
+          return null;
+        },
+      });
+
+      const response = await __handlers.pluginsGetRouterV1Handler(
+        ctx,
+        new Request(
+          `https://example.com/api/v1/plugins/search?q=%20Weather%20%20API%20&category=tools&topic=automation&searchSource=${source}`,
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      expect(observationWrites).toEqual([
+        {
+          source,
+          artifactKind: "plugin",
+          normalizedQuery: "weather api",
+          category: "tools",
+          topic: "automation",
+          resultCount: 2,
+          officialResultCount: 1,
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    ["unmarked plugin request", "https://example.com/api/v1/plugins/search?q=weather", 200],
+    [
+      "unknown plugin source",
+      "https://example.com/api/v1/plugins/search?q=weather&searchSource=crawler",
+      200,
+    ],
+    [
+      "marked generic package request",
+      "https://example.com/api/v1/packages/search?q=weather&searchSource=clawhub-web",
+      200,
+    ],
+    [
+      "marked empty plugin query",
+      "https://example.com/api/v1/plugins/search?q=%20%20&searchSource=clawhub-web",
+      400,
+    ],
+  ])("does not record %s", async (_case, requestUrl, expectedStatus) => {
+    const observationWrites: Record<string, unknown>[] = [];
+    const ctx = makeCtx({
+      runQuery: vi.fn().mockResolvedValue([]),
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        observationWrites.push(args);
+        return null;
+      },
+    });
+    const handler = requestUrl.includes("/plugins/")
+      ? __handlers.pluginsGetRouterV1Handler
+      : __handlers.packagesGetRouterV1Handler;
+
+    const response = await handler(ctx, new Request(requestUrl));
+
+    expect(response.status).toBe(expectedStatus);
+    expect(observationWrites).toEqual([]);
+  });
+
+  it("does not record a marked plugin search when result assembly fails", async () => {
+    const observationWrites: Record<string, unknown>[] = [];
+    const ctx = makeCtx({
+      runQuery: vi.fn().mockRejectedValue(new Error("search unavailable")),
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        observationWrites.push(args);
+        return null;
+      },
+    });
+
+    await expect(
+      __handlers.pluginsGetRouterV1Handler(
+        ctx,
+        new Request(
+          "https://example.com/api/v1/plugins/search?q=weather&searchSource=openclaw-control-ui",
+        ),
+      ),
+    ).rejects.toThrow("search unavailable");
+    expect(observationWrites).toEqual([]);
+  });
+
+  it("keeps search available and logs no query when observation storage fails", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ctx = makeCtx({
+      runQuery: vi.fn().mockResolvedValue([]),
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        throw new Error("storage failed for sensitive query text");
+      },
+    });
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      ctx,
+      new Request(
+        "https://example.com/api/v1/plugins/search?q=private-query&searchSource=openclaw-control-ui",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(log).toHaveBeenCalledWith(
+      "[plugin-search-observations] failed to record marked search",
+      { source: "openclaw-control-ui" },
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private-query");
+  });
+
   it("plugins search forwards New eligibility to both plugin families", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());

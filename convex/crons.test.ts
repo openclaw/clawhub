@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
   const skillHourlyStatsPruneRef = Symbol("skill-hourly-stats-prune");
   const packageStatEventPruneRef = Symbol("package-stat-event-prune");
+  const pluginSearchObservationPruneRef = Symbol("plugin-search-observation-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => {
     skillStatEventPruneRef,
     skillHourlyStatsPruneRef,
     packageStatEventPruneRef,
+    pluginSearchObservationPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
@@ -84,6 +86,9 @@ vi.mock("./_generated/api", () => ({
       processPackageStatEventsInternal: Symbol("package-stat-events"),
       pruneProcessedPackageStatEventsInternal: mocks.packageStatEventPruneRef,
       backfillPackageReleaseScansInternal: Symbol("package-scan-backfill"),
+    },
+    pluginSearchObservations: {
+      pruneExpiredInternal: mocks.pluginSearchObservationPruneRef,
     },
     publisherAbuse: {
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
@@ -365,6 +370,17 @@ describe("crons", () => {
       "publisher-invite-retention-prune",
       { hours: 6 },
       mocks.publisherInvitesPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes plugin search observations daily with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "plugin-search-observations-prune",
+      { hours: 24 },
+      mocks.pluginSearchObservationPruneRef,
       { batchSize: 500 },
     );
   });

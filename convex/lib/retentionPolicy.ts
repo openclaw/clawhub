@@ -25,7 +25,13 @@ type EphemeralRetentionPolicy = BaseRetentionPolicy & {
   classification: "ephemeral";
   standardBatchSize: typeof RETENTION_STANDARD_BATCH_SIZE;
   prune: string;
-  expirationField?: "expiresAt" | "expirationTime" | "dayStart" | "processedAt" | "createdAt";
+  expirationField?:
+    | "expiresAt"
+    | "expirationTime"
+    | "dayStart"
+    | "processedAt"
+    | "createdAt"
+    | "observedAt";
   expirationIndex?: string;
   retention: string;
 };
@@ -173,6 +179,15 @@ export const RETENTION_POLICIES = {
     prune: "packages.pruneProcessedPackageStatEventsInternal",
     retention: "Processed and older than 7 days.",
   }),
+  pluginSearchObservations: ephemeral(
+    "Raw plugin search observations are retained only to build privacy-preserving aggregates.",
+    {
+      expirationField: "observedAt",
+      expirationIndex: "by_observed_at",
+      prune: "pluginSearchObservations.pruneExpiredInternal",
+      retention: "30 days after observation.",
+    },
+  ),
   packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
   packageLeaderboards: derived(
     "Package trending snapshots can be rebuilt from packageDailyStats.",
