@@ -423,6 +423,7 @@ export async function fetchPackages(params: {
 
 export async function fetchPluginCatalog(params: {
   q?: string;
+  searchSource?: "clawhub-web";
   cursor?: string;
   family?: PluginFamily;
   isOfficial?: boolean;
@@ -472,6 +473,7 @@ export async function fetchPluginCatalog(params: {
   if (params.q?.trim()) {
     const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
     url.searchParams.set("q", params.q.trim());
+    if (params.searchSource) url.searchParams.set("searchSource", params.searchSource);
     if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
