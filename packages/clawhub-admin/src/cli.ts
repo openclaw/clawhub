@@ -72,6 +72,7 @@ import {
   cmdSetPromotionStatus,
   cmdUpdatePromotion,
 } from "./commands/promotions.js";
+import { cmdSearchInsights } from "./commands/searchInsights.js";
 import { cmdHardDeleteSkill } from "./commands/skills.js";
 
 const program = new Command()
@@ -993,6 +994,20 @@ function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
       });
   }
 }
+
+program
+  .command("search-insights")
+  .description("Read staff-only plugin search demand and advisory opportunities")
+  .option("--source <source>", "clawhub-web|openclaw-control-ui (default: both)")
+  .option("--window <days>", "Rank by 7 or 30 completed UTC days")
+  .option("--official-gap", "Only queries with zero-official-result searches")
+  .option("--intent-kind <kind>", "company_product|generic_capability|ambiguous")
+  .option("--end-day <date>", "Exclusive UTC window end, YYYY-MM-DD")
+  .option("--limit <count>", "Maximum query rows, 1–100")
+  .option("--json", "Output canonical aggregate JSON")
+  .action(async (options) => {
+    await cmdSearchInsights(await resolveGlobalOpts(), options);
+  });
 
 program.action(() => {
   program.outputHelp();

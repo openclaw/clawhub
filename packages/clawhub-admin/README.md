@@ -147,3 +147,24 @@ All skill and plugin commands accept `--json` where the underlying endpoint supp
 `packages validation-report --json` exhaustively fetches the current validation state for every
 plugin and writes exactly one JSON document to stdout. Redirect stdout to archive the report;
 authentication, registry, and request failures are written to stderr by the CLI error handler.
+
+### Search intelligence
+
+Admins and moderators can read the same aggregate report as Management → Search
+intelligence. This is read-only and does not change Featured or Trending.
+
+```sh
+clawhub-admin search-insights
+clawhub-admin search-insights --source openclaw-control-ui --window 30 --official-gap
+clawhub-admin search-insights --intent-kind company_product --json
+clawhub-admin search-insights --end-day 2026-09-07 --limit 100 --json
+```
+
+Windows contain complete UTC days before `--end-day` (exclusive; defaults to today).
+Every response includes seven-day, previous-seven-day and 30-day counts. Source can
+be `clawhub-web` or `openclaw-control-ui`; omit it to combine them. `--window 7|30`
+selects ranking. `--intent-kind` accepts `company_product`, `generic_capability`, or
+`ambiguous`; company opportunities require fresh weekly confidence of at least 80%
+and three official-gap searches. Missing or failed classification is unavailable,
+not inferred from package names. The data-through/coverage fields expose refresh
+lag or lost coverage. Current package metadata is freshness-labeled separately.

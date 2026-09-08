@@ -1,0 +1,77 @@
+import { type } from "arktype";
+
+const sourceCounts = type({ "clawhub-web": "number", "openclaw-control-ui": "number" });
+const intentKind = '"company_product" | "generic_capability" | "ambiguous"';
+const classification = type({
+  weekStart: "number",
+  weekEnd: "number",
+  query: "string",
+  intentKind,
+  "companyProductName?": "string",
+  confidence: "number",
+  model: "string",
+  modelVersion: "string",
+  processedAt: "number",
+});
+const currentResult = type({
+  name: "string",
+  displayName: "string",
+  summary: "string | null",
+  version: "string | null",
+  url: "string",
+  isOfficial: "boolean",
+  isFeatured: "boolean",
+  eligibleForFeatured: "boolean",
+});
+export const SearchInsightsReportSchema = type({
+  window: {
+    endDay: "number",
+    start7d: "number",
+    startPrevious7d: "number",
+    start30d: "number",
+    days: "7 | 30",
+  },
+  source: '"clawhub-web" | "openclaw-control-ui" | null',
+  generatedAt: "number",
+  totalQueries: "number",
+  totalSearches7d: "number",
+  sources7d: sourceCounts,
+  truncated: "boolean",
+  classificationStatus: '"available" | "partial" | "unavailable"',
+  classificationRun: type({
+    weekStart: "number",
+    weekEnd: "number",
+    processedAt: "number",
+    expectedQualified: "number",
+    classifiedCount: "number",
+    truncated: "boolean",
+    model: "string",
+    modelVersion: "string",
+    "failureCode?": "string",
+  }).or("null"),
+  metadataCheckedAt: "number | null",
+  currentMetadataStatus: '"available" | "unavailable"',
+  coverage: {
+    dataThrough: "number | null",
+    collectionStartedAt: "number | null",
+    gapStart: "number | null",
+    gapEnd: "number | null",
+  },
+  rows: type({
+    query: "string",
+    searches7d: "number",
+    searchesPrevious7d: "number",
+    searches30d: "number",
+    officialGaps7d: "number",
+    officialGaps30d: "number",
+    zeroResults7d: "number",
+    change7d: "number",
+    changePercent: "number | null",
+    sources7d: sourceCounts,
+    classification: classification.or("null"),
+    companyOpportunity: "boolean",
+    searchUrl: "string",
+    currentResults: currentResult.array(),
+    featuredCandidate: currentResult.or("null"),
+  }).array(),
+});

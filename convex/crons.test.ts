@@ -60,6 +60,10 @@ vi.mock("convex/server", () => ({
 
 vi.mock("./_generated/api", () => ({
   internal: {
+    searchInsights: {
+      aggregateInternal: Symbol("search-insights-aggregate"),
+      pruneExpiredInternal: Symbol("search-insights-retention"),
+    },
     canonicalTrending: {
       materializeInternal: mocks.canonicalTrendingMaterializeRef,
       pruneExpiredActionInternal: mocks.canonicalTrendingPruneRef,

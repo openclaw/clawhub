@@ -7,6 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { searchClassification, searchInsightSource } from "./lib/searchInsights";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -4484,7 +4485,63 @@ const skillOwnershipTransfers = defineTable({
   .index("by_from_user_status", ["fromUserId", "status"])
   .index("by_skill_status", ["skillId", "status"]);
 
+const searchAggregateStates = defineTable({
+  key: v.literal("plugin"),
+  cursor: v.union(v.string(), v.null()),
+  processedThrough: v.number(),
+  revision: v.number(),
+  coverageStart: v.number(),
+  coverageGapStart: v.optional(v.number()),
+  coverageGapEnd: v.optional(v.number()),
+}).index("by_key", ["key"]);
+const searchDailyAggregates = defineTable({
+  dayStart: v.number(),
+  query: v.string(),
+  source: searchInsightSource,
+  artifactKind: v.literal("plugin"),
+  category: v.string(),
+  intent: v.string(),
+  searches: v.number(),
+  officialGaps: v.number(),
+  zeroResults: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_dayStart_and_source_and_query_and_category_and_intent", [
+    "dayStart",
+    "source",
+    "query",
+    "category",
+    "intent",
+  ])
+  .index("by_source_and_dayStart", ["source", "dayStart"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchClassificationRuns = defineTable({
+  weekStart: v.number(),
+  weekEnd: v.number(),
+  processedAt: v.number(),
+  status: v.union(v.literal("available"), v.literal("unavailable")),
+  expectedQualified: v.number(),
+  classifiedCount: v.number(),
+  truncated: v.optional(v.boolean()),
+  model: v.string(),
+  modelVersion: v.string(),
+  failureCode: v.optional(v.string()),
+  expirationTime: v.number(),
+})
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchWeeklyClassifications = defineTable(
+  searchClassification.extend({ expirationTime: v.number() }),
+)
+  .index("by_query_and_weekEnd", ["query", "weekEnd"])
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_expirationTime", ["expirationTime"]);
+
 export default defineSchema({
+  searchAggregateStates,
+  searchDailyAggregates,
+  searchWeeklyClassifications,
+  searchClassificationRuns,
   ...authTables,
   authSessions,
   authRefreshTokens,
