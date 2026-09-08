@@ -111,6 +111,16 @@ export async function classifySearchIntent(
     if (!text) return unavailable("invalid_provider_output");
     const parsed = classificationSchema.safeParse(JSON.parse(text));
     if (!parsed.success) return unavailable("invalid_provider_output");
+    if (
+      parsed.data.rows.some(
+        ({ companyProductName: name }) =>
+          name !== null &&
+          (name.trim() !== name ||
+            // eslint-disable-next-line no-control-regex -- Reject unrepresentable descriptors before persisting enrichment.
+            /[\u0000-\u001f\u007f]/.test(name)),
+      )
+    )
+      return unavailable("invalid_provider_output");
     const expected = new Set(input.map((row) => row.query));
     if (
       parsed.data.rows.length !== expected.size ||

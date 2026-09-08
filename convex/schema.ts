@@ -4539,7 +4539,12 @@ const searchWeeklyClassifications = defineTable(
   .index("by_expirationTime", ["expirationTime"]);
 const searchWeeklyDigests = defineTable({
   weekEnd: v.number(),
-  status: v.union(v.literal("claimed"), v.literal("sent"), v.literal("failed")),
+  status: v.union(
+    v.literal("claimed"),
+    v.literal("sent"),
+    v.literal("failed"),
+    v.literal("exhausted"),
+  ),
   attempts: v.number(),
   claimedUntil: v.number(),
   nextAttemptAt: v.number(),

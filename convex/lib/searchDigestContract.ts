@@ -1,5 +1,28 @@
 import { v } from "convex/values";
 
+export const SEARCH_DIGEST_MAX_BYTES = 30_000;
+
+export const digestClassificationValidator = v.object({
+  status: v.union(v.literal("available"), v.literal("unavailable")),
+  model: v.string(),
+  modelVersion: v.string(),
+  failureCode: v.optional(v.string()),
+  expectedQualified: v.number(),
+  truncated: v.boolean(),
+  rows: v.array(
+    v.object({
+      query: v.string(),
+      intentKind: v.union(
+        v.literal("company_product"),
+        v.literal("generic_capability"),
+        v.literal("ambiguous"),
+      ),
+      companyProductName: v.optional(v.string()),
+      confidence: v.number(),
+    }),
+  ),
+});
+
 const row = v.object({
   query: v.string(),
   searches: v.number(),

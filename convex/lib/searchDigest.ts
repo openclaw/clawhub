@@ -1,5 +1,6 @@
 import type { Infer } from "convex/values";
 import type { searchDigestValidator } from "./searchDigestContract";
+import { SEARCH_DIGEST_MAX_BYTES } from "./searchDigestContract";
 import { SEARCH_DIGEST_THRESHOLD } from "./searchIntentClassifier";
 
 type DigestSourceCounts = { "clawhub-web": number; "openclaw-control-ui": number };
@@ -27,6 +28,7 @@ type DigestInput = {
   currentMetadataStatus: "available" | "unavailable";
   truncated: boolean;
   rows: DigestInputRow[];
+  featuredRows?: DigestInputRow[];
   moverRows?: DigestInputRow[];
   coverage?: {
     dataThrough: number | null;
@@ -53,11 +55,38 @@ export function buildSearchDigest(input: DigestInput): SearchDigest {
     officialGaps: entry.officialGaps7d,
     searchUrl: absolute(entry.searchUrl),
   });
-  const eligible = input.rows.filter((entry) => entry.searches7d >= SEARCH_DIGEST_THRESHOLD);
+  const representable = (value: string, max: number) =>
+    value.length > 0 &&
+    value.length <= max &&
+    value.trim() === value &&
+    // eslint-disable-next-line no-control-regex -- Match the receiver's ASCII control exclusion exactly.
+    !/[\u0000-\u001f\u007f]/.test(value);
+  const descriptor = (value: string) =>
+    value
+      // eslint-disable-next-line no-control-regex -- Sanitize display-only text, never canonical identities.
+      .replace(/[\u0000-\u001f\u007f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+  const representableRow = (entry: DigestInputRow) =>
+    representable(entry.query, 256) && absolute(entry.searchUrl).length <= 2048;
+  const candidates = input.rows.filter(representableRow);
+  const featuredCandidates = (input.featuredRows ?? input.rows).filter(representableRow);
+  const moverCandidates = (input.moverRows ?? input.rows).filter(representableRow);
+  const omitted =
+    candidates.length !== input.rows.length ||
+    featuredCandidates.length !== (input.featuredRows ?? input.rows).length ||
+    moverCandidates.length !== (input.moverRows ?? input.rows).length ||
+    featuredCandidates.some(
+      (entry) =>
+        entry.featuredCandidate?.eligibleForFeatured &&
+        !representable(entry.featuredCandidate.name, 160),
+    );
+  const eligible = candidates.filter((entry) => entry.searches7d >= SEARCH_DIGEST_THRESHOLD);
   const gaps = eligible
     .filter((entry) => entry.officialGaps7d >= SEARCH_DIGEST_THRESHOLD)
     .sort((a, b) => b.officialGaps7d - a.officialGaps7d || demand(a, b));
-  return {
+  const digest: SearchDigest = {
     kind: "plugin_search_weekly" as const,
     weekStart: input.weekEnd - 604_800_000,
     weekEnd: input.weekEnd,
@@ -70,7 +99,7 @@ export function buildSearchDigest(input: DigestInput): SearchDigest {
     },
     classificationStatus: input.classificationStatus,
     currentMetadataStatus: input.currentMetadataStatus,
-    truncated: input.truncated,
+    truncated: input.truncated || omitted,
     coverage: {
       dataThrough: input.coverage?.dataThrough ?? null,
       collectionStartedAt: input.coverage?.collectionStartedAt ?? null,
@@ -95,10 +124,15 @@ export function buildSearchDigest(input: DigestInput): SearchDigest {
               confidence: entry.classification!.confidence,
             })),
     officialGaps: gaps.slice(0, 5).map(row),
-    featuredCandidates: eligible
+    featuredCandidates: featuredCandidates
       .filter(
         (entry) =>
-          entry.featuredCandidate?.eligibleForFeatured && !entry.featuredCandidate.isFeatured,
+          entry.searches7d >= SEARCH_DIGEST_THRESHOLD &&
+          input.currentMetadataStatus === "available" &&
+          entry.featuredCandidate?.eligibleForFeatured &&
+          !entry.featuredCandidate.isFeatured &&
+          representable(entry.featuredCandidate.name, 160) &&
+          absolute(entry.featuredCandidate.url).length <= 2048,
       )
       .sort(demand)
       .slice(0, 5)
@@ -106,11 +140,13 @@ export function buildSearchDigest(input: DigestInput): SearchDigest {
         ...row(entry),
         package: {
           name: entry.featuredCandidate!.name,
-          displayName: entry.featuredCandidate!.displayName,
+          displayName:
+            descriptor(entry.featuredCandidate!.displayName) ||
+            descriptor(entry.featuredCandidate!.name),
           url: absolute(entry.featuredCandidate!.url),
         },
       })),
-    movers: (input.moverRows ?? input.rows)
+    movers: moverCandidates
       .filter(
         (entry) =>
           Math.max(entry.searches7d, entry.searchesPrevious7d) >= SEARCH_DIGEST_THRESHOLD &&
@@ -124,6 +160,24 @@ export function buildSearchDigest(input: DigestInput): SearchDigest {
       .slice(0, 5)
       .map(row),
   };
+  // Bound the wire payload, not UTF-16 characters. Drop complete lowest-ranked
+  // rows from the longest section; fixed tie order preserves deterministic output
+  // and retains each section's leading evidence before removing a shorter section.
+  const sections = [
+    digest.movers,
+    digest.featuredCandidates,
+    digest.officialGaps,
+    digest.companyOpportunities,
+  ];
+  while (new TextEncoder().encode(JSON.stringify(digest)).byteLength > SEARCH_DIGEST_MAX_BYTES) {
+    const longest = sections.reduce((best, section) =>
+      section.length > best.length ? section : best,
+    );
+    if (!longest.length) throw new Error("Digest metadata exceeds wire budget");
+    longest.pop();
+    digest.truncated = true;
+  }
+  return digest;
 }
 
 export type SearchDigest = Infer<typeof searchDigestValidator>;

@@ -6,7 +6,8 @@ afterEach(() => vi.unstubAllGlobals());
 it("classifies only threshold-qualified aggregate gaps through a strict identity-free provider request", async () => {
   const requests: Record<string, unknown>[] = [];
   vi.stubGlobal("fetch", async (_url: string, options: RequestInit) => {
-    requests.push(JSON.parse(String(options.body)));
+    if (typeof options.body !== "string") throw new Error("Expected JSON body");
+    requests.push(JSON.parse(options.body));
     return Response.json({
       status: "completed",
       output: [
@@ -160,3 +161,40 @@ it("fails closed without exposing provider errors", async () => {
   });
   expect(JSON.stringify(result)).not.toContain("sensitive");
 });
+
+it.each([" Notion ", "Notion\u0000"])(
+  "rejects an unrepresentable canonical descriptor %j before freezing shared enrichment",
+  async (companyProductName) => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  rows: [
+                    {
+                      query: "notion",
+                      intentKind: "company_product",
+                      companyProductName,
+                      confidence: 0.9,
+                    },
+                  ],
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(
+      await classifySearchIntent(
+        [{ query: "notion", searches: 3, officialGaps: 3, topResults: [] }],
+        "fixture-provider-key",
+      ),
+    ).toMatchObject({ status: "unavailable", failureCode: "invalid_provider_output" });
+  },
+);

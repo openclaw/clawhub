@@ -142,3 +142,164 @@ it("includes a dropped-to-zero mover qualified by the previous full week, while 
   });
   expect(result.movers.map((row) => row.query)).toEqual(["calendar"]);
 });
+
+it("does not let an oversized valid registry package poison the frozen receiver payload", () => {
+  const result = buildSearchDigest({
+    weekEnd: Date.parse("2026-09-07T00:00:00Z"),
+    siteUrl: "https://clawhub.ai",
+    totalSearches7d: 4,
+    sources7d: { "clawhub-web": 4, "openclaw-control-ui": 0 },
+    classificationStatus: "unavailable",
+    currentMetadataStatus: "available",
+    truncated: false,
+    rows: [
+      {
+        query: "notion",
+        searches7d: 4,
+        searchesPrevious7d: 0,
+        officialGaps7d: 4,
+        searchUrl: "/plugins?q=notion",
+        classification: null,
+        featuredCandidate: {
+          name: "a".repeat(161),
+          displayName: "Long registry name",
+          url: `/plugins/${"a".repeat(161)}`,
+          eligibleForFeatured: true,
+          isFeatured: false,
+        },
+      },
+    ],
+  });
+  expect(result.featuredCandidates).toEqual([]);
+  expect(result.officialGaps).toHaveLength(1);
+  expect(result.truncated).toBe(true);
+});
+
+it("omits unrepresentable query identities without silently changing counts or names and sanitizes display-only text", () => {
+  const base = {
+    searches7d: 4,
+    searchesPrevious7d: 0,
+    officialGaps7d: 4,
+    searchUrl: "/plugins?q=notion",
+    classification: null,
+    featuredCandidate: null,
+  };
+  const result = buildSearchDigest({
+    weekEnd: Date.parse("2026-09-07T00:00:00Z"),
+    siteUrl: "https://clawhub.ai",
+    totalSearches7d: 8,
+    sources7d: { "clawhub-web": 8, "openclaw-control-ui": 0 },
+    classificationStatus: "unavailable",
+    currentMetadataStatus: "available",
+    truncated: false,
+    rows: [
+      { ...base, query: "notion\u0000" },
+      {
+        ...base,
+        query: "界".repeat(256),
+        searchUrl: `/plugins?q=${encodeURIComponent("界".repeat(256))}`,
+      },
+      {
+        ...base,
+        query: "notion",
+        featuredCandidate: {
+          name: "notion",
+          displayName: " Notion\ncommunity ",
+          url: "/plugins/notion",
+          eligibleForFeatured: true,
+          isFeatured: false,
+        },
+      },
+    ],
+  });
+  expect(result.totalSearches).toBe(8);
+  expect(result.officialGaps.map((row) => row.query)).toEqual(["notion"]);
+  expect(result.movers.map((row) => row.query)).toEqual(["notion"]);
+  expect(result.featuredCandidates[0].package).toMatchObject({
+    name: "notion",
+    displayName: "Notion community",
+  });
+  expect(result.truncated).toBe(true);
+});
+
+it("fits valid long Unicode shortlists within the persisted UTF-8 budget by dropping only whole tail rows", () => {
+  const rows = Array.from({ length: 5 }, (_, i) => {
+    const query = "界".repeat(200) + i;
+    return {
+      query,
+      searches7d: 5,
+      searchesPrevious7d: 0,
+      officialGaps7d: 5,
+      searchUrl: `/plugins?q=${encodeURIComponent(query)}`,
+      classification: {
+        intentKind: "company_product",
+        confidence: 0.9,
+        companyProductName: "Synthetic Product",
+      },
+      featuredCandidate: {
+        name: `package-${i}`,
+        displayName: `Package ${i}`,
+        url: `/plugins/package-${i}`,
+        eligibleForFeatured: true,
+        isFeatured: false,
+      },
+    };
+  });
+  const digest = buildSearchDigest({
+    weekEnd: Date.parse("2026-09-07T00:00:00Z"),
+    siteUrl: "https://clawhub.ai",
+    totalSearches7d: 25,
+    sources7d: { "clawhub-web": 25, "openclaw-control-ui": 0 },
+    classificationStatus: "available",
+    currentMetadataStatus: "available",
+    truncated: false,
+    rows,
+  });
+  expect(new TextEncoder().encode(JSON.stringify(digest)).byteLength).toBeLessThanOrEqual(30_000);
+  expect(digest.truncated).toBe(true);
+  expect(digest.totalSearches).toBe(25);
+  for (const section of [
+    digest.companyOpportunities,
+    digest.officialGaps,
+    digest.featuredCandidates,
+    digest.movers,
+  ]) {
+    expect(section.length).toBeGreaterThan(0);
+    expect(section.map((row) => row.query)).toEqual(
+      rows.slice(0, section.length).map((row) => row.query),
+    );
+  }
+});
+
+it("keeps successful demand metadata when the separate official-gap cohort lookup fails", () => {
+  const gap = {
+    query: "notion",
+    searches7d: 4,
+    searchesPrevious7d: 0,
+    officialGaps7d: 4,
+    searchUrl: "/plugins?q=notion",
+    classification: null,
+    featuredCandidate: null,
+  };
+  const candidate = {
+    name: "notion-community",
+    displayName: "Notion community",
+    url: "/plugins/notion-community",
+    eligibleForFeatured: true,
+    isFeatured: false,
+  };
+  const digest = buildSearchDigest({
+    weekEnd: Date.parse("2026-09-07T00:00:00Z"),
+    siteUrl: "https://clawhub.ai",
+    totalSearches7d: 4,
+    sources7d: { "clawhub-web": 4, "openclaw-control-ui": 0 },
+    classificationStatus: "unavailable",
+    currentMetadataStatus: "available",
+    truncated: false,
+    rows: [gap],
+    featuredRows: [{ ...gap, featuredCandidate: candidate }],
+  });
+  expect(digest.featuredCandidates).toHaveLength(1);
+  expect(digest.featuredCandidates[0].package.name).toBe("notion-community");
+  expect(digest.officialGaps).toHaveLength(1);
+});

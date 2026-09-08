@@ -5,6 +5,14 @@ import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 const crons = cronJobs();
 
 if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !== "1") {
+  // Hour-aligned UTC ticks let the release gate honor Pacific DST at 09:00.
+  crons.cron("search-weekly-digest", "0 * * * *", internal.searchWeeklyDigest.tickInternal, {});
+  crons.interval(
+    "search-weekly-digest-retention",
+    { hours: 24 },
+    internal.searchWeeklyDigest.pruneExpiredInternal,
+    {},
+  );
   crons.interval(
     "search-insights-aggregate",
     { hours: 1 },
