@@ -7,6 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { searchDigestValidator } from "./lib/searchDigestContract";
 import { searchClassification, searchInsightSource } from "./lib/searchInsights";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
@@ -4536,12 +4537,27 @@ const searchWeeklyClassifications = defineTable(
   .index("by_query_and_weekEnd", ["query", "weekEnd"])
   .index("by_weekEnd", ["weekEnd"])
   .index("by_expirationTime", ["expirationTime"]);
+const searchWeeklyDigests = defineTable({
+  weekEnd: v.number(),
+  status: v.union(v.literal("claimed"), v.literal("sent"), v.literal("failed")),
+  attempts: v.number(),
+  claimedUntil: v.number(),
+  nextAttemptAt: v.number(),
+  sentAt: v.optional(v.number()),
+  failureCode: v.optional(v.string()),
+  expirationTime: v.number(),
+  payload: v.optional(searchDigestValidator),
+})
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
+  .index("by_expiration_time", ["expirationTime"]);
 
 export default defineSchema({
   searchAggregateStates,
   searchDailyAggregates,
   searchWeeklyClassifications,
   searchClassificationRuns,
+  searchWeeklyDigests,
   ...authTables,
   authSessions,
   authRefreshTokens,

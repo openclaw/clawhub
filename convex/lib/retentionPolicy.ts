@@ -91,6 +91,12 @@ export const RETENTION_POLICIES = {
       retention: "13 calendar months after the week.",
     },
   ),
+  searchWeeklyDigests: ephemeral("Bounded weekly aggregate digest payloads and delivery status.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expiration_time",
+    prune: "searchWeeklyDigest.pruneExpiredInternal",
+    retention: "13 calendar months from the completed week boundary.",
+  }),
   users: permanent("Canonical user profiles and account state."),
   authSessions: ephemeral("Convex Auth sessions expire after their total session duration.", {
     expirationField: "expirationTime",
