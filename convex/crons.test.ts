@@ -27,6 +27,9 @@ const mocks = vi.hoisted(() => {
   const skillEvaluationDispatchWatchdogRef = Symbol("skill-evaluation-dispatch-watchdog");
   return {
     interval,
+    cron: vi.fn(),
+    searchWeeklyTick: Symbol("search-weekly-tick"),
+    searchWeeklyPrune: Symbol("search-weekly-prune"),
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
@@ -55,11 +58,16 @@ const mocks = vi.hoisted(() => {
 vi.mock("convex/server", () => ({
   cronJobs: () => ({
     interval: mocks.interval,
+    cron: mocks.cron,
   }),
 }));
 
 vi.mock("./_generated/api", () => ({
   internal: {
+    searchWeeklyDigest: {
+      tickInternal: mocks.searchWeeklyTick,
+      pruneExpiredInternal: mocks.searchWeeklyPrune,
+    },
     searchInsights: {
       aggregateInternal: Symbol("search-insights-aggregate"),
       pruneExpiredInternal: Symbol("search-insights-retention"),
@@ -146,6 +154,7 @@ describe("crons", () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.interval.mockReset();
+    mocks.cron.mockReset();
     delete process.env.CLAWHUB_DISABLE_CRONS;
     delete process.env.CLAWHUB_PREVIEW;
   });
@@ -161,6 +170,7 @@ describe("crons", () => {
     await import("./crons");
 
     expect(mocks.interval).not.toHaveBeenCalled();
+    expect(mocks.cron).not.toHaveBeenCalled();
   });
 
   it("does not register side-effecting cron work in disposable previews", async () => {
@@ -169,6 +179,23 @@ describe("crons", () => {
     await import("./crons");
 
     expect(mocks.interval).not.toHaveBeenCalled();
+    expect(mocks.cron).not.toHaveBeenCalled();
+  });
+
+  it("checks the Pacific weekly release at the top of each hour and retains bounded delivery history", async () => {
+    await import("./crons");
+    expect(mocks.cron).toHaveBeenCalledWith(
+      "search-weekly-digest",
+      "0 * * * *",
+      mocks.searchWeeklyTick,
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "search-weekly-digest-retention",
+      { hours: 24 },
+      mocks.searchWeeklyPrune,
+      {},
+    );
   });
 
   it("runs GitHub skill source sync every 15 minutes", async () => {

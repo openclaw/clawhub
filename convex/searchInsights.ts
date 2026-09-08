@@ -58,7 +58,10 @@ export const listDailyInternal = internalQuery({
     ).paginate(args.paginationOpts);
   },
 });
-async function readReport(ctx: ActionCtx, args: SearchInsightArgs): Promise<SearchInsightReport> {
+export async function readReport(
+  ctx: ActionCtx,
+  args: SearchInsightArgs,
+): Promise<SearchInsightReport> {
   const coverageState: Doc<"searchAggregateStates"> | null = await ctx.runQuery(
     internal.searchInsights.getAggregateStateInternal,
     {},
