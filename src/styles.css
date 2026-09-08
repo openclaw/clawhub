@@ -34157,3 +34157,111 @@ a[class*="rounded-full"] {
     margin-top: 8px;
   }
 }
+
+.search-insights {
+  display: grid;
+  gap: 20px;
+}
+.search-insights-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+}
+.search-insights h1 {
+  font-size: 1.7rem;
+  font-weight: 650;
+  margin: 0 0 8px;
+}
+.search-insights p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+.search-insights-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.search-insights-controls label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.search-insights-controls select {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 12px;
+  min-width: 180px;
+}
+.search-insights-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.search-insights-summary > div {
+  display: grid;
+  gap: 5px;
+  padding: 20px;
+}
+.search-insights-summary strong {
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.search-insights-summary span {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+.search-insights-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.search-insights-table {
+  width: 100%;
+  min-width: 1000px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.search-insights-table th,
+.search-insights-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.search-insights-table th:first-child,
+.search-insights-table td:first-child {
+  min-width: 180px;
+  max-width: 320px;
+}
+.search-insights-table th {
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.search-insights-table small {
+  display: block;
+  color: var(--ink-soft);
+  margin-top: 4px;
+  font-size: 0.7rem;
+}
+.search-insights-table a {
+  color: var(--accent);
+}
+@media (max-width: 700px) {
+  .search-insights-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .search-insights-controls label,
+  .search-insights-controls select {
+    width: 100%;
+  }
+}

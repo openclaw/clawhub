@@ -6,6 +6,18 @@ const crons = cronJobs();
 
 if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !== "1") {
   crons.interval(
+    "search-insights-aggregate",
+    { hours: 1 },
+    internal.searchInsights.aggregateInternal,
+    {},
+  );
+  crons.interval(
+    "search-insights-retention",
+    { hours: 24 },
+    internal.searchInsights.pruneExpiredInternal,
+    {},
+  );
+  crons.interval(
     "github-skill-source-sync",
     { minutes: 15 },
     internal.githubSkillSyncNode.syncGitHubSkillSourcesInternal,

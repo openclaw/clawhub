@@ -64,6 +64,33 @@ const ephemeral = (
 });
 
 export const RETENTION_POLICIES = {
+  searchAggregateStates: permanent(
+    "One ingestion cursor and query-free coverage bounds; no identities.",
+  ),
+  searchDailyAggregates: ephemeral("Daily anonymous search facts; no historical log backfill.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expirationTime",
+    prune: "searchInsights.pruneExpiredInternal",
+    retention: "13 calendar months after the UTC day.",
+  }),
+  searchClassificationRuns: ephemeral(
+    "Query-free weekly classification completion/failure status.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expirationTime",
+      prune: "searchInsights.pruneExpiredInternal",
+      retention: "13 calendar months after the week.",
+    },
+  ),
+  searchWeeklyClassifications: ephemeral(
+    "Advisory weekly intent only; never official provenance.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expirationTime",
+      prune: "searchInsights.pruneExpiredInternal",
+      retention: "13 calendar months after the week.",
+    },
+  ),
   users: permanent("Canonical user profiles and account state."),
   authSessions: ephemeral("Convex Auth sessions expire after their total session duration.", {
     expirationField: "expirationTime",
