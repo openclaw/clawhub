@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Plus, Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { PluginListItem } from "../components/PluginListItem";
 import { PublisherListItem } from "../components/PublisherListItem";
@@ -9,6 +9,7 @@ import { SkillListItem } from "../components/SkillListItem";
 import { SkillsShListItem } from "../components/SkillsShListItem";
 import { Card } from "../components/ui/card";
 import { convexHttp } from "../convex/client";
+import { navigateWithManualPluginSearch, takeManualPluginSearch } from "../lib/manualPluginSearch";
 import type { PublicSkill } from "../lib/publicUser";
 import type { CanonicalSkillSearchResult } from "../lib/skillsShCatalog";
 import {
@@ -19,6 +20,7 @@ import {
   type UnifiedCreatorResult,
   type UnifiedPluginResult,
   type UnifiedSkillResult,
+  type ManualPluginSearch,
 } from "../lib/useUnifiedSearch";
 
 const SEARCH_PAGE_SIZE = 25;
@@ -38,6 +40,9 @@ export const Route = createFileRoute("/search")({
   }),
   loaderDeps: ({ search }) => ({
     q: search.q,
+  }),
+  beforeLoad: ({ search, preload }) => ({
+    manualPluginSearch: preload ? null : takeManualPluginSearch(search.q),
   }),
   loader: async ({ deps }): Promise<UnifiedSearchInitialData | null> =>
     await loadInitialSearchResults(deps.q),
@@ -79,10 +84,12 @@ async function loadInitialSearchResults(query: string | undefined) {
 
 function UnifiedSearchPage() {
   const search = Route.useSearch();
+  const { manualPluginSearch } = Route.useRouteContext();
   const initialSearch = Route.useLoaderData() as UnifiedSearchInitialData | null | undefined;
   const navigate = useNavigate();
   const activeType = search.type ?? "all";
   const [query, setQuery] = useState(search.q ?? "");
+  const lastManualSearchRef = useRef<ManualPluginSearch | null>(manualPluginSearch);
   const [resultLimit, setResultLimit] = useState(SEARCH_PAGE_SIZE);
 
   useEffect(() => {
@@ -105,7 +112,9 @@ function UnifiedSearchPage() {
     pluginHasMore,
     creatorHasMore,
     isSearching,
+    pluginSearchError,
   } = useUnifiedSearch(search.q ?? "", "all", {
+    ...(manualPluginSearch ? { manualPluginSearch } : {}),
     ...(initialSearch ? { initialData: initialSearch } : null),
     limits: {
       skills: resultLimit,
@@ -134,13 +143,23 @@ function UnifiedSearchPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    void navigate({
-      to: "/search",
-      search: {
-        q: query.trim() || undefined,
-        type: search.type,
-      },
-    });
+    const trimmed = query.trim();
+    if (lastManualSearchRef.current?.query !== trimmed) {
+      lastManualSearchRef.current = { query: trimmed, consumed: false };
+    }
+    const intent =
+      trimmed && (activeType === "all" || activeType === "plugins")
+        ? lastManualSearchRef.current
+        : null;
+    void navigateWithManualPluginSearch(intent, () =>
+      navigate({
+        to: "/search",
+        search: {
+          q: query.trim() || undefined,
+          type: search.type,
+        },
+      }),
+    );
   };
 
   const setType = (type: UnifiedSearchType) => {
@@ -155,6 +174,7 @@ function UnifiedSearchPage() {
   };
 
   const clearSearch = () => {
+    lastManualSearchRef.current = null;
     setQuery("");
     void navigate({
       to: "/search",
@@ -230,13 +250,23 @@ function UnifiedSearchPage() {
         </button>
       </div>
 
+      {!isSearching && pluginSearchError && (activeType === "all" || activeType === "plugins") ? (
+        <div role="alert" className="empty-state">
+          <p className="empty-state-title">Unable to search plugins</p>
+          <p className="empty-state-body">
+            The plugin catalog is temporarily unavailable. Please try again later.
+          </p>
+        </div>
+      ) : null}
       {isSearching ? (
         <BrowseResultsSkeleton count={activeType === "all" ? 8 : 6} />
       ) : !search.q ? (
         <Card className="text-center p-10">
           <p className="text-ink-soft">Enter a search term to find skills, plugins, and creators</p>
         </Card>
-      ) : results.length === 0 ? (
+      ) : results.length === 0 &&
+        pluginSearchError &&
+        (activeType === "all" || activeType === "plugins") ? null : results.length === 0 ? (
         <SearchEmptyState
           activeType={activeType}
           hasOtherTypeMatches={hasOtherTypeMatches}

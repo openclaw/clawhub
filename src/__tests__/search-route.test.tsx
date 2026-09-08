@@ -17,6 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     useLoaderData: () => loaderDataMock,
     useSearch: () => searchMock,
+    useRouteContext: () => ({ manualPluginSearch: null }),
   }),
   useNavigate: () => navigateMock,
 }));

@@ -11,6 +11,7 @@ import {
 } from "./skillsShCatalog";
 
 export type UnifiedSearchType = "all" | "skills" | "plugins" | "creators";
+export type ManualPluginSearch = { query: string; consumed: boolean };
 const MAX_UNIFIED_SEARCH_LIMIT = 100;
 const MAX_CREATOR_SEARCH_LIMIT = 50;
 
@@ -80,6 +81,8 @@ export type UnifiedSearchInitialData = {
 };
 
 type UnifiedSearchOptions = {
+  manualPluginSearch?: ManualPluginSearch | null;
+  detectPluginHasMore?: boolean;
   debounceMs?: number;
   enabled?: boolean;
   initialData?: UnifiedSearchInitialData | null;
@@ -141,6 +144,8 @@ export function useUnifiedSearch(
   const requestRef = useRef(0);
   const debounceMs = options.debounceMs ?? 300;
   const enabled = options.enabled ?? true;
+  const manualPluginSearch = options.manualPluginSearch;
+  const detectPluginHasMore = options.detectPluginHasMore ?? true;
   const initialData = options.initialData ?? null;
   const skillLimit = Math.max(0, Math.min(options.limits?.skills ?? 25, MAX_UNIFIED_SEARCH_LIMIT));
   const pluginLimit = Math.max(
@@ -198,6 +203,7 @@ export function useUnifiedSearch(
   const [isSearching, setIsSearching] = useState(
     () => enabled && trimmedQuery.length > 0 && !matchedInitialData,
   );
+  const [pluginSearchError, setPluginSearchError] = useState(false);
 
   useEffect(() => {
     if (!matchedInitialData) return;
@@ -235,6 +241,7 @@ export function useUnifiedSearch(
       setPluginHasMore(false);
       setCreatorHasMore(false);
       setIsSearching(false);
+      setPluginSearchError(false);
       return () => {};
     }
 
@@ -253,6 +260,7 @@ export function useUnifiedSearch(
     const requestId = requestRef.current;
     const controller = new AbortController();
     setIsSearching(true);
+    setPluginSearchError(false);
 
     const handle = window.setTimeout(() => {
       void (async () => {
@@ -271,10 +279,39 @@ export function useUnifiedSearch(
           }
 
           if (shouldFetchPlugins) {
+            const isManual = Boolean(
+              manualPluginSearch &&
+              !manualPluginSearch.consumed &&
+              manualPluginSearch.query === trimmedQuery,
+            );
+            if (isManual && manualPluginSearch) manualPluginSearch.consumed = true;
             promises[1] = fetchPluginCatalog({
               q: trimmedQuery,
-              limit: pluginLimit + 1,
+              limit: isManual ? pluginLimit : pluginLimit + 1,
+              ...(isManual ? { searchSource: "clawhub-web" as const } : {}),
               signal: controller.signal,
+            }).then(async (response) => {
+              if (!isManual) return response;
+              // Count only the visible response. A supporting has-more request
+              // never carries attribution and never replaces the visible rows.
+              let hasMore = false;
+              if (
+                detectPluginHasMore &&
+                response.items.length === pluginLimit &&
+                !controller.signal.aborted
+              ) {
+                try {
+                  const probe = await fetchPluginCatalog({
+                    q: trimmedQuery,
+                    limit: pluginLimit + 1,
+                    signal: controller.signal,
+                  });
+                  hasMore = probe.items.length > pluginLimit;
+                } catch {
+                  // A failed pagination probe does not discard a successful search.
+                }
+              }
+              return { ...response, hasMore };
             });
           }
 
@@ -288,6 +325,7 @@ export function useUnifiedSearch(
           const settled = await Promise.allSettled(promises.map((p) => p ?? Promise.resolve(null)));
 
           if (requestId !== requestRef.current) return;
+          setPluginSearchError(shouldFetchPlugins && settled[1].status === "rejected");
 
           const skillsRaw = settled[0].status === "fulfilled" ? settled[0].value : null;
           const pluginsRaw = settled[1].status === "fulfilled" ? settled[1].value : null;
@@ -322,7 +360,10 @@ export function useUnifiedSearch(
           setSkillHasMore(
             matchedInitialData ? matchedInitialData.skillHasMore : skillMatches.length > skillLimit,
           );
-          setPluginHasMore(pluginMatches.length > pluginLimit);
+          setPluginHasMore(
+            (pluginsRaw as { hasMore?: boolean } | null)?.hasMore ??
+              pluginMatches.length > pluginLimit,
+          );
           setCreatorHasMore(
             creatorLimit < MAX_CREATOR_SEARCH_LIMIT &&
               (creatorMatches.length > creatorLimit ||
@@ -378,6 +419,8 @@ export function useUnifiedSearch(
     creatorLimit,
     creatorRequestLimit,
     matchedInitialData,
+    manualPluginSearch,
+    detectPluginHasMore,
   ]);
 
   return {
@@ -392,5 +435,6 @@ export function useUnifiedSearch(
     pluginHasMore,
     creatorHasMore,
     isSearching,
+    pluginSearchError,
   };
 }
