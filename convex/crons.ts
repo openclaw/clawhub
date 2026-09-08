@@ -119,6 +119,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "plugin-search-observations-prune",
+    { hours: 24 },
+    internal.pluginSearchObservations.pruneExpiredInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
     "global-stats-update",
     { hours: 24 },
     internal.statsMaintenance.updateGlobalStatsAction,
