@@ -898,12 +898,6 @@ function SkillSpectorChecks({
 function SkillSpectorAttribution() {
   return (
     <div className="skillspector-attribution" aria-label="By NVIDIA">
-      <img
-        className="security-scanner-attribution-mark"
-        src="https://www.nvidia.com/favicon.ico"
-        alt=""
-        aria-hidden="true"
-      />
       <span>By NVIDIA</span>
     </div>
   );
@@ -919,12 +913,6 @@ function AigAttribution() {
       aria-label="By Tencent"
       title="Based on Tencent Zhuque Lab AI-Infra-Guard"
     >
-      <img
-        className="security-scanner-attribution-mark"
-        src="https://static.www.tencent.com/favicon.ico"
-        alt=""
-        aria-hidden="true"
-      />
       <span>By Tencent</span>
     </a>
   );

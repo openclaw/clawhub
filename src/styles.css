@@ -1904,13 +1904,6 @@ code {
   text-transform: none;
 }
 
-.security-scanner-attribution-mark {
-  width: 16px;
-  height: 16px;
-  object-fit: contain;
-  border-radius: 3px;
-}
-
 .skillspector-findings-block {
   display: grid;
   gap: 18px;

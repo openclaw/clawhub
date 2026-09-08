@@ -572,11 +572,6 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("link", { name: "By Tencent" }).getAttribute("href")).toBe(
       "https://github.com/Tencent/AI-Infra-Guard",
     );
-    expect(
-      container
-        .querySelector('a[href="https://github.com/Tencent/AI-Infra-Guard"] img')
-        ?.getAttribute("src"),
-    ).toBe("https://static.www.tencent.com/favicon.ico");
     expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
     expect(screen.queryByText(/A\.I\.G supplies supporting evidence/)).toBeNull();
     expect(screen.getByText("Findings (1)")).toBeTruthy();
