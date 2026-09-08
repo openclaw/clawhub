@@ -1,0 +1,68 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "Remove scanner vendor logos \u00b7 clean and five-finding audits \u00b7 desktop/mobile",
+  "provider": "local Chrome",
+  "baseline": "ead4d9a0b9",
+  "candidate": "c3315251caec9e269759d3dac3161a056aeadcd0",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "NVIDIA desktop \u2014 before",
+          "slug": "nvidia-desktop",
+          "status": "passed",
+          "screenshot": "nvidia-desktop.png"
+        },
+        {
+          "name": "NVIDIA mobile \u2014 before",
+          "slug": "nvidia-mobile",
+          "status": "passed",
+          "screenshot": "nvidia-mobile.png"
+        },
+        {
+          "name": "TENCENT desktop \u2014 before",
+          "slug": "tencent-desktop",
+          "status": "passed",
+          "screenshot": "tencent-desktop.png"
+        },
+        {
+          "name": "TENCENT mobile \u2014 before",
+          "slug": "tencent-mobile",
+          "status": "passed",
+          "screenshot": "tencent-mobile.png"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "NVIDIA desktop \u2014 after",
+          "slug": "nvidia-desktop",
+          "status": "passed",
+          "screenshot": "nvidia-desktop.png"
+        },
+        {
+          "name": "NVIDIA mobile \u2014 after",
+          "slug": "nvidia-mobile",
+          "status": "passed",
+          "screenshot": "nvidia-mobile.png"
+        },
+        {
+          "name": "TENCENT desktop \u2014 after",
+          "slug": "tencent-desktop",
+          "status": "passed",
+          "screenshot": "tencent-desktop.png"
+        },
+        {
+          "name": "TENCENT mobile \u2014 after",
+          "slug": "tencent-mobile",
+          "status": "passed",
+          "screenshot": "tencent-mobile.png"
+        }
+      ]
+    }
+  ]
+}
