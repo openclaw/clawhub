@@ -1,0 +1,68 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "Scanner information tooltips \u00b7 hover, keyboard, and touch \u00b7 desktop/mobile",
+  "provider": "local Chrome",
+  "baseline": "ead4d9a0b9",
+  "candidate": "6a9a4c81654bf056cffa507325193f2eea32a9b1",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "NVIDIA desktop \u2014 before",
+          "slug": "nvidia-desktop",
+          "status": "passed",
+          "screenshot": "nvidia-desktop.png"
+        },
+        {
+          "name": "NVIDIA mobile \u2014 before",
+          "slug": "nvidia-mobile",
+          "status": "passed",
+          "screenshot": "nvidia-mobile.png"
+        },
+        {
+          "name": "TENCENT desktop \u2014 before",
+          "slug": "tencent-desktop",
+          "status": "passed",
+          "screenshot": "tencent-desktop.png"
+        },
+        {
+          "name": "TENCENT mobile \u2014 before",
+          "slug": "tencent-mobile",
+          "status": "passed",
+          "screenshot": "tencent-mobile.png"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "NVIDIA desktop \u2014 tooltip hovered",
+          "slug": "nvidia-desktop",
+          "status": "passed",
+          "screenshot": "nvidia-desktop.png"
+        },
+        {
+          "name": "NVIDIA mobile \u2014 tooltip hovered",
+          "slug": "nvidia-mobile",
+          "status": "passed",
+          "screenshot": "nvidia-mobile.png"
+        },
+        {
+          "name": "TENCENT desktop \u2014 tooltip hovered",
+          "slug": "tencent-desktop",
+          "status": "passed",
+          "screenshot": "tencent-desktop.png"
+        },
+        {
+          "name": "TENCENT mobile \u2014 tooltip hovered",
+          "slug": "tencent-mobile",
+          "status": "passed",
+          "screenshot": "tencent-mobile.png"
+        }
+      ]
+    }
+  ]
+}
