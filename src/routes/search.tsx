@@ -174,6 +174,7 @@ function UnifiedSearchPage() {
   };
 
   const clearSearch = () => {
+    lastManualSearchRef.current = null;
     setQuery("");
     void navigate({
       to: "/search",

@@ -667,7 +667,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             placeholder={kind === "skills" ? "Search skills..." : "Search plugins..."}
             value={searchQuery}
             onChange={(next) => {
-              manualPluginQueryRef.current = kind === "plugins" ? next.trim() || null : null;
+              if (next.trim() !== trimmedSearch) {
+                manualPluginQueryRef.current = kind === "plugins" ? next.trim() || null : null;
+              }
               setSearchQuery(next);
             }}
             onClear={searchDisclosure.closeSearch}

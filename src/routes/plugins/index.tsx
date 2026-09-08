@@ -600,6 +600,8 @@ function PluginsIndex() {
 
   const handleClearSearch = () => {
     window.clearTimeout(searchNavigateTimer.current);
+    lastManualQueryRef.current = null;
+    manualSearchNavigation.pending = null;
     setQuery("");
     searchInputRef.current?.focus();
     void navigate({

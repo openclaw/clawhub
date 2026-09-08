@@ -183,11 +183,30 @@ describe("manual plugin search attribution", () => {
     const search = requests.find((url) => url.pathname.endsWith("/plugins/search"))!;
     expect(search.searchParams.get("searchSource")).toBe("clawhub-web");
     expect(search.searchParams.get("limit")).toBe("20");
+    fireEvent.change(input, { target: { value: "notion " } });
     fireEvent.click(screen.getByRole("tab", { name: "Official" }));
     await waitFor(() =>
       expect(requests.filter((url) => url.pathname.endsWith("/plugins/search"))).toHaveLength(2),
     );
     expect(requests.filter((url) => url.searchParams.has("searchSource"))).toHaveLength(1);
+  });
+
+  it("starts a new manual intent after clearing and retyping the same plugin query", async () => {
+    await openPlugins("/plugins?q=notion");
+    const input = screen.getByPlaceholderText("Search plugins...");
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() =>
+      expect(requests.filter((url) => url.searchParams.has("searchSource"))).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe(""));
+    fireEvent.click(screen.getByRole("button", { name: "Search plugins" }));
+    fireEvent.change(screen.getByPlaceholderText("Search plugins..."), {
+      target: { value: "notion" },
+    });
+    await waitFor(() =>
+      expect(requests.filter((url) => url.searchParams.has("searchSource"))).toHaveLength(2),
+    );
   });
 
   it("marks only visible header plugin results after manual input settles", async () => {
