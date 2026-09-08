@@ -1,0 +1,68 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "Scanner tooltip titles \u2014 SkillSpector by NVIDIA / A.I.G by Tencent \u2014 hover, keyboard, touch",
+  "provider": "local Chrome",
+  "baseline": "ead4d9a0b9",
+  "candidate": "bda3eb6f24b219cac75b0827deb857891e904f27",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "NVIDIA desktop \u2014 before",
+          "slug": "nvidia-desktop",
+          "status": "passed",
+          "screenshot": "nvidia-desktop.png"
+        },
+        {
+          "name": "NVIDIA mobile \u2014 before",
+          "slug": "nvidia-mobile",
+          "status": "passed",
+          "screenshot": "nvidia-mobile.png"
+        },
+        {
+          "name": "TENCENT desktop \u2014 before",
+          "slug": "tencent-desktop",
+          "status": "passed",
+          "screenshot": "tencent-desktop.png"
+        },
+        {
+          "name": "TENCENT mobile \u2014 before",
+          "slug": "tencent-mobile",
+          "status": "passed",
+          "screenshot": "tencent-mobile.png"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "NVIDIA desktop \u2014 tooltip hovered",
+          "slug": "nvidia-desktop",
+          "status": "passed",
+          "screenshot": "nvidia-desktop.png"
+        },
+        {
+          "name": "NVIDIA mobile \u2014 tooltip hovered",
+          "slug": "nvidia-mobile",
+          "status": "passed",
+          "screenshot": "nvidia-mobile.png"
+        },
+        {
+          "name": "TENCENT desktop \u2014 tooltip hovered",
+          "slug": "tencent-desktop",
+          "status": "passed",
+          "screenshot": "tencent-desktop.png"
+        },
+        {
+          "name": "TENCENT mobile \u2014 tooltip hovered",
+          "slug": "tencent-mobile",
+          "status": "passed",
+          "screenshot": "tencent-mobile.png"
+        }
+      ]
+    }
+  ]
+}
