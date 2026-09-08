@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -489,7 +489,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
-  it("renders SkillSpector findings as the agentic-risk finding source", () => {
+  it("renders SkillSpector findings as the agentic-risk finding source", async () => {
     const { container } = render(
       <SecurityAuditPage
         entity={{
@@ -517,7 +517,14 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("link", { name: "SkillSpector" }).getAttribute("target")).toBe(
       "_blank",
     );
-    expect(screen.getByText("By NVIDIA")).toBeTruthy();
+    expect(screen.queryByText("By NVIDIA")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "About SkillSpector" }));
+    const info = within(await screen.findByRole("dialog", { name: "About SkillSpector" }));
+    expect(info.getByText("By NVIDIA")).toBeTruthy();
+    expect(info.getByText(/Scans agent skills for vulnerabilities/)).toBeTruthy();
+    expect(info.getByRole("link", { name: "Learn more" }).getAttribute("href")).toBe(
+      "https://github.com/NVIDIA/SkillSpector",
+    );
     expect(screen.queryByText("SkillSpector found 1 issue.")).toBeNull();
     expect(screen.getByRole("heading", { name: "Description-Behavior Mismatch" })).toBeTruthy();
     expect(screen.getAllByText("High").length).toBeGreaterThan(0);
@@ -548,7 +555,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
-  it("renders A.I.G coverage and concise findings with Tencent attribution", () => {
+  it("renders A.I.G coverage and concise findings with Tencent attribution", async () => {
     const { container } = render(
       <SecurityAuditPage
         entity={{
@@ -569,9 +576,15 @@ describe("SecurityScanResults static guidance", () => {
     );
     expect(screen.getByRole("link", { name: "A.I.G" }).getAttribute("target")).toBe("_blank");
     expect(screen.queryByText("Malicious")).toBeNull();
-    expect(screen.getByRole("link", { name: "By Tencent" }).getAttribute("href")).toBe(
+    expect(screen.queryByText("Based on Tencent Zhuque Lab AI-Infra-Guard")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "About A.I.G" }));
+    const info = within(await screen.findByRole("dialog", { name: "About A.I.G" }));
+    expect(info.getByText("Based on Tencent Zhuque Lab AI-Infra-Guard")).toBeTruthy();
+    expect(info.getByText(/Uses AI to audit agent skill code/)).toBeTruthy();
+    expect(info.getByRole("link", { name: "Learn more" }).getAttribute("href")).toBe(
       "https://github.com/Tencent/AI-Infra-Guard",
     );
+    expect(info.getByRole("link", { name: "Learn more" }).getAttribute("target")).toBe("_blank");
     expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
     expect(screen.queryByText(/A\.I\.G supplies supporting evidence/)).toBeNull();
     expect(screen.getByText("Findings (1)")).toBeTruthy();

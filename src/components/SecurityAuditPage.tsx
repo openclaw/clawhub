@@ -17,6 +17,7 @@ import {
   buildSecurityAuditExportZip,
   type StaticScan,
 } from "../lib/securityAuditExport";
+import { ScannerInfoTooltip } from "./ScannerInfoTooltip";
 import {
   aggregateAuditVerdict,
   AUDIT_SCANNER_LABELS,
@@ -897,24 +898,23 @@ function SkillSpectorChecks({
 
 function SkillSpectorAttribution() {
   return (
-    <div className="skillspector-attribution" aria-label="By NVIDIA">
-      <span>By NVIDIA</span>
-    </div>
+    <ScannerInfoTooltip
+      name="SkillSpector"
+      company="By NVIDIA"
+      description="Scans agent skills for vulnerabilities, malicious code, and unsafe behavior."
+      href="https://github.com/NVIDIA/SkillSpector"
+    />
   );
 }
 
 function AigAttribution() {
   return (
-    <a
-      className="skillspector-attribution"
+    <ScannerInfoTooltip
+      name="A.I.G"
+      company="Based on Tencent Zhuque Lab AI-Infra-Guard"
+      description="Uses AI to audit agent skill code for vulnerabilities and malicious behavior."
       href="https://github.com/Tencent/AI-Infra-Guard"
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="By Tencent"
-      title="Based on Tencent Zhuque Lab AI-Infra-Guard"
-    >
-      <span>By Tencent</span>
-    </a>
+    />
   );
 }
 

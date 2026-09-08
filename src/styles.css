@@ -1893,15 +1893,58 @@ code {
   min-width: 0;
 }
 
-.skillspector-attribution {
+.security-scanner-info-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
   color: var(--ink-soft);
-  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.security-scanner-info-trigger:hover {
+  color: var(--ink);
+}
+
+.security-scanner-info-trigger:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.security-scanner-info-tooltip {
+  z-index: 50;
+  display: grid;
+  gap: 8px;
+  width: 288px;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-bg-elevated);
+  color: var(--oc-text-primary);
+  box-shadow: var(--oc-shadow-md);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.security-scanner-info-company {
   font-weight: 650;
-  line-height: 1;
-  text-transform: none;
+}
+
+.security-scanner-info-tooltip p {
+  margin: 0;
+}
+
+.security-scanner-info-tooltip a {
+  width: fit-content;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .skillspector-findings-block {
