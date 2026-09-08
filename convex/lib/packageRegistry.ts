@@ -279,6 +279,7 @@ export function derivePluginManifestSummary(params: {
   skillManifest?: JsonRecord;
   files: PluginManifestSummaryFile[];
   compatibility?: PackageCompatibility;
+  categories?: readonly string[];
 }) {
   const icon = normalizePluginManifestIcon(params.pluginManifest);
   const compatibility = extractCompatibilityFromManifest(
@@ -313,6 +314,7 @@ export function derivePluginManifestSummary(params: {
 
   return {
     schemaVersion: 1 as const,
+    ...(params.categories ? { categories: [...params.categories] } : {}),
     ...(icon ? { icon } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),

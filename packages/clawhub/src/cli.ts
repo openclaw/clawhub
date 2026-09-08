@@ -753,7 +753,12 @@ registerCommand(packageCmd, ["package", "publish"])
     "Required for manual publish when trusted publisher config exists",
   )
   .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--categories <slugs>", "Comma-separated category slugs")
+  .addOption(
+    new Option(
+      "--categories <slugs>",
+      "Deprecated compatibility input; declare plugin categories in openclaw.plugin.json",
+    ).hideHelp(),
+  )
   .option("--topics <topics>", "Comma-separated topics")
   .option("--bundle-format <format>", "Bundle format")
   .option("--host-targets <targets>", "Comma-separated bundle host targets")

@@ -1,7 +1,9 @@
 import {
   ServerPackagePublishRequestSchema,
+  PACKAGE_CATEGORY_BATCH_LIMIT,
   validateClawPackageContents,
   derivePluginCategoryTags,
+  inferPluginCategoriesFromManifest,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   INTERNAL_UNCATEGORIZED_CATEGORY,
@@ -3403,6 +3405,55 @@ export const getVersionByNameForViewerInternal = internalQuery({
         ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
       },
     };
+  },
+});
+
+export const resolveVersionCategoriesBatchInternal = internalQuery({
+  args: {
+    packages: v.array(
+      v.object({
+        name: v.string(),
+        version: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (args.packages.length > PACKAGE_CATEGORY_BATCH_LIMIT) {
+      throw new ConvexError(
+        `Package category batches are limited to ${PACKAGE_CATEGORY_BATCH_LIMIT} packages`,
+      );
+    }
+    const identityKey = (identity: { name: string; version: string }) =>
+      JSON.stringify([identity.name, identity.version]);
+    const uniqueIdentities = [
+      ...new Map(args.packages.map((identity) => [identityKey(identity), identity])).values(),
+    ];
+    const resolved = await Promise.all(
+      uniqueIdentities.map(async (identity) => {
+        const pkg = await getReadablePackageByName(ctx, identity.name, undefined);
+        if (!pkg || (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin")) {
+          return [identityKey(identity), null] as const;
+        }
+        const release = await ctx.db
+          .query("packageReleases")
+          .withIndex("by_package_version", (q) =>
+            q.eq("packageId", pkg._id).eq("version", identity.version),
+          )
+          .unique();
+        return [
+          identityKey(identity),
+          isPublishedPackageRelease(release) && release.pluginManifestSummary?.categories
+            ? [...release.pluginManifestSummary.categories]
+            : null,
+        ] as const;
+      }),
+    );
+    const categoriesByIdentity = new Map(resolved);
+
+    return args.packages.map((identity) => ({
+      ...identity,
+      categories: categoriesByIdentity.get(identityKey(identity)) ?? null,
+    }));
   },
 });
 
@@ -8896,12 +8947,23 @@ async function publishPackageImpl(
   let categories: string[];
   let normalizedTopics: string[];
   try {
-    const declaredCategories =
-      payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
-    categories =
-      family === "claw"
-        ? (declaredCategories ?? [])
-        : resolvePluginCategories({ declared: declaredCategories });
+    if (family === "code-plugin" || family === "bundle-plugin") {
+      const inferredCategories = [
+        ...new Set([
+          ...inferPluginCategoriesFromManifest(pluginManifest),
+          ...inferPluginCategoriesFromManifest(bundleManifest),
+        ]),
+      ].slice(0, 3);
+      categories = derivePluginCategoryTags({
+        family,
+        pluginManifest,
+        inferredCategories,
+      });
+    } else {
+      const declaredCategories =
+        payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
+      categories = declaredCategories ?? [];
+    }
     normalizedTopics = normalizeCatalogTopics(payload.topics ?? existingPackage?.topics);
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
@@ -8961,6 +9023,7 @@ async function publishPackageImpl(
             })(),
           ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
           compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+          ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
           files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
         });
 
@@ -10258,10 +10321,20 @@ export const setPackageCatalogMetadata = mutation({
       allowPlatformModerator: true,
     });
 
-    let normalizedCategories: string[];
     let normalizedTopics: string[];
     try {
-      normalizedCategories = resolvePluginCategories({ declared: args.categories });
+      if (args.categories !== undefined) {
+        const echoedCategories = resolvePluginCategories({ declared: args.categories });
+        const currentCategories = resolvePluginCategories({ declared: pkg.categories });
+        if (
+          echoedCategories.length !== currentCategories.length ||
+          echoedCategories.some((category, index) => category !== currentCategories[index])
+        ) {
+          throw new Error(
+            "Plugin categories come from openclaw.plugin.json; publish a new version to change them",
+          );
+        }
+      }
       normalizedTopics = normalizeCatalogTopics(args.topics);
     } catch (error) {
       throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
@@ -10270,33 +10343,19 @@ export const setPackageCatalogMetadata = mutation({
     const now = Date.now();
     const nextPackage = {
       ...pkg,
-      categories: normalizedCategories,
       topics: normalizedTopics.length ? normalizedTopics : undefined,
-      inferredCategories: undefined,
       inferredTopics: undefined,
-      inferredFromReleaseId: undefined,
-      inferredCategoryConfidence: undefined,
       inferredTopicConfidence: undefined,
-      inferredClassifierVersion: undefined,
       inferredTopicClassifierVersion: undefined,
-      inferredInputHash: undefined,
       inferredTopicInputHash: undefined,
-      inferredAt: undefined,
       updatedAt: now,
     };
     await ctx.db.patch(pkg._id, {
-      categories: nextPackage.categories,
       topics: nextPackage.topics,
-      inferredCategories: nextPackage.inferredCategories,
       inferredTopics: nextPackage.inferredTopics,
-      inferredFromReleaseId: nextPackage.inferredFromReleaseId,
-      inferredCategoryConfidence: nextPackage.inferredCategoryConfidence,
       inferredTopicConfidence: nextPackage.inferredTopicConfidence,
-      inferredClassifierVersion: nextPackage.inferredClassifierVersion,
       inferredTopicClassifierVersion: nextPackage.inferredTopicClassifierVersion,
-      inferredInputHash: nextPackage.inferredInputHash,
       inferredTopicInputHash: nextPackage.inferredTopicInputHash,
-      inferredAt: nextPackage.inferredAt,
       updatedAt: now,
     });
     const owner = await getOwnerPublisher(ctx, {

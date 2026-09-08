@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   derivePluginCategoryTags,
+  getDeclaredPluginCategoriesFromManifest,
   inferPluginCategoriesFromManifest,
   isPluginCategorySlug,
+  PLUGIN_CATEGORY_SLUGS,
   resolveStoredPluginCategories,
 } from "./pluginCategories";
 
@@ -86,7 +88,7 @@ describe("plugin categories", () => {
     ).toEqual(["security"]);
   });
 
-  it("ignores manifest taxonomy declarations and uses contribution inference", () => {
+  it("uses package manifest declarations before contribution inference", () => {
     expect(
       derivePluginCategoryTags({
         family: "code-plugin",
@@ -95,16 +97,55 @@ describe("plugin categories", () => {
           contracts: { tools: ["demo"] },
         },
       }),
-    ).toEqual(["tools"]);
+    ).toEqual(["security"]);
+  });
+
+  it("rejects invalid package manifest category declarations", () => {
+    expect(() =>
+      derivePluginCategoryTags({
+        family: "code-plugin",
+        pluginManifest: { categories: [], contracts: { tools: ["demo"] } },
+      }),
+    ).toThrow("Plugin manifest categories must contain at least one category");
+    expect(() =>
+      derivePluginCategoryTags({
+        family: "code-plugin",
+        pluginManifest: { categories: ["legacy-category"] },
+      }),
+    ).toThrow('Unknown plugin category slug "legacy-category"');
+    expect(() =>
+      getDeclaredPluginCategoriesFromManifest({ categories: ["models", "models"] }),
+    ).toThrow('Duplicate plugin category slug "models"');
+    expect(() => getDeclaredPluginCategoriesFromManifest({ categories: [" models"] })).toThrow(
+      'Unknown plugin category slug " models"',
+    );
+  });
+
+  it("matches the OpenClaw package category contract", () => {
+    expect(PLUGIN_CATEGORY_SLUGS).toEqual([
+      "channels",
+      "models",
+      "memory",
+      "context",
+      "voice",
+      "media",
+      "web",
+      "tools",
+      "runtime",
+      "gateway",
+      "security",
+      "other",
+    ]);
+    expect(getDeclaredPluginCategoriesFromManifest({ categories: ["other", "models"] })).toEqual([
+      "other",
+      "models",
+    ]);
     expect(
       derivePluginCategoryTags({
         family: "code-plugin",
-        pluginManifest: {
-          categories: ["legacy-category"],
-          contracts: { tools: ["demo"] },
-        },
+        pluginManifest: { categories: ["other", "models"] },
       }),
-    ).toEqual(["tools"]);
+    ).toEqual(["other", "models"]);
   });
 
   it("does not classify skills as plugin categories", () => {

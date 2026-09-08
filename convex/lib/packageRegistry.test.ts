@@ -85,6 +85,7 @@ describe("packageRegistry", () => {
         description: "Manifest description is diagnostic only",
         version: "9.9.9",
         family: "code-plugin",
+        categories: ["tools", "runtime"],
         icon: "  https://cdn.example.test/icons/example-ai-plugin.svg  ",
         openclaw: {
           compat: {
@@ -144,10 +145,12 @@ describe("packageRegistry", () => {
           text: "not a skill",
         },
       ],
+      categories: ["tools", "runtime"],
     });
 
     expect(summary).toEqual({
       schemaVersion: 1,
+      categories: ["tools", "runtime"],
       icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
       compatibility: { pluginApiRange: "^2.0.0" },
       manifestIdentity: {

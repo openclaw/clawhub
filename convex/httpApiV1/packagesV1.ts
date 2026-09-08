@@ -1,5 +1,7 @@
 import {
   ApiRoutes,
+  ApiV1PackageCategoriesBatchRequestSchema,
+  ApiV1PackageCategoriesBatchResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageValidationReportPageSchema,
@@ -9,6 +11,7 @@ import {
   PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
+  PACKAGE_CATEGORY_BATCH_LIMIT,
   PackageRepairNameRequestSchema,
   PackageRepairRuntimeIdRequestSchema,
   PackageReportRequestSchema,
@@ -23,6 +26,7 @@ import {
   isPluginCategorySlug,
   PLUGIN_CATEGORY_DEFINITIONS,
   parseArk,
+  type ApiV1PackageCategoriesBatchRequest,
   type PackagePublishMetadata,
   type PackageAppealListStatus,
   type PackageModerationQueueStatus,
@@ -128,6 +132,7 @@ const internalRefs = internal as unknown as {
     hardDeleteForAdminInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
+    resolveVersionCategoriesBatchInternal: unknown;
     getVersionSecurityByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
     publishPackageForTrustedPublisherInternal: unknown;
@@ -2841,6 +2846,54 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[0] === "categories:batch" && segments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+
+    let body: ApiV1PackageCategoriesBatchRequest;
+    try {
+      body = parseArk(
+        ApiV1PackageCategoriesBatchRequestSchema,
+        await request.json(),
+        "Package category batch payload",
+      );
+      if (body.packages.length > PACKAGE_CATEGORY_BATCH_LIMIT) {
+        throw new Error(
+          `Package category batches are limited to ${PACKAGE_CATEGORY_BATCH_LIMIT} packages`,
+        );
+      }
+      if (
+        body.packages.some(
+          ({ name, version }) =>
+            !name.trim() || !version.trim() || tryNormalizePackageName(name) === null,
+        )
+      ) {
+        throw new Error("Package names and versions must be non-empty valid package identities");
+      }
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Invalid package category batch payload",
+        400,
+        rate.headers,
+      );
+    }
+
+    try {
+      const packages = await runQueryRef<
+        Array<{ name: string; version: string; categories: string[] | null }>
+      >(ctx, internalRefs.packages.resolveVersionCategoriesBatchInternal, {
+        packages: body.packages,
+      });
+      const response = parseArk(
+        ApiV1PackageCategoriesBatchResponseSchema,
+        { packages },
+        "Package category batch response",
+      );
+      return json(response, 200, rate.headers);
+    } catch {
+      return text("Internal Server Error", 500, rate.headers);
+    }
+  }
   if (segments[0] === "migrations" && segments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;

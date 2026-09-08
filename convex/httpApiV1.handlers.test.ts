@@ -339,6 +339,83 @@ beforeEach(() => {
 });
 
 describe("httpApiV1 handlers", () => {
+  it("returns exact-version categories in request order", async () => {
+    const requested = [
+      { name: "@openclaw/whatsapp", version: "1.2.3" },
+      { name: "@openclaw/missing", version: "9.9.9" },
+      { name: "@openclaw/whatsapp", version: "1.2.3" },
+    ];
+    const runQuery = vi.fn(async () => [
+      { ...requested[0], categories: ["channels"] },
+      { ...requested[1], categories: null },
+      { ...requested[2], categories: ["channels"] },
+    ]);
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify({ packages: requested }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      packages: [
+        { ...requested[0], categories: ["channels"] },
+        { ...requested[1], categories: null },
+        { ...requested[2], categories: ["channels"] },
+      ],
+    });
+    expect(runQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["rejects malformed batch bodies", { packages: "not-an-array" }, "payload"],
+    [
+      "rejects blank exact-version identities",
+      { packages: [{ name: " ", version: "1.2.3" }] },
+      "non-empty",
+    ],
+    [
+      "caps exact-version category batches at 200 packages",
+      {
+        packages: Array.from({ length: 201 }, (_, index) => ({
+          name: `@openclaw/plugin-${index}`,
+          version: "1.0.0",
+        })),
+      },
+      "200",
+    ],
+  ])("%s", async (_name, body, expectedMessage) => {
+    const runQuery = vi.fn();
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain(expectedMessage);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 when exact-version category lookup fails internally", async () => {
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn().mockRejectedValue(new Error("database unavailable")) }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify({
+          packages: [{ name: "@openclaw/whatsapp", version: "1.2.3" }],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+  });
+
   it("rejects local scan upload submissions with scan-download guidance", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:owner",

@@ -4,6 +4,7 @@ import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 
 export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
+export const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
 
 export function normalizePackageOwnerHandle(handle: string | null | undefined) {
   const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
@@ -54,6 +55,7 @@ export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred]
 
 export const PluginManifestSummarySchema = type({
   schemaVersion: "number",
+  categories: "string[]?",
   icon: "string?",
   compatibility: PackageCompatibilitySchema.optional(),
   manifestIdentity: type({
@@ -81,6 +83,31 @@ export const PluginManifestSummarySchema = type({
   }).array(),
 });
 export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
+
+const PackageVersionIdentitySchema = type({
+  "+": "reject",
+  name: "string",
+  version: "string",
+});
+
+export const ApiV1PackageCategoriesBatchRequestSchema = type({
+  "+": "reject",
+  packages: PackageVersionIdentitySchema.array(),
+});
+export type ApiV1PackageCategoriesBatchRequest =
+  (typeof ApiV1PackageCategoriesBatchRequestSchema)[inferred];
+
+export const ApiV1PackageCategoriesBatchResponseSchema = type({
+  "+": "reject",
+  packages: type({
+    "+": "reject",
+    name: "string",
+    version: "string",
+    categories: "string[]|null",
+  }).array(),
+});
+export type ApiV1PackageCategoriesBatchResponse =
+  (typeof ApiV1PackageCategoriesBatchResponseSchema)[inferred];
 
 export const PackageVerificationSummarySchema = type({
   tier: PackageVerificationTierSchema,

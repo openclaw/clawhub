@@ -12790,8 +12790,11 @@ describe("packages public queries", () => {
     );
   });
 
-  it("forwards only valid HTTPS plugin manifest icons to release insertion", async () => {
-    async function publishWithManifestIcon(icon: unknown) {
+  it("forwards valid manifest icons and derives categories when declarations are omitted", async () => {
+    async function publishWithManifestIcon(
+      icon: unknown,
+      bundleManifest?: Record<string, unknown>,
+    ) {
       const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
         if (args.minimumRole === "publisher") {
           return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
@@ -12816,7 +12819,15 @@ describe("packages public queries", () => {
             },
           }),
         ],
-        ["storage:manifest", JSON.stringify({ id: "demo.plugin", icon })],
+        [
+          "storage:manifest",
+          JSON.stringify({ id: "demo.plugin", icon, contracts: { tools: ["demoTool"] } }),
+        ],
+        ...(bundleManifest
+          ? ([["storage:bundle-manifest", JSON.stringify(bundleManifest)]] as Array<
+              [string, string]
+            >)
+          : []),
         ["storage:code", "export default {};"],
       ]);
       const ctx = {
@@ -12858,7 +12869,7 @@ describe("packages public queries", () => {
         payload: {
           name: "demo-plugin",
           displayName: "Demo Plugin",
-          family: "code-plugin",
+          family: bundleManifest ? "bundle-plugin" : "code-plugin",
           version: "1.0.0",
           changelog: "init",
           source: {
@@ -12885,6 +12896,17 @@ describe("packages public queries", () => {
               sha256: "manifest",
               contentType: "application/json",
             },
+            ...(bundleManifest
+              ? [
+                  {
+                    path: ".codex-plugin/plugin.json",
+                    size: 1,
+                    storageId: "storage:bundle-manifest",
+                    sha256: "bundle-manifest",
+                    contentType: "application/json",
+                  },
+                ]
+              : []),
             {
               path: "dist/index.js",
               size: 1,
@@ -12908,7 +12930,21 @@ describe("packages public queries", () => {
 
     await expect(
       publishWithManifestIcon("https://cdn.example.test/icons/demo.svg"),
-    ).resolves.toMatchObject({ icon: "https://cdn.example.test/icons/demo.svg" });
+    ).resolves.toMatchObject({
+      icon: "https://cdn.example.test/icons/demo.svg",
+      categories: ["tools"],
+      pluginManifestSummary: { categories: ["tools"] },
+    });
+    await expect(
+      publishWithManifestIcon(undefined, {
+        channels: ["whatsapp"],
+        providers: ["openrouter"],
+        kind: "memory",
+      }),
+    ).resolves.toMatchObject({
+      categories: ["tools", "channels", "models"],
+      pluginManifestSummary: { categories: ["tools", "channels", "models"] },
+    });
 
     for (const icon of [
       "http://cdn.example.test/icons/demo.svg",
@@ -13063,7 +13099,10 @@ describe("packages public queries", () => {
     );
 
     expect(runMutation).toHaveBeenCalled();
-    expect(result.categories).toEqual(["other"]);
+    expect(result.categories).toEqual(["security"]);
+    expect(result.pluginManifestSummary).toEqual(
+      expect.objectContaining({ categories: ["security"] }),
+    );
     expect(result.topics).toBeUndefined();
     expect(result.sha256hash).toBe(expectedLegacyZipSha256);
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));

@@ -1,5 +1,6 @@
 import { type PluginCategorySlug } from "./catalogMetadata.js";
 export { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS, PLUGIN_CATEGORY_SLUGS, type PluginCategorySlug, } from "./catalogMetadata.js";
+export declare function getDeclaredPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[] | undefined;
 export declare function inferPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[];
 export declare function derivePluginCategoryTags(input: {
     family?: string;

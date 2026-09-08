@@ -125,15 +125,6 @@ function getFileInputs() {
   return Array.from(document.querySelectorAll('input[type="file"]')) as HTMLInputElement[];
 }
 
-function selectCategory(name: string) {
-  const trigger = screen.getByRole("button", { name: "Categories" });
-  if (trigger.getAttribute("aria-expanded") !== "true") {
-    fireEvent.pointerDown(trigger, { button: 0 });
-  }
-  fireEvent.click(screen.getByRole("menuitemcheckbox", { name }));
-  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
-}
-
 describe("plugins publish route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
@@ -511,7 +502,7 @@ describe("plugins publish route", () => {
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
-  it("prefills and preserves catalog metadata when publishing a new plugin version", async () => {
+  it("prefills and preserves topics when publishing a new plugin version", async () => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",
       name: "demo-plugin",
@@ -544,9 +535,9 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
       expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
     });
+    expect(screen.queryByRole("button", { name: "Categories" })).toBeNull();
 
     const packageJson = withRelativePath(
       new File(
@@ -582,10 +573,10 @@ describe("plugins publish route", () => {
     });
     expect(publishRelease).toHaveBeenCalledWith({
       payload: expect.objectContaining({
-        categories: ["tools"],
         topics: ["GPU development"],
       }),
     });
+    expect(publishRelease.mock.calls[0]?.[0].payload).not.toHaveProperty("categories");
   });
 
   it("auto-fills a package changelog preview from the uploaded README", async () => {
@@ -775,7 +766,7 @@ describe("plugins publish route", () => {
     });
   });
 
-  it("sends explicit empty catalog metadata when it is cleared on a plugin version publish", async () => {
+  it("sends empty topics when they are cleared on a plugin version publish", async () => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",
       name: "demo-plugin",
@@ -829,10 +820,9 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
       expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
     });
-    selectCategory("Tools");
+    expect(screen.queryByRole("button", { name: "Categories" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Remove GPU development keyword" }));
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
@@ -844,10 +834,10 @@ describe("plugins publish route", () => {
     });
     expect(publishRelease).toHaveBeenCalledWith({
       payload: expect.objectContaining({
-        categories: [],
         topics: [],
       }),
     });
+    expect(publishRelease.mock.calls[0]?.[0].payload).not.toHaveProperty("categories");
   });
 
   it("shows backend publish failures inline on the upload form", async () => {

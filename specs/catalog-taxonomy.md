@@ -5,29 +5,23 @@
 - Skills and plugins use separate controlled slug registries from `clawhub-schema`.
 - Category slugs name one concept. Plugin categories mirror contribution slots; skill categories
   describe user intent.
-- Each item stores up to three category slugs. Unknown slugs are rejected.
-- `other` is a fallback and is removed whenever a specific category is present.
-- Category selection precedence:
-  1. Current publish input from CLI or UI.
-  2. Existing stored categories.
-  3. `other`.
-- Omitted or empty categories mean `other`; categories are never inferred implicitly.
-- Generate is an explicit author action that fills editable category selections. Generated skill
-  suggestions use title, summary, and slug. Generated plugin suggestions use manifest contribution
-  fields.
-- Generated suggestions only emit controlled slugs and are not persisted until Save or Publish.
-- Metadata files are not author-facing taxonomy declaration sources. Plugin manifests are only used
-  when an author explicitly generates plugin category suggestions.
+- Skills store up to three category slugs. Unknown slugs are rejected, and `other` is removed when
+  a specific skill category is present.
+- Plugins may declare an ordered `categories` array in `openclaw.plugin.json`. When present, it must
+  contain one to three exact controlled plugin slugs with no duplicates; the first value is primary.
+- Plugin category precedence is package declaration, then ClawHub manifest-contribution inference,
+  then `other`. Omission is accepted. Invalid declarations reject publication instead of falling
+  through to inference.
+- Each plugin release stores the effective categories for that exact package version. A promoted
+  latest release also updates the package-level categories used by browse, search, and filters.
+- Plugin categories are package-owned and are not editable in ClawHub publish or settings UI.
+  Publishers change them by publishing a new package version.
 - Backports and non-latest plugin releases do not replace current categories.
 - Capability tags are not taxonomy inputs.
-- Existing items without valid stored categories remain in `other` until an author or operator
-  explicitly accepts generated or manually selected categories.
-- `categories` is the single canonical source for detail, settings, profile, API, and discovery
-  reads.
-- The one-time classifier backfill may seed `categories` only when a publisher has never supplied
-  the field. Once seeded, publishers own the values and may replace them through UI settings or a
-  latest CLI publish. Explicit catalog flags publish an automatic patch version even when artifact
-  files are unchanged. Explicitly clearing categories saves canonical `other`.
+- Existing plugin releases are not backfilled. Exact-version category lookup returns no categories
+  for legacy releases that predate release-level category storage.
+- Package-level `categories` is the canonical latest-version source for detail, profile, API, and
+  discovery reads. Release-level manifest summaries are the canonical exact-version source.
 
 ## Topics
 
@@ -44,14 +38,16 @@
   author-facing labels may use different casing. Selecting a category reveals at most five
   normalized top-topic chips from a bounded sample of that category's highest-ranked public items.
   Exact normalized topic browse links remain supported.
-- Authors can edit categories and topics from skill and plugin settings.
-- Settings expose Generate as an explicit category action. Clearing categories saves `other`.
+- Authors can edit skill categories and topics from skill settings. Plugin settings expose topics
+  only; plugin categories come from `openclaw.plugin.json`.
+- Skill settings expose Generate as an explicit category action. Clearing skill categories saves
+  `other`.
 - Backports and non-latest plugin releases do not replace current topics.
 - `topics` is the single canonical source for detail, settings, profile, API, and discovery reads.
 - The one-time classifier backfill may seed `topics` only when a publisher has never supplied the
   field. Once seeded, publishers own the values and may edit or explicitly clear them.
-- Saving catalog metadata or promoting a latest UI/CLI publish clears category and topic inference
-  compatibility state so an old backfill cannot reappear after a publisher edit or explicit clear.
+- Saving catalog metadata clears the corresponding editable inference compatibility state so an old
+  backfill cannot reappear after a publisher edit or explicit clear.
 - Future generated topic suggestions must remain non-canonical until a publisher or operator
   explicitly accepts them.
 
@@ -71,6 +67,14 @@
   `@convex-dev/migrations` because it only rebuilds derived search rows from unchanged package
   sources; apply mode still requires explicit confirmation and reports resumable progress.
 
+## Exact-version plugin category lookup
+
+- `POST /api/v1/packages/categories:batch` accepts up to 200 `{ name, version }` identities.
+- Results preserve request order and duplicates. Each result repeats the identity and returns the
+  stored exact-version category array, or `null` when the package/version is unknown, private,
+  unpublished, or predates release-level category storage.
+- The endpoint does not derive or backfill metadata at request time.
+
 ## Follow-Up
 
 Corpus classification was a one-time operator-run phase:
@@ -80,7 +84,8 @@ Corpus classification was a one-time operator-run phase:
   runtime plugin code is never imported or executed.
 - Classification writes bounded preview rows to `catalogClassificationResults`. Preview generation
   never changes skill/package taxonomy or search digests.
-- Explicit author categories/topics always win. Explicit empty arrays remain authoritative.
+- During this completed rollout, explicit author categories/topics won over generated preview data.
+  Current plugin category ownership is defined in the Categories section above.
 - Applied inferred categories and topics were bootstrap data only. The catalog metadata
   canonicalization migration copies current valid `inferredCategories` and `inferredTopics` into
   canonical fields only when the corresponding publisher field is absent, clears all inference
