@@ -900,7 +900,7 @@ function SkillSpectorAttribution() {
   return (
     <ScannerInfoTooltip
       name="SkillSpector"
-      company="By NVIDIA"
+      company="NVIDIA"
       description="Scans agent skills for vulnerabilities, malicious code, and unsafe behavior."
       href="https://github.com/NVIDIA/SkillSpector"
     />
@@ -911,7 +911,7 @@ function AigAttribution() {
   return (
     <ScannerInfoTooltip
       name="A.I.G"
-      company="Based on Tencent Zhuque Lab AI-Infra-Guard"
+      company="Tencent"
       description="Uses AI to audit agent skill code for vulnerabilities and malicious behavior."
       href="https://github.com/Tencent/AI-Infra-Guard"
     />

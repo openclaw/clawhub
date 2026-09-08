@@ -80,7 +80,9 @@ export function ScannerInfoTooltip({
             if (openedByHover.current) event.preventDefault();
           }}
         >
-          <span className="security-scanner-info-company">{company}</span>
+          <span className="security-scanner-info-company">
+            {name} by {company}
+          </span>
           <p id={descriptionId}>{description}</p>
           <a ref={linkRef} href={href} target="_blank" rel="noopener noreferrer">
             Learn more

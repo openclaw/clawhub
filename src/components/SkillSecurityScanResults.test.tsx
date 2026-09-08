@@ -520,7 +520,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("By NVIDIA")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "About SkillSpector" }));
     const info = within(await screen.findByRole("dialog", { name: "About SkillSpector" }));
-    expect(info.getByText("By NVIDIA")).toBeTruthy();
+    expect(info.getByText("SkillSpector by NVIDIA")).toBeTruthy();
     expect(info.getByText(/Scans agent skills for vulnerabilities/)).toBeTruthy();
     expect(info.getByRole("link", { name: "Learn more" }).getAttribute("href")).toBe(
       "https://github.com/NVIDIA/SkillSpector",
@@ -579,7 +579,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("Based on Tencent Zhuque Lab AI-Infra-Guard")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "About A.I.G" }));
     const info = within(await screen.findByRole("dialog", { name: "About A.I.G" }));
-    expect(info.getByText("Based on Tencent Zhuque Lab AI-Infra-Guard")).toBeTruthy();
+    expect(info.getByText("A.I.G by Tencent")).toBeTruthy();
     expect(info.getByText(/Uses AI to audit agent skill code/)).toBeTruthy();
     expect(info.getByRole("link", { name: "Learn more" }).getAttribute("href")).toBe(
       "https://github.com/Tencent/AI-Infra-Guard",
