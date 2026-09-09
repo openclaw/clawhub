@@ -1,0 +1,748 @@
+{
+  "status": "partial",
+  "scenario": "100-production-plugin category rehearsal",
+  "mode": "before-after",
+  "provider": "real local Convex and real ClawHub browser; public production sample",
+  "baseline": {
+    "ref": "c95ea77450",
+    "state": "captured production categories before local backfill"
+  },
+  "candidate": {
+    "ref": "c95ea77450",
+    "state": "40 reviewed bundled latest-release assignments applied locally"
+  },
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "Developer tools \u2014 desktop, 0 \u2192 6 results",
+          "slug": "developer-tools",
+          "screenshot": "developer-tools.png",
+          "status": "passed"
+        },
+        {
+          "name": "Documents & files \u2014 desktop, 0 \u2192 2 results",
+          "slug": "documents-files",
+          "screenshot": "documents-files.png",
+          "status": "passed"
+        },
+        {
+          "name": "Inbox & collaboration \u2014 mobile, 0 \u2192 11 results",
+          "slug": "mobile",
+          "screenshot": "mobile.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Developer tools \u2014 desktop, 0 \u2192 6 results",
+          "slug": "developer-tools",
+          "screenshot": "developer-tools.png",
+          "status": "passed"
+        },
+        {
+          "name": "Documents & files \u2014 desktop, 0 \u2192 2 results",
+          "slug": "documents-files",
+          "screenshot": "documents-files.png",
+          "status": "passed"
+        },
+        {
+          "name": "Inbox & collaboration \u2014 mobile, 0 \u2192 11 results",
+          "slug": "mobile",
+          "screenshot": "mobile.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "capture": {
+    "startedAt": "2026-09-09T02:48:41.357Z",
+    "completedAt": "2026-09-09T02:51:28.993Z",
+    "plugins": 100,
+    "historicalReleases": 90,
+    "artifactFiles": 365,
+    "bytes": 8685995,
+    "sha256": "90e6e7f271e697c1c1e22b962179fd78f797b3ba6017d9feddbbbe6507ed2449",
+    "cohorts": {
+      "legacy-other": 20,
+      "capability-voice": 3,
+      "legacy-tools": 20,
+      "capability-security": 3,
+      "capability-context": 3,
+      "bundled-product": 22,
+      "bundled-core": 18,
+      "capability-memory": 3,
+      "capability-channels": 2,
+      "capability-web": 3,
+      "capability-media": 3
+    },
+    "manifestDeclared": 0,
+    "failures": []
+  },
+  "import": {
+    "tables": {
+      "packages": 100,
+      "packageReleases": 190,
+      "publishers": 55,
+      "users": 58,
+      "_storage": 365
+    },
+    "unselectedTagsOmitted": 99,
+    "syntheticFields": [
+      "user profiles",
+      "package _creationTime uses public createdAt",
+      "publisher createdAt/updatedAt use public _creationTime"
+    ],
+    "preserved": [
+      "original package/release/publisher/storage IDs",
+      "all captured latest and historical release metadata, except publishAttemptId/pendingPublication",
+      "original manifest and bounded documentation bytes, SHA-256 verified",
+      "public categories, owners, source metadata and scan state"
+    ],
+    "omitted": [
+      "authentication and secrets",
+      "scheduled tasks",
+      "unselected release tags",
+      "uncaptured file bytes and archive bytes"
+    ]
+  },
+  "restore": {
+    "packages": 100,
+    "releases": 190,
+    "capturedPackageCategoryFieldsPreserved": 100,
+    "capturedReleaseMetadataPreserved": 190,
+    "categoriesBefore": {
+      "other": 31,
+      "tools": 26,
+      "web": 11,
+      "channels": 28,
+      "media": 9,
+      "voice": 5,
+      "models": 9,
+      "runtime": 9,
+      "security": 8,
+      "gateway": 7,
+      "context": 6,
+      "memory": 10
+    }
+  },
+  "stateVerification": {
+    "packagesVerified": 100,
+    "packageDigestsVerified": 100,
+    "categoryDigestRowsVerified": 169,
+    "latestReleasesApplied": 40,
+    "categoryValuesChanged": 34,
+    "historicalReleasesUnchanged": 90,
+    "nonAcceptedLatestReleasesUnchanged": 60,
+    "preservedOtherPackageAndReleaseMetadata": true,
+    "categoriesBefore": {
+      "other": 31,
+      "tools": 26,
+      "web": 11,
+      "channels": 28,
+      "media": 9,
+      "voice": 5,
+      "models": 9,
+      "runtime": 9,
+      "security": 8,
+      "gateway": 7,
+      "context": 6,
+      "memory": 10
+    },
+    "categoriesAfter": {
+      "data-analytics": 1,
+      "productivity": 1,
+      "inbox-collaboration": 11,
+      "models": 10,
+      "voice": 11,
+      "channels": 33,
+      "security": 8,
+      "infrastructure": 4,
+      "other": 18,
+      "media": 7,
+      "tools": 21,
+      "web": 11,
+      "runtime": 3,
+      "gateway": 1,
+      "context": 5,
+      "developer-tools": 6,
+      "agent-orchestration": 4,
+      "memory": 10,
+      "documents-files": 2
+    },
+    "changes": [
+      {
+        "name": "@openclaw/team-reports",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "data-analytics",
+          "productivity",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/volcengine-provider",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "models",
+          "voice"
+        ]
+      },
+      {
+        "name": "@openclaw/zoom-meetings",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "voice",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/teams-meetings",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "voice",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/imessage",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/buzz",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/mxc-sandbox",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "security",
+          "infrastructure"
+        ]
+      },
+      {
+        "name": "@openclaw/zai-provider",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "models",
+          "media"
+        ]
+      },
+      {
+        "name": "@openclaw/venice-provider",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "models"
+        ]
+      },
+      {
+        "name": "@openclaw/sms",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/signal",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/clickclack",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/mattermost",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/tokenjuice",
+        "version": "2026.9.3",
+        "before": [
+          "runtime",
+          "context",
+          "gateway"
+        ],
+        "after": [
+          "context",
+          "developer-tools"
+        ]
+      },
+      {
+        "name": "@openclaw/copilot",
+        "version": "2026.9.3",
+        "before": [
+          "runtime"
+        ],
+        "after": [
+          "developer-tools",
+          "agent-orchestration"
+        ]
+      },
+      {
+        "name": "@openclaw/diffs-language-pack",
+        "version": "2026.9.3",
+        "before": [
+          "media",
+          "gateway"
+        ],
+        "after": [
+          "developer-tools"
+        ]
+      },
+      {
+        "name": "@openclaw/slack",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/openshell-sandbox",
+        "version": "2026.9.3",
+        "before": [
+          "security",
+          "runtime",
+          "gateway"
+        ],
+        "after": [
+          "security",
+          "infrastructure"
+        ]
+      },
+      {
+        "name": "@openclaw/line",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/acpx",
+        "version": "2026.9.3",
+        "before": [
+          "runtime",
+          "models"
+        ],
+        "after": [
+          "developer-tools",
+          "agent-orchestration"
+        ]
+      },
+      {
+        "name": "@openclaw/whatsapp",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels",
+          "voice"
+        ]
+      },
+      {
+        "name": "@openclaw/voice-call",
+        "version": "2026.9.3",
+        "before": [
+          "tools",
+          "voice"
+        ],
+        "after": [
+          "voice"
+        ]
+      },
+      {
+        "name": "@openclaw/lobster",
+        "version": "2026.9.3",
+        "before": [
+          "tools",
+          "security"
+        ],
+        "after": [
+          "agent-orchestration"
+        ]
+      },
+      {
+        "name": "@openclaw/discord",
+        "version": "2026.9.3",
+        "before": [
+          "channels",
+          "media"
+        ],
+        "after": [
+          "channels",
+          "voice"
+        ]
+      },
+      {
+        "name": "@openclaw/synology-chat",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/feishu",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels",
+          "documents-files",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/codex",
+        "version": "2026.9.3",
+        "before": [
+          "models",
+          "media",
+          "gateway"
+        ],
+        "after": [
+          "developer-tools",
+          "agent-orchestration",
+          "web"
+        ]
+      },
+      {
+        "name": "@openclaw/zalo",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/google-meet",
+        "version": "2026.9.3",
+        "before": [
+          "tools",
+          "web",
+          "gateway"
+        ],
+        "after": [
+          "voice",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/googlechat",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/nextcloud-talk",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/memory-lancedb",
+        "version": "2026.9.3",
+        "before": [
+          "memory",
+          "tools"
+        ],
+        "after": [
+          "memory"
+        ]
+      },
+      {
+        "name": "@openclaw/diffs",
+        "version": "2026.9.3",
+        "before": [
+          "channels",
+          "gateway",
+          "context"
+        ],
+        "after": [
+          "developer-tools",
+          "documents-files"
+        ]
+      },
+      {
+        "name": "@openclaw/diagnostics-prometheus",
+        "version": "2026.9.3",
+        "before": [
+          "runtime"
+        ],
+        "after": [
+          "infrastructure"
+        ]
+      },
+      {
+        "name": "@openclaw/zalouser",
+        "version": "2026.9.3",
+        "before": [
+          "channels",
+          "tools"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/tlon",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/nostr",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/msteams",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels",
+          "inbox-collaboration"
+        ]
+      },
+      {
+        "name": "@openclaw/matrix",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ]
+      },
+      {
+        "name": "@openclaw/diagnostics-otel",
+        "version": "2026.9.3",
+        "before": [
+          "runtime"
+        ],
+        "after": [
+          "infrastructure"
+        ]
+      }
+    ]
+  },
+  "publicApiVerification": {
+    "checkedAt": "2026-09-09T03:03:28.846Z",
+    "exactVersions": 190,
+    "exactVersionApiMatchesInternal": true,
+    "filterChecks": [
+      {
+        "category": "data-analytics",
+        "count": 1
+      },
+      {
+        "category": "productivity",
+        "count": 1
+      },
+      {
+        "category": "inbox-collaboration",
+        "count": 11
+      },
+      {
+        "category": "models",
+        "count": 10
+      },
+      {
+        "category": "voice",
+        "count": 11
+      },
+      {
+        "category": "channels",
+        "count": 33
+      },
+      {
+        "category": "security",
+        "count": 8
+      },
+      {
+        "category": "infrastructure",
+        "count": 4
+      },
+      {
+        "category": "other",
+        "count": 20
+      },
+      {
+        "category": "media",
+        "count": 7
+      },
+      {
+        "category": "tools",
+        "count": 21
+      },
+      {
+        "category": "web",
+        "count": 11
+      },
+      {
+        "category": "runtime",
+        "count": 3
+      },
+      {
+        "category": "gateway",
+        "count": 1
+      },
+      {
+        "category": "context",
+        "count": 5
+      },
+      {
+        "category": "developer-tools",
+        "count": 6
+      },
+      {
+        "category": "agent-orchestration",
+        "count": 4
+      },
+      {
+        "category": "memory",
+        "count": 10
+      },
+      {
+        "category": "documents-files",
+        "count": 2
+      }
+    ]
+  },
+  "rollback": {
+    "checkedAt": "2026-09-09T03:05:23.377Z",
+    "rolledBack": 40,
+    "all100PackagesRestoredExactly": true,
+    "all190ReleasesRestoredExactly": true,
+    "exact190VersionApiRestoredExactly": true
+  },
+  "modelLane": {
+    "status": "blocked",
+    "reason": "1Password CLI authorization on agent host timed out; saved model credential unavailable",
+    "fallbackRowsRejected": 59,
+    "missingManifestSkipped": 1,
+    "skippedPackage": "gog-extended"
+  },
+  "sourceAudit": {
+    "sourceCommit": "5ee48626b8db9c97a443fc51c1edc631530c84a0",
+    "sourceManifestsValid": 152,
+    "namedInventoryMatches": 149,
+    "packagedManifestMatches": 150,
+    "privateQaExcluded": 2
+  },
+  "validation": {
+    "unitTestsPassed": 6508,
+    "unitTestsSkipped": 3,
+    "typecheck": "passed",
+    "autoreview": "passed; no findings",
+    "formatLintDeadcodePeersWorkflowPins": "passed",
+    "ciStatic": "blocked by seven unchanged dependency audit advisories; reproduced on base"
+  },
+  "rerun": {
+    "checkedAt": "2026-09-09T03:07:38.668Z",
+    "runId": "prod-sample-rerun",
+    "applied": 40,
+    "freshPreviewSourceCounts": {
+      "bundled": 40,
+      "fallback": 59,
+      "skippedMissingManifest": 1
+    },
+    "exact190VersionResponsesMatchFirstApplication": true,
+    "completedMigrationRepeatPreservesState": true,
+    "firstBatchProcessed": 10,
+    "repeatStatus": "Migration already done."
+  }
+}
