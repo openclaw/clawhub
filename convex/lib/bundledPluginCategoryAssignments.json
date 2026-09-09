@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "d2462a55439c098650e4ce8aa322ffe103414ae5",
+  "sourceCommit": "3bf34b0570d3e55ad16f7c4cb25249797a59042b",
   "assignments": [
     {
       "packageName": "@openclaw/a2a",
@@ -10,8 +10,8 @@
     {
       "packageName": "@openclaw/acpx",
       "pluginId": "acpx",
-      "categories": ["developer-tools"],
-      "manifestSha256": "4befde33ae6776250b9543d9fd599bd0f715ae23b56adc36c0913a9b3480ed85"
+      "categories": ["agent-runtimes"],
+      "manifestSha256": "cf7bd62a5f2a15bff6eb5b95790786dfa70fd5bb58e4ded998ade5bb85fe2c97"
     },
     {
       "packageName": "@openclaw/admin-http-rpc",
@@ -142,8 +142,8 @@
     {
       "packageName": "@openclaw/codex",
       "pluginId": "codex",
-      "categories": ["developer-tools"],
-      "manifestSha256": "bfe14149f19d9fca67e9fc6203e5faf3ed4af8ddb29a6ca4b3434789009fe6d3"
+      "categories": ["agent-runtimes"],
+      "manifestSha256": "0e98d133ee9abfdff746d60cdccdc1d4182cbc29a39c4ca72de8c6a439b2228d"
     },
     {
       "packageName": "@openclaw/cohere-provider",
@@ -160,8 +160,8 @@
     {
       "packageName": "@openclaw/copilot",
       "pluginId": "copilot",
-      "categories": ["developer-tools"],
-      "manifestSha256": "35e54ec781a20f6778121f6e9dfb71db0084f18a18bf939bf1ad441cefec19aa"
+      "categories": ["agent-runtimes"],
+      "manifestSha256": "97b0d1b7a60b660ec7ab302a61ddffd668c5ec1010b6bfb5e2e684e938c9a035"
     },
     {
       "packageName": "@openclaw/copilot-proxy",

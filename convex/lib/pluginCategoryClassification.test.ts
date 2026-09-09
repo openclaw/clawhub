@@ -83,6 +83,23 @@ describe("single-purpose plugin classification", () => {
     expect(request).toHaveBeenCalledTimes(1);
   });
 
+  it("classifies an execution backend as Agent runtimes using the current taxonomy", async () => {
+    modelResponse(["agent-runtimes"]);
+    const result = await classifyPluginCategories({
+      name: "agent-executor",
+      pluginManifest: {
+        description: "Runs the agent model/tool loop and owns native sessions and compaction.",
+      },
+    });
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+    expect(body.text.format.schema.properties.categories.items.enum).toContain("agent-runtimes");
+    expect(body.instructions).toContain("agent-runtimes: Agent execution engines");
+    expect(result).toMatchObject({
+      categories: ["agent-runtimes"],
+      classification: { source: "generated", classifierVersion: "plugin-single-category-v3" },
+    });
+  });
+
   it("allows a dedicated classifier model override", async () => {
     modelResponse(["scheduling"]);
     vi.stubEnv("OPENAI_PLUGIN_CATEGORY_MODEL", "category-model-override");
