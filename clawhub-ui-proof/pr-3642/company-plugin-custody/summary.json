@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "company-plugin-custody",
+  "provider": "local Convex/dev-auth; real Playwright Chromium; controlled security-worker fixtures",
+  "baseline": "f969a2d082",
+  "candidate": "b7d6356b09",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "Company package before custody disclosure",
+          "slug": "package",
+          "screenshot": "package.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Company package with custody and provenance disclosure",
+          "slug": "package",
+          "screenshot": "package.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}
