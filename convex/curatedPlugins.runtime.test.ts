@@ -5,6 +5,7 @@ import { convexTest } from "convex-test";
 import { makeFunctionReference } from "convex/server";
 import { expect, it } from "vitest";
 import { validateCuratedPluginPublisher } from "./lib/curatedPluginProvenance";
+import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const configure = makeFunctionReference<"mutation">("curatedPlugins:setStaffCustodyInternal");
@@ -112,7 +113,57 @@ it("adopts custody only through a matching verified GitHub organization owner", 
       role: "member",
       syncedAt: Date.now(),
     });
-    return { admin, company, publisher, githubMembership };
+    const packageFields = {
+      name: "@fixture-company/notes",
+      normalizedName: "@fixture-company/notes",
+      displayName: "Notes",
+      ownerUserId: admin,
+      ownerPublisherId: publisher,
+      family: "bundle-plugin" as const,
+      channel: "community" as const,
+      isOfficial: false,
+      tags: {},
+      scanStatus: "clean" as const,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const packageId = await ctx.db.insert("packages", packageFields);
+    const content = "Immutable imported notes";
+    const sha256 = await hashToken(content);
+    const storageId = await ctx.storage.store(new Blob([content]));
+    const releaseId = await ctx.db.insert("packageReleases", {
+      packageId,
+      version: "1.0.0",
+      distTags: ["latest"],
+      publicationStatus: "published",
+      changelog: "Imported",
+      files: [{ path: "README.md", size: content.length, sha256, storageId }],
+      integritySha256: sha256,
+      createdBy: admin,
+      createdAt: 1,
+      source: { repo: "fixture-company/plugins", path: "", commit: "a".repeat(40) },
+      curation: {
+        integration: "notes",
+        job: "reading",
+        authorship: "company",
+        repositoryId: 1,
+        ownerId: 123,
+        sourceContentHash: sha256,
+        omittedCapabilities: [],
+        format: "claude",
+        syncedAt: 1,
+      },
+      llmAnalysis: { status: "completed", verdict: "benign", checkedAt: 1 },
+    });
+    await ctx.db.patch(packageId, { latestReleaseId: releaseId, tags: { latest: releaseId } });
+    const aliasId = await ctx.db.insert("packages", {
+      ...packageFields,
+      name: "@cursor/notes",
+      normalizedName: "@cursor/notes",
+      canonicalPackageId: packageId,
+    });
+    return { admin, company, publisher, githubMembership, packageId, releaseId, aliasId };
   });
   const company = t.withIdentity({ subject: ids.company });
   const update = makeFunctionReference<"mutation">("publishers:updateProfile");
@@ -121,7 +172,22 @@ it("adopts custody only through a matching verified GitHub organization owner", 
     "administers the matching GitHub organization",
   );
   await t.run((ctx) => ctx.db.patch(ids.githubMembership, { role: "admin" }));
+  const history = () =>
+    t.run(async (ctx) => ({
+      package: await ctx.db.get(ids.packageId),
+      release: await ctx.db.get(ids.releaseId),
+      alias: await ctx.db.get(ids.aliasId),
+    }));
+  const before = await history();
+  const fileUrl = "/api/v1/packages/%40fixture-company%2Fnotes/file?path=README.md&version=1.0.0";
+  const bytesBefore = await (await t.fetch(fileUrl)).text();
+  expect(bytesBefore).toBe("Immutable imported notes");
   await company.mutation(update, args);
+  expect(await history()).toEqual(before);
+  expect(await (await t.fetch(fileUrl)).text()).toBe(bytesBefore);
+  const redirect = await t.fetch("/api/v1/packages/%40cursor%2Fnotes");
+  expect(redirect.status).toBe(307);
+  expect(redirect.headers.get("location")).toContain("%40fixture-company%2Fnotes");
   const adopted = await t.run((ctx) => ctx.db.get(ids.publisher));
   expect(adopted).toMatchObject({
     _id: ids.publisher,

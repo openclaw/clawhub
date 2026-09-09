@@ -1,0 +1,491 @@
+{
+  "version": 1,
+  "reviewStatus": "proposed; production activation awaits maintainer approval",
+  "snapshots": [
+    {
+      "repo": "cursor/plugins",
+      "repositoryId": 1140229822,
+      "ownerId": 126759922,
+      "commit": "27e2a62ff94f9af4b5e68435e41cdceacadb840c",
+      "updatedAt": "2026-09-08T22:54:44Z"
+    },
+    {
+      "repo": "anthropics/claude-plugins-official",
+      "repositoryId": 1100776768,
+      "ownerId": 76263028,
+      "commit": "517b2fcd1b60fa2181ac52dcf8492361ba341180",
+      "updatedAt": "2026-09-08T21:39:33Z"
+    },
+    {
+      "repo": "openai/plugins",
+      "repositoryId": 1172963839,
+      "ownerId": 14957082,
+      "commit": "d416fd5a43426019986b1e489506db3db66dee3d",
+      "updatedAt": "2026-09-08T17:57:25Z"
+    },
+    {
+      "repo": "arize-ai/arize-skills",
+      "repositoryId": 1173840557,
+      "ownerId": 59858760,
+      "commit": "20ea1034e2ff400aceb90e77d410aa878923954e",
+      "updatedAt": "2026-08-31T17:08:02Z"
+    },
+    {
+      "repo": "granola-inc/granola-cursor-plugin",
+      "repositoryId": 1197282911,
+      "ownerId": 129086310,
+      "commit": "56583da6e4db7f311808543f18ac905b8de1ff85",
+      "updatedAt": "2026-04-08T11:53:04Z"
+    },
+    {
+      "repo": "makenotion/claude-code-notion-plugin",
+      "repositoryId": 1109330582,
+      "ownerId": 4792552,
+      "commit": "9847f2aa1a15f25df35ed1fb7b4557dbb60cd651",
+      "updatedAt": "2026-01-22T19:21:32Z"
+    }
+  ],
+  "catalogPackages": 1849,
+  "publishedOpenClawPackages": 95,
+  "candidateCount": 426,
+  "permissionNeededCount": 94,
+  "decisions": [
+    {
+      "repo": "arize-ai/arize-skills",
+      "path": "",
+      "categories": ["gateway"],
+      "capabilities": {
+        "runnable": ["skills"],
+        "omitted": []
+      },
+      "status": "selected",
+      "reasons": ["Canonical source selected by provenance, runnable coverage and maintenance"],
+      "integration": "arize",
+      "job": "ai-observability",
+      "publisher": "arize",
+      "authorship": "company",
+      "format": "claude",
+      "declaredAuthor": {
+        "name": "Arize AI",
+        "email": "support@arize.com",
+        "url": "https://arize.com"
+      },
+      "contentHash": "3ffa64d8827c40079ee6e9c857d9f2b08e489430aa22abdcef6ca9a5a320149c",
+      "commit": "20ea1034e2ff400aceb90e77d410aa878923954e",
+      "licensing": {
+        "status": "eligible",
+        "files": [
+          {
+            "path": "LICENSE",
+            "sha256": "c2ee3ca265d16952f38358ad4f44b5f771af43ba8d77a2b802aab51d0ceeedba"
+          }
+        ],
+        "notices": []
+      }
+    },
+    {
+      "repo": "cursor/plugins",
+      "path": "third_party/intercom",
+      "categories": ["tools"],
+      "capabilities": {
+        "runnable": ["mcpServers"],
+        "omitted": []
+      },
+      "status": "selected",
+      "reasons": ["Canonical source selected by provenance, runnable coverage and maintenance"],
+      "integration": "intercom",
+      "job": "customer-support",
+      "publisher": "cursor",
+      "authorship": "registry",
+      "format": "cursor",
+      "declaredAuthor": {
+        "name": "Cursor",
+        "email": "plugins@cursor.com"
+      },
+      "icon": "assets/logo.svg",
+      "contentHash": "c91b246cc051ca5f80450aef82024cd211c28645c9dbf28fa8a8ff6061140ed6",
+      "commit": "27e2a62ff94f9af4b5e68435e41cdceacadb840c",
+      "licensing": {
+        "status": "eligible",
+        "files": [
+          {
+            "path": "third_party/intercom/LICENSE",
+            "sha256": "702f5f331b56aff0e33d8c7826df5202559f894145eb70355c6477b55b5bb8a0"
+          }
+        ],
+        "notices": []
+      }
+    },
+    {
+      "repo": "cursor/plugins",
+      "path": "third_party/zoom",
+      "categories": ["tools"],
+      "capabilities": {
+        "runnable": ["mcpServers"],
+        "omitted": []
+      },
+      "status": "selected",
+      "reasons": ["Canonical source selected by provenance, runnable coverage and maintenance"],
+      "integration": "zoom",
+      "job": "meeting-knowledge",
+      "publisher": "cursor",
+      "authorship": "registry",
+      "format": "cursor",
+      "declaredAuthor": {
+        "name": "Cursor",
+        "email": "plugins@cursor.com"
+      },
+      "icon": "assets/logo.png",
+      "contentHash": "fe5b53ce813ae753443549839f5e975ef7a396a03650dc085dfa3e67ff00cb23",
+      "commit": "27e2a62ff94f9af4b5e68435e41cdceacadb840c",
+      "licensing": {
+        "status": "eligible",
+        "files": [
+          {
+            "path": "third_party/zoom/LICENSE",
+            "sha256": "702f5f331b56aff0e33d8c7826df5202559f894145eb70355c6477b55b5bb8a0"
+          }
+        ],
+        "notices": []
+      }
+    },
+    {
+      "repo": "granola-inc/granola-cursor-plugin",
+      "path": "",
+      "categories": ["tools"],
+      "capabilities": {
+        "runnable": ["mcpServers", "skills"],
+        "omitted": ["agents", "commands", "rules"]
+      },
+      "status": "blocked",
+      "reasons": [
+        "No applicable MIT license: .cursor-plugin/plugin.json",
+        "No applicable MIT license: .github/CODEOWNERS",
+        "No applicable MIT license: .mcp.json",
+        "No applicable MIT license: README.md",
+        "No applicable MIT license: SECURITY.md",
+        "No applicable MIT license: agents/granola-engineer.md",
+        "No applicable MIT license: commands/granola-brief.md",
+        "No applicable MIT license: commands/granola-bug-report.md",
+        "No applicable MIT license: commands/granola-gaps.md",
+        "No applicable MIT license: commands/granola-plan.md",
+        "No applicable MIT license: commands/granola-pr.md",
+        "No applicable MIT license: commands/granola-spec.md",
+        "No applicable MIT license: rules/check-meeting-context.mdc",
+        "No applicable MIT license: skills/.DS_Store",
+        "No applicable MIT license: skills/granola-context/SKILL.md",
+        "No applicable MIT license: skills/granola-prep/SKILL.md",
+        "No applicable MIT license: skills/granola-review/SKILL.md"
+      ],
+      "integration": "granola",
+      "job": "meeting-notes",
+      "publisher": "granola",
+      "authorship": "company",
+      "format": "cursor",
+      "declaredAuthor": {
+        "name": "Granola",
+        "email": "hello@granola.ai"
+      },
+      "icon": "assets/logo.svg",
+      "contentHash": "ad53b6a6790d03a1c88db92d0c4f49c4031fbcebe23ca83b43d30acfcf5df13b",
+      "commit": "56583da6e4db7f311808543f18ac905b8de1ff85",
+      "licensing": {
+        "status": "blocked",
+        "files": [],
+        "notices": []
+      }
+    },
+    {
+      "repo": "makenotion/claude-code-notion-plugin",
+      "path": "",
+      "categories": ["tools"],
+      "capabilities": {
+        "runnable": ["commands", "mcpServers", "skills"],
+        "omitted": []
+      },
+      "status": "blocked",
+      "reasons": [
+        "No applicable MIT license: .claude-plugin/marketplace.json",
+        "No applicable MIT license: .claude-plugin/plugin.json",
+        "No applicable MIT license: .mcp.json",
+        "No applicable MIT license: README.md",
+        "No applicable MIT license: commands/create-database-row.md",
+        "No applicable MIT license: commands/create-page.md",
+        "No applicable MIT license: commands/create-task.md",
+        "No applicable MIT license: commands/database-query.md",
+        "No applicable MIT license: commands/find.md",
+        "No applicable MIT license: commands/search.md",
+        "No applicable MIT license: commands/tasks/build.md",
+        "No applicable MIT license: commands/tasks/explain-diff.md",
+        "No applicable MIT license: commands/tasks/plan.md",
+        "No applicable MIT license: commands/tasks/setup.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/SKILL.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/evaluations/README.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/evaluations/conversation-to-wiki.json",
+        "No applicable MIT license: skills/notion/knowledge-capture/evaluations/decision-record.json",
+        "No applicable MIT license: skills/notion/knowledge-capture/examples/conversation-to-faq.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/examples/decision-capture.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/examples/how-to-guide.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/reference/database-best-practices.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/reference/decision-log-database.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/reference/documentation-database.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/reference/faq-database.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/reference/how-to-guide-database.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/reference/learning-database.md",
+        "No applicable MIT license: skills/notion/knowledge-capture/reference/team-wiki-database.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/SKILL.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/evaluations/README.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/evaluations/decision-meeting-prep.json",
+        "No applicable MIT license: skills/notion/meeting-intelligence/evaluations/status-meeting-prep.json",
+        "No applicable MIT license: skills/notion/meeting-intelligence/examples/customer-meeting.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/examples/executive-review.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/examples/project-decision.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/examples/sprint-planning.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/reference/brainstorming-template.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/reference/decision-meeting-template.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/reference/one-on-one-template.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/reference/retrospective-template.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/reference/sprint-planning-template.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/reference/status-update-template.md",
+        "No applicable MIT license: skills/notion/meeting-intelligence/reference/template-selection-guide.md",
+        "No applicable MIT license: skills/notion/research-documentation/SKILL.md",
+        "No applicable MIT license: skills/notion/research-documentation/evaluations/README.md",
+        "No applicable MIT license: skills/notion/research-documentation/evaluations/basic-research.json",
+        "No applicable MIT license: skills/notion/research-documentation/evaluations/research-to-database.json",
+        "No applicable MIT license: skills/notion/research-documentation/examples/competitor-analysis.md",
+        "No applicable MIT license: skills/notion/research-documentation/examples/market-research.md",
+        "No applicable MIT license: skills/notion/research-documentation/examples/technical-investigation.md",
+        "No applicable MIT license: skills/notion/research-documentation/examples/trip-planning.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/advanced-search.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/citations.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/comparison-format.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/comparison-template.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/comprehensive-report-format.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/comprehensive-report-template.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/format-selection-guide.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/quick-brief-format.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/quick-brief-template.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/research-summary-format.md",
+        "No applicable MIT license: skills/notion/research-documentation/reference/research-summary-template.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/SKILL.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/evaluations/README.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/evaluations/basic-spec-implementation.json",
+        "No applicable MIT license: skills/notion/spec-to-implementation/evaluations/spec-to-tasks.json",
+        "No applicable MIT license: skills/notion/spec-to-implementation/examples/api-feature.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/examples/database-migration.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/examples/ui-component.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/milestone-summary-template.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/progress-tracking.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/progress-update-template.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/quick-implementation-plan.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/spec-parsing.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/standard-implementation-plan.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/task-creation-template.md",
+        "No applicable MIT license: skills/notion/spec-to-implementation/reference/task-creation.md"
+      ],
+      "integration": "notion",
+      "job": "workspace",
+      "publisher": "notion",
+      "authorship": "company",
+      "format": "claude",
+      "declaredAuthor": {
+        "name": "Notion Labs",
+        "url": "https://www.notion.so"
+      },
+      "contentHash": "c158916ed0dcadd16744bd503aa78698b19fb5f80ba6c8ee857491a103db10d1",
+      "commit": "9847f2aa1a15f25df35ed1fb7b4557dbb60cd651",
+      "licensing": {
+        "status": "blocked",
+        "files": [],
+        "notices": []
+      }
+    },
+    {
+      "repo": "openai/plugins",
+      "path": "plugins/notion",
+      "categories": ["tools"],
+      "capabilities": {
+        "runnable": ["mcpServers", "skills"],
+        "omitted": ["agents", "apps"]
+      },
+      "status": "blocked",
+      "reasons": [
+        "No applicable MIT license: plugins/notion/.app.json",
+        "No applicable MIT license: plugins/notion/.codex-plugin/plugin.json",
+        "No applicable MIT license: plugins/notion/.mcp.json",
+        "No applicable MIT license: plugins/notion/README.md",
+        "No applicable MIT license: plugins/notion/agents/openai.yaml",
+        "No applicable MIT license: plugins/notion/assets/notion-dark.png",
+        "No applicable MIT license: plugins/notion/assets/notion-small.svg",
+        "No applicable MIT license: plugins/notion/assets/notion.png",
+        "No applicable MIT license: plugins/notion/plugin.lock.json"
+      ],
+      "integration": "notion",
+      "job": "workspace",
+      "publisher": "openai",
+      "authorship": "registry",
+      "format": "codex",
+      "declaredAuthor": {
+        "email": "support@openai.com",
+        "name": "Notion",
+        "url": "https://openai.com/"
+      },
+      "icon": "./assets/notion.png",
+      "contentHash": "3b00237af22d093fb53f75b6fc915120057a79d3f84873e07648cbddb676ff03",
+      "commit": "d416fd5a43426019986b1e489506db3db66dee3d",
+      "licensing": {
+        "status": "blocked",
+        "files": [
+          {
+            "path": "plugins/notion/skills/notion-knowledge-capture/LICENSE.txt",
+            "sha256": "0f377d9b2a1db642e4b0531ffa126e96d9bc6c085f8d9441f220fb25f723c6f8"
+          },
+          {
+            "path": "plugins/notion/skills/notion-meeting-intelligence/LICENSE.txt",
+            "sha256": "0f377d9b2a1db642e4b0531ffa126e96d9bc6c085f8d9441f220fb25f723c6f8"
+          },
+          {
+            "path": "plugins/notion/skills/notion-research-documentation/LICENSE.txt",
+            "sha256": "0f377d9b2a1db642e4b0531ffa126e96d9bc6c085f8d9441f220fb25f723c6f8"
+          },
+          {
+            "path": "plugins/notion/skills/notion-spec-to-implementation/LICENSE.txt",
+            "sha256": "0f377d9b2a1db642e4b0531ffa126e96d9bc6c085f8d9441f220fb25f723c6f8"
+          }
+        ],
+        "notices": []
+      }
+    },
+    {
+      "repo": "openai/plugins",
+      "path": "plugins/slack",
+      "categories": ["tools"],
+      "capabilities": {
+        "runnable": ["mcpServers"],
+        "omitted": ["apps"]
+      },
+      "status": "existing-openclaw",
+      "reasons": [
+        "No applicable MIT license: plugins/slack/.app.json",
+        "No applicable MIT license: plugins/slack/.codex-plugin/plugin.json",
+        "No applicable MIT license: plugins/slack/.mcp.json",
+        "No applicable MIT license: plugins/slack/assets/app-icon.png",
+        "No applicable MIT license: plugins/slack/assets/composer-icon.png",
+        "No applicable MIT license: plugins/slack/assets/logo.png",
+        "No applicable MIT license: plugins/slack/assets/slack-small.svg",
+        "No applicable MIT license: plugins/slack/assets/slack.png",
+        "Equivalent OpenClaw integration has precedence"
+      ],
+      "integration": "slack",
+      "job": "team-messaging",
+      "publisher": "openai",
+      "authorship": "registry",
+      "format": "codex",
+      "declaredAuthor": {
+        "email": "support@openai.com",
+        "name": "Slack",
+        "url": "https://openai.com/"
+      },
+      "icon": "./assets/logo.png",
+      "contentHash": "968996599c0b1eddda03f9e75bd219cc54bd51f0c18eced10c18c4ba20b3cbb4",
+      "canonical": "@openclaw/slack",
+      "commit": "d416fd5a43426019986b1e489506db3db66dee3d",
+      "licensing": {
+        "status": "blocked",
+        "files": [],
+        "notices": []
+      }
+    }
+  ],
+  "openclawParityObservations": [
+    {
+      "bundledId": "openrouter",
+      "package": "@openclaw/openrouter",
+      "catalogPresent": false,
+      "sourceRelease": "2026.9.3"
+    },
+    {
+      "bundledId": "huggingface",
+      "package": "@openclaw/huggingface",
+      "catalogPresent": false,
+      "sourceRelease": "2026.9.3"
+    }
+  ],
+  "notes": [
+    "Zoom meeting-knowledge is distinct from OpenClaw zoom-meetings meeting-participation.",
+    "Arize is the company-owned source discovered through Claude. Cursor Intercom retains Cursor authorship.",
+    "Granola and both Notion sources remain withheld because their complete source closure lacks MIT licensing. No outreach was performed.",
+    "Published OpenClaw Slack suppresses the equivalent wrapper. Bundled provider identities are included as a separate explicit boundary.",
+    "The complete inventory and permission-needed report are attached to the Linear issue; this compact decision record intentionally excludes full source licenses and unreviewed catalog bulk.",
+    "Existing community Notion and Intercom packages use separate source repositories. They are review context, not permission to hide or modify another publisher\u2019s package.",
+    "The existing community Intercom package is an autonomous support channel; the proposed registry bundle is an MCP helper. No exact-source duplicate was found among the current related packages.",
+    "Cursor Zoom is proposed after the richer OpenAI candidate failed the normal upload-size gate. Full eligible behavior is preferred only when the resulting artifact is publishable through ordinary gates."
+  ],
+  "existingRelatedPackages": [
+    {
+      "name": "notion-workspace-plugin",
+      "family": "code-plugin",
+      "summary": "Requires AISA_API_KEY. Uses the supplied AISA_API_KEY to send requests to https://api.aisa.one. Native-first ClawHub plugin for `notion-workspace`. Ships the packaged AIsa skill with an `openclaw.plugin.json` manifest and a Claude-compatible bundle fallback. Manage Notion workspace: search pages and databases, read markdown, create pages, insert rows, triggers, MCP. Powered by AISA gateway (Notion toolkit). Requires AISA_API_KEY and curl. Keywords: notion, workspace, page, database, block, markdown, wiki, task board, insert row, OAuth. Use when: the user needs web search, research, source discovery, or content extraction.",
+      "sourceRepo": "baofeng-tech/agent-skills-io",
+      "sourcePath": "clawhub-plugin-release/plugins/notion-workspace-plugin",
+      "isOfficial": false
+    },
+    {
+      "name": "@othreecodes/openclaw-intercom",
+      "family": "code-plugin",
+      "summary": "Intercom support channel for OpenClaw: an autonomous, customer-facing agent that answers any channel connected to your Intercom inbox \u2014 WhatsApp, Instagram, Facebook, in-app Messenger, SMS, email \u2014 end to end. Reads customer screenshots, formats real replies, tags and annotates, escalates to the origin inbox and then goes silent, and never re-answers what a human teammate already handled. A channel, not an API helper skill.",
+      "sourceRepo": "othreecodes/openclaw-intercom",
+      "sourcePath": null,
+      "isOfficial": false
+    },
+    {
+      "name": "@openclaw/zoom-meetings",
+      "family": "code-plugin",
+      "summary": "OpenClaw Zoom browser meeting participant plugin.",
+      "sourceRepo": "openclaw/openclaw",
+      "sourcePath": "extensions/zoom-meetings",
+      "isOfficial": true
+    }
+  ],
+  "operationalExclusions": [
+    {
+      "repo": "openai/plugins",
+      "path": "plugins/zoom",
+      "commit": "d416fd5a43426019986b1e489506db3db66dee3d",
+      "license": "MIT",
+      "normalizedBytes": 5431663,
+      "normalPublisherLimitBytes": 4194304,
+      "reason": "The normal CLI dry run rejected the transformed artifact as too large. It is not allowlisted for publication. The smaller MIT Cursor MCP wrapper remains the pilot candidate; no upload limit was relaxed."
+    }
+  ],
+  "preparedBatch": {
+    "digest": "7ba36c12f6d76ae4c4727b00ef0f47abb08a0bab3e2320b7fddbca85c741b1ef",
+    "validation": "All three pinned artifacts passed the normal package CLI dry run, including exact upload inventory digest verification. No authentication, uploads, or publication were performed.",
+    "packages": [
+      {
+        "name": "@arize/arize-ai-observability",
+        "version": "1.2.0",
+        "artifactHash": "d8d39b9e19416a8ed5b6105cdf91c5309d7a79430c9767ec227d6cb865d43f18",
+        "sourceContentHash": "3ffa64d8827c40079ee6e9c857d9f2b08e489430aa22abdcef6ca9a5a320149c",
+        "fileCount": 97,
+        "totalBytes": 584475
+      },
+      {
+        "name": "@cursor/intercom-customer-support",
+        "version": "1.0.0",
+        "artifactHash": "b454bc6e75b52086192704133aa486e809335fc6feed6c1afeb32348f62612c3",
+        "sourceContentHash": "c91b246cc051ca5f80450aef82024cd211c28645c9dbf28fa8a8ff6061140ed6",
+        "fileCount": 8,
+        "totalBytes": 6351
+      },
+      {
+        "name": "@cursor/zoom-meeting-knowledge",
+        "version": "1.0.0",
+        "artifactHash": "40c2ee50d020e132010965e2b7d42911176fec49c24ad7ca49b13e64eddba89a",
+        "sourceContentHash": "fe5b53ce813ae753443549839f5e975ef7a396a03650dc085dfa3e67ff00cb23",
+        "fileCount": 8,
+        "totalBytes": 23531
+      }
+    ]
+  }
+}
