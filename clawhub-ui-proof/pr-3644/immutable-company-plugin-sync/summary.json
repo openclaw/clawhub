@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "scenario": "immutable-company-plugin-sync",
+  "provider": "local Convex/dev-auth; real Playwright Chromium; controlled security-worker fixtures",
+  "baseline": "f969a2d082",
+  "candidate": "ad61c852ff",
+  "lanes": [
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Canonical company package after immutable update and redirect",
+          "slug": "package",
+          "screenshot": "package.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}
