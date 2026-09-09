@@ -3,11 +3,16 @@ import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalAction, internalQuery } from "./_generated/server";
+import { internalAction, internalQuery, type ActionCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
 import bundledInventory from "./lib/bundledPluginCategoryAssignments.json";
 import { sha256Hex } from "./lib/clawpack";
-import { derivePluginManifestSummary } from "./lib/packageRegistry";
+import {
+  derivePluginManifestSummary,
+  maybeParseJson,
+  readStorageText,
+  REAL_BUNDLE_MANIFESTS,
+} from "./lib/packageRegistry";
 import {
   classifyPluginCategories,
   PLUGIN_CATEGORY_CLASSIFIER_VERSION,
@@ -165,6 +170,48 @@ export const storePreview = internalMutation({
   },
 });
 
+function isManifestRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+async function readRefreshManifests(
+  ctx: Pick<ActionCtx, "storage">,
+  family: Doc<"packages">["family"],
+  release: Doc<"packageReleases">,
+) {
+  const readManifest = async (file: Doc<"packageReleases">["files"][number]) => {
+    if (file.size > 512_000) return undefined;
+    return maybeParseJson(await readStorageText(ctx, file.storageId, { maxBytes: 512_000 }));
+  };
+  let pluginManifest: unknown = release.extractedPluginManifest;
+  if (pluginManifest == null) {
+    const file = release.files.find((candidate) => candidate.path === "openclaw.plugin.json");
+    if (file) {
+      pluginManifest = await readManifest(file);
+      // An unreadable root may contain an explicit declaration; never bypass it with bundle data.
+      if (!isManifestRecord(pluginManifest)) return null;
+    }
+  } else if (!isManifestRecord(pluginManifest)) {
+    return null;
+  }
+  let bundleManifest: unknown = release.normalizedBundleManifest;
+  if (isManifestRecord(pluginManifest)) return { pluginManifest, bundleManifest };
+  if (family !== "bundle-plugin") return null;
+
+  // Historical bundles predate the required OpenClaw root. Their foreign manifest is evidence,
+  // not an OpenClaw category declaration, and follows the same marker order as publication.
+  if (!isManifestRecord(bundleManifest)) {
+    for (const marker of REAL_BUNDLE_MANIFESTS) {
+      const file = release.files.find((candidate) => candidate.path === marker.path);
+      if (!file) continue;
+      bundleManifest = await readManifest(file);
+      break;
+    }
+  }
+  if (!isManifestRecord(bundleManifest) || Object.keys(bundleManifest).length === 0) return null;
+  return { pluginManifest: undefined, bundleManifest };
+}
+
 /** One bounded page per call; the returned cursor resumes without replacing reviewed rows. */
 export const preview = internalAction({
   args: { runId: v.string(), cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
@@ -202,19 +249,13 @@ export const preview = internalAction({
         continue;
       }
       try {
-        let pluginManifest: unknown = current.release.extractedPluginManifest;
-        if (!pluginManifest) {
-          const file = current.release.files.find(
-            (candidate) => candidate.path === "openclaw.plugin.json" && candidate.size <= 512_000,
-          );
-          const blob = file ? await ctx.storage.get(file.storageId) : null;
-          if (!blob || blob.size > 512_000) {
-            skipped++;
-            diagnostics.push({ packageId, reason: "No bounded plugin manifest evidence." });
-            continue;
-          }
-          pluginManifest = JSON.parse(await blob.text());
+        const manifests = await readRefreshManifests(ctx, current.pkg.family, current.release);
+        if (!manifests) {
+          skipped++;
+          diagnostics.push({ packageId, reason: "No bounded plugin manifest evidence." });
+          continue;
         }
+        const { pluginManifest, bundleManifest } = manifests;
         const docs: string[] = [];
         let remaining = 16_000;
         for (const file of current.release.files
@@ -251,7 +292,7 @@ export const preview = internalAction({
                   name: current.pkg.name,
                   pluginManifest,
                   packageJson: current.release.extractedPackageJson,
-                  bundleManifest: current.release.normalizedBundleManifest,
+                  bundleManifest,
                   documentation: docs.join("\n"),
                 },
                 // Refresh preserves actual declarations in already-published artifacts.
@@ -266,8 +307,8 @@ export const preview = internalAction({
           classification: assignment.classification,
           ...(!current.release.pluginManifestSummary && {
             newReleaseSummary: derivePluginManifestSummary({
-              pluginManifest: pluginManifest as Record<string, unknown>,
-              skillManifest: current.release.normalizedBundleManifest,
+              pluginManifest: pluginManifest ?? {},
+              skillManifest: isManifestRecord(bundleManifest) ? bundleManifest : undefined,
               files: current.release.files,
               compatibility: current.release.compatibility,
             }),

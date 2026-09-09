@@ -16,6 +16,12 @@ import {
 } from "./publicRouteReservations";
 import { getFrontmatterValue, parseFrontmatter, sanitizePath } from "./skills";
 
+export const REAL_BUNDLE_MANIFESTS = [
+  { path: ".codex-plugin/plugin.json", format: "codex" },
+  { path: ".claude-plugin/plugin.json", format: "claude" },
+  { path: ".cursor-plugin/plugin.json", format: "cursor" },
+] as const;
+
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
 type PublishFile = {

@@ -90,6 +90,173 @@ async function fixture() {
 }
 
 describe("latest plugin category refresh", () => {
+  it.each([
+    "normalized",
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+  ])(
+    "refreshes a rootless historical bundle from %s evidence and restores its missing summary",
+    async (source) => {
+      const { t, latest, readCategories } = await fixture();
+      await t.run(async (ctx) => {
+        const bundle = {
+          name: "Appointments",
+          description: "Manage appointments and availability.",
+          skills: ["skills"],
+          categories: ["models"],
+        };
+        const text = JSON.stringify(bundle);
+        const storageId = await ctx.storage.store(new Blob([text]));
+        const skillStorageId = await ctx.storage.store(new Blob(["Manage appointments."]));
+        await ctx.db.patch(latest.packageId, { family: "bundle-plugin" });
+        await ctx.db.patch(latest.releaseId, {
+          extractedPluginManifest: undefined,
+          pluginManifestSummary: undefined,
+          normalizedBundleManifest: source === "normalized" ? bundle : undefined,
+          files: [
+            ...(source === "normalized"
+              ? []
+              : [{ path: source, size: text.length, sha256: "bundle", storageId }]),
+            {
+              path: "skills/appointments/SKILL.md",
+              size: 20,
+              sha256: "skill",
+              storageId: skillStorageId,
+            },
+          ],
+        });
+      });
+      const before = await readCategories();
+      const beforeRelease = await t.run(async (ctx) => ctx.db.get(latest.releaseId));
+      const preview = await t.action(internal.pluginCategoryRefresh.preview, { runId: "rootless" });
+      expect(preview).toMatchObject({ previewed: 1, skipped: 0, failed: 0 });
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "rootless",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(rows.page[0]).toMatchObject({
+        categories: ["scheduling"],
+        classification: { source: "generated" },
+        newReleaseSummary: {
+          bundledSkills: [{ name: "appointments", skillMdPath: "skills/appointments/SKILL.md" }],
+        },
+      });
+      const request = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+      expect(JSON.parse(JSON.parse(request.input).bundle)).toMatchObject({ name: "Appointments" });
+      expect(JSON.parse(JSON.parse(request.input).manifest)).toEqual({});
+      await t.mutation(internal.pluginCategoryRefresh.accept, {
+        ids: [rows.page[0]._id],
+        confirm: "apply-plugin-category-refresh",
+      });
+      await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
+      expect(await readCategories()).toEqual([
+        { name: "@category-proof/appointments", version: "1.0.0", categories: ["tools"] },
+        { name: "@category-proof/appointments", version: "2.0.0", categories: ["scheduling"] },
+      ]);
+      await t.mutation(internal.pluginCategoryRefresh.rollback, {
+        id: rows.page[0]._id,
+        confirm: "rollback-plugin-category-refresh",
+      });
+      expect(await readCategories()).toEqual(before);
+      expect(await t.run(async (ctx) => ctx.db.get(latest.releaseId))).toEqual(beforeRelease);
+    },
+  );
+
+  it.each([
+    "code-plugin",
+    "missing-evidence",
+    "empty-bundle",
+    "malformed-bundle",
+    "malformed-root",
+    "oversized-root-metadata",
+    "oversized-root-blob",
+    "missing-root-blob",
+  ])("does not classify %s by bypassing missing or unreadable evidence", async (scenario) => {
+    const { t, latest } = await fixture();
+    await t.run(async (ctx) => {
+      const root = scenario.endsWith("root") || scenario.includes("root-");
+      const text =
+        scenario === "malformed-root" || scenario === "malformed-bundle"
+          ? "[invalid JSON"
+          : scenario === "oversized-root-blob"
+            ? " ".repeat(512_001)
+            : JSON.stringify({ categories: ["models"] });
+      const storageId = await ctx.storage.store(new Blob([text]));
+      if (scenario === "missing-root-blob") await ctx.storage.delete(storageId);
+      await ctx.db.patch(latest.packageId, {
+        family: scenario === "code-plugin" ? "code-plugin" : "bundle-plugin",
+      });
+      await ctx.db.patch(latest.releaseId, {
+        extractedPluginManifest: undefined,
+        normalizedBundleManifest:
+          scenario === "empty-bundle"
+            ? {}
+            : scenario === "missing-evidence" || scenario === "malformed-bundle"
+              ? undefined
+              : { name: "Appointments", description: "Manage appointments." },
+        files:
+          root || scenario === "malformed-bundle"
+            ? [
+                {
+                  path: root ? "openclaw.plugin.json" : ".claude-plugin/plugin.json",
+                  size: scenario === "oversized-root-metadata" ? 512_001 : 20,
+                  sha256: "unreadable",
+                  storageId,
+                },
+              ]
+            : [],
+      });
+    });
+    const result = await t.action(internal.pluginCategoryRefresh.preview, { runId: "unusable" });
+    expect(result.previewed).toBe(0);
+    expect(result.skipped + result.failed).toBe(1);
+    expect(fetch).not.toHaveBeenCalled();
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "unusable",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(rows.page).toEqual([]);
+  });
+
+  it.each([false, true])(
+    "preserves actual root declaration validation for a bundle (invalid=%s)",
+    async (invalid) => {
+      const { t, latest } = await fixture();
+      await t.run(async (ctx) => {
+        const text = JSON.stringify({
+          id: "appointments",
+          categories: invalid ? [] : ["models", "voice"],
+        });
+        const storageId = await ctx.storage.store(new Blob([text]));
+        await ctx.db.patch(latest.packageId, { family: "bundle-plugin" });
+        await ctx.db.patch(latest.releaseId, {
+          extractedPluginManifest: undefined,
+          normalizedBundleManifest: { name: "Appointments", categories: ["scheduling"] },
+          files: [{ path: "openclaw.plugin.json", size: text.length, sha256: "root", storageId }],
+        });
+      });
+      const result = await t.action(internal.pluginCategoryRefresh.preview, {
+        runId: "bundle-declared",
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "bundle-declared",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      if (invalid) {
+        expect(result).toMatchObject({ previewed: 0, failed: 1 });
+        expect(rows.page).toEqual([]);
+      } else {
+        expect(result).toMatchObject({ previewed: 1, failed: 0 });
+        expect(rows.page[0]).toMatchObject({
+          categories: ["models", "voice"],
+          classification: { source: "manifest" },
+        });
+      }
+    },
+  );
+
   it("rejects superseded model previews, including rows accepted before a classifier upgrade", async () => {
     const { t, readCategories } = await fixture();
     const before = await readCategories();
