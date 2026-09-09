@@ -88,7 +88,7 @@ test("plugin browse exposes product categories and keeps mobile filtering usable
 }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 1100 });
   await page.goto("/plugins");
-    const categories = page.getByLabel("Plugin categories");
+  const categories = page.getByLabel("Plugin categories");
   await expect(categories).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("categories-desktop.png"), fullPage: true });
   await expect(categories.getByRole("button")).toHaveCount(22);
