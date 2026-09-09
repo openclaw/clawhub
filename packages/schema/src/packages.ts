@@ -443,6 +443,7 @@ export const PackageListItemSchema = type({
   summary: "string|null?",
   icon: "string|null?",
   ownerHandle: "string|null?",
+  ownerOfficial: "boolean?",
   createdAt: "number",
   updatedAt: "number",
   latestVersion: "string|null?",

@@ -1114,7 +1114,7 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
       meta: owner ? (
         <TypeaheadPublisherMeta
           owner={owner}
-          official={item.result.plugin.isOfficial}
+          official={item.result.plugin.isOfficial || item.result.plugin.ownerOfficial === true}
           packageName={packageName}
         />
       ) : (

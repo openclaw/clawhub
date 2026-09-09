@@ -1902,6 +1902,9 @@ function makeDigestCtx(options: {
               },
             };
           }
+          if (table === "officialPublishers") {
+            return { withIndex: () => ({ unique: async () => null }) };
+          }
           if (
             table !== "packageCapabilitySearchDigest" &&
             table !== "packageTopicSearchDigest" &&

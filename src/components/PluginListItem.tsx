@@ -43,6 +43,7 @@ export function PluginListItem({
   href,
   showOfficialBadge = true,
 }: PluginListItemProps) {
+  const isOfficial = item.isOfficial || item.ownerOfficial === true;
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
   const categories = getPluginCategories(item);
@@ -73,7 +74,7 @@ export function PluginListItem({
               <span className="skill-card-owner">
                 {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
               </span>
-              {showOfficialBadge && item.isOfficial ? <OfficialBadge /> : null}
+              {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
             </span>
           </div>
         </div>
@@ -124,7 +125,7 @@ export function PluginListItem({
               <span className="skill-list-item-owner">@{item.ownerHandle}</span>
             ) : null}
           </span>
-          {showOfficialBadge && item.isOfficial ? <OfficialBadge /> : null}
+          {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
           <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
         </div>
         <p className="skill-list-item-summary">

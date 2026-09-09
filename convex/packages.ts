@@ -72,7 +72,7 @@ import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
 import type { StaticScanResult } from "./lib/moderationEngine";
-import { isOfficialPublisher } from "./lib/officialPublishers";
+import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
@@ -704,6 +704,7 @@ type PublicPackageListItem = {
   summary: string | null;
   icon: string | null;
   ownerHandle: string | null;
+  ownerOfficial: boolean;
   createdAt: number;
   updatedAt: number;
   latestVersion: string | null;
@@ -1587,6 +1588,11 @@ async function toPublicPackageListItem(
   digest: PackageDigestLike,
   featuredAt?: number,
 ): Promise<PublicPackageListItem> {
+  // Publisher identity is independent of the package's official channel. Resolve
+  // current status so granting/revoking a badge needs no package digest backfill.
+  const publisher = digest.ownerPublisherId
+    ? await ctx.db.get(digest.ownerPublisherId)
+    : await getOwnerPublisher(ctx, digest);
   return {
     name: digest.name,
     displayName: digest.displayName,
@@ -1597,6 +1603,7 @@ async function toPublicPackageListItem(
     summary: digest.summary ?? null,
     icon: digest.icon ?? null,
     ownerHandle: digest.ownerHandle || null,
+    ownerOfficial: await isOfficialPublisher(ctx, publisher),
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersion ?? null,
@@ -1616,7 +1623,8 @@ async function toPublicPackageListItemFromPackage(
     pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
       ? extractPackageDigestFields(pkg)
       : pkg;
-  const owner = toPublicPublisher(
+  const owner = await toPublicPublisherWithOfficial(
+    ctx,
     await getOwnerPublisher(ctx, {
       ownerPublisherId: pkg.ownerPublisherId,
       ownerUserId: pkg.ownerUserId,
@@ -1632,6 +1640,7 @@ async function toPublicPackageListItemFromPackage(
     summary: pkg.summary ?? null,
     icon: pkg.icon ?? null,
     ownerHandle: owner?.handle ?? null,
+    ownerOfficial: owner?.official === true,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     latestVersion: pkg.latestVersionSummary?.version ?? null,

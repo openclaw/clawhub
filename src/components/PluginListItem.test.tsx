@@ -27,6 +27,28 @@ describe("PluginListItem", () => {
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
+  it.each(["list", "card"] as const)(
+    "shows publisher badges on community %s plugins",
+    (variant) => {
+      render(
+        <PluginListItem
+          item={makePlugin({ isOfficial: false, channel: "community", ownerOfficial: true })}
+          variant={variant}
+        />,
+      );
+      expect(screen.getByLabelText("Official")).toBeTruthy();
+    },
+  );
+
+  it("leaves unverified community publishers unbadged", () => {
+    render(
+      <PluginListItem
+        item={makePlugin({ isOfficial: false, channel: "community", ownerOfficial: false })}
+      />,
+    );
+    expect(screen.queryByLabelText("Official")).toBeNull();
+  });
+
   it("renders author topics", () => {
     render(
       <PluginListItem

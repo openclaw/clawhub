@@ -591,6 +591,9 @@ Notes:
 - List/search defaults to public, published plugin packages, including for authenticated callers.
 - Explicit `channel=private` returns published private packages the authenticated caller can read.
 - Reservations, unpublished, deleted, and blocked plugin packages are excluded from list/search.
+- Plugin catalog items expose `ownerOfficial` for the current publisher badge, separately
+  from package `isOfficial` and `channel`. Publisher badges do not change official-only
+  filtering or package endorsement.
 
 ### `GET /api/v1/packages/search`
 
