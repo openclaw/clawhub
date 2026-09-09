@@ -174,3 +174,8 @@ All 99 proposals and model/source explanations, including six holds, are retaine
 | openclaw-seatalk | 1.1.1 | channels, tools, security | channels | generated |
 | openclaw-weixin | 0.3.0 | other | channels | generated |
 | sequential-thinking | 2026.7.1-2 | other | other | generated |
+
+
+## Compatibility rollout follow-up
+
+A separate native local Convex check at compatibility candidate `f6d0d1f0b1` verifies five malformed historical declarations remain manageable and a valid ordered Other/Models/Voice declaration agrees across exact-version HTTP and all three browse filters. All six regressions failed before the fix. An independent source-blind validator also exercised the built CLI: all eight warning/help/JSON/empty-value/topics/Claw dry-run clauses passed. CLI dry runs prove preparation and output, not backend publication. The combined compatibility layer passes 6,531 unit tests (3 skipped), full static, type/build and package gates. Scoped source reviews are clean. Detailed sanitized results are in `summary.json` under `compatibilityFollowup`; the earlier screenshots remain the recorded 22-category sample comparison.

@@ -1405,7 +1405,7 @@
           "channels"
         ],
         "source": "generated",
-        "evidence": "This plugin’s primary purpose is connecting OpenClaw to MAX Messenger as a two-way messaging channel, supporting webhooks or polling, direct messages, group chats, and message delivery. Media handling, transcription, security policies, and streaming are supporting features.",
+        "evidence": "This plugin\u2019s primary purpose is connecting OpenClaw to MAX Messenger as a two-way messaging channel, supporting webhooks or polling, direct messages, group chats, and message delivery. Media handling, transcription, security policies, and streaming are supporting features.",
         "decision": "applied"
       },
       {
@@ -1415,7 +1415,7 @@
           "research"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is web scraping and AI-powered data extraction through Apify Actors for market research, competitor intelligence, trend analysis, lead generation, and similar investigations. Although it integrates with an external API and can fetch web data, its main user job is conducting research and synthesizing extracted information.",
+        "evidence": "The plugin\u2019s primary purpose is web scraping and AI-powered data extraction through Apify Actors for market research, competitor intelligence, trend analysis, lead generation, and similar investigations. Although it integrates with an external API and can fetch web data, its main user job is conducting research and synthesizing extracted information.",
         "decision": "applied"
       },
       {
@@ -1425,7 +1425,7 @@
           "security"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is agent governance and security: enforcing policies, blocking dangerous tool calls, scanning/redacting PII, requiring approvals, and maintaining audit trails through AxonFlow.",
+        "evidence": "The plugin\u2019s primary purpose is agent governance and security: enforcing policies, blocking dangerous tool calls, scanning/redacting PII, requiring approvals, and maintaining audit trails through AxonFlow.",
         "decision": "applied"
       },
       {
@@ -1455,7 +1455,7 @@
           "memory"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is durable, per-agent long-term memory. It stores conversation-derived knowledge in isolated LanceDB stores, supports recall, search, forgetting, embeddings, provenance, ACLs, and consolidation, with tools such as memory_store and memory_recall. The Obsidian view, UI, and Telegram commands are supporting features.",
+        "evidence": "The plugin\u2019s primary purpose is durable, per-agent long-term memory. It stores conversation-derived knowledge in isolated LanceDB stores, supports recall, search, forgetting, embeddings, provenance, ACLs, and consolidation, with tools such as memory_store and memory_recall. The Obsidian view, UI, and Telegram commands are supporting features.",
         "decision": "applied"
       },
       {
@@ -1465,7 +1465,7 @@
           "other"
         ],
         "source": "generated",
-        "evidence": "The plugin’s main purpose is live Expedia travel search: finding hotels, vacation rentals, and flights with prices, availability, and booking links. Travel search and booking do not fit a more specific listed category.",
+        "evidence": "The plugin\u2019s main purpose is live Expedia travel search: finding hotels, vacation rentals, and flights with prices, availability, and booking links. Travel search and booking do not fit a more specific listed category.",
         "decision": "applied"
       },
       {
@@ -1505,7 +1505,7 @@
           "models"
         ],
         "source": "generated",
-        "evidence": "This plugin’s primary purpose is to provide a `cursor-cli` model provider and route OpenClaw model calls through the local Cursor `cursor-agent` binary. Its catalog refresh, thinking-level mapping, and CLI streaming bridge support model inference rather than serving as the agent execution engine itself.",
+        "evidence": "This plugin\u2019s primary purpose is to provide a `cursor-cli` model provider and route OpenClaw model calls through the local Cursor `cursor-agent` binary. Its catalog refresh, thinking-level mapping, and CLI streaming bridge support model inference rather than serving as the agent execution engine itself.",
         "decision": "applied"
       },
       {
@@ -1535,7 +1535,7 @@
           "memory"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is governed durable agent memory: recalling relevant memories before work, writing back summaries afterward, inspecting and reviewing stored memories, and tracking recall usage and provenance. Its OpenClaw tools implement cross-conversation continuity rather than active-context assembly or general integrations.",
+        "evidence": "The plugin\u2019s primary purpose is governed durable agent memory: recalling relevant memories before work, writing back summaries afterward, inspecting and reviewing stored memories, and tracking recall usage and provenance. Its OpenClaw tools implement cross-conversation continuity rather than active-context assembly or general integrations.",
         "decision": "applied"
       },
       {
@@ -1805,7 +1805,7 @@
           "voice"
         ],
         "source": "generated",
-        "evidence": "The plugin’s main purpose is offline local text-to-speech using sherpa-onnx, generating WAV audio from text and configuring OpenClaw’s TTS provider.",
+        "evidence": "The plugin\u2019s main purpose is offline local text-to-speech using sherpa-onnx, generating WAV audio from text and configuring OpenClaw\u2019s TTS provider.",
         "decision": "applied"
       },
       {
@@ -1975,7 +1975,7 @@
           "security"
         ],
         "source": "generated",
-        "evidence": "MoltGuard’s primary purpose is protecting OpenClaw agents: it detects prompt injection, scans tool calls and files for risks, sanitizes secrets and PII, and blocks dangerous actions.",
+        "evidence": "MoltGuard\u2019s primary purpose is protecting OpenClaw agents: it detects prompt injection, scans tool calls and files for risks, sanitizes secrets and PII, and blocks dangerous actions.",
         "decision": "applied"
       },
       {
@@ -1985,7 +1985,7 @@
           "context"
         ],
         "source": "generated",
-        "evidence": "OpenViking is installed as OpenClaw’s context-engine plugin. Its primary lifecycle methods assemble, afterTurn, and compact build, recall, archive, and manage the active conversation context, while also supporting durable memory storage and retrieval.",
+        "evidence": "OpenViking is installed as OpenClaw\u2019s context-engine plugin. Its primary lifecycle methods assemble, afterTurn, and compact build, recall, archive, and manage the active conversation context, while also supporting durable memory storage and retrieval.",
         "decision": "applied"
       },
       {
@@ -2015,7 +2015,7 @@
           "media"
         ],
         "source": "generated",
-        "evidence": "Pixcli’s primary purpose is generating and editing media: images, video, voiceover, music, sound effects, and podcasts. Its job handling, publishing, and API integration support these media-creation workflows.",
+        "evidence": "Pixcli\u2019s primary purpose is generating and editing media: images, video, voiceover, music, sound effects, and podcasts. Its job handling, publishing, and API integration support these media-creation workflows.",
         "decision": "applied"
       },
       {
@@ -2025,7 +2025,7 @@
           "channels"
         ],
         "source": "generated",
-        "evidence": "该插件的主要用途是作为 OpenClaw 的钉钉企业机器人渠道适配器，通过 Stream 模式支持私聊、群聊、@机器人及消息收发。虽然还提供交互卡片、文件处理和多 Agent 路由等能力，但核心安装目的仍是让用户通过钉钉与代理通信。",
+        "evidence": "\u8be5\u63d2\u4ef6\u7684\u4e3b\u8981\u7528\u9014\u662f\u4f5c\u4e3a OpenClaw \u7684\u9489\u9489\u4f01\u4e1a\u673a\u5668\u4eba\u6e20\u9053\u9002\u914d\u5668\uff0c\u901a\u8fc7 Stream \u6a21\u5f0f\u652f\u6301\u79c1\u804a\u3001\u7fa4\u804a\u3001@\u673a\u5668\u4eba\u53ca\u6d88\u606f\u6536\u53d1\u3002\u867d\u7136\u8fd8\u63d0\u4f9b\u4ea4\u4e92\u5361\u7247\u3001\u6587\u4ef6\u5904\u7406\u548c\u591a Agent \u8def\u7531\u7b49\u80fd\u529b\uff0c\u4f46\u6838\u5fc3\u5b89\u88c5\u76ee\u7684\u4ecd\u662f\u8ba9\u7528\u6237\u901a\u8fc7\u9489\u9489\u4e0e\u4ee3\u7406\u901a\u4fe1\u3002",
         "decision": "applied"
       },
       {
@@ -2035,7 +2035,7 @@
           "memory"
         ],
         "source": "generated",
-        "evidence": "该插件的主要用途是为 AI Agent 提供长期记忆：自动捕获对话、提取并结构化记忆、生成用户画像，并通过 SQLite/腾讯云向量数据库进行持久化存储与检索。",
+        "evidence": "\u8be5\u63d2\u4ef6\u7684\u4e3b\u8981\u7528\u9014\u662f\u4e3a AI Agent \u63d0\u4f9b\u957f\u671f\u8bb0\u5fc6\uff1a\u81ea\u52a8\u6355\u83b7\u5bf9\u8bdd\u3001\u63d0\u53d6\u5e76\u7ed3\u6784\u5316\u8bb0\u5fc6\u3001\u751f\u6210\u7528\u6237\u753b\u50cf\uff0c\u5e76\u901a\u8fc7 SQLite/\u817e\u8baf\u4e91\u5411\u91cf\u6570\u636e\u5e93\u8fdb\u884c\u6301\u4e45\u5316\u5b58\u50a8\u4e0e\u68c0\u7d22\u3002",
         "decision": "applied"
       },
       {
@@ -2045,7 +2045,7 @@
           "integrations"
         ],
         "source": "generated",
-        "evidence": "This plugin is a unified connector to multiple Google Workspace APIs—Gmail, Calendar, Drive, Contacts, Tasks, and Sheets—using shared OAuth and configurable service toggles. Its main purpose is broad service integration rather than a single workflow.",
+        "evidence": "This plugin is a unified connector to multiple Google Workspace APIs\u2014Gmail, Calendar, Drive, Contacts, Tasks, and Sheets\u2014using shared OAuth and configurable service toggles. Its main purpose is broad service integration rather than a single workflow.",
         "decision": "applied"
       },
       {
@@ -2055,7 +2055,7 @@
           "channels"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is bridging Vauxr voice devices to OpenClaw: it receives device transcripts, routes them into agent sessions, and streams responses back for TTS. Device-control tools are secondary capabilities.",
+        "evidence": "The plugin\u2019s primary purpose is bridging Vauxr voice devices to OpenClaw: it receives device transcripts, routes them into agent sessions, and streams responses back for TTS. Device-control tools are secondary capabilities.",
         "decision": "held"
       },
       {
@@ -2065,7 +2065,7 @@
           "channels"
         ],
         "source": "generated",
-        "evidence": "Bncr 是 OpenClaw 的频道插件，核心用途是通过 Bncr/无界客户端收发人与 Agent 的文本、媒体消息，并管理私聊、群聊及会话连接。",
+        "evidence": "Bncr \u662f OpenClaw \u7684\u9891\u9053\u63d2\u4ef6\uff0c\u6838\u5fc3\u7528\u9014\u662f\u901a\u8fc7 Bncr/\u65e0\u754c\u5ba2\u6237\u7aef\u6536\u53d1\u4eba\u4e0e Agent \u7684\u6587\u672c\u3001\u5a92\u4f53\u6d88\u606f\uff0c\u5e76\u7ba1\u7406\u79c1\u804a\u3001\u7fa4\u804a\u53ca\u4f1a\u8bdd\u8fde\u63a5\u3002",
         "decision": "applied"
       },
       {
@@ -2075,7 +2075,7 @@
           "security"
         ],
         "source": "generated",
-        "evidence": "This plugin’s main purpose is enforcing security policy around OpenClaw skill/plugin installation. It scans sources before activation, generates vetting reports, blocks critical findings, and intercepts agent tool calls that bypass the approved installation path.",
+        "evidence": "This plugin\u2019s main purpose is enforcing security policy around OpenClaw skill/plugin installation. It scans sources before activation, generates vetting reports, blocks critical findings, and intercepts agent tool calls that bypass the approved installation path.",
         "decision": "applied"
       },
       {
@@ -2105,7 +2105,7 @@
           "channels"
         ],
         "source": "generated",
-        "evidence": "This plugin is explicitly a Chrome channel adapter connecting OpenClaw to the Sider Chrome extension, allowing users to communicate with and control OpenClaw from Sider’s sidebar. Pairing, message routing, streaming events, and attachment transfer support that transport purpose.",
+        "evidence": "This plugin is explicitly a Chrome channel adapter connecting OpenClaw to the Sider Chrome extension, allowing users to communicate with and control OpenClaw from Sider\u2019s sidebar. Pairing, message routing, streaming events, and attachment transfer support that transport purpose.",
         "decision": "applied"
       },
       {
@@ -2145,7 +2145,7 @@
           "research"
         ],
         "source": "generated",
-        "evidence": "该插件的主要用途是对抖音进行社媒研究与情报分析：搜索热榜、作品和达人，获取作品详情、评论、达人资料及作品/短剧合集。它是只读的研究工具，不提供发布、互动或账号运营功能。",
+        "evidence": "\u8be5\u63d2\u4ef6\u7684\u4e3b\u8981\u7528\u9014\u662f\u5bf9\u6296\u97f3\u8fdb\u884c\u793e\u5a92\u7814\u7a76\u4e0e\u60c5\u62a5\u5206\u6790\uff1a\u641c\u7d22\u70ed\u699c\u3001\u4f5c\u54c1\u548c\u8fbe\u4eba\uff0c\u83b7\u53d6\u4f5c\u54c1\u8be6\u60c5\u3001\u8bc4\u8bba\u3001\u8fbe\u4eba\u8d44\u6599\u53ca\u4f5c\u54c1/\u77ed\u5267\u5408\u96c6\u3002\u5b83\u662f\u53ea\u8bfb\u7684\u7814\u7a76\u5de5\u5177\uff0c\u4e0d\u63d0\u4f9b\u53d1\u5e03\u3001\u4e92\u52a8\u6216\u8d26\u53f7\u8fd0\u8425\u529f\u80fd\u3002",
         "decision": "applied"
       },
       {
@@ -2155,7 +2155,7 @@
           "inbox-collaboration"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is managing email inboxes and messages through IMAP/SMTP: listing mailboxes, searching and reading messages, updating flags, moving mail, sending, and replying. This is general email and inbox management, not a messaging transport or a generic integration.",
+        "evidence": "The plugin\u2019s primary purpose is managing email inboxes and messages through IMAP/SMTP: listing mailboxes, searching and reading messages, updating flags, moving mail, sending, and replying. This is general email and inbox management, not a messaging transport or a generic integration.",
         "decision": "applied"
       },
       {
@@ -2185,7 +2185,7 @@
           "sales-marketing"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is managing Google Ads campaigns: performance reporting, keyword research, search-term optimization, ad-copy creation, campaign structure, and preview-then-execute advertising edits. Its MCP connection is incidental to this marketing workflow.",
+        "evidence": "The plugin\u2019s primary purpose is managing Google Ads campaigns: performance reporting, keyword research, search-term optimization, ad-copy creation, campaign structure, and preview-then-execute advertising edits. Its MCP connection is incidental to this marketing workflow.",
         "decision": "applied"
       },
       {
@@ -2205,7 +2205,7 @@
           "memory"
         ],
         "source": "generated",
-        "evidence": "Hivemind’s primary purpose is cloud-backed persistent shared memory: it auto-captures conversations, recalls relevant memories across sessions and agents, and shares them across teammates and workspaces.",
+        "evidence": "Hivemind\u2019s primary purpose is cloud-backed persistent shared memory: it auto-captures conversations, recalls relevant memories across sessions and agents, and shares them across teammates and workspaces.",
         "decision": "applied"
       },
       {
@@ -2255,7 +2255,7 @@
           "inbox-collaboration"
         ],
         "source": "generated",
-        "evidence": "The plugin’s main purpose is managing and normalizing outgoing message content before dispatch, including Markdown cleanup, kaomoji-safe formatting, and Chinese text conversion. Although it uses OpenClaw message hooks and targets Discord presentation, it is a message-formatting utility rather than a human-agent transport.",
+        "evidence": "The plugin\u2019s main purpose is managing and normalizing outgoing message content before dispatch, including Markdown cleanup, kaomoji-safe formatting, and Chinese text conversion. Although it uses OpenClaw message hooks and targets Discord presentation, it is a message-formatting utility rather than a human-agent transport.",
         "decision": "applied"
       },
       {
@@ -2265,7 +2265,7 @@
           "channels"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is connecting OpenClaw to Octo as a real-time messaging channel via WebSocket. Its manifest identifies it as an Octo channel plugin, with bot accounts, tokens, group mentions, and message/card sending capabilities.",
+        "evidence": "The plugin\u2019s primary purpose is connecting OpenClaw to Octo as a real-time messaging channel via WebSocket. Its manifest identifies it as an Octo channel plugin, with bot accounts, tokens, group mentions, and message/card sending capabilities.",
         "decision": "applied"
       },
       {
@@ -2285,7 +2285,7 @@
           "media"
         ],
         "source": "generated",
-        "evidence": "This plugin’s primary purpose is autonomous AI video editing: creating, transforming, analyzing, captioning, compositing, enhancing, and exporting video and related audio/image media through natural-language requests.",
+        "evidence": "This plugin\u2019s primary purpose is autonomous AI video editing: creating, transforming, analyzing, captioning, compositing, enhancing, and exporting video and related audio/image media through natural-language requests.",
         "decision": "applied"
       },
       {
@@ -2295,7 +2295,7 @@
           "web"
         ],
         "source": "generated",
-        "evidence": "This plugin’s main purpose is controlling Chrome/Chromium through CDP for browser automation, including opening pages, reading content, clicking, filling forms, screenshots, and tab management.",
+        "evidence": "This plugin\u2019s main purpose is controlling Chrome/Chromium through CDP for browser automation, including opening pages, reading content, clicking, filling forms, screenshots, and tab management.",
         "decision": "applied"
       },
       {
@@ -2305,7 +2305,7 @@
           "agent-orchestration"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is coordinating multiple coding-agent sessions: launching, monitoring, approving, resuming, stopping, and routing work across Claude Code, Codex, and OpenCode. It also manages worktrees, merges, PR follow-through, and goal loops. It is not itself the underlying agent execution engine.",
+        "evidence": "The plugin\u2019s primary purpose is coordinating multiple coding-agent sessions: launching, monitoring, approving, resuming, stopping, and routing work across Claude Code, Codex, and OpenCode. It also manages worktrees, merges, PR follow-through, and goal loops. It is not itself the underlying agent execution engine.",
         "decision": "applied"
       },
       {
@@ -2315,7 +2315,7 @@
           "memory"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is durable agent memory: it automatically extracts entities and relationships from conversations, persists them in a local SQLite knowledge graph across sessions, and provides retrieval, search, path, semantic, and temporal-memory tools.",
+        "evidence": "The plugin\u2019s primary purpose is durable agent memory: it automatically extracts entities and relationships from conversations, persists them in a local SQLite knowledge graph across sessions, and provides retrieval, search, path, semantic, and temporal-memory tools.",
         "decision": "applied"
       },
       {
@@ -2325,7 +2325,7 @@
           "media"
         ],
         "source": "generated",
-        "evidence": "This plugin adds HeyGen as a provider for OpenClaw’s video_generate tool, specializing in avatar/presenter video generation with scripted narration, voices, styles, and image references.",
+        "evidence": "This plugin adds HeyGen as a provider for OpenClaw\u2019s video_generate tool, specializing in avatar/presenter video generation with scripted narration, voices, styles, and image references.",
         "decision": "applied"
       },
       {
@@ -2345,7 +2345,7 @@
           "channels"
         ],
         "source": "generated",
-        "evidence": "该插件的主要用途是通过腾讯 iLink Bot API 将微信个人账号接入 OpenClaw，使用户能够收发文字、图片、视频、文件和语音消息；清单也明确将其标为 channel。",
+        "evidence": "\u8be5\u63d2\u4ef6\u7684\u4e3b\u8981\u7528\u9014\u662f\u901a\u8fc7\u817e\u8baf iLink Bot API \u5c06\u5fae\u4fe1\u4e2a\u4eba\u8d26\u53f7\u63a5\u5165 OpenClaw\uff0c\u4f7f\u7528\u6237\u80fd\u591f\u6536\u53d1\u6587\u5b57\u3001\u56fe\u7247\u3001\u89c6\u9891\u3001\u6587\u4ef6\u548c\u8bed\u97f3\u6d88\u606f\uff1b\u6e05\u5355\u4e5f\u660e\u786e\u5c06\u5176\u6807\u4e3a channel\u3002",
         "decision": "applied"
       },
       {
@@ -2365,7 +2365,7 @@
           "research"
         ],
         "source": "generated",
-        "evidence": "The plugin’s primary purpose is source-only web search and URL extraction with research mode, provenance, freshness controls, authority reranking, quality reports, and multi-provider routing. Although it integrates many search services, those are implementation details supporting web research rather than the main installation purpose.",
+        "evidence": "The plugin\u2019s primary purpose is source-only web search and URL extraction with research mode, provenance, freshness controls, authority reranking, quality reports, and multi-provider routing. Although it integrates many search services, those are implementation details supporting web research rather than the main installation purpose.",
         "decision": "held"
       },
       {
@@ -2403,7 +2403,7 @@
         "proposedCategories": [
           "channels"
         ],
-        "modelExplanation": "The plugin’s primary purpose is bridging Vauxr voice devices to OpenClaw: it receives device transcripts, routes them into agent sessions, and streams responses back for TTS. Device-control tools are secondary capabilities.",
+        "modelExplanation": "The plugin\u2019s primary purpose is bridging Vauxr voice devices to OpenClaw: it receives device transcripts, routes them into agent sessions, and streams responses back for TTS. Device-control tools are secondary capabilities.",
         "reason": "Voice-device bridge remains ambiguous between Voice and Channels."
       },
       {
@@ -2442,7 +2442,7 @@
         "proposedCategories": [
           "research"
         ],
-        "modelExplanation": "The plugin’s primary purpose is source-only web search and URL extraction with research mode, provenance, freshness controls, authority reranking, quality reports, and multi-provider routing. Although it integrates many search services, those are implementation details supporting web research rather than the main installation purpose.",
+        "modelExplanation": "The plugin\u2019s primary purpose is source-only web search and URL extraction with research mode, provenance, freshness controls, authority reranking, quality reports, and multi-provider routing. Although it integrates many search services, those are implementation details supporting web research rather than the main installation purpose.",
         "reason": "Source-only generic search and extraction fits Web; the Research proposal is unsupported."
       },
       {
@@ -5844,7 +5844,7 @@
           "imageSha256": "7bf383d621691dd0ff7825a2a78e79ff6ed77caca1dd15ff26c61d5abf3691f2"
         },
         {
-          "name": "Developer tools filter (8 → 3)",
+          "name": "Developer tools filter (8 \u2192 3)",
           "slug": "developer-tools-filter",
           "screenshot": "developer-tools-filter.png",
           "status": "passed",
@@ -5852,7 +5852,7 @@
           "imageSha256": "4319034d345c6c6f9889ffeb9f4887ccf62557b7e89f8b4bace586c61999f45a"
         },
         {
-          "name": "Mobile Inbox & collaboration (2 → 3)",
+          "name": "Mobile Inbox & collaboration (2 \u2192 3)",
           "slug": "mobile-inbox-collaboration",
           "screenshot": "mobile-inbox-collaboration.png",
           "status": "passed",
@@ -5873,7 +5873,7 @@
           "imageSha256": "de3d339bc4302627848ce7f723918132c97f4a8beb238c783ef722823d327ddc"
         },
         {
-          "name": "Developer tools filter (8 → 3)",
+          "name": "Developer tools filter (8 \u2192 3)",
           "slug": "developer-tools-filter",
           "screenshot": "developer-tools-filter.png",
           "status": "passed",
@@ -5881,7 +5881,7 @@
           "imageSha256": "46717a4feedcea5d8da9ab813cd57d8b5d7b9c247af287a0ea23e54881f1d945"
         },
         {
-          "name": "Mobile Inbox & collaboration (2 → 3)",
+          "name": "Mobile Inbox & collaboration (2 \u2192 3)",
           "slug": "mobile-inbox-collaboration",
           "screenshot": "mobile-inbox-collaboration.png",
           "status": "passed",
@@ -5917,7 +5917,7 @@
           "width": 1440,
           "height": 1080
         },
-        "notes": "Full-page screenshots of /plugins?sort=updated, showing 21 → 22 category navigation."
+        "notes": "Full-page screenshots of /plugins?sort=updated, showing 21 \u2192 22 category navigation."
       },
       {
         "label": "Developer tools filter",
@@ -5951,10 +5951,10 @@
         "label": "Mobile Agent runtimes filter",
         "rows": 3,
         "route": "/plugins?category=agent-runtimes",
-        "notes": "390 × 844 viewport; full-page capture."
+        "notes": "390 \u00d7 844 viewport; full-page capture."
       }
     ],
-    "reportMarkdown": "Captured in real Chromium on the agent host after waiting for the exact expected plugin identities, not only result counts. Desktop viewport: 1440×1080; mobile: 390×844. These are actual application screenshots; source pixels were not composed or edited.\n\nDeveloper tools changes from **8 to 3** results. Three native runtimes move into Agent runtimes; Code Agent separately moves into Agent orchestration, and the held Claude Code Sync proposal retains original production metadata. The new Agent runtimes filter shows **Codex, ACPX and Copilot** with its Bot category icon. New-category desktop/mobile captures are **candidate-only**, since the v2 category list has no matching category.\n\nClawHub rendered at `http://127.0.0.1:4320/plugins`. Paired full-page captures show category navigation, Developer tools, and mobile Inbox & collaboration (2 → 3 results). Candidate-only captures show Agent runtimes at desktop and mobile widths.\n\nCapture boundaries:\n\n- Category navigation: Full-page screenshots of /plugins?sort=updated, showing 21 → 22 category navigation.\n- Developer tools filter: Full-page screenshots of /plugins?category=developer-tools. Three native runtimes moved; Code Agent reclassified to orchestration; held Claude Code Sync retained original metadata.\n- Mobile Inbox & collaboration: Same /plugins?category=inbox-collaboration filter. Full page.\n- Agent runtimes filter (candidate only): New category; no prior equivalent screenshot.\n- Mobile Agent runtimes filter (candidate only): 390 × 844 viewport; full-page capture.\n\n| Paired state | Before | After |\n| --- | --- | --- |\n| Category navigation | ![Before Category navigation](baseline/category-navigation.png) | ![After Category navigation](candidate/category-navigation.png) |\n| Developer tools filter | ![Before Developer tools filter](baseline/developer-tools-filter.png) | ![After Developer tools filter](candidate/developer-tools-filter.png) |\n| Mobile Inbox & collaboration | ![Before Mobile Inbox & collaboration](baseline/mobile-inbox-collaboration.png) | ![After Mobile Inbox & collaboration](candidate/mobile-inbox-collaboration.png) |\n\nNew-category captures (candidate only):\n\n![Agent runtimes filter](candidate/agent-runtimes-filter.png)\n\n![Mobile Agent runtimes filter](candidate/mobile-agent-runtimes-filter.png)\n\n"
+    "reportMarkdown": "Captured in real Chromium on the agent host after waiting for the exact expected plugin identities, not only result counts. Desktop viewport: 1440\u00d71080; mobile: 390\u00d7844. These are actual application screenshots; source pixels were not composed or edited.\n\nDeveloper tools changes from **8 to 3** results. Three native runtimes move into Agent runtimes; Code Agent separately moves into Agent orchestration, and the held Claude Code Sync proposal retains original production metadata. The new Agent runtimes filter shows **Codex, ACPX and Copilot** with its Bot category icon. New-category desktop/mobile captures are **candidate-only**, since the v2 category list has no matching category.\n\nClawHub rendered at `http://127.0.0.1:4320/plugins`. Paired full-page captures show category navigation, Developer tools, and mobile Inbox & collaboration (2 \u2192 3 results). Candidate-only captures show Agent runtimes at desktop and mobile widths.\n\nCapture boundaries:\n\n- Category navigation: Full-page screenshots of /plugins?sort=updated, showing 21 \u2192 22 category navigation.\n- Developer tools filter: Full-page screenshots of /plugins?category=developer-tools. Three native runtimes moved; Code Agent reclassified to orchestration; held Claude Code Sync retained original metadata.\n- Mobile Inbox & collaboration: Same /plugins?category=inbox-collaboration filter. Full page.\n- Agent runtimes filter (candidate only): New category; no prior equivalent screenshot.\n- Mobile Agent runtimes filter (candidate only): 390 \u00d7 844 viewport; full-page capture.\n\n| Paired state | Before | After |\n| --- | --- | --- |\n| Category navigation | ![Before Category navigation](baseline/category-navigation.png) | ![After Category navigation](candidate/category-navigation.png) |\n| Developer tools filter | ![Before Developer tools filter](baseline/developer-tools-filter.png) | ![After Developer tools filter](candidate/developer-tools-filter.png) |\n| Mobile Inbox & collaboration | ![Before Mobile Inbox & collaboration](baseline/mobile-inbox-collaboration.png) | ![After Mobile Inbox & collaboration](candidate/mobile-inbox-collaboration.png) |\n\nNew-category captures (candidate only):\n\n![Agent runtimes filter](candidate/agent-runtimes-filter.png)\n\n![Mobile Agent runtimes filter](candidate/mobile-agent-runtimes-filter.png)\n\n"
   },
   "runtimeVerification": {
     "status": "passed",
@@ -6004,5 +6004,335 @@
     "httpRouteChecksPassed": 15,
     "browserPageErrors": [],
     "proofBoundary": "Agent-host real Chromium browser proof. Not observation of the user MacBook browser."
+  },
+  "compatibilityFollowup": {
+    "checkedAt": "2026-09-09T04:51:36.889Z",
+    "runtime": "Disposable native local Convex",
+    "productionWrites": false,
+    "management": [
+      {
+        "name": "@compat/empty",
+        "categories": [
+          "web"
+        ],
+        "suggestedCategories": [
+          "web"
+        ]
+      },
+      {
+        "name": "@compat/duplicate",
+        "categories": [
+          "web"
+        ],
+        "suggestedCategories": [
+          "web"
+        ]
+      },
+      {
+        "name": "@compat/unknown",
+        "categories": [
+          "web"
+        ],
+        "suggestedCategories": [
+          "web"
+        ]
+      },
+      {
+        "name": "@compat/oversized",
+        "categories": [
+          "web"
+        ],
+        "suggestedCategories": [
+          "web"
+        ]
+      },
+      {
+        "name": "@compat/non-array",
+        "categories": [
+          "web"
+        ],
+        "suggestedCategories": [
+          "web"
+        ]
+      },
+      {
+        "name": "@compat/ordered",
+        "categories": [
+          "other",
+          "models",
+          "voice"
+        ],
+        "suggestedCategories": [
+          "other",
+          "models",
+          "voice"
+        ]
+      }
+    ],
+    "exactVersion": [
+      {
+        "categories": [
+          "other",
+          "models",
+          "voice"
+        ],
+        "name": "@compat/ordered",
+        "version": "1.0.0"
+      }
+    ],
+    "filters": [
+      {
+        "category": "other",
+        "names": [
+          "@compat/ordered"
+        ],
+        "categories": [
+          "other",
+          "models",
+          "voice"
+        ]
+      },
+      {
+        "category": "models",
+        "names": [
+          "@compat/ordered"
+        ],
+        "categories": [
+          "other",
+          "models",
+          "voice"
+        ]
+      },
+      {
+        "category": "voice",
+        "names": [
+          "@compat/ordered"
+        ],
+        "categories": [
+          "other",
+          "models",
+          "voice"
+        ]
+      }
+    ],
+    "managementReadsPassed": 6,
+    "historicalMalformedDeclarationsRead": 5,
+    "orderedOtherParityPassed": true,
+    "cli": {
+      "sourceBlind": true,
+      "summary": {
+        "pass": 8,
+        "fail": 0,
+        "blocked": 0,
+        "outOfScope": 0
+      },
+      "limitations": [
+        "All publication probes used --dry-run. This proves preparation and warnings, not upload, backend classification, or stored categories.",
+        "No implementation, tests, diffs, git history, or review reports were inspected for this CLI validation."
+      ],
+      "antiCheatProbes": [
+        {
+          "probe": "legacy value developer-tools vs scheduling",
+          "result": "Passed; warning and JSON behavior followed the supplied input variant."
+        },
+        {
+          "probe": "explicit empty --categories value",
+          "result": "Passed; warning and JSON behavior followed the supplied input variant."
+        },
+        {
+          "probe": "manifest-declared vs omitted categories",
+          "result": "Passed; warning and JSON behavior followed the supplied input variant."
+        },
+        {
+          "probe": "JSON vs human-readable output",
+          "result": "Passed; warning and JSON behavior followed the supplied input variant."
+        },
+        {
+          "probe": "--topics with no --categories",
+          "result": "Passed; warning and JSON behavior followed the supplied input variant."
+        },
+        {
+          "probe": "separate Claw tarball package family",
+          "result": "Passed; warning and JSON behavior followed the supplied input variant."
+        }
+      ],
+      "clauses": [
+        {
+          "clause": "1",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": null,
+          "commands": [
+            [
+              "package",
+              "publish",
+              "--help"
+            ]
+          ]
+        },
+        {
+          "clause": "2",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": true,
+          "commands": [
+            [
+              "--no-input",
+              "package",
+              "publish",
+              "./declared-plugin",
+              "--dry-run",
+              "--json",
+              "--categories",
+              "developer-tools",
+              "--source-repo",
+              "openclaw/category-proof-fixture",
+              "--source-commit",
+              "abc123"
+            ]
+          ]
+        },
+        {
+          "clause": "3",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": true,
+          "commands": [
+            [
+              "--no-input",
+              "package",
+              "publish",
+              "./declared-plugin",
+              "--dry-run",
+              "--json",
+              "--categories",
+              "",
+              "--source-repo",
+              "openclaw/category-proof-fixture",
+              "--source-commit",
+              "abc123"
+            ]
+          ]
+        },
+        {
+          "clause": "4",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": true,
+          "commands": [
+            [
+              "--no-input",
+              "package",
+              "publish",
+              "./declared-plugin",
+              "--dry-run",
+              "--json",
+              "--categories",
+              "scheduling",
+              "--topics",
+              "automation,productivity",
+              "--source-repo",
+              "openclaw/category-proof-fixture",
+              "--source-commit",
+              "abc123"
+            ]
+          ]
+        },
+        {
+          "clause": "5",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": true,
+          "commands": [
+            [
+              "--no-input",
+              "package",
+              "publish",
+              "./declared-plugin",
+              "--dry-run",
+              "--json",
+              "--topics",
+              "automation",
+              "--source-repo",
+              "openclaw/category-proof-fixture",
+              "--source-commit",
+              "abc123"
+            ]
+          ]
+        },
+        {
+          "clause": "6",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": true,
+          "commands": [
+            [
+              "--no-input",
+              "package",
+              "publish",
+              "./automatic-plugin",
+              "--dry-run",
+              "--json",
+              "--topics",
+              "automation",
+              "--source-repo",
+              "openclaw/category-proof-fixture",
+              "--source-commit",
+              "abc123"
+            ]
+          ]
+        },
+        {
+          "clause": "7",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": true,
+          "commands": [
+            [
+              "--no-input",
+              "package",
+              "publish",
+              "./sample-claw-1.0.0.tgz",
+              "--dry-run",
+              "--json",
+              "--categories",
+              "automation"
+            ]
+          ]
+        },
+        {
+          "clause": "8",
+          "status": "pass",
+          "exitCode": 0,
+          "jsonParseable": null,
+          "commands": [
+            [
+              "--no-input",
+              "package",
+              "publish",
+              "./declared-plugin",
+              "--dry-run",
+              "--categories",
+              "developer-tools",
+              "--source-repo",
+              "openclaw/category-proof-fixture",
+              "--source-commit",
+              "abc123"
+            ]
+          ]
+        }
+      ]
+    },
+    "head": "f6d0d1f0b19f0ba8090e06dc8fe4653ba488d4b4",
+    "validation": {
+      "unit": {
+        "passed": 6531,
+        "skipped": 3
+      },
+      "static": "passed",
+      "typesBuild": "passed",
+      "packages": "passed",
+      "autoreview": "both scoped reviews clean; combined diff manually inspected"
+    }
   }
 }
