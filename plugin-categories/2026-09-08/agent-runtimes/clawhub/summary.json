@@ -6392,5 +6392,46 @@
       "unselectedLatestReleasesUnchanged": 7,
       "sourceFilesHashesStorageReferencesAndOtherReleaseMetadataUnchanged": true
     }
+  },
+  "operatorFollowup": {
+    "productionWrites": false,
+    "sourcePin": "3bf34b0570d3e55ad16f7c4cb25249797a59042b",
+    "focusedTests": {
+      "passed": 31,
+      "failed": 0
+    },
+    "runtimeEvidence": {
+      "localConvex": "migrations:run dryRun returned No changes were committed; processed0; no state changes",
+      "operatorCLI": "non-main process invocation exits1: Production operator requires main."
+    },
+    "workflowSyntax": "YAML parsed; six fixed modes; credential bound only to operator step",
+    "autoreview": {
+      "status": "clean",
+      "engine": "codex",
+      "model": "gpt-5.6-sol",
+      "trufflehog": "clean",
+      "result": "No accepted/actionable findings within the stated deployment-freeze invariant and approved operator scope."
+    },
+    "operationalLimitation": "No global deployment lock. Owner freezes deployments through migration completion, checks deployed SHA around waves, and reinspects status after lost responses. Initial workflow/main/deployed SHA guard remains mandatory; per-row backend evidence/classifier/bundled guards remain active.",
+    "additionalProof": "Bounded packageId/reason preview diagnostics survive for skipped/failed packages without journal rows; 31st focused regression verifies raw source fields do not enter artifacts.",
+    "restackedCommit": "2ccf32837b9fd4364c3f7e85deac2c6f448838f0",
+    "restackedBase": "5b987ebdeb3a2b0b8cbe5cc234796842314a7f93",
+    "combinedValidation": {
+      "static": "passed including dependency audit",
+      "unitPassed": 6576,
+      "unitSkipped": 3,
+      "typesBuild": "passed"
+    }
+  },
+  "browserRegressionFollowup": {
+    "commit": "f94cf76d26",
+    "beforeFailed": 2,
+    "afterPassed": 2,
+    "runtime": "real local ClawHub on 4320 and Convex on 3320/3321",
+    "cases": [
+      "canonical category API",
+      "desktop and mobile filtering"
+    ],
+    "docs": "22 active values distinguished from readable retired slugs"
   }
 }
