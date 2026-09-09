@@ -10,6 +10,7 @@ import { sha256Hex } from "./lib/clawpack";
 import { derivePluginManifestSummary } from "./lib/packageRegistry";
 import {
   classifyPluginCategories,
+  PLUGIN_CATEGORY_CLASSIFIER_VERSION,
   pluginCategoryClassificationValidator,
 } from "./lib/pluginCategoryClassification";
 import { pluginManifestSummaryValidator } from "./schema";
@@ -17,6 +18,14 @@ import { pluginManifestSummaryValidator } from "./schema";
 const bundledAssignments = new Map(
   bundledInventory.assignments.map((entry) => [entry.packageName, entry]),
 );
+
+function generatedAssignmentIsCurrent(row: Doc<"pluginCategoryRefreshes">) {
+  return (
+    row.classification.source !== "generated" ||
+    (row.classification.classifierVersion === PLUGIN_CATEGORY_CLASSIFIER_VERSION &&
+      row.categories.length === 1)
+  );
+}
 
 function bundledAssignment(
   pkg: Doc<"packages">,
@@ -237,13 +246,17 @@ export const preview = internalAction({
                   evidence: `Reviewed OpenClaw bundled manifest: extensions/${current.bundled.pluginId}/openclaw.plugin.json`,
                 },
               }
-            : await classifyPluginCategories({
-                name: current.pkg.name,
-                pluginManifest,
-                packageJson: current.release.extractedPackageJson,
-                bundleManifest: current.release.normalizedBundleManifest,
-                documentation: docs.join("\n"),
-              });
+            : await classifyPluginCategories(
+                {
+                  name: current.pkg.name,
+                  pluginManifest,
+                  packageJson: current.release.extractedPackageJson,
+                  bundleManifest: current.release.normalizedBundleManifest,
+                  documentation: docs.join("\n"),
+                },
+                // Refresh preserves actual declarations in already-published artifacts.
+                { allowLegacyDeclarations: true },
+              );
         const id = await ctx.runMutation(internal.pluginCategoryRefresh.storePreview, {
           runId: args.runId,
           packageId,
@@ -310,6 +323,8 @@ export const accept = internalMutation({
       if (!row || row.status !== "preview") continue;
       if (row.classification.source === "fallback")
         throw new ConvexError("Refresh failed classifications before accepting them.");
+      if (!generatedAssignmentIsCurrent(row))
+        throw new ConvexError("Classifier changed. Generate a new preview before accepting it.");
       await ctx.db.patch(id, { status: "accepted", acceptedAt: Date.now() });
       accepted++;
     }
@@ -322,6 +337,13 @@ export const applyAccepted = internalMutation({
   handler: async (ctx, { id }) => {
     const row = await ctx.db.get(id);
     if (!row || row.status !== "accepted") return { applied: false };
+    if (!generatedAssignmentIsCurrent(row)) {
+      await ctx.db.patch(id, {
+        status: "stale",
+        reason: "Classifier changed. Generate a new preview.",
+      });
+      return { applied: false };
+    }
     const pkg = await ctx.db.get(row.packageId);
     const release = await ctx.db.get(row.releaseId);
     if (

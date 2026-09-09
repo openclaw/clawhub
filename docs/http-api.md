@@ -650,6 +650,19 @@ Returns the canonical plugin discovery taxonomy in display order. Each category
 contains `slug`, `label`, `description`, a bare Lucide `icon` key, and numeric
 `order`.
 
+Use each category's description to choose the main reason someone installs the
+plugin. New plugin releases may declare exactly one category in
+`openclaw.plugin.json`, for example `"categories": ["developer-tools"]`. When the
+declaration is absent, ClawHub generates one category from bounded manifest,
+package, and documentation evidence using `gpt-5.6-luna` by default. Operators can
+override this with `OPENAI_PLUGIN_CATEGORY_MODEL`; the skill-summary model setting
+does not affect plugin classification.
+
+Already-published multi-category declarations remain readable and are preserved
+during metadata refresh. New generated assignments and bundled manifests use one
+category. A failed model request falls back to `other` during publication and is
+not accepted by the reviewed backfill.
+
 ### `GET /api/v1/skills/export`
 
 Bulk export of latest public skills for offline analysis.

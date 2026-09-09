@@ -12978,11 +12978,16 @@ describe("packages public queries", () => {
 
     modelFetch.mockClear();
     await expect(
-      publishWithManifestIcon(undefined, undefined, ["productivity", "scheduling"]),
+      publishWithManifestIcon(undefined, undefined, ["productivity"]),
     ).resolves.toMatchObject({
-      categories: ["productivity", "scheduling"],
+      categories: ["productivity"],
       categoryClassification: { source: "manifest" },
     });
+    for (const bundle of [undefined, { name: "Appointments" }]) {
+      await expect(
+        publishWithManifestIcon(undefined, bundle, ["productivity", "scheduling"]),
+      ).rejects.toThrow("exactly one category");
+    }
     expect(modelFetch).not.toHaveBeenCalled();
 
     modelFetch.mockImplementation(async () =>

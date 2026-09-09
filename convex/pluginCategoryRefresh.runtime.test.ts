@@ -90,6 +90,37 @@ async function fixture() {
 }
 
 describe("latest plugin category refresh", () => {
+  it("rejects superseded model previews, including rows accepted before a classifier upgrade", async () => {
+    const { t, readCategories } = await fixture();
+    const before = await readCategories();
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "old-classifier" });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "old-classifier",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    const row = rows.page[0];
+    await t.run(async (ctx) =>
+      ctx.db.patch(row._id, {
+        classification: {
+          ...row.classification,
+          classifierVersion: "plugin-product-categories-v1",
+        },
+      }),
+    );
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.accept, {
+        ids: [row._id],
+        confirm: "apply-plugin-category-refresh",
+      }),
+    ).rejects.toThrow("Classifier changed");
+    await t.run(async (ctx) => ctx.db.patch(row._id, { status: "accepted" }));
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id }),
+    ).resolves.toEqual({ applied: false });
+    expect(await readCategories()).toEqual(before);
+    expect((await t.run(async (ctx) => ctx.db.get(row._id)))?.status).toBe("stale");
+  });
+
   it("preserves manifest details when a legacy release only has a stored manifest", async () => {
     const { t, latest } = await fixture();
     await t.run(async (ctx) => {
