@@ -1,6 +1,7 @@
 import {
   isPluginCategorySlug,
   isSkillCategorySlug,
+  LEGACY_PLUGIN_CATEGORY_DEFINITIONS,
   normalizeCatalogTopic,
   PLUGIN_CATEGORY_DEFINITIONS,
   resolveStoredSkillCategories,
@@ -62,7 +63,10 @@ const SKILL_CATEGORIES_BY_SLUG = new Map(
   SKILL_CATEGORIES.map((category) => [category.slug, category]),
 );
 const PLUGIN_CATEGORIES_BY_SLUG = new Map(
-  PLUGIN_CATEGORIES.map((category) => [category.slug, category]),
+  [...PLUGIN_CATEGORIES, ...LEGACY_PLUGIN_CATEGORY_DEFINITIONS].map((category) => [
+    category.slug,
+    category,
+  ]),
 );
 
 export function resolvePluginBrowseCategorySlug(

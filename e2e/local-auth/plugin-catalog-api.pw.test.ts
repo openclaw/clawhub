@@ -57,12 +57,21 @@ test("plugin categories API exposes the canonical OpenClaw taxonomy", async ({ r
     "memory",
     "context",
     "voice",
-    "media",
     "web",
-    "tools",
-    "runtime",
-    "gateway",
+    "media",
     "security",
+    "integrations",
+    "developer-tools",
+    "infrastructure",
+    "documents-files",
+    "inbox-collaboration",
+    "productivity",
+    "scheduling",
+    "finance-payments",
+    "sales-marketing",
+    "data-analytics",
+    "agent-orchestration",
+    "research",
     "other",
   ]);
   expect(json.categories?.[0]).toEqual({
@@ -72,4 +81,36 @@ test("plugin categories API exposes the canonical OpenClaw taxonomy", async ({ r
     icon: "message-circle",
     order: 0,
   });
+});
+
+test("plugin browse exposes product categories and keeps mobile filtering usable", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 1100 });
+  await page.goto("/plugins");
+    const categories = page.getByLabel("Plugin categories");
+  await expect(categories).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("categories-desktop.png"), fullPage: true });
+  await expect(categories.getByRole("button")).toHaveCount(22);
+  await expect(
+    categories.getByRole("button", { name: "Documents & files", exact: true }),
+  ).toBeVisible();
+  const scheduling = categories.getByRole("button", { name: "Scheduling", exact: true });
+  await expect(scheduling.locator("svg.lucide-calendar-days")).toBeVisible();
+  await scheduling.click();
+  await expect(page).toHaveURL(/category=scheduling/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const select = page.getByRole("combobox", { name: "Category" });
+  await expect(select).toBeVisible();
+  await expect(select).toContainText("Scheduling");
+  await select.click();
+  await page.getByRole("searchbox", { name: "Search categories" }).fill("Research");
+  await expect(page.getByRole("radio", { name: "Research", exact: true })).toBeVisible();
+  await page.getByRole("radio", { name: "Research", exact: true }).click();
+  await expect(page).toHaveURL(/category=research/);
+  await expect(select).toContainText("Research");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath("categories-mobile.png"), fullPage: true });
 });

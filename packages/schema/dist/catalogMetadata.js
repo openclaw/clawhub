@@ -26,7 +26,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
         slug: "channels",
         label: "Channels",
         icon: "message-circle",
-        description: "Messaging and collaboration channel integrations.",
+        description: "Messaging transports that let people talk to the agent through a channel.",
     },
     {
         slug: "models",
@@ -53,34 +53,16 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
         description: "Speech synthesis, transcription, voice calls, and audio interaction.",
     },
     {
+        slug: "web",
+        label: "Web",
+        icon: "globe",
+        description: "Web search providers, browser control, and fetching web pages.",
+    },
+    {
         slug: "media",
         label: "Media",
         icon: "palette",
         description: "Image, video, audio, and other media understanding or generation.",
-    },
-    {
-        slug: "web",
-        label: "Web",
-        icon: "globe",
-        description: "Web search, browsing, fetching, research, and information retrieval.",
-    },
-    {
-        slug: "tools",
-        label: "Tools",
-        icon: "wrench",
-        description: "Agent tools, workflows, scheduled work, and service automation.",
-    },
-    {
-        slug: "runtime",
-        label: "Runtime",
-        icon: "git-branch",
-        description: "Developer tooling, agent runtimes, coding, testing, and execution backends.",
-    },
-    {
-        slug: "gateway",
-        label: "Gateway",
-        icon: "activity",
-        description: "Gateway extensions, deployment, observability, and operational tooling.",
     },
     {
         slug: "security",
@@ -89,11 +71,90 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
         description: "Authentication, authorization, security controls, and policy enforcement.",
     },
     {
+        slug: "integrations",
+        label: "Integrations",
+        icon: "plug",
+        description: "General connectors, API bridges, and service integration platforms. Prefer a specific use category when the connected service has a clear purpose.",
+    },
+    {
+        slug: "developer-tools",
+        label: "Developer tools",
+        icon: "code-xml",
+        description: "Writing, reviewing, testing, and debugging software; coding agents and development environments.",
+    },
+    {
+        slug: "infrastructure",
+        label: "Infrastructure",
+        icon: "server",
+        description: "Deploying, hosting, monitoring, and operating systems, networks, services, and agent runtimes.",
+    },
+    {
+        slug: "documents-files",
+        label: "Documents & files",
+        icon: "files",
+        description: "Reading, creating, extracting, transferring, and managing documents and files.",
+    },
+    {
+        slug: "inbox-collaboration",
+        label: "Inbox & collaboration",
+        icon: "inbox",
+        description: "Managing email, inboxes, team communication, and collaborative workspaces. Channel transport alone belongs in Channels.",
+    },
+    {
+        slug: "productivity",
+        label: "Productivity",
+        icon: "list-todo",
+        description: "Tasks, notes, projects, planning, and personal or team work management.",
+    },
+    {
+        slug: "scheduling",
+        label: "Scheduling",
+        icon: "calendar-days",
+        description: "Calendars, appointments, availability, and booking. Technical job scheduling belongs with the workflow it supports.",
+    },
+    {
+        slug: "finance-payments",
+        label: "Finance & payments",
+        icon: "wallet-cards",
+        description: "Payments, banking, accounting, financial markets, trading, and financial analysis.",
+    },
+    {
+        slug: "sales-marketing",
+        label: "Sales & marketing",
+        icon: "megaphone",
+        description: "Customer relationships, sales, support, outreach, campaigns, and marketing operations.",
+    },
+    {
+        slug: "data-analytics",
+        label: "Data & analytics",
+        icon: "chart-no-axes-combined",
+        description: "Querying databases, processing datasets, analysis, reporting, and business intelligence. Agent memory storage belongs in Memory.",
+    },
+    {
+        slug: "agent-orchestration",
+        label: "Agent orchestration",
+        icon: "workflow",
+        description: "Coordinating agents, delegating work, and running multi-step agent workflows.",
+    },
+    {
+        slug: "research",
+        label: "Research",
+        icon: "search",
+        description: "Investigating topics, finding and evaluating sources, scientific literature, and synthesizing evidence. General web access belongs in Web.",
+    },
+    {
         slug: "other",
         label: "Other",
         icon: "package",
         description: "Plugins that do not yet fit another browse category.",
     },
+];
+// Published metadata and old category URLs must remain readable during reclassification.
+// These values are accepted by readers, but are not offered for new browse discovery.
+export const LEGACY_PLUGIN_CATEGORY_DEFINITIONS = [
+    { slug: "tools", label: "Tools", icon: "wrench" },
+    { slug: "runtime", label: "Runtime", icon: "git-branch" },
+    { slug: "gateway", label: "Gateway", icon: "activity" },
 ];
 export const SKILL_CATEGORY_DEFINITIONS = [
     {
@@ -214,7 +275,10 @@ export const SKILL_CATEGORY_DEFINITIONS = [
 ];
 export const PLUGIN_CATEGORY_SLUGS = PLUGIN_CATEGORY_DEFINITIONS.map((category) => category.slug);
 export const SKILL_CATEGORY_SLUGS = SKILL_CATEGORY_DEFINITIONS.map((category) => category.slug);
-const PLUGIN_CATEGORY_SLUG_SET = new Set(PLUGIN_CATEGORY_SLUGS);
+const PLUGIN_CATEGORY_SLUG_SET = new Set([
+    ...PLUGIN_CATEGORY_SLUGS,
+    ...LEGACY_PLUGIN_CATEGORY_DEFINITIONS.map((category) => category.slug),
+]);
 const SKILL_CATEGORY_SLUG_SET = new Set(SKILL_CATEGORY_SLUGS);
 export function isPluginCategorySlug(value) {
     return Boolean(value && PLUGIN_CATEGORY_SLUG_SET.has(value));

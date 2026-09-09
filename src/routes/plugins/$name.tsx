@@ -70,8 +70,7 @@ import {
   buildPluginCategoryBrowseHref,
   buildPluginTopicBrowseHref,
   formatCatalogTopicLabel,
-  PLUGIN_CATEGORIES,
-  resolvePluginBrowseCategorySlug,
+  getPluginCategoryBySlug,
 } from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import { buildPluginMeta } from "../../lib/og";
@@ -1176,8 +1175,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const pkg = detail.package;
   const headerCategories = (pkg.categories ?? [])
     .flatMap((value) => {
-      const slug = resolvePluginBrowseCategorySlug(value);
-      const category = PLUGIN_CATEGORIES.find((item) => item.slug === slug);
+      const category = getPluginCategoryBySlug(value);
       return category ? [category] : [];
     })
     .slice(0, 3);

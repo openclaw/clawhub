@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
+import { isPluginCategorySlug } from "clawhub-schema";
 import { Download } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
+import { getPluginCategoryBySlug } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
@@ -18,18 +19,12 @@ type PluginListItemProps = {
   showOfficialBadge?: boolean;
 };
 
-const PLUGIN_CATEGORIES_BY_SLUG = new Map(
-  PLUGIN_CATEGORY_DEFINITIONS.map((category) => [category.slug, category]),
-);
-
 function getPluginTaxonomyDisplay(item: PackageListItem) {
   const topics = (item.topics ?? []).filter((topic) => topic.trim());
   if (topics.length > 0) return { labels: topics, ariaLabel: "Topics" };
 
   const categories = (item.categories ?? []).flatMap((category) => {
-    return isPluginCategorySlug(category) && PLUGIN_CATEGORIES_BY_SLUG.has(category)
-      ? [category]
-      : [];
+    return isPluginCategorySlug(category) && getPluginCategoryBySlug(category) ? [category] : [];
   });
   return { labels: categories, ariaLabel: "Categories" };
 }
@@ -37,7 +32,7 @@ function getPluginTaxonomyDisplay(item: PackageListItem) {
 function getPluginCategories(item: PackageListItem) {
   return (item.categories ?? []).flatMap((slug) => {
     if (!isPluginCategorySlug(slug)) return [];
-    const category = PLUGIN_CATEGORIES_BY_SLUG.get(slug);
+    const category = getPluginCategoryBySlug(slug);
     return category ? [category] : [];
   });
 }

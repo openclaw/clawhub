@@ -1,5 +1,5 @@
 import { Layers, Package } from "lucide-react";
-import { PLUGIN_CATEGORIES, SKILL_CATEGORIES } from "./categories";
+import { getPluginCategoryBySlug, PLUGIN_CATEGORIES, SKILL_CATEGORIES } from "./categories";
 import { getCategoryIconComponent } from "./categoryIcons";
 
 type BrowseCategoryIconProps = {
@@ -15,7 +15,8 @@ export function BrowseCategoryIcon({ slug, icon, size = 16, className }: BrowseC
   }
   const iconKey =
     icon ??
-    [...SKILL_CATEGORIES, ...PLUGIN_CATEGORIES].find((category) => category.slug === slug)?.icon;
+    [...SKILL_CATEGORIES, ...PLUGIN_CATEGORIES].find((category) => category.slug === slug)?.icon ??
+    getPluginCategoryBySlug(slug)?.icon;
   const Icon = getCategoryIconComponent(iconKey) ?? Package;
   return <Icon size={size} className={className} aria-hidden="true" />;
 }

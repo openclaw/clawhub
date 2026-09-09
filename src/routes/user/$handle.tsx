@@ -4,6 +4,7 @@ import {
   getCatalogTopicSlugs,
   isPluginCategorySlug,
   isSkillCategorySlug,
+  LEGACY_PLUGIN_CATEGORY_DEFINITIONS,
   normalizeCatalogTopic,
   resolveStoredPluginCategories,
 } from "clawhub-schema";
@@ -1046,7 +1047,10 @@ export function buildPublisherCatalogCategoryOptions(
   items: readonly PublicPublisherCatalogItem[],
   kind: "skill" | "plugin",
 ): BrowseCategory[] {
-  const source = kind === "plugin" ? PLUGIN_CATEGORIES : SKILL_CATEGORIES;
+  const source =
+    kind === "plugin"
+      ? [...PLUGIN_CATEGORIES, ...LEGACY_PLUGIN_CATEGORY_DEFINITIONS]
+      : SKILL_CATEGORIES;
   const presentSlugs = new Set(items.flatMap((item) => getPublisherCatalogItemCategorySlugs(item)));
   return source.filter((category) => presentSlugs.has(category.slug));
 }

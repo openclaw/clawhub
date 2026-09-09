@@ -7,7 +7,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "channels";
     readonly label: "Channels";
     readonly icon: "message-circle";
-    readonly description: "Messaging and collaboration channel integrations.";
+    readonly description: "Messaging transports that let people talk to the agent through a channel.";
 }, {
     readonly slug: "models";
     readonly label: "Models";
@@ -29,40 +29,98 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly icon: "message-square";
     readonly description: "Speech synthesis, transcription, voice calls, and audio interaction.";
 }, {
+    readonly slug: "web";
+    readonly label: "Web";
+    readonly icon: "globe";
+    readonly description: "Web search providers, browser control, and fetching web pages.";
+}, {
     readonly slug: "media";
     readonly label: "Media";
     readonly icon: "palette";
     readonly description: "Image, video, audio, and other media understanding or generation.";
-}, {
-    readonly slug: "web";
-    readonly label: "Web";
-    readonly icon: "globe";
-    readonly description: "Web search, browsing, fetching, research, and information retrieval.";
-}, {
-    readonly slug: "tools";
-    readonly label: "Tools";
-    readonly icon: "wrench";
-    readonly description: "Agent tools, workflows, scheduled work, and service automation.";
-}, {
-    readonly slug: "runtime";
-    readonly label: "Runtime";
-    readonly icon: "git-branch";
-    readonly description: "Developer tooling, agent runtimes, coding, testing, and execution backends.";
-}, {
-    readonly slug: "gateway";
-    readonly label: "Gateway";
-    readonly icon: "activity";
-    readonly description: "Gateway extensions, deployment, observability, and operational tooling.";
 }, {
     readonly slug: "security";
     readonly label: "Security";
     readonly icon: "shield";
     readonly description: "Authentication, authorization, security controls, and policy enforcement.";
 }, {
+    readonly slug: "integrations";
+    readonly label: "Integrations";
+    readonly icon: "plug";
+    readonly description: "General connectors, API bridges, and service integration platforms. Prefer a specific use category when the connected service has a clear purpose.";
+}, {
+    readonly slug: "developer-tools";
+    readonly label: "Developer tools";
+    readonly icon: "code-xml";
+    readonly description: "Writing, reviewing, testing, and debugging software; coding agents and development environments.";
+}, {
+    readonly slug: "infrastructure";
+    readonly label: "Infrastructure";
+    readonly icon: "server";
+    readonly description: "Deploying, hosting, monitoring, and operating systems, networks, services, and agent runtimes.";
+}, {
+    readonly slug: "documents-files";
+    readonly label: "Documents & files";
+    readonly icon: "files";
+    readonly description: "Reading, creating, extracting, transferring, and managing documents and files.";
+}, {
+    readonly slug: "inbox-collaboration";
+    readonly label: "Inbox & collaboration";
+    readonly icon: "inbox";
+    readonly description: "Managing email, inboxes, team communication, and collaborative workspaces. Channel transport alone belongs in Channels.";
+}, {
+    readonly slug: "productivity";
+    readonly label: "Productivity";
+    readonly icon: "list-todo";
+    readonly description: "Tasks, notes, projects, planning, and personal or team work management.";
+}, {
+    readonly slug: "scheduling";
+    readonly label: "Scheduling";
+    readonly icon: "calendar-days";
+    readonly description: "Calendars, appointments, availability, and booking. Technical job scheduling belongs with the workflow it supports.";
+}, {
+    readonly slug: "finance-payments";
+    readonly label: "Finance & payments";
+    readonly icon: "wallet-cards";
+    readonly description: "Payments, banking, accounting, financial markets, trading, and financial analysis.";
+}, {
+    readonly slug: "sales-marketing";
+    readonly label: "Sales & marketing";
+    readonly icon: "megaphone";
+    readonly description: "Customer relationships, sales, support, outreach, campaigns, and marketing operations.";
+}, {
+    readonly slug: "data-analytics";
+    readonly label: "Data & analytics";
+    readonly icon: "chart-no-axes-combined";
+    readonly description: "Querying databases, processing datasets, analysis, reporting, and business intelligence. Agent memory storage belongs in Memory.";
+}, {
+    readonly slug: "agent-orchestration";
+    readonly label: "Agent orchestration";
+    readonly icon: "workflow";
+    readonly description: "Coordinating agents, delegating work, and running multi-step agent workflows.";
+}, {
+    readonly slug: "research";
+    readonly label: "Research";
+    readonly icon: "search";
+    readonly description: "Investigating topics, finding and evaluating sources, scientific literature, and synthesizing evidence. General web access belongs in Web.";
+}, {
     readonly slug: "other";
     readonly label: "Other";
     readonly icon: "package";
     readonly description: "Plugins that do not yet fit another browse category.";
+}];
+export declare const LEGACY_PLUGIN_CATEGORY_DEFINITIONS: readonly [{
+    readonly slug: "tools";
+    readonly label: "Tools";
+    readonly icon: "wrench";
+}, {
+    readonly slug: "runtime";
+    readonly label: "Runtime";
+    readonly icon: "git-branch";
+}, {
+    readonly slug: "gateway";
+    readonly label: "Gateway";
+    readonly icon: "activity";
 }];
 export declare const SKILL_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "integrations";
@@ -149,9 +207,9 @@ export declare const SKILL_CATEGORY_DEFINITIONS: readonly [{
     readonly description: "Skills that do not yet fit another browse category.";
     readonly keywords: readonly [];
 }];
-export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
+export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"] | (typeof LEGACY_PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
 export type SkillCategorySlug = (typeof SKILL_CATEGORY_DEFINITIONS)[number]["slug"];
-export declare const PLUGIN_CATEGORY_SLUGS: ("channels" | "context" | "gateway" | "media" | "memory" | "models" | "other" | "runtime" | "security" | "tools" | "voice" | "web")[];
+export declare const PLUGIN_CATEGORY_SLUGS: ("agent-orchestration" | "channels" | "context" | "data-analytics" | "developer-tools" | "documents-files" | "finance-payments" | "inbox-collaboration" | "infrastructure" | "integrations" | "media" | "memory" | "models" | "other" | "productivity" | "research" | "sales-marketing" | "scheduling" | "security" | "voice" | "web")[];
 export declare const SKILL_CATEGORY_SLUGS: ("agents" | "automation" | "communication" | "creative" | "development" | "finance" | "integrations" | "knowledge" | "lifestyle" | "operations" | "other" | "productivity" | "research" | "security")[];
 export declare function isPluginCategorySlug(value: string | null | undefined): value is PluginCategorySlug;
 export declare function isSkillCategorySlug(value: string | null | undefined): value is SkillCategorySlug;
