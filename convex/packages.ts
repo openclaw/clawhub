@@ -1464,6 +1464,9 @@ function digestMatchesFilters(
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
+  // Catalog discovery must not inherit an owner's permission to inspect hidden reservations.
+  if (digest.softDeletedAt || digest.channel === "private" || !digest.latestVersion) return false;
+  if (isPackageBlockedFromPublic(digest.scanStatus)) return false;
   if (!isClawFamilyPubliclyVisible(digest.family)) return false;
   if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
@@ -1513,6 +1516,10 @@ function packageMatchesListFilters(
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
+  if (pkg.softDeletedAt || pkg.channel === "private" || !pkg.latestVersionSummary?.version) {
+    return false;
+  }
+  if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;
   if (!isClawFamilyPubliclyVisible(pkg.family)) return false;
   if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
   if (args.family && pkg.family !== args.family) return false;

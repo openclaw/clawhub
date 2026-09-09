@@ -4587,7 +4587,7 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
-  it("allows owners to list their private packages", async () => {
+  it("excludes private packages from catalog pages even for owners", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
@@ -4609,7 +4609,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:owner",
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
   it("keeps highlighted package pages in newest-featured order", async () => {
@@ -4707,7 +4707,7 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
-  it("lets legacy no-link personal package owners list private package digests", async () => {
+  it("excludes private catalog digests even for legacy personal owners", async () => {
     const { ctx } = makeDigestCtx({
       publisherDocs: {
         "publishers:legacy-personal": {
@@ -4739,10 +4739,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:viewer",
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual([
-      "legacy-personal-secret",
-      "public-plugin",
-    ]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
   it("does not let inactive no-link personal publishers expose private package digests", async () => {
@@ -4781,7 +4778,7 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
-  it("does not reuse legacy no-link personal access across package owners", async () => {
+  it("excludes all private catalog digests across legacy personal owners", async () => {
     const { ctx } = makeDigestCtx({
       publisherDocs: {
         "publishers:legacy-personal": {
@@ -4819,10 +4816,10 @@ describe("packages public queries", () => {
       viewerUserId: "users:viewer",
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["own-legacy-secret", "public-plugin"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
-  it("allows owners to filter to only their private packages", async () => {
+  it("returns no private catalog entries even when owners filter for them", async () => {
     const { ctx, indexNames } = makeDigestCtx({
       pages: [
         {
@@ -4848,11 +4845,11 @@ describe("packages public queries", () => {
       viewerUserId: "users:owner",
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin"]);
+    expect(result.page.map((entry) => entry.name)).toEqual([]);
     expect(indexNames).toEqual(["by_active_channel_updated"]);
   });
 
-  it("allows org collaborators to list their private packages", async () => {
+  it("excludes private packages from catalog pages even for org collaborators", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
@@ -4878,7 +4875,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:member",
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
   it("applies isOfficial filtering even with family and channel set", async () => {
@@ -5027,7 +5024,7 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["youtube"]);
   });
 
-  it("allows owners to search their private packages", async () => {
+  it("excludes private packages from catalog search even for owners", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
@@ -5054,7 +5051,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:owner",
     });
 
-    expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
+    expect(result.map((entry) => entry.package.name)).toEqual([]);
   });
 
   it("uses bounded topic and fallback digest takes for search", async () => {
@@ -5363,7 +5360,7 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["agentmail", "email"]);
   });
 
-  it("allows org collaborators to search their private packages", async () => {
+  it("excludes private packages from catalog search even for org collaborators", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
@@ -5395,7 +5392,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:member",
     });
 
-    expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
+    expect(result.map((entry) => entry.package.name)).toEqual([]);
   });
 
   it("uses the active updated index for public listings", async () => {
