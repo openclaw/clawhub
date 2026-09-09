@@ -2,7 +2,6 @@ import {
   ServerPackagePublishRequestSchema,
   PACKAGE_CATEGORY_BATCH_LIMIT,
   validateClawPackageContents,
-  derivePluginCategoryTags,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   INTERNAL_UNCATEGORIZED_CATEGORY,
@@ -12,6 +11,7 @@ import {
   normalizePluginCategories,
   parseArk,
   resolvePluginCategories,
+  resolveStoredPluginCategories,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type PackageChannel,
@@ -2934,10 +2934,8 @@ function toPackageManageContext(
       _id: latestRelease._id,
       version: latestRelease.version,
     },
-    suggestedCategories: derivePluginCategoryTags({
-      family: pkg.family,
-      pluginManifest: latestRelease.extractedPluginManifest,
-    }),
+    // Historical artifacts may predate declaration validation; management reads persisted metadata.
+    suggestedCategories: resolveStoredPluginCategories(pkg),
   };
 }
 

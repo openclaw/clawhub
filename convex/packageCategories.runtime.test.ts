@@ -49,6 +49,90 @@ async function publish(
 }
 
 describe("exact-version plugin categories", () => {
+  it.each([
+    { label: "empty", categories: [] },
+    { label: "duplicate", categories: ["models", "models"] },
+    { label: "unknown", categories: ["retired-category"] },
+    { label: "oversized", categories: ["models", "web", "voice", "memory"] },
+    { label: "non-array", categories: "models" },
+  ])("loads publisher management for a legacy $label declaration", async ({ categories }) => {
+    const t = convexTest({ schema, modules });
+    const { userId, publisherId } = await t.run(async (ctx) => {
+      const createdUserId = await ctx.db.insert("users", { handle: "legacy-owner" });
+      const createdPublisherId = await ctx.db.insert("publishers", {
+        kind: "user",
+        handle: "legacy-owner",
+        displayName: "Legacy owner",
+        linkedUserId: createdUserId,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { userId: createdUserId, publisherId: createdPublisherId };
+    });
+    const release = await publish(t, userId, publisherId, "@catalog/legacy-manage", "1.0.0", {
+      categories: ["web"],
+    });
+    // Existing artifacts could predate declaration validation; fixture writes do not republish them.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(release.releaseId, {
+        extractedPluginManifest: { categories, contracts: { tools: ["legacy-tool"] } },
+      });
+    });
+
+    await expect(
+      t.withIdentity({ subject: userId }).query(api.packages.getManageContext, {
+        name: "@catalog/legacy-manage",
+      }),
+    ).resolves.toMatchObject({
+      package: { name: "@catalog/legacy-manage", categories: ["web"] },
+      latestRelease: { version: "1.0.0" },
+      suggestedCategories: ["web"],
+    });
+  });
+
+  it("keeps an ordered legacy Other declaration consistent across package, browse, and exact-version reads", async () => {
+    const t = convexTest({ schema, modules });
+    const { userId, publisherId } = await t.run(async (ctx) => {
+      const createdUserId = await ctx.db.insert("users", { handle: "ordered-owner" });
+      const createdPublisherId = await ctx.db.insert("publishers", {
+        kind: "user",
+        handle: "ordered-owner",
+        displayName: "Ordered owner",
+        linkedUserId: createdUserId,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { userId: createdUserId, publisherId: createdPublisherId };
+    });
+    // Import a valid legacy declaration without relaxing the new-publication singleton rule.
+    await publish(t, userId, publisherId, "@catalog/ordered", "1.0.0", {
+      categories: ["other", "models", "voice"],
+    });
+
+    const detail = await t.query(api.packages.getByName, { name: "@catalog/ordered" });
+    expect(detail?.package.categories).toEqual(["other", "models", "voice"]);
+    await expect(
+      t.query(internal.packages.resolveVersionCategoriesBatchInternal, {
+        packages: [{ name: "@catalog/ordered", version: "1.0.0" }],
+      }),
+    ).resolves.toEqual([
+      { name: "@catalog/ordered", version: "1.0.0", categories: ["other", "models", "voice"] },
+    ]);
+    for (const category of [undefined, "other", "models", "voice"]) {
+      const page = await t.query(api.packages.listPublicPage, {
+        family: "code-plugin",
+        ...(category ? { category } : {}),
+        paginationOpts: { cursor: null, numItems: 20 },
+      });
+      expect(page.page).toEqual([
+        expect.objectContaining({
+          name: "@catalog/ordered",
+          categories: ["other", "models", "voice"],
+        }),
+      ]);
+    }
+  });
+
   it("returns stored release categories and null for unavailable or legacy releases", async () => {
     const t = convexTest({ schema, modules });
     const { userId, publisherId } = await t.run(async (ctx) => {

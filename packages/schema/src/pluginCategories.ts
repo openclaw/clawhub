@@ -132,6 +132,17 @@ export function resolveStoredPluginCategories(
 ): PluginCategorySlug[] {
   if (input.family === "skill") return [];
   try {
+    const declared = input.categories;
+    if (
+      declared &&
+      declared.length > 0 &&
+      declared.length <= 3 &&
+      new Set(declared).size === declared.length &&
+      declared.every(isPluginCategorySlug)
+    ) {
+      // Published declarations preserve order, including Other alongside specific categories.
+      return [...declared];
+    }
     const inferenceCurrent =
       Boolean(input.latestReleaseId) && input.latestReleaseId === input.inferredFromReleaseId;
     return resolvePluginCategories({
