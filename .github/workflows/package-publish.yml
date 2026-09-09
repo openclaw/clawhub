@@ -64,11 +64,11 @@ on:
         required: false
         type: string
       categories:
-        description: Optional comma-separated plugin category slugs.
+        description: Deprecated for plugins (ignored). Declare one category in openclaw.plugin.json or omit for automatic classification. Claws retain comma-separated categories.
         required: false
         type: string
       clear_categories:
-        description: Clear existing plugin categories. Cannot be combined with categories.
+        description: Deprecated for plugins (ignored). Remove manifest categories for automatic classification. Claws retain category clearing. Cannot be combined with categories.
         required: false
         type: boolean
         default: false

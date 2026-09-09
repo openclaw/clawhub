@@ -73,6 +73,7 @@ const { parseClawPack } = await import("../../clawpack");
 const { MAX_PACKAGE_MULTIPART_BYTES } = await import("../../schema/index.js");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
+const mockWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
 function makeOpts(workdir = "/work") {
@@ -1456,6 +1457,10 @@ describe("package commands", () => {
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", options);
 
+      expect(mockWarn).toHaveBeenCalledWith(
+        expect.stringContaining("--categories is deprecated and ignored for plugin publishes"),
+      );
+
       expect(getPublishPayload()).toEqual({
         name: "@scope/demo-plugin",
         displayName: "Demo Plugin",
@@ -2069,7 +2074,7 @@ describe("package commands", () => {
     }
   });
 
-  it("sends explicit empty catalog metadata to clear existing package values", async () => {
+  it("preserves empty legacy categories and topic clearing with a deprecation notice", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "clear-topics-plugin");
@@ -2103,10 +2108,42 @@ describe("package commands", () => {
       });
 
       expect(getPublishPayload()).toMatchObject({ categories: [], topics: [] });
+      expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining("openclaw.plugin.json"));
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
   });
+
+  it.each([undefined, "developer-tools", ""])(
+    "keeps dry-run JSON parseable and warns only when legacy categories are supplied (%s)",
+    async (categories) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        await createCodePluginFixture(workdir, "category-plugin", "category-plugin");
+        await cmdPublishPackage(makeOpts(workdir), "category-plugin", {
+          sourceRepo: "openclaw/category-plugin",
+          sourceCommit: "abc123",
+          dryRun: true,
+          json: true,
+          categories,
+          topics: "automation",
+        });
+
+        const stdout = mockWrite.mock.calls.map(([chunk]) => String(chunk)).join("");
+        expect(() => JSON.parse(stdout)).not.toThrow();
+        expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+        if (categories === undefined) {
+          expect(mockWarn).not.toHaveBeenCalled();
+        } else {
+          expect(mockWarn).toHaveBeenCalledExactlyOnceWith(
+            expect.stringContaining("Omit categories from the manifest to let ClawHub classify"),
+          );
+        }
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("uses the README H1 as a package display name fallback", async () => {
     const workdir = await makeTmpWorkdir();
@@ -2749,14 +2786,16 @@ describe("package commands", () => {
         artifactSha256,
       });
 
-      await cmdPublishPackage(makeOpts(workdir), packName);
+      await cmdPublishPackage(makeOpts(workdir), packName, { categories: "automation" });
 
       expect(getPublishPayload()).toMatchObject({
         name: "demo-claw",
         family: "claw",
         version: "1.0.0",
         expectedArtifactSha256: artifactSha256,
+        categories: ["automation"],
       });
+      expect(mockWarn).not.toHaveBeenCalled();
       const uploaded = getPublishForm().get("clawpack");
       expect(uploaded).toBeInstanceOf(File);
       const parsed = parseClawPack(new Uint8Array(await (uploaded as File).arrayBuffer()));

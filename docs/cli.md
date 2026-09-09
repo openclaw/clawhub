@@ -732,14 +732,22 @@ clawhub publisher create opik --display-name "Opik"
   release is published or reaches a terminal failure state.
 - `--wait-timeout <seconds>` sets the `--wait` deadline (default: 1800).
 - `--owner <handle>` publishes under a user or org publisher handle when the actor has publisher access.
-- `--categories <slugs>` and `--topics <topics>` behave as they do for
-  `skill publish`, but code-plugin and bundle-plugin categories are matched
-  against the plugin list, not the skill one: `channels`, `models`, `memory`,
-  `context`, `voice`, `media`, `web`, `tools`, `runtime`, `gateway`,
-  `security`, `other`. Experimental [`--family claw`](./claws.md) publishes
-  skip that category check and store the passed slugs as-is. The topic rules
-  in [Skill catalog metadata](./publishing.md#skill-catalog-metadata) —
-  limits, reserved names, republish behavior — apply to every family,
+- Code-plugin and bundle-plugin categories come from `openclaw.plugin.json`.
+  Declare exactly one category, for example `"categories": ["agent-runtimes"]`.
+  An explicit manifest declaration takes priority. If the field is omitted,
+  ClawHub generates one category from bounded package metadata and documentation
+  using its configured model (default: GPT-5.6 Luna), with `other` as the fallback
+  when classification is unavailable. Omission does not preserve a category
+  supplied on an earlier publish. See [Plugin catalog metadata](./publishing.md#plugin-catalog-metadata).
+- `--categories <slugs>` remains accepted for compatibility, but is ignored for
+  plugin publishes, including `--categories ""`. The CLI prints a deprecation
+  warning to stderr, including with `--json` and `--dry-run`. Move declarations
+  into the manifest; remove the field to request automatic classification.
+  Experimental [`--family claw`](./claws.md) publishes still store categories
+  passed through this flag as-is.
+- `--topics <topics>` is separate from categories and still accepts comma-separated
+  values. Omit it to preserve existing topics; pass `--topics ""` to clear them.
+  The [topic rules](./publishing.md#skill-catalog-metadata) apply to every family,
   including `claw`.
 - Scoped package names must match the selected owner. See `docs/publishing.md`.
 - Existing flags (`--family`, `--name`, `--version`, `--source-repo`, `--source-commit`, `--source-ref`, `--source-path`) still work as overrides.
@@ -855,7 +863,6 @@ job's existing `with` block. Keep `dry_run: true` on pull-request jobs; use
 ```yaml
 with:
   changelog: "Describe the changes in this release."
-  categories: "tools"
   topics: "automation,productivity"
 ```
 
@@ -864,13 +871,19 @@ Notes:
 - The reusable workflow defaults `source` to the caller repo.
 - For monorepos, pass `source_path` so the workflow publishes the plugin
   package folder, for example `source_path: extensions/codex`.
-- `changelog`, `categories`, and `topics` are optional. When present, the
-  workflow forwards them to the matching package publish CLI flags. Categories
-  and topics use comma-separated values; omitting them preserves the existing
-  workflow behavior.
-- To remove previously declared metadata, set `clear_categories: true` or
-  `clear_topics: true`. A clear input cannot be combined with its matching
-  value input.
+- `changelog` and `topics` are optional and map to the matching CLI flags.
+  Topics use comma-separated values. Omit `topics` to preserve existing topics,
+  or set `clear_topics: true` to remove them. Do not combine `topics` with
+  `clear_topics: true`.
+- For plugins, declare exactly one category in `openclaw.plugin.json` as described
+  in [Plugin catalog metadata](./publishing.md#plugin-catalog-metadata). Omit that
+  field to let ClawHub classify the release automatically using its configured
+  model (default: GPT-5.6 Luna).
+- The legacy `categories` and `clear_categories` inputs still forward
+  `--categories` for compatibility. Plugin publishes ignore both and print a
+  deprecation warning; they cannot set, preserve, or clear a plugin's category.
+  Remove these workflow inputs when migrating the declaration into the manifest.
+  Experimental Claw publishes retain their existing category behavior.
 - Pin the reusable workflow to a stable tag or full commit SHA. Do not run release publishing from `@main`.
 - `pull_request` should use `dry_run: true` so CI stays non-polluting.
 - Real publishes should be limited to trusted events such as `workflow_dispatch` or tag pushes.

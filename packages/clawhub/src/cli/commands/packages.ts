@@ -970,6 +970,15 @@ export async function cmdPublishPackage(
   try {
     plan = await preparePackagePublishPlan(opts, sourceArg, options);
 
+    if (options.categories !== undefined && plan.payload.family !== "claw") {
+      console.warn(
+        "Warning: --categories is deprecated and ignored for plugin publishes, including an empty value. " +
+          "Declare exactly one category in openclaw.plugin.json. " +
+          "Omit categories from the manifest to let ClawHub classify the plugin automatically. " +
+          "--topics is unchanged.",
+      );
+    }
+
     if (options.dryRun) {
       if (options.json) {
         process.stdout.write(`${JSON.stringify(plan.output, null, 2)}\n`);

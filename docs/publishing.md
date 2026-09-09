@@ -182,6 +182,40 @@ distinct from plugin policy findings. Report the stage and Convex request id
 when asking maintainers to investigate; do not include credentials or package
 contents in diagnostic reports.
 
+### Plugin Catalog Metadata
+
+Choose the single main reason someone installs the plugin. Code plugins and
+bundle plugins can declare one category in their root `openclaw.plugin.json`:
+
+```json
+{
+  "id": "example-agent-runtime",
+  "categories": ["agent-runtimes"]
+}
+```
+
+Merge the `categories` field into your existing manifest. Use a current plugin
+category slug, such as `context`, `memory`, or `developer-tools`; explicit
+declarations take priority over automatic classification. Each new release must
+declare exactly one category or omit the field.
+
+When `categories` is omitted, ClawHub generates one category from bounded package
+metadata and documentation using its configured model (default: GPT-5.6 Luna).
+It falls back to `other` when classification is unavailable. A previous release's
+category is not an author declaration and is not preserved merely by omission.
+
+The package CLI's `--categories` flag and reusable workflow's `categories` and
+`clear_categories` inputs are deprecated for plugins. They remain accepted but
+are ignored, with a warning on stderr. Move a chosen category into the manifest;
+remove the field to return to automatic classification. This also applies to
+`--categories ""`, which no longer clears plugin categories. Experimental Claw
+publishes and skill publishing retain their existing category behavior.
+
+Topics remain separate: use `--topics` or the workflow's `topics` input to set
+them, omit the input to preserve existing topics, or use `--topics ""` /
+`clear_topics: true` to clear them. See the [package CLI reference](./cli.md#package-publish-source)
+and [topic rules](#skill-catalog-metadata).
+
 ### Trusted Publishing for Packages
 
 Package trusted publishing is a two-step setup:
