@@ -1,0 +1,93 @@
+name: Plugin Category Refresh
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Fixed operator action (accept rehearses without applying categories)"
+        type: choice
+        required: true
+        default: status
+        options: [status, preview, report, accept, apply, rollback]
+      expected_sha:
+        description: "Exact main commit already deployed to production"
+        type: string
+        required: true
+      run_id:
+        description: "Stable category refresh run ID; reuse it when resuming"
+        type: string
+        required: true
+      cursor:
+        description: "Previous resumeCursor; blank starts at the beginning"
+        type: string
+        default: ""
+      max_pages:
+        description: "Bounded pages per dispatch (1–20)"
+        type: string
+        default: "10"
+      workers:
+        description: "Concurrent preview actions (1–4)"
+        type: string
+        default: "3"
+      reviewed_ids:
+        description: "JSON array of at most 100 journal IDs; report computes their review hash"
+        type: string
+        default: "[]"
+      review_hash:
+        description: "Exact report SHA-256 required by accept, apply, and rollback"
+        type: string
+        default: ""
+
+concurrency:
+  group: plugin-category-refresh-production
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  operate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    environment:
+      name: Production
+    steps:
+      - name: Require exact main revision
+        env:
+          CATEGORY_EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/main || ! "$CATEGORY_EXPECTED_SHA" =~ ^[a-f0-9]{40}$ || "$GITHUB_SHA" != "$CATEGORY_EXPECTED_SHA" ]]; then
+            echo '::error::Category refresh requires the exact deployed main SHA.'
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Run bounded category operation
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CATEGORY_MODE: ${{ inputs.mode }}
+          CATEGORY_EXPECTED_SHA: ${{ inputs.expected_sha }}
+          CATEGORY_RUN_ID: ${{ inputs.run_id }}
+          CATEGORY_CURSOR: ${{ inputs.cursor }}
+          CATEGORY_MAX_PAGES: ${{ inputs.max_pages }}
+          CATEGORY_WORKERS: ${{ inputs.workers }}
+          CATEGORY_REVIEWED_IDS: ${{ inputs.reviewed_ids }}
+          CATEGORY_REVIEW_HASH: ${{ inputs.review_hash }}
+        run: bun scripts/plugin-category-operator.ts
+
+      - name: Preserve bounded operator evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-category-refresh-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/plugin-category-operator/result.json
+          if-no-files-found: warn
+          retention-days: 30
