@@ -24,12 +24,21 @@ const source = identity
     ref: z.string().min(1),
     publisher: slug,
     authorship: z.enum(["company", "registry"]),
-    format: z.enum(["cursor", "claude", "codex", "agent", "openclaw"]),
+    format: z.enum(["cursor", "claude", "codex", "agent"]),
     registry: registry.optional(),
     repositoryId: z.number().int().positive(),
     ownerId: z.number().int().positive(),
     ownershipEvidence: z.url(),
     categories: z.array(z.enum(PLUGIN_CATEGORY_SLUGS)).max(3),
+    supersedes: z
+      .array(z.string().regex(/^@[a-z0-9-]+\/[a-z0-9-]+$/))
+      .max(3)
+      .optional(),
+    approved: z.boolean().optional(),
+    approvedInitialHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     preferred: z.boolean().optional(),
     decisionReason: z.string().min(1).optional(),
   })
@@ -46,6 +55,16 @@ const source = identity
         message: "Registry copies must use their registry publisher",
       });
     }
+    if (value.supersedes?.length && value.authorship !== "company")
+      ctx.addIssue({
+        code: "custom",
+        message: "Only a company source may replace registry wrappers",
+      });
+    if (value.approved && !value.approvedInitialHash)
+      ctx.addIssue({
+        code: "custom",
+        message: "Approved sources require the reviewed initial source hash",
+      });
     if (value.preferred && !value.decisionReason)
       ctx.addIssue({ code: "custom", message: "A curator preference requires a reason" });
   });
@@ -68,7 +87,16 @@ export const curatedManifestSchema = z
         ),
     ),
   })
-  .strict();
+  .strict()
+  .superRefine((manifest, ctx) => {
+    const approved = new Set<string>();
+    for (const source of manifest.sources.filter((s) => s.approved)) {
+      const key = `${source.integration}:${source.job}`;
+      if (approved.has(key))
+        ctx.addIssue({ code: "custom", message: `Multiple approved sources for ${key}` });
+      approved.add(key);
+    }
+  });
 export type CuratedManifest = z.infer<typeof curatedManifestSchema>;
 export type CuratedSource = CuratedManifest["sources"][number];
 export type Registry = z.infer<typeof registry>;

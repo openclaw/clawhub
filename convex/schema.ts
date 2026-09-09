@@ -1725,6 +1725,7 @@ const skillTopicSearchDigest = defineTable({
   ]);
 
 const packages = defineTable({
+  canonicalPackageId: v.optional(v.id("packages")),
   name: v.string(),
   normalizedName: v.string(),
   displayName: v.string(),
@@ -1968,6 +1969,7 @@ const packageReleases = defineTable({
   .index("by_package_owner_deleted_created", ["packageId", "ownerDeletedBy", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
+  .index("by_package_curated_hash", ["packageId", "curation.sourceContentHash"])
   .index("by_sha256hash", ["sha256hash"]);
 
 const catalogClassificationResults = defineTable({
@@ -2399,6 +2401,7 @@ const packagePublishUploadTickets = defineTable({
 }).index("by_publish_token", ["publishTokenId"]);
 
 const packageSearchDigest = defineTable({
+  canonicalPackageId: v.optional(v.id("packages")),
   packageId: v.id("packages"),
   name: v.string(),
   normalizedName: v.string(),
@@ -2464,6 +2467,7 @@ const packageSearchDigest = defineTable({
   });
 
 const packageTopicSearchDigest = defineTable({
+  canonicalPackageId: v.optional(v.id("packages")),
   packageId: v.id("packages"),
   name: v.string(),
   normalizedName: v.string(),
@@ -2596,6 +2600,7 @@ const packageTopicSearchDigest = defineTable({
   ]);
 
 const packagePluginCategorySearchDigest = defineTable({
+  canonicalPackageId: v.optional(v.id("packages")),
   packageId: v.id("packages"),
   name: v.string(),
   normalizedName: v.string(),

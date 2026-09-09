@@ -294,6 +294,7 @@ export declare function estimatePackageMultipartUploadBytes(input: PackageMultip
 export declare function isPackageMultipartUploadTooLarge(input: PackageMultipartUploadSizeInput): boolean;
 export declare function getPackageMultipartSizeError(): string;
 export declare const CuratedPluginImportSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    supersedes?: string[] | undefined;
     integration: string;
     job: string;
     authorship: "company" | "registry";
@@ -315,6 +316,7 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     expectedArtifactSha256?: string | undefined;
     requirePrepublicationChecks?: boolean | undefined;
     curation?: {
+        supersedes?: string[] | undefined;
         integration: string;
         job: string;
         authorship: "company" | "registry";
@@ -356,6 +358,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     expectedArtifactSha256?: string | undefined;
     requirePrepublicationChecks?: boolean | undefined;
     curation?: {
+        supersedes?: string[] | undefined;
         integration: string;
         job: string;
         authorship: "company" | "registry";
@@ -756,6 +759,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             version?: string | undefined;
         } | null | undefined;
         curation?: {
+            supersedes?: string[] | undefined;
             integration: string;
             job: string;
             authorship: "company" | "registry";

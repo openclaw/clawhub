@@ -2,8 +2,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { requireAuthToken } from "../../packages/clawhub/src/cli/authToken";
 import { curatedManifestSchema } from "./contract";
 import { applyBatch, prepareBatch } from "./import";
+import { reconcileBatch, readSyncState } from "./reconcile";
 import { fetchSnapshot } from "./sources";
 
 const { values } = parseArgs({
@@ -12,6 +14,7 @@ const { values } = parseArgs({
     registry: { type: "string" },
     output: { type: "string" },
     apply: { type: "boolean" },
+    scheduled: { type: "boolean" },
     "approved-digest": { type: "string" },
     help: { type: "boolean" },
   },
@@ -19,7 +22,7 @@ const { values } = parseArgs({
 });
 if (values.help) {
   console.log(
-    "bun run plugins:sync --manifest <curated.json> --registry <ClawHub URL> --output <report.json> [--apply --approved-digest <reviewed SHA-256>]\nDefaults to a reviewable plan. Apply uses normal ClawHub authentication and prepublication scans.",
+    "bun run plugins:sync --manifest <curated.json> --registry <ClawHub URL> --output <report.json> [--apply --approved-digest <reviewed SHA-256>] [--scheduled]\nDefaults to a reviewable plan. Apply uses normal ClawHub authentication and prepublication scans.",
   );
 } else {
   if (!values.manifest || !values.registry || !values.output)
@@ -49,7 +52,14 @@ if (values.help) {
     targets.set(source.repo, source.ref);
   }
   const snapshots = [];
-  for (const [repo, ref] of targets) snapshots.push(await fetchSnapshot(repo, ref));
+  const sourceErrors: Array<{ repo: string; error: string }> = [];
+  for (const [repo, ref] of targets) {
+    try {
+      snapshots.push(await fetchSnapshot(repo, ref));
+    } catch (error) {
+      sourceErrors.push({ repo, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
   const catalog: Array<{ name: string }> = [];
   let cursor: string | undefined;
   const seen = new Set<string>();
@@ -75,7 +85,12 @@ if (values.help) {
       seen.add(cursor);
     }
   } while (cursor);
-  const batch = await prepareBatch({ manifest, snapshots, catalog });
+  const token = await requireAuthToken();
+  const batch = await reconcileBatch(
+    await prepareBatch({ manifest, snapshots, catalog }),
+    (name, hash, version) => readSyncState(registry.origin, token, name, hash, version),
+    Boolean(values.scheduled),
+  );
   const output = resolve(values.output);
   await mkdir(dirname(output), { recursive: true });
   const report = {
@@ -83,10 +98,16 @@ if (values.help) {
     digest: batch.digest,
     plan: batch.plan,
     inventory: batch.inventory,
+    changes: batch.changes,
+    sourceErrors,
   };
   await writeFile(output, JSON.stringify(report, null, 2) + "\n");
   if (values.apply) {
-    if (!values["approved-digest"])
+    if (sourceErrors.length || batch.changes.some((change) => change.status === "failed"))
+      throw new Error(
+        "Incomplete synchronization state; review the report and retry before applying",
+      );
+    if (!values.scheduled && !values["approved-digest"])
       throw new Error("--apply requires --approved-digest from the reviewed plan");
     const results = await applyBatch(
       batch,
@@ -97,10 +118,12 @@ if (values.help) {
         registry: registry.origin,
         registrySource: "cli",
       },
-      values["approved-digest"],
+      values.scheduled ? batch.digest : values["approved-digest"]!,
     );
     await writeFile(output, JSON.stringify({ ...report, results }, null, 2) + "\n");
   }
+  if (sourceErrors.length || batch.changes.some((change) => change.status === "failed"))
+    process.exitCode = 1;
   console.log(
     JSON.stringify({
       output,

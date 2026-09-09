@@ -9,7 +9,6 @@ const manifests: Record<CuratedSource["format"], string> = {
   claude: ".claude-plugin/plugin.json",
   codex: ".codex-plugin/plugin.json",
   agent: "plugin.json",
-  openclaw: "openclaw.plugin.json",
 };
 const omittedRoots: Record<string, string[]> = {
   rules: ["rules", ".cursor/rules"],
@@ -128,6 +127,7 @@ export async function preparePlugin({
     integration: source.integration,
     job: source.job,
     authorship: source.authorship,
+    supersedes: source.supersedes,
     publisher: source.publisher,
     author: candidate.declaredAuthor,
     ownershipEvidence: source.ownershipEvidence,

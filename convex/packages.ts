@@ -29,6 +29,7 @@ import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import { applyCanonicalReplacement } from "./curatedPlugins";
 import {
   action,
   internalAction,
@@ -968,6 +969,7 @@ type PackageDigestLike = Pick<
   | "stats"
   | "recommendedScore"
   | "scanStatus"
+  | "canonicalPackageId"
   | "softDeletedAt"
 > & { pluginCategory?: string };
 type PackageOwnerAccessRef = Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId"> &
@@ -1185,14 +1187,12 @@ async function canViewerReadPackage(
     PackageDigestLike,
     "channel" | "scanStatus" | "ownerUserId" | "ownerPublisherId" | "stats"
   > &
-    Partial<Pick<PackageDigestLike, "ownerKind" | "latestVersion">> &
+    Partial<Pick<PackageDigestLike, "ownerKind" | "latestVersion" | "canonicalPackageId">> &
     Partial<Pick<Doc<"packages">, "latestReleaseId" | "latestVersionSummary">>,
   viewerUserId: Id<"users"> | undefined,
   membershipCache?: Map<string, Promise<boolean>>,
 ) {
-  // Catalog discovery excludes unpublished packages; owner dashboards use the
-  // separate toDashboardPackageListItem path and retain pending-review access.
-  if (hasNoPublishedPackageVersions(digest)) return false;
+  if (digest.canonicalPackageId || hasNoPublishedPackageVersions(digest)) return false;
   if (!requiresPrivilegedPackageAccess(digest)) return true;
   const isPrivilegedViewer = await viewerCanAccessPackageOwner(
     ctx,
@@ -3255,9 +3255,17 @@ export const getByNameForViewerInternal = internalQuery({
   args: {
     name: v.string(),
     viewerUserId: v.optional(v.id("users")),
+    followCanonical: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
+    let pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
+    if (args.followCanonical && pkg?.canonicalPackageId) {
+      const target = await ctx.db.get(pkg.canonicalPackageId);
+      pkg =
+        target && !target.canonicalPackageId
+          ? await getReadablePackageByName(ctx, target.name, args.viewerUserId)
+          : null;
+    }
     if (!pkg) return null;
     const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
     const publicPackage = toPublicPackage(pkg, latestRelease);
@@ -11445,6 +11453,8 @@ export const publishPendingReleaseInternal = internalMutation({
     }
 
     if (release.curation && !manualRecovery) {
+      if (pkg.canonicalPackageId)
+        throw new ConvexError("A replaced source cannot finish publication");
       const actor = release.createdBy ? await ctx.db.get(release.createdBy) : null;
       const publisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
       validateCuratedPluginPublisher({
@@ -11546,6 +11556,16 @@ export const publishPendingReleaseInternal = internalMutation({
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
       updatedAt: now,
     });
+    // Publish the new canonical artifact and remove replaced registry results in
+    // this same transaction, so public discovery never sees two winners.
+    for (const name of release.curation?.supersedes ?? []) {
+      await applyCanonicalReplacement(ctx, {
+        actorUserId: release.createdBy,
+        name,
+        targetName: pkg.name,
+        reason: `Reviewed company source replacement in ${release.version}`,
+      });
+    }
     await schedulePackageReleaseTagCleanup(ctx, pkg._id, cleanupAssignments);
 
     return {
@@ -11753,6 +11773,10 @@ export const insertReleaseInternal = internalMutation({
         curation: args.curation,
       });
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
+    if (existing?.canonicalPackageId)
+      throw new ConvexError(
+        "This package has a canonical replacement; publish to that package instead",
+      );
     const existingIsReservation = isReservedPackagePlaceholder(existing);
     const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
     if (existing?.softDeletedAt) {
