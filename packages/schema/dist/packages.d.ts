@@ -301,6 +301,7 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     version: string;
     changelog: string;
     expectedArtifactSha256?: string | undefined;
+    requirePrepublicationChecks?: boolean | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
@@ -330,6 +331,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     version: string;
     changelog: string;
     expectedArtifactSha256?: string | undefined;
+    requirePrepublicationChecks?: boolean | undefined;
     manualOverrideReason?: string | undefined;
     channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
@@ -1295,6 +1297,23 @@ export declare const PackagePublishAttemptStatusSchema: import("arktype/internal
 export type PackagePublishAttemptStatus = (typeof PackagePublishAttemptStatusSchema)[inferred];
 export declare const PackagePublicationStatusSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "expired" | "failed" | "pending" | "published", {}>;
 export type PackagePublicationStatus = (typeof PackagePublicationStatusSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    manualOverrideReason: string;
+}, {}>;
+export type ApiV1PackagePublishRecoveryRequest = (typeof ApiV1PackagePublishRecoveryRequestSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    attemptId: string;
+    recoveredFromAttemptId: string;
+    packageId: string;
+    releaseId: string;
+    name: string;
+    version: string;
+    status: "blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize";
+    publicationStatus: "blocked" | "expired" | "failed" | "pending" | "published";
+    reused: boolean;
+}, {}>;
+export type ApiV1PackagePublishRecoveryResponse = (typeof ApiV1PackagePublishRecoveryResponseSchema)[inferred];
 export declare const PackagePublishAttemptCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: "blocked" | "clean" | "failed" | "pending";
     summary?: string | undefined;

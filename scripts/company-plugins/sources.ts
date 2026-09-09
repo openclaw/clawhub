@@ -129,6 +129,7 @@ export async function fetchSnapshot(
     commit: source.commit,
     updatedAt: commit.commit.committer.date,
     files,
+    fileBytes: entries,
     fileHashes,
     fileSizes,
   };
