@@ -54,6 +54,7 @@ test("plugin categories API exposes the canonical OpenClaw taxonomy", async ({ r
   expect(json.categories?.map((category) => category.slug)).toEqual([
     "channels",
     "models",
+    "agent-runtimes",
     "memory",
     "context",
     "voice",
@@ -91,7 +92,7 @@ test("plugin browse exposes product categories and keeps mobile filtering usable
   const categories = page.getByLabel("Plugin categories");
   await expect(categories).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("categories-desktop.png"), fullPage: true });
-  await expect(categories.getByRole("button")).toHaveCount(22);
+  await expect(categories.getByRole("button")).toHaveCount(23);
   await expect(
     categories.getByRole("button", { name: "Documents & files", exact: true }),
   ).toBeVisible();

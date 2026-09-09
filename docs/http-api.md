@@ -626,9 +626,11 @@ Query params:
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
 - `sort` (optional): `recommended` (default), `trending`, `downloads`, `updated`, legacy alias `installs`
-- `category` (optional): plugin category filter. Current values:
-  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
-  `tools`, `runtime`, `gateway`, `security`, `other`.
+- `category` (optional): plugin category filter. The active browse values are
+  returned by `GET /api/v1/plugins/categories`, including their descriptions and
+  icons. The 22 categories cover core configuration surfaces and product uses.
+  Retired values `tools`, `runtime`, and `gateway` remain readable for existing
+  metadata and links, but do not appear in the active browse list.
 
 Legacy v1 filter aliases remain accepted on read endpoints:
 
@@ -738,9 +740,9 @@ Query params:
 - `q` (required): query string
 - `limit` (optional): integer (1-100)
 - `isOfficial` (optional): `true` or `false`
-- `category` (optional): plugin category filter. Current values:
-  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
-  `tools`, `runtime`, `gateway`, `security`, `other`.
+- `category` (optional): plugin category filter. Use the 22 active values from
+  `GET /api/v1/plugins/categories`. Retired `tools`, `runtime`, and `gateway`
+  values remain readable for existing metadata and links.
 
 Notes:
 
