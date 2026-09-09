@@ -1,0 +1,3602 @@
+{
+  "mode": "before-after",
+  "status": "passed",
+  "scope": "Local rehearsal only; no production writes or plugin code execution. Two model proposals withheld for semantic review and one plugin skipped for missing manifest evidence.",
+  "capture": {
+    "plugins": 100,
+    "releases": 190,
+    "historicalReleases": 90,
+    "staticFiles": 365,
+    "bytes": 8685995,
+    "startedAt": "2026-09-09T02:48:41.357Z",
+    "completedAt": "2026-09-09T02:51:28.993Z",
+    "snapshotSha256": "90e6e7f271e697c1c1e22b962179fd78f797b3ba6017d9feddbbbe6507ed2449",
+    "atomic": false
+  },
+  "categoryDefinitions": {
+    "channels": "Human-agent messaging transports and channel adapters. Choose this when the main purpose is letting people talk to the agent through a messaging service, even if the adapter also exposes workspace tools.",
+    "models": "General model providers, inference backends, and model routing. Specialized speech or media generators belong in Voice or Media when that is their main purpose.",
+    "memory": "Durable agent memory, embeddings, and retrieval across conversations. Building or compacting the active conversation context belongs in Context.",
+    "context": "Building, selecting, compacting, or managing the active conversation context. Durable memory storage and retrieval belong in Memory.",
+    "voice": "Speech synthesis, transcription, voice calls, and spoken interaction. Music and general media creation or analysis belong in Media.",
+    "web": "General web search, browser control, and fetching web pages. A tool whose main purpose is a specific research or business workflow belongs in that workflow's category.",
+    "media": "Creating, transforming, or understanding images, video, music, and other media. Spoken interaction and transcription belong in Voice.",
+    "security": "Protecting access and enforcing trust through authentication, authorization, credential controls, security auditing, or policy. Authentication incidental to another purpose does not belong here.",
+    "integrations": "General connectors, API bridges, and service integration platforms without a more specific user purpose. A connector to a particular workflow belongs in that workflow's category; exposing tools or MCP is not enough.",
+    "developer-tools": "Writing, reviewing, testing, and debugging software, including coding agents, coding-agent harnesses, and development environments. General coordination of agents belongs in Agent orchestration.",
+    "infrastructure": "Deploying, hosting, monitoring, and operating systems, networks, services, execution environments, and agent runtimes. Coding-agent harnesses belong in Developer tools; agent delegation belongs in Agent orchestration.",
+    "documents-files": "Reading, creating, extracting, transferring, and managing documents and files. Software code review belongs in Developer tools; task and project management belongs in Productivity.",
+    "inbox-collaboration": "Managing email, inboxes, team communication, and collaborative workspaces. Providing a transport for people to talk to the agent belongs in Channels.",
+    "productivity": "Managing tasks, notes, projects, plans, and personal or team work. Appointments and availability belong in Scheduling; document processing belongs in Documents & files.",
+    "scheduling": "Calendars, appointments, availability, and booking. Technical job scheduling belongs with the workflow it supports, or Infrastructure for general system scheduling.",
+    "finance-payments": "Payments, billing, accounting, banking, trading, and financial workflows. General business reporting belongs in Data & analytics.",
+    "sales-marketing": "Customer relationships, sales, customer support, outreach, campaigns, and marketing operations. General email or chat management belongs in Inbox & collaboration.",
+    "data-analytics": "Querying databases, processing datasets, analysis, reporting, and business intelligence. Agent memory storage belongs in Memory; operational telemetry belongs in Infrastructure.",
+    "agent-orchestration": "Coordinating agents, delegating work, and running multi-step agent workflows. Coding-agent harnesses belong in Developer tools; hosting and operating runtimes belong in Infrastructure.",
+    "research": "Investigating topics, evaluating sources, working with scientific literature, and synthesizing evidence. General web search, browsing, and page fetching belong in Web.",
+    "other": "Use only when the plugin's main purpose does not fit another category or the available evidence is insufficient. Do not use this just because a plugin has several capabilities."
+  },
+  "modelAccess": {
+    "model": "gpt-5.6-luna",
+    "modelLookupStatus": 200,
+    "returnedModel": "gpt-5.6-luna",
+    "localEnvironmentStatus": 200
+  },
+  "backend": {
+    "checkedAt": "2026-09-09T03:49:49.025Z",
+    "scope": "Local rehearsal using 100 production plugin snapshots; no production writes.",
+    "sourceSnapshotCapturedAt": "2026-09-09T02:51:28.993Z",
+    "bundledSourceCommit": "d2462a55439c098650e4ce8aa322ffe103414ae5",
+    "classification": {
+      "realLunaClassificationsSucceeded": 59,
+      "generatedAccepted": 57,
+      "generatedHeldForSemanticReview": 2,
+      "bundledAccepted": 40,
+      "latestReleasesApplied": 97,
+      "categoryValuesChanged": 75,
+      "missingEvidenceSkipped": [
+        {
+          "name": "gog-extended",
+          "reason": "No bounded plugin manifest evidence."
+        }
+      ],
+      "freshModelCallsDuringRollbackAndReplay": 0
+    },
+    "validation": {
+      "migrationComponent": "@convex-dev/migrations",
+      "migrationBatchSize": 10,
+      "dryRunBatches": 10,
+      "dryRunRows": 97,
+      "dryRunSourceProjectionJournalAndComponentStateUnchanged": true,
+      "packagesVerified": 100,
+      "packageSearchDigestsVerified": 100,
+      "categoryDigestRowsVerified": 104,
+      "topicDigestRowsVerified": 211,
+      "publicExactVersionResponsesVerified": 190,
+      "historicalReleasesUnchanged": 90,
+      "heldOrMissingLatestReleasesUnchanged": 3,
+      "sourceFilesHashesStorageReferencesAndOtherReleaseMetadataUnchanged": true,
+      "unrelatedPackageAndSearchMetadataUnchanged": true,
+      "all100PackageDocumentsRestoredExactlyDuringRollback": true,
+      "all190ReleaseDocumentsRestoredExactlyDuringRollback": true,
+      "all190PublicVersionResponsesRestoredExactlyDuringRollback": true,
+      "replayedReviewedAssignments": 97,
+      "replayEvidenceHashesIdentical": true,
+      "replayClassifierAndInventoryValidated": true,
+      "replayIsNewModelClassification": false,
+      "repeatCompletedMigrationPreservedState": true
+    },
+    "filters": [
+      {
+        "category": "channels",
+        "count": 31,
+        "pages": 1
+      },
+      {
+        "category": "models",
+        "count": 5,
+        "pages": 1
+      },
+      {
+        "category": "memory",
+        "count": 13,
+        "pages": 1
+      },
+      {
+        "category": "context",
+        "count": 1,
+        "pages": 1
+      },
+      {
+        "category": "voice",
+        "count": 7,
+        "pages": 1
+      },
+      {
+        "category": "web",
+        "count": 3,
+        "pages": 1
+      },
+      {
+        "category": "media",
+        "count": 4,
+        "pages": 1
+      },
+      {
+        "category": "security",
+        "count": 6,
+        "pages": 1
+      },
+      {
+        "category": "integrations",
+        "count": 4,
+        "pages": 1
+      },
+      {
+        "category": "developer-tools",
+        "count": 8,
+        "pages": 1
+      },
+      {
+        "category": "infrastructure",
+        "count": 2,
+        "pages": 1
+      },
+      {
+        "category": "documents-files",
+        "count": 2,
+        "pages": 1
+      },
+      {
+        "category": "inbox-collaboration",
+        "count": 2,
+        "pages": 1
+      },
+      {
+        "category": "productivity",
+        "count": 1,
+        "pages": 1
+      },
+      {
+        "category": "scheduling",
+        "count": 0,
+        "pages": 1
+      },
+      {
+        "category": "finance-payments",
+        "count": 0,
+        "pages": 1
+      },
+      {
+        "category": "sales-marketing",
+        "count": 2,
+        "pages": 1
+      },
+      {
+        "category": "data-analytics",
+        "count": 2,
+        "pages": 1
+      },
+      {
+        "category": "agent-orchestration",
+        "count": 1,
+        "pages": 1
+      },
+      {
+        "category": "research",
+        "count": 3,
+        "pages": 1
+      },
+      {
+        "category": "other",
+        "count": 5,
+        "pages": 1
+      }
+    ],
+    "changes": [
+      {
+        "name": "@agentmessier/openclaw-agent-messier",
+        "version": "0.16.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "other"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@alexbessarabenko/openclaw-max",
+        "version": "0.4.0",
+        "before": [
+          "channels",
+          "voice",
+          "models"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@apify/apify-openclaw-plugin",
+        "version": "0.5.3",
+        "before": [
+          "tools",
+          "web"
+        ],
+        "after": [
+          "research"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@axonflow/openclaw",
+        "version": "2.9.0",
+        "before": [
+          "tools",
+          "security"
+        ],
+        "after": [
+          "security"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@byterover/byterover",
+        "version": "4.0.0",
+        "before": [
+          "context",
+          "tools"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@conan-scott/openclaw-fish-audio",
+        "version": "1.1.6",
+        "before": [
+          "voice",
+          "channels"
+        ],
+        "after": [
+          "voice"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@cyb3rb1ade/plur1bus-memory",
+        "version": "7.12.8",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@expediagroup/expedia-openclaw",
+        "version": "1.0.4",
+        "before": [
+          "tools",
+          "web",
+          "channels"
+        ],
+        "after": [
+          "other"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@gendigital/sage-openclaw",
+        "version": "0.12.0",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "security"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@honcho-ai/openclaw-honcho",
+        "version": "1.5.5",
+        "before": [
+          "memory",
+          "tools",
+          "channels"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@jason-vaughan/openclaw-google-oauth",
+        "version": "0.4.0",
+        "before": [
+          "tools"
+        ],
+        "after": [
+          "integrations"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@jeehou/openclaw-cursor-cli",
+        "version": "0.0.6",
+        "before": [
+          "models",
+          "runtime",
+          "security"
+        ],
+        "after": [
+          "models"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@manuelfedele/openclaw-gmail-plugin",
+        "version": "0.4.0",
+        "before": [
+          "tools",
+          "web"
+        ],
+        "after": [
+          "inbox-collaboration"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@mem0/openclaw-mem0",
+        "version": "1.0.14",
+        "before": [
+          "memory",
+          "tools",
+          "models"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@natebjones/ob1-agent-memory",
+        "version": "0.1.6",
+        "before": [
+          "memory",
+          "tools"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@nowledge/openclaw-nowledge-mem",
+        "version": "0.8.31",
+        "before": [
+          "memory",
+          "context"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@openclaw/acpx",
+        "version": "2026.9.3",
+        "before": [
+          "runtime",
+          "models"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/buzz",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/clickclack",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/codex",
+        "version": "2026.9.3",
+        "before": [
+          "models",
+          "media",
+          "gateway"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/copilot",
+        "version": "2026.9.3",
+        "before": [
+          "runtime"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/diagnostics-otel",
+        "version": "2026.9.3",
+        "before": [
+          "runtime"
+        ],
+        "after": [
+          "infrastructure"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/diagnostics-prometheus",
+        "version": "2026.9.3",
+        "before": [
+          "runtime"
+        ],
+        "after": [
+          "infrastructure"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/diffs",
+        "version": "2026.9.3",
+        "before": [
+          "channels",
+          "gateway",
+          "context"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/diffs-language-pack",
+        "version": "2026.9.3",
+        "before": [
+          "media",
+          "gateway"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/discord",
+        "version": "2026.9.3",
+        "before": [
+          "channels",
+          "media"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/feishu",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/google-meet",
+        "version": "2026.9.3",
+        "before": [
+          "tools",
+          "web",
+          "gateway"
+        ],
+        "after": [
+          "voice"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/googlechat",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/imessage",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/kitchen-sink",
+        "version": "0.2.14",
+        "before": [
+          "context",
+          "memory",
+          "channels"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@openclaw/line",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/lobster",
+        "version": "2026.9.3",
+        "before": [
+          "tools",
+          "security"
+        ],
+        "after": [
+          "agent-orchestration"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/matrix",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/mattermost",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/memory-lancedb",
+        "version": "2026.9.3",
+        "before": [
+          "memory",
+          "tools"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/msteams",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/mxc-sandbox",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "security"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/nextcloud-talk",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/nostr",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/openshell-sandbox",
+        "version": "2026.9.3",
+        "before": [
+          "security",
+          "runtime",
+          "gateway"
+        ],
+        "after": [
+          "security"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/sherpa-onnx-tts",
+        "version": "2026.6.8",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "voice"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@openclaw/signal",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/slack",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/sms",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/synology-chat",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/team-reports",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "data-analytics"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/teams-meetings",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "voice"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/tlon",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/tokenjuice",
+        "version": "2026.9.3",
+        "before": [
+          "runtime",
+          "context",
+          "gateway"
+        ],
+        "after": [
+          "context"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/venice-provider",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "models"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/voice-call",
+        "version": "2026.9.3",
+        "before": [
+          "tools",
+          "voice"
+        ],
+        "after": [
+          "voice"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/volcengine-provider",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "models"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/whatsapp",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/zai-provider",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "models"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/zalo",
+        "version": "2026.9.3",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/zalouser",
+        "version": "2026.9.3",
+        "before": [
+          "channels",
+          "tools"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openclaw/zoom-meetings",
+        "version": "2026.9.3",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "voice"
+        ],
+        "source": "bundled"
+      },
+      {
+        "name": "@openguardrails/moltguard",
+        "version": "6.9.4",
+        "before": [
+          "security"
+        ],
+        "after": [
+          "security"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@openviking/openclaw-plugin",
+        "version": "2026.9.8-2",
+        "before": [
+          "memory"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@qverisai/qveris",
+        "version": "2026.9.9",
+        "before": [
+          "models",
+          "context",
+          "web"
+        ],
+        "after": [
+          "integrations"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@robot-inventor/discord-ignore",
+        "version": "1.1.10",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@shellbot/openclaw-pixcli",
+        "version": "3.4.2",
+        "before": [
+          "tools",
+          "media",
+          "voice"
+        ],
+        "after": [
+          "media"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@soimy/dingtalk",
+        "version": "3.6.11",
+        "before": [
+          "channels"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@tencentdb-agent-memory/memory-tencentdb",
+        "version": "0.2.2",
+        "before": [
+          "memory"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@tensorfold/openclaw-google-workspace",
+        "version": "0.2.1",
+        "before": [
+          "tools"
+        ],
+        "after": [
+          "integrations"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "@xmoxmo/bncr",
+        "version": "0.6.7",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "100-percent-skill-vetter",
+        "version": "2.0.1",
+        "before": [
+          "runtime",
+          "security",
+          "gateway"
+        ],
+        "after": [
+          "security"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "apple-pim-cli",
+        "version": "3.18.0",
+        "before": [
+          "tools",
+          "security",
+          "web"
+        ],
+        "after": [
+          "productivity"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "browser-use-plugin",
+        "version": "1.0.0",
+        "before": [
+          "web"
+        ],
+        "after": [
+          "web"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "chrome-openclaw-sider",
+        "version": "1.0.26",
+        "before": [
+          "channels",
+          "runtime"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "claude-code-sync",
+        "version": "0.3.0",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "clawlink-plugin",
+        "version": "0.3.6",
+        "before": [
+          "tools",
+          "channels",
+          "web"
+        ],
+        "after": [
+          "integrations"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "database",
+        "version": "0.1.0",
+        "before": null,
+        "after": [
+          "data-analytics"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "douyin-insights-openclaw-plugin",
+        "version": "0.2.9",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "research"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "email",
+        "version": "0.1.0",
+        "before": [
+          "web"
+        ],
+        "after": [
+          "inbox-collaboration"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "excel",
+        "version": "0.1.0",
+        "before": [
+          "tools"
+        ],
+        "after": [
+          "documents-files"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "gc-provider",
+        "version": "0.1.33",
+        "before": [
+          "models",
+          "media"
+        ],
+        "after": [
+          "models"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "google-ads-assistant",
+        "version": "1.0.0",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "sales-marketing"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "hirey",
+        "version": "1.0.74",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "other"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "hivemind",
+        "version": "0.7.150",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "holo-wechat-mp",
+        "version": "0.2.0",
+        "before": [
+          "media",
+          "channels"
+        ],
+        "after": [
+          "sales-marketing"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "lobu",
+        "version": "14.0.0",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "memsearch",
+        "version": "0.3.18",
+        "before": [
+          "memory",
+          "models"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "message-linter",
+        "version": "2026.7.1-beta.5",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "documents-files"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "octo",
+        "version": "1.4.1",
+        "before": [
+          "channels",
+          "tools"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "ocuclaw",
+        "version": "1.3.7",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "openclaw-ai-video-editor",
+        "version": "1.1.2",
+        "before": [
+          "tools",
+          "media"
+        ],
+        "after": [
+          "media"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "openclaw-browser-automation",
+        "version": "1.5.0",
+        "before": [
+          "web"
+        ],
+        "after": [
+          "web"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "openclaw-code-agent",
+        "version": "4.7.15",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "developer-tools"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "openclaw-memory-graph",
+        "version": "0.19.6",
+        "before": [
+          "tools",
+          "models",
+          "memory"
+        ],
+        "after": [
+          "memory"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "openclaw-plugin-heygen",
+        "version": "0.1.0",
+        "before": [
+          "media"
+        ],
+        "after": [
+          "media"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "openclaw-seatalk",
+        "version": "1.1.1",
+        "before": [
+          "channels",
+          "tools",
+          "security"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "openclaw-weixin",
+        "version": "0.3.0",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "channels"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "sequential-thinking",
+        "version": "2026.7.1-2",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "other"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "web-search-plus-plugin-v2",
+        "version": "4.0.3",
+        "before": [
+          "tools",
+          "web"
+        ],
+        "after": [
+          "web"
+        ],
+        "source": "generated"
+      },
+      {
+        "name": "xhs-insights-openclaw-plugin",
+        "version": "0.1.23",
+        "before": [
+          "other"
+        ],
+        "after": [
+          "research"
+        ],
+        "source": "generated"
+      }
+    ],
+    "proposals": [
+      {
+        "name": "@agentmessier/openclaw-agent-messier",
+        "version": "0.16.3",
+        "categories": [
+          "other"
+        ],
+        "source": "generated",
+        "evidence": "This plugin primarily lets an OpenClaw agent join and play live AgentNet soccer matches, with venue-specific gameplay tools and an autoplay watcher. It also supports task-market venues, but its main purpose is game participation, which does not fit the defined workflow categories.",
+        "decision": "applied"
+      },
+      {
+        "name": "@alexbessarabenko/openclaw-max",
+        "version": "0.4.0",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "This plugin’s primary purpose is connecting OpenClaw to MAX Messenger as a two-way messaging channel, supporting webhooks or polling, direct and group chats, message delivery, and channel-specific session routing. Media handling, transcription, security policies, and streaming are secondary features.",
+        "decision": "applied"
+      },
+      {
+        "name": "@apify/apify-openclaw-plugin",
+        "version": "0.5.3",
+        "categories": [
+          "research"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s main purpose is web scraping and data extraction through Apify Actors for market research, competitor intelligence, trend analysis, and similar investigations. Although it connects to an external service and can search the web, its specific workflow centers on collecting and synthesizing research data.",
+        "decision": "applied"
+      },
+      {
+        "name": "@axonflow/openclaw",
+        "version": "2.9.0",
+        "categories": [
+          "security"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is governance and security enforcement for agents: it blocks dangerous tool calls, scans and redacts PII or secrets, requires approval for high-risk actions, enforces policies, and maintains audit trails.",
+        "decision": "applied"
+      },
+      {
+        "name": "@byterover/byterover",
+        "version": "4.0.0",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "ByteRover recalls curated knowledge across conversations and provides `brv_record` to write durable agent memory. Although it integrates with active prompt assembly, its primary purpose is persistent memory storage and retrieval, which fits Memory rather than Context.",
+        "decision": "applied"
+      },
+      {
+        "name": "@conan-scott/openclaw-fish-audio",
+        "version": "1.1.6",
+        "categories": [
+          "voice"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is a Fish Audio text-to-speech provider, supporting voice cloning, speech synthesis, voice configuration, and audio output for voice notes. Telegram and WhatsApp delivery are incidental channel targets; the main installation purpose is spoken-audio generation.",
+        "decision": "applied"
+      },
+      {
+        "name": "@cyb3rb1ade/plur1bus-memory",
+        "version": "7.12.8",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "This plugin’s primary purpose is durable, per-agent long-term memory: it stores, recalls, searches, curates, and forgets conversation-derived knowledge using isolated LanceDB stores, embeddings, provenance, and retrieval across conversations.",
+        "decision": "applied"
+      },
+      {
+        "name": "@expediagroup/expedia-openclaw",
+        "version": "1.0.4",
+        "categories": [
+          "other"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is live travel search for hotels, vacation rentals, and flights, returning prices, availability, and Expedia booking links. No category specifically covers travel booking/search, so it does not fit the broader connector, web, or scheduling categories as its main purpose.",
+        "decision": "applied"
+      },
+      {
+        "name": "@gendigital/sage-openclaw",
+        "version": "0.12.0",
+        "categories": [
+          "security"
+        ],
+        "source": "generated",
+        "evidence": "Sage is a security layer that intercepts commands, file operations, and URL fetches, detecting threats and enforcing Allow/Ask/Deny verdicts with approval prompts. It protects against malware, prompt injection, credential theft, supply-chain attacks, and dangerous actions.",
+        "decision": "applied"
+      },
+      {
+        "name": "@honcho-ai/openclaw-honcho",
+        "version": "1.5.5",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "The plugin is an Honcho-backed durable memory system for OpenClaw. It persists conversations, maintains user and agent representations, supports semantic search and retrieval across sessions, and replaces built-in memory plugins.",
+        "decision": "applied"
+      },
+      {
+        "name": "@jason-vaughan/openclaw-google-oauth",
+        "version": "0.4.0",
+        "categories": [
+          "integrations"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is a broad Google Workspace connector exposing Gmail, Calendar, Drive, Docs, Sheets, and Slides through one direct OAuth client. Although it includes email, scheduling, and document tools, its primary purpose is integrating an agent with multiple Google APIs rather than serving one narrower workflow.",
+        "decision": "applied"
+      },
+      {
+        "name": "@jeehou/openclaw-cursor-cli",
+        "version": "0.0.6",
+        "categories": [
+          "models"
+        ],
+        "source": "generated",
+        "evidence": "This plugin adds a `cursor-cli` provider and routes OpenClaw model calls through the local Cursor agent binary. Its primary purpose is model inference/backend access, with catalog refresh and optional tool execution as supporting features.",
+        "decision": "applied"
+      },
+      {
+        "name": "@manuelfedele/openclaw-gmail-plugin",
+        "version": "0.4.0",
+        "categories": [
+          "inbox-collaboration"
+        ],
+        "source": "generated",
+        "evidence": "This plugin primarily manages email inboxes and mailboxes over IMAP/SMTP: searching, reading, threading, sending, replying, moving, starring, and updating messages. Attachment downloads are an additional document-handling feature, but email management is the main purpose.",
+        "decision": "applied"
+      },
+      {
+        "name": "@mem0/openclaw-mem0",
+        "version": "1.0.14",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is a Mem0 long-term memory backend for OpenClaw. It stores, searches, recalls, updates, and consolidates memories across sessions, using durable memory, embeddings, and vector stores.",
+        "decision": "applied"
+      },
+      {
+        "name": "@natebjones/ob1-agent-memory",
+        "version": "0.1.6",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "This plugin’s primary purpose is governed durable agent memory: recalling context before work, writing back summaries afterward, inspecting and reviewing stored memories, and tracing memory usage. Its tools explicitly implement recall, write-back, review queues, provenance, and retrieval across tasks.",
+        "decision": "applied"
+      },
+      {
+        "name": "@nowledge/openclaw-nowledge-mem",
+        "version": "0.8.31",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s main purpose is durable, cross-tool knowledge-graph memory: searchable memories, embeddings/graph retrieval, session distillation, conversation capture, and linked historical context. Although it can inject active session context and capture threads, those support its primary persistent memory function.",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/acpx",
+        "version": "2026.9.3",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/acpx/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/buzz",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/buzz/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/clickclack",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/clickclack/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/codex",
+        "version": "2026.9.3",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/codex/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/copilot",
+        "version": "2026.9.3",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/copilot/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/diagnostics-otel",
+        "version": "2026.9.3",
+        "categories": [
+          "infrastructure"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/diagnostics-otel/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/diagnostics-prometheus",
+        "version": "2026.9.3",
+        "categories": [
+          "infrastructure"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/diagnostics-prometheus/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/diffs",
+        "version": "2026.9.3",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/diffs/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/diffs-language-pack",
+        "version": "2026.9.3",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/diffs-language-pack/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/discord",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/discord/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/feishu",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/feishu/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/google-meet",
+        "version": "2026.9.3",
+        "categories": [
+          "voice"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/google-meet/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/googlechat",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/googlechat/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/imessage",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/imessage/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/kitchen-sink",
+        "version": "0.2.14",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "generated",
+        "evidence": "A credential-free compatibility and test fixture for OpenClaw plugin authors, plugin-inspector, and Crabpot. It exercises plugin API registrations, runtime probes, contract checks, install/packaging validation, and deterministic smoke scenarios rather than serving a primary end-user workflow.",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/line",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/line/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/lobster",
+        "version": "2026.9.3",
+        "categories": [
+          "agent-orchestration"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/lobster/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/matrix",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/matrix/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/mattermost",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/mattermost/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/memory-lancedb",
+        "version": "2026.9.3",
+        "categories": [
+          "memory"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/memory-lancedb/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/msteams",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/msteams/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/mxc-sandbox",
+        "version": "2026.9.3",
+        "categories": [
+          "security"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/mxc/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/nextcloud-talk",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/nextcloud-talk/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/nostr",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/nostr/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/openshell-sandbox",
+        "version": "2026.9.3",
+        "categories": [
+          "security"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/openshell/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/sherpa-onnx-tts",
+        "version": "2026.6.8",
+        "categories": [
+          "voice"
+        ],
+        "source": "generated",
+        "evidence": "This plugin provides offline local text-to-speech using sherpa-onnx, downloading voice models and generating WAV audio for spoken interaction.",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/signal",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/signal/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/slack",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/slack/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/sms",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/sms/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/synology-chat",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/synology-chat/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/team-reports",
+        "version": "2026.9.3",
+        "categories": [
+          "data-analytics"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/team-reports/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/teams-meetings",
+        "version": "2026.9.3",
+        "categories": [
+          "voice"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/teams-meetings/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/tlon",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/tlon/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/tokenjuice",
+        "version": "2026.9.3",
+        "categories": [
+          "context"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/tokenjuice/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/venice-provider",
+        "version": "2026.9.3",
+        "categories": [
+          "models"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/venice/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/voice-call",
+        "version": "2026.9.3",
+        "categories": [
+          "voice"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/voice-call/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/volcengine-provider",
+        "version": "2026.9.3",
+        "categories": [
+          "models"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/volcengine/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/whatsapp",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/whatsapp/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/zai-provider",
+        "version": "2026.9.3",
+        "categories": [
+          "models"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/zai/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/zalo",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/zalo/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/zalouser",
+        "version": "2026.9.3",
+        "categories": [
+          "channels"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/zalouser/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openclaw/zoom-meetings",
+        "version": "2026.9.3",
+        "categories": [
+          "voice"
+        ],
+        "source": "bundled",
+        "evidence": "Reviewed OpenClaw bundled manifest: extensions/zoom-meetings/openclaw.plugin.json",
+        "decision": "applied"
+      },
+      {
+        "name": "@openguardrails/moltguard",
+        "version": "6.9.4",
+        "categories": [
+          "security"
+        ],
+        "source": "generated",
+        "evidence": "MoltGuard’s primary purpose is protecting agents through prompt-injection detection, credential and PII sanitization, risk-based tool-call blocking, and behavioral monitoring.",
+        "decision": "applied"
+      },
+      {
+        "name": "@openviking/openclaw-plugin",
+        "version": "2026.9.8-2",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is providing OpenViking-backed durable agent memory and retrieval: automatic recall, long-term memory storage, session archiving, memory extraction, semantic search, and RAG. Although it implements a context-engine lifecycle and exposes resource tools, its main installation purpose is persistent memory management.",
+        "decision": "applied"
+      },
+      {
+        "name": "@qverisai/qveris",
+        "version": "2026.9.9",
+        "categories": [
+          "integrations"
+        ],
+        "source": "generated",
+        "evidence": "QVeris is a general capability-discovery and API tool-calling bridge: it searches for external tools, inspects their schemas, and executes them through the QVeris API. Its session caching and credential handling are supporting features, not the primary user purpose.",
+        "decision": "applied"
+      },
+      {
+        "name": "@robot-inventor/discord-ignore",
+        "version": "1.1.10",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is specifically a Discord channel adapter that filters inbound messages and adds a Discord slash command for channel cooldowns before messages reach the agent. Its main purpose is controlling agent interaction through Discord, which fits Channels.",
+        "decision": "applied"
+      },
+      {
+        "name": "@shellbot/openclaw-pixcli",
+        "version": "3.4.2",
+        "categories": [
+          "media"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is generating and editing images, video, music, sound effects, voiceovers, and podcasts through pixcli tools. Although it includes speech and audio features, its broad creative media-generation toolkit is best classified as Media.",
+        "decision": "applied"
+      },
+      {
+        "name": "@soimy/dingtalk",
+        "version": "3.6.11",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "该插件的主要用途是作为 OpenClaw 的钉钉企业机器人渠道适配器，通过 Stream 模式支持私聊、群聊、@机器人及消息收发。互动卡片、文档 API 和多 Agent 路由均属于该渠道的附加能力。",
+        "decision": "applied"
+      },
+      {
+        "name": "@tencentdb-agent-memory/memory-tencentdb",
+        "version": "0.2.2",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "该插件的主要用途是为 AI Agent 提供长期记忆：自动捕获对话、提取结构化记忆、生成用户画像，并通过 SQLite/向量数据库进行持久化存储和召回。",
+        "decision": "applied"
+      },
+      {
+        "name": "@tensorfold/openclaw-google-workspace",
+        "version": "0.2.1",
+        "categories": [
+          "integrations"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is an all-in-one connector to Google Workspace services—Gmail, Calendar, Drive, Contacts, Tasks, and Sheets—using shared OAuth and toggleable service integrations. Its main purpose is providing broad Google Workspace API access rather than a single narrower workflow.",
+        "decision": "applied"
+      },
+      {
+        "name": "@vauxr/openclaw",
+        "version": "2026.9.3-1",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "This plugin’s primary purpose is bridging Vauxr voice devices to the OpenClaw agent loop: it receives device transcripts and streams agent responses back for spoken playback. Device listing, announcements, and control tools are secondary capabilities.",
+        "decision": "held"
+      },
+      {
+        "name": "@xmoxmo/bncr",
+        "version": "0.6.7",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "这是 OpenClaw 的 Bncr 频道适配器，主要用于通过 Bncr/无界客户端进行人与 Agent 的消息收发、群聊和私聊会话管理；媒体传输、ACK 和重连属于该消息通道的附加能力。",
+        "decision": "applied"
+      },
+      {
+        "name": "100-percent-skill-vetter",
+        "version": "2.0.1",
+        "categories": [
+          "security"
+        ],
+        "source": "generated",
+        "evidence": "This plugin performs pre-install security vetting for OpenClaw skills and plugins, generates risk reports, blocks installations with critical findings, and intercepts agent tool calls that bypass the approved installation path.",
+        "decision": "applied"
+      },
+      {
+        "name": "apple-pim-cli",
+        "version": "3.18.0",
+        "categories": [
+          "productivity"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s main purpose is personal information management: creating and managing calendar events, reminders, contacts, and related tasks. Although it also provides Mail.app access and an inbound mail channel, those are secondary to the broader PIM workflow.",
+        "decision": "applied"
+      },
+      {
+        "name": "browser-use-plugin",
+        "version": "1.0.0",
+        "categories": [
+          "web"
+        ],
+        "source": "generated",
+        "evidence": "Provides general browser automation for navigating websites, interacting with page elements, filling forms, taking screenshots, executing JavaScript, and extracting web-page data.",
+        "decision": "applied"
+      },
+      {
+        "name": "chrome-openclaw-sider",
+        "version": "1.0.26",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is explicitly a Chrome channel adapter that connects OpenClaw to the Sider Chrome extension, enabling users to communicate with and control OpenClaw through Sider’s browser sidebar. Pairing, message streaming, replies, tool status, and attachments support the messaging transport.",
+        "decision": "applied"
+      },
+      {
+        "name": "claude-code-sync",
+        "version": "0.3.0",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is primarily a Claude Code session-sync and remote-control harness: it makes coding sessions rideable from terminals, supports live/forked driving, and coordinates a single active driver. Telegram and other channel relays are secondary transport behavior.",
+        "decision": "applied"
+      },
+      {
+        "name": "clawlink-plugin",
+        "version": "0.3.6",
+        "categories": [
+          "integrations"
+        ],
+        "source": "generated",
+        "evidence": "ClawLink is a general integration hub connecting OpenClaw to 1,000+ external apps through managed OAuth and a uniform catalog of tools. Its primary purpose is bridging APIs and services, rather than serving one specific workflow.",
+        "decision": "applied"
+      },
+      {
+        "name": "database",
+        "version": "0.1.0",
+        "categories": [
+          "data-analytics"
+        ],
+        "source": "generated",
+        "evidence": "Provides local SQLite database management and data access: schema inspection, SQL querying and execution, transactions, and CRUD operations. Its main purpose is querying and manipulating structured database data.",
+        "decision": "applied"
+      },
+      {
+        "name": "douyin-insights-openclaw-plugin",
+        "version": "0.2.9",
+        "categories": [
+          "research"
+        ],
+        "source": "generated",
+        "evidence": "Provides read-only Douyin social-media intelligence: hot trends, video and creator searches, content details, comments, profiles, creator works, and series. Its main purpose is researching and analyzing social-media content and creators, not general web access or merely connecting to MCP.",
+        "decision": "applied"
+      },
+      {
+        "name": "email",
+        "version": "0.1.0",
+        "categories": [
+          "inbox-collaboration"
+        ],
+        "source": "generated",
+        "evidence": "This plugin manages email mailboxes and messages over IMAP/SMTP, including searching, reading, flagging, moving, sending, and replying. Its primary purpose is email and inbox management, not merely general service integration.",
+        "decision": "applied"
+      },
+      {
+        "name": "excel",
+        "version": "0.1.0",
+        "categories": [
+          "documents-files"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is reading, inspecting, replacing, and appending rows in local .xlsx Excel workbooks. It manages spreadsheet files rather than providing general analytics or productivity features.",
+        "decision": "applied"
+      },
+      {
+        "name": "gc-provider",
+        "version": "0.1.33",
+        "categories": [
+          "models"
+        ],
+        "source": "generated",
+        "evidence": "This plugin’s primary purpose is providing the GrowthCircle.id OpenAI-compatible model backend. It registers the `growthcircle` provider for OpenClaw/Hermes and supplies model discovery and inference through the GrowthCircle API. Its setup CLI configures multiple clients, but that is supporting functionality.",
+        "decision": "applied"
+      },
+      {
+        "name": "google-ads-assistant",
+        "version": "1.0.0",
+        "categories": [
+          "sales-marketing"
+        ],
+        "source": "generated",
+        "evidence": "The plugin is purpose-built for Google Ads marketing operations: campaign performance reporting, keyword research, search-term cleanup, ad-copy generation, campaign structure, and preview-then-execute campaign edits. Its MCP connection and OAuth are supporting integration and authentication details, not the primary user purpose.",
+        "decision": "applied"
+      },
+      {
+        "name": "hirey",
+        "version": "1.0.74",
+        "categories": [
+          "other"
+        ],
+        "source": "generated",
+        "evidence": "Hirey is a specialized people-to-people matching platform spanning jobs, hiring, housing, friendship, dating, founders, investors, and legal contacts. Its plugin registers Hi tools, identity binding, listings, claims, and event delivery, but no single defined category such as sales, productivity, scheduling, or integrations captures its broad matching-marketplace purpose.",
+        "decision": "applied"
+      },
+      {
+        "name": "hivemind",
+        "version": "0.7.150",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "Hivemind’s primary purpose is cloud-backed persistent shared memory: it automatically captures conversations and recalls relevant memories across sessions, agents, machines, and teammates. Its search, indexing, and graph features support that memory system.",
+        "decision": "applied"
+      },
+      {
+        "name": "holo-wechat-mp",
+        "version": "0.2.0",
+        "categories": [
+          "sales-marketing"
+        ],
+        "source": "generated",
+        "evidence": "This plugin is centered on producing, typesetting, managing, analyzing, and publishing articles for WeChat Official Accounts, including drafts, published content, and audience/article statistics. Its image generation and API connectivity support this content-marketing workflow rather than being the primary purpose.",
+        "decision": "applied"
+      },
+      {
+        "name": "imclaw",
+        "version": "0.11.6",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "IMClaw’s primary purpose is an Agent-to-Agent instant-messaging channel. It provides direct and group conversations, inbound message handling, proactive sending, media delivery, and social messaging features through the `imclaw` channel.",
+        "decision": "held"
+      },
+      {
+        "name": "lobu",
+        "version": "14.0.0",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "Lobu’s stated purpose is providing persistent, structured agent memory over MCP, including recalling relevant facts before prompts and capturing observations as long-term memories after sessions. Its search and save tools support durable memory across conversations.",
+        "decision": "applied"
+      },
+      {
+        "name": "memsearch",
+        "version": "0.3.18",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "MemSearch is a persistent cross-session memory plugin: it captures conversation summaries, embeds and indexes them with Milvus, and recalls relevant prior context through search and retrieval tools.",
+        "decision": "applied"
+      },
+      {
+        "name": "message-linter",
+        "version": "2026.7.1-beta.5",
+        "categories": [
+          "documents-files"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s main purpose is deterministic formatting and sanitization of outgoing message text, including Markdown normalization and Chinese text conversion. Although it integrates with OpenClaw hooks and Discord, it is not primarily a messaging transport or general integration.",
+        "decision": "applied"
+      },
+      {
+        "name": "octo",
+        "version": "1.4.1",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "Octo is explicitly an OpenClaw channel plugin that connects to Octo via WebSocket for real-time messaging, with bot-token and channel-account configuration. Its card and document-task tools are secondary capabilities of the messaging adapter.",
+        "decision": "applied"
+      },
+      {
+        "name": "ocuclaw",
+        "version": "1.3.7",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "OcuClaw primarily connects an OpenClaw agent to Even Realities G2 smart glasses, providing an interactive glasses-based user interface and voice-input pathway through the OcuClaw client. Its tools render surfaces and handle user interaction on the glasses.",
+        "decision": "applied"
+      },
+      {
+        "name": "openclaw-ai-video-editor",
+        "version": "1.1.2",
+        "categories": [
+          "media"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is autonomous video editing and media creation: it trims and transforms video, generates captions, audio, B-roll, images, and exports platform-specific media. Its MCP/API integration is the delivery mechanism, not the main user job.",
+        "decision": "applied"
+      },
+      {
+        "name": "openclaw-browser-automation",
+        "version": "1.5.0",
+        "categories": [
+          "web"
+        ],
+        "source": "generated",
+        "evidence": "This plugin’s main purpose is controlling Chrome/Chromium through CDP for browser automation, including opening pages, reading content, clicking, filling forms, screenshots, and tab management. Its documentation explicitly separates this from web search.",
+        "decision": "applied"
+      },
+      {
+        "name": "openclaw-code-agent",
+        "version": "4.7.15",
+        "categories": [
+          "developer-tools"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is to run and manage coding-agent sessions using Claude Code, Codex, and OpenCode. It provides coding workflows such as plan approval, repository worktrees, testing-oriented goal loops, merge/PR follow-through, and session output, making Developer tools the narrowest fit.",
+        "decision": "applied"
+      },
+      {
+        "name": "openclaw-memory-graph",
+        "version": "0.19.6",
+        "categories": [
+          "memory"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is durable agent memory: it automatically extracts entities and relationships from conversations, persists them in a local SQLite knowledge graph, and provides search, retrieval, path, semantic, and temporal-memory tools across sessions.",
+        "decision": "applied"
+      },
+      {
+        "name": "openclaw-plugin-heygen",
+        "version": "0.1.0",
+        "categories": [
+          "media"
+        ],
+        "source": "generated",
+        "evidence": "This plugin adds HeyGen as a video-generation provider, focused on creating avatar/presenter videos with specified avatars, voices, scripts, styles, and orientations through the video_generate tool.",
+        "decision": "applied"
+      },
+      {
+        "name": "openclaw-seatalk",
+        "version": "1.1.1",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "This plugin’s primary purpose is connecting OpenClaw to SeaTalk messaging, supporting private and group chats, threads, inbound events, and outbound replies. Its history and group tools, gateway modes, and access controls support that messaging-channel role.",
+        "decision": "applied"
+      },
+      {
+        "name": "openclaw-weixin",
+        "version": "0.3.0",
+        "categories": [
+          "channels"
+        ],
+        "source": "generated",
+        "evidence": "该插件的主要用途是通过腾讯 iLink Bot API 将微信个人账号接入 OpenClaw，使用户能够在微信中与 Agent 收发消息。二维码登录、多账号管理以及图片、视频、文件和语音传输都是这一微信通信通道的配套功能。",
+        "decision": "applied"
+      },
+      {
+        "name": "sequential-thinking",
+        "version": "2026.7.1-2",
+        "categories": [
+          "other"
+        ],
+        "source": "generated",
+        "evidence": "Provides a sequential_thinking tool for step-by-step reflective problem-solving, including revisions, branches, and per-session thought history. It does not primarily manage conversation context, durable memory, models, agents, or software development.",
+        "decision": "applied"
+      },
+      {
+        "name": "web-search-plus-plugin-v2",
+        "version": "4.0.3",
+        "categories": [
+          "web"
+        ],
+        "source": "generated",
+        "evidence": "The plugin’s primary purpose is general web search and URL extraction, with multi-provider routing, freshness/news/locale controls, source provenance, and research-oriented reranking. Its provider integrations and optional local MCP adapter support that web-search workflow rather than being the main purpose.",
+        "decision": "applied"
+      },
+      {
+        "name": "xhs-insights-openclaw-plugin",
+        "version": "0.1.23",
+        "categories": [
+          "research"
+        ],
+        "source": "generated",
+        "evidence": "Provides Xiaohongshu/RedNote research workflows: trend and content search, product and review analysis, comment analysis, topic data, and creator profile/post research. Its main purpose is investigating social-media content and market signals, not general web access or a messaging transport.",
+        "decision": "applied"
+      }
+    ],
+    "held": [
+      {
+        "name": "imclaw",
+        "version": "0.11.6",
+        "retainedCategories": [
+          "channels",
+          "tools",
+          "media"
+        ],
+        "proposedCategories": [
+          "channels"
+        ],
+        "modelExplanation": "IMClaw’s primary purpose is an Agent-to-Agent instant-messaging channel. It provides direct and group conversations, inbound message handling, proactive sending, media delivery, and social messaging features through the `imclaw` channel.",
+        "reason": "Held for semantic review: an agent-first social network whose human owner observes or intervenes, rather than a channel for direct human-agent conversation."
+      },
+      {
+        "name": "@vauxr/openclaw",
+        "version": "2026.9.3-1",
+        "retainedCategories": [
+          "channels",
+          "tools",
+          "voice"
+        ],
+        "proposedCategories": [
+          "channels"
+        ],
+        "modelExplanation": "This plugin’s primary purpose is bridging Vauxr voice devices to the OpenClaw agent loop: it receives device transcripts and streams agent responses back for spoken playback. Device listing, announcements, and control tools are secondary capabilities.",
+        "reason": "Held for semantic review: a voice-device transcript/response bridge may belong in Voice despite channel-shaped implementation metadata."
+      }
+    ]
+  },
+  "sourceAudit": {
+    "sourceCommit": "d2462a55439c098650e4ce8aa322ffe103414ae5",
+    "sourceBaseCommit": "5ee48626b8db9c97a443fc51c1edc631530c84a0",
+    "sourceManifestCount": 152,
+    "namedPackageCount": 149,
+    "beforeCategoryCardinality": {
+      "2": 47,
+      "1": 92,
+      "3": 13
+    },
+    "afterCategoryCardinality": {
+      "1": 152
+    },
+    "categoryCounts": {
+      "agent-orchestration": 4,
+      "developer-tools": 8,
+      "memory": 5,
+      "infrastructure": 8,
+      "media": 6,
+      "models": 54,
+      "voice": 14,
+      "web": 10,
+      "channels": 24,
+      "documents-files": 4,
+      "security": 7,
+      "inbox-collaboration": 1,
+      "productivity": 2,
+      "integrations": 3,
+      "data-analytics": 1,
+      "context": 1
+    },
+    "changedManifestCount": 62,
+    "changedPrimaryCategories": [
+      {
+        "pluginId": "a2a",
+        "before": "channels",
+        "after": "agent-orchestration"
+      },
+      {
+        "pluginId": "canvas",
+        "before": "productivity",
+        "after": "documents-files"
+      },
+      {
+        "pluginId": "cua-computer",
+        "before": "productivity",
+        "after": "infrastructure"
+      },
+      {
+        "pluginId": "document-extract",
+        "before": "context",
+        "after": "documents-files"
+      },
+      {
+        "pluginId": "reef",
+        "before": "channels",
+        "after": "agent-orchestration"
+      }
+    ],
+    "unnamedPluginIds": [
+      "active-memory",
+      "device-pair",
+      "talk-voice"
+    ],
+    "builtManifestCount": 150,
+    "sourcePluginsExcludedFromBuild": [
+      "qa-channel",
+      "qa-lab"
+    ],
+    "builtManifestsMatchSource": true,
+    "builtManifests": [
+      {
+        "pluginId": "a2a",
+        "categories": [
+          "agent-orchestration"
+        ],
+        "path": "dist/extensions/a2a/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "acpx",
+        "categories": [
+          "developer-tools"
+        ],
+        "path": "dist/extensions/acpx/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "active-memory",
+        "categories": [
+          "memory"
+        ],
+        "path": "dist/extensions/active-memory/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "admin-http-rpc",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/admin-http-rpc/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "alibaba",
+        "categories": [
+          "media"
+        ],
+        "path": "dist/extensions/alibaba/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "amazon-bedrock",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/amazon-bedrock/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "amazon-bedrock-mantle",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/amazon-bedrock-mantle/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "anthropic",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/anthropic/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "anthropic-vertex",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/anthropic-vertex/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "arcee",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/arcee/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "azure-speech",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/azure-speech/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "baseten",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/baseten/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "beam",
+        "categories": [
+          "developer-tools"
+        ],
+        "path": "dist/extensions/beam/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "bonjour",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/bonjour/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "brave",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/brave/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "browser",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/browser/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "buzz",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/buzz/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "byteplus",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/byteplus/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "canvas",
+        "categories": [
+          "documents-files"
+        ],
+        "path": "dist/extensions/canvas/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "cerebras",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/cerebras/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "chutes",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/chutes/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "clawrouter",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/clawrouter/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "clickclack",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/clickclack/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "cloudflare-ai-gateway",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/cloudflare-ai-gateway/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "codex",
+        "categories": [
+          "developer-tools"
+        ],
+        "path": "dist/extensions/codex/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "cohere",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/cohere/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "comfy",
+        "categories": [
+          "media"
+        ],
+        "path": "dist/extensions/comfy/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "copilot",
+        "categories": [
+          "developer-tools"
+        ],
+        "path": "dist/extensions/copilot/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "copilot-proxy",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/copilot-proxy/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "crabbox",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/crabbox/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "cua-computer",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/cua-computer/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "deepgram",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/deepgram/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "deepinfra",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/deepinfra/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "deepseek",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/deepseek/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "device-pair",
+        "categories": [
+          "security"
+        ],
+        "path": "dist/extensions/device-pair/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "diagnostics-otel",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/diagnostics-otel/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "diagnostics-prometheus",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/diagnostics-prometheus/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "diffs",
+        "categories": [
+          "developer-tools"
+        ],
+        "path": "dist/extensions/diffs/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "diffs-language-pack",
+        "categories": [
+          "developer-tools"
+        ],
+        "path": "dist/extensions/diffs-language-pack/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "discord",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/discord/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "document-extract",
+        "categories": [
+          "documents-files"
+        ],
+        "path": "dist/extensions/document-extract/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "duckduckgo",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/duckduckgo/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "elevenlabs",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/elevenlabs/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "exa",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/exa/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "fal",
+        "categories": [
+          "media"
+        ],
+        "path": "dist/extensions/fal/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "featherless",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/featherless/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "feishu",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/feishu/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "file-transfer",
+        "categories": [
+          "documents-files"
+        ],
+        "path": "dist/extensions/file-transfer/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "firecrawl",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/firecrawl/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "fireworks",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/fireworks/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "fish-audio-speech",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/fish-audio-speech/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "geolocation",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/geolocation/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "github-copilot",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/github-copilot/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "gmi",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/gmi/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "google",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/google/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "google-meet",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/google-meet/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "googlechat",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/googlechat/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "gradium",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/gradium/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "groq",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/groq/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "huggingface",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/huggingface/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "imap",
+        "categories": [
+          "inbox-collaboration"
+        ],
+        "path": "dist/extensions/imap/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "imessage",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/imessage/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "inworld",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/inworld/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "irc",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/irc/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "kilocode",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/kilocode/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "kimi",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/kimi-coding/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "line",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/line/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "linux-node",
+        "categories": [
+          "infrastructure"
+        ],
+        "path": "dist/extensions/linux-node/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "litellm",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/litellm/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "llama-cpp",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/llama-cpp/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "llm-task",
+        "categories": [
+          "agent-orchestration"
+        ],
+        "path": "dist/extensions/llm-task/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "lmstudio",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/lmstudio/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "lobster",
+        "categories": [
+          "agent-orchestration"
+        ],
+        "path": "dist/extensions/lobster/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "logbook",
+        "categories": [
+          "productivity"
+        ],
+        "path": "dist/extensions/logbook/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "longcat",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/longcat/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "matrix",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/matrix/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "mattermost",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/mattermost/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "memory-core",
+        "categories": [
+          "memory"
+        ],
+        "path": "dist/extensions/memory-core/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "memory-lancedb",
+        "categories": [
+          "memory"
+        ],
+        "path": "dist/extensions/memory-lancedb/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "memory-wiki",
+        "categories": [
+          "memory"
+        ],
+        "path": "dist/extensions/memory-wiki/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "meta",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/meta/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "microsoft",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/microsoft/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "microsoft-foundry",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/microsoft-foundry/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "migrate-claude",
+        "categories": [
+          "integrations"
+        ],
+        "path": "dist/extensions/migrate-claude/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "migrate-hermes",
+        "categories": [
+          "integrations"
+        ],
+        "path": "dist/extensions/migrate-hermes/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "minimax",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/minimax/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "mistral",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/mistral/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "moonshot",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/moonshot/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "msteams",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/msteams/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "mxc",
+        "categories": [
+          "security"
+        ],
+        "path": "dist/extensions/mxc/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "nextcloud-talk",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/nextcloud-talk/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "nostr",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/nostr/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "novita",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/novita/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "nvidia",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/nvidia/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "oc-path",
+        "categories": [
+          "documents-files"
+        ],
+        "path": "dist/extensions/oc-path/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "ollama",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/ollama/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "onepassword",
+        "categories": [
+          "security"
+        ],
+        "path": "dist/extensions/onepassword/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "openai",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/openai/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "opencode",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/opencode/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "opencode-go",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/opencode-go/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "openrouter",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/openrouter/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "openshell",
+        "categories": [
+          "security"
+        ],
+        "path": "dist/extensions/openshell/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "parallel",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/parallel/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "perplexity",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/perplexity/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "pixverse",
+        "categories": [
+          "media"
+        ],
+        "path": "dist/extensions/pixverse/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "policy",
+        "categories": [
+          "security"
+        ],
+        "path": "dist/extensions/policy/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "qianfan",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/qianfan/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "qwen",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/qwen/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "raft",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/raft/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "reef",
+        "categories": [
+          "agent-orchestration"
+        ],
+        "path": "dist/extensions/reef/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "runway",
+        "categories": [
+          "media"
+        ],
+        "path": "dist/extensions/runway/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "searxng",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/searxng/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "senseaudio",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/senseaudio/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "sglang",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/sglang/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "signal",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/signal/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "slack",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/slack/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "sms",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/sms/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "stepfun",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/stepfun/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "synology-chat",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/synology-chat/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "synthetic",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/synthetic/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "talk-voice",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/talk-voice/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "tavily",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/tavily/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "team-reports",
+        "categories": [
+          "data-analytics"
+        ],
+        "path": "dist/extensions/team-reports/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "teams-meetings",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/teams-meetings/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "telegram",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/telegram/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "tencent",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/tencent/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "tlon",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/tlon/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "together",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/together/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "tokenjuice",
+        "categories": [
+          "context"
+        ],
+        "path": "dist/extensions/tokenjuice/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "tts-local-cli",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/tts-local-cli/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "twitch",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/twitch/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "vault",
+        "categories": [
+          "security"
+        ],
+        "path": "dist/extensions/vault/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "venice",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/venice/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "vercel-ai-gateway",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/vercel-ai-gateway/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "visitor-access",
+        "categories": [
+          "security"
+        ],
+        "path": "dist/extensions/visitor-access/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "vllm",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/vllm/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "voice-call",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/voice-call/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "volcengine",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/volcengine/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "voyage",
+        "categories": [
+          "memory"
+        ],
+        "path": "dist/extensions/voyage/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "vydra",
+        "categories": [
+          "media"
+        ],
+        "path": "dist/extensions/vydra/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "web-readability",
+        "categories": [
+          "web"
+        ],
+        "path": "dist/extensions/web-readability/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "webhooks",
+        "categories": [
+          "integrations"
+        ],
+        "path": "dist/extensions/webhooks/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "whatsapp",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/whatsapp/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "workboard",
+        "categories": [
+          "productivity"
+        ],
+        "path": "dist/extensions/workboard/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "xai",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/xai/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "xiaomi",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/xiaomi/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "zai",
+        "categories": [
+          "models"
+        ],
+        "path": "dist/extensions/zai/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "zalo",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/zalo/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "zalouser",
+        "categories": [
+          "channels"
+        ],
+        "path": "dist/extensions/zalouser/openclaw.plugin.json"
+      },
+      {
+        "pluginId": "zoom-meetings",
+        "categories": [
+          "voice"
+        ],
+        "path": "dist/extensions/zoom-meetings/openclaw.plugin.json"
+      }
+    ]
+  },
+  "validation": {
+    "clawhubUnitPassed": 6516,
+    "clawhubUnitSkipped": 3,
+    "clawhubTypesBuild": "passed",
+    "clawhubPackages": "passed",
+    "autoreview": "clean; no findings",
+    "clawhubStaticRemaining": "seven unchanged dependency audit advisories, reproduced on baseline",
+    "openclawFocusedTests": 50,
+    "openclawRuntimeTests": 253,
+    "openclawRuntimeAndUiBuild": "passed",
+    "openclawBroaderChangedGate": "unchanged expired plugin-SDK compatibility guard, reproduced on baseline"
+  },
+  "scenario": "clawhub-single-category-production-sample",
+  "provider": "real local Convex, running applications, and real browser",
+  "baseline": {
+    "clawhubCommit": "c95ea7745049e92f69b33e42696635ea374238eb",
+    "openclawCommit": "c8960487ad31f42647c2f133ad3a78b8dbab054a",
+    "state": "Earlier multi-category code and prior 40 bundled updates on the same production sample"
+  },
+  "candidate": {
+    "clawhubCommit": "c84bf8ed751c26fa9c3a982c3bdfca4b09489632",
+    "openclawCommit": "43d9cdff8f4ecd0d9e1e1b084ffffb1ea30beb28",
+    "state": "Single-category code and 97 reviewed latest-release assignments"
+  },
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "Developer tools: 6 → 8 results",
+          "slug": "developer-tools",
+          "screenshot": "developer-tools.png",
+          "status": "passed"
+        },
+        {
+          "name": "Documents & files: membership changes, 2 results",
+          "slug": "documents-files",
+          "screenshot": "documents-files.png",
+          "status": "passed"
+        },
+        {
+          "name": "Mobile: Inbox & collaboration, 11 → 2 results",
+          "slug": "mobile",
+          "screenshot": "mobile.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Developer tools: 6 → 8 results",
+          "slug": "developer-tools",
+          "screenshot": "developer-tools.png",
+          "status": "passed"
+        },
+        {
+          "name": "Documents & files: membership changes, 2 results",
+          "slug": "documents-files",
+          "screenshot": "documents-files.png",
+          "status": "passed"
+        },
+        {
+          "name": "Mobile: Inbox & collaboration, 11 → 2 results",
+          "slug": "mobile",
+          "screenshot": "mobile.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "beforeBrowser": {
+    "phase": "before",
+    "source": "realClawHubLocalConvexProductionSample",
+    "categories": 21,
+    "captures": [
+      {
+        "state": "desktop",
+        "url": "http://127.0.0.1:4320/plugins?sort=updated",
+        "rows": 25,
+        "empty": false
+      },
+      {
+        "state": "developer-tools",
+        "url": "http://127.0.0.1:4320/plugins?category=developer-tools",
+        "rows": 6,
+        "empty": false
+      },
+      {
+        "state": "documents-files",
+        "url": "http://127.0.0.1:4320/plugins?category=documents-files",
+        "rows": 2,
+        "empty": false
+      },
+      {
+        "state": "mobile",
+        "url": "http://127.0.0.1:4320/plugins?category=inbox-collaboration",
+        "rows": 11,
+        "empty": false
+      }
+    ],
+    "pageErrors": []
+  },
+  "afterBrowser": {
+    "phase": "after",
+    "source": "realClawHubLocalConvexProductionSample",
+    "categories": 21,
+    "captures": [
+      {
+        "state": "desktop",
+        "url": "http://127.0.0.1:4320/plugins?sort=updated",
+        "rows": 25,
+        "empty": false
+      },
+      {
+        "state": "developer-tools",
+        "url": "http://127.0.0.1:4320/plugins?category=developer-tools",
+        "rows": 8,
+        "empty": false
+      },
+      {
+        "state": "documents-files",
+        "url": "http://127.0.0.1:4320/plugins?category=documents-files",
+        "rows": 2,
+        "empty": false
+      },
+      {
+        "state": "mobile",
+        "url": "http://127.0.0.1:4320/plugins?category=inbox-collaboration",
+        "rows": 2,
+        "empty": false
+      }
+    ],
+    "pageErrors": []
+  }
+}
