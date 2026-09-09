@@ -102,6 +102,7 @@ describe("packageSearchDigest", () => {
       channel: "community",
       scanStatus: "clean",
       softDeletedAt: undefined,
+      latestVersion: "1.0.0",
     };
 
     const ctx = {
@@ -165,6 +166,7 @@ describe("packageSearchDigest", () => {
       channel: "community",
       scanStatus: "clean",
       softDeletedAt: undefined,
+      latestVersion: "1.0.0",
     };
 
     const ctx = {

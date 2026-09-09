@@ -781,6 +781,13 @@ API shape rule:
   never accompany the published `@openclaw/whatsapp` in normal discovery.
   Owner management/detail access and explicitly staff-only moderation APIs
   retain their separate authorization rules and may inspect withheld records.
+- Explicit `channel=private` list/search requests may return published private
+  packages the authenticated caller is authorized to read; reservations,
+  unpublished, deleted, and blocked packages remain excluded.
+- Public plugin counts and topic suggestions use the same public publication
+  criteria. After deploying this eligibility change, the existing
+  `statsMaintenance:updateGlobalStatsAction` recount repairs historical totals;
+  the daily global-stats cron also performs this reconciliation.
 - family-specific endpoints are allowed for install and publish semantics
 - code-plugin download/install endpoints must not be overloaded for bundle
   plugins

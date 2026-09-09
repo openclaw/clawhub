@@ -11,7 +11,7 @@ type SkillVisibilityFields = Pick<
   Partial<Pick<Doc<"skills">, "moderationVerdict">>;
 type PackageVisibilityFields = Pick<
   Doc<"packageSearchDigest">,
-  "softDeletedAt" | "family" | "channel" | "scanStatus"
+  "softDeletedAt" | "family" | "channel" | "scanStatus" | "latestVersion"
 >;
 
 type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, "db">;
@@ -40,7 +40,7 @@ export function getPublicSkillVisibilityDelta(
 export function isPublicPluginDoc<T extends PackageVisibilityFields>(
   pkg: T | null | undefined,
 ): pkg is T {
-  if (!pkg || pkg.softDeletedAt) return false;
+  if (!pkg || pkg.softDeletedAt || !pkg.latestVersion) return false;
   if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") return false;
   if (pkg.channel === "private") return false;
   if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;

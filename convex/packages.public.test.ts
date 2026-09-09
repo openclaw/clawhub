@@ -4819,7 +4819,7 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["public-plugin"]);
   });
 
-  it("returns no private catalog entries even when owners filter for them", async () => {
+  it("allows owners to explicitly browse published private packages", async () => {
     const { ctx, indexNames } = makeDigestCtx({
       pages: [
         {
@@ -4845,7 +4845,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:owner",
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual([]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin"]);
     expect(indexNames).toEqual(["by_active_channel_updated"]);
   });
 
@@ -5024,7 +5024,7 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["youtube"]);
   });
 
-  it("excludes private packages from catalog search even for owners", async () => {
+  it("allows owners to explicitly search published private packages", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
@@ -5051,7 +5051,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:owner",
     });
 
-    expect(result.map((entry) => entry.package.name)).toEqual([]);
+    expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
   });
 
   it("uses bounded topic and fallback digest takes for search", async () => {
@@ -5360,7 +5360,7 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["agentmail", "email"]);
   });
 
-  it("excludes private packages from catalog search even for org collaborators", async () => {
+  it("allows org collaborators to explicitly search published private packages", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
         {
@@ -5392,7 +5392,7 @@ describe("packages public queries", () => {
       viewerUserId: "users:member",
     });
 
-    expect(result.map((entry) => entry.package.name)).toEqual([]);
+    expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
   });
 
   it("uses the active updated index for public listings", async () => {

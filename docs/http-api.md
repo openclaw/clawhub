@@ -588,8 +588,9 @@ Notes:
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
 - Anonymous callers only see public package channels.
-- Authenticated callers can see private packages for publishers they belong to in list/search results.
-- `channel=private` only returns packages the authenticated caller can read.
+- List/search defaults to public, published plugin packages, including for authenticated callers.
+- Explicit `channel=private` returns published private packages the authenticated caller can read.
+- Reservations, unpublished, deleted, and blocked plugin packages are excluded from list/search.
 
 ### `GET /api/v1/packages/search`
 
@@ -611,8 +612,9 @@ Notes:
 - Invalid values for `family`, `channel`, `isOfficial`, `featured`, or
   `highlightedOnly` return `400`. Unknown query parameters are ignored.
 - Anonymous callers only see public package channels.
-- Authenticated callers can search private packages for publishers they belong to.
-- `channel=private` only returns packages the authenticated caller can read.
+- Search defaults to public, published plugin packages, including for authenticated callers.
+- Explicit `channel=private` returns published private packages the authenticated caller can read.
+- Reservations, unpublished, deleted, and blocked plugin packages are excluded from search.
 
 ### `GET /api/v1/plugins`
 

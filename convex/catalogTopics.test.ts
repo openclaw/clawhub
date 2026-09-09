@@ -76,6 +76,7 @@ function makePluginCategoryDigest(overrides: Record<string, unknown> = {}) {
     isOfficial: false,
     ownerUserId: "users:owner",
     pluginCategory: "runtime",
+    latestVersion: "1.0.0",
     scanStatus: "clean",
     createdAt: 1,
     updatedAt: 2,

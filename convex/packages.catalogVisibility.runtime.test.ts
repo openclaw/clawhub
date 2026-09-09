@@ -4,7 +4,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { hashToken } from "./lib/tokens";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
@@ -17,6 +17,12 @@ async function fixture(role: "user" | "admin" = "admin") {
   const t = convexTest(schema, modules);
   registerRateLimiter(t);
   const fixtureOwnerUserId = await t.run(async (ctx) => {
+    await ctx.db.insert("globalStats", {
+      key: "default",
+      activeSkillsCount: 0,
+      activePluginsCount: 0,
+      updatedAt: 1,
+    });
     const ownerUserId = await ctx.db.insert("users", { handle: "maintainer", role });
     await ctx.db.insert("apiTokens", {
       userId: ownerUserId,
@@ -62,7 +68,7 @@ async function fixture(role: "user" | "admin" = "admin") {
         scanStatus: options.scanStatus ?? "clean",
         softDeletedAt: options.softDeletedAt,
         categories: ["channels"],
-        topics: ["WhatsApp"],
+        topics: expectedNames.includes(options.name) ? ["WhatsApp"] : ["WhatsApp", "Withheld Only"],
         tags: {},
         stats: { downloads: 1, installs: 1, stars: 0, versions: published ? 1 : 0 },
         createdAt: 1,
@@ -137,11 +143,14 @@ const routes = [
   "/api/v1/bundle-plugins",
   "/api/v1/plugins?channel=private",
   "/api/v1/plugins/search?q=whatsapp&channel=private",
+  "/api/v1/plugins?channel=private&category=channels",
+  "/api/v1/plugins?channel=private&highlightedOnly=true",
+  "/api/v1/plugins?channel=private&sort=downloads",
 ];
 
 describe("normal plugin catalog visibility", () => {
   it.each(["anonymous", "user", "admin"] as const)(
-    "only discovers published public plugins as %s",
+    "requires explicit authorized opt-in to discover published private plugins as %s",
     async (viewer) => {
       const { t, ownerUserId } = await fixture(viewer === "user" ? "user" : "admin");
       const headers: Record<string, string> =
@@ -150,11 +159,14 @@ describe("normal plugin catalog visibility", () => {
         const response = await t.fetch(route, { headers });
         expect(response.status, route).toBe(200);
         const body = await response.json();
+        if (route === "/api/v1/plugins") expect(body.totalCount).toBe(2);
         const names = body.results
           ? body.results.map((entry: { package: { name: string } }) => entry.package.name)
           : body.items.map((entry: { name: string }) => entry.name);
         const expected = route.includes("channel=private")
-          ? []
+          ? viewer === "anonymous"
+            ? []
+            : ["whatsapp-private"]
           : route.includes("/code-plugins")
             ? ["@openclaw/whatsapp"]
             : route.includes("/bundle-plugins")
@@ -163,6 +175,13 @@ describe("normal plugin catalog visibility", () => {
         expect(names.sort(), route).toEqual(expected);
       }
       const browser = viewer === "anonymous" ? t : t.withIdentity({ subject: ownerUserId });
+      expect(await browser.query(api.packages.countPublicPlugins, {})).toBe(2);
+      expect(
+        await browser.query(api.catalogTopics.listTopByCategory, {
+          kind: "plugin",
+          category: "channels",
+        }),
+      ).toEqual(["whatsapp"]);
       expect(
         (await browser.query(api.packages.searchPublic, { query: "whatsapp" }))
           .map((entry) => entry.package.name)
@@ -179,6 +198,40 @@ describe("normal plugin catalog visibility", () => {
       ).toEqual(expectedNames);
     },
   );
+
+  it("does not expose private plugins to an unrelated authenticated user", async () => {
+    const { t } = await fixture();
+    const outsiderBearer = `${bearer}-outsider`;
+    await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", { handle: "outsider", role: "user" });
+      await ctx.db.insert("apiTokens", {
+        userId,
+        label: "outsider fixture",
+        prefix: "local",
+        tokenHash: await hashToken(outsiderBearer),
+        createdAt: Date.now(),
+      });
+    });
+    for (const route of routes.filter((path) => path.includes("channel=private"))) {
+      const response = await t.fetch(route, {
+        headers: { Authorization: `Bearer ${outsiderBearer}` },
+      });
+      expect(response.status, route).toBe(200);
+      const body = await response.json();
+      expect(body.results ?? body.items, route).toEqual([]);
+    }
+  });
+
+  it("reconciles existing counts without counting unpublished placeholders", async () => {
+    const { t } = await fixture();
+    await t.run(async (ctx) => {
+      const stats = await ctx.db.query("globalStats").unique();
+      if (!stats) throw new Error("Missing fixture stats");
+      await ctx.db.patch(stats._id, { activePluginsCount: 5 });
+    });
+    await t.action(internal.statsMaintenance.updateGlobalStatsAction, {});
+    expect(await t.query(api.packages.countPublicPlugins, {})).toBe(2);
+  });
 
   it.each([false, true])(
     "paginates past placeholders without losing public plugins (authenticated=%s)",

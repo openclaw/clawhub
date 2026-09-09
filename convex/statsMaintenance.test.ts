@@ -308,36 +308,42 @@ describe("public package digest count maintenance", () => {
     const paginate = vi.fn().mockResolvedValue({
       page: [
         {
+          latestVersion: "1.0.0",
           family: "code-plugin",
           channel: "community",
           scanStatus: "clean",
           softDeletedAt: undefined,
         },
         {
+          latestVersion: "1.0.0",
           family: "bundle-plugin",
           channel: "official",
           scanStatus: "not-run",
           softDeletedAt: undefined,
         },
         {
+          latestVersion: "1.0.0",
           family: "skill",
           channel: "community",
           scanStatus: "clean",
           softDeletedAt: undefined,
         },
         {
+          latestVersion: "1.0.0",
           family: "code-plugin",
           channel: "private",
           scanStatus: "clean",
           softDeletedAt: undefined,
         },
         {
+          latestVersion: "1.0.0",
           family: "bundle-plugin",
           channel: "community",
           scanStatus: "malicious",
           softDeletedAt: undefined,
         },
         {
+          latestVersion: "1.0.0",
           family: "code-plugin",
           channel: "community",
           scanStatus: "clean",
