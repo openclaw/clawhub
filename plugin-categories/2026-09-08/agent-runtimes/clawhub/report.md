@@ -191,3 +191,11 @@ The existing 100-plugin local sample was reverified with this final compatibilit
 The two stale browser expectations failed before correction and both pass after correction against real local ClawHub (canonical API and desktop/mobile filtering). The backfill operator is a new manual workflow; its 31 focused tests cover review hashes, current evidence, dry-run/apply and failure reporting, and retained bounded diagnostics. A real CLI invocation rejected a non-main target, and the native local component dry-run confirmed rollback output semantics. The existing 100-plugin proof establishes backend migration behavior; this evidence does not claim the new GitHub workflow has run in production.
 
 The final combined candidate is `2ccf32837b9fd4364c3f7e85deac2c6f448838f0`: full static (including dependency audit), type/build and unit gates pass (6,576 tests, three skipped); autoreview is clean under the documented deployment-freeze requirement. Operators must keep deployment fixed until the asynchronous migration completes. Production remains unchanged at this point.
+
+## Production release and CLI routing correction
+
+The application deployed successfully at `494c348a1cd95a3fb447a408d561a57ad15be9c2`, with verified backend contracts, frontend/UI smoke checks and restored external import settings. The first read-only operator status failed before any category preview or apply: named deployment selection bypassed the Convex CLI deployment-key path. Follow-up `1306efabb17cc33f67c568f6c612f1622db3d81d` removes that selector while retaining the exact production credential-prefix guard and adds sanitized operation/exit diagnostics.
+
+Native CLI regression reproduces the old team/project lookup and corrected deployment-key routing for all five adapter command forms using a loopback fixture. Real local Convex read-only adapter checks also pass. Static and 6,578 unit tests pass; autoreview is clean. No category backfill has started at this point.
+
+The preserved production baseline contains 1,843 returned public plugins (advertised count 1,850) and 1,933 exact lookups, all currently null. It cannot prove preservation of historical production category values; those checks will be reported as skipped. The separate local physical-state preservation proof remains valid.

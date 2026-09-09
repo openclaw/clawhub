@@ -6433,5 +6433,65 @@
       "desktop and mobile filtering"
     ],
     "docs": "22 active values distinguished from readable retired slugs"
+  },
+  "operatorRoutingFollowup": {
+    "baseCommit": "494c348a1cd95a3fb447a408d561a57ad15be9c2",
+    "productionFailureRun": "34314935694",
+    "rootCause": "Explicit named --deployment is resolved before deploy-key environment selection; it requests cloud team/project lookup instead of binding the deployment key.",
+    "nativeFixture": {
+      "endpoint": "loopback provision service only",
+      "credential": "non-secret fixture key",
+      "baseline": "GET /api/deployment/operator-fixture-123/team_and_project",
+      "fixed": "POST /api/deployment/url_for_key",
+      "operations": [
+        "appMeta run",
+        "component getStatus",
+        "inline journal query",
+        "environment names",
+        "category model"
+      ]
+    },
+    "localRuntimeProof": {
+      "target": "local3320",
+      "appMetaReadable": true,
+      "hasApiKey": true,
+      "usesLuna": true,
+      "migrationStates": [
+        "success"
+      ],
+      "acceptedCount": 0,
+      "writes": false
+    },
+    "focusedTests": 33,
+    "autoreview": "clean; gpt-5.6-sol; TruffleHog clean",
+    "productionWrites": false,
+    "commit": "1306efabb17cc33f67c568f6c612f1622db3d81d",
+    "fullUnit": {
+      "passed": 6578,
+      "filesPassed": 491,
+      "skippedTests": 3
+    },
+    "static": "passed",
+    "typecheck": "pass",
+    "unitPassed": 6578,
+    "unitSkipped": 3
+  },
+  "productionRollout": {
+    "appCommit": "494c348a1cd95a3fb447a408d561a57ad15be9c2",
+    "test": "https://github.com/openclaw/clawhub/actions/runs/34314409979",
+    "backend": "https://github.com/openclaw/clawhub/actions/runs/34314783861",
+    "frontend": "https://github.com/openclaw/clawhub/actions/runs/34314915585",
+    "backendAndFrontendVerified": true,
+    "externalImportsRestoredAndVerified": true,
+    "categoryBackfillStarted": false,
+    "operatorStatusFailure": "https://github.com/openclaw/clawhub/actions/runs/34314935694",
+    "baseline": {
+      "publicEntries": 1843,
+      "advertisedTotal": 1850,
+      "historicalTargets": 90,
+      "resolvableHistoricalCategories": 0,
+      "exactResponses": 1933,
+      "allExactCategoriesNull": true
+    }
   }
 }
