@@ -63,6 +63,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../../components/ui/tooltip";
 import { UserBadge } from "../../components/UserBadge";
 import { getActivityTrendEndDay } from "../../lib/activityTrend";
 import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
@@ -1478,25 +1484,67 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           .replace(/^https?:\/\//, "")
           .replace(/\/$/, "");
         return (
-          <a href={href} target="_blank" rel="noopener noreferrer" className="plugin-external-link">
-            <GitHubIcon />
-            {display}
-          </a>
+          <div>
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="plugin-external-link"
+            >
+              <GitHubIcon />
+              {display}
+            </a>
+            {latestRelease?.curation?.author ? (
+              <p className="text-sm text-muted-foreground">
+                Source author: {latestRelease.curation.author}
+              </p>
+            ) : null}
+            {latestRelease?.curation?.omittedCapabilities.length ? (
+              <p className="text-sm text-muted-foreground">
+                Omitted unsupported components:{" "}
+                {latestRelease.curation.omittedCapabilities.join(", ")}
+              </p>
+            ) : null}
+          </div>
         );
       })()
     : null;
   const pluginHeroCreator = heroCreatorPublisher ? (
-    <UserBadge
-      user={heroCreatorPublisher}
-      fallbackHandle={heroCreatorPublisher.handle ?? pkg.ownerHandle ?? null}
-      prefix=""
-      size="md"
-      showName
-      showHandle={false}
-      showMutedHandle
-      stackMutedHandleBelowName
-      disableTooltip
-    />
+    <div className="flex items-center gap-2">
+      <UserBadge
+        user={heroCreatorPublisher}
+        fallbackHandle={heroCreatorPublisher.handle ?? pkg.ownerHandle ?? null}
+        prefix=""
+        size="md"
+        showName
+        showHandle={false}
+        showMutedHandle
+        stackMutedHandleBelowName
+        disableTooltip
+      />
+      {owner?.staffCustody &&
+      latestRelease?.curation?.authorship === "company" &&
+      latestRelease.verification?.sourceRepo?.toLowerCase() ===
+        owner.staffCustody.sourceRepo.toLowerCase() ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="About this imported publisher"
+                className="text-muted-foreground"
+              >
+                <Info size={14} aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              ClawHub imported this plugin from the linked company source. The publisher is
+              claimable by the company.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : null}
+    </div>
   ) : null;
   const hasSourceMetadata = Boolean(sourceRepoLink || owner || latestRelease || pkg.latestVersion);
   const securitySummary = latestRelease ? (

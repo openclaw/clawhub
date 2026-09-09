@@ -1,3 +1,4 @@
+import type { CuratedPluginImport } from "clawhub-schema";
 import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
@@ -44,6 +45,7 @@ export type PackageVersionDetail = {
   } | null;
   version: {
     version: string;
+    curation?: (CuratedPluginImport & { syncedAt: number }) | null;
     createdAt: number;
     changelog: string;
     distTags?: string[];

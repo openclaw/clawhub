@@ -81,6 +81,18 @@ export async function preparePlugin({
         delete files[path];
     }
   }
+  const declaredIcon = candidate.icon?.replace(/^\.\//, "");
+  const iconPath =
+    declaredIcon &&
+    !declaredIcon.startsWith("/") &&
+    !declaredIcon.includes("\\") &&
+    !declaredIcon.split("/").includes("..") &&
+    files[declaredIcon]
+      ? declaredIcon
+      : undefined;
+  const icon = iconPath
+    ? `https://raw.githubusercontent.com/${source.repo}/${snapshot.commit}/${[source.path, iconPath].filter(Boolean).join("/").split("/").map(encodeURIComponent).join("/")}`
+    : undefined;
   const runtimeId = `${source.integration}-${source.job}`;
   const native = files["openclaw.plugin.json"]
     ? JSON.parse(Buffer.from(files["openclaw.plugin.json"]).toString())
@@ -95,6 +107,7 @@ export async function preparePlugin({
         id: runtimeId,
         name: displayName,
         description: candidate.description,
+        icon,
         categories: candidate.categories,
         configSchema: native.configSchema ?? {
           type: "object",
@@ -122,6 +135,7 @@ export async function preparePlugin({
     omittedCapabilities: candidate.capabilities.omitted,
     licenses: candidate.license.files.map(({ text: _, ...file }) => file),
     notices: candidate.license.notices,
+    ...(candidate.icon && !icon ? { omittedIcon: candidate.icon } : {}),
   };
   files["CLAWHUB_SOURCE.json"] = Buffer.from(JSON.stringify(provenance, null, 2) + "\n");
   const hashes = hashSkillFiles(

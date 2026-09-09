@@ -56,6 +56,10 @@ import {
 import { generatePackageChangelogPreview } from "./lib/changelog";
 import { sha256Hex } from "./lib/clawpack";
 import {
+  curatedPluginProvenanceValidator,
+  validateCuratedPluginPublisher,
+} from "./lib/curatedPluginProvenance";
+import {
   ACTIVITY_TREND_DAYS,
   buildDailyMetricTrends,
   clampActivityTrendEndDay,
@@ -8679,6 +8683,21 @@ async function publishPackageImpl(
     }
     ownerUserId = ownerTarget?.linkedUserId ?? actorUserId;
     ownerPublisherId = ownerTarget?.publisherId;
+    if (payload.curation) {
+      const publisher = ownerPublisherId
+        ? await runQueryRef<Doc<"publishers"> | null>(
+            ctx,
+            internalRefs.publishers.getByIdInternal,
+            { publisherId: ownerPublisherId },
+          )
+        : null;
+      validateCuratedPluginPublisher({
+        actor: actor ?? {},
+        publisher,
+        sourceRepo: effectiveSource?.repo,
+        curation: payload.curation,
+      });
+    }
     if (existingTrustedPublisher && !manualOverrideReason && actor?.role !== "admin") {
       throw new ConvexError(
         "Manual publishes for packages with trusted publisher config require manualOverrideReason",
@@ -8687,6 +8706,16 @@ async function publishPackageImpl(
     publishActor = { kind: "user", userId: actorUserId };
   }
 
+  if (
+    payload.curation &&
+    (auth.kind !== "user" ||
+      !effectiveSource?.commit ||
+      !/^[a-f0-9]{40}$/.test(effectiveSource.commit))
+  ) {
+    throw new ConvexError(
+      "Curated plugins require a staff publish pinned to an exact GitHub commit",
+    );
+  }
   const displayName = payload.displayName?.trim() || name;
   const { files, legacyZipEntries } = await verifyPublishFileStorageMetadata(
     ctx,
@@ -9037,6 +9066,7 @@ async function publishPackageImpl(
     pluginManifestSummary,
     clawManifestSummary: validatedClaw?.summary,
     source: effectiveSource,
+    curation: payload.curation ? { ...payload.curation, syncedAt: Date.now() } : undefined,
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
     trustedPublishInventoryDigest: auth.kind === "github-actions" ? inventoryDigest : undefined,
   };
@@ -9050,7 +9080,11 @@ async function publishPackageImpl(
 
   // Curated imports require the normal checks even before global staging rollout.
   // A caller can strengthen the gate, never opt out of the deployment policy.
-  if (options.stagePrePublicationChecks || payload.requirePrepublicationChecks) {
+  if (
+    options.stagePrePublicationChecks ||
+    payload.requirePrepublicationChecks ||
+    payload.curation
+  ) {
     let existingRelease: Doc<"packageReleases"> | null = null;
     if (existingPackage) {
       existingRelease = await runQueryRef<Doc<"packageReleases"> | null>(
@@ -11410,6 +11444,16 @@ export const publishPendingReleaseInternal = internalMutation({
       }
     }
 
+    if (release.curation && !manualRecovery) {
+      const actor = release.createdBy ? await ctx.db.get(release.createdBy) : null;
+      const publisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+      validateCuratedPluginPublisher({
+        actor: actor ?? {},
+        publisher,
+        sourceRepo: release.source?.repo,
+        curation: release.curation,
+      });
+    }
     const now = Date.now();
     const firstPublishedRelease = hasNoPublishedPackageVersions(pkg);
     const pendingFamily = stringPendingField(metadata, "family", pkg.family) as PackageFamily;
@@ -11586,6 +11630,7 @@ export const insertReleaseInternal = internalMutation({
     pluginManifestSummary: v.optional(v.any()),
     clawManifestSummary: v.optional(v.any()),
     source: v.optional(v.any()),
+    curation: v.optional(curatedPluginProvenanceValidator),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
     trustedPublishInventoryDigest: v.optional(v.string()),
   },
@@ -11700,6 +11745,13 @@ export const insertReleaseInternal = internalMutation({
     if (args.channel === "official" && !publisherOfficial) {
       throw new ConvexError("Only official publishers may publish to the official channel");
     }
+    if (args.curation)
+      validateCuratedPluginPublisher({
+        actor,
+        publisher: ownerPublisher,
+        sourceRepo: args.source?.repo,
+        curation: args.curation,
+      });
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
     const existingIsReservation = isReservedPackagePlaceholder(existing);
     const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
@@ -11906,6 +11958,7 @@ export const insertReleaseInternal = internalMutation({
       staticScan: args.staticScan,
       llmAnalysis: args.llmAnalysis,
       source: args.source,
+      curation: args.curation,
       createdBy: args.actorUserId,
       publishActor: args.publishActor,
       createdAt: now,

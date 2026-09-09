@@ -78,6 +78,25 @@ export async function applyBatch(
         changelog: `Imported ${item.source.repo} at ${item.provenance.commit}. Source SHA-256: ${item.sourceContentHash}.`,
         requirePrepublicationChecks: true,
         expectedInventoryDigest: item.artifactHash,
+        curation: {
+          integration: item.source.integration,
+          job: item.source.job,
+          authorship: item.source.authorship,
+          repositoryId: item.source.repositoryId,
+          ownerId: item.source.ownerId,
+          sourceContentHash: item.sourceContentHash,
+          author:
+            typeof item.provenance.author === "string"
+              ? item.provenance.author
+              : item.provenance.author &&
+                  typeof item.provenance.author === "object" &&
+                  "name" in item.provenance.author &&
+                  typeof item.provenance.author.name === "string"
+                ? item.provenance.author.name
+                : undefined,
+          omittedCapabilities: item.provenance.omittedCapabilities,
+          format: item.source.format,
+        },
         json: true,
       });
       if (!result?.attemptId || !["pending", "published"].includes(result.publicationStatus ?? ""))
