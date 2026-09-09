@@ -92,6 +92,16 @@ export const migrations = new Migrations(components.migrations, {
   defaultBatchSize: 25,
 });
 
+// Only explicitly reviewed rows can change package metadata. Component cursors make apply resumable.
+export const applyAcceptedPluginCategoryRefreshes = migrations.define({
+  table: "pluginCategoryRefreshes",
+  batchSize: 10,
+  customRange: (query) => query.withIndex("by_status", (q) => q.eq("status", "accepted")),
+  migrateOne: async (ctx, row) => {
+    await ctx.runMutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+  },
+});
+
 export function shouldPreserveSkillModerationLock(skill: Doc<"skills">) {
   if (skill.softDeletedAt) return true;
   if (skill.moderationStatus !== "hidden") return false;

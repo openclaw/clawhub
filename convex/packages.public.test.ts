@@ -1172,6 +1172,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.mocked(getAuthUserId).mockReset();
   vi.mocked(getAuthUserId).mockResolvedValue(null);
 });
@@ -12787,10 +12789,31 @@ describe("packages public queries", () => {
     );
   });
 
-  it("forwards valid manifest icons and derives categories when declarations are omitted", async () => {
+  it("publishes model categories when omitted and preserves explicit manifest categories", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+    const modelFetch = vi.fn(async () =>
+      Response.json({
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  categories: ["scheduling"],
+                  evidence: "Manages appointments and availability.",
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", modelFetch);
     async function publishWithManifestIcon(
       icon: unknown,
       bundleManifest?: Record<string, unknown>,
+      declaredCategories?: string[],
     ) {
       const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
         if (args.minimumRole === "publisher") {
@@ -12818,7 +12841,13 @@ describe("packages public queries", () => {
         ],
         [
           "storage:manifest",
-          JSON.stringify({ id: "demo.plugin", icon, contracts: { tools: ["demoTool"] } }),
+          JSON.stringify({
+            id: "demo.plugin",
+            icon,
+            categories: declaredCategories,
+            description: "Manages appointments and availability.",
+            contracts: { tools: ["demoTool"] },
+          }),
         ],
         ...(bundleManifest
           ? ([["storage:bundle-manifest", JSON.stringify(bundleManifest)]] as Array<
@@ -12929,8 +12958,12 @@ describe("packages public queries", () => {
       publishWithManifestIcon("https://cdn.example.test/icons/demo.svg"),
     ).resolves.toMatchObject({
       icon: "https://cdn.example.test/icons/demo.svg",
-      categories: ["tools"],
-      pluginManifestSummary: { categories: ["tools"] },
+      categories: ["scheduling"],
+      pluginManifestSummary: { categories: ["scheduling"] },
+      categoryClassification: {
+        source: "generated",
+        evidence: "Manages appointments and availability.",
+      },
     });
     await expect(
       publishWithManifestIcon(undefined, {
@@ -12939,8 +12972,25 @@ describe("packages public queries", () => {
         kind: "memory",
       }),
     ).resolves.toMatchObject({
-      categories: ["tools", "channels", "models"],
-      pluginManifestSummary: { categories: ["tools", "channels", "models"] },
+      categories: ["scheduling"],
+      pluginManifestSummary: { categories: ["scheduling"] },
+    });
+
+    modelFetch.mockClear();
+    await expect(
+      publishWithManifestIcon(undefined, undefined, ["productivity", "scheduling"]),
+    ).resolves.toMatchObject({
+      categories: ["productivity", "scheduling"],
+      categoryClassification: { source: "manifest" },
+    });
+    expect(modelFetch).not.toHaveBeenCalled();
+
+    modelFetch.mockImplementation(async () =>
+      Response.json({ error: "unavailable" }, { status: 503 }),
+    );
+    await expect(publishWithManifestIcon(undefined)).resolves.toMatchObject({
+      categories: ["other"],
+      categoryClassification: { source: "fallback" },
     });
 
     for (const icon of [

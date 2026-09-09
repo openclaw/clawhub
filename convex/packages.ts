@@ -3,7 +3,6 @@ import {
   PACKAGE_CATEGORY_BATCH_LIMIT,
   validateClawPackageContents,
   derivePluginCategoryTags,
-  inferPluginCategoriesFromManifest,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   INTERNAL_UNCATEGORIZED_CATEGORY,
@@ -104,6 +103,11 @@ import {
   resolvePackageReleaseScanStatus,
 } from "./lib/packageSecurity";
 import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
+import {
+  classifyPluginCategories,
+  pluginCategoryClassificationValidator,
+  type PluginCategoryClassification,
+} from "./lib/pluginCategoryClassification";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
@@ -8953,20 +8957,19 @@ async function publishPackageImpl(
       readmeText: readmeEntry?.text ?? null,
     });
   let categories: string[];
+  let categoryClassification: PluginCategoryClassification | undefined;
   let normalizedTopics: string[];
   try {
     if (family === "code-plugin" || family === "bundle-plugin") {
-      const inferredCategories = [
-        ...new Set([
-          ...inferPluginCategoriesFromManifest(pluginManifest),
-          ...inferPluginCategoriesFromManifest(bundleManifest),
-        ]),
-      ].slice(0, 3);
-      categories = derivePluginCategoryTags({
-        family,
+      const assignment = await classifyPluginCategories({
+        name,
         pluginManifest,
-        inferredCategories,
+        packageJson,
+        bundleManifest,
+        documentation: readmeEntry?.text,
       });
+      categories = assignment.categories;
+      categoryClassification = assignment.classification;
     } else {
       const declaredCategories =
         payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
@@ -9092,6 +9095,7 @@ async function publishPackageImpl(
     extractedPluginManifest: storedPluginManifest,
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     pluginManifestSummary,
+    categoryClassification,
     clawManifestSummary: validatedClaw?.summary,
     source: effectiveSource,
     trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
@@ -11635,6 +11639,7 @@ export const insertReleaseInternal = internalMutation({
     extractedPluginManifest: v.optional(v.any()),
     normalizedBundleManifest: v.optional(v.any()),
     pluginManifestSummary: v.optional(v.any()),
+    categoryClassification: v.optional(pluginCategoryClassificationValidator),
     clawManifestSummary: v.optional(v.any()),
     source: v.optional(v.any()),
     trustedPublishTokenId: v.optional(v.id("packagePublishTokens")),
@@ -11949,6 +11954,7 @@ export const insertReleaseInternal = internalMutation({
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
       pluginManifestSummary: args.pluginManifestSummary,
+      categoryClassification: args.categoryClassification,
       clawManifestSummary: args.clawManifestSummary,
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,

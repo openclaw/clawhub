@@ -115,6 +115,7 @@ import type * as lib_packageRuntimeIdentity from "../lib/packageRuntimeIdentity.
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
 import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
+import type * as lib_pluginCategoryClassification from "../lib/pluginCategoryClassification.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_publicBrowse from "../lib/publicBrowse.js";
 import type * as lib_publicRouteReservations from "../lib/publicRouteReservations.js";
@@ -179,6 +180,7 @@ import type * as packageLeaderboards from "../packageLeaderboards.js";
 import type * as packagePublishRecovery from "../packagePublishRecovery.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
+import type * as pluginCategoryRefresh from "../pluginCategoryRefresh.js";
 import type * as prepublicationObservability from "../prepublicationObservability.js";
 import type * as promotions from "../promotions.js";
 import type * as promotionsFeed from "../promotionsFeed.js";
@@ -340,6 +342,7 @@ declare const fullApi: ApiFromModules<{
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/packageSecurity": typeof lib_packageSecurity;
   "lib/packageStatEvents": typeof lib_packageStatEvents;
+  "lib/pluginCategoryClassification": typeof lib_pluginCategoryClassification;
   "lib/public": typeof lib_public;
   "lib/publicBrowse": typeof lib_publicBrowse;
   "lib/publicRouteReservations": typeof lib_publicRouteReservations;
@@ -404,6 +407,7 @@ declare const fullApi: ApiFromModules<{
   packagePublishRecovery: typeof packagePublishRecovery;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
+  pluginCategoryRefresh: typeof pluginCategoryRefresh;
   prepublicationObservability: typeof prepublicationObservability;
   promotions: typeof promotions;
   promotionsFeed: typeof promotionsFeed;

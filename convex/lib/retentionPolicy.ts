@@ -139,6 +139,9 @@ export const RETENTION_POLICIES = {
     "Catalog classification output can be recomputed from package and skill metadata.",
     "skills/packages",
   ),
+  pluginCategoryRefreshes: permanent(
+    "Reviewed category migration decisions and before/after evidence required for guarded rollback.",
+  ),
   packageInspectorWarnings: permanent("Package inspector findings are user-facing review history."),
   packageInspectorFindingNotifications: permanent(
     "Notification sent-log prevents duplicate emails.",

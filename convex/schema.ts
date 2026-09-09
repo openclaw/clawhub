@@ -7,6 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassification";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -705,7 +706,7 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
-const pluginManifestSummaryValidator = v.object({
+export const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
   categories: v.optional(v.array(v.string())),
   icon: v.optional(v.string()),
@@ -1884,6 +1885,7 @@ const packageReleases = defineTable({
   normalizedBundleManifest: v.optional(v.any()),
   manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
+  categoryClassification: v.optional(pluginCategoryClassificationValidator),
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
@@ -1958,6 +1960,39 @@ const packageReleases = defineTable({
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
+
+// Retained as review/apply history: regenerating a preview never erases an accepted decision.
+const pluginCategoryRefreshes = defineTable({
+  runId: v.string(),
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  packageName: v.string(),
+  version: v.string(),
+  beforeHash: v.string(),
+  beforeCategories: v.optional(v.array(v.string())),
+  beforeReleaseCategories: v.optional(v.array(v.string())),
+  beforeHadSummary: v.boolean(),
+  newReleaseSummary: v.optional(pluginManifestSummaryValidator),
+  beforeClassification: v.optional(pluginCategoryClassificationValidator),
+  categories: v.array(v.string()),
+  classification: pluginCategoryClassificationValidator,
+  status: v.union(
+    v.literal("preview"),
+    v.literal("accepted"),
+    v.literal("applied"),
+    v.literal("stale"),
+    v.literal("rolled-back"),
+  ),
+  createdAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  appliedAt: v.optional(v.number()),
+  afterHash: v.optional(v.string()),
+  rolledBackAt: v.optional(v.number()),
+  reason: v.optional(v.string()),
+})
+  .index("by_run_package", ["runId", "packageId"])
+  .index("by_run", ["runId"])
+  .index("by_status", ["status"]);
 
 const catalogClassificationResults = defineTable({
   targetKind: v.union(v.literal("skill"), v.literal("plugin")),
@@ -4495,6 +4530,7 @@ export default defineSchema({
   packages,
   packageReleases,
   catalogClassificationResults,
+  pluginCategoryRefreshes,
   packageInspectorWarnings,
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
