@@ -485,27 +485,40 @@ export async function operate(
 }
 
 const execute = promisify(execFile);
-function cliClient(): Client {
-  const invoke = async (args: string[]) => {
+export function processFailureClass(error: unknown) {
+  const failure = error as { code?: unknown; killed?: unknown } | null;
+  if (failure?.killed === true) return "timeout";
+  if (failure?.code === "ENOENT") return "executable-missing";
+  if (failure?.code === "EACCES") return "executable-denied";
+  if (failure?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "output-limit";
+  if (typeof failure?.code === "number" && Number.isInteger(failure.code))
+    return `exit-${failure.code}`;
+  return "process-error";
+}
+
+export function createConvexCliClient(): Client {
+  const invoke = async (operation: string, args: string[]) => {
     try {
-      const { stdout } = await execute(
-        "node",
-        ["node_modules/convex/bin/main.js", ...args, "--deployment", TARGET],
-        { timeout: 240_000, maxBuffer: 8 * 1024 * 1024 },
-      );
+      // A named --deployment bypasses deploy-key resolution in Convex CLI.
+      // parseOptions already binds the credential to prod:wry-manatee-359;
+      // let that credential select its deployment without a cloud-login path.
+      const { stdout } = await execute("node", ["node_modules/convex/bin/main.js", ...args], {
+        timeout: 240_000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
       return stdout;
-    } catch {
+    } catch (error) {
       // CLI diagnostics can include source or deployment configuration. Never
       // forward stdout/stderr/error objects to Actions logs or proof artifacts.
       throw new OperatorError(
-        "Convex operation failed; inspect the deployed function and retry the checkpoint.",
+        `Convex ${operation} failed (${processFailureClass(error)}); inspect the deployed function and retry the checkpoint.`,
       );
     }
   };
   return {
     run: async <T>(name: string, args: Json, component = false) =>
       JSON.parse(
-        await invoke([
+        await invoke(name, [
           "run",
           "--codegen",
           "disable",
@@ -515,13 +528,15 @@ function cliClient(): Client {
         ]),
       ) as T,
     query: async <T>(source: string) =>
-      JSON.parse(await invoke(["run", "--codegen", "disable", "--inline-query", source])) as T,
+      JSON.parse(
+        await invoke("journal-query", ["run", "--codegen", "disable", "--inline-query", source]),
+      ) as T,
     envNames: async () =>
-      (await invoke(["env", "list", "--names-only"]))
+      (await invoke("environment-names", ["env", "list", "--names-only"]))
         .split(/\r?\n/)
         .map((name) => name.trim())
         .filter(Boolean),
-    model: () => invoke(["env", "get", "OPENAI_PLUGIN_CATEGORY_MODEL"]),
+    model: () => invoke("category-model", ["env", "get", "OPENAI_PLUGIN_CATEGORY_MODEL"]),
     taxonomyMatches: async () => {
       const response = await fetch("https://clawhub.ai/api/v1/plugins/categories", {
         signal: AbortSignal.timeout(15_000),
@@ -550,7 +565,7 @@ if (import.meta.main) {
   };
   try {
     const options = parseOptions(process.env);
-    const result = await operate(cliClient(), options, checkpoint);
+    const result = await operate(createConvexCliClient(), options, checkpoint);
     await checkpoint({
       target: TARGET,
       expectedSha: options.sha,
