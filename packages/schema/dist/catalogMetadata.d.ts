@@ -7,107 +7,107 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "channels";
     readonly label: "Channels";
     readonly icon: "message-circle";
-    readonly description: "Messaging transports that let people talk to the agent through a channel.";
+    readonly description: "Human-agent messaging transports and channel adapters. Choose this when the main purpose is letting people talk to the agent through a messaging service, even if the adapter also exposes workspace tools.";
 }, {
     readonly slug: "models";
     readonly label: "Models";
     readonly icon: "brain";
-    readonly description: "Model providers, inference backends, and model routing.";
+    readonly description: "General model providers, inference backends, and model routing. Specialized speech or media generators belong in Voice or Media when that is their main purpose.";
 }, {
     readonly slug: "memory";
     readonly label: "Memory";
     readonly icon: "database";
-    readonly description: "Memory providers, embeddings, and retrieval.";
+    readonly description: "Durable agent memory, embeddings, and retrieval across conversations. Building or compacting the active conversation context belongs in Context.";
 }, {
     readonly slug: "context";
     readonly label: "Context";
     readonly icon: "book-open";
-    readonly description: "Context engines and context management.";
+    readonly description: "Building, selecting, compacting, or managing the active conversation context. Durable memory storage and retrieval belong in Memory.";
 }, {
     readonly slug: "voice";
     readonly label: "Voice";
     readonly icon: "message-square";
-    readonly description: "Speech synthesis, transcription, voice calls, and audio interaction.";
+    readonly description: "Speech synthesis, transcription, voice calls, and spoken interaction. Music and general media creation or analysis belong in Media.";
 }, {
     readonly slug: "web";
     readonly label: "Web";
     readonly icon: "globe";
-    readonly description: "Web search providers, browser control, and fetching web pages.";
+    readonly description: "General web search, browser control, and fetching web pages. A tool whose main purpose is a specific research or business workflow belongs in that workflow's category.";
 }, {
     readonly slug: "media";
     readonly label: "Media";
     readonly icon: "palette";
-    readonly description: "Image, video, audio, and other media understanding or generation.";
+    readonly description: "Creating, transforming, or understanding images, video, music, and other media. Spoken interaction and transcription belong in Voice.";
 }, {
     readonly slug: "security";
     readonly label: "Security";
     readonly icon: "shield";
-    readonly description: "Authentication, authorization, security controls, and policy enforcement.";
+    readonly description: "Protecting access and enforcing trust through authentication, authorization, credential controls, security auditing, or policy. Authentication incidental to another purpose does not belong here.";
 }, {
     readonly slug: "integrations";
     readonly label: "Integrations";
     readonly icon: "plug";
-    readonly description: "General connectors, API bridges, and service integration platforms. Prefer a specific use category when the connected service has a clear purpose.";
+    readonly description: "General connectors, API bridges, and service integration platforms without a more specific user purpose. A connector to a particular workflow belongs in that workflow's category; exposing tools or MCP is not enough.";
 }, {
     readonly slug: "developer-tools";
     readonly label: "Developer tools";
     readonly icon: "code-xml";
-    readonly description: "Writing, reviewing, testing, and debugging software; coding agents and development environments.";
+    readonly description: "Writing, reviewing, testing, and debugging software, including coding agents, coding-agent harnesses, and development environments. General coordination of agents belongs in Agent orchestration.";
 }, {
     readonly slug: "infrastructure";
     readonly label: "Infrastructure";
     readonly icon: "server";
-    readonly description: "Deploying, hosting, monitoring, and operating systems, networks, services, and agent runtimes.";
+    readonly description: "Deploying, hosting, monitoring, and operating systems, networks, services, execution environments, and agent runtimes. Coding-agent harnesses belong in Developer tools; agent delegation belongs in Agent orchestration.";
 }, {
     readonly slug: "documents-files";
     readonly label: "Documents & files";
     readonly icon: "files";
-    readonly description: "Reading, creating, extracting, transferring, and managing documents and files.";
+    readonly description: "Reading, creating, extracting, transferring, and managing documents and files. Software code review belongs in Developer tools; task and project management belongs in Productivity.";
 }, {
     readonly slug: "inbox-collaboration";
     readonly label: "Inbox & collaboration";
     readonly icon: "inbox";
-    readonly description: "Managing email, inboxes, team communication, and collaborative workspaces. Channel transport alone belongs in Channels.";
+    readonly description: "Managing email, inboxes, team communication, and collaborative workspaces. Providing a transport for people to talk to the agent belongs in Channels.";
 }, {
     readonly slug: "productivity";
     readonly label: "Productivity";
     readonly icon: "list-todo";
-    readonly description: "Tasks, notes, projects, planning, and personal or team work management.";
+    readonly description: "Managing tasks, notes, projects, plans, and personal or team work. Appointments and availability belong in Scheduling; document processing belongs in Documents & files.";
 }, {
     readonly slug: "scheduling";
     readonly label: "Scheduling";
     readonly icon: "calendar-days";
-    readonly description: "Calendars, appointments, availability, and booking. Technical job scheduling belongs with the workflow it supports.";
+    readonly description: "Calendars, appointments, availability, and booking. Technical job scheduling belongs with the workflow it supports, or Infrastructure for general system scheduling.";
 }, {
     readonly slug: "finance-payments";
     readonly label: "Finance & payments";
     readonly icon: "wallet-cards";
-    readonly description: "Payments, banking, accounting, financial markets, trading, and financial analysis.";
+    readonly description: "Payments, billing, accounting, banking, trading, and financial workflows. General business reporting belongs in Data & analytics.";
 }, {
     readonly slug: "sales-marketing";
     readonly label: "Sales & marketing";
     readonly icon: "megaphone";
-    readonly description: "Customer relationships, sales, support, outreach, campaigns, and marketing operations.";
+    readonly description: "Customer relationships, sales, customer support, outreach, campaigns, and marketing operations. General email or chat management belongs in Inbox & collaboration.";
 }, {
     readonly slug: "data-analytics";
     readonly label: "Data & analytics";
     readonly icon: "chart-no-axes-combined";
-    readonly description: "Querying databases, processing datasets, analysis, reporting, and business intelligence. Agent memory storage belongs in Memory.";
+    readonly description: "Querying databases, processing datasets, analysis, reporting, and business intelligence. Agent memory storage belongs in Memory; operational telemetry belongs in Infrastructure.";
 }, {
     readonly slug: "agent-orchestration";
     readonly label: "Agent orchestration";
     readonly icon: "workflow";
-    readonly description: "Coordinating agents, delegating work, and running multi-step agent workflows.";
+    readonly description: "Coordinating agents, delegating work, and running multi-step agent workflows. Coding-agent harnesses belong in Developer tools; hosting and operating runtimes belong in Infrastructure.";
 }, {
     readonly slug: "research";
     readonly label: "Research";
     readonly icon: "search";
-    readonly description: "Investigating topics, finding and evaluating sources, scientific literature, and synthesizing evidence. General web access belongs in Web.";
+    readonly description: "Investigating topics, evaluating sources, working with scientific literature, and synthesizing evidence. General web search, browsing, and page fetching belong in Web.";
 }, {
     readonly slug: "other";
     readonly label: "Other";
     readonly icon: "package";
-    readonly description: "Plugins that do not yet fit another browse category.";
+    readonly description: "Use only when the plugin's main purpose does not fit another category or the available evidence is insufficient. Do not use this just because a plugin has several capabilities.";
 }];
 export declare const LEGACY_PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "tools";
