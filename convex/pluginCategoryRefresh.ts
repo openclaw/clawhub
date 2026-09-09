@@ -225,23 +225,25 @@ export const preview = internalAction({
           docs.push(text);
           remaining -= text.length;
         }
-        const assignment = current.bundled
-          ? {
-              categories: getDeclaredPluginCategoriesFromManifest(current.bundled)!,
-              classification: {
-                source: "bundled" as const,
-                classifierVersion: `bundled-product-categories:${bundledInventory.sourceCommit}`,
-                inputHash: current.bundled.manifestSha256,
-                evidence: `Reviewed OpenClaw bundled manifest: extensions/${current.bundled.pluginId}/openclaw.plugin.json`,
-              },
-            }
-          : await classifyPluginCategories({
-              name: current.pkg.name,
-              pluginManifest,
-              packageJson: current.release.extractedPackageJson,
-              bundleManifest: current.release.normalizedBundleManifest,
-              documentation: docs.join("\n"),
-            });
+        // The published artifact's declaration wins over a newer bundled inventory assignment.
+        const assignment =
+          current.bundled && !getDeclaredPluginCategoriesFromManifest(pluginManifest)
+            ? {
+                categories: getDeclaredPluginCategoriesFromManifest(current.bundled)!,
+                classification: {
+                  source: "bundled" as const,
+                  classifierVersion: `bundled-product-categories:${bundledInventory.sourceCommit}`,
+                  inputHash: current.bundled.manifestSha256,
+                  evidence: `Reviewed OpenClaw bundled manifest: extensions/${current.bundled.pluginId}/openclaw.plugin.json`,
+                },
+              }
+            : await classifyPluginCategories({
+                name: current.pkg.name,
+                pluginManifest,
+                packageJson: current.release.extractedPackageJson,
+                bundleManifest: current.release.normalizedBundleManifest,
+                documentation: docs.join("\n"),
+              });
         const id = await ctx.runMutation(internal.pluginCategoryRefresh.storePreview, {
           runId: args.runId,
           packageId,
@@ -266,12 +268,18 @@ export const preview = internalAction({
           }
         } else {
           skipped++;
-          diagnostics.push({ packageId, reason: "Release or category evidence changed during preview." });
+          diagnostics.push({
+            packageId,
+            reason: "Release or category evidence changed during preview.",
+          });
         }
       } catch {
         // Individual malformed artifacts must not prevent a cursor from advancing.
         failed++;
-        diagnostics.push({ packageId, reason: "Artifact evidence could not be read or validated." });
+        diagnostics.push({
+          packageId,
+          reason: "Artifact evidence could not be read or validated.",
+        });
       }
     }
     return { cursor: page.cursor, isDone: page.isDone, previewed, skipped, failed, diagnostics };
@@ -346,7 +354,10 @@ export const applyAccepted = internalMutation({
     }
     const summary = release.pluginManifestSummary ?? row.newReleaseSummary;
     if (!summary) {
-      await ctx.db.patch(id, { status: "stale", reason: "Generate a new preview with manifest summary evidence." });
+      await ctx.db.patch(id, {
+        status: "stale",
+        reason: "Generate a new preview with manifest summary evidence.",
+      });
       return { applied: false };
     }
     const nextRelease = {

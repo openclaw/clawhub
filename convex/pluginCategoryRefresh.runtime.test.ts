@@ -103,26 +103,34 @@ describe("latest plugin category refresh", () => {
       await ctx.db.patch(latest.releaseId, {
         extractedPluginManifest: undefined,
         pluginManifestSummary: undefined,
-        files: [{ path: "openclaw.plugin.json", size: manifest.length, sha256: "manifest", storageId }],
+        files: [
+          { path: "openclaw.plugin.json", size: manifest.length, sha256: "manifest", storageId },
+        ],
       });
     });
     await t.action(internal.pluginCategoryRefresh.preview, { runId: "stored-manifest" });
     const rows = await t.query(internal.pluginCategoryRefresh.list, {
-      runId: "stored-manifest", paginationOpts: { cursor: null, numItems: 10 },
+      runId: "stored-manifest",
+      paginationOpts: { cursor: null, numItems: 10 },
     });
     await t.mutation(internal.pluginCategoryRefresh.accept, {
-      ids: [rows.page[0]._id], confirm: "apply-plugin-category-refresh",
+      ids: [rows.page[0]._id],
+      confirm: "apply-plugin-category-refresh",
     });
     await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
     const release = await t.run(async (ctx) => ctx.db.get(latest.releaseId));
     expect(release?.pluginManifestSummary).toMatchObject({
-      categories: ["scheduling"], configFields: [{ name: "apiKey" }],
+      categories: ["scheduling"],
+      configFields: [{ name: "apiKey" }],
       mcpServers: [{ name: "appointments" }],
     });
     await t.mutation(internal.pluginCategoryRefresh.rollback, {
-      id: rows.page[0]._id, confirm: "rollback-plugin-category-refresh",
+      id: rows.page[0]._id,
+      confirm: "rollback-plugin-category-refresh",
     });
-    expect((await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.pluginManifestSummary).toBeUndefined();
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.pluginManifestSummary,
+    ).toBeUndefined();
   });
 
   it("uses reviewed bundled assignments only for verified OpenClaw package identities", async () => {
@@ -133,7 +141,7 @@ describe("latest plugin category refresh", () => {
         normalizedName: "@openclaw/imap",
       });
       await ctx.db.patch(latest.releaseId, {
-        extractedPluginManifest: { id: "imap", categories: ["tools"] },
+        extractedPluginManifest: { id: "imap" },
         source: { repo: "openclaw/openclaw" },
       });
     });
@@ -143,7 +151,7 @@ describe("latest plugin category refresh", () => {
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(unverified.page).toMatchObject([
-      { categories: ["tools"], classification: { source: "manifest" } },
+      { categories: ["scheduling"], classification: { source: "generated" } },
     ]);
     await t.run(async (ctx) => ctx.db.patch(publisherId, { handle: "openclaw", kind: "org" }));
     await t.action(internal.pluginCategoryRefresh.preview, { runId: "verified" });
@@ -154,8 +162,42 @@ describe("latest plugin category refresh", () => {
     expect(verified.page).toMatchObject([
       { categories: ["inbox-collaboration"], classification: { source: "bundled" } },
     ]);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
+
+  it.each([{ categories: ["tools"] }, { categories: ["productivity", "scheduling"] }])(
+    "preserves explicit bundled release categories $categories through preview and apply",
+    async ({ categories }) => {
+      const { t, latest, publisherId } = await fixture();
+      await t.run(async (ctx) => {
+        await ctx.db.patch(publisherId, { handle: "openclaw", kind: "org" });
+        await ctx.db.patch(latest.packageId, {
+          name: "@openclaw/imap",
+          normalizedName: "@openclaw/imap",
+        });
+        await ctx.db.patch(latest.releaseId, {
+          extractedPluginManifest: { id: "imap", categories },
+          source: { repo: "openclaw/openclaw" },
+        });
+      });
+      await t.action(internal.pluginCategoryRefresh.preview, { runId: "bundled-declaration" });
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "bundled-declaration",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(rows.page).toMatchObject([{ categories, classification: { source: "manifest" } }]);
+      await t.mutation(internal.pluginCategoryRefresh.accept, {
+        ids: [rows.page[0]._id],
+        confirm: "apply-plugin-category-refresh",
+      });
+      await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
+      const exactVersion = await t.query(internal.packages.resolveVersionCategoriesBatchInternal, {
+        packages: [{ name: "@openclaw/imap", version: "2.0.0" }],
+      });
+      expect(exactVersion[0].categories).toEqual(categories);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not overwrite a newer release or category edit after preview approval", async () => {
     const { t, publish, latest, readCategories } = await fixture();
