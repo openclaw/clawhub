@@ -1,0 +1,80 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "plugin-publisher-badges",
+  "provider": "local-playwright-real-convex",
+  "baseline": "6b25e866fb",
+  "candidate": "9a63b68cdf07f4cbc1a620d555a6ed21530fd2bc",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "Search dropdown; typical + long title (1440×900)",
+          "slug": "typeahead-desktop",
+          "screenshot": "typeahead-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin search list; typical + long title (1440×900)",
+          "slug": "list-desktop",
+          "screenshot": "list-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin cards; typical + long title (1440×900)",
+          "slug": "cards-desktop",
+          "screenshot": "cards-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin search list; typical + long title (390×844)",
+          "slug": "list-mobile",
+          "screenshot": "list-mobile.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin browse; typical + long title (390×844)",
+          "slug": "browse-mobile",
+          "screenshot": "browse-mobile.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Search dropdown; typical + long title (1440×900)",
+          "slug": "typeahead-desktop",
+          "screenshot": "typeahead-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin search list; typical + long title (1440×900)",
+          "slug": "list-desktop",
+          "screenshot": "list-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin cards; typical + long title (1440×900)",
+          "slug": "cards-desktop",
+          "screenshot": "cards-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin search list; typical + long title (390×844)",
+          "slug": "list-mobile",
+          "screenshot": "list-mobile.png",
+          "status": "passed"
+        },
+        {
+          "name": "Plugin browse; typical + long title (390×844)",
+          "slug": "browse-mobile",
+          "screenshot": "browse-mobile.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}
