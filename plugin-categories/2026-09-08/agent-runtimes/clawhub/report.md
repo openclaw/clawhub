@@ -179,3 +179,9 @@ All 99 proposals and model/source explanations, including six holds, are retaine
 ## Compatibility rollout follow-up
 
 A separate native local Convex check at compatibility candidate `f6d0d1f0b1` verifies five malformed historical declarations remain manageable and a valid ordered Other/Models/Voice declaration agrees across exact-version HTTP and all three browse filters. All six regressions failed before the fix. An independent source-blind validator also exercised the built CLI: all eight warning/help/JSON/empty-value/topics/Claw dry-run clauses passed. CLI dry runs prove preparation and output, not backend publication. The combined compatibility layer passes 6,531 unit tests (3 skipped), full static, type/build and package gates. Scoped source reviews are clean. Detailed sanitized results are in `summary.json` under `compatibilityFollowup`; the earlier screenshots remain the recorded 22-category sample comparison.
+
+## Historical bundle rollout follow-up
+
+At `7782f11c758f758d4dd070e403e957ca8f3ac214`, the refresh also recognizes bounded bundle metadata from historical releases predating the required OpenClaw root. The exact public Higgsfield 1.0.2 artifact changed from a missing-evidence skip to a Media proposal after one real gpt-5.6-luna call. Native local apply, exact-version HTTP verification, unchanged files and exact rollback passed. Actual OpenClaw roots remain authoritative; malformed or missing evidence is not bypassed.
+
+The existing 100-plugin local sample was reverified with this final compatibility backend: 93 applied, 73 category values changed, all 190 exact releases and all 22 filters consistent; 90 historical and seven unselected latest releases unchanged. Full combined static, type/build and unit gates passed (6,545 tests, three skipped). Production remains unchanged at this proof timestamp.

@@ -6334,5 +6334,63 @@
       "packages": "passed",
       "autoreview": "both scoped reviews clean; combined diff manually inspected"
     }
+  },
+  "historicalBundleFollowup": {
+    "head": "7782f11c758f758d4dd070e403e957ca8f3ac214",
+    "runtime": {
+      "checkedAt": "2026-09-09T05:06:41.019Z",
+      "runtime": "Disposable local Convex on ports 3360/3361",
+      "package": "higgsfield-mcp",
+      "version": "1.0.2",
+      "before": {
+        "previewed": false,
+        "skipReason": "No bounded plugin manifest evidence."
+      },
+      "after": {
+        "previewed": true,
+        "categories": [
+          "media"
+        ],
+        "classification": {
+          "classifierVersion": "plugin-single-category-v3",
+          "evidence": "The plugin connects to Higgsfield's MCP service primarily to generate AI images and videos, while also supporting related assets, presets, models, and generation jobs.",
+          "inputHash": "fff7a1d30c3cc20336eff2410ef5e6812d23a888634653260b2cbc5a9c45dbc9",
+          "source": "generated"
+        },
+        "bundledSkills": [
+          {
+            "name": "higgsfield",
+            "skillMdPath": "skills/higgsfield/SKILL.md"
+          }
+        ]
+      },
+      "publicArtifactHashesVerified": true,
+      "realModelCalls": 1,
+      "model": "gpt-5.6-luna",
+      "applied": true,
+      "exactVersionHttpVerified": true,
+      "sourceFilesUnchanged": true,
+      "rollbackPackageAndReleaseExact": true,
+      "modelEnvironmentRemoved": true,
+      "productionWrites": false,
+      "main100PluginProofUntouched": true
+    },
+    "combinedValidation": {
+      "static": "passed",
+      "unitPassed": 6545,
+      "unitSkipped": 3,
+      "typesBuild": "passed",
+      "autoreview": "clean; parent inspected combined diff"
+    },
+    "existingSampleReverified": {
+      "checkedAt": "2026-09-09T05:09:50.676Z",
+      "latestReleasesApplied": 93,
+      "categoryValuesChanged": 73,
+      "packagesVerified": 100,
+      "publicExactVersionsVerified": 190,
+      "historicalReleasesUnchanged": 90,
+      "unselectedLatestReleasesUnchanged": 7,
+      "sourceFilesHashesStorageReferencesAndOtherReleaseMetadataUnchanged": true
+    }
   }
 }
