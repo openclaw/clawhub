@@ -29,3 +29,13 @@ The same policy signal appears in several places:
 
 `trustedPublisher` is an internal automated-publish permission. It does not make
 a publisher or package Official.
+
+## Staff custody for curated company plugins
+
+A staff-custodied company organization records the reviewed GitHub organization ID and ownership evidence. Establishing custody requires an active staff administrator and an organization whose members are all active staff, including an owner. Custody does not grant Official status; the existing official-publisher decision remains separate.
+
+Company-authored imports require matching custody. Registry-authored imports retain the Cursor, OpenAI or Anthropic publisher and never acquire represented-company authorship from manifest branding. Curated provenance is a staff-only, typed release field, accompanied by `CLAWHUB_SOURCE.json` inside the scanned artifact. Source attribution, hashes and omitted capabilities remain part of immutable release history.
+
+A company adopts custody through the existing publisher membership and connected GitHub organization verification flow. The claimant must own the publisher and have fresh administrator membership for the exact recorded GitHub organization ID. Adoption removes the custody disclosure and stops subsequent staff synchronization, including pending publications rechecked before becoming public. Existing moderation recovery remains the explicit override path. Adoption does not change package IDs or old releases.
+
+Imported icons may point only at exact-commit files preserved within the MIT-licensed source closure. External image URLs are omitted and recorded; imports do not scrape company logos.

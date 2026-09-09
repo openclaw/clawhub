@@ -4583,6 +4583,31 @@ export const seedCompanyPluginImportFixtures = internalMutation({
         publisher = await ctx.db.get(id);
       }
       const publisherId = publisher!._id;
+      if (handle === "fixture-company") {
+        await ctx.db.patch(publisherId, {
+          staffCustody: {
+            repositoryOwner: handle,
+            repositoryOwnerId: 20,
+            sourceRepo: `${handle}/plugins`,
+            evidenceUrl: "https://example.com/company-plugins",
+            establishedAt: now,
+            establishedBy: admin._id,
+          },
+        });
+      }
+      const official = await ctx.db
+        .query("officialPublishers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+        .unique();
+      if (!official)
+        await ctx.db.insert("officialPublishers", {
+          publisherId,
+          reason: "Controlled company import acceptance fixture",
+          createdByUserId: admin._id,
+          createdAt: now,
+          updatedAt: now,
+        });
+
       const member = await ctx.db
         .query("publisherMembers")
         .withIndex("by_publisher_user", (q) =>

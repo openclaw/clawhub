@@ -156,6 +156,19 @@ test("curated company and registry bundles cross the real catalog and download b
         continue;
       }
       await expect.poll(async () => (await request.get(url)).status()).toBe(200);
+      const detail = await (await request.get(url)).json();
+      expect(detail.package.categories).toContain("tools");
+      expect(detail.package.isOfficial).toBe(true);
+      const version = await (await request.get(`${url}/versions/${item.version}`)).json();
+      expect(version.version.curation).toMatchObject({
+        authorship: item.source.authorship,
+        author: item.source.authorship === "company" ? "Fixture Company" : "Cursor",
+        sourceContentHash: item.sourceContentHash,
+        omittedCapabilities: ["rules"],
+      });
+      if (item.source.authorship === "company")
+        expect(detail.owner.staffCustody).toEqual({ sourceRepo: "fixture-company/plugins" });
+      else expect(detail.owner.staffCustody).toBeUndefined();
       const download = await request.get(`${url}/download?version=${item.version}`);
       expect(download.ok()).toBe(true);
       const bytes = await download.body();
@@ -218,6 +231,18 @@ test("curated company and registry bundles cross the real catalog and download b
       });
       await page.goto(`/${item.source.publisher}/plugins/${item.source.integration}-notes`);
       await expect(page.getByRole("heading", { level: 1 })).toContainText(item.source.integration);
+      await expect(
+        page.getByText(
+          `Source author: ${item.source.authorship === "company" ? "Fixture Company" : "Cursor"}`,
+        ),
+      ).toBeVisible();
+      if (item.source.authorship === "company") {
+        await page.getByRole("button", { name: "About this imported publisher" }).hover();
+        await expect(page.getByRole("tooltip")).toContainText("claimable by the company");
+      } else
+        await expect(
+          page.getByRole("button", { name: "About this imported publisher" }),
+        ).toHaveCount(0);
       await testInfo.attach(`${item.source.publisher}-${item.source.integration}.png`, {
         body: await page.screenshot({ fullPage: true }),
         contentType: "image/png",

@@ -6,6 +6,7 @@ import {
   canonicalTrendingCardValidator,
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
+import { curatedPluginProvenanceValidator } from "./lib/curatedPluginProvenance";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
@@ -241,6 +242,16 @@ const authRefreshTokens = defineTable({
   .index("by_expiration_time", ["expirationTime"]);
 
 const publishers = defineTable({
+  staffCustody: v.optional(
+    v.object({
+      repositoryOwner: v.string(),
+      repositoryOwnerId: v.number(),
+      sourceRepo: v.string(),
+      evidenceUrl: v.string(),
+      establishedAt: v.number(),
+      establishedBy: v.id("users"),
+    }),
+  ),
   kind: v.union(v.literal("user"), v.literal("org")),
   handle: v.string(),
   displayName: v.string(),
@@ -1942,6 +1953,7 @@ const packageReleases = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  curation: v.optional(curatedPluginProvenanceValidator),
   manualModeration: v.optional(packageReleaseModerationOverrideValidator),
   source: v.optional(v.any()),
   createdBy: v.id("users"),

@@ -525,6 +525,7 @@ type SkillVersionLike = {
 };
 
 type ReleaseLike = {
+  curation?: Doc<"packageReleases">["curation"];
   _id: Id<"packageReleases">;
   packageId: Id<"packages">;
   version: string;
@@ -4157,7 +4158,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
-    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    owner: {
+      _id: Id<"users">;
+      handle?: string;
+      displayName?: string;
+      image?: string;
+      staffCustody?: { sourceRepo: string };
+    } | null;
   } | null;
   const skillDetail = detail?.package
     ? null
@@ -4219,6 +4226,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
               handle: packageOwner.handle ?? null,
               displayName: packageOwner.displayName ?? null,
               image: packageOwner.image ?? null,
+              ...(packageOwner.staffCustody ? { staffCustody: packageOwner.staffCustody } : {}),
             }
           : null,
       },
@@ -4441,6 +4449,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           clawManifestSummary: result.version.clawManifestSummary ?? null,
           verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
+          curation: result.version.curation ?? null,
           sha256hash: result.version.sha256hash ?? null,
           vtAnalysis: result.version.vtAnalysis ?? null,
           skillSpectorAnalysis: result.version.skillSpectorAnalysis ?? null,
@@ -4680,7 +4689,13 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
-    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    owner: {
+      _id: Id<"users">;
+      handle?: string;
+      displayName?: string;
+      image?: string;
+      staffCustody?: { sourceRepo: string };
+    } | null;
   } | null;
   if (!detail?.package) return text("Package not found", 404, rate.headers);
 

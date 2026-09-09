@@ -47,6 +47,7 @@ import {
   MAX_PACKAGE_CLAWPACK_BYTES,
   MAX_PACKAGE_MULTIPART_BYTES,
   normalizeOpenClawExternalPluginCompatibility,
+  type CuratedPluginImport,
   type PackageArtifactSummary,
   type PackageCompatibility,
   type PackageFamily,
@@ -161,6 +162,7 @@ type PublishablePackageFamily = "code-plugin" | "bundle-plugin" | "claw";
 
 type PackagePublishOptions = {
   expectedInventoryDigest?: string;
+  curation?: CuratedPluginImport;
   requirePrepublicationChecks?: boolean;
   family?: PublishablePackageFamily;
   name?: string;
@@ -285,6 +287,7 @@ type InferredPublishSource = {
 type PackagePublishSource = ReturnType<typeof buildSource>;
 
 type PackagePublishPayload = {
+  curation?: CuratedPluginImport;
   requirePrepublicationChecks?: boolean;
   name: string;
   displayName: string;
@@ -2773,6 +2776,7 @@ async function preparePackagePublishPlan(
   const categories = parseCsv(options.categories);
   const topics = parseCsv(options.topics);
   const payload: PackagePublishPayload = {
+    ...(options.curation ? { curation: options.curation } : {}),
     ...(options.requirePrepublicationChecks ? { requirePrepublicationChecks: true } : {}),
     name,
     displayName,

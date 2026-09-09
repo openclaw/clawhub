@@ -19,7 +19,7 @@ export type PublicPublisher = Pick<
   | "linkedUserId"
   | "githubHandle"
   | "githubVerifiedAt"
-> & { official?: boolean };
+> & { official?: boolean; staffCustody?: { sourceRepo: string } };
 
 export type PublicSkillStats = {
   downloads: number;
@@ -144,6 +144,9 @@ export function toPublicPublisher(
     githubHandle: publisher.githubHandle,
     githubVerifiedAt: publisher.githubVerifiedAt,
     ...(options?.official ? { official: true } : {}),
+    ...(publisher.staffCustody
+      ? { staffCustody: { sourceRepo: publisher.staffCustody.sourceRepo } }
+      : {}),
   };
 }
 

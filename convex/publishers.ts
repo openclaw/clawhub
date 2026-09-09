@@ -3193,6 +3193,7 @@ export const updateProfile = mutation({
     }
 
     const now = Date.now();
+    let adoptedStaffCustody = false;
     let githubPatch:
       | {
           githubHandle: string;
@@ -3231,6 +3232,18 @@ export const updateProfile = mutation({
       ) {
         throw new ConvexError("Reconnect GitHub to verify your organization membership");
       }
+      if (publisher.staffCustody) {
+        if (
+          membership.role !== "owner" ||
+          githubMembership.role !== "admin" ||
+          githubOrgId !== String(publisher.staffCustody.repositoryOwnerId)
+        ) {
+          throw new ConvexError(
+            "Claiming custody requires a publisher owner who administers the matching GitHub organization",
+          );
+        }
+        adoptedStaffCustody = true;
+      }
       githubPatch = {
         githubHandle: githubMembership.login,
         githubOrgId: githubMembership.githubOrgId,
@@ -3246,6 +3259,7 @@ export const updateProfile = mutation({
       image: imageUrl,
       imageStorageId,
       ...githubPatch,
+      ...(adoptedStaffCustody ? { staffCustody: undefined } : {}),
       updatedAt: now,
     });
     if (
@@ -3267,6 +3281,7 @@ export const updateProfile = mutation({
         imageStorageId,
         githubHandle: nextGithubHandle,
         githubOrgId: nextGithubOrgId,
+        ...(adoptedStaffCustody ? { adoptedStaffCustody: publisher.staffCustody } : {}),
       },
       createdAt: now,
     });

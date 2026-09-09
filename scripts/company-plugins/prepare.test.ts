@@ -84,3 +84,24 @@ it("removes competing format markers so runtime detection honors the selected fo
   expect(result.files[".cursor-plugin/plugin.json"]).toBeDefined();
   expect((await preparePlugin(input)).artifactHash).toBe(result.artifactHash);
 });
+
+it("links only an icon preserved inside the licensed source closure at its exact commit", async () => {
+  const input = fixture();
+  const marker = "plugins/intercom/.cursor-plugin/plugin.json";
+  const manifest = JSON.parse(input.snapshot.files[marker]);
+  manifest.logo = "./assets/logo.png";
+  input.snapshot.files[marker] = JSON.stringify(manifest);
+  input.snapshot.files["plugins/intercom/assets/logo.png"] = "licensed fixture icon";
+  let prepared = await preparePlugin(input);
+  expect(JSON.parse(Buffer.from(prepared.files["openclaw.plugin.json"]).toString()).icon).toBe(
+    `https://raw.githubusercontent.com/cursor/plugins/${input.snapshot.commit}/plugins/intercom/assets/logo.png`,
+  );
+  expect(prepared.files["assets/logo.png"]).toEqual(Buffer.from("licensed fixture icon"));
+  manifest.logo = "https://unrelated.example/unlicensed.png";
+  input.snapshot.files[marker] = JSON.stringify(manifest);
+  prepared = await preparePlugin(input);
+  expect(
+    JSON.parse(Buffer.from(prepared.files["openclaw.plugin.json"]).toString()).icon,
+  ).toBeUndefined();
+  expect(prepared.provenance.omittedIcon).toBe(manifest.logo);
+});
