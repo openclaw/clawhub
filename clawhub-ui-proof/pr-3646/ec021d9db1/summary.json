@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "plugin-catalog-visibility-and-owner-access",
+  "provider": "local Convex + disposable Playwright Chromium",
+  "baseline": "39ff7db30c2e86beb75ae180f4fdcc85e5b27a6e",
+  "candidate": "ec021d9db1b0087ccab14f94bfd31d726848022a",
+  "localUrl": "http://127.0.0.1:3197/plugins",
+  "backendUrl": "http://127.0.0.1:3298",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "Before: five entries, including unpublished placeholders signed-in catalog",
+          "slug": "owner-catalog",
+          "screenshot": "owner-catalog.png",
+          "status": "passed"
+        },
+        {
+          "name": "Before: five entries, including unpublished placeholders anonymous catalog",
+          "slug": "anonymous-catalog",
+          "screenshot": "anonymous-catalog.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "After: only two published public plugins signed-in catalog",
+          "slug": "owner-catalog",
+          "screenshot": "owner-catalog.png",
+          "status": "passed"
+        },
+        {
+          "name": "After: only two published public plugins anonymous catalog",
+          "slug": "anonymous-catalog",
+          "screenshot": "anonymous-catalog.png",
+          "status": "passed"
+        },
+        {
+          "name": "Retained owner dashboard with private and reserved packages",
+          "slug": "owner-dashboard",
+          "screenshot": "owner-dashboard.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}
