@@ -12077,6 +12077,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.categories.map((category: { slug: string }) => category.slug)).toEqual([
       "channels",
       "models",
+      "agent-runtimes",
       "memory",
       "context",
       "voice",

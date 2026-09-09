@@ -35,7 +35,14 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Models",
     icon: "brain",
     description:
-      "General model providers, inference backends, and model routing. Specialized speech or media generators belong in Voice or Media when that is their main purpose.",
+      "General model providers, inference backends, and model routing. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media when that is their main purpose.",
+  },
+  {
+    slug: "agent-runtimes",
+    label: "Agent runtimes",
+    icon: "bot",
+    description:
+      "Agent execution engines and backends that run model/tool loops and manage native sessions, including Codex, ACP, and Copilot runtimes. Context assembly belongs in Context; coordinating work across agents belongs in Agent orchestration.",
   },
   {
     slug: "memory",
@@ -49,7 +56,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Context",
     icon: "book-open",
     description:
-      "Building, selecting, compacting, or managing the active conversation context. Durable memory storage and retrieval belong in Memory.",
+      "Building, selecting, compacting, or managing the active conversation context. Durable memory belongs in Memory; an engine that runs the agent and owns its native sessions belongs in Agent runtimes.",
   },
   {
     slug: "voice",
@@ -91,14 +98,14 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Developer tools",
     icon: "code-xml",
     description:
-      "Writing, reviewing, testing, and debugging software, including coding agents, coding-agent harnesses, and development environments. General coordination of agents belongs in Agent orchestration.",
+      "Writing, reviewing, testing, and debugging software, development environments, and coding workflows. Plugins whose main purpose is providing the agent execution engine belong in Agent runtimes.",
   },
   {
     slug: "infrastructure",
     label: "Infrastructure",
     icon: "server",
     description:
-      "Deploying, hosting, monitoring, and operating systems, networks, services, execution environments, and agent runtimes. Coding-agent harnesses belong in Developer tools; agent delegation belongs in Agent orchestration.",
+      "Deploying, hosting, monitoring, and operating systems, networks, services, and execution environments. Engines that run the agent loop belong in Agent runtimes; coordinating agents belongs in Agent orchestration.",
   },
   {
     slug: "documents-files",
@@ -154,7 +161,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Agent orchestration",
     icon: "workflow",
     description:
-      "Coordinating agents, delegating work, and running multi-step agent workflows. Coding-agent harnesses belong in Developer tools; hosting and operating runtimes belong in Infrastructure.",
+      "Coordinating agents, delegating work, and running multi-step agent workflows. Engines and backends that execute the agent loop and manage its native sessions belong in Agent runtimes.",
   },
   {
     slug: "research",

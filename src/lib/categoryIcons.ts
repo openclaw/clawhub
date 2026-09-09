@@ -1,6 +1,7 @@
 import {
   Activity,
   BookOpen,
+  Bot,
   Brain,
   CalendarDays,
   ChartNoAxesCombined,
@@ -39,6 +40,7 @@ type CategoryIconComponent = ComponentType<{
 const CATEGORY_ICONS = {
   activity: Activity,
   "book-open": BookOpen,
+  bot: Bot,
   brain: Brain,
   "calendar-days": CalendarDays,
   "chart-no-axes-combined": ChartNoAxesCombined,

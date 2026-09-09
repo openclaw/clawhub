@@ -12,7 +12,12 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "models";
     readonly label: "Models";
     readonly icon: "brain";
-    readonly description: "General model providers, inference backends, and model routing. Specialized speech or media generators belong in Voice or Media when that is their main purpose.";
+    readonly description: "General model providers, inference backends, and model routing. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media when that is their main purpose.";
+}, {
+    readonly slug: "agent-runtimes";
+    readonly label: "Agent runtimes";
+    readonly icon: "bot";
+    readonly description: "Agent execution engines and backends that run model/tool loops and manage native sessions, including Codex, ACP, and Copilot runtimes. Context assembly belongs in Context; coordinating work across agents belongs in Agent orchestration.";
 }, {
     readonly slug: "memory";
     readonly label: "Memory";
@@ -22,7 +27,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "context";
     readonly label: "Context";
     readonly icon: "book-open";
-    readonly description: "Building, selecting, compacting, or managing the active conversation context. Durable memory storage and retrieval belong in Memory.";
+    readonly description: "Building, selecting, compacting, or managing the active conversation context. Durable memory belongs in Memory; an engine that runs the agent and owns its native sessions belongs in Agent runtimes.";
 }, {
     readonly slug: "voice";
     readonly label: "Voice";
@@ -52,12 +57,12 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "developer-tools";
     readonly label: "Developer tools";
     readonly icon: "code-xml";
-    readonly description: "Writing, reviewing, testing, and debugging software, including coding agents, coding-agent harnesses, and development environments. General coordination of agents belongs in Agent orchestration.";
+    readonly description: "Writing, reviewing, testing, and debugging software, development environments, and coding workflows. Plugins whose main purpose is providing the agent execution engine belong in Agent runtimes.";
 }, {
     readonly slug: "infrastructure";
     readonly label: "Infrastructure";
     readonly icon: "server";
-    readonly description: "Deploying, hosting, monitoring, and operating systems, networks, services, execution environments, and agent runtimes. Coding-agent harnesses belong in Developer tools; agent delegation belongs in Agent orchestration.";
+    readonly description: "Deploying, hosting, monitoring, and operating systems, networks, services, and execution environments. Engines that run the agent loop belong in Agent runtimes; coordinating agents belongs in Agent orchestration.";
 }, {
     readonly slug: "documents-files";
     readonly label: "Documents & files";
@@ -97,7 +102,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "agent-orchestration";
     readonly label: "Agent orchestration";
     readonly icon: "workflow";
-    readonly description: "Coordinating agents, delegating work, and running multi-step agent workflows. Coding-agent harnesses belong in Developer tools; hosting and operating runtimes belong in Infrastructure.";
+    readonly description: "Coordinating agents, delegating work, and running multi-step agent workflows. Engines and backends that execute the agent loop and manage its native sessions belong in Agent runtimes.";
 }, {
     readonly slug: "research";
     readonly label: "Research";
@@ -209,7 +214,7 @@ export declare const SKILL_CATEGORY_DEFINITIONS: readonly [{
 }];
 export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"] | (typeof LEGACY_PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
 export type SkillCategorySlug = (typeof SKILL_CATEGORY_DEFINITIONS)[number]["slug"];
-export declare const PLUGIN_CATEGORY_SLUGS: ("agent-orchestration" | "channels" | "context" | "data-analytics" | "developer-tools" | "documents-files" | "finance-payments" | "inbox-collaboration" | "infrastructure" | "integrations" | "media" | "memory" | "models" | "other" | "productivity" | "research" | "sales-marketing" | "scheduling" | "security" | "voice" | "web")[];
+export declare const PLUGIN_CATEGORY_SLUGS: ("agent-orchestration" | "agent-runtimes" | "channels" | "context" | "data-analytics" | "developer-tools" | "documents-files" | "finance-payments" | "inbox-collaboration" | "infrastructure" | "integrations" | "media" | "memory" | "models" | "other" | "productivity" | "research" | "sales-marketing" | "scheduling" | "security" | "voice" | "web")[];
 export declare const SKILL_CATEGORY_SLUGS: ("agents" | "automation" | "communication" | "creative" | "development" | "finance" | "integrations" | "knowledge" | "lifestyle" | "operations" | "other" | "productivity" | "research" | "security")[];
 export declare function isPluginCategorySlug(value: string | null | undefined): value is PluginCategorySlug;
 export declare function isSkillCategorySlug(value: string | null | undefined): value is SkillCategorySlug;

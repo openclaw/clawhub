@@ -125,6 +125,7 @@ describe("plugin categories", () => {
     expect(PLUGIN_CATEGORY_SLUGS).toEqual([
       "channels",
       "models",
+      "agent-runtimes",
       "memory",
       "context",
       "voice",

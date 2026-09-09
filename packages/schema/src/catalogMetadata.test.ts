@@ -20,6 +20,7 @@ describe("catalog metadata", () => {
     expect(PLUGIN_CATEGORY_DEFINITIONS.map((category) => category.slug)).toEqual([
       "channels",
       "models",
+      "agent-runtimes",
       "memory",
       "context",
       "voice",

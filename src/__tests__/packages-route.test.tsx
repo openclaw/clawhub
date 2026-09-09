@@ -625,8 +625,9 @@ describe("plugins route", () => {
     render(<Component />);
 
     const categorySidebar = screen.getByLabelText("Plugin categories");
-    expect(categorySidebar.querySelectorAll("button")).toHaveLength(22);
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(23);
     expect(categorySidebar.textContent).toContain("Channels");
+    expect(categorySidebar.textContent).toContain("Agent runtimes");
     expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
   });
 
