@@ -85,6 +85,7 @@ it.each([false, true])(
                 importedAt: 1,
               },
               curation: {
+                supersedes: [],
                 integration: "support",
                 job: "customer-support",
                 authorship: "registry" as const,

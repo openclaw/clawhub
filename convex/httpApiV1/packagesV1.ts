@@ -115,6 +115,7 @@ const apiRefs = api as unknown as {
   };
 };
 const internalRefs = internal as unknown as {
+  curatedPlugins: { getSyncStateForUserInternal: unknown };
   packages: {
     countPublicPluginsInternal: unknown;
     getByNameForViewerInternal: unknown;
@@ -525,6 +526,7 @@ type SkillVersionLike = {
 };
 
 type ReleaseLike = {
+  publicationStatus?: Doc<"packageReleases">["publicationStatus"];
   curation?: Doc<"packageReleases">["curation"];
   _id: Id<"packageReleases">;
   packageId: Id<"packages">;
@@ -610,7 +612,12 @@ type AdminRepairPackageLike = Pick<
 type RepairOwnerPublisherLike = Pick<Doc<"publishers">, "_id" | "handle" | "deletedAt">;
 
 function toVisibleRelease(release: ReleaseLike | null) {
-  if (!release || ("softDeletedAt" in release && release.softDeletedAt !== undefined)) return null;
+  if (
+    !release ||
+    release.softDeletedAt !== undefined ||
+    (release.publicationStatus !== undefined && release.publicationStatus !== "published")
+  )
+    return null;
   return release;
 }
 
@@ -4120,6 +4127,24 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   const normalizedPackageName = tryNormalizePackageName(packageName);
   if (!normalizedPackageName) return text("Package not found", 404, rate.headers);
 
+  if (packageSegments[0] === "sync-state" && packageSegments.length === 1) {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    if (auth.user.role !== "admin") return text("Forbidden", 403, rate.headers);
+    const url = new URL(request.url);
+    const sourceHash = url.searchParams.get("sourceHash") ?? "";
+    const version = url.searchParams.get("version") ?? "";
+    if (!/^[a-f0-9]{64}$/.test(sourceHash) || !version || version.length > 200)
+      return text("Invalid source hash or version", 400, rate.headers);
+    const result = await runQueryRef(ctx, internalRefs.curatedPlugins.getSyncStateForUserInternal, {
+      actorUserId: auth.userId,
+      name: normalizedPackageName,
+      sourceHash,
+      version,
+    });
+    return json(result, 200, rate.headers);
+  }
+
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   if (
     packageSegments[0] === "versions" &&
@@ -4155,6 +4180,8 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
     name: normalizedPackageName,
     viewerUserId: viewerUserId ?? undefined,
+    followCanonical:
+      packageSegments[0] !== "versions" && !new URL(request.url).searchParams.has("version"),
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
@@ -4166,6 +4193,14 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       staffCustody?: { sourceRepo: string };
     } | null;
   } | null;
+  if (detail?.package && detail.package.name !== normalizedPackageName) {
+    const target = new URL(request.url);
+    target.pathname = `/api/v1/packages/${encodeURIComponent(detail.package.name)}${packageSegments.length ? `/${packageSegments.map(encodeURIComponent).join("/")}` : ""}`;
+    return new Response(null, {
+      status: 307,
+      headers: mergeHeaders(rate.headers, { Location: target.toString() }, corsHeaders()),
+    });
+  }
   const skillDetail = detail?.package
     ? null
     : await getSkillDetailForRequest(ctx, normalizedPackageName, ownerHandle);

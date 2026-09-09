@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 
 export const curatedPluginProvenanceValidator = v.object({
+  supersedes: v.optional(v.array(v.string())),
   integration: v.string(),
   job: v.string(),
   authorship: v.union(v.literal("company"), v.literal("registry")),
@@ -14,6 +15,7 @@ export const curatedPluginProvenanceValidator = v.object({
   syncedAt: v.number(),
 });
 export type CuratedPluginMetadata = {
+  supersedes?: string[];
   integration: string;
   job: string;
   authorship: "company" | "registry";
@@ -49,6 +51,13 @@ export function validateCuratedPluginPublisher(input: {
     curation.omittedCapabilities.length > 20
   )
     throw new ConvexError("Invalid curated plugin metadata");
+  if (
+    curation.supersedes?.length &&
+    (curation.authorship !== "company" ||
+      curation.supersedes.length > 3 ||
+      curation.supersedes.some((name) => !/^@[a-z0-9-]+\/[a-z0-9-]+$/.test(name)))
+  )
+    throw new ConvexError("Invalid canonical replacement identities");
   if (curation.authorship === "company") {
     const custody = publisher.staffCustody;
     if (

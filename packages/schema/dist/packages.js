@@ -278,6 +278,7 @@ function utf8ByteLength(value) {
     return bytes;
 }
 const CuratedPluginImportFields = {
+    supersedes: "string[]?",
     integration: "string",
     job: "string",
     authorship: '"company"|"registry"',

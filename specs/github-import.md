@@ -278,3 +278,11 @@ Error UX:
 - Skill file references `docs/usage.md` + images; smart-select picks `.md` and referenced text files; ignores external links.
 - Huge repo → clean “too large” error.
 - Redirect pinning → import stores commit sha in provenance.
+
+## Curated company plugin synchronization
+
+Staff-curated bundle imports use the reviewed source manifest in `scripts/company-plugins/` and the existing package publisher. This is an admin-only provenance path; it does not broaden the signed-in dashboard's owned-repository restriction. Canonical identity is `(integration, primary job)`: equivalent OpenClaw packages/bundles win, followed by verified company repositories, then registry-authored wrappers. Exact repository/path duplicates never receive separate releases.
+
+Every changed source closure must retain complete MIT licensing and notices, resolve to an exact commit, pass supported bundle extraction, and submit the final normalized bytes to normal prepublication checks. Initial publication requires a reviewed artifact digest; automatic updates require a reviewed source identity and initial source hash. Same source bytes are idempotent; changed bytes get a new immutable version. Missing or invalid upstream content leaves the last safe release available and appears in the operator report.
+
+A new company source may replace a registry wrapper for the same job only after its artifact clears scanning. Publication, canonical aliasing and discovery deduplication are one transaction. Existing version URLs continue to identify the old artifact; unversioned requests follow the canonical target. Pending and blocked releases are inaccessible through both exact download and file routes, including updates to an already public package. Company adoption stops staff synchronization and preserves package and release identity.

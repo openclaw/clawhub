@@ -23,7 +23,7 @@ export async function prepareBatch(input: InventoryInput) {
 }
 
 type PreparedPlugin = Awaited<ReturnType<typeof preparePlugin>> & { source: CuratedSource };
-function buildImportPlan(prepared: PreparedPlugin[]) {
+export function buildImportPlan(prepared: PreparedPlugin[]) {
   for (const item of prepared)
     for (const path of Object.keys(item.files)) {
       if (!validateFilePath(path) || path.includes("\0"))
@@ -79,6 +79,7 @@ export async function applyBatch(
         requirePrepublicationChecks: true,
         expectedInventoryDigest: item.artifactHash,
         curation: {
+          supersedes: item.source.supersedes,
           integration: item.source.integration,
           job: item.source.job,
           authorship: item.source.authorship,

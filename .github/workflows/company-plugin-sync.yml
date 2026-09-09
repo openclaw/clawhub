@@ -1,0 +1,39 @@
+name: Curated Company Plugin Sync
+
+on:
+  schedule:
+    - cron: "43 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: curated-company-plugin-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main' && vars.COMPANY_PLUGIN_SYNC_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: Production
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/setup-bun
+      - name: Synchronize reviewed source identities
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_COMPANY_PLUGIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          bun run plugins:sync --manifest scripts/company-plugins/sources.json --registry https://clawhub.ai --output company-plugin-sync.json --scheduled --apply
+      - name: Preserve the operator report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: company-plugin-sync-${{ github.run_id }}-${{ github.run_attempt }}
+          path: company-plugin-sync.json
+          if-no-files-found: warn
+          retention-days: 30
