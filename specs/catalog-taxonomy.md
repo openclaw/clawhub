@@ -3,8 +3,8 @@
 ## Categories
 
 - Skills and plugins use separate controlled slug registries from `clawhub-schema`.
-- Category slugs name one concept. Plugin categories combine six core configuration surfaces
-  (Channels, Models, Memory, Context, Voice, Web) with product uses and capabilities.
+- Category slugs name one concept. Plugin categories combine seven core configuration surfaces
+  (Channels, Models, Agent runtimes, Memory, Context, Voice, Web) with product uses and capabilities.
 - The remaining active plugin categories are Media, Security, Integrations, Developer tools,
   Infrastructure, Documents & files, Inbox & collaboration, Productivity, Scheduling,
   Finance & payments, Sales & marketing, Data & analytics, Agent orchestration, Research, and Other.
@@ -12,8 +12,15 @@
   from the active browse registry. Compatibility never maps all Tools plugins to Integrations.
 - Skills store up to three category slugs. Unknown slugs are rejected, and `other` is removed when
   a specific skill category is present.
-- Plugins may declare an ordered `categories` array in `openclaw.plugin.json`. When present, it must
-  contain one to three exact controlled plugin slugs with no duplicates; the first value is primary.
+- New plugin releases may declare `categories` in `openclaw.plugin.json`. When present, the array
+  contains exactly one controlled slug describing the primary reason to install the plugin.
+  Generated assignments and bundled manifests also contain exactly one category. Readers and the
+  refresh preserve actual one-to-three-category declarations in previously published artifacts.
+- The active registry has 22 categories. `agent-runtimes` uses the `bot` icon after Models. It covers
+  execution engines and backends that run the agent loop and manage native sessions. Context
+  covers active-context assembly and compaction; Agent orchestration covers coordination and
+  delegation. Session mirroring or locks alone do not make a plugin an execution engine.
+  Legacy `runtime` remains readable and is not automatically mapped to Agent runtimes.
 - Plugin category precedence is package declaration, then ClawHub model classification,
   then `other`. Omission is accepted. Invalid declarations reject publication instead of falling
   through to inference.
@@ -108,7 +115,7 @@ completion. The retained journal is the audit/rollback record.
 
 Operator entry points (run only against the deliberately selected deployment):
 
-- `pluginCategoryRefresh:preview {"runId":"product-categories-v1","batchSize":10}` returns
+- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v3-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
 - `pluginCategoryRefresh:accept` accepts at most 100 inspected row IDs with
@@ -122,8 +129,11 @@ Operator entry points (run only against the deliberately selected deployment):
 - `pluginCategoryRefresh:rollback` accepts one applied journal ID with
   `confirm: "rollback-plugin-category-refresh"`. Preserve the journal and verification output.
 
-Classification uses `OPENAI_API_KEY` and optional `OPENAI_PLUGIN_CATEGORY_MODEL`, falling back
-to `OPENAI_SKILL_SUMMARY_MODEL` and then `gpt-4.1-mini`. Missing credentials, timeouts, and
+Classification uses `OPENAI_API_KEY` and defaults to `gpt-5.6-luna`, with a dedicated
+`OPENAI_PLUGIN_CATEGORY_MODEL` override independent of skill-summary configuration. The current
+classifier revision is `plugin-single-category-v3`; superseded generated previews cannot be
+accepted or applied. The model receives all 22 purpose definitions and must return exactly one
+category. Missing credentials, timeouts, and
 invalid output are recorded as failed fallback classifications. They cannot be accepted by the
 backfill. Retry those packages under a new run ID after resolving the failure.
 
