@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "plugin-category-expansion",
+  "provider": "local Convex + Playwright Chromium",
+  "baseline": "f28c0de01df2bb60e67e9908b1d5cc9a827c31aa",
+  "candidate": "8b789d8b2a",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "Plugin category navigation",
+          "slug": "desktop",
+          "screenshot": "desktop.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Plugin category navigation",
+          "slug": "desktop",
+          "screenshot": "desktop.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}
