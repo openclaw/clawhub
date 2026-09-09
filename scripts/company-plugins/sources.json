@@ -1,6 +1,175 @@
 {
   "version": 1,
-  "registries": [],
-  "sources": [],
-  "openclaw": []
+  "registries": [
+    {
+      "registry": "cursor",
+      "repo": "cursor/plugins",
+      "ref": "main"
+    },
+    {
+      "registry": "claude",
+      "repo": "anthropics/claude-plugins-official",
+      "ref": "main"
+    },
+    {
+      "registry": "openai",
+      "repo": "openai/plugins",
+      "ref": "main"
+    }
+  ],
+  "sources": [
+    {
+      "integration": "intercom",
+      "job": "customer-support",
+      "repo": "cursor/plugins",
+      "path": "third_party/intercom",
+      "ref": "main",
+      "publisher": "cursor",
+      "authorship": "registry",
+      "registry": "cursor",
+      "repositoryId": 1140229822,
+      "ownerId": 126759922,
+      "ownershipEvidence": "https://github.com/cursor/plugins",
+      "categories": ["tools"],
+      "format": "cursor",
+      "approved": false,
+      "approvedInitialHash": "c91b246cc051ca5f80450aef82024cd211c28645c9dbf28fa8a8ff6061140ed6"
+    },
+    {
+      "integration": "arize",
+      "job": "ai-observability",
+      "repo": "arize-ai/arize-skills",
+      "path": "",
+      "ref": "main",
+      "publisher": "arize",
+      "authorship": "company",
+      "repositoryId": 1173840557,
+      "ownerId": 59858760,
+      "ownershipEvidence": "https://github.com/Arize-ai/arize-skills",
+      "categories": ["gateway"],
+      "format": "claude",
+      "approved": false,
+      "approvedInitialHash": "3ffa64d8827c40079ee6e9c857d9f2b08e489430aa22abdcef6ca9a5a320149c"
+    },
+    {
+      "integration": "granola",
+      "job": "meeting-notes",
+      "repo": "granola-inc/granola-cursor-plugin",
+      "path": "",
+      "ref": "main",
+      "publisher": "granola",
+      "authorship": "company",
+      "repositoryId": 1197282911,
+      "ownerId": 129086310,
+      "ownershipEvidence": "https://github.com/granola-inc/granola-cursor-plugin",
+      "categories": ["tools"],
+      "format": "cursor",
+      "approved": false
+    },
+    {
+      "integration": "notion",
+      "job": "workspace",
+      "repo": "openai/plugins",
+      "path": "plugins/notion",
+      "ref": "main",
+      "publisher": "openai",
+      "authorship": "registry",
+      "registry": "openai",
+      "repositoryId": 1172963839,
+      "ownerId": 14957082,
+      "ownershipEvidence": "https://github.com/openai/plugins",
+      "categories": ["tools"],
+      "format": "codex",
+      "approved": false
+    },
+    {
+      "integration": "zoom",
+      "job": "meeting-knowledge",
+      "repo": "cursor/plugins",
+      "path": "third_party/zoom",
+      "ref": "main",
+      "publisher": "cursor",
+      "authorship": "registry",
+      "registry": "cursor",
+      "repositoryId": 1140229822,
+      "ownerId": 126759922,
+      "ownershipEvidence": "https://github.com/cursor/plugins",
+      "categories": ["tools"],
+      "format": "cursor",
+      "approved": false,
+      "approvedInitialHash": "fe5b53ce813ae753443549839f5e975ef7a396a03650dc085dfa3e67ff00cb23",
+      "decisionReason": "OpenAI Zoom retains more runnable components but its normalized 5,431,663-byte artifact exceeds the existing 4 MiB multipart upload limit. Withhold that source; the MIT Cursor MCP wrapper fits the normal publisher."
+    },
+    {
+      "integration": "notion",
+      "job": "workspace",
+      "repo": "makenotion/claude-code-notion-plugin",
+      "path": "",
+      "ref": "main",
+      "publisher": "notion",
+      "authorship": "company",
+      "repositoryId": 1109330582,
+      "ownerId": 4792552,
+      "ownershipEvidence": "https://github.com/makenotion",
+      "categories": ["tools"],
+      "format": "claude",
+      "approved": false
+    },
+    {
+      "integration": "slack",
+      "job": "team-messaging",
+      "repo": "openai/plugins",
+      "path": "plugins/slack",
+      "ref": "main",
+      "publisher": "openai",
+      "authorship": "registry",
+      "registry": "openai",
+      "repositoryId": 1172963839,
+      "ownerId": 14957082,
+      "ownershipEvidence": "https://github.com/openai/plugins",
+      "categories": ["tools"],
+      "format": "codex",
+      "approved": false
+    }
+  ],
+  "openclaw": [
+    {
+      "integration": "slack",
+      "job": "team-messaging",
+      "package": "@openclaw/slack",
+      "evidence": "https://github.com/openclaw/openclaw/blob/1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7/extensions/slack/openclaw.plugin.json"
+    },
+    {
+      "integration": "discord",
+      "job": "team-messaging",
+      "package": "@openclaw/discord",
+      "evidence": "https://github.com/openclaw/openclaw/blob/1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7/extensions/discord/openclaw.plugin.json"
+    },
+    {
+      "integration": "zoom",
+      "job": "meeting-participation",
+      "package": "@openclaw/zoom-meetings",
+      "evidence": "https://github.com/openclaw/openclaw/blob/1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7/extensions/zoom-meetings/openclaw.plugin.json"
+    },
+    {
+      "integration": "google-meet",
+      "job": "meeting-participation",
+      "package": "@openclaw/google-meet",
+      "evidence": "https://github.com/openclaw/openclaw/blob/1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7/extensions/google-meet/openclaw.plugin.json"
+    },
+    {
+      "integration": "openrouter",
+      "job": "model-provider",
+      "bundledId": "openrouter",
+      "package": "@openclaw/openrouter",
+      "evidence": "https://github.com/openclaw/openclaw/blob/1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7/extensions/openrouter/openclaw.plugin.json"
+    },
+    {
+      "integration": "huggingface",
+      "job": "model-provider",
+      "bundledId": "huggingface",
+      "package": "@openclaw/huggingface",
+      "evidence": "https://github.com/openclaw/openclaw/blob/1391f7cd2d40ab5bbcf2f5f831d3a64f520e72d7/extensions/huggingface/openclaw.plugin.json"
+    }
+  ]
 }

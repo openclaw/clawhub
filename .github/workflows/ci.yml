@@ -205,6 +205,8 @@ jobs:
           - name: publish-new-version
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
             grep: skill publishers can create a skill
+          - name: company-plugin-sync
+            specs: e2e/local-auth/company-plugin-sync.pw.test.ts
           - name: old-cli-publish
             specs: e2e/local-auth/old-cli-publish-compat.pw.test.ts
 
