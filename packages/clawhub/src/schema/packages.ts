@@ -354,6 +354,7 @@ const PackagePublishMetadataFields = {
   version: "string",
   changelog: "string",
   expectedArtifactSha256: "string?",
+  requirePrepublicationChecks: "boolean?",
   manualOverrideReason: "string?",
   channel: PackageChannelSchema.optional(),
   tags: "string[]?",

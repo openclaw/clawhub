@@ -54,6 +54,7 @@
     "llms:check": "bun scripts/generate-llms-txt.ts --check",
     "llms:generate": "bun scripts/generate-llms-txt.ts",
     "plugins:inventory": "bun scripts/company-plugins/cli.ts",
+    "plugins:sync": "bun scripts/company-plugins/sync-cli.ts",
     "preinstall": "bunx --bun only-allow@1.2.2 bun",
     "preview": "bun --bun vite preview",
     "proof:publish": "node scripts/ui-proof-publish.mjs",

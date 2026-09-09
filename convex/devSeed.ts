@@ -12,6 +12,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
+import { isLocalDevAuthEnabled } from "./lib/devAuth";
 import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
@@ -4553,6 +4554,51 @@ export const seedCliRoleHelpFixtures = rawInternalMutation({
       admin: { handle: admin.handle, role: admin.role, token: adminToken },
       user: { handle: user.handle, role: user.role, token: userToken },
     };
+  },
+});
+
+export const seedCompanyPluginImportFixtures = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    if (!isLocalDevAuthEnabled()) throw new Error("Company plugin fixtures require local dev auth");
+    const now = Date.now();
+    const admin = await upsertRoleHelpFixtureUser(ctx, {
+      handle: "cli-admin",
+      displayName: "CLI Admin",
+      role: "admin",
+    });
+    for (const handle of ["cursor", "fixture-company"]) {
+      let publisher = await ctx.db
+        .query("publishers")
+        .withIndex("by_handle", (q) => q.eq("handle", handle))
+        .unique();
+      if (!publisher) {
+        const id = await ctx.db.insert("publishers", {
+          kind: "org",
+          handle,
+          displayName: handle,
+          createdAt: now,
+          updatedAt: now,
+        });
+        publisher = await ctx.db.get(id);
+      }
+      const publisherId = publisher!._id;
+      const member = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher_user", (q) =>
+          q.eq("publisherId", publisherId).eq("userId", admin._id),
+        )
+        .unique();
+      if (!member)
+        await ctx.db.insert("publisherMembers", {
+          publisherId,
+          userId: admin._id,
+          role: "owner",
+          createdAt: now,
+          updatedAt: now,
+        });
+    }
+    return { handle: admin.handle, token: await replaceRoleHelpFixtureToken(ctx, admin._id, now) };
   },
 });
 

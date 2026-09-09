@@ -1177,11 +1177,18 @@ async function viewerCanManagePackageOwner(
 
 async function canViewerReadPackage(
   ctx: DbReaderCtx,
-  digest: Pick<PackageDigestLike, "channel" | "scanStatus" | "ownerUserId" | "ownerPublisherId"> &
-    Partial<Pick<PackageDigestLike, "ownerKind">>,
+  digest: Pick<
+    PackageDigestLike,
+    "channel" | "scanStatus" | "ownerUserId" | "ownerPublisherId" | "stats"
+  > &
+    Partial<Pick<PackageDigestLike, "ownerKind" | "latestVersion">> &
+    Partial<Pick<Doc<"packages">, "latestReleaseId" | "latestVersionSummary">>,
   viewerUserId: Id<"users"> | undefined,
   membershipCache?: Map<string, Promise<boolean>>,
 ) {
+  // Catalog discovery excludes unpublished packages; owner dashboards use the
+  // separate toDashboardPackageListItem path and retain pending-review access.
+  if (hasNoPublishedPackageVersions(digest)) return false;
   if (!requiresPrivilegedPackageAccess(digest)) return true;
   const isPrivilegedViewer = await viewerCanAccessPackageOwner(
     ctx,
@@ -1218,9 +1225,16 @@ function isPublishedPackageRelease(
 }
 
 function hasNoPublishedPackageVersions(
-  pkg: Pick<Doc<"packages">, "latestReleaseId" | "latestVersionSummary" | "stats">,
+  pkg: Partial<Pick<Doc<"packages">, "latestReleaseId" | "latestVersionSummary" | "stats">> & {
+    latestVersion?: string;
+  },
 ) {
-  return !pkg.latestReleaseId && !pkg.latestVersionSummary && (pkg.stats?.versions ?? 0) <= 0;
+  return (
+    !pkg.latestReleaseId &&
+    !pkg.latestVersionSummary &&
+    !pkg.latestVersion &&
+    (pkg.stats?.versions ?? 0) <= 0
+  );
 }
 
 function normalizePublicPackageSourcePath(sourcePath: unknown) {
@@ -9034,7 +9048,9 @@ async function publishPackageImpl(
       toPackageInspectorPublishResponseFinding(finding, inspectorResult.metadata),
     ) ?? [];
 
-  if (options.stagePrePublicationChecks) {
+  // Curated imports require the normal checks even before global staging rollout.
+  // A caller can strengthen the gate, never opt out of the deployment policy.
+  if (options.stagePrePublicationChecks || payload.requirePrepublicationChecks) {
     let existingRelease: Doc<"packageReleases"> | null = null;
     if (existingPackage) {
       existingRelease = await runQueryRef<Doc<"packageReleases"> | null>(

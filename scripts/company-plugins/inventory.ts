@@ -350,7 +350,9 @@ export async function inventoryPlugins(input: InventoryInput) {
   );
   return {
     version: 1,
-    snapshots: input.snapshots.map(({ files: _, fileHashes: __, fileSizes: ___, ...s }) => s),
+    snapshots: input.snapshots.map(
+      ({ files: _, fileBytes: _bytes, fileHashes: __, fileSizes: ___, ...s }) => s,
+    ),
     candidates,
     parityGaps,
     permissionNeeded: candidates

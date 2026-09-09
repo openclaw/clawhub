@@ -79,6 +79,7 @@ export type Snapshot = {
   commit: string;
   updatedAt: string;
   files: Record<string, string>;
+  fileBytes?: Record<string, Uint8Array>;
   fileHashes?: Record<string, string>;
   fileSizes?: Record<string, number>;
 };

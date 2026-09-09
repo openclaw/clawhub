@@ -160,6 +160,8 @@ type PackageExploreOptions = {
 type PublishablePackageFamily = "code-plugin" | "bundle-plugin" | "claw";
 
 type PackagePublishOptions = {
+  expectedInventoryDigest?: string;
+  requirePrepublicationChecks?: boolean;
   family?: PublishablePackageFamily;
   name?: string;
   displayName?: string;
@@ -283,6 +285,7 @@ type InferredPublishSource = {
 type PackagePublishSource = ReturnType<typeof buildSource>;
 
 type PackagePublishPayload = {
+  requirePrepublicationChecks?: boolean;
   name: string;
   displayName: string;
   ownerHandle?: string;
@@ -970,6 +973,15 @@ export async function cmdPublishPackage(
   try {
     plan = await preparePackagePublishPlan(opts, sourceArg, options);
 
+    // Compare the actual upload buffers, after filesystem traversal and ignore
+    // rules, before authentication or uploads. Curated plans require exact bytes.
+    if (
+      options.expectedInventoryDigest &&
+      options.expectedInventoryDigest !==
+        buildGitHubFolderContentHash(hashSkillFiles(plan.filesOnDisk).files)
+    ) {
+      fail("Staged package inventory differs from the reviewed artifact");
+    }
     if (options.dryRun) {
       if (options.json) {
         process.stdout.write(`${JSON.stringify(plan.output, null, 2)}\n`);
@@ -986,7 +998,7 @@ export async function cmdPublishPackage(
           files: plan.filesOnDisk,
         });
       }
-      return;
+      return undefined;
     }
 
     if (plan.payload.family === "code-plugin") {
@@ -1162,6 +1174,7 @@ export async function cmdPublishPackage(
         }
         printPackageInspectorFindings(result);
       }
+      return finalResult;
     } catch (error) {
       spinner?.fail(formatError(error));
       throw error;
@@ -2760,6 +2773,7 @@ async function preparePackagePublishPlan(
   const categories = parseCsv(options.categories);
   const topics = parseCsv(options.topics);
   const payload: PackagePublishPayload = {
+    ...(options.requirePrepublicationChecks ? { requirePrepublicationChecks: true } : {}),
     name,
     displayName,
     ...(ownerHandle ? { ownerHandle } : {}),

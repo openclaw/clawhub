@@ -285,6 +285,7 @@ const PackagePublishMetadataFields = {
     version: "string",
     changelog: "string",
     expectedArtifactSha256: "string?",
+    requirePrepublicationChecks: "boolean?",
     manualOverrideReason: "string?",
     channel: PackageChannelSchema.optional(),
     tags: "string[]?",
@@ -813,6 +814,21 @@ export const ApiV1PackagePublishResponseSchema = type({
 });
 export const PackagePublishAttemptStatusSchema = type('"pending_checks"|"ready_to_finalize"|"finalizing"|"finalized"|"blocked"|"failed"|"expired"');
 export const PackagePublicationStatusSchema = type('"pending"|"published"|"blocked"|"failed"|"expired"');
+export const ApiV1PackagePublishRecoveryRequestSchema = type({
+    manualOverrideReason: "string",
+});
+export const ApiV1PackagePublishRecoveryResponseSchema = type({
+    ok: "true",
+    attemptId: "string",
+    recoveredFromAttemptId: "string",
+    packageId: "string",
+    releaseId: "string",
+    name: "string",
+    version: "string",
+    status: PackagePublishAttemptStatusSchema,
+    publicationStatus: PackagePublicationStatusSchema,
+    reused: "boolean",
+});
 export const PackagePublishAttemptCheckSchema = type({
     status: '"pending"|"clean"|"blocked"|"failed"',
     summary: "string?",
