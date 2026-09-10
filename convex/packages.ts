@@ -75,6 +75,7 @@ import type { StaticScanResult } from "./lib/moderationEngine";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import { resolvePackageIcon } from "./lib/packageIcons";
 import {
   assertManualRecoveryFinalization,
   manualPackageRecovery,
@@ -86,7 +87,6 @@ import {
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
   maybeParseJson,
-  normalizePluginManifestIcon,
   normalizePackageName,
   normalizePublishFiles,
   readStorageText,
@@ -8892,7 +8892,6 @@ async function publishPackageImpl(
     );
   }
   const validatedClaw = clawPackage?.ok ? clawPackage.value : undefined;
-  const icon = family === "claw" ? undefined : normalizePluginManifestIcon(pluginManifest);
   if (family === "code-plugin") {
     const validation = validateOpenClawExternalCodePluginPackageContents(
       packageJson,
@@ -9023,6 +9022,14 @@ async function publishPackageImpl(
         scanStatus: initialScanStatus,
       }
     : undefined;
+  const icon =
+    family === "claw"
+      ? undefined
+      : await resolvePackageIcon(ctx, {
+          files,
+          manifest: pluginManifest,
+          ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
+        });
   const integritySha256 = await hashSkillFiles(
     files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
@@ -9040,6 +9047,7 @@ async function publishPackageImpl(
           ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
           files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
         });
+  if (pluginManifestSummary && icon) pluginManifestSummary.icon = icon;
 
   const legacyZipStorageId =
     payload.artifact?.kind === "npm-pack"

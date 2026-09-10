@@ -12817,8 +12817,10 @@ describe("packages public queries", () => {
       icon: unknown,
       bundleManifest?: Record<string, unknown>,
       declaredCategories?: string[],
+      portableIcon?: Uint8Array,
     ) {
       const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if ("sha256" in args && "contentType" in args) return args;
         if (args.minimumRole === "publisher") {
           return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
         }
@@ -12880,12 +12882,22 @@ describe("packages public queries", () => {
             linkedUserId: "users:owner",
           }),
         runMutation,
-        runAction: makePublishRunActionMock(),
+        runAction: vi.fn(async function (
+          this: PublishScanStorage,
+          ref: FunctionReference<"action">,
+          args: unknown,
+        ) {
+          return getFunctionName(ref) === "skillPresentationImageNode:validateRasterInternal"
+            ? true
+            : makePublishRunActionMock().call(this, ref, args);
+        }),
         scheduler: {
           runAfter: vi.fn(),
         },
         storage: {
           get: vi.fn(async (storageId: string) => {
+            if (storageId === "storage:icon" && portableIcon)
+              return new Blob([new Uint8Array(portableIcon)]);
             const content = storedFiles.get(storageId);
             return content ? new Blob([content]) : null;
           }),
@@ -12943,6 +12955,17 @@ describe("packages public queries", () => {
               sha256: "code",
               contentType: "application/javascript",
             },
+            ...(portableIcon
+              ? [
+                  {
+                    path: "assets/icon.png",
+                    size: portableIcon.byteLength,
+                    storageId: "storage:icon",
+                    sha256: await sha256Hex(portableIcon),
+                    contentType: "application/octet-stream",
+                  },
+                ]
+              : []),
           ],
         },
       });
@@ -12956,6 +12979,17 @@ describe("packages public queries", () => {
       );
       return insertCall?.[1] as Record<string, unknown>;
     }
+
+    const portableIcon = new Uint8Array(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    const hostedIcon = `/api/v1/skill-icons/${await sha256Hex(portableIcon)}`;
+    await expect(
+      publishWithManifestIcon(undefined, undefined, undefined, portableIcon),
+    ).resolves.toMatchObject({ icon: hostedIcon, pluginManifestSummary: { icon: hostedIcon } });
 
     await expect(
       publishWithManifestIcon("https://cdn.example.test/icons/demo.svg"),

@@ -109,6 +109,7 @@ import type * as lib_officialPublishers from "../lib/officialPublishers.js";
 import type * as lib_openClawPublishAuthorization from "../lib/openClawPublishAuthorization.js";
 import type * as lib_openaiResponse from "../lib/openaiResponse.js";
 import type * as lib_packageArtifacts from "../lib/packageArtifacts.js";
+import type * as lib_packageIcons from "../lib/packageIcons.js";
 import type * as lib_packagePublishRecovery from "../lib/packagePublishRecovery.js";
 import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageRuntimeIdentity from "../lib/packageRuntimeIdentity.js";
@@ -336,6 +337,7 @@ declare const fullApi: ApiFromModules<{
   "lib/openClawPublishAuthorization": typeof lib_openClawPublishAuthorization;
   "lib/openaiResponse": typeof lib_openaiResponse;
   "lib/packageArtifacts": typeof lib_packageArtifacts;
+  "lib/packageIcons": typeof lib_packageIcons;
   "lib/packagePublishRecovery": typeof lib_packagePublishRecovery;
   "lib/packageRegistry": typeof lib_packageRegistry;
   "lib/packageRuntimeIdentity": typeof lib_packageRuntimeIdentity;
