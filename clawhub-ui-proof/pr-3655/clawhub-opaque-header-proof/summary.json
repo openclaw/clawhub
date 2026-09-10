@@ -1,0 +1,376 @@
+{
+  "status": "pass",
+  "mode": "before-after",
+  "provider": "local real Chromium; public read-only Convex",
+  "scenario": "opaque sticky header: audit, home, and search",
+  "baseline": "e769826f1f951c5fb7d4838bab1cc03a9ee31d53",
+  "candidate": "0a6d9b6434c67d286cb5b745c98f3060a9ecf1cb",
+  "lanes": [
+    {
+      "name": "baseline",
+      "ref": "e769826f1f951c5fb7d4838bab1cc03a9ee31d53",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "audit-scrolled-1440-dark \u2014 Before",
+          "slug": "audit-scrolled-1440-dark",
+          "screenshot": "audit-scrolled-1440-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-1440-dark",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "dark",
+            "background": "color(srgb 0.0317787 0.0317919 0.0317931 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 181,
+            "overflow": false,
+            "screenshot": "baseline/audit-scrolled-1440-dark.png"
+          }
+        },
+        {
+          "name": "home-scrolled-1440-dark \u2014 Before",
+          "slug": "home-scrolled-1440-dark",
+          "screenshot": "home-scrolled-1440-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "home-scrolled-1440-dark",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "dark",
+            "background": "color(srgb 0.0317787 0.0317919 0.0317931 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "baseline/home-scrolled-1440-dark.png"
+          }
+        },
+        {
+          "name": "search-open-1440-dark \u2014 Before",
+          "slug": "search-open-1440-dark",
+          "screenshot": "search-open-1440-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "search-open-1440-dark",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "dark",
+            "background": "color(srgb 0.0317787 0.0317919 0.0317931 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "baseline/search-open-1440-dark.png"
+          }
+        },
+        {
+          "name": "audit-scrolled-1440-light \u2014 Before",
+          "slug": "audit-scrolled-1440-light",
+          "screenshot": "audit-scrolled-1440-light.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-1440-light",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "light",
+            "background": "color(srgb 0.980129 0.980308 0.980325 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 181,
+            "overflow": false,
+            "screenshot": "baseline/audit-scrolled-1440-light.png"
+          }
+        },
+        {
+          "name": "audit-scrolled-390-dark \u2014 Before",
+          "slug": "audit-scrolled-390-dark",
+          "screenshot": "audit-scrolled-390-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-390-dark",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "dark",
+            "background": "color(srgb 0.0317787 0.0317919 0.0317931 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 179,
+            "overflow": false,
+            "screenshot": "baseline/audit-scrolled-390-dark.png"
+          }
+        },
+        {
+          "name": "home-scrolled-390-dark \u2014 Before",
+          "slug": "home-scrolled-390-dark",
+          "screenshot": "home-scrolled-390-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "home-scrolled-390-dark",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "dark",
+            "background": "color(srgb 0.0317787 0.0317919 0.0317931 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "baseline/home-scrolled-390-dark.png"
+          }
+        },
+        {
+          "name": "search-open-390-dark \u2014 Before",
+          "slug": "search-open-390-dark",
+          "screenshot": "search-open-390-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "search-open-390-dark",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "dark",
+            "background": "color(srgb 0.0317787 0.0317919 0.0317931 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "baseline/search-open-390-dark.png"
+          }
+        },
+        {
+          "name": "audit-scrolled-390-light \u2014 Before",
+          "slug": "audit-scrolled-390-light",
+          "screenshot": "audit-scrolled-390-light.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-390-light",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "light",
+            "background": "color(srgb 0.980129 0.980308 0.980325 / 0.78)",
+            "alpha": 199,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 179,
+            "overflow": false,
+            "screenshot": "baseline/audit-scrolled-390-light.png"
+          }
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "ref": "0a6d9b6434c67d286cb5b745c98f3060a9ecf1cb",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "audit-scrolled-1440-dark \u2014 After",
+          "slug": "audit-scrolled-1440-dark",
+          "screenshot": "audit-scrolled-1440-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-1440-dark",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "dark",
+            "background": "oklch(0.135 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 181,
+            "overflow": false,
+            "screenshot": "candidate/audit-scrolled-1440-dark.png"
+          }
+        },
+        {
+          "name": "home-scrolled-1440-dark \u2014 After",
+          "slug": "home-scrolled-1440-dark",
+          "screenshot": "home-scrolled-1440-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "home-scrolled-1440-dark",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "dark",
+            "background": "oklch(0.135 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "candidate/home-scrolled-1440-dark.png"
+          }
+        },
+        {
+          "name": "search-open-1440-dark \u2014 After",
+          "slug": "search-open-1440-dark",
+          "screenshot": "search-open-1440-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "search-open-1440-dark",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "dark",
+            "background": "oklch(0.135 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "candidate/search-open-1440-dark.png"
+          }
+        },
+        {
+          "name": "audit-scrolled-1440-light \u2014 After",
+          "slug": "audit-scrolled-1440-light",
+          "screenshot": "audit-scrolled-1440-light.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-1440-light",
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            },
+            "theme": "light",
+            "background": "oklch(0.985 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 181,
+            "overflow": false,
+            "screenshot": "candidate/audit-scrolled-1440-light.png"
+          }
+        },
+        {
+          "name": "audit-scrolled-390-dark \u2014 After",
+          "slug": "audit-scrolled-390-dark",
+          "screenshot": "audit-scrolled-390-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-390-dark",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "dark",
+            "background": "oklch(0.135 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 179,
+            "overflow": false,
+            "screenshot": "candidate/audit-scrolled-390-dark.png"
+          }
+        },
+        {
+          "name": "home-scrolled-390-dark \u2014 After",
+          "slug": "home-scrolled-390-dark",
+          "screenshot": "home-scrolled-390-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "home-scrolled-390-dark",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "dark",
+            "background": "oklch(0.135 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "candidate/home-scrolled-390-dark.png"
+          }
+        },
+        {
+          "name": "search-open-390-dark \u2014 After",
+          "slug": "search-open-390-dark",
+          "screenshot": "search-open-390-dark.png",
+          "status": "pass",
+          "assertion": {
+            "name": "search-open-390-dark",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "dark",
+            "background": "oklch(0.135 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 200,
+            "overflow": false,
+            "screenshot": "candidate/search-open-390-dark.png"
+          }
+        },
+        {
+          "name": "audit-scrolled-390-light \u2014 After",
+          "slug": "audit-scrolled-390-light",
+          "screenshot": "audit-scrolled-390-light.png",
+          "status": "pass",
+          "assertion": {
+            "name": "audit-scrolled-390-light",
+            "viewport": {
+              "width": 390,
+              "height": 844
+            },
+            "theme": "light",
+            "background": "oklch(0.985 0 0)",
+            "alpha": 255,
+            "opacity": "1",
+            "top": 0,
+            "position": "sticky",
+            "scrollY": 179,
+            "overflow": false,
+            "screenshot": "candidate/audit-scrolled-390-light.png"
+          }
+        }
+      ]
+    }
+  ]
+}
