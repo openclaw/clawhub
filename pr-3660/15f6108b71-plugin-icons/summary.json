@@ -1,0 +1,134 @@
+{
+  "status": "pass",
+  "mode": "before-after",
+  "lanes": [
+    {
+      "name": "baseline",
+      "ref": "694ff719e9",
+      "baseURL": "http://127.0.0.1:4377",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Desktop official list, dark",
+          "slug": "1-desktop-official-list-dark",
+          "screenshot": "1-desktop-official-list-dark.png",
+          "status": "pass",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "iconCount": 0
+        },
+        {
+          "name": "Desktop official list, light",
+          "slug": "2-desktop-official-list-light",
+          "screenshot": "2-desktop-official-list-light.png",
+          "status": "pass",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "iconCount": 0
+        },
+        {
+          "name": "Laptop official list",
+          "slug": "3-laptop-official-list",
+          "screenshot": "3-laptop-official-list.png",
+          "status": "pass",
+          "viewport": {
+            "width": 1366,
+            "height": 768
+          },
+          "iconCount": 0
+        },
+        {
+          "name": "Tablet official grid",
+          "slug": "4-tablet-official-grid",
+          "screenshot": "4-tablet-official-grid.png",
+          "status": "pass",
+          "viewport": {
+            "width": 768,
+            "height": 1024
+          },
+          "iconCount": 0
+        },
+        {
+          "name": "Mobile official grid",
+          "slug": "5-mobile-official-grid",
+          "screenshot": "5-mobile-official-grid.png",
+          "status": "pass",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "iconCount": 0
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "ref": "15f6108b7189451d9aeab5f596ffaf5c0709667d",
+      "baseURL": "http://127.0.0.1:4378",
+      "status": "pass",
+      "steps": [
+        {
+          "name": "Desktop official list, dark",
+          "slug": "1-desktop-official-list-dark",
+          "screenshot": "1-desktop-official-list-dark.png",
+          "status": "pass",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "iconCount": 8
+        },
+        {
+          "name": "Desktop official list, light",
+          "slug": "2-desktop-official-list-light",
+          "screenshot": "2-desktop-official-list-light.png",
+          "status": "pass",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "iconCount": 8
+        },
+        {
+          "name": "Laptop official list",
+          "slug": "3-laptop-official-list",
+          "screenshot": "3-laptop-official-list.png",
+          "status": "pass",
+          "viewport": {
+            "width": 1366,
+            "height": 768
+          },
+          "iconCount": 8
+        },
+        {
+          "name": "Tablet official grid",
+          "slug": "4-tablet-official-grid",
+          "screenshot": "4-tablet-official-grid.png",
+          "status": "pass",
+          "viewport": {
+            "width": 768,
+            "height": 1024
+          },
+          "iconCount": 8
+        },
+        {
+          "name": "Mobile official grid",
+          "slug": "5-mobile-official-grid",
+          "screenshot": "5-mobile-official-grid.png",
+          "status": "pass",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "iconCount": 8
+        }
+      ]
+    }
+  ],
+  "scenario": "Official bundled plugin icons",
+  "provider": "real isolated local Convex backends and Chromium"
+}
