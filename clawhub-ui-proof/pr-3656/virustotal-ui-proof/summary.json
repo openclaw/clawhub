@@ -1,0 +1,309 @@
+{
+  "baseline": "feafb9ae91",
+  "candidate": "45bf41acba14c45e6d8dd1bfe9fd232745b268c6",
+  "generatedAt": "2026-09-10T03:45:45.792Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-remove-virustotal-ui/.artifacts/virustotal-ui-proof/baseline",
+      "name": "baseline",
+      "ref": "feafb9ae91",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "directory-loading-desktop",
+          "screenshot": "screenshots/directory-loading-desktop.png",
+          "slug": "directory-loading-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-audit-desktop",
+          "screenshot": "screenshots/skill-audit-desktop.png",
+          "slug": "skill-audit-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-audit-desktop",
+          "screenshot": "screenshots/plugin-audit-desktop.png",
+          "slug": "plugin-audit-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-directory-desktop",
+          "screenshot": "screenshots/skill-directory-desktop.png",
+          "slug": "skill-directory-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-directory-desktop",
+          "screenshot": "screenshots/plugin-directory-desktop.png",
+          "slug": "plugin-directory-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "directory-loading-laptop",
+          "screenshot": "screenshots/directory-loading-laptop.png",
+          "slug": "directory-loading-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-audit-laptop",
+          "screenshot": "screenshots/skill-audit-laptop.png",
+          "slug": "skill-audit-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-audit-laptop",
+          "screenshot": "screenshots/plugin-audit-laptop.png",
+          "slug": "plugin-audit-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-directory-laptop",
+          "screenshot": "screenshots/skill-directory-laptop.png",
+          "slug": "skill-directory-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-directory-laptop",
+          "screenshot": "screenshots/plugin-directory-laptop.png",
+          "slug": "plugin-directory-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "directory-loading-tablet",
+          "screenshot": "screenshots/directory-loading-tablet.png",
+          "slug": "directory-loading-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-audit-tablet",
+          "screenshot": "screenshots/skill-audit-tablet.png",
+          "slug": "skill-audit-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-audit-tablet",
+          "screenshot": "screenshots/plugin-audit-tablet.png",
+          "slug": "plugin-audit-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-directory-tablet",
+          "screenshot": "screenshots/skill-directory-tablet.png",
+          "slug": "skill-directory-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-directory-tablet",
+          "screenshot": "screenshots/plugin-directory-tablet.png",
+          "slug": "plugin-directory-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "directory-loading-mobile",
+          "screenshot": "screenshots/directory-loading-mobile.png",
+          "slug": "directory-loading-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-audit-mobile",
+          "screenshot": "screenshots/skill-audit-mobile.png",
+          "slug": "skill-audit-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-audit-mobile",
+          "screenshot": "screenshots/plugin-audit-mobile.png",
+          "slug": "plugin-audit-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "skill-directory-mobile",
+          "screenshot": "screenshots/skill-directory-mobile.png",
+          "slug": "skill-directory-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "plugin-directory-mobile",
+          "screenshot": "screenshots/plugin-directory-mobile.png",
+          "slug": "plugin-directory-mobile",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-remove-virustotal-ui/.artifacts/virustotal-ui-proof/candidate",
+      "name": "candidate",
+      "ref": "45bf41acba14c45e6d8dd1bfe9fd232745b268c6",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "directory-loading-desktop",
+          "screenshot": "screenshots/directory-loading-desktop.png",
+          "slug": "directory-loading-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-audit-desktop",
+          "screenshot": "screenshots/skill-audit-desktop.png",
+          "slug": "skill-audit-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-audit-desktop",
+          "screenshot": "screenshots/plugin-audit-desktop.png",
+          "slug": "plugin-audit-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-directory-desktop",
+          "screenshot": "screenshots/skill-directory-desktop.png",
+          "slug": "skill-directory-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-directory-desktop",
+          "screenshot": "screenshots/plugin-directory-desktop.png",
+          "slug": "plugin-directory-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "directory-loading-laptop",
+          "screenshot": "screenshots/directory-loading-laptop.png",
+          "slug": "directory-loading-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-audit-laptop",
+          "screenshot": "screenshots/skill-audit-laptop.png",
+          "slug": "skill-audit-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-audit-laptop",
+          "screenshot": "screenshots/plugin-audit-laptop.png",
+          "slug": "plugin-audit-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-directory-laptop",
+          "screenshot": "screenshots/skill-directory-laptop.png",
+          "slug": "skill-directory-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-directory-laptop",
+          "screenshot": "screenshots/plugin-directory-laptop.png",
+          "slug": "plugin-directory-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "directory-loading-tablet",
+          "screenshot": "screenshots/directory-loading-tablet.png",
+          "slug": "directory-loading-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-audit-tablet",
+          "screenshot": "screenshots/skill-audit-tablet.png",
+          "slug": "skill-audit-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-audit-tablet",
+          "screenshot": "screenshots/plugin-audit-tablet.png",
+          "slug": "plugin-audit-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-directory-tablet",
+          "screenshot": "screenshots/skill-directory-tablet.png",
+          "slug": "skill-directory-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-directory-tablet",
+          "screenshot": "screenshots/plugin-directory-tablet.png",
+          "slug": "plugin-directory-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "directory-loading-mobile",
+          "screenshot": "screenshots/directory-loading-mobile.png",
+          "slug": "directory-loading-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-audit-mobile",
+          "screenshot": "screenshots/skill-audit-mobile.png",
+          "slug": "skill-audit-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-audit-mobile",
+          "screenshot": "screenshots/plugin-audit-mobile.png",
+          "slug": "plugin-audit-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "skill-directory-mobile",
+          "screenshot": "screenshots/skill-directory-mobile.png",
+          "slug": "skill-directory-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "plugin-directory-mobile",
+          "screenshot": "screenshots/plugin-directory-mobile.png",
+          "slug": "plugin-directory-mobile",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-remove-virustotal-ui/.artifacts/virustotal-ui-proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-remove-virustotal-ui/.artifacts/proof-scenarios/remove-virustotal.mjs",
+  "status": "pass"
+}
