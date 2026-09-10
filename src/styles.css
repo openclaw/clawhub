@@ -572,28 +572,6 @@ code {
   display: none;
 }
 
-.app-shell:has(
-    .skill-detail-page,
-    .plugin-detail-page,
-    .security-audit-page,
-    .publisher-profile-route,
-    .dashboard-route
-  )
-  .navbar.navbar-calm {
-  background: transparent;
-}
-
-.app-shell:has(
-    .skill-detail-page,
-    .plugin-detail-page,
-    .security-audit-page,
-    .publisher-profile-route,
-    .dashboard-route
-  )
-  .navbar.navbar-calm.navbar-calm-scrolled {
-  background: color-mix(in srgb, var(--nav-bg) 78%, transparent);
-}
-
 .app-shell main {
   position: relative;
   flex: 1;
@@ -654,6 +632,7 @@ code {
   position: sticky;
   top: 0;
   z-index: 10;
+  /* Sticky navigation must obscure page content in every route and scroll state. */
   background: var(--nav-bg);
   border-bottom: 1px solid var(--line);
 }
@@ -29397,37 +29376,12 @@ a[class*="rounded-full"] {
 }
 
 /* Header sync from the design experiment: search, menu, and brand mark only. */
-.navbar.navbar-calm {
-  background: var(--nav-bg);
-  transition:
-    background 0.2s ease,
-    backdrop-filter 0.2s ease,
-    -webkit-backdrop-filter 0.2s ease;
-}
-
-.navbar.navbar-calm.navbar-calm-scrolled {
-  background: color-mix(in srgb, var(--nav-bg) 84%, transparent);
-  backdrop-filter: blur(12px) saturate(1.08);
-  -webkit-backdrop-filter: blur(12px) saturate(1.08);
-}
-
 .navbar-calm .navbar-inner {
   position: relative;
 }
 
 .app-shell:has(.home-v2-main) .navbar.navbar-calm {
   border-bottom: none;
-  background: transparent;
-}
-
-.app-shell:has(.home-v2-main) .navbar.navbar-calm.navbar-calm-scrolled {
-  background: color-mix(in srgb, var(--nav-bg) 78%, transparent);
-}
-
-.navbar.navbar-calm.navbar-calm-scrolled:has(.navbar-search-typeahead) {
-  background: color-mix(in srgb, var(--nav-bg) 94%, transparent);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
 }
 
 .app-shell:has(.navbar-search-typeahead)::after {
