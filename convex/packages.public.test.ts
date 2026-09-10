@@ -12988,13 +12988,17 @@ describe("packages public queries", () => {
     );
     const hostedIcon = `/api/v1/skill-icons/${await sha256Hex(portableIcon)}`;
     await expect(
-      publishWithManifestIcon(undefined, undefined, undefined, portableIcon),
+      publishWithManifestIcon(
+        "https://ignored.example/icon.png",
+        undefined,
+        undefined,
+        portableIcon,
+      ),
     ).resolves.toMatchObject({ icon: hostedIcon, pluginManifestSummary: { icon: hostedIcon } });
 
     await expect(
       publishWithManifestIcon("https://cdn.example.test/icons/demo.svg"),
     ).resolves.toMatchObject({
-      icon: "https://cdn.example.test/icons/demo.svg",
       categories: ["scheduling"],
       pluginManifestSummary: { categories: ["scheduling"] },
       categoryClassification: {
@@ -13036,6 +13040,7 @@ describe("packages public queries", () => {
     });
 
     for (const icon of [
+      "https://cdn.example.test/icons/demo.svg",
       "http://cdn.example.test/icons/demo.svg",
       "/icons/demo.svg",
       "not a url",
@@ -13043,7 +13048,9 @@ describe("packages public queries", () => {
       123,
       { src: "https://cdn.example.test/icons/demo.svg" },
     ]) {
-      await expect(publishWithManifestIcon(icon)).resolves.not.toHaveProperty("icon");
+      const published = await publishWithManifestIcon(icon);
+      expect(published).not.toHaveProperty("icon");
+      expect(published.pluginManifestSummary).not.toHaveProperty("icon");
     }
   });
 

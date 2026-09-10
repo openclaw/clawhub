@@ -46,6 +46,7 @@ type PluginIconCandidate = {
   name: string;
   ownerPublisherId?: Id<"publishers">;
   release: Doc<"packageReleases">;
+  icon?: string;
   trustedSource: boolean;
 };
 
@@ -64,7 +65,7 @@ export const listPluginIconRepairCandidatesInternal = internalQuery({
       .paginate({ cursor: args.cursor, numItems: clampInt(args.limit, 1, 25) });
     const candidates: PluginIconCandidate[] = [];
     for (const pkg of page.page) {
-      if (pkg.icon || !pkg.latestReleaseId) continue;
+      if (isHostedSkillPresentationIconPath(pkg.icon) || !pkg.latestReleaseId) continue;
       const release = await ctx.db.get(pkg.latestReleaseId);
       if (
         !release ||
@@ -78,6 +79,7 @@ export const listPluginIconRepairCandidatesInternal = internalQuery({
         name: pkg.normalizedName,
         ownerPublisherId: pkg.ownerPublisherId,
         release,
+        icon: pkg.icon,
         trustedSource:
           pkg.normalizedName.startsWith("@openclaw/") &&
           owner?.handle === "openclaw" &&
@@ -99,16 +101,17 @@ export const applyPluginIconRepairInternal = internalMutation({
     releaseId: v.id("packageReleases"),
     ownerPublisherId: v.optional(v.id("publishers")),
     icon: v.string(),
+    expectedIcon: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    if (!isHostedSkillPresentationIconPath(args.icon) && !args.icon.startsWith("https://"))
-      throw new ConvexError("Invalid plugin icon");
+    if (!isHostedSkillPresentationIconPath(args.icon)) throw new ConvexError("Invalid plugin icon");
     const pkg = await ctx.db.get(args.packageId);
     const release = await ctx.db.get(args.releaseId);
     // A concurrent publish, ownership change, or deletion invalidates the prepared repair.
     if (
       !pkg ||
-      pkg.icon ||
+      isHostedSkillPresentationIconPath(pkg.icon) ||
+      pkg.icon !== args.expectedIcon ||
       pkg.softDeletedAt !== undefined ||
       pkg.latestReleaseId !== args.releaseId ||
       pkg.ownerPublisherId !== args.ownerPublisherId ||
@@ -164,14 +167,13 @@ export const repairPluginIconsInternal = internalAction({
     const samples: Array<{ name: string; icon: string }> = [];
     let patched = 0;
     for (const candidate of page.candidates) {
-      const icon =
-        candidate.release.icon ??
-        (await resolvePackageIcon(ctx, {
-          files: candidate.release.files,
-          manifest: candidate.release.extractedPluginManifest,
-          ...(candidate.trustedSource ? { trustedSource: candidate.release.verification } : {}),
-          dryRun,
-        }));
+      const icon = isHostedSkillPresentationIconPath(candidate.release.icon)
+        ? candidate.release.icon
+        : await resolvePackageIcon(ctx, {
+            files: candidate.release.files,
+            ...(candidate.trustedSource ? { trustedSource: candidate.release.verification } : {}),
+            dryRun,
+          });
       if (!icon) continue;
       samples.push({ name: candidate.name, icon });
       if (
@@ -180,6 +182,7 @@ export const repairPluginIconsInternal = internalAction({
           packageId: candidate.packageId,
           releaseId: candidate.release._id,
           ownerPublisherId: candidate.ownerPublisherId,
+          expectedIcon: candidate.icon,
           icon,
         }))
       )

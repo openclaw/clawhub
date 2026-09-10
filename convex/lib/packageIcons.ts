@@ -6,7 +6,6 @@ import {
   storeSkillPresentationAsset,
 } from "../skillPresentationAssets";
 import { sha256Hex } from "./clawpack";
-import { normalizePluginManifestIcon } from "./packageRegistry";
 import {
   buildSkillPresentationIconPath,
   MAX_SKILL_PRESENTATION_ICON_BYTES,
@@ -35,19 +34,17 @@ export async function resolvePackageIcon(
   ctx: IconContext,
   args: {
     files: Array<{ path: string; size: number; sha256: string; storageId: string }>;
-    manifest?: unknown;
     trustedSource?: IconSource;
     dryRun?: boolean;
   },
 ): Promise<string | undefined> {
-  const fallback = normalizePluginManifestIcon(args.manifest);
   const file = args.files.find((entry) => entry.path === PORTABLE_PLUGIN_ICON);
   let bytes: Uint8Array;
   if (file) {
-    if (file.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return fallback;
+    if (file.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
     const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
     if (!blob) throw new ConvexError("Plugin icon could not be read. Please retry.");
-    if (blob.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return fallback;
+    if (blob.size > MAX_SKILL_PRESENTATION_ICON_BYTES) return undefined;
     bytes = new Uint8Array(await blob.arrayBuffer());
     if ((await sha256Hex(bytes)) !== file.sha256.toLowerCase()) {
       throw new ConvexError("Plugin icon changed during upload. Please retry.");
@@ -55,9 +52,9 @@ export async function resolvePackageIcon(
   } else {
     // Older official npm archives omitted assets despite recording a source commit that has them.
     const sourceUrl = bundledPluginIconSourceUrl(args.trustedSource);
-    if (!sourceUrl) return fallback;
+    if (!sourceUrl) return undefined;
     const downloaded = await fetchBundledIcon(sourceUrl);
-    if (!downloaded) return fallback;
+    if (!downloaded) return undefined;
     bytes = downloaded;
   }
 
@@ -65,10 +62,10 @@ export async function resolvePackageIcon(
     // npm archives commonly label every entry application/octet-stream; validate the bytes.
     validateSkillPresentationIcon({ path: PORTABLE_PLUGIN_ICON, bytes });
   } catch {
-    return fallback;
+    return undefined;
   }
   if (!(await isDecodableSkillPresentationRaster(ctx, { bytes, contentType: "image/png" })))
-    return fallback;
+    return undefined;
   const sha256 = await sha256Hex(bytes);
   if (args.dryRun) return buildSkillPresentationIconPath(sha256);
   // Reuse the content-addressed raster store and serving route already used for catalog icons.

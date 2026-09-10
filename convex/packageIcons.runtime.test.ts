@@ -122,6 +122,46 @@ describe("plugin icon repair", () => {
       await t.action(internal.maintenance.repairPluginIconsInternal, { dryRun: false }),
     ).toMatchObject({ matched: 0, patched: 0 });
   });
+  it("does not accept external URLs or reuse legacy release icon URLs", async () => {
+    const { t, ...ids } = await fixture();
+    const externalIcon = "https://example.com/icon.png";
+    await expect(
+      t.mutation(internal.maintenance.applyPluginIconRepairInternal, {
+        ...ids,
+        icon: externalIcon,
+      }),
+    ).rejects.toThrow("Invalid plugin icon");
+    await t.run(async (ctx) =>
+      ctx.db.patch(ids.releaseId, {
+        icon: externalIcon,
+        extractedPluginManifest: { icon: externalIcon },
+      }),
+    );
+    expect(
+      await t.action(internal.maintenance.repairPluginIconsInternal, { dryRun: false }),
+    ).toMatchObject({ matched: 0, patched: 0 });
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(ids.packageId))?.icon).toBeUndefined();
+    });
+  });
+  it("replaces legacy package URLs with the hosted bundled asset", async () => {
+    const { t, ...ids } = await fixture();
+    const externalIcon = "https://example.com/icon.png";
+    await t.run(async (ctx) => {
+      await ctx.db.patch(ids.packageId, { icon: externalIcon });
+      await ctx.db.patch(ids.releaseId, { icon });
+    });
+    expect(await t.action(internal.maintenance.repairPluginIconsInternal, {})).toMatchObject({
+      matched: 1,
+      patched: 0,
+    });
+    expect(
+      await t.action(internal.maintenance.repairPluginIconsInternal, { dryRun: false }),
+    ).toMatchObject({ matched: 1, patched: 1 });
+    await t.run(async (ctx) => {
+      expect((await ctx.db.get(ids.packageId))?.icon).toBe(icon);
+    });
+  });
   it("paginates without skipping candidates and restricts source recovery to the active OpenClaw owner", async () => {
     const { t, ...ids } = await fixture();
     const args = { family: "code-plugin" as const, cursor: null, limit: 1 };

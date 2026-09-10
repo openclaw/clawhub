@@ -78,21 +78,19 @@ describe("PublishedItemCard", () => {
     expect(document.querySelector("svg")?.classList.contains("lucide-slash")).toBe(true);
   });
 
-  it("always uses the default kind icon for plugins regardless of icon field (F7)", () => {
+  it("uses the default kind icon for plugins without a bundled icon", () => {
     render(<PublishedItemCard item={{ ...basePlugin, icon: null }} />);
     expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
   });
 
-  it("renders plugin manifest icons for publisher plugin rows", () => {
+  it("renders hosted bundled icons for publisher plugin rows", () => {
     render(
-      <PublishedItemCard
-        item={{ ...basePlugin, icon: "https://cdn.example.test/icons/plugin.svg" }}
-      />,
+      <PublishedItemCard item={{ ...basePlugin, icon: `/api/v1/skill-icons/${"a".repeat(64)}` }} />,
     );
 
     const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
     expect(image).toBeTruthy();
-    expect(image?.getAttribute("src")).toBe("https://cdn.example.test/icons/plugin.svg");
+    expect(image?.getAttribute("src")).toBe(`/api/v1/skill-icons/${"a".repeat(64)}`);
     expect(document.querySelector(".marketplace-icon-glyph")).toBeNull();
   });
 

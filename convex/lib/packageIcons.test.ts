@@ -41,12 +41,11 @@ async function file(bytes = png, path = "assets/icon.png") {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("package icons", () => {
-  it("prefers the portable PNG over legacy manifest URLs and serves it with the correct MIME type", async () => {
+  it("hosts the portable PNG with the correct MIME type", async () => {
     const ctx = context();
     expect(
       await resolvePackageIcon(ctx as never, {
         files: [await file()],
-        manifest: { icon: "https://old.example/icon.png" },
       }),
     ).toBe(`/api/v1/skill-icons/${await sha256Hex(png)}`);
     expect(ctx.storage.store.mock.calls[0]?.[0]).toHaveProperty("type", "image/png");
@@ -68,7 +67,7 @@ describe("package icons", () => {
     expect(ctx.storage.store).not.toHaveBeenCalled();
     expect(ctx.runMutation).not.toHaveBeenCalled();
   });
-  it("does not fetch manifest URLs, untrusted sources, moving refs, or traversal paths", async () => {
+  it("does not fetch untrusted sources, moving refs, or traversal paths", async () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
     for (const trustedSource of [
@@ -82,9 +81,8 @@ describe("package icons", () => {
         await resolvePackageIcon(context() as never, {
           files: [],
           trustedSource,
-          manifest: { icon: "https://example.com/icon.png" },
         }),
-      ).toBe("https://example.com/icon.png");
+      ).toBeUndefined();
     }
     expect(fetcher).not.toHaveBeenCalled();
   });

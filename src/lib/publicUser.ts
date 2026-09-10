@@ -66,7 +66,7 @@ export type PublicPublisherCatalogItem = {
   inferredCategories?: string[];
   latestVersionId?: string | null;
   inferredFromVersionId?: string | null;
-  /** Legacy skill icon field or plugin manifest HTTPS icon URL retained in responses. */
+  /** Hosted bundled icon path; older records may retain legacy icon values. */
   icon: string | null;
   href: string;
   installs?: number;

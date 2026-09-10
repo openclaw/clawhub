@@ -6,7 +6,6 @@ import {
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
-  normalizePluginManifestIcon,
   normalizePackageName,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
@@ -151,7 +150,6 @@ describe("packageRegistry", () => {
     expect(summary).toEqual({
       schemaVersion: 1,
       categories: ["tools", "runtime"],
-      icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
       compatibility: { pluginApiRange: "^2.0.0" },
       manifestIdentity: {
         name: "example-ai-plugin",
@@ -436,28 +434,16 @@ describe("packageRegistry", () => {
     expect(result).not.toHaveProperty("capabilities");
   });
 
-  it("accepts only valid HTTPS plugin manifest icon URLs", () => {
-    expect(normalizePluginManifestIcon({ icon: "https://cdn.example.test/icons/demo.svg" })).toBe(
-      "https://cdn.example.test/icons/demo.svg",
-    );
-    expect(
-      normalizePluginManifestIcon({
-        icon: "  https://cdn.example.test/icons/demo.svg?color=111111  ",
-      }),
-    ).toBe("https://cdn.example.test/icons/demo.svg?color=111111");
-
+  it("ignores manifest icon URLs and paths in summaries", () => {
     for (const icon of [
+      "https://cdn.example.test/icons/demo.svg",
       "http://cdn.example.test/icons/demo.svg",
-      "/icons/demo.svg",
-      "icons/demo.svg",
-      "not a url",
-      "",
-      "   ",
-      123,
-      null,
-      { src: "https://cdn.example.test/icons/demo.svg" },
+      "assets/icon.png",
+      `/api/v1/skill-icons/${"a".repeat(64)}`,
     ]) {
-      expect(normalizePluginManifestIcon({ icon })).toBeUndefined();
+      expect(
+        derivePluginManifestSummary({ pluginManifest: { icon }, files: [] }),
+      ).not.toHaveProperty("icon");
     }
   });
 

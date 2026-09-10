@@ -9027,7 +9027,6 @@ async function publishPackageImpl(
       ? undefined
       : await resolvePackageIcon(ctx, {
           files,
-          manifest: pluginManifest,
           ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
         });
   const integritySha256 = await hashSkillFiles(
@@ -9036,18 +9035,20 @@ async function publishPackageImpl(
   const pluginManifestSummary =
     family === "claw"
       ? undefined
-      : derivePluginManifestSummary({
-          pluginManifest:
-            pluginManifest ??
-            (() => {
-              throw new ConvexError("openclaw.plugin.json is required for plugin packages");
-            })(),
-          ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
-          compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-          ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
-          files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
-        });
-  if (pluginManifestSummary && icon) pluginManifestSummary.icon = icon;
+      : {
+          ...derivePluginManifestSummary({
+            pluginManifest:
+              pluginManifest ??
+              (() => {
+                throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+              })(),
+            ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
+            compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+            ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
+            files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
+          }),
+          ...(icon ? { icon } : {}),
+        };
 
   const legacyZipStorageId =
     payload.artifact?.kind === "npm-pack"
