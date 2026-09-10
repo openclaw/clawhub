@@ -154,10 +154,12 @@ describe("pre-publication publish worker workflow", () => {
     expect(runStep?.run).not.toContain("--version");
     expect(runStep?.run).not.toContain("--max-jobs");
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
-      "npm install -g @openclaw/clawscan@0.1.7",
+      "npm install -g @openclaw/clawscan@0.1.8",
     );
     const skillspectorInstall = steps.find((step) => step.name === "Install SkillSpector")?.run;
-    expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");
+    expect(skillspectorInstall).toContain(
+      "git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc",
+    );
     expect(skillspectorInstall).toContain("skillspector --help");
     expect(steps).toContainEqual(
       expect.objectContaining({

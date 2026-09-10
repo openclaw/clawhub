@@ -95,7 +95,7 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.7
+          npm install -g @openclaw/clawscan@0.1.8
           clawscan --version
 
       - name: Install SkillSpector
@@ -104,7 +104,7 @@ jobs:
           python -m venv "$RUNNER_TEMP/skillspector-venv"
           source "$RUNNER_TEMP/skillspector-venv/bin/activate"
           python -m pip install --upgrade pip
-          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@8f37cfa'
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
           echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
           skillspector --help >/dev/null
 
