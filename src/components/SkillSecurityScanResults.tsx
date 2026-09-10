@@ -138,32 +138,10 @@ type StaticFinding = {
 };
 
 type SecurityScanResultsProps = {
-  sha256hash?: string;
-  vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   staticFindings?: StaticFinding[];
   variant?: "panel" | "badge";
 };
-
-function VirusTotalIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="1em"
-      height="1em"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 100 89"
-      aria-label="VirusTotal"
-    >
-      <title>VirusTotal</title>
-      <path
-        fill="currentColor"
-        fillRule="evenodd"
-        d="M45.292 44.5 0 89h100V0H0l45.292 44.5zM90 80H22l35.987-35.2L22 9h68v71z"
-      />
-    </svg>
-  );
-}
 
 function ClawScanIcon({ className }: { className?: string }) {
   return <ShieldCheck className={className} aria-label="ClawScan" />;
@@ -266,33 +244,6 @@ export function getClawScanDisplayStatus(analysis?: LlmAnalysis | null) {
     return "review";
   }
   return status;
-}
-
-function getVtEngineStats(analysis?: VtAnalysis | null) {
-  return analysis?.engineStats ?? analysis?.metadata?.stats;
-}
-
-function hasNonEngineVirusTotalSource(analysis?: VtAnalysis | null) {
-  if (!analysis) return false;
-  const source = analysis.source?.trim().toLowerCase();
-  const scanner = analysis.scanner?.trim().toLowerCase();
-  return Boolean(
-    (source && !source.startsWith("engines")) || (scanner && !scanner.startsWith("engines")),
-  );
-}
-
-export function getVirusTotalDisplayStatus(analysis?: VtAnalysis | null) {
-  const stats = getVtEngineStats(analysis);
-  if (stats) {
-    if ((stats.malicious ?? 0) > 0) return "malicious";
-    if ((stats.suspicious ?? 0) > 0) return "suspicious";
-    return "benign";
-  }
-
-  if (hasNonEngineVirusTotalSource(analysis)) return "benign";
-  if (analysis?.verdict === "undetected-only-fallback") return "benign";
-
-  return analysis?.verdict ?? analysis?.status ?? "pending";
 }
 
 export function ScanResultBadge({
@@ -682,18 +633,11 @@ function LlmAnalysisDetail({ analysis }: { analysis: LlmAnalysis }) {
   );
 }
 
-export function SecurityScanResults({
-  sha256hash,
-  vtAnalysis,
-  llmAnalysis,
-  variant = "panel",
-}: SecurityScanResultsProps) {
-  if (!sha256hash && !llmAnalysis) {
+export function SecurityScanResults({ llmAnalysis, variant = "panel" }: SecurityScanResultsProps) {
+  if (!llmAnalysis) {
     return null;
   }
 
-  const vtStatus = getVirusTotalDisplayStatus(vtAnalysis);
-  const vtUrl = sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null;
   const llmVerdict = llmAnalysis?.verdict ?? llmAnalysis?.status;
   const llmDisplayStatus = getClawScanDisplayStatus(llmAnalysis);
   const llmStatusInfo = llmVerdict ? getScanStatusInfo(llmDisplayStatus) : null;
@@ -701,23 +645,6 @@ export function SecurityScanResults({
   if (variant === "badge") {
     return (
       <div className="version-scan-badge-row">
-        {sha256hash ? (
-          <div className="version-scan-badge">
-            <VirusTotalIcon className="version-scan-icon version-scan-icon-vt" />
-            <ScanResultBadge status={vtStatus} className="version-scan-status-badge" />
-            {vtUrl ? (
-              <a
-                href={vtUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="version-scan-link"
-                onClick={(event) => event.stopPropagation()}
-              >
-                ↗
-              </a>
-            ) : null}
-          </div>
-        ) : null}
         {llmStatusInfo ? (
           <div className="version-scan-badge">
             <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
@@ -732,25 +659,6 @@ export function SecurityScanResults({
     <div className="scan-results-panel">
       <div className="scan-results-title">Security Scan</div>
       <div className="scan-results-list">
-        {sha256hash ? (
-          <div className="scan-result-row">
-            <div className="scan-result-scanner">
-              <VirusTotalIcon className="scan-result-icon scan-result-icon-vt" />
-              <span className="scan-result-scanner-name">VirusTotal</span>
-            </div>
-            <ScanResultBadge status={vtStatus} />
-            {vtUrl ? (
-              <a
-                href={vtUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="scan-result-link"
-              >
-                View report →
-              </a>
-            ) : null}
-          </div>
-        ) : null}
         {llmStatusInfo && llmAnalysis ? (
           <div className="scan-result-row">
             <div className="scan-result-scanner">

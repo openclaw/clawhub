@@ -1,14 +1,5 @@
 import { getSecurityAuditOverviewCopy } from "clawhub-schema";
-import {
-  ArrowLeft,
-  Check,
-  Clock,
-  Download,
-  ExternalLink,
-  Info,
-  RefreshCw,
-  TriangleAlert,
-} from "lucide-react";
+import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -439,103 +430,6 @@ function SecurityAuditHero({ props }: { props: SecurityAuditPageProps }) {
   );
 }
 
-function getVirusTotalEngineStats(analysis?: VtAnalysis | null) {
-  return analysis?.engineStats ?? analysis?.metadata?.stats ?? null;
-}
-
-function joinReadableClauses(clauses: string[]) {
-  if (clauses.length <= 1) return clauses[0] ?? "";
-  if (clauses.length === 2) return `${clauses[0]}, and ${clauses[1]}`;
-  return `${clauses.slice(0, -1).join(", ")}, and ${clauses.at(-1)}`;
-}
-
-function hasNonEngineVirusTotalSource(analysis?: VtAnalysis | null) {
-  if (!analysis) return false;
-  const source = analysis.source?.trim().toLowerCase();
-  const scanner = analysis.scanner?.trim().toLowerCase();
-  return Boolean(
-    (source && !source.startsWith("engines")) || (scanner && !scanner.startsWith("engines")),
-  );
-}
-
-function getArtifactKindLabel(entity: EntityRef) {
-  return entity.kind === "plugin" ? "plugin" : "skill";
-}
-
-function getVirusTotalNoFindingsCopy(_entity: EntityRef) {
-  return "No VirusTotal findings";
-}
-
-function getVirusTotalPendingCopy(entity: EntityRef) {
-  return `VirusTotal findings are pending for this ${getArtifactKindLabel(entity)} version.`;
-}
-
-function getVirusTotalEngineOverview(analysis: VtAnalysis | null | undefined, entity: EntityRef) {
-  const stats = getVirusTotalEngineStats(analysis);
-  if (stats) {
-    const malicious = stats.malicious ?? 0;
-    const suspicious = stats.suspicious ?? 0;
-    const clean = (stats.harmless ?? 0) + (stats.undetected ?? 0);
-    const total = malicious + suspicious + clean;
-    if (total <= 0) return getVirusTotalNoFindingsCopy(entity);
-
-    const artifactKind = getArtifactKindLabel(entity);
-    const hasFullEngineStats =
-      stats.malicious !== undefined &&
-      stats.suspicious !== undefined &&
-      stats.harmless !== undefined &&
-      stats.undetected !== undefined;
-    const firstCountLabel = (count: number) =>
-      hasFullEngineStats
-        ? `${count}/${total} vendors`
-        : `${count} ${count === 1 ? "vendor" : "vendors"}`;
-    const followupCountLabel = (count: number) =>
-      hasFullEngineStats ? `${count}/${total}` : `${count} ${count === 1 ? "vendor" : "vendors"}`;
-
-    if (malicious === 0 && suspicious === 0) {
-      return `${firstCountLabel(clean)} flagged this ${artifactKind} as clean.`;
-    }
-
-    const clauses: string[] = [];
-    if (malicious > 0) {
-      clauses.push(`${firstCountLabel(malicious)} flagged this ${artifactKind} as malicious`);
-    }
-    if (suspicious > 0) {
-      clauses.push(
-        clauses.length === 0
-          ? `${firstCountLabel(suspicious)} flagged this ${artifactKind} as suspicious`
-          : `${followupCountLabel(suspicious)} flagged it as suspicious`,
-      );
-    }
-    if (clean > 0) {
-      clauses.push(`${followupCountLabel(clean)} flagged it as clean`);
-    }
-    return `${joinReadableClauses(clauses)}.`;
-  }
-
-  if (hasNonEngineVirusTotalSource(analysis)) {
-    return getVirusTotalNoFindingsCopy(entity);
-  }
-
-  const status = analysis?.status?.trim().toLowerCase();
-  if (
-    status === "clean" ||
-    status === "benign" ||
-    analysis?.verdict === "undetected-only-fallback"
-  ) {
-    return getVirusTotalNoFindingsCopy(entity);
-  }
-  if (status && !["loading", "not_found", "pending"].includes(status)) {
-    return `VirusTotal engine telemetry is currently ${status} for this artifact.`;
-  }
-
-  return null;
-}
-
-function getVirusTotalOverviewCopy(analysis: VtAnalysis | null | undefined, entity: EntityRef) {
-  return getVirusTotalEngineOverview(analysis, entity) ?? getVirusTotalPendingCopy(entity);
-}
-
 function SecurityAuditOverview(props: SecurityAuditPageProps) {
   const overviewCopy = getSecurityAuditOverviewCopy({ llmAnalysis: props.llmAnalysis });
   return (
@@ -764,28 +658,6 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
         ) : null}
       </dl>
     </article>
-  );
-}
-
-function VirusTotalSection(props: SecurityAuditPageProps) {
-  const vtUrl = props.sha256hash ? `https://www.virustotal.com/gui/file/${props.sha256hash}` : null;
-  return (
-    <div className="security-report-panel-body">
-      <div className="security-report-overview-body">
-        <p>{getVirusTotalOverviewCopy(props.vtAnalysis, props.entity)}</p>
-      </div>
-      {vtUrl ? (
-        <a
-          href={vtUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="security-audit-external-link"
-        >
-          View on VirusTotal
-          <ExternalLink className="h-3 w-3" aria-hidden="true" />
-        </a>
-      ) : null}
-    </div>
   );
 }
 
@@ -1066,7 +938,6 @@ function SecurityAuditScannerSection({
       </div>
       {kind === "static" ? <StaticScanSection {...props} /> : null}
       {kind === "aig" ? <AigSection {...props} /> : null}
-      {kind === "virustotal" ? <VirusTotalSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
     </section>
   );

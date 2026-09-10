@@ -5,7 +5,6 @@ import { MarketplaceIcon } from "../components/MarketplaceIcon";
 import {
   getClawScanDisplayStatus,
   getScanStatusInfo,
-  getVirusTotalDisplayStatus,
   ScanResultBadge,
   type LlmAnalysis,
   type VtAnalysis,
@@ -248,7 +247,6 @@ function AuditsPage() {
           <div className="audits-table-row audits-table-head" role="row">
             <div role="columnheader">{itemColumnLabel}</div>
             <div role="columnheader">ClawScan</div>
-            <div role="columnheader">VirusTotal</div>
             <div role="columnheader" className="audits-downloads-header">
               Downloads
             </div>
@@ -277,7 +275,6 @@ function AuditsPage() {
 function AuditTableRow({ row }: { row: AuditRow }) {
   const latest = row.kind === "plugin" ? row.latestRelease : row.latestVersion;
   const clawScanStatus = getClawScanDisplayStatus(latest?.llmAnalysis ?? null);
-  const vtStatus = getVirusTotalDisplayStatus(latest?.vtAnalysis ?? null);
   const ownerHandle = row.kind === "plugin" ? row.package.ownerHandle : row.ownerHandle;
   const displayName =
     row.kind === "plugin"
@@ -303,7 +300,6 @@ function AuditTableRow({ row }: { row: AuditRow }) {
         </div>
       </div>
       <AuditSignalCell status={clawScanStatus} />
-      <AuditSignalCell status={vtStatus} />
       <div role="cell" className="audits-downloads-cell">
         {formatCompactStat(downloadsForRow(row))}
       </div>
@@ -329,7 +325,6 @@ function AuditSkeletonRows({ count = 6 }: { count?: number }) {
             <span className="audits-skeleton-icon" />
             <span className="audits-skeleton-copy" />
           </div>
-          <span className="audits-skeleton-pill" />
           <span className="audits-skeleton-pill" />
           <span className="audits-skeleton-stat" />
         </div>

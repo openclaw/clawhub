@@ -113,7 +113,7 @@ describe("plugin security audit route", () => {
     expect(screen.queryByRole("button", { name: "Download security audit" })).toBeNull();
   });
 
-  it("links VirusTotal to the canonical npm-pack artifact hash", () => {
+  it("omits VirusTotal links even when the canonical npm-pack artifact hash exists", () => {
     const loaderData = makeLoaderData();
     loaderData.version.version = {
       ...loaderData.version.version,
@@ -126,8 +126,6 @@ describe("plugin security audit route", () => {
 
     render(<PluginSecurityAuditPage name="demo-plugin" loaderData={loaderData as never} />);
 
-    expect(screen.getByRole("link", { name: "View on VirusTotal" }).getAttribute("href")).toBe(
-      "https://www.virustotal.com/gui/file/tgz-sha",
-    );
+    expect(screen.queryByRole("link", { name: /VirusTotal/i })).toBeNull();
   });
 });

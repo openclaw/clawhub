@@ -232,7 +232,6 @@ describe("SecurityScanResults static guidance", () => {
   it("hides advisory static findings from the public scan panel", () => {
     render(
       <SecurityScanResults
-        vtAnalysis={{ status: "clean", checkedAt: Date.now() }}
         llmAnalysis={{ status: "clean", checkedAt: Date.now() }}
         staticFindings={[
           {
@@ -254,7 +253,6 @@ describe("SecurityScanResults static guidance", () => {
   it("keeps mixed advisory static findings hidden when scanners are clean", () => {
     render(
       <SecurityScanResults
-        vtAnalysis={{ status: "clean", checkedAt: Date.now() }}
         llmAnalysis={{ status: "clean", checkedAt: Date.now() }}
         staticFindings={[
           {
@@ -451,9 +449,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.queryByText("Risk")).toBeNull();
     expect(screen.queryByText("ClawScan risk")).toBeNull();
-    expect(
-      screen.getByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeTruthy();
+    expect(screen.getByText("Security checks for vulnerabilities and agentic risk")).toBeTruthy();
     expect(container.querySelector(".security-scan-hero-subtext")?.textContent).not.toContain(
       "Warn",
     );
@@ -486,7 +482,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector"]);
   });
 
   it("renders SkillSpector findings as the agentic-risk finding source", async () => {
@@ -552,7 +548,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector"]);
   });
 
   it("renders A.I.G coverage and concise findings with Tencent attribution", async () => {
@@ -603,7 +599,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "A.I.G", "SkillSpector", "VirusTotal"]);
+    ).toEqual(["Overview", "A.I.G", "SkillSpector"]);
   });
 
   it("renders legacy message-only A.I.G findings once", () => {
@@ -762,8 +758,8 @@ describe("SecurityScanResults static guidance", () => {
     expect(outcomeRow?.textContent).not.toContain("Pending");
     expect(outcomeRow?.textContent).not.toContain("Malicious");
     expect(
-      screen.getByText("VirusTotal findings are pending for this skill version."),
-    ).toBeTruthy();
+      screen.queryByText("VirusTotal findings are pending for this skill version."),
+    ).toBeNull();
     expect(screen.queryByText("No SkillSpector findings.")).toBeNull();
     expect(screen.getByText("Vulnerability Patterns")).toBeTruthy();
     expect(screen.getByText("Prompt Injection")).toBeTruthy();
@@ -941,7 +937,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText(/to give this audit context on these findings/i)).toBeNull();
   });
 
-  it("keeps plugin audit metadata focused while preserving hash links", () => {
+  it("keeps plugin audit metadata focused without VirusTotal hash links", () => {
     render(
       <SecurityAuditPage
         entity={{
@@ -964,9 +960,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("Version")).toBeTruthy();
     expect(screen.queryByText("Hash")).toBeNull();
     expect(screen.queryByText("seeded-plugin-hash")).toBeNull();
-    expect(screen.getByRole("link", { name: /View on VirusTotal/i }).getAttribute("href")).toBe(
-      "https://www.virustotal.com/gui/file/seeded-plugin-hash",
-    );
+    expect(screen.queryByRole("link", { name: /VirusTotal/i })).toBeNull();
   });
 
   it("does not show SkillSpector as pending for plugins without bundled skills", () => {
@@ -1011,213 +1005,52 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("Jan 2, 2024 · 3:04 AM UTC")).toBeTruthy();
   });
 
-  it("shows VirusTotal reports in the shared scanner report shell", () => {
-    const { container } = render(
-      <SecurityAuditPage
-        entity={{
-          kind: "skill",
-          title: "Hash Guard",
-          name: "hash-guard",
-          version: "1.2.3",
-          detailPath: "/local/hash-guard",
-        }}
-        sha256hash="abc123"
-        vtAnalysis={{
-          status: "clean",
-          verdict: "benign",
-          source: "engines",
-          engineStats: { malicious: 0, suspicious: 0, harmless: 4, undetected: 58 },
-          checkedAt: Date.now(),
-        }}
-      />,
-    );
+  it.each(["skill", "plugin"] as const)(
+    "omits VirusTotal from %s audits even when stored telemetry is present",
+    (kind) => {
+      const { container } = render(
+        <SecurityAuditPage
+          entity={{
+            kind,
+            title: "Hash Guard",
+            name: "hash-guard",
+            version: "1.2.3",
+            detailPath: "/local/hash-guard",
+          }}
+          sha256hash="abc123"
+          vtAnalysis={{
+            status: "malicious",
+            source: "engines",
+            engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
+            checkedAt: Date.UTC(2025, 0, 1),
+          }}
+          llmAnalysis={{
+            status: "clean",
+            summary: "No ClawScan issues.",
+            checkedAt: Date.UTC(2024, 0, 2, 3, 4),
+          }}
+        />,
+      );
+      expect(container.textContent).not.toMatch(/VirusTotal|vendors flagged/i);
+      expect(container.querySelector('a[href*="virustotal.com"]')).toBeNull();
+      expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+      expect(screen.getByText("Pass")).toBeTruthy();
+      expect(screen.getByText("Jan 2, 2024 · 3:04 AM UTC")).toBeTruthy();
+    },
+  );
 
-    expect(screen.getByRole("heading", { name: "Hash Guard" })).toBeTruthy();
-    expect(
-      screen.getByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByText("62/62 vendors flagged this skill as clean.")).toBeTruthy();
-    expect(screen.queryByLabelText("VirusTotal findings")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /View on VirusTotal/i }).getAttribute("href")).toBe(
-      "https://www.virustotal.com/gui/file/abc123",
-    );
-    expect(screen.queryByRole("heading", { name: /Findings/i })).toBeNull();
-    expect(screen.queryByText("ASI03: Identity and Privilege Abuse")).toBeNull();
-    expect(screen.queryByText("Scanner verdict")).toBeNull();
-    expect(screen.queryByText("Artifact")).toBeNull();
-    expect(
-      Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
-        node.textContent?.trim(),
-      ),
-    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
-  });
-
-  it("summarizes completed engine-only VirusTotal scans", () => {
-    render(
-      <SecurityAuditPage
-        entity={{
-          kind: "skill",
-          title: "Hash Guard",
-          name: "hash-guard",
-          version: "1.2.3",
-          detailPath: "/local/hash-guard",
-        }}
-        sha256hash="abc123"
-        vtAnalysis={{
-          status: "clean",
-          source: "engines",
-          engineStats: { malicious: 0, suspicious: 0, harmless: 2, undetected: 60 },
-          checkedAt: Date.now(),
-        }}
-      />,
-    );
-
-    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByText("62/62 vendors flagged this skill as clean.")).toBeTruthy();
-    expect(screen.queryByLabelText("VirusTotal findings")).toBeNull();
-    expect(screen.queryByText(/No VirusTotal analysis has been recorded/i)).toBeNull();
-  });
-
-  it("summarizes non-zero VirusTotal detection counts in normal prose", () => {
-    const { rerender } = render(
-      <SecurityAuditPage
-        entity={{
-          kind: "skill",
-          title: "Hash Guard",
-          name: "hash-guard",
-          version: "1.2.3",
-          detailPath: "/local/hash-guard",
-        }}
-        sha256hash="abc123"
-        vtAnalysis={{
-          status: "malicious",
-          source: "engines",
-          engineStats: { malicious: 2, suspicious: 1, harmless: 3, undetected: 58 },
-          checkedAt: Date.now(),
-        }}
-      />,
-    );
-
-    expect(
-      screen.getByText(
-        "2/64 vendors flagged this skill as malicious, 1/64 flagged it as suspicious, and 61/64 flagged it as clean.",
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByLabelText("VirusTotal findings")).toBeNull();
-    expect(screen.queryByText("Harmless")).toBeNull();
-    expect(screen.queryByText("Undetected")).toBeNull();
-
-    rerender(
-      <SecurityAuditPage
-        entity={{
-          kind: "plugin",
-          title: "Plugin Guard",
-          name: "plugin-guard",
-          version: "1.2.3",
-          detailPath: "/plugins/plugin-guard",
-        }}
-        sha256hash="abc123"
-        vtAnalysis={{
-          status: "suspicious",
-          source: "engines",
-          engineStats: { malicious: 0, suspicious: 1, harmless: 3, undetected: 60 },
-          checkedAt: Date.now(),
-        }}
-      />,
-    );
-
-    expect(
-      screen.getByText(
-        "1/64 vendors flagged this plugin as suspicious, and 63/64 flagged it as clean.",
-      ),
-    ).toBeTruthy();
-  });
-
-  it("avoids denominator prose for partial VirusTotal engine stats", () => {
-    render(
-      <SecurityAuditPage
-        entity={{
-          kind: "skill",
-          title: "Hash Guard",
-          name: "hash-guard",
-          version: "1.2.3",
-          detailPath: "/local/hash-guard",
-        }}
-        sha256hash="abc123"
-        vtAnalysis={{
-          status: "suspicious",
-          source: "engines",
-          engineStats: { suspicious: 1 },
-          checkedAt: Date.now(),
-        }}
-      />,
-    );
-
-    expect(screen.getByText("1 vendor flagged this skill as suspicious.")).toBeTruthy();
-    expect(screen.queryByText("1/1 vendors flagged this skill as suspicious.")).toBeNull();
-  });
-
-  it("renders VirusTotal undetected-only fallback as pass", () => {
-    render(
-      <SecurityAuditPage
-        entity={{
-          kind: "plugin",
-          title: "Opik",
-          name: "@opik/opik-openclaw",
-          version: "0.2.14",
-          detailPath: "/plugins/@opik/opik-openclaw",
-        }}
-        sha256hash="abc123"
-        vtAnalysis={{
-          status: "clean",
-          verdict: "undetected-only-fallback",
-          analysis:
-            "VirusTotal reported no malicious or suspicious engine hits. ClawHub promoted this source-linked package after clean LLM and clean static scans.",
-          source: "engines-undetected-fallback",
-          checkedAt: Date.now(),
-        }}
-        llmAnalysis={{ status: "clean", summary: "No ClawScan issues.", checkedAt: 1 }}
-      />,
-    );
-
-    expect(screen.getByRole("heading", { name: "VirusTotal" })).toBeTruthy();
-    expect(screen.getByText("Pass")).toBeTruthy();
-    expect(screen.getByText("No VirusTotal findings")).toBeTruthy();
-    expect(screen.queryByText("undetected-only-fallback")).toBeNull();
-  });
-
-  it("treats legacy non-engine VirusTotal text as neutral and hidden", () => {
-    render(
-      <SecurityAuditPage
-        entity={{
-          kind: "skill",
-          title: "SkillScan",
-          name: "skillscan",
-          version: "1.1.6",
-          detailPath: "/tokauthai/skillscan",
-        }}
-        sha256hash="abc123"
-        vtAnalysis={{
-          status: "suspicious",
-          analysis: "Type: OpenClaw Skill Name: skillscan Version: 1.1.6 raw AI context",
-          source: "legacy-ai",
-          checkedAt: Date.now(),
-        }}
-      />,
-    );
-
-    expect(
-      screen.getByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeTruthy();
-    expect(screen.queryByText("Pass")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.queryByText(/multi-engine malware detections/i)).toBeNull();
-    expect(screen.queryByRole("heading", { name: /Findings/ })).toBeNull();
-    expect(screen.queryByText(/raw AI context/i)).toBeNull();
-    expect(screen.getByText("No VirusTotal findings")).toBeTruthy();
-  });
+  it.each(["panel", "badge"] as const)(
+    "renders only ClawScan in the %s scan results",
+    (variant) => {
+      const { container } = render(
+        <SecurityScanResults variant={variant} llmAnalysis={{ status: "clean", checkedAt: 1 }} />,
+      );
+      expect(container.textContent).not.toMatch(/VirusTotal/i);
+      expect(container.querySelector('a[href*="virustotal.com"]')).toBeNull();
+      expect(screen.getByText("Pass")).toBeTruthy();
+      expect(screen.getByLabelText("ClawScan")).toBeTruthy();
+    },
+  );
 
   it("keeps static analysis reports out of the public scanner report shell", () => {
     const { container } = render(
@@ -1233,9 +1066,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Pattern Guard" })).toBeTruthy();
-    expect(
-      screen.getByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeTruthy();
+    expect(screen.getByText("Security checks for vulnerabilities and agentic risk")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.queryByText("Static analysis")).toBeNull();
     expect(screen.queryByText("Pattern checks found a network request.")).toBeNull();
@@ -1254,7 +1085,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector"]);
   });
 
   it("builds a security audit ZIP with scanner outcome files", () => {
@@ -1327,9 +1158,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Plugin Guard" })).toBeTruthy();
-    expect(
-      screen.getByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeTruthy();
+    expect(screen.getByText("Security checks for vulnerabilities and agentic risk")).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Legacy plugin guidance.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
@@ -1347,7 +1176,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "VirusTotal", "Static analysis"]);
+    ).toEqual(["Overview", "Static analysis"]);
   });
 
   it("lets static scan risk override a clean legacy ClawScan outcome", () => {
@@ -1413,9 +1242,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Legacy Skill" })).toBeTruthy();
-    expect(
-      screen.getByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeTruthy();
+    expect(screen.getByText("Security checks for vulnerabilities and agentic risk")).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
@@ -1428,7 +1255,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector"]);
     expect(screen.getByRole("link", { name: "Back to skill" }).getAttribute("href")).toBe(
       "/local/legacy-skill",
     );
@@ -1449,14 +1276,12 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Pending Skill" })).toBeTruthy();
-    expect(
-      screen.getByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeTruthy();
+    expect(screen.getByText("Security checks for vulnerabilities and agentic risk")).toBeTruthy();
     expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
     expect(screen.getByText("No security analysis has been recorded yet.")).toBeTruthy();
     expect(
-      screen.getByText("VirusTotal findings are pending for this skill version."),
-    ).toBeTruthy();
+      screen.queryByText("VirusTotal findings are pending for this skill version."),
+    ).toBeNull();
     expect(screen.queryByText("Static analysis")).toBeNull();
     expect(screen.queryByText("Static analysis findings are pending for this release.")).toBeNull();
     expect(screen.queryByText("No VirusTotal findings")).toBeNull();
@@ -1498,7 +1323,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
+    ).toEqual(["Overview", "SkillSpector"]);
   });
 
   it("lets skill managers enqueue a security rescan from the audit sidebar", async () => {

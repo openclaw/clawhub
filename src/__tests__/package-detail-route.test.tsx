@@ -1618,7 +1618,7 @@ describe("plugin detail route", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "Security checks across malware telemetry and agentic risk",
+        name: "Security checks for vulnerabilities and agentic risk",
       }),
     ).toBeTruthy();
     expect(screen.queryByText("Looks safe.")).toBeNull();

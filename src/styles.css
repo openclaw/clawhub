@@ -12451,22 +12451,6 @@ a.skills-sh-security-audit-row:focus-visible {
   white-space: nowrap;
 }
 
-.skill-version-release .version-scan-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  min-width: 12px;
-  color: var(--ink-soft);
-  font-size: 0.72rem;
-  line-height: 1;
-  text-decoration: none;
-}
-
-.skill-version-release .version-scan-link:hover {
-  color: var(--accent);
-}
-
 .skill-version-release .version-scan-badge .scan-result-status.scan-status-clean {
   width: 22px;
   min-width: 22px;
@@ -16126,10 +16110,6 @@ a.skills-sh-security-audit-row:focus-visible {
   font-size: 1rem;
 }
 
-.scan-result-icon-vt {
-  color: var(--accent-deep);
-}
-
 .scan-result-icon-oc {
   color: var(--accent);
 }
@@ -16166,17 +16146,6 @@ a.skills-sh-security-audit-row:focus-visible {
 .scan-status-error {
   background: var(--oc-status-error-bg);
   color: var(--oc-status-error-fg);
-}
-
-.scan-result-link {
-  font-size: 0.82rem;
-  color: var(--accent);
-  text-decoration: none;
-  justify-self: end;
-}
-
-.scan-result-link:hover {
-  text-decoration: underline;
 }
 
 .version-scan-results {
@@ -16225,20 +16194,7 @@ a.skills-sh-security-audit-row:focus-visible {
   font-size: 0.9rem;
 }
 
-.version-scan-icon-vt {
-  color: var(--accent-deep);
-}
-
 .version-scan-icon-oc {
-  color: var(--accent);
-}
-
-.version-scan-link {
-  color: var(--ink-soft);
-  text-decoration: none;
-}
-
-.version-scan-link:hover {
   color: var(--accent);
 }
 
@@ -17011,11 +16967,6 @@ a.agentic-risk-finding-title:focus-visible {
   .scan-result-row {
     grid-template-columns: 1fr auto;
     gap: 6px 10px;
-  }
-
-  .scan-result-link {
-    grid-column: 1 / -1;
-    justify-self: start;
   }
 }
 
@@ -19586,9 +19537,7 @@ body:has(.browse-page-borderless-header) .navbar {
 
 .audits-table-row {
   display: grid;
-  grid-template-columns:
-    minmax(460px, 1.9fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr)
-    minmax(108px, 0.35fr);
+  grid-template-columns: minmax(0, 1.9fr) minmax(132px, 0.55fr) minmax(108px, 0.35fr);
   column-gap: 32px;
   row-gap: 16px;
   align-items: center;
@@ -19612,8 +19561,7 @@ body:has(.browse-page-borderless-header) .navbar {
   background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
 }
 
-.audits-table-head > div:nth-child(2),
-.audits-table-head > div:nth-child(3) {
+.audits-table-head > div:nth-child(2) {
   text-align: right;
 }
 
@@ -19771,10 +19719,6 @@ body:has(.browse-page-borderless-header) .navbar {
 
   .audits-table-row > .audits-signal-cell:nth-child(2)::before {
     content: "ClawScan";
-  }
-
-  .audits-table-row > .audits-signal-cell:nth-child(3)::before {
-    content: "VirusTotal";
   }
 
   .audits-downloads-cell {

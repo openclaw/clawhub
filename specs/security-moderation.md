@@ -410,7 +410,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Static findings are internal evidence for Codex-backed ClawScan only. They do
   not hide, block, set public security status, affect installability, or trigger
   user autobans.
-- Public artifact pages present SkillSpector findings, VirusTotal malware telemetry,
+- Public artifact pages present SkillSpector findings, A.I.G findings for skills,
   and ClawScan-powered risk review as one consolidated Security audit page.
   This is a product-facing model only; scanner storage, moderation decisions,
   and worker behavior remain separate internally.
@@ -439,8 +439,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   result. This is not a prepublication-worker contract.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
-- VirusTotal telemetry remains a separate Security audit signal and is not an
-  input to the production ClawScan profile or judge.
+- VirusTotal is not displayed in the UI: audit pages, the audit directory, version
+  scan badges, and pending-scan notices omit its results, links, and placeholders.
+  Stored telemetry and machine-readable audit exports remain available; it is
+  not an input to the production ClawScan profile or judge.
 - The worker's explicit artifact-only OSS ClawScan route accepts every claimed
   target kind and source through the same completion/failure contract. Skill
   versions and scan requests use the isolated `artifact` root; extracted

@@ -378,9 +378,8 @@ export function SkillDetailPageView({
             <div className="pending-banner-content">
               <strong>Security scan in progress</strong>
               <p>
-                Your skill is being scanned by VirusTotal. It will be visible to others once the
-                scan completes. This usually takes up to 5 minutes — grab a coffee or exfoliate your
-                shell while you wait.
+                Your skill is undergoing security checks. It will be visible to others once the
+                checks complete.
               </p>
             </div>
           </div>

@@ -6,9 +6,9 @@ import {
   type VtAnalysis,
 } from "./SkillSecurityScanResults";
 
-export type AuditScannerKind = "aig" | "static" | "virustotal" | "skillspector";
+export type AuditScannerKind = "aig" | "static" | "skillspector";
 
-export const SECURITY_AUDIT_SUBTEXT = "Security checks across malware telemetry and agentic risk";
+export const SECURITY_AUDIT_SUBTEXT = "Security checks for vulnerabilities and agentic risk";
 
 type SecurityAuditSignals = {
   vtAnalysis?: VtAnalysis | null;
@@ -27,10 +27,9 @@ export const AUDIT_SCANNER_LABELS: Record<AuditScannerKind, string> = {
   aig: "A.I.G",
   skillspector: "SkillSpector",
   static: "Static analysis",
-  virustotal: "VirusTotal",
 };
 
-const DEFAULT_AUDIT_SCANNER_ORDER: AuditScannerKind[] = ["skillspector", "virustotal", "static"];
+const DEFAULT_AUDIT_SCANNER_ORDER: AuditScannerKind[] = ["skillspector", "static"];
 
 const SUPPORTING_AUDIT_SCANNER_ORDER: AuditScannerKind[] = DEFAULT_AUDIT_SCANNER_ORDER.filter(
   (kind) => kind !== "skillspector",
@@ -64,11 +63,11 @@ export function getAuditScannerOrder(signals?: SecurityAuditSignals): AuditScann
   if (signals?.skillSpectorAnalysis) {
     order = hasStaticScanReview
       ? ["skillspector", ...SUPPORTING_AUDIT_SCANNER_ORDER]
-      : ["skillspector", "virustotal"];
+      : ["skillspector"];
   } else if (hasStaticScanReview) {
-    order = ["virustotal", "static"];
+    order = ["static"];
   } else {
-    order = ["skillspector", "virustotal"];
+    order = ["skillspector"];
   }
   return signals?.aigAnalysis ? ["aig", ...order] : order;
 }
@@ -78,7 +77,6 @@ export function getLatestAuditCheckedAt(signals: SecurityAuditSignals) {
     signals.aigAnalysis?.checkedAt,
     signals.llmAnalysis?.checkedAt,
     signals.skillSpectorAnalysis?.checkedAt,
-    signals.vtAnalysis?.checkedAt,
     signals.staticScan?.checkedAt,
   ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   return values.length ? Math.max(...values) : null;

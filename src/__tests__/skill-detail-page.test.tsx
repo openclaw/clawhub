@@ -1493,7 +1493,7 @@ describe("SkillDetailPage", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: "Security checks across malware telemetry and agentic risk",
+        name: "Security checks for vulnerabilities and agentic risk",
       }),
     ).toBeTruthy();
     expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();
