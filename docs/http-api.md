@@ -432,6 +432,27 @@ Authenticated stored report archive endpoint for submitted versions.
 - `kind` defaults to `skill`; use `kind=plugin` for plugin/package scans.
 - Returns the same ZIP shape as scan-request downloads.
 
+### `POST /api/v1/packages/-/scan/batch`
+
+Admin-only bulk ClawScan rescan for active code/bundle plugins' latest releases.
+Accepts `{ "mode": "all-active-latest", "cursor": null, "batchSize": 10, "dryRun": true }`.
+The backend caps pages at 10 package rows. Deleted/non-plugin packages and
+missing/deleted/revoked latest releases are skipped. Existing active jobs are
+preserved; other eligible releases receive a lowest-priority `bulk-rescan` job.
+
+Returns `ok`, `mode`, `queued`, `alreadyQueued`, `skipped`, `jobIds`, `nextCursor`,
+`done`, and `sampleNames`. Dry runs return would-queue counts with empty `jobIds`
+and create no jobs or batch audit entries. Resume with `nextCursor`; catalog
+pagination uses stable creation order. Wait for the batch before submitting the
+next page. Existing successful scans are eligible, regardless of AIG coverage.
+
+### `POST /api/v1/packages/-/scan/batch/status`
+
+Admin-only job status aggregate. Accepts `{ "jobIds": ["..."] }` (at most 200).
+Returns `ok`, `total`, `queued`, `running`, `succeeded`, `failed`, `missing`,
+`terminal`, `done`, and `failedJobIds`. `done` means no jobs remain queued/running;
+check `failed` and `missing` before reporting success. Duplicate IDs count once.
+
 ### `POST /api/v1/skills/-/scan/batch`
 
 Admin-only canonical batch rescan route. It accepts the same payload shape as legacy `POST /api/v1/skills/-/rescan-batch`.

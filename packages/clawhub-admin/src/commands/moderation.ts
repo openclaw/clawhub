@@ -18,6 +18,7 @@ import {
   ApiV1ReclassifyBanResponseSchema,
   ApiV1SetRoleResponseSchema,
   ApiV1SkillScanBatchResponseSchema,
+  ApiV1PackageScanBatchResponseSchema,
   ApiV1SkillScanBatchStatusResponseSchema,
   ApiV1SkillScanSubmitResponseSchema,
   ApiV1SkillRepairVtPendingResponseSchema,
@@ -472,6 +473,19 @@ export async function cmdRescanSkill(
   }
 }
 
+export async function cmdRescanAllPackages(
+  opts: GlobalOpts,
+  options: Omit<Parameters<typeof cmdRescanAllSkills>[1], "maxSkills"> & { maxPackages?: number },
+  inputAllowed: boolean,
+) {
+  return cmdRescanAllSkills(
+    opts,
+    { ...options, maxSkills: options.maxPackages },
+    inputAllowed,
+    "packages",
+  );
+}
+
 export async function cmdRescanAllSkills(
   opts: GlobalOpts,
   options: {
@@ -485,8 +499,9 @@ export async function cmdRescanAllSkills(
     failFast?: boolean;
   },
   inputAllowed: boolean,
+  target: "skills" | "packages" = "skills",
 ) {
-  const batchSize = normalizePositiveInt(options.batchSize, 50);
+  const batchSize = normalizePositiveInt(options.batchSize, target === "packages" ? 10 : 50);
   const pollIntervalMs = normalizeNonNegativeInt(options.pollInterval, 30) * 1000;
   const maxSkills =
     options.maxSkills === undefined ? undefined : normalizePositiveInt(options.maxSkills, 1);
@@ -495,11 +510,13 @@ export async function cmdRescanAllSkills(
   if (!options.dryRun && !options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
-      `Queue bulk ClawScan rescans for active latest skills in batches of ${batchSize}? (admin)`,
+      `Queue bulk ClawScan rescans for active latest ${target} in batches of ${batchSize}? (admin)`,
     );
     if (!ok) return undefined;
   }
 
+  const batchPath =
+    target === "packages" ? `${ApiRoutes.packages}/-/scan/batch` : `${ApiRoutes.skillScans}/batch`;
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   let cursor = options.cursor?.trim() || null;
@@ -514,11 +531,11 @@ export async function cmdRescanAllSkills(
     const remaining = maxSkills === undefined ? batchSize : Math.max(0, maxSkills - processed);
     if (remaining === 0) break;
     const effectiveBatchSize = Math.min(batchSize, remaining);
-    const result = await apiRequest(
+    const result = await apiRequest<unknown>(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skillScans}/batch`,
+        path: batchPath,
         token,
         body: {
           mode: "all-active-latest",
@@ -527,13 +544,18 @@ export async function cmdRescanAllSkills(
           dryRun: options.dryRun === true,
         },
       },
-      ApiV1SkillScanBatchResponseSchema,
+      target === "packages"
+        ? ApiV1PackageScanBatchResponseSchema
+        : ApiV1SkillScanBatchResponseSchema,
     );
-    const batch = parseArk(
-      ApiV1SkillScanBatchResponseSchema,
-      result,
-      "Bulk skill rescan batch response",
-    );
+    const batch =
+      target === "packages"
+        ? parseArk(
+            ApiV1PackageScanBatchResponseSchema,
+            result,
+            "Bulk package rescan batch response",
+          )
+        : parseArk(ApiV1SkillScanBatchResponseSchema, result, "Bulk skill rescan batch response");
     batches += 1;
     totalQueued += batch.queued;
     totalAlreadyQueued += batch.alreadyQueued;
@@ -548,7 +570,9 @@ export async function cmdRescanAllSkills(
       alreadyQueued: batch.alreadyQueued,
       skipped: batch.skipped,
       done: batch.done,
-      sampleSlugs: batch.sampleSlugs,
+      ...("sampleNames" in batch
+        ? { sampleNames: batch.sampleNames }
+        : { sampleSlugs: batch.sampleSlugs }),
     });
 
     if (!options.dryRun && batch.jobIds.length > 0) {
@@ -556,10 +580,13 @@ export async function cmdRescanAllSkills(
         pollIntervalMs,
         json: options.json,
         batch: batches,
+        statusPath: `${batchPath}/status`,
       });
-      totalFailed += status.failed;
-      if (status.failed > 0 && options.failFast) {
-        fail(`Bulk rescan batch ${batches} finished with ${status.failed} failed job(s)`);
+      totalFailed += status.failed + status.missing;
+      if (status.failed + status.missing > 0 && options.failFast) {
+        fail(
+          `Bulk rescan batch ${batches} finished with ${status.failed + status.missing} failed or missing job(s)`,
+        );
       }
     }
 
@@ -701,14 +728,14 @@ async function pollBulkRescanStatus(
   registry: string,
   token: string,
   jobIds: string[],
-  options: { pollIntervalMs: number; json?: boolean; batch: number },
+  options: { pollIntervalMs: number; json?: boolean; batch: number; statusPath: string },
 ) {
   while (true) {
     const result = await apiRequest(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skillScans}/batch/status`,
+        path: options.statusPath,
         token,
         body: { jobIds },
       },

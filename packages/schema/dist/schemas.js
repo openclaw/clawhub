@@ -665,6 +665,38 @@ export const ApiV1SkillScanBatchStatusResponseSchema = type({
     done: "boolean",
     failedJobIds: "string[]",
 });
+export const ApiV1PackageScanBatchRequestSchema = type({
+    mode: '"all-active-latest"?',
+    cursor: "string|null?",
+    batchSize: "number?",
+    dryRun: "boolean?",
+});
+export const ApiV1PackageScanBatchResponseSchema = type({
+    ok: "true",
+    mode: '"all-active-latest"',
+    queued: "number",
+    alreadyQueued: "number",
+    skipped: "number",
+    jobIds: "string[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    sampleNames: "string[]",
+});
+export const ApiV1PackageScanBatchStatusRequestSchema = type({
+    jobIds: "string[]",
+});
+export const ApiV1PackageScanBatchStatusResponseSchema = type({
+    ok: "true",
+    total: "number",
+    queued: "number",
+    running: "number",
+    succeeded: "number",
+    failed: "number",
+    missing: "number",
+    terminal: "number",
+    done: "boolean",
+    failedJobIds: "string[]",
+});
 export const ApiV1SkillRepairVtPendingRequestSchema = type({
     cursor: "string|null?",
     batchSize: "number?",

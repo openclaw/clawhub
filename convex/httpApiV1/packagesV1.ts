@@ -1,5 +1,7 @@
 import {
   ApiRoutes,
+  ApiV1PackageScanBatchRequestSchema,
+  ApiV1PackageScanBatchStatusRequestSchema,
   ApiV1PackageCategoriesBatchRequestSchema,
   ApiV1PackageCategoriesBatchResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
@@ -185,6 +187,8 @@ const internalRefs = internal as unknown as {
   };
   securityScan: {
     requestPackageRescanForUserInternal: unknown;
+    enqueueBulkPackageRescanBatchForAdminInternal: unknown;
+    getBulkPackageRescanBatchStatusForAdminInternal: unknown;
   };
   publishAttempts: {
     getPackagePublishAttemptStatusInternal: unknown;
@@ -2846,6 +2850,55 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (
+    segments[0] === "-" &&
+    segments[1] === "scan" &&
+    segments[2] === "batch" &&
+    (segments.length === 3 || (segments.length === 4 && segments[3] === "status"))
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      if (segments[3] === "status") {
+        const body = parseArk(
+          ApiV1PackageScanBatchStatusRequestSchema,
+          await request.json(),
+          "Package scan batch status payload",
+        );
+        const result = await runQueryRef(
+          ctx,
+          internalRefs.securityScan.getBulkPackageRescanBatchStatusForAdminInternal,
+          {
+            actorUserId: auth.userId,
+            jobIds: body.jobIds,
+          },
+        );
+        return json(result, 200, rate.headers);
+      }
+      const body = parseArk(
+        ApiV1PackageScanBatchRequestSchema,
+        await request.json(),
+        "Package scan batch payload",
+      );
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.securityScan.enqueueBulkPackageRescanBatchForAdminInternal,
+        {
+          ...body,
+          actorUserId: auth.userId,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package bulk rescan failed");
+    }
+  }
+
   if (segments[0] === "categories:batch" && segments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "read");
     if (!rate.ok) return rate.response;

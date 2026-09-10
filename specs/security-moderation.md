@@ -490,6 +490,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   claimable immediately, but it must not demote that job from publish priority.
 - Bulk rescans stay lowest priority and use the bounded operator campaign flow,
   which enqueues one page at a time and waits for that page before continuing.
+- The plugin bulk rescan command scans only the latest active release of code/bundle
+  plugins, preserving existing active jobs and manual moderation decisions. It
+  skips deleted/revoked releases, uses stable creation-order catalog pagination,
+  and caps each transaction at 10 package rows to bound release hydration. Admin
+  identity comes from the authenticated API token, and applied batches are audited.
+  Dry runs create neither jobs nor batch audit entries. Existing scanner results
+  do not exclude a release; this supports scanner-version and AIG backfills.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker

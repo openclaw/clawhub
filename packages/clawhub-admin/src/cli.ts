@@ -36,6 +36,7 @@ import {
   cmdRepairVtPendingSkills,
   cmdRevokeSkillVersion,
   cmdRescanAllSkills,
+  cmdRescanAllPackages,
   cmdRescanSkill,
   cmdSetRole,
   cmdUnbanUser,
@@ -784,6 +785,28 @@ function registerPluginModerationCommands(command: Command) {
 }
 
 function registerPluginOperations(command: Command) {
+  command
+    .command("rescan-all")
+    .description("Queue admin ClawScan rescans for active latest plugins in paced batches")
+    .option("--batch-size <n>", "Batch size; backend caps at 10", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--poll-interval <sec>", "Seconds between batch status polls", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--cursor <cursor>", "Resume from a backend pagination cursor")
+    .option("--max-packages <n>", "Stop after this many scanned/queued/skipped packages", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--dry-run", "Page eligible plugins without queueing jobs")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON progress events")
+    .option("--fail-fast", "Stop after the first drained batch with failed jobs")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRescanAllPackages(opts, options, isInputAllowed());
+    });
+
   command
     .command("validation-report")
     .description("Export current plugin validation results as JSON")

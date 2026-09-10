@@ -127,6 +127,7 @@ bun run admin -- skills triage-report <report-id> --status open|confirmed|dismis
 bun run admin -- plugins moderate <name> --version <version> --state approved|quarantined|revoked --reason <text>
 bun run admin -- plugins feature <name> [--json]
 bun run admin -- plugins unfeature <name> [--json]
+bun run admin -- plugins rescan-all [--batch-size 10] [--max-packages <n>] [--cursor <cursor>] [--dry-run] [--poll-interval 30] [--fail-fast] [--yes] [--json]
 bun run admin -- plugins status <name>
 bun run admin -- plugins queue [--status open|blocked|manual|all]
 bun run admin -- plugins reports [--status open|confirmed|dismissed|all]
@@ -147,3 +148,18 @@ All skill and plugin commands accept `--json` where the underlying endpoint supp
 `packages validation-report --json` exhaustively fetches the current validation state for every
 plugin and writes exactly one JSON document to stdout. Redirect stdout to archive the report;
 authentication, registry, and request failures are written to stderr by the CLI error handler.
+
+`plugins rescan-all` (also `packages rescan-all`) requires an admin token. It
+rescans each active code/bundle plugin's latest release, including releases with
+existing successful scanner results. Deleted packages/releases, revoked releases,
+non-plugin packages, and missing latest releases are skipped; historical releases
+are never scanned. Existing queued/running jobs are preserved and awaited. New
+jobs use the lowest-priority `bulk-rescan` source.
+
+The CLI waits for each batch to finish before paging again. The default and
+backend cap are 10 packages to keep large release records within transaction
+limits. `--max-packages` bounds visited package rows, including skips; `--cursor`
+resumes the reported next page. `--dry-run` reports would-queue counts without
+creating jobs or batch audit entries. `--json` emits batch/status/summary events;
+failed or missing jobs produce a nonzero exit, and `--fail-fast` stops after the
+first failed batch drains.

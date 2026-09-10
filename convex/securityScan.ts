@@ -231,6 +231,7 @@ type EnqueueSkillVersionScanArgs = {
 };
 
 type EnqueuePackageReleaseScanArgs = {
+  preserveActiveJob?: boolean;
   releaseId: Id<"packageReleases">;
   source: SecurityScanJobSource;
   priority?: number;
@@ -780,6 +781,145 @@ export const getBulkSkillRescanBatchStatusForAdminInternal = internalQuery({
     assertAdmin(actor);
 
     return getBulkSkillRescanBatchStatus(ctx, args.jobIds.slice(0, MAX_BULK_RESCAN_STATUS_JOB_IDS));
+  },
+});
+
+export const enqueueBulkPackageRescanBatchForAdminInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    mode: v.optional(v.literal("all-active-latest")),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const mode = args.mode ?? "all-active-latest";
+    // Releases can approach 1 MiB each; cap hydration below the transaction read budget.
+    const batchSize = Math.min(normalizeBulkRescanBatchSize(args.batchSize), 10);
+    const dryRun = args.dryRun === true;
+    const page = await ctx.db
+      .query("packages")
+      .order("asc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: batchSize,
+        maximumBytesRead: 2_000_000,
+      });
+
+    let queued = 0;
+    let alreadyQueued = 0;
+    let skipped = 0;
+    const jobIds: Id<"securityScanJobs">[] = [];
+    const sampleNames: string[] = [];
+
+    for (const pkg of page.page) {
+      if (sampleNames.length < BULK_RESCAN_SAMPLE_LIMIT) sampleNames.push(pkg.name);
+      if (
+        pkg.softDeletedAt ||
+        (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
+        !pkg.latestReleaseId
+      ) {
+        skipped += 1;
+        continue;
+      }
+
+      const version = await ctx.db.get(pkg.latestReleaseId);
+      if (
+        !version ||
+        version.softDeletedAt ||
+        version.packageId !== pkg._id ||
+        version.manualModeration?.state === "revoked"
+      ) {
+        skipped += 1;
+        continue;
+      }
+
+      if (dryRun) {
+        const existing = await ctx.db
+          .query("securityScanJobs")
+          .withIndex("by_package_release", (q) => q.eq("packageReleaseId", version._id))
+          .collect();
+        const active = existing.find((job) => job.status === "queued" || job.status === "running");
+        if (active) alreadyQueued += 1;
+        else queued += 1;
+        continue;
+      }
+
+      const result = await enqueuePackageReleaseScan(
+        ctx,
+        {
+          releaseId: version._id,
+          source: "bulk-rescan",
+          priority: 0,
+          waitForVtMs: 0,
+          preserveActiveJob: true,
+        },
+        version,
+      );
+      if (!result.jobId) {
+        skipped += 1;
+        continue;
+      }
+      jobIds.push(result.jobId);
+      if (result.alreadyQueued) alreadyQueued += 1;
+      else queued += 1;
+    }
+
+    const nextCursor = page.isDone ? null : page.continueCursor;
+
+    if (!dryRun) {
+      const now = Date.now();
+      await ctx.db.insert("auditLogs", {
+        actorUserId: actor._id,
+        action: "package.clawscan.bulk_rescan_batch",
+        targetType: "securityScanBatch",
+        targetId: `bulk-rescan:${now}`,
+        metadata: {
+          mode,
+          batchSize,
+          queued,
+          alreadyQueued,
+          skipped,
+          cursor: args.cursor ?? null,
+          nextCursor,
+          sampleNames,
+        },
+        createdAt: now,
+      });
+    }
+
+    return {
+      ok: true as const,
+      mode,
+      queued,
+      alreadyQueued,
+      skipped,
+      jobIds,
+      nextCursor,
+      done: page.isDone,
+      sampleNames,
+    };
+  },
+});
+
+export const getBulkPackageRescanBatchStatusForAdminInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    jobIds: v.array(v.id("securityScanJobs")),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    if (args.jobIds.length > MAX_BULK_RESCAN_STATUS_JOB_IDS) {
+      throw new ConvexError("Too many scan job IDs");
+    }
+    return getBulkSkillRescanBatchStatus(ctx, [...new Set(args.jobIds)]);
   },
 });
 
@@ -2654,8 +2794,12 @@ export const enqueuePackageReleaseScanInternal = internalMutation({
   },
 });
 
-async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageReleaseScanArgs) {
-  const release = await ctx.db.get(args.releaseId);
+async function enqueuePackageReleaseScan(
+  ctx: MutationCtx,
+  args: EnqueuePackageReleaseScanArgs,
+  knownRelease?: Doc<"packageReleases">,
+) {
+  const release = knownRelease ?? (await ctx.db.get(args.releaseId));
   if (!release || release.softDeletedAt) return { ok: true as const, skipped: "missing" as const };
   const now = Date.now();
   const waitForVtUntil = now + Math.max(0, args.waitForVtMs ?? DEFAULT_VT_WAIT_MS);
@@ -2668,6 +2812,9 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
     .collect();
   const active = existing.find((job) => job.status === "queued" || job.status === "running");
   if (active) {
+    if (args.preserveActiveJob) {
+      return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
+    }
     await ctx.db.patch(active._id, {
       source: higherPrioritySource(active.source, args.source),
       priority: Math.max(active.priority, args.priority ?? 0),
