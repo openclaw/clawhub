@@ -117,6 +117,8 @@ Public read:
   - Invalid `sort` values return `400`
 - `GET /api/v1/plugins?limit=&cursor=&sort=`
   - `sort`: `recommended` (default), `downloads`, `updated`, legacy alias `installs`
+- `GET /api/v1/plugins/overview`
+  - Cacheable bounded marketplace shelves and category metadata
 - `GET /api/v1/plugins/search?q=...`
 - `GET /api/v1/packages/{name}/versions/{version}/artifact`
 - `GET /api/v1/packages/{name}/versions/{version}/security`

@@ -10955,6 +10955,80 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("plugin overview returns one cacheable bounded home-page payload", async () => {
+    const featured = {
+      ...makeCatalogItem("featured-plugin", {
+        family: "code-plugin",
+        updatedAt: 300,
+      }),
+      categories: ["channels"],
+    };
+    const trending = {
+      ...makeCatalogItem("trending-plugin", {
+        family: "bundle-plugin",
+        updatedAt: 200,
+      }),
+      categories: ["models"],
+    };
+    const category = {
+      ...makeCatalogItem("category-plugin", {
+        family: "code-plugin",
+        updatedAt: 100,
+      }),
+      categories: [],
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      const page = args.highlightedOnly
+        ? [featured]
+        : args.sort === "trending"
+          ? [trending]
+          : args.category === "channels"
+            ? [category]
+            : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toContain("s-maxage=300");
+    const payload = await response.json();
+    expect(payload.categories).toEqual(
+      expect.arrayContaining([expect.objectContaining({ slug: "channels", order: 0 })]),
+    );
+    expect(payload.items).toEqual([
+      expect.objectContaining({ name: "featured-plugin", featured: true }),
+      expect.objectContaining({ name: "trending-plugin", trending: true }),
+      expect.objectContaining({ name: "category-plugin", categories: ["channels"] }),
+    ]);
+    expect(runQuery).toHaveBeenCalledTimes(payload.categories.length + 2);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        highlightedOnly: true,
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        category: "channels",
+        officialFirst: true,
+        sort: "downloads",
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    const categoryCall = runQuery.mock.calls.find(
+      ([, args]) => (args as { category?: string }).category === "channels",
+    );
+    expect(categoryCall?.[1]).not.toHaveProperty("families");
+  });
+
   it("packages list forwards topics to both unified catalog sources", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());

@@ -668,6 +668,17 @@ On the unified `/api/v1/packages` endpoint it is plugin-only; use
 
 Legacy aliases are not accepted as stored or author-declared category values.
 
+### `GET /api/v1/plugins/overview`
+
+Returns the bounded data needed to render the plugin marketplace home page in
+one cacheable request: the canonical category metadata plus the union of the
+top eight Featured, Trending, and official-first/download-sorted plugins for
+each category. Items may include `featured` and `trending` markers.
+
+The response is public and carries shared-cache headers. Use the paginated
+`GET /api/v1/plugins` endpoint for searches, category expansion, and complete
+catalog traversal.
+
 ### `GET /api/v1/plugins/categories`
 
 Returns the canonical plugin discovery taxonomy in display order. Each category

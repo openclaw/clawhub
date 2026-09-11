@@ -323,7 +323,7 @@ export const ServerPackagePublishRequestSchema = type({
     artifact: PackagePublishArtifactSchema.optional(),
     files: CliPublishFileSchema.array(),
 });
-export const PackageListItemSchema = type({
+const PackageListItemFields = {
     name: "string",
     displayName: "string",
     family: PackageFamilySchema,
@@ -342,6 +342,25 @@ export const PackageListItemSchema = type({
     featuredAt: "number?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
+};
+export const PackageListItemSchema = type(PackageListItemFields);
+export const PluginOverviewItemSchema = type({
+    "+": "reject",
+    ...PackageListItemFields,
+    featured: "boolean?",
+    trending: "boolean?",
+});
+export const ApiV1PluginOverviewResponseSchema = type({
+    "+": "reject",
+    categories: type({
+        "+": "reject",
+        slug: "string",
+        label: "string",
+        description: "string",
+        icon: "string",
+        order: "number",
+    }).array(),
+    items: PluginOverviewItemSchema.array(),
 });
 export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),
