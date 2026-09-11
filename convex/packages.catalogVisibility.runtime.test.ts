@@ -149,6 +149,84 @@ const routes = [
 ];
 
 describe("normal plugin catalog visibility", () => {
+  it("continues family-less official-first category pages without restarting", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const { t } = await fixture();
+
+    try {
+      const first = await t.query(api.packages.listPublicPage, {
+        category: "channels",
+        officialFirst: true,
+        paginationOpts: { cursor: null, numItems: 1 },
+      });
+      const second = await t.query(api.packages.listPublicPage, {
+        category: "channels",
+        officialFirst: true,
+        paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+      });
+
+      expect(first.isDone).toBe(false);
+      expect(second.page[0]?.name).not.toBe(first.page[0]?.name);
+      expect([...first.page, ...second.page].map((entry) => entry.name).sort()).toEqual(
+        expectedNames,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("filters Trending to plugin families before applying the page limit", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const { t, ownerUserId } = await fixture();
+
+    try {
+      await t.run(async (ctx) => {
+        const clawId = await ctx.db.insert("packages", {
+          name: "trending-claw",
+          normalizedName: "trending-claw",
+          displayName: "Trending Claw",
+          ownerUserId,
+          family: "claw",
+          channel: "official",
+          isOfficial: true,
+          scanStatus: "clean",
+          categories: [],
+          topics: [],
+          tags: {},
+          stats: { downloads: 10, installs: 10, stars: 0, versions: 1 },
+          latestVersionSummary: { version: "1.0.0", createdAt: 1, changelog: "Initial release" },
+          createdAt: 1,
+          updatedAt: 1,
+        });
+        const leaderboard = await ctx.db
+          .query("packageLeaderboards")
+          .withIndex("by_kind", (q) => q.eq("kind", PACKAGE_TRENDING_LEADERBOARD_KIND))
+          .first();
+        if (!leaderboard) throw new Error("Missing fixture leaderboard");
+        await ctx.db.patch(leaderboard._id, {
+          items: [
+            { packageId: clawId, score: 10, installs: 10, downloads: 10 },
+            ...leaderboard.items,
+          ],
+        });
+      });
+
+      const result = await t.query(internal.packages.listPageForViewerInternal, {
+        families: ["code-plugin", "bundle-plugin"],
+        sort: "trending",
+        paginationOpts: { cursor: null, numItems: 1 },
+      });
+
+      expect(result.page.map((entry) => entry.name)).toEqual(["@openclaw/whatsapp"]);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
   it.each(["anonymous", "user", "admin"] as const)(
     "requires explicit authorized opt-in to discover published private plugins as %s",
     async (viewer) => {

@@ -2536,7 +2536,9 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
       isDone: boolean;
       continueCursor: string;
     }>(ctx, internalRefs.packages.listPageForViewerInternal, {
-      ...(args.highlightedOnly ? { families: [...PLUGIN_OVERVIEW_FAMILIES] } : {}),
+      ...(args.highlightedOnly || args.sort === "trending"
+        ? { families: [...PLUGIN_OVERVIEW_FAMILIES] }
+        : {}),
       ...args,
       paginationOpts: { cursor: null, numItems: PLUGIN_OVERVIEW_SECTION_SIZE },
     });

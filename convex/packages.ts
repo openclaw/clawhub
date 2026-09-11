@@ -1514,6 +1514,7 @@ function packageMatchesListFilters(
   pkg: Doc<"packages">,
   args: {
     family?: PackageFamily;
+    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     category?: string;
@@ -1527,6 +1528,7 @@ function packageMatchesListFilters(
   if (!isClawFamilyPubliclyVisible(pkg.family)) return false;
   if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
   if (args.family && pkg.family !== args.family) return false;
+  if (args.families?.length && !args.families.includes(pkg.family)) return false;
   if (args.channel && pkg.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
   if (args.category) {
@@ -4511,8 +4513,8 @@ async function listPackagePageImpl(
   if (args.channel === "private" && !args.viewerUserId) {
     return { page: [], isDone: true, continueCursor: "" };
   }
-  if (args.families?.length && !args.highlightedOnly) {
-    throw new Error("families is only supported for highlighted package pages");
+  if (args.families?.length && !args.highlightedOnly && args.sort !== "trending") {
+    throw new Error("families is only supported for highlighted or trending package pages");
   }
   if (args.category && !isPluginCategorySlug(args.category)) {
     return { page: [], isDone: true, continueCursor: "" };
@@ -4887,7 +4889,9 @@ async function listOfficialFirstPackageCategoryPage(
 
   if (state.phase === "official") {
     const officialPage =
-      !args.highlightedOnly && state.cursor === null
+      // Digest cursors resume through the family-scoped category reader below.
+      // Family-less reads use stable multi-family cursors and must stay on that path.
+      !args.highlightedOnly && args.family !== undefined && state.cursor === null
         ? await takeVisiblePackageCategoryDigestPage(ctx, {
             ...args,
             isOfficial: true,
@@ -4941,21 +4945,22 @@ async function listOfficialFirstPackageCategoryPage(
           : "",
       };
     }
-    const communityPage = args.highlightedOnly
-      ? await listPackagePageImpl(ctx, {
-          ...args,
-          officialFirst: false,
-          isOfficial: false,
-          paginationOpts: {
-            cursor: null,
+    const communityPage =
+      args.highlightedOnly || args.family === undefined
+        ? await listPackagePageImpl(ctx, {
+            ...args,
+            officialFirst: false,
+            isOfficial: false,
+            paginationOpts: {
+              cursor: null,
+              numItems: targetCount - collected.length,
+            },
+          })
+        : await takeVisiblePackageCategoryDigestPage(ctx, {
+            ...args,
+            isOfficial: false,
             numItems: targetCount - collected.length,
-          },
-        })
-      : await takeVisiblePackageCategoryDigestPage(ctx, {
-          ...args,
-          isOfficial: false,
-          numItems: targetCount - collected.length,
-        });
+          });
     collected.push(...communityPage.page);
     return {
       page: collected,

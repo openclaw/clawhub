@@ -11020,6 +11020,14 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        sort: "trending",
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
         category: "channels",
         numItems: 8,
       }),

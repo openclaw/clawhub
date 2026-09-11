@@ -6084,6 +6084,7 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
       category: "security",
       officialFirst: true,
       excludedScanStatuses: ["pending"],
@@ -6126,6 +6127,7 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
       category: "security",
       officialFirst: true,
       paginationOpts: { cursor: null, numItems: 3 },
@@ -6296,6 +6298,7 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
       category: "security",
       officialFirst: true,
       paginationOpts: { cursor: null, numItems: 1 },
