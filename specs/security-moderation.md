@@ -12,6 +12,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
+- Skill transfer, delete, and restore authorization follows the resource's current
+  publisher ownership. For organization skills, the historical `ownerUserId` is
+  not an authorization grant: current organization admin/owner membership is
+  required, subject to the operation's existing platform staff permissions.
+- Transfer acceptance rechecks the requester's current authority, including when
+  they originally published the skill. Removing or downgrading their membership
+  invalidates pending requests. Personal and legacy skills retain personal-owner
+  authorization through the shared publisher ownership check.
+
 - user: upload skills (subject to GitHub age gate), report skills/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.

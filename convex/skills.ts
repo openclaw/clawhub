@@ -13648,23 +13648,20 @@ async function setSkillSoftDeletedByActor(
   const slug = skill.slug;
 
   const isModeratorOrAdmin = user.role === "admin" || user.role === "moderator";
-  let isOwner = skill.ownerUserId === args.userId;
-
-  if (!isOwner) {
-    try {
-      await assertCanManageOwnedResource(ctx, {
-        actor: user,
-        ownerUserId: skill.ownerUserId,
-        ownerPublisherId: skill.ownerPublisherId,
-        allowedPublisherRoles: ["admin"],
-      });
-      isOwner = true;
-    } catch {
-      if (!isModeratorOrAdmin) {
-        // Preserve legacy behavior: delegate to assertModerator to produce the
-        // standard "Forbidden" error for non-owners without elevated roles.
-        assertModerator(user);
-      }
+  let isOwner = false;
+  // A historical publisher user ID does not confer current organization access.
+  try {
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+    });
+    isOwner = true;
+  } catch {
+    if (!isModeratorOrAdmin) {
+      // Preserve the standard authorization error for non-owners.
+      assertModerator(user);
     }
   }
   if (args.deleted && skill.moderationStatus === "removed") {
