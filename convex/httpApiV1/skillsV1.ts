@@ -740,10 +740,7 @@ type VerifySecurityVersion = {
   vtAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["vtAnalysis"]>,
     "status" | "verdict" | "source" | "checkedAt"
-  > &
-    Partial<
-      Pick<NonNullable<Doc<"skillVersions">["vtAnalysis"]>, "analysis" | "scanner" | "engineStats">
-    >;
+  >;
   skillSpectorAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>,
     | "status"
@@ -753,8 +750,7 @@ type VerifySecurityVersion = {
     | "issueCount"
     | "scannerVersion"
     | "checkedAt"
-  > &
-    Partial<Pick<NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>, "summary" | "error">>;
+  >;
 };
 
 type SecurityVerdictTargetResult = {
@@ -794,26 +790,31 @@ function normalizeVerificationStatus(value: string | null | undefined): Normaliz
 }
 
 function buildVerifySecurity(version: VerifySecurityVersion) {
+  const rawStatus = version.llmAnalysis?.status ?? null;
+  const status = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? rawStatus);
+  return {
+    status,
+    passed: status === "clean",
+    rawStatus,
+    verdict: version.llmAnalysis?.verdict ?? null,
+    confidence: version.llmAnalysis?.confidence ?? null,
+    summary: version.llmAnalysis?.summary ?? null,
+    model: version.llmAnalysis?.model ?? null,
+    checkedAt: version.llmAnalysis?.checkedAt ?? null,
+  };
+}
+
+function buildSecurityVerdictSummary(version: VerifySecurityVersion) {
   const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
-  const clawRawStatus = version.llmAnalysis?.status ?? null;
-  const clawStatus = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus);
   const vtStatus = version.vtAnalysis
     ? normalizeVerificationStatus(version.vtAnalysis.verdict ?? version.vtAnalysis.status)
     : null;
   const skillSpectorStatus = version.skillSpectorAnalysis
     ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
     : null;
-  const status = clawStatus;
 
   return {
-    status,
-    passed: status === "clean",
-    rawStatus: clawRawStatus,
-    verdict: version.llmAnalysis?.verdict ?? null,
-    confidence: version.llmAnalysis?.confidence ?? null,
-    summary: version.llmAnalysis?.summary ?? null,
-    model: version.llmAnalysis?.model ?? null,
-    checkedAt: version.llmAnalysis?.checkedAt ?? null,
+    ...buildVerifySecurity(version),
     signals: {
       staticScan: version.staticScan
         ? {
@@ -837,10 +838,7 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
             status: vtStatus ?? "pending",
             rawStatus: version.vtAnalysis.status,
             verdict: version.vtAnalysis.verdict ?? null,
-            analysis: version.vtAnalysis.analysis ?? null,
             source: version.vtAnalysis.source ?? null,
-            scanner: version.vtAnalysis.scanner ?? null,
-            engineStats: version.vtAnalysis.engineStats ?? null,
             checkedAt: version.vtAnalysis.checkedAt ?? null,
           }
         : null,
@@ -853,8 +851,6 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
             recommendation: version.skillSpectorAnalysis.recommendation ?? null,
             issueCount: version.skillSpectorAnalysis.issueCount ?? 0,
             scannerVersion: version.skillSpectorAnalysis.scannerVersion ?? null,
-            summary: version.skillSpectorAnalysis.summary ?? null,
-            error: version.skillSpectorAnalysis.error ?? null,
             checkedAt: version.skillSpectorAnalysis.checkedAt ?? null,
           }
         : null,
@@ -921,7 +917,7 @@ function buildSecurityVerdictReasons(args: {
   return [...new Set(reasons)];
 }
 
-function getVerifySecurityCheckedAt(security: ReturnType<typeof buildVerifySecurity>) {
+function getVerifySecurityCheckedAt(security: ReturnType<typeof buildSecurityVerdictSummary>) {
   const candidates = [
     security.checkedAt,
     security.signals.staticScan?.checkedAt,
@@ -929,53 +925,6 @@ function getVerifySecurityCheckedAt(security: ReturnType<typeof buildVerifySecur
     security.signals.skillSpector?.checkedAt,
   ].filter((value): value is number => typeof value === "number");
   return candidates.length > 0 ? Math.max(...candidates) : null;
-}
-
-function buildSecurityVerdictSummary(security: ReturnType<typeof buildVerifySecurity>) {
-  return {
-    status: security.status,
-    passed: security.passed,
-    rawStatus: security.rawStatus,
-    verdict: security.verdict,
-    confidence: security.confidence,
-    summary: security.summary,
-    model: security.model,
-    checkedAt: security.checkedAt,
-    signals: {
-      staticScan: security.signals.staticScan
-        ? {
-            status: security.signals.staticScan.status,
-            rawStatus: security.signals.staticScan.rawStatus,
-            reasonCodes: security.signals.staticScan.reasonCodes,
-            summary: security.signals.staticScan.summary,
-            engineVersion: security.signals.staticScan.engineVersion,
-            checkedAt: security.signals.staticScan.checkedAt,
-          }
-        : null,
-      virusTotal: security.signals.virusTotal
-        ? {
-            status: security.signals.virusTotal.status,
-            rawStatus: security.signals.virusTotal.rawStatus,
-            verdict: security.signals.virusTotal.verdict,
-            source: security.signals.virusTotal.source,
-            checkedAt: security.signals.virusTotal.checkedAt,
-          }
-        : null,
-      skillSpector: security.signals.skillSpector
-        ? {
-            status: security.signals.skillSpector.status,
-            rawStatus: security.signals.skillSpector.rawStatus,
-            score: security.signals.skillSpector.score,
-            severity: security.signals.skillSpector.severity,
-            recommendation: security.signals.skillSpector.recommendation,
-            issueCount: security.signals.skillSpector.issueCount,
-            scannerVersion: security.signals.skillSpector.scannerVersion,
-            checkedAt: security.signals.skillSpector.checkedAt,
-          }
-        : null,
-      dependencyRegistry: null,
-    },
-  };
 }
 
 function isValidRequestedVersion(version: string) {
@@ -1189,7 +1138,7 @@ async function buildSecurityVerdictItem(
     );
   }
 
-  const security = buildVerifySecurity(version);
+  const security = buildSecurityVerdictSummary(version);
   const reasons = buildSecurityVerdictReasons({
     isMalwareBlocked: result.moderationInfo?.isMalwareBlocked ?? false,
     securityPassed: security.passed,
@@ -1218,7 +1167,7 @@ async function buildSecurityVerdictItem(
       version.version,
     ),
     overview: formatSecurityAuditOverview({ llmAnalysis: version.llmAnalysis }),
-    security: buildSecurityVerdictSummary(security),
+    security,
   };
 }
 
@@ -2451,8 +2400,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               source: "unavailable",
               reason: "No server-resolved GitHub import provenance is stored for this version.",
             },
-        security,
-        scannerReports: await readVersionScannerReports(ctx, version),
+        security: {
+          ...security,
+          scannerReports: await readVersionScannerReports(ctx, version),
+        },
         signature: {
           status: "unsigned",
         },

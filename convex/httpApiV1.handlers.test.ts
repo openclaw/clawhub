@@ -7496,30 +7496,14 @@ describe("httpApiV1 handlers", () => {
         summary: "ClawScan clean.",
         model: "gpt-test",
         checkedAt: 3,
-        signals: {
-          staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
-          virusTotal: {
-            status: "clean",
-            rawStatus: "clean",
-            verdict: "clean",
-            source: "engines",
-          },
-          skillSpector: {
-            status: "clean",
-            rawStatus: "clean",
-            score: 0,
-            recommendation: "INSTALL",
-            issueCount: 0,
-          },
-          dependencyRegistry: null,
-        },
       },
       signature: { status: "unsigned" },
     });
     expect(json.skill).toBeUndefined();
     expect(json.publisher).toBeUndefined();
-    expect(json.scannerReports).toBeDefined();
-    expect(json.scannerReports).toEqual(scannerReports);
+    expect(json.security).not.toHaveProperty("signals");
+    expect(json).not.toHaveProperty("scannerReports");
+    expect(json.security.scannerReports).toEqual(scannerReports);
   });
 
   it("does not let publisher-supplied skill-card.md satisfy verification", async () => {
@@ -7746,10 +7730,7 @@ describe("httpApiV1 handlers", () => {
       passed: true,
       rawStatus: "clean",
       verdict: "benign",
-      signals: {
-        staticScan: { status: "malicious", rawStatus: "malicious" },
-        dependencyRegistry: null,
-      },
+      scannerReports: { aig: null, skillspector: null },
     });
   });
 

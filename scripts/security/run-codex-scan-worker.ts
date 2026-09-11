@@ -26,6 +26,7 @@ import {
 } from "./security-scan-worker-summary";
 
 export type ClaimedJob = {
+  scannerReportsUploadUrl?: string | null;
   job: {
     _id: string;
     leaseToken: string;
@@ -1934,6 +1935,7 @@ function validateClawScanArtifactForClawHubProfile(
     mapping: clawScanDiagnosticMapping(artifact, scannerSet),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),
     scannerReportsJson: JSON.stringify({
+      checkedAt,
       aig: rawAig ? (JSON.parse(rawAig) as unknown) : null,
       skillspector: JSON.parse(rawSkillSpector) as unknown,
     }),
@@ -2103,6 +2105,22 @@ export async function processJob(
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
+    // A signed upload URL advertises support after the separately deployed
+    // backend updates. Upload directly to storage to avoid action argument limits.
+    let scannerReportsStorageId: string | undefined;
+    if (job.scannerReportsUploadUrl) {
+      const uploaded = await fetch(job.scannerReportsUploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: mapped.scannerReportsJson,
+      });
+      if (!uploaded.ok) throw new Error(`Scanner report upload failed (${uploaded.status})`);
+      const uploadResult = asRecord(await uploaded.json());
+      if (typeof uploadResult?.storageId !== "string" || !uploadResult.storageId) {
+        throw new Error("Scanner report upload did not return a storage ID");
+      }
+      scannerReportsStorageId = uploadResult.storageId;
+    }
     await client.action(api.securityScan.completeCodexScanJob, {
       token,
       jobId: job.job._id as Id<"securityScanJobs">,
@@ -2110,7 +2128,9 @@ export async function processJob(
       llmAnalysis,
       aigAnalysis,
       skillSpectorAnalysis,
-      scannerReportsJson: mapped.scannerReportsJson,
+      ...(scannerReportsStorageId
+        ? { scannerReportsStorageId: scannerReportsStorageId as Id<"_storage"> }
+        : {}),
       runId: process.env.GITHUB_RUN_ID,
     });
     scanCompletedAt = Date.now();

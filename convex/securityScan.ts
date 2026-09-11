@@ -3782,6 +3782,7 @@ type CodexScanHydrationCtx = {
   runQuery: (ref: never, args: never) => Promise<unknown>;
   storage: {
     getUrl: (storageId: Id<"_storage">) => Promise<string | null>;
+    generateUploadUrl: () => Promise<string>;
   };
 };
 
@@ -3859,6 +3860,10 @@ async function hydrateClaimedCodexScanJob(
     return null;
   }
   return {
+    scannerReportsUploadUrl:
+      version && (job.targetKind === "skillVersion" || scanRequest?.update)
+        ? await ctx.storage.generateUploadUrl()
+        : null,
     job,
     target: {
       ...target,
@@ -3987,8 +3992,7 @@ export const completeCodexScanJob = action({
     llmAnalysis: llmAnalysisValidator,
     aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
-    // Keep vendor JSON out of Convex value encoding (for example SARIF "$schema").
-    scannerReportsJson: v.optional(v.string()),
+    scannerReportsStorageId: v.optional(v.id("_storage")),
     runId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -4017,32 +4021,20 @@ export const completeCodexScanJob = action({
     }
 
     async function updateSkillVersion(versionId: Id<"skillVersions">) {
-      if (completedAigAnalysis) {
-        await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
-          versionId,
-          aigAnalysis: completedAigAnalysis,
-        });
-      }
-      if (args.skillSpectorAnalysis) {
-        await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
-          versionId,
-          skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
-        });
-      }
-      const scannerReportsStorageId = args.scannerReportsJson
-        ? await ctx.storage.store(
-            new Blob(
-              [
-                JSON.stringify({
-                  checkedAt: args.llmAnalysis.checkedAt,
-                  ...JSON.parse(args.scannerReportsJson),
-                }),
-              ],
-              { type: "application/json" },
-            ),
-          )
-        : undefined;
+      const scannerReportsStorageId = args.scannerReportsStorageId;
       try {
+        if (completedAigAnalysis) {
+          await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
+            versionId,
+            aigAnalysis: completedAigAnalysis,
+          });
+        }
+        if (args.skillSpectorAnalysis) {
+          await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
+            versionId,
+            skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+          });
+        }
         await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
           versionId,
           llmAnalysis: args.llmAnalysis,

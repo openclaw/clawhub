@@ -56,18 +56,29 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
       nextRunAt: 0,
       attempts: 1,
       leaseToken: "lease-fixture",
+      workerId: "report-worker",
       leaseExpiresAt: Date.now() + 60_000,
       createdAt: 1,
       updatedAt: 1,
     });
     return { versionId: createdVersionId, jobId: createdJobId };
   });
+  const claimed = await t.action(api.securityScan.hydrateCodexScanJob, {
+    token: "worker-fixture",
+    jobId,
+    leaseToken: "lease-fixture",
+    workerId: "report-worker",
+  });
+  expect(claimed?.scannerReportsUploadUrl).toBeTypeOf("string");
   async function verify() {
     const response = await t.fetch("/api/v1/skills/report-fixture/verify?ownerHandle=report-owner");
     expect(response.status).toBe(200);
-    return response.json();
+    const body = await response.json();
+    expect(body).not.toHaveProperty("scannerReports");
+    expect(body.security).not.toHaveProperty("signals");
+    return body;
   }
-  expect((await verify()).scannerReports).toEqual({ aig: null, skillspector: null });
+  expect((await verify()).security.scannerReports).toEqual({ aig: null, skillspector: null });
   const scannerReports = {
     aig: {
       $schema: "https://json.schemastore.org/sarif-2.1.0.json",
@@ -100,14 +111,16 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
         issues: [],
         checkedAt,
       },
-      scannerReportsJson: JSON.stringify(scannerReports),
+      scannerReportsStorageId: await t.run((ctx) =>
+        ctx.storage.store(new Blob([JSON.stringify({ checkedAt, ...scannerReports })])),
+      ),
     });
   }
   await complete(10);
   const firstId = await t.run(
     async (ctx) => (await ctx.db.get(versionId))!.scannerReportsStorageId!,
   );
-  expect((await verify()).scannerReports).toEqual(scannerReports);
+  expect((await verify()).security.scannerReports).toEqual(scannerReports);
   // The normal verdict still governs verification; raw CAUTION does not replace it.
   expect((await verify()).security.status).toBe("clean");
 
@@ -115,7 +128,7 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
     versionId,
     aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 20 },
   });
-  expect((await verify()).scannerReports).toEqual({ aig: null, skillspector: null });
+  expect((await verify()).security.scannerReports).toEqual({ aig: null, skillspector: null });
   await t.run(async (ctx) => {
     await ctx.db.patch(jobId, {
       status: "running",
@@ -129,14 +142,14 @@ it("returns complete vendor JSON through scan completion and verify, replacing s
   );
   expect(secondId).not.toBe(firstId);
   expect(await t.run((ctx) => ctx.storage.get(firstId))).toBeNull();
-  expect((await verify()).scannerReports).toEqual(scannerReports);
+  expect((await verify()).security.scannerReports).toEqual(scannerReports);
 
   await t.mutation(internal.skills.updateVersionLlmAnalysisInternal, {
     versionId,
     llmAnalysis: { status: "error", checkedAt: 30 },
   });
   expect(await t.run((ctx) => ctx.storage.get(secondId))).toBeNull();
-  expect((await verify()).scannerReports).toEqual({ aig: null, skillspector: null });
+  expect((await verify()).security.scannerReports).toEqual({ aig: null, skillspector: null });
 
   // Pending publication discard owns the same blob lifecycle as version removal.
   const discardedReportId = await t.run(async (ctx) => {

@@ -425,11 +425,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   scanner.
 - Published skill verification retains complete upstream A.I.G and SkillSpector
   JSON in a version-owned storage blob, separate from capped database summaries.
-  `/verify` returns these reports only when their scan timestamp matches all
+  `/verify` returns these reports under `security.scannerReports`, alongside the
+  overall verdict and without duplicate signal summaries, only when their scan timestamp matches all
   stored summaries and the ClawScan verdict. Legacy scans expose null reports
   until rescanned; raw evidence never changes moderation or verification policy.
   Replacing a scan deletes its previous report blob, and version hard deletion
-  or pending-publication discard deletes the associated blob.
+  or pending-publication discard deletes the associated blob. Workers send raw
+  reports only when the hydrated job provides a signed upload URL, so merging
+  the worker before a separate Convex deployment does not break scan completion.
+  Raw JSON uploads directly to storage; completion receives only a storage ID,
+  avoiding Convex function-argument size and value-encoding limits.
 - Production workers install A.I.G and its complete Python dependency set from
   the reviewed, hash-locked worker requirements file. Updating the scanner or a
   dependency requires an explicit lock update; a mutable package-index artifact
