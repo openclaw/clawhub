@@ -3987,6 +3987,8 @@ export const completeCodexScanJob = action({
     llmAnalysis: llmAnalysisValidator,
     aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    // Keep vendor JSON out of Convex value encoding (for example SARIF "$schema").
+    scannerReportsJson: v.optional(v.string()),
     runId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -4014,23 +4016,46 @@ export const completeCodexScanJob = action({
       throw new ConvexError("A.I.G analysis is required to complete skill scans");
     }
 
-    if (target.job.targetKind === "skillVersion" && target.version) {
+    async function updateSkillVersion(versionId: Id<"skillVersions">) {
       if (completedAigAnalysis) {
         await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
-          versionId: target.version._id,
+          versionId,
           aigAnalysis: completedAigAnalysis,
         });
       }
       if (args.skillSpectorAnalysis) {
         await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
-          versionId: target.version._id,
+          versionId,
           skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
         });
       }
-      await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
-        versionId: target.version._id,
-        llmAnalysis: args.llmAnalysis,
-      });
+      const scannerReportsStorageId = args.scannerReportsJson
+        ? await ctx.storage.store(
+            new Blob(
+              [
+                JSON.stringify({
+                  checkedAt: args.llmAnalysis.checkedAt,
+                  ...JSON.parse(args.scannerReportsJson),
+                }),
+              ],
+              { type: "application/json" },
+            ),
+          )
+        : undefined;
+      try {
+        await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
+          versionId,
+          llmAnalysis: args.llmAnalysis,
+          scannerReportsStorageId,
+        });
+      } catch (error) {
+        if (scannerReportsStorageId) await ctx.storage.delete(scannerReportsStorageId);
+        throw error;
+      }
+    }
+
+    if (target.job.targetKind === "skillVersion" && target.version) {
+      await updateSkillVersion(target.version._id);
     } else if (target.job.targetKind === "packageRelease" && target.release) {
       await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
         releaseId: target.release._id,
@@ -4049,22 +4074,7 @@ export const completeCodexScanJob = action({
         target.scanRequest.update &&
         target.version
       ) {
-        if (completedAigAnalysis) {
-          await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
-            versionId: target.version._id,
-            aigAnalysis: completedAigAnalysis,
-          });
-        }
-        if (args.skillSpectorAnalysis) {
-          await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
-            versionId: target.version._id,
-            skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
-          });
-        }
-        await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
-          versionId: target.version._id,
-          llmAnalysis: args.llmAnalysis,
-        });
+        await updateSkillVersion(target.version._id);
         writtenBack = true;
       }
       const skillSpectorAnalysis = args.skillSpectorAnalysis

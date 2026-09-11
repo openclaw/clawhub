@@ -7319,6 +7319,14 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns a skill verification envelope with card and security metadata", async () => {
+    const scannerReports = {
+      aig: { version: "2.1.0", runs: [], vendorExtension: { preserved: true } },
+      skillspector: {
+        risk_assessment: { score: 0, recommendation: "CAUTION" },
+        analysis_completeness: { is_complete: false, coverage_percent: 99.1 },
+        vendorExtension: { text: "full scanner evidence ".repeat(30_000) },
+      },
+    };
     const internalVersion = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -7326,6 +7334,7 @@ describe("httpApiV1 handlers", () => {
       createdAt: 1,
       changelog: "c",
       fingerprint: "source-fingerprint",
+      scannerReportsStorageId: "storage:scanner-reports",
       files: [
         {
           path: "SKILL.md",
@@ -7384,6 +7393,7 @@ describe("httpApiV1 handlers", () => {
         checkedAt: 9,
       },
       depRegistryScanStatus: "suspicious",
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 3 },
       skillSpectorAnalysis: {
         status: "clean",
         score: 0,
@@ -7393,7 +7403,7 @@ describe("httpApiV1 handlers", () => {
         issues: [],
         scannerVersion: "skillspector-test",
         summary: "SkillSpector clean.",
-        checkedAt: 5,
+        checkedAt: 3,
       },
       capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
@@ -7428,7 +7438,13 @@ describe("httpApiV1 handlers", () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob([JSON.stringify({ checkedAt: 3, ...scannerReports })])),
+        },
+      }),
       new Request("https://example.com/api/v1/skills/demo/verify?ownerHandle=acme&tag=stable"),
     );
 
@@ -7502,6 +7518,8 @@ describe("httpApiV1 handlers", () => {
     });
     expect(json.skill).toBeUndefined();
     expect(json.publisher).toBeUndefined();
+    expect(json.scannerReports).toBeDefined();
+    expect(json.scannerReports).toEqual(scannerReports);
   });
 
   it("does not let publisher-supplied skill-card.md satisfy verification", async () => {

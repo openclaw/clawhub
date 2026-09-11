@@ -55,6 +55,7 @@ import {
 import { normalizePublisherHandle } from "../lib/publishers";
 import { MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { getRuntimeRolloutCapabilities } from "../lib/rolloutCapabilities";
+import { readVersionScannerReports } from "../lib/scannerReports";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
@@ -2451,6 +2452,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               reason: "No server-resolved GitHub import provenance is stored for this version.",
             },
         security,
+        scannerReports: await readVersionScannerReports(ctx, version),
         signature: {
           status: "unsigned",
         },

@@ -1915,12 +1915,13 @@ function validateClawScanArtifactForClawHubProfile(
 
   const checkedAt = artifactCompletedAtMs(artifact);
   let aigAnalysis: AigAnalysis | undefined;
+  let rawAig: string | undefined;
   if (scannerSet.includes("aig")) {
     const aig = asRecord(scanners?.aig);
     if (!aig || aig.raw === undefined) {
       throw new Error("ClawScan aig scanner output was missing");
     }
-    const rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
+    rawAig = typeof aig.raw === "string" ? aig.raw : JSON.stringify(aig.raw);
     aigAnalysis = normalizeAigAnalysis(rawAig, checkedAt);
     if (aigAnalysis.status === "error") {
       throw new Error(aigAnalysis.error ?? "A.I.G returned unusable scanner output");
@@ -1932,6 +1933,10 @@ function validateClawScanArtifactForClawHubProfile(
     llmAnalysis: toStoredLlmAnalysis(parsed, checkedAt),
     mapping: clawScanDiagnosticMapping(artifact, scannerSet),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),
+    scannerReportsJson: JSON.stringify({
+      aig: rawAig ? (JSON.parse(rawAig) as unknown) : null,
+      skillspector: JSON.parse(rawSkillSpector) as unknown,
+    }),
   };
 }
 
@@ -2105,6 +2110,7 @@ export async function processJob(
       llmAnalysis,
       aigAnalysis,
       skillSpectorAnalysis,
+      scannerReportsJson: mapped.scannerReportsJson,
       runId: process.env.GITHUB_RUN_ID,
     });
     scanCompletedAt = Date.now();

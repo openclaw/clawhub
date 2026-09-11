@@ -1548,6 +1548,9 @@ async function hardDeleteSkillStep(
         .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
         .take(HARD_DELETE_VERSION_BATCH_SIZE);
       for (const version of versions) {
+        if (version.scannerReportsStorageId) {
+          await ctx.storage.delete(version.scannerReportsStorageId);
+        }
         await ctx.db.delete(version._id);
       }
       if (versions.length === HARD_DELETE_VERSION_BATCH_SIZE) {
@@ -9281,6 +9284,7 @@ export const updateVersionAigAnalysisInternal = internalMutation({
 export const updateVersionLlmAnalysisInternal = internalMutation({
   args: {
     versionId: v.id("skillVersions"),
+    scannerReportsStorageId: v.optional(v.id("_storage")),
     moderationMode: v.optional(v.union(v.literal("normal"), v.literal("preserve"))),
     llmAnalysis: v.object({
       status: v.string(),
@@ -9349,9 +9353,21 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
-    if (!version) return;
+    if (!version) {
+      if (args.scannerReportsStorageId) throw new ConvexError("Version not found");
+      return;
+    }
     const nextVersion = { ...version, llmAnalysis: args.llmAnalysis };
-    await ctx.db.patch(args.versionId, { llmAnalysis: args.llmAnalysis });
+    if (
+      version.scannerReportsStorageId &&
+      version.scannerReportsStorageId !== args.scannerReportsStorageId
+    ) {
+      await ctx.storage.delete(version.scannerReportsStorageId);
+    }
+    await ctx.db.patch(args.versionId, {
+      llmAnalysis: args.llmAnalysis,
+      scannerReportsStorageId: args.scannerReportsStorageId,
+    });
     await ctx.scheduler?.runAfter(0, internal.skillCards.enqueueForVersionInternal, {
       versionId: args.versionId,
       source: "scan",
@@ -13231,6 +13247,7 @@ export const discardPendingPublicationInternal = internalMutation({
     }
 
     const storageIds = new Set<Id<"_storage">>();
+    if (version.scannerReportsStorageId) storageIds.add(version.scannerReportsStorageId);
     for (const file of version.files ?? []) {
       if (typeof file.storageId === "string") {
         storageIds.add(file.storageId as Id<"_storage">);

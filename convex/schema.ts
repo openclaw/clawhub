@@ -1219,6 +1219,7 @@ const skillVersions = defineTable({
     }),
   ),
   sha256hash: v.optional(v.string()),
+  scannerReportsStorageId: v.optional(v.id("_storage")),
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),

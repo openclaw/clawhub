@@ -863,6 +863,10 @@ export declare const ApiV1SkillVerifyResponseSchema: import("arktype/internal/va
     artifact: unknown;
     provenance: unknown;
     security: unknown;
+    scannerReports?: {
+        aig: unknown;
+        skillspector: unknown;
+    } | undefined;
     signature: unknown;
 }, {}>;
 export declare const ApiV1PublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

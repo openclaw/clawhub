@@ -528,36 +528,55 @@ describe("clawhub-schema", () => {
     expect(parsed.results[0]?.downloads).toBe(2_190);
   });
 
-  it("parses flattened skill verification envelopes", () => {
-    const parsed = parseArk(
-      ApiV1SkillVerifyResponseSchema,
-      {
-        schema: "clawhub.skill.verify.v1",
-        ok: true,
-        decision: "pass",
-        reasons: [],
-        slug: "demo",
-        displayName: "Demo",
-        pageUrl: "https://clawhub.ai/openclaw/skills/demo",
-        publisherHandle: "openclaw",
-        publisherDisplayName: "OpenClaw",
-        publisherProfileUrl: "https://clawhub.ai/openclaw",
-        version: "1.0.0",
-        resolvedFrom: "latest",
-        tag: null,
-        createdAt: 1,
-        card: { available: true },
-        artifact: { sourceFingerprint: "source", bundleFingerprints: [], files: [] },
-        provenance: { source: "unavailable" },
-        security: { status: "clean", passed: true },
-        signature: { status: "unsigned" },
+  it.each([
+    undefined,
+    { aig: null, skillspector: null },
+    {
+      aig: {
+        $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+        runs: [],
+        futureField: true,
       },
-      "Verify",
-    );
+      skillspector: {
+        analysis_completeness: { coverage_percent: 99.1 },
+        evidence: "full".repeat(150_000),
+      },
+    },
+  ])(
+    "parses flattened skill verification envelopes with optional full scanner reports",
+    (scannerReports) => {
+      const parsed = parseArk(
+        ApiV1SkillVerifyResponseSchema,
+        {
+          schema: "clawhub.skill.verify.v1",
+          ok: true,
+          decision: "pass",
+          reasons: [],
+          slug: "demo",
+          displayName: "Demo",
+          pageUrl: "https://clawhub.ai/openclaw/skills/demo",
+          publisherHandle: "openclaw",
+          publisherDisplayName: "OpenClaw",
+          publisherProfileUrl: "https://clawhub.ai/openclaw",
+          version: "1.0.0",
+          resolvedFrom: "latest",
+          tag: null,
+          createdAt: 1,
+          card: { available: true },
+          artifact: { sourceFingerprint: "source", bundleFingerprints: [], files: [] },
+          provenance: { source: "unavailable" },
+          security: { status: "clean", passed: true },
+          ...(scannerReports === undefined ? {} : { scannerReports }),
+          signature: { status: "unsigned" },
+        },
+        "Verify",
+      );
 
-    expect(parsed.slug).toBe("demo");
-    expect(parsed.version).toBe("1.0.0");
-  });
+      expect(parsed.slug).toBe("demo");
+      expect(parsed.version).toBe("1.0.0");
+      expect(parsed.scannerReports).toEqual(scannerReports);
+    },
+  );
 
   it("parses delete request payload", () => {
     expect(

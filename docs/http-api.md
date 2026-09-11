@@ -463,7 +463,8 @@ Admin-only canonical batch status route. It accepts `{ "jobIds": ["..."] }` and 
 
 ### `GET /api/v1/skills/{slug}/verify`
 
-Returns the Skill Card verification envelope used by `clawhub skill verify`.
+Returns the Skill Card verification envelope used by `clawhub skill verify` and
+`openclaw skills verify`.
 
 Query params:
 
@@ -478,6 +479,9 @@ Notes:
 - Skill identity, publisher identity, and selected version metadata are top-level envelope fields (`slug`, `displayName`, `publisherHandle`, `version`, `resolvedFrom`, `tag`, `createdAt`) so shell automation can read them without unpacking nested wrappers.
 - `security` is the top-level ClawScan/security verdict. Automation should key off `ok`, `decision`, `reasons`, and `security.status`.
 - `security.signals` contains supporting scanner evidence such as `staticScan`, `virusTotal`, and `skillSpector`.
+- `scannerReports.aig` contains the complete upstream A.I.G SARIF JSON, and `scannerReports.skillspector` contains the complete upstream SkillSpector JSON, including completeness, limitations, findings, and scanner-specific metadata. These reports are supporting evidence; they do not override the ClawScan verdict or verification exit codes.
+- Each raw report is `null` when it was not retained for the selected scan. Older scans require a rescan to populate it. While a rescan is committing, reports are withheld if they no longer match the stored scanner summaries. No findings or strings are truncated in these raw reports.
+- Raw reports are included by default and can make verification output substantially larger. CI can select only the existing verdict fields when needed (for example, `jq '{ok, decision, reasons}'`).
 - `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
 - `provenance` is `server-resolved-github-import` only when ClawHub resolved and stored a GitHub repo/ref/commit/path during publish or import; otherwise it is `unavailable`.
 

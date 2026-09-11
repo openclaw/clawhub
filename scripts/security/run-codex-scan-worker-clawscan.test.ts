@@ -207,6 +207,7 @@ function clawScanArtifactJson(options?: {
           ? {}
           : {
               raw: options?.aigRaw ?? {
+                $schema: "https://json.schemastore.org/sarif-2.1.0.json",
                 version: "2.1.0",
                 runs: [
                   {
@@ -233,6 +234,10 @@ function clawScanArtifactJson(options?: {
             recommendation: "DO_NOT_INSTALL",
           },
           issues: [{ id: "SDI-1", severity: "HIGH", explanation: "test finding" }],
+          analysis_completeness: {
+            coverage_percent: 99.1,
+            futureField: [1, null, { evidence: "full" }],
+          },
         },
       },
       "clawscan-static": {
@@ -698,9 +703,15 @@ JSON`,
           },
         });
         const payload = client.action.mock.calls[0]?.[1] as
-          | { llmAnalysis?: { model?: string } }
+          | { llmAnalysis?: { model?: string }; scannerReportsJson?: string }
           | undefined;
         expect(payload?.llmAnalysis?.model).toBeUndefined();
+        expect(payload?.scannerReportsJson).toBeTypeOf("string");
+        const original = JSON.parse(artifactJson);
+        expect(JSON.parse(payload!.scannerReportsJson!)).toEqual({
+          aig: original.scanners.aig.raw,
+          skillspector: original.scanners.skillspector.raw,
+        });
 
         const invocationArgs = await readFile(argsLog, "utf8");
         expect(invocationArgs).toContain("--profile");

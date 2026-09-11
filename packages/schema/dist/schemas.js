@@ -773,6 +773,7 @@ export const ApiV1SkillVerifyResponseSchema = type({
     artifact: "unknown",
     provenance: "unknown",
     security: "unknown",
+    scannerReports: type({ aig: "unknown", skillspector: "unknown" }).optional(),
     signature: "unknown",
 });
 export const ApiV1PublishResponseSchema = type({
