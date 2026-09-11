@@ -20,6 +20,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   they originally published the skill. Removing or downgrading their membership
   invalidates pending requests. Personal and legacy skills retain personal-owner
   authorization through the shared publisher ownership check.
+- Changelog previews must authorize previous-version file access before reading
+  stored content or invoking an AI provider. They use the same ownership, staff,
+  moderation, deletion, and publication checks as direct skill file reads.
+  The changelog formatter receives an already-authorized version; it must not
+  resolve and load a different previous version from an untrusted slug.
 
 - user: upload skills (subject to GitHub age gate), report skills/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).

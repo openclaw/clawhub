@@ -10188,10 +10188,28 @@ export const generateChangelogPreview = action({
     readmeText: v.string(),
     filePaths: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ changelog: string; source: "auto" }> => {
     await requireUserFromAction(ctx);
+    const slug = args.slug.trim().toLowerCase();
+    const skill: Doc<"skills"> | null = await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
+      slug,
+    });
+    const previous: Doc<"skillVersions"> | null = skill?.latestVersionId
+      ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+          versionId: skill.latestVersionId,
+        })
+      : null;
+    // Changelog generation reads files and sends them to an external provider.
+    // Apply the same access check as direct file reads before either can happen.
+    if (
+      previous &&
+      (previous.skillId !== skill?._id || !(await canReadSkillVersionFiles(ctx, previous)))
+    ) {
+      throw new ConvexError("Version not available");
+    }
     const changelog = await buildChangelogPreview(ctx, {
-      slug: args.slug.trim().toLowerCase(),
+      slug,
+      previous,
       version: args.version.trim(),
       readmeText: args.readmeText,
       filePaths: args.filePaths?.map((value) => value.trim()).filter(Boolean),

@@ -273,18 +273,12 @@ export async function generateChangelogPreview(
     version: string;
     readmeText: string;
     filePaths?: string[];
+    previous: Doc<"skillVersions"> | null;
   },
 ): Promise<string> {
   try {
-    const skill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
-      slug: args.slug,
-    })) as Doc<"skills"> | null;
-    const previous: Doc<"skillVersions"> | null =
-      skill?.latestVersionId && !skill.softDeletedAt
-        ? ((await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-            versionId: skill.latestVersionId,
-          })) as Doc<"skillVersions"> | null)
-        : null;
+    // The caller supplies only a version it has already authorized for file access.
+    const previous = args.previous;
 
     const oldReadmeText: string | null = previous
       ? await readReadmeFromVersion(ctx, previous)
