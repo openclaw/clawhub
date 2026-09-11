@@ -1,7 +1,11 @@
 import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 /* @vitest-environment node */
-import { afterEach, describe, expect, it } from "vitest";
-import { vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import type { ActionCtx } from "./_generated/server";
 import http from "./http";
 import { RATE_LIMITS } from "./lib/httpRateLimit";

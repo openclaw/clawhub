@@ -2,6 +2,11 @@
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -17499,7 +17504,7 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        key: "ip:unknown:trustedPublish",
+        key: "ip:203.0.113.1:trustedPublish",
         name: "trustedPublishIp",
         config: expect.objectContaining({ rate: RATE_LIMITS.trustedPublish.ip }),
       }),

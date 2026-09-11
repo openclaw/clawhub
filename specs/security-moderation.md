@@ -10,6 +10,23 @@ read_when:
 
 See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace policy on prohibited skill categories.
 
+## Anonymous API ingress
+
+- Hosted anonymous HTTP requests must enter through the ClawHub Vercel edge.
+  The proxy replaces caller-supplied identity headers with its Vercel OIDC
+  service token and the platform-controlled visitor address. Convex verifies
+  the token's issuer, audience, project, owner and deployment environment
+  before using that address for quotas or download metrics.
+- Unverified direct requests consume no shared quota: redirect them to the
+  configured public HTTPS API origin, or reject if no safe origin is configured.
+  Invalid edge assertions are rejected without redirecting, to avoid loops
+  through a misconfigured proxy.
+  The legacy `TRUST_FORWARDED_IPS` flag must never authorize raw IP headers.
+- API tokens retain per-user quotas. A server-owned loopback Convex deployment
+  may use a local development bucket when no hosted environment is configured.
+- Rollout requires the identity-forwarding edge before the backend starts
+  enforcing verified anonymous ingress.
+
 ## Roles + permissions
 
 - Skill transfer, delete, and restore authorization follows the resource's current

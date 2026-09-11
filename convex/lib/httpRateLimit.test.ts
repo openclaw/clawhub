@@ -1,6 +1,12 @@
 /* @vitest-environment node */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyRateLimit, getClientIp, RATE_LIMITS } from "./httpRateLimit";
+import { getVerifiedClientIp } from "./verifiedClientIp";
+
+vi.mock("./verifiedClientIp", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./verifiedClientIp")>()),
+  getVerifiedClientIp: vi.fn(async () => null),
+}));
 
 type MockRateLimitStatus = {
   allowed: boolean;
@@ -113,27 +119,27 @@ describe("getClientIp", () => {
     expect(getClientIp(request)).toBeNull();
   });
 
-  it("returns first ip from cf-connecting-ip when trusted mode is enabled", () => {
+  it("rejects raw cf-connecting-ip even with the legacy flag", () => {
     const request = new Request("https://example.com", {
       headers: {
         "cf-connecting-ip": "203.0.113.1, 198.51.100.2",
       },
     });
     process.env.TRUST_FORWARDED_IPS = "true";
-    expect(getClientIp(request)).toBe("203.0.113.1");
+    expect(getClientIp(request)).toBeNull();
   });
 
-  it("uses forwarded headers when opt-in enabled", () => {
+  it("rejects raw forwarded headers even with the legacy flag", () => {
     const request = new Request("https://example.com", {
       headers: {
         "x-forwarded-for": "203.0.113.9, 198.51.100.2",
       },
     });
     process.env.TRUST_FORWARDED_IPS = "true";
-    expect(getClientIp(request)).toBe("203.0.113.9");
+    expect(getClientIp(request)).toBeNull();
   });
 
-  it("prefers x-forwarded-for over x-real-ip when trusted mode is enabled", () => {
+  it("rejects all unverified forwarded identity headers", () => {
     const request = new Request("https://example.com", {
       headers: {
         "x-forwarded-for": "203.0.113.9, 198.51.100.2",
@@ -141,7 +147,7 @@ describe("getClientIp", () => {
       },
     });
     process.env.TRUST_FORWARDED_IPS = "true";
-    expect(getClientIp(request)).toBe("203.0.113.9");
+    expect(getClientIp(request)).toBeNull();
   });
 });
 
@@ -168,6 +174,7 @@ describe("RATE_LIMITS", () => {
 });
 
 describe("applyRateLimit headers", () => {
+  beforeEach(() => vi.mocked(getVerifiedClientIp).mockResolvedValue("203.0.113.1"));
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
@@ -299,7 +306,7 @@ describe("applyRateLimit headers", () => {
     const [, args] = componentRateLimitCalls(runMutation)[0];
     expect(args).toMatchObject({
       name: "downloadIp",
-      key: "ip:unknown:download",
+      key: "ip:203.0.113.1:download",
       config: expect.objectContaining({
         kind: "fixed window",
         rate: RATE_LIMITS.download.ip,
@@ -335,7 +342,7 @@ describe("applyRateLimit headers", () => {
     expect(metadataTouchCalls(runMutation).map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
         name: "downloadIp",
-        key: "ip:unknown:download",
+        key: "ip:203.0.113.1:download",
         now: 2_650_000,
         ttlMs: 86_400_000,
       }),
@@ -367,7 +374,7 @@ describe("applyRateLimit headers", () => {
     expect(metadataTouchCalls(runMutation).map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
         name: "downloadIp",
-        key: "ip:unknown:download",
+        key: "ip:203.0.113.1:download",
         now: 2_660_000,
         ttlMs: 86_400_000,
       }),
@@ -396,7 +403,7 @@ describe("applyRateLimit headers", () => {
     const [, args] = componentRateLimitCalls(runMutation)[0];
     expect(args).toMatchObject({
       name: "exportIp",
-      key: "ip:unknown:export",
+      key: "ip:203.0.113.1:export",
       config: expect.objectContaining({
         kind: "fixed window",
         rate: RATE_LIMITS.export.ip,
@@ -543,7 +550,7 @@ describe("applyRateLimit headers", () => {
     expect(result.response.headers.get("Retry-After")).toBe("30");
   });
 
-  it("uses one anonymous download fallback bucket when client ip is missing", async () => {
+  it("shares the verified visitor download bucket across routes", async () => {
     vi.spyOn(Date, "now").mockReturnValue(4_500_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -567,8 +574,8 @@ describe("applyRateLimit headers", () => {
 
     const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
     expect(componentRateLimitCalls(runMutation).map(([, args]) => String(args.key))).toEqual([
-      "ip:unknown:download",
-      "ip:unknown:download",
+      "ip:203.0.113.1:download",
+      "ip:203.0.113.1:download",
     ]);
   });
 
@@ -642,7 +649,7 @@ describe("applyRateLimit headers", () => {
     );
   });
 
-  it("uses one anonymous read fallback bucket when client ip is missing", async () => {
+  it("shares the verified visitor read bucket across routes", async () => {
     vi.spyOn(Date, "now").mockReturnValue(4_600_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -662,8 +669,8 @@ describe("applyRateLimit headers", () => {
 
     const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
     expect(componentRateLimitCalls(runMutation).map(([, args]) => String(args.key))).toEqual([
-      "ip:unknown:read",
-      "ip:unknown:read",
+      "ip:203.0.113.1:read",
+      "ip:203.0.113.1:read",
     ]);
   });
 
@@ -691,5 +698,33 @@ describe("applyRateLimit headers", () => {
     expect(result.response.status).toBe(429);
     expect(result.response.headers.get("X-RateLimit-Limit")).toBe(String(RATE_LIMITS.download.ip));
     expect(result.response.headers.get("Retry-After")).toBe("30");
+  });
+});
+describe("anonymous request isolation", () => {
+  beforeEach(() => vi.mocked(getVerifiedClientIp).mockResolvedValue(null));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("routes unknown direct visitors through the edge without consuming a shared quota", async () => {
+    vi.stubEnv("SITE_URL", "https://clawhub.ai");
+    const ctx = makeRateLimitCtx({
+      ip: { allowed: true, remaining: 10, limit: 10, resetAt: Date.now() + 60000 },
+    });
+    const result = await applyRateLimit(
+      ctx,
+      new Request("https://example.convex.site/api/v1/search?q=test"),
+      "read",
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(307);
+    const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("does not let an opt-in flag turn caller-supplied headers into quota identities", async () => {
+    vi.stubEnv("TRUST_FORWARDED_IPS", "true");
+    const request = new Request("https://example.convex.site/api/v1/search", {
+      headers: { "cf-connecting-ip": "203.0.113.8", "x-forwarded-for": "203.0.113.9" },
+    });
+    expect(getClientIp(request)).toBeNull();
   });
 });

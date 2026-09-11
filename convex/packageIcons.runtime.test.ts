@@ -2,7 +2,12 @@
 /* @vitest-environment edge-runtime */
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import { internal } from "./_generated/api";
 import { derivePluginManifestSummary } from "./lib/packageRegistry";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
