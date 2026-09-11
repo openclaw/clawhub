@@ -220,7 +220,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   abuse list from the filtered backend dashboard state instead of applying a
   separate client-side official-org filter.
 
-## Reporting + auto-hide
+## Reporting + moderation review
 
 - Reports are unique per user + target (skill/package).
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
@@ -229,13 +229,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     and the owner is not banned.
   - Active package report = package exists, not soft-deleted, and the owner is
     not banned/deactivated.
-- Auto-hide: when unique reports exceed 3 (4th report):
-  - skill report flow:
-    - soft-delete skill (`softDeletedAt`)
-    - set `moderationStatus = hidden`
-    - set `moderationReason = auto.reports`
-    - set embeddings visibility `deleted`
-    - audit log entry: `skill.auto_hide`
+- Reports never change skill visibility or installability automatically, regardless
+  of the number of distinct reporters or whether the skill is official. Report
+  submission records moderator intake and updates report counts only. Hiding a
+  skill requires an authorized moderator's explicit decision; this prevents a
+  small group of ordinary accounts from removing arbitrary catalog entries.
+- Existing report, scanner, and moderator hides retain their provenance; this
+  change does not automatically restore previously hidden skills.
 - Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.

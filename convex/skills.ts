@@ -103,11 +103,7 @@ import {
   requirePublisherRole,
 } from "./lib/publishers";
 import { RECOMMENDATION_SCORE_VERSION } from "./lib/recommendationScore";
-import {
-  AUTO_HIDE_REPORT_THRESHOLD,
-  MAX_ACTIVE_REPORTS_PER_USER,
-  MAX_REPORT_REASON_LENGTH,
-} from "./lib/reporting";
+import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import {
   canReleaseReservedSlugForPublisher,
   enforceReservedSlugCooldownForNewSkill,
@@ -4195,47 +4191,12 @@ export const report = mutation({
     });
 
     const nextReportCount = (skill.reportCount ?? 0) + 1;
-    const shouldAutoHide = nextReportCount > AUTO_HIDE_REPORT_THRESHOLD && !skill.softDeletedAt;
-    const updates: Partial<Doc<"skills">> = {
+    // Reports are moderator intake, not authority to hide another publisher's skill.
+    await ctx.db.patch(skill._id, {
       reportCount: nextReportCount,
       lastReportedAt: now,
       updatedAt: now,
-    };
-    if (shouldAutoHide) {
-      Object.assign(updates, {
-        softDeletedAt: now,
-        moderationStatus: "hidden",
-        moderationReason: "auto.reports",
-        moderationNotes: "Auto-hidden after 4 unique reports.",
-        isSuspicious: computeIsSuspicious({
-          moderationFlags: skill.moderationFlags,
-          moderationReason: "auto.reports",
-        }),
-        hiddenAt: now,
-        lastReviewedAt: now,
-        unpublishedSlugReservedUntil: undefined,
-        unpublishedSlugReleasedAt: undefined,
-        unpublishedOriginalSlug: undefined,
-      });
-    }
-
-    const nextSkill = { ...skill, ...updates };
-    await ctx.db.patch(skill._id, updates);
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-
-    if (shouldAutoHide) {
-      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now);
-
-      await ctx.db.insert("auditLogs", {
-        actorUserId: userId,
-        action: "skill.auto_hide",
-        targetType: "skill",
-        targetId: skill._id,
-        metadata: { reportCount: nextReportCount },
-        createdAt: now,
-      });
-    }
+    });
 
     await appendSkillModerationEventLog(ctx, {
       kind: "report",
