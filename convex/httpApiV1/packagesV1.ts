@@ -128,6 +128,7 @@ const internalRefs = internal as unknown as {
     getByNameForViewerInternal: unknown;
     hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
+    listPluginOverviewCategoryInternal: unknown;
     listPluginValidationReportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -880,7 +881,9 @@ type CatalogListItem = PackageListItem & {
 
 type PluginOverviewItem = CatalogListItem & {
   featured?: boolean;
+  featuredRank?: number;
   trending?: boolean;
+  trendingRank?: number;
 };
 
 type CatalogSearchEntry = {
@@ -2503,17 +2506,23 @@ const PLUGIN_OVERVIEW_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 function mergePluginOverviewItem(
   items: Map<string, PluginOverviewItem>,
   item: CatalogListItem,
-  options: { category?: string; featured?: boolean; trending?: boolean },
+  options: {
+    category?: string;
+    featuredRank?: number;
+    trendingRank?: number;
+  },
 ) {
   const existing = items.get(item.name);
   const categories = [
     ...new Set([...(existing?.categories ?? []), ...(item.categories ?? []), options.category]),
   ].filter((category): category is string => Boolean(category));
+  const featuredRank = existing?.featuredRank ?? options.featuredRank;
+  const trendingRank = existing?.trendingRank ?? options.trendingRank;
   items.set(item.name, {
     ...(existing ?? item),
     ...(categories.length > 0 ? { categories } : {}),
-    ...(existing?.featured || options.featured ? { featured: true } : {}),
-    ...(existing?.trending || options.trending ? { trending: true } : {}),
+    ...(featuredRank === undefined ? {} : { featured: true, featuredRank }),
+    ...(trendingRank === undefined ? {} : { trending: true, trendingRank }),
   });
 }
 
@@ -2521,12 +2530,7 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
 
-  const page = async (args: {
-    category?: string;
-    highlightedOnly?: boolean;
-    officialFirst?: boolean;
-    sort?: "downloads" | "trending";
-  }) =>
+  const page = async (args: { highlightedOnly?: boolean; sort?: "trending" }) =>
     await runQueryRef<{
       page: CatalogListItem[];
       isDone: boolean;
@@ -2542,19 +2546,26 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
     page({ highlightedOnly: true }),
     page({ sort: "trending" }),
     ...PLUGIN_CATEGORY_DEFINITIONS.map((category) =>
-      page({ category: category.slug, officialFirst: true, sort: "downloads" }),
+      runQueryRef<CatalogListItem[]>(
+        ctx,
+        internalRefs.packages.listPluginOverviewCategoryInternal,
+        {
+          category: category.slug,
+          numItems: PLUGIN_OVERVIEW_SECTION_SIZE,
+        },
+      ),
     ),
   ]);
   const items = new Map<string, PluginOverviewItem>();
-  for (const item of featured.page) {
-    mergePluginOverviewItem(items, item, { featured: true });
+  for (const [featuredRank, item] of featured.page.entries()) {
+    mergePluginOverviewItem(items, item, { featuredRank });
   }
-  for (const item of trending.page) {
-    mergePluginOverviewItem(items, item, { trending: true });
+  for (const [trendingRank, item] of trending.page.entries()) {
+    mergePluginOverviewItem(items, item, { trendingRank });
   }
   for (const [index, result] of categoryPages.entries()) {
     const category = PLUGIN_CATEGORY_DEFINITIONS[index];
-    for (const item of result.page) {
+    for (const item of result) {
       mergePluginOverviewItem(items, item, { category: category.slug });
     }
   }

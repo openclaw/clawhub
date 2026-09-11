@@ -674,6 +674,8 @@ Returns the bounded data needed to render the plugin marketplace home page in
 one cacheable request: the canonical category metadata plus the union of the
 top eight Featured, Trending, and official-first/download-sorted plugins for
 each category. Items may include `featured` and `trending` markers.
+Marked items also include their zero-based `featuredRank` or `trendingRank`, so
+clients preserve each shelf's independent order after deduplicating metadata.
 
 The response is public and carries shared-cache headers. Use the paginated
 `GET /api/v1/plugins` endpoint for searches, category expansion, and complete

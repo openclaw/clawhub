@@ -348,7 +348,9 @@ export const PluginOverviewItemSchema = type({
     "+": "reject",
     ...PackageListItemFields,
     featured: "boolean?",
+    featuredRank: "number?",
     trending: "boolean?",
+    trendingRank: "number?",
 });
 export const ApiV1PluginOverviewResponseSchema = type({
     "+": "reject",

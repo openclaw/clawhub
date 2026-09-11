@@ -60,6 +60,7 @@ import {
   listPublicPage,
   listPublicNewPluginsPage,
   listPageForViewerInternal,
+  listPluginOverviewCategoryInternal,
   listVersions,
   listVersionsForViewerInternal,
   listVersionsForManager,
@@ -218,6 +219,12 @@ const listPageForViewerInternalHandler = (
       isDone: boolean;
       continueCursor: string;
     }
+  >
+)._handler;
+const listPluginOverviewCategoryInternalHandler = (
+  listPluginOverviewCategoryInternal as unknown as WrappedHandler<
+    { category: string; numItems: number },
+    Array<{ name: string; isOfficial: boolean; stats?: { downloads: number } }>
   >
 )._handler;
 const listPluginExportPageInternalHandler = (
@@ -1922,6 +1929,33 @@ function makeDigestCtx(options: {
                 lt: (field: string, value: string) => unknown;
               }) => unknown,
             ) => {
+              if (indexName.includes("_official_")) {
+                indexNames.push(indexName);
+                const filters: Array<{ field: string; value: unknown }> = [];
+                const queryBuilder = {
+                  eq: (field: string, value: unknown) => {
+                    filters.push({ field, value });
+                    return queryBuilder;
+                  },
+                  gte: () => queryBuilder,
+                  lt: () => queryBuilder,
+                };
+                builder?.(queryBuilder);
+                const takeRows = async (limit: number) => {
+                  take(limit);
+                  return (rowsByTable.get(table) ?? [])
+                    .filter((row) =>
+                      filters.every(({ field, value }) => readTestField(row, field) === value),
+                    )
+                    .slice(0, limit);
+                };
+                return {
+                  order: vi.fn(() => ({
+                    paginate: getPaginate(table),
+                    take: vi.fn(takeRows),
+                  })),
+                };
+              }
               if (indexName.includes("_family_")) {
                 indexNames.push(indexName);
                 let family = "";
@@ -6046,7 +6080,7 @@ describe("packages public queries", () => {
           continueCursor: "",
         },
       ],
-      categoryRows: excludedCommunityDigests,
+      categoryRows: [officialDigest, ...excludedCommunityDigests],
     });
 
     const result = await listPublicPageHandler(ctx, {
@@ -6059,7 +6093,8 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor).toMatch(/^pkgofficialfirst:/);
-    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledTimes(2);
     expect(take).toHaveBeenCalledWith(200);
   });
 
@@ -6103,8 +6138,70 @@ describe("packages public queries", () => {
     ]);
     expect(result.isDone).toBe(true);
     expect(result.continueCursor).toBe("");
-    expect(paginate).toHaveBeenCalledTimes(1);
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledTimes(2);
+  });
+
+  it("fills overview shelves from bounded category indexes while Claws are disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const genericNoise = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`generic-noise-${index}`, {
+        family: "code-plugin",
+        pluginCategoryTags: ["models"],
+        stats: { downloads: 1_000 - index, installs: 0, stars: 0, versions: 1 },
+      }),
+    );
+    const categoryRows = [
+      makeDigest("community-code", {
+        pluginCategory: "security",
+        pluginCategoryTags: ["security"],
+        stats: { downloads: 100, installs: 0, stars: 0, versions: 1 },
+      }),
+      makeDigest("official-code", {
+        isOfficial: true,
+        pluginCategory: "security",
+        pluginCategoryTags: ["security"],
+        stats: { downloads: 10, installs: 0, stars: 0, versions: 1 },
+      }),
+      makeDigest("official-bundle", {
+        family: "bundle-plugin",
+        isOfficial: true,
+        pluginCategory: "security",
+        pluginCategoryTags: ["security"],
+        stats: { downloads: 20, installs: 0, stars: 0, versions: 1 },
+      }),
+      makeDigest("community-bundle", {
+        family: "bundle-plugin",
+        pluginCategory: "security",
+        pluginCategoryTags: ["security"],
+        stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
+      }),
+    ];
+    const { ctx, indexNames, paginate, take } = makeDigestCtx({
+      pages: [{ page: genericNoise, isDone: false, continueCursor: "generic:later" }],
+      categoryRows,
+    });
+
+    try {
+      const result = await listPluginOverviewCategoryInternalHandler(ctx, {
+        category: "security",
+        numItems: 3,
+      });
+
+      expect(result.map((entry) => entry.name)).toEqual([
+        "official-bundle",
+        "official-code",
+        "community-bundle",
+      ]);
+      expect(indexNames).toEqual(Array(4).fill("by_active_family_official_category_downloads"));
+      expect(paginate).not.toHaveBeenCalled();
+      expect(take).toHaveBeenCalledTimes(4);
+      expect(take).toHaveBeenCalledWith(200);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
   });
 
   it("keeps highlighted-only filtering while filling official-first category pages", async () => {
@@ -6207,8 +6304,8 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor).toMatch(/^pkgofficialfirst:/);
-    expect(paginate).toHaveBeenCalledTimes(1);
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledTimes(2);
   });
 
   it("uses plugin category digests for category-filtered search", async () => {

@@ -461,7 +461,9 @@ export const PluginOverviewItemSchema = type({
   "+": "reject",
   ...PackageListItemFields,
   featured: "boolean?",
+  featuredRank: "number?",
   trending: "boolean?",
+  trendingRank: "number?",
 });
 export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
 

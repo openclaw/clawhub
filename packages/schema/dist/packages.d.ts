@@ -439,7 +439,9 @@ export declare const PluginOverviewItemSchema: import("arktype/internal/variants
         versions: number;
     } | undefined;
     featured?: boolean | undefined;
+    featuredRank?: number | undefined;
     trending?: boolean | undefined;
+    trendingRank?: number | undefined;
 }, {}>;
 export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
 export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -475,7 +477,9 @@ export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal
             versions: number;
         } | undefined;
         featured?: boolean | undefined;
+        featuredRank?: number | undefined;
         trending?: boolean | undefined;
+        trendingRank?: number | undefined;
     }[];
 }, {}>;
 export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];

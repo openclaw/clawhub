@@ -10978,6 +10978,9 @@ describe("httpApiV1 handlers", () => {
       categories: [],
     };
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) {
+        return args.category === "channels" ? [category] : [];
+      }
       const page = args.highlightedOnly
         ? [featured]
         : args.sort === "trending"
@@ -11018,15 +11021,55 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         category: "channels",
-        officialFirst: true,
-        sort: "downloads",
-        paginationOpts: { cursor: null, numItems: 8 },
+        numItems: 8,
       }),
     );
     const categoryCall = runQuery.mock.calls.find(
       ([, args]) => (args as { category?: string }).category === "channels",
     );
     expect(categoryCall?.[1]).not.toHaveProperty("families");
+    expect(categoryCall?.[1]).not.toHaveProperty("paginationOpts");
+  });
+
+  it("plugin overview preserves independent ranks for overlapping shelves", async () => {
+    const shared = makeCatalogItem("shared-plugin", {
+      family: "code-plugin",
+      updatedAt: 300,
+    });
+    const trendingFirst = makeCatalogItem("trending-first", {
+      family: "code-plugin",
+      updatedAt: 200,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) return [];
+      const page = args.highlightedOnly
+        ? [shared]
+        : args.sort === "trending"
+          ? [trendingFirst, shared]
+          : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    const payload = await response.json();
+    expect(payload.items).toEqual([
+      expect.objectContaining({
+        name: "shared-plugin",
+        featured: true,
+        featuredRank: 0,
+        trending: true,
+        trendingRank: 1,
+      }),
+      expect.objectContaining({
+        name: "trending-first",
+        trending: true,
+        trendingRank: 0,
+      }),
+    ]);
   });
 
   it("packages list forwards topics to both unified catalog sources", async () => {

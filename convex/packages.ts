@@ -2776,6 +2776,36 @@ async function takeVisiblePackageCategoryDigestPage(
   };
 }
 
+const PLUGIN_OVERVIEW_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+
+async function listPluginOverviewCategory(
+  ctx: DbReaderCtx,
+  args: { category: PluginCategorySlug; numItems: number },
+) {
+  const targetCount = Math.max(1, Math.min(args.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+  // The marketplace home drops pagination, so select from the category indexes
+  // directly instead of truncating a sparse page from the general catalog scan.
+  const pages = await Promise.all(
+    PLUGIN_OVERVIEW_FAMILIES.map(
+      async (family) =>
+        await listOfficialFirstPackageCategoryPage(ctx, {
+          family,
+          category: args.category,
+          sort: "downloads",
+          paginationOpts: { cursor: null, numItems: targetCount },
+        }),
+    ),
+  );
+  return pages
+    .flatMap((page) => page.page)
+    .sort(
+      (a, b) =>
+        Number(b.isOfficial) - Number(a.isOfficial) ||
+        compareStablePackageDiscoveryCandidates(a, b, "downloads"),
+    )
+    .slice(0, targetCount);
+}
+
 async function fetchHighlightedPackageEntries(
   ctx: DbReaderCtx,
   args: {
@@ -4261,6 +4291,20 @@ export const listPageForViewerInternal = internalQuery({
   },
 });
 
+export const listPluginOverviewCategoryInternal = internalQuery({
+  args: {
+    category: v.string(),
+    numItems: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (!isPluginCategorySlug(args.category)) return [];
+    return await listPluginOverviewCategory(ctx, {
+      category: args.category,
+      numItems: args.numItems,
+    });
+  },
+});
+
 export const countPublicPluginsInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -4293,12 +4337,17 @@ export const countPublicPlugins = query({
   },
 });
 
+type PackageDiscoverySortable = Pick<
+  PackageDigestLike,
+  "stats" | "recommendedScore" | "createdAt" | "updatedAt" | "family" | "name"
+>;
+
 function compareStablePackageDiscoveryCandidates(
-  a: PackageDigestLike,
-  b: PackageDigestLike,
+  a: PackageDiscoverySortable,
+  b: PackageDiscoverySortable,
   sort: "updated" | "created" | "downloads" | "recommended" | "installs",
 ) {
-  const metric = (candidate: PackageDigestLike) => {
+  const metric = (candidate: PackageDiscoverySortable) => {
     if (sort === "downloads") return candidate.stats?.downloads ?? 0;
     if (sort === "installs") return candidate.stats?.installs ?? 0;
     if (sort === "recommended") return candidate.recommendedScore ?? 0;
@@ -4837,15 +4886,22 @@ async function listOfficialFirstPackageCategoryPage(
   const collected: PublicPackageListItem[] = [];
 
   if (state.phase === "official") {
-    const officialPage = await listPackagePageImpl(ctx, {
-      ...args,
-      officialFirst: false,
-      isOfficial: true,
-      paginationOpts: {
-        cursor: state.cursor,
-        numItems: targetCount,
-      },
-    });
+    const officialPage =
+      !args.highlightedOnly && state.cursor === null
+        ? await takeVisiblePackageCategoryDigestPage(ctx, {
+            ...args,
+            isOfficial: true,
+            numItems: targetCount,
+          })
+        : await listPackagePageImpl(ctx, {
+            ...args,
+            officialFirst: false,
+            isOfficial: true,
+            paginationOpts: {
+              cursor: state.cursor,
+              numItems: targetCount,
+            },
+          });
     collected.push(...officialPage.page);
     if (!officialPage.isDone) {
       return {
