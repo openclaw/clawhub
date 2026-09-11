@@ -4260,6 +4260,33 @@ describe("securityScan", () => {
     expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:publish"]);
   });
 
+  it.each([1, 4, 16])(
+    "reads only the needed native queue rows for a %i-job claim with GitHub rollout off",
+    async (limit) => {
+      vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+      const jobs = Array.from({ length: 512 }, (_, index) =>
+        makeScanJob({
+          _id: `securityScanJobs:bulk-${index}`,
+          source: "bulk-rescan",
+          createdAt: index + 1,
+          nextRunAt: index + 1,
+        }),
+      );
+      const { ctx } = makeClaimCtx(jobs);
+
+      const claimed = await claimQueuedJobsInternalHandler(ctx, {
+        workerId: "shared-worker",
+        lane: "shared",
+        limit,
+        leaseMs: 60_000,
+      });
+
+      expect(claimed.map((job) => job._id)).toEqual(jobs.slice(0, limit).map((job) => job._id));
+      const pages = await Promise.all(ctx.runQuery.mock.results.map((result) => result.value));
+      expect(pages.reduce((total, page) => total + page.page.length, 0)).toBe(limit);
+    },
+  );
+
   it("skips queued generic GitHub scans while still claiming NVIDIA scans when rollout is off", async () => {
     vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
     const genericJobs = Array.from({ length: 513 }, (_, index) =>
@@ -4327,6 +4354,11 @@ describe("securityScan", () => {
       "securityScanJobs:nvidia",
       "skillScanRequests:nvidia",
     ]);
+    // Sparse legacy jobs must not turn a one-job claim into hundreds of queries.
+    const publishPages = ctx.runQuery.mock.calls.filter(
+      ([, args]) => (args as { source: string }).source === "publish",
+    );
+    expect(publishPages.length).toBeLessThanOrEqual(3);
   });
 
   it("lets the catalog lane claim only the lowest-priority catalog source", async () => {
