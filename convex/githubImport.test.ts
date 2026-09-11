@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { generateKeyPairSync } from "node:crypto";
+import { zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { __test } from "./githubImport";
@@ -84,6 +85,15 @@ describe("githubImport", () => {
       "demo-repo/skill/SKILL.md",
       "demo-repo/skill/notes.md",
     ]);
+  });
+
+  it("rejects oversized files so they are not inflated past import limits", () => {
+    const zip = zipSync({
+      "demo-repo/skill/SKILL.md": new TextEncoder().encode("# Demo\n"),
+      "demo-repo/skill/model.bin": new Uint8Array(10 * 1024 * 1024 + 1),
+    });
+
+    expect(() => __test.unzipToEntries(zip)).toThrow(/file that is too large/i);
   });
 
   it("rejects a public repo owned by another GitHub account before repo lookup", async () => {
