@@ -25,6 +25,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   moderation, deletion, and publication checks as direct skill file reads.
   The changelog formatter receives an already-authorized version; it must not
   resolve and load a different previous version from an untrusted slug.
+- Server-side OG image requests validate all resolved IPv4/IPv6 destinations at
+  the socket lookup boundary. Private, local, special-purpose, or mixed results
+  are rejected. The socket receives only those checked addresses, avoiding a
+  second DNS lookup; HTTPS still verifies the original hostname. Every redirect
+  repeats URL and destination checks. Timeout and byte limits remain enforced.
 
 - user: upload skills (subject to GitHub age gate), report skills/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).

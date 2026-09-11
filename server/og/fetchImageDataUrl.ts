@@ -81,6 +81,7 @@ export async function fetchImageDataUrl(
       return `data:${contentType};base64,${buffer.toString("base64")}`;
     } finally {
       clearTimeout(timeout);
+      controller.abort();
     }
   } catch {
     return null;
@@ -98,17 +99,14 @@ async function fetchOgImageResponse(
 ) {
   let currentUrl = initialUrl;
   for (let hop = 0; hop <= MAX_IMAGE_REDIRECTS; hop += 1) {
-    const response = await fetch(currentUrl, {
-      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/*" },
-      redirect: "manual",
-      signal,
-    });
+    const response = await requestPublicImage(currentUrl, signal);
     if (
       options.followRedirects &&
       response.status >= 300 &&
       response.status < 400 &&
       hop < MAX_IMAGE_REDIRECTS
     ) {
+      await response.body?.cancel();
       const location = response.headers.get("location")?.trim();
       if (!location) return null;
       const nextUrl = new URL(location, currentUrl);
@@ -187,3 +185,4 @@ async function readLimitedImageBody(response: Response) {
     totalBytes,
   );
 }
+import { requestPublicImage } from "./requestPublicImage";
