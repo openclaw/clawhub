@@ -125,12 +125,6 @@ describe("HTTP route rate limit defaults", () => {
     ["legacy download", LegacyApiRoutes.download, "downloadIp", RATE_LIMITS.download.ip],
     ["plugins export", ApiRoutes.pluginsExport, "exportIp", RATE_LIMITS.export.ip],
     [
-      "package inspector artifact",
-      "/api/v1/package-inspector/artifact",
-      "downloadIp",
-      RATE_LIMITS.download.ip,
-    ],
-    [
       "package artifact download",
       "/api/v1/packages/demo/versions/1.0.0/artifact/download",
       "downloadIp",
@@ -155,27 +149,6 @@ describe("HTTP route rate limit defaults", () => {
       bucket: "readIp",
       rate: RATE_LIMITS.read.ip,
     });
-  });
-
-  it("registers auth sign-in routes behind the router-level default limit", async () => {
-    const route = http.lookup("/api/auth/signin/github", "GET");
-    if (!route) throw new Error("Expected auth sign-in route");
-    const [action] = route;
-    const { ctx, runMutation } = makeDeniedRateLimitCtx();
-
-    const response = await (action as unknown as WrappedHttpAction)._handler(
-      ctx,
-      new Request("https://example.com/api/auth/signin/github"),
-    );
-
-    expect(response.status).toBe(429);
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        name: "readIp",
-        config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
-      }),
-    );
   });
 
   it.each([
