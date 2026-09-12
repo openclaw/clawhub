@@ -3105,6 +3105,7 @@ export const claimQueuedJobsInternal = internalMutation({
       }
       const eligible: Doc<"securityScanJobs">[] = [];
       let cursor: string | null = null;
+      let pageSize = Math.min(takeLimit, MAX_CODEX_SCAN_CLAIM_LIMIT);
       do {
         const page: ReadySourceJobsForClaimPage = await runQueryRef<ReadySourceJobsForClaimPage>(
           ctx,
@@ -3113,14 +3114,18 @@ export const claimQueuedJobsInternal = internalMutation({
             source,
             now,
             cursor,
-            numItems: githubSkillSyncEnabled
-              ? Math.min(takeLimit, MAX_CODEX_SCAN_CLAIM_LIMIT)
-              : MAX_CODEX_SCAN_CLAIM_LIMIT,
+            numItems: pageSize,
             excludeGitHubSkillSync: !githubSkillSyncEnabled,
           },
         );
         for (const job of page.page) {
-          if (await isJobRolloutClaimable(job)) eligible.push(job);
+          if (await isJobRolloutClaimable(job)) {
+            eligible.push(job);
+          } else {
+            // Native claims should not read the whole queue. Expand only after
+            // blocked legacy GitHub jobs require scanning past the first page.
+            pageSize = MAX_CODEX_SCAN_CLAIM_LIMIT;
+          }
           if (eligible.length >= takeLimit) return eligible;
         }
         cursor = page.isDone ? null : page.continueCursor;
