@@ -433,7 +433,7 @@ export const ServerPackagePublishRequestSchema = type({
 });
 export type ServerPackagePublishRequest = (typeof ServerPackagePublishRequestSchema)[inferred];
 
-export const PackageListItemSchema = type({
+const PackageListItemFields = {
   name: "string",
   displayName: "string",
   family: PackageFamilySchema,
@@ -452,8 +452,34 @@ export const PackageListItemSchema = type({
   featuredAt: "number?",
   verificationTier: PackageVerificationTierSchema.or("null").optional(),
   stats: PackageStatsSchema.optional(),
-});
+} as const;
+
+export const PackageListItemSchema = type(PackageListItemFields);
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
+
+export const PluginOverviewItemSchema = type({
+  "+": "reject",
+  ...PackageListItemFields,
+  featured: "boolean?",
+  featuredRank: "number?",
+  trending: "boolean?",
+  trendingRank: "number?",
+});
+export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
+
+export const ApiV1PluginOverviewResponseSchema = type({
+  "+": "reject",
+  categories: type({
+    "+": "reject",
+    slug: "string",
+    label: "string",
+    description: "string",
+    icon: "string",
+    order: "number",
+  }).array(),
+  items: PluginOverviewItemSchema.array(),
+});
+export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];
 
 export const ApiV1PackageListResponseSchema = type({
   items: PackageListItemSchema.array(),

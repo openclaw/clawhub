@@ -4,6 +4,11 @@ import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArk } from "../packages/schema/src/ark";
 import { ApiV1SkillListResponseSchema } from "../packages/schema/src/schemas";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -7394,6 +7399,14 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns a skill verification envelope with card and security metadata", async () => {
+    const scannerReports = {
+      aig: { version: "2.1.0", runs: [], vendorExtension: { preserved: true } },
+      skillspector: {
+        risk_assessment: { score: 0, recommendation: "CAUTION" },
+        analysis_completeness: { is_complete: false, coverage_percent: 99.1 },
+        vendorExtension: { text: "full scanner evidence ".repeat(30_000) },
+      },
+    };
     const internalVersion = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -7401,6 +7414,7 @@ describe("httpApiV1 handlers", () => {
       createdAt: 1,
       changelog: "c",
       fingerprint: "source-fingerprint",
+      scannerReportsStorageId: "storage:scanner-reports",
       files: [
         {
           path: "SKILL.md",
@@ -7459,6 +7473,7 @@ describe("httpApiV1 handlers", () => {
         checkedAt: 9,
       },
       depRegistryScanStatus: "suspicious",
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 3 },
       skillSpectorAnalysis: {
         status: "clean",
         score: 0,
@@ -7468,7 +7483,7 @@ describe("httpApiV1 handlers", () => {
         issues: [],
         scannerVersion: "skillspector-test",
         summary: "SkillSpector clean.",
-        checkedAt: 5,
+        checkedAt: 3,
       },
       capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
@@ -7503,7 +7518,13 @@ describe("httpApiV1 handlers", () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob([JSON.stringify({ checkedAt: 3, ...scannerReports })])),
+        },
+      }),
       new Request("https://example.com/api/v1/skills/demo/verify?ownerHandle=acme&tag=stable"),
     );
 
@@ -7555,28 +7576,14 @@ describe("httpApiV1 handlers", () => {
         summary: "ClawScan clean.",
         model: "gpt-test",
         checkedAt: 3,
-        signals: {
-          staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
-          virusTotal: {
-            status: "clean",
-            rawStatus: "clean",
-            verdict: "clean",
-            source: "engines",
-          },
-          skillSpector: {
-            status: "clean",
-            rawStatus: "clean",
-            score: 0,
-            recommendation: "INSTALL",
-            issueCount: 0,
-          },
-          dependencyRegistry: null,
-        },
       },
       signature: { status: "unsigned" },
     });
     expect(json.skill).toBeUndefined();
     expect(json.publisher).toBeUndefined();
+    expect(json.security).not.toHaveProperty("signals");
+    expect(json).not.toHaveProperty("scannerReports");
+    expect(json.security.scannerReports).toEqual(scannerReports);
   });
 
   it("does not let publisher-supplied skill-card.md satisfy verification", async () => {
@@ -7803,10 +7810,7 @@ describe("httpApiV1 handlers", () => {
       passed: true,
       rawStatus: "clean",
       verdict: "benign",
-      signals: {
-        staticScan: { status: "malicious", rawStatus: "malicious" },
-        dependencyRegistry: null,
-      },
+      scannerReports: { aig: null, skillspector: null },
     });
   });
 
@@ -11028,6 +11032,131 @@ describe("httpApiV1 handlers", () => {
         topic: "calendar",
       }),
     );
+  });
+
+  it("plugin overview returns one cacheable bounded home-page payload", async () => {
+    const featured = {
+      ...makeCatalogItem("featured-plugin", {
+        family: "code-plugin",
+        updatedAt: 300,
+      }),
+      categories: ["channels"],
+    };
+    const trending = {
+      ...makeCatalogItem("trending-plugin", {
+        family: "bundle-plugin",
+        updatedAt: 200,
+      }),
+      categories: ["models"],
+    };
+    const category = {
+      ...makeCatalogItem("category-plugin", {
+        family: "code-plugin",
+        updatedAt: 100,
+      }),
+      categories: [],
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) {
+        return args.category === "channels" ? [category] : [];
+      }
+      const page = args.highlightedOnly
+        ? [featured]
+        : args.sort === "trending"
+          ? [trending]
+          : args.category === "channels"
+            ? [category]
+            : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toContain("s-maxage=300");
+    const payload = await response.json();
+    expect(payload.categories).toEqual(
+      expect.arrayContaining([expect.objectContaining({ slug: "channels", order: 0 })]),
+    );
+    expect(payload.items).toEqual([
+      expect.objectContaining({ name: "featured-plugin", featured: true }),
+      expect.objectContaining({ name: "trending-plugin", trending: true }),
+      expect.objectContaining({ name: "category-plugin", categories: ["channels"] }),
+    ]);
+    expect(runQuery).toHaveBeenCalledTimes(payload.categories.length + 2);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        highlightedOnly: true,
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        sort: "trending",
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        category: "channels",
+        numItems: 8,
+      }),
+    );
+    const categoryCall = runQuery.mock.calls.find(
+      ([, args]) => (args as { category?: string }).category === "channels",
+    );
+    expect(categoryCall?.[1]).not.toHaveProperty("families");
+    expect(categoryCall?.[1]).not.toHaveProperty("paginationOpts");
+  });
+
+  it("plugin overview preserves independent ranks for overlapping shelves", async () => {
+    const shared = makeCatalogItem("shared-plugin", {
+      family: "code-plugin",
+      updatedAt: 300,
+    });
+    const trendingFirst = makeCatalogItem("trending-first", {
+      family: "code-plugin",
+      updatedAt: 200,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) return [];
+      const page = args.highlightedOnly
+        ? [shared]
+        : args.sort === "trending"
+          ? [trendingFirst, shared]
+          : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    const payload = await response.json();
+    expect(payload.items).toEqual([
+      expect.objectContaining({
+        name: "shared-plugin",
+        featured: true,
+        featuredRank: 0,
+        trending: true,
+        trendingRank: 1,
+      }),
+      expect.objectContaining({
+        name: "trending-first",
+        trending: true,
+        trendingRank: 0,
+      }),
+    ]);
   });
 
   it("packages list forwards topics to both unified catalog sources", async () => {
@@ -17450,7 +17579,7 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        key: "ip:unknown:trustedPublish",
+        key: "ip:203.0.113.1:trustedPublish",
         name: "trustedPublishIp",
         config: expect.objectContaining({ rate: RATE_LIMITS.trustedPublish.ip }),
       }),

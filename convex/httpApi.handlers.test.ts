@@ -1,6 +1,11 @@
 /* @vitest-environment node */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
+
 vi.mock("./lib/apiTokenAuth", () => ({
   getOptionalApiTokenUser: vi.fn(),
   requireApiTokenUser: vi.fn(),

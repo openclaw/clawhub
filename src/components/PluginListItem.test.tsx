@@ -81,28 +81,28 @@ describe("PluginListItem", () => {
     expect(screen.getByLabelText("Categories")).toBeTruthy();
   });
 
-  it("renders a plugin manifest icon URL with safe image attributes", () => {
+  it("renders a hosted bundled plugin icon with safe image attributes", () => {
     render(
       <PluginListItem
-        item={makePlugin({ icon: "https://cdn.example.test/icons/demo.svg" })}
+        item={makePlugin({ icon: `/api/v1/skill-icons/${"a".repeat(64)}` })}
         variant="card"
       />,
     );
 
     const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
     expect(image).toBeTruthy();
-    expect(image?.getAttribute("src")).toBe("https://cdn.example.test/icons/demo.svg");
+    expect(image?.getAttribute("src")).toBe(`/api/v1/skill-icons/${"a".repeat(64)}`);
     expect(image?.getAttribute("referrerpolicy")).toBe("no-referrer");
     expect(image?.getAttribute("loading")).toBe("lazy");
     expect(image?.getAttribute("decoding")).toBe("async");
   });
 
-  it("falls back to the default plugin glyph when a manifest icon fails to load", () => {
+  it("falls back to the category glyph when a bundled icon fails to load", () => {
     render(
       <PluginListItem
         item={makePlugin({
           categories: ["models"],
-          icon: "https://cdn.example.test/broken.svg",
+          icon: `/api/v1/skill-icons/${"b".repeat(64)}`,
         })}
       />,
     );

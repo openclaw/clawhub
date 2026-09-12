@@ -10,7 +10,48 @@ read_when:
 
 See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace policy on prohibited skill categories.
 
+## Anonymous API ingress
+
+- Hosted anonymous HTTP requests must enter through the ClawHub Vercel edge.
+  The proxy replaces caller-supplied identity headers with its Vercel OIDC
+  service token and the platform-controlled visitor address. Convex verifies
+  the token's issuer, audience, project, owner and deployment environment
+  before using that address for quotas or download metrics.
+- Unverified direct requests consume no shared quota: redirect them to the
+  configured public HTTPS API origin, or reject if no safe origin is configured.
+  Invalid edge assertions are rejected without redirecting, to avoid loops
+  through a misconfigured proxy.
+  The legacy `TRUST_FORWARDED_IPS` flag must never authorize raw IP headers.
+- API tokens retain per-user quotas. A server-owned loopback Convex deployment
+  may use a local development bucket when no hosted environment is configured.
+- Inspector worker routes, signed archive metric receipts, and Convex Auth's
+  OAuth sign-in/callback routes retain their handler-owned credential checks at
+  the Convex origin. They do not use anonymous IP quotas or redirect credentials
+  to another origin. Worker credentials never exempt ordinary public API routes
+  from verified ingress.
+- Rollout requires the identity-forwarding edge before the backend starts
+  enforcing verified anonymous ingress.
+
 ## Roles + permissions
+
+- Skill transfer, delete, and restore authorization follows the resource's current
+  publisher ownership. For organization skills, the historical `ownerUserId` is
+  not an authorization grant: current organization admin/owner membership is
+  required, subject to the operation's existing platform staff permissions.
+- Transfer acceptance rechecks the requester's current authority, including when
+  they originally published the skill. Removing or downgrading their membership
+  invalidates pending requests. Personal and legacy skills retain personal-owner
+  authorization through the shared publisher ownership check.
+- Changelog previews must authorize previous-version file access before reading
+  stored content or invoking an AI provider. They use the same ownership, staff,
+  moderation, deletion, and publication checks as direct skill file reads.
+  The changelog formatter receives an already-authorized version; it must not
+  resolve and load a different previous version from an untrusted slug.
+- Server-side OG image requests validate all resolved IPv4/IPv6 destinations at
+  the socket lookup boundary. Private, local, special-purpose, or mixed results
+  are rejected. The socket receives only those checked addresses, avoiding a
+  second DNS lookup; HTTPS still verifies the original hostname. Every redirect
+  repeats URL and destination checks. Timeout and byte limits remain enforced.
 
 - user: upload skills (subject to GitHub age gate), report skills/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
@@ -211,7 +252,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   abuse list from the filtered backend dashboard state instead of applying a
   separate client-side official-org filter.
 
-## Reporting + auto-hide
+## Reporting + moderation review
 
 - Reports are unique per user + target (skill/package).
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
@@ -220,13 +261,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     and the owner is not banned.
   - Active package report = package exists, not soft-deleted, and the owner is
     not banned/deactivated.
-- Auto-hide: when unique reports exceed 3 (4th report):
-  - skill report flow:
-    - soft-delete skill (`softDeletedAt`)
-    - set `moderationStatus = hidden`
-    - set `moderationReason = auto.reports`
-    - set embeddings visibility `deleted`
-    - audit log entry: `skill.auto_hide`
+- Reports never change skill visibility or installability automatically, regardless
+  of the number of distinct reporters or whether the skill is official. Report
+  submission records moderator intake and updates report counts only. Hiding a
+  skill requires an authorized moderator's explicit decision; this prevents a
+  small group of ordinary accounts from removing arbitrary catalog entries.
+- Existing report, scanner, and moderator hides retain their provenance; this
+  change does not automatically restore previously hidden skills.
 - Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.
@@ -423,6 +464,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   the normal retry lifecycle, but an A.I.G finding never independently blocks,
   hides, or changes installability. Package releases skip the skill-only A.I.G
   scanner.
+- Published skill verification retains complete upstream A.I.G and SkillSpector
+  JSON in a version-owned storage blob, separate from capped database summaries.
+  `/verify` returns these reports under `security.scannerReports`, alongside the
+  overall verdict and without duplicate signal summaries, only when their scan timestamp matches all
+  stored summaries and the ClawScan verdict. Legacy scans expose null reports
+  until rescanned; raw evidence never changes moderation or verification policy.
+  Replacing a scan deletes its previous report blob, and version hard deletion
+  or pending-publication discard deletes the associated blob. Workers send raw
+  reports only when the hydrated job provides a signed upload URL, so merging
+  the worker before a separate Convex deployment does not break scan completion.
+  Raw JSON uploads directly to storage; completion receives only a storage ID,
+  avoiding Convex function-argument size and value-encoding limits.
 - Production workers install A.I.G and its complete Python dependency set from
   the reviewed, hash-locked worker requirements file. Updating the scanner or a
   dependency requires an explicit lock update; a mutable package-index artifact

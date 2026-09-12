@@ -29,6 +29,8 @@ import {
   PLUGIN_CATEGORY_DEFINITIONS,
   parseArk,
   type ApiV1PackageCategoriesBatchRequest,
+  type ApiV1PluginOverviewResponse,
+  type PackageListItem,
   type PackagePublishMetadata,
   type PackageAppealListStatus,
   type PackageModerationQueueStatus,
@@ -126,6 +128,7 @@ const internalRefs = internal as unknown as {
     getByNameForViewerInternal: unknown;
     hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
+    listPluginOverviewCategoryInternal: unknown;
     listPluginValidationReportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -872,21 +875,15 @@ async function resolvePackageTags(
   );
 }
 
-type CatalogListItem = {
-  name: string;
-  displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
-  runtimeId?: string | null;
-  channel: "official" | "community" | "private";
-  isOfficial: boolean;
-  summary?: string | null;
-  ownerHandle?: string | null;
-  createdAt: number;
-  updatedAt: number;
-  latestVersion?: string | null;
-  featuredAt?: number;
-  verificationTier?: string | null;
-  stats?: { downloads: number; installs: number; stars: number; versions: number };
+type CatalogListItem = PackageListItem & {
+  ownerOfficial?: boolean;
+};
+
+type PluginOverviewItem = CatalogListItem & {
+  featured?: boolean;
+  featuredRank?: number;
+  trending?: boolean;
+  trendingRank?: number;
 };
 
 type CatalogSearchEntry = {
@@ -2501,6 +2498,97 @@ export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
     includeSkills: false,
     pluginFamilies: ["code-plugin", "bundle-plugin"],
   });
+}
+
+const PLUGIN_OVERVIEW_SECTION_SIZE = 8;
+const PLUGIN_OVERVIEW_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+
+function mergePluginOverviewItem(
+  items: Map<string, PluginOverviewItem>,
+  item: CatalogListItem,
+  options: {
+    category?: string;
+    featuredRank?: number;
+    trendingRank?: number;
+  },
+) {
+  const existing = items.get(item.name);
+  const categories = [
+    ...new Set([...(existing?.categories ?? []), ...(item.categories ?? []), options.category]),
+  ].filter((category): category is string => Boolean(category));
+  const featuredRank = existing?.featuredRank ?? options.featuredRank;
+  const trendingRank = existing?.trendingRank ?? options.trendingRank;
+  items.set(item.name, {
+    ...(existing ?? item),
+    ...(categories.length > 0 ? { categories } : {}),
+    ...(featuredRank === undefined ? {} : { featured: true, featuredRank }),
+    ...(trendingRank === undefined ? {} : { trending: true, trendingRank }),
+  });
+}
+
+export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  const page = async (args: { highlightedOnly?: boolean; sort?: "trending" }) =>
+    await runQueryRef<{
+      page: CatalogListItem[];
+      isDone: boolean;
+      continueCursor: string;
+    }>(ctx, internalRefs.packages.listPageForViewerInternal, {
+      ...(args.highlightedOnly || args.sort === "trending"
+        ? { families: [...PLUGIN_OVERVIEW_FAMILIES] }
+        : {}),
+      ...args,
+      paginationOpts: { cursor: null, numItems: PLUGIN_OVERVIEW_SECTION_SIZE },
+    });
+
+  // One bounded fanout replaces one public HTTP request per home-page shelf.
+  const [featured, trending, ...categoryPages] = await Promise.all([
+    page({ highlightedOnly: true }),
+    page({ sort: "trending" }),
+    ...PLUGIN_CATEGORY_DEFINITIONS.map((category) =>
+      runQueryRef<CatalogListItem[]>(
+        ctx,
+        internalRefs.packages.listPluginOverviewCategoryInternal,
+        {
+          category: category.slug,
+          numItems: PLUGIN_OVERVIEW_SECTION_SIZE,
+        },
+      ),
+    ),
+  ]);
+  const items = new Map<string, PluginOverviewItem>();
+  for (const [featuredRank, item] of featured.page.entries()) {
+    mergePluginOverviewItem(items, item, { featuredRank });
+  }
+  for (const [trendingRank, item] of trending.page.entries()) {
+    mergePluginOverviewItem(items, item, { trendingRank });
+  }
+  for (const [index, result] of categoryPages.entries()) {
+    const category = PLUGIN_CATEGORY_DEFINITIONS[index];
+    for (const item of result) {
+      mergePluginOverviewItem(items, item, { category: category.slug });
+    }
+  }
+
+  const response: ApiV1PluginOverviewResponse = {
+    categories: PLUGIN_CATEGORY_DEFINITIONS.map((category, order) => ({
+      slug: category.slug,
+      label: category.label,
+      description: category.description,
+      icon: category.icon,
+      order,
+    })),
+    items: [...items.values()],
+  };
+  return json(
+    response,
+    200,
+    mergeHeaders(rate.headers, {
+      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+    }),
+  );
 }
 
 export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {

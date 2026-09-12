@@ -10,6 +10,7 @@ import {
   syncPackageSearchDigestForPackageId,
 } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { resolvePackageIcon } from "./lib/packageIcons";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import {
   derivePersonalPublisherHandle,
@@ -22,6 +23,7 @@ import {
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { isSkillCardPath } from "./lib/skillCards";
+import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -38,6 +40,165 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
+
+type PluginIconCandidate = {
+  packageId: Id<"packages">;
+  name: string;
+  ownerPublisherId?: Id<"publishers">;
+  release: Doc<"packageReleases">;
+  icon?: string;
+  trustedSource: boolean;
+};
+
+export const listPluginIconRepairCandidatesInternal = internalQuery({
+  args: {
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
+    cursor: v.union(v.string(), v.null()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", args.family),
+      )
+      .paginate({ cursor: args.cursor, numItems: clampInt(args.limit, 1, 25) });
+    const candidates: PluginIconCandidate[] = [];
+    for (const pkg of page.page) {
+      if (isHostedSkillPresentationIconPath(pkg.icon) || !pkg.latestReleaseId) continue;
+      const release = await ctx.db.get(pkg.latestReleaseId);
+      if (
+        !release ||
+        release.softDeletedAt !== undefined ||
+        (release.publicationStatus && release.publicationStatus !== "published")
+      )
+        continue;
+      const owner = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+      candidates.push({
+        packageId: pkg._id,
+        name: pkg.normalizedName,
+        ownerPublisherId: pkg.ownerPublisherId,
+        release,
+        icon: pkg.icon,
+        trustedSource:
+          pkg.normalizedName.startsWith("@openclaw/") &&
+          owner?.handle === "openclaw" &&
+          isPublisherActive(owner),
+      });
+    }
+    return {
+      candidates,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const applyPluginIconRepairInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    releaseId: v.id("packageReleases"),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    icon: v.string(),
+    expectedIcon: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!isHostedSkillPresentationIconPath(args.icon)) throw new ConvexError("Invalid plugin icon");
+    const pkg = await ctx.db.get(args.packageId);
+    const release = await ctx.db.get(args.releaseId);
+    // A concurrent publish, ownership change, or deletion invalidates the prepared repair.
+    if (
+      !pkg ||
+      isHostedSkillPresentationIconPath(pkg.icon) ||
+      pkg.icon !== args.expectedIcon ||
+      pkg.softDeletedAt !== undefined ||
+      pkg.latestReleaseId !== args.releaseId ||
+      pkg.ownerPublisherId !== args.ownerPublisherId ||
+      !release ||
+      release.packageId !== pkg._id ||
+      release.softDeletedAt !== undefined ||
+      (release.publicationStatus && release.publicationStatus !== "published")
+    )
+      return false;
+    await ctx.db.patch(release._id, {
+      icon: args.icon,
+      ...(release.pluginManifestSummary
+        ? { pluginManifestSummary: { ...release.pluginManifestSummary, icon: args.icon } }
+        : {}),
+    });
+    await ctx.db.patch(pkg._id, {
+      icon: args.icon,
+      ...(pkg.latestVersionSummary
+        ? { latestVersionSummary: { ...pkg.latestVersionSummary, icon: args.icon } }
+        : {}),
+    });
+    return true;
+  },
+});
+
+// Storage reads, GitHub fetches and raster decoding require an action. Keep this repair
+// bounded and cursor-resumable instead of scheduling untracked actions from migrateOne.
+export const repairPluginIconsInternal = internalAction({
+  args: {
+    family: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    scanned: number;
+    matched: number;
+    patched: number;
+    cursor: string;
+    isDone: boolean;
+    dryRun: boolean;
+    samples: Array<{ name: string; icon: string }>;
+  }> => {
+    const dryRun = args.dryRun !== false;
+    const page = await ctx.runQuery(internal.maintenance.listPluginIconRepairCandidatesInternal, {
+      family: args.family ?? "code-plugin",
+      cursor: args.cursor ?? null,
+      limit: args.limit ?? 10,
+    });
+    const samples: Array<{ name: string; icon: string }> = [];
+    let patched = 0;
+    for (const candidate of page.candidates) {
+      const icon = isHostedSkillPresentationIconPath(candidate.release.icon)
+        ? candidate.release.icon
+        : await resolvePackageIcon(ctx, {
+            files: candidate.release.files,
+            ...(candidate.trustedSource ? { trustedSource: candidate.release.verification } : {}),
+            dryRun,
+          });
+      if (!icon) continue;
+      samples.push({ name: candidate.name, icon });
+      if (
+        !dryRun &&
+        (await ctx.runMutation(internal.maintenance.applyPluginIconRepairInternal, {
+          packageId: candidate.packageId,
+          releaseId: candidate.release._id,
+          ownerPublisherId: candidate.ownerPublisherId,
+          expectedIcon: candidate.icon,
+          icon,
+        }))
+      )
+        patched += 1;
+    }
+    return {
+      scanned: page.scanned,
+      matched: samples.length,
+      patched,
+      cursor: page.cursor,
+      isDone: page.isDone,
+      dryRun,
+      samples,
+    };
+  },
+});
 
 type StalePackagePublishAttempt = {
   attemptId: Id<"publishAttempts">;

@@ -75,6 +75,7 @@ import type { StaticScanResult } from "./lib/moderationEngine";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import { resolvePackageIcon } from "./lib/packageIcons";
 import {
   assertManualRecoveryFinalization,
   manualPackageRecovery,
@@ -86,7 +87,6 @@ import {
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
   maybeParseJson,
-  normalizePluginManifestIcon,
   normalizePackageName,
   normalizePublishFiles,
   readStorageText,
@@ -1514,6 +1514,7 @@ function packageMatchesListFilters(
   pkg: Doc<"packages">,
   args: {
     family?: PackageFamily;
+    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     category?: string;
@@ -1527,6 +1528,7 @@ function packageMatchesListFilters(
   if (!isClawFamilyPubliclyVisible(pkg.family)) return false;
   if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
   if (args.family && pkg.family !== args.family) return false;
+  if (args.families?.length && !args.families.includes(pkg.family)) return false;
   if (args.channel && pkg.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
   if (args.category) {
@@ -2774,6 +2776,36 @@ async function takeVisiblePackageCategoryDigestPage(
         })
       : "",
   };
+}
+
+const PLUGIN_OVERVIEW_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+
+async function listPluginOverviewCategory(
+  ctx: DbReaderCtx,
+  args: { category: PluginCategorySlug; numItems: number },
+) {
+  const targetCount = Math.max(1, Math.min(args.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+  // The marketplace home drops pagination, so select from the category indexes
+  // directly instead of truncating a sparse page from the general catalog scan.
+  const pages = await Promise.all(
+    PLUGIN_OVERVIEW_FAMILIES.map(
+      async (family) =>
+        await listOfficialFirstPackageCategoryPage(ctx, {
+          family,
+          category: args.category,
+          sort: "downloads",
+          paginationOpts: { cursor: null, numItems: targetCount },
+        }),
+    ),
+  );
+  return pages
+    .flatMap((page) => page.page)
+    .sort(
+      (a, b) =>
+        Number(b.isOfficial) - Number(a.isOfficial) ||
+        compareStablePackageDiscoveryCandidates(a, b, "downloads"),
+    )
+    .slice(0, targetCount);
 }
 
 async function fetchHighlightedPackageEntries(
@@ -4261,6 +4293,20 @@ export const listPageForViewerInternal = internalQuery({
   },
 });
 
+export const listPluginOverviewCategoryInternal = internalQuery({
+  args: {
+    category: v.string(),
+    numItems: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (!isPluginCategorySlug(args.category)) return [];
+    return await listPluginOverviewCategory(ctx, {
+      category: args.category,
+      numItems: args.numItems,
+    });
+  },
+});
+
 export const countPublicPluginsInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -4293,12 +4339,17 @@ export const countPublicPlugins = query({
   },
 });
 
+type PackageDiscoverySortable = Pick<
+  PackageDigestLike,
+  "stats" | "recommendedScore" | "createdAt" | "updatedAt" | "family" | "name"
+>;
+
 function compareStablePackageDiscoveryCandidates(
-  a: PackageDigestLike,
-  b: PackageDigestLike,
+  a: PackageDiscoverySortable,
+  b: PackageDiscoverySortable,
   sort: "updated" | "created" | "downloads" | "recommended" | "installs",
 ) {
-  const metric = (candidate: PackageDigestLike) => {
+  const metric = (candidate: PackageDiscoverySortable) => {
     if (sort === "downloads") return candidate.stats?.downloads ?? 0;
     if (sort === "installs") return candidate.stats?.installs ?? 0;
     if (sort === "recommended") return candidate.recommendedScore ?? 0;
@@ -4462,8 +4513,8 @@ async function listPackagePageImpl(
   if (args.channel === "private" && !args.viewerUserId) {
     return { page: [], isDone: true, continueCursor: "" };
   }
-  if (args.families?.length && !args.highlightedOnly) {
-    throw new Error("families is only supported for highlighted package pages");
+  if (args.families?.length && !args.highlightedOnly && args.sort !== "trending") {
+    throw new Error("families is only supported for highlighted or trending package pages");
   }
   if (args.category && !isPluginCategorySlug(args.category)) {
     return { page: [], isDone: true, continueCursor: "" };
@@ -4837,15 +4888,24 @@ async function listOfficialFirstPackageCategoryPage(
   const collected: PublicPackageListItem[] = [];
 
   if (state.phase === "official") {
-    const officialPage = await listPackagePageImpl(ctx, {
-      ...args,
-      officialFirst: false,
-      isOfficial: true,
-      paginationOpts: {
-        cursor: state.cursor,
-        numItems: targetCount,
-      },
-    });
+    const officialPage =
+      // Digest cursors resume through the family-scoped category reader below.
+      // Family-less reads use stable multi-family cursors and must stay on that path.
+      !args.highlightedOnly && args.family !== undefined && state.cursor === null
+        ? await takeVisiblePackageCategoryDigestPage(ctx, {
+            ...args,
+            isOfficial: true,
+            numItems: targetCount,
+          })
+        : await listPackagePageImpl(ctx, {
+            ...args,
+            officialFirst: false,
+            isOfficial: true,
+            paginationOpts: {
+              cursor: state.cursor,
+              numItems: targetCount,
+            },
+          });
     collected.push(...officialPage.page);
     if (!officialPage.isDone) {
       return {
@@ -4885,21 +4945,22 @@ async function listOfficialFirstPackageCategoryPage(
           : "",
       };
     }
-    const communityPage = args.highlightedOnly
-      ? await listPackagePageImpl(ctx, {
-          ...args,
-          officialFirst: false,
-          isOfficial: false,
-          paginationOpts: {
-            cursor: null,
+    const communityPage =
+      args.highlightedOnly || args.family === undefined
+        ? await listPackagePageImpl(ctx, {
+            ...args,
+            officialFirst: false,
+            isOfficial: false,
+            paginationOpts: {
+              cursor: null,
+              numItems: targetCount - collected.length,
+            },
+          })
+        : await takeVisiblePackageCategoryDigestPage(ctx, {
+            ...args,
+            isOfficial: false,
             numItems: targetCount - collected.length,
-          },
-        })
-      : await takeVisiblePackageCategoryDigestPage(ctx, {
-          ...args,
-          isOfficial: false,
-          numItems: targetCount - collected.length,
-        });
+          });
     collected.push(...communityPage.page);
     return {
       page: collected,
@@ -8892,7 +8953,6 @@ async function publishPackageImpl(
     );
   }
   const validatedClaw = clawPackage?.ok ? clawPackage.value : undefined;
-  const icon = family === "claw" ? undefined : normalizePluginManifestIcon(pluginManifest);
   if (family === "code-plugin") {
     const validation = validateOpenClawExternalCodePluginPackageContents(
       packageJson,
@@ -9023,23 +9083,33 @@ async function publishPackageImpl(
         scanStatus: initialScanStatus,
       }
     : undefined;
+  const icon =
+    family === "claw"
+      ? undefined
+      : await resolvePackageIcon(ctx, {
+          files,
+          ...(trustedOpenClawPlugin ? { trustedSource: verification } : {}),
+        });
   const integritySha256 = await hashSkillFiles(
     files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
   const pluginManifestSummary =
     family === "claw"
       ? undefined
-      : derivePluginManifestSummary({
-          pluginManifest:
-            pluginManifest ??
-            (() => {
-              throw new ConvexError("openclaw.plugin.json is required for plugin packages");
-            })(),
-          ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
-          compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-          ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
-          files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
-        });
+      : {
+          ...derivePluginManifestSummary({
+            pluginManifest:
+              pluginManifest ??
+              (() => {
+                throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+              })(),
+            ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
+            compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+            ...(family === "code-plugin" || family === "bundle-plugin" ? { categories } : {}),
+            files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
+          }),
+          ...(icon ? { icon } : {}),
+        };
 
   const legacyZipStorageId =
     payload.artifact?.kind === "npm-pack"

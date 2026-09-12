@@ -3782,6 +3782,7 @@ type CodexScanHydrationCtx = {
   runQuery: (ref: never, args: never) => Promise<unknown>;
   storage: {
     getUrl: (storageId: Id<"_storage">) => Promise<string | null>;
+    generateUploadUrl: () => Promise<string>;
   };
 };
 
@@ -3859,6 +3860,10 @@ async function hydrateClaimedCodexScanJob(
     return null;
   }
   return {
+    scannerReportsUploadUrl:
+      version && (job.targetKind === "skillVersion" || scanRequest?.update)
+        ? await ctx.storage.generateUploadUrl()
+        : null,
     job,
     target: {
       ...target,
@@ -3987,6 +3992,7 @@ export const completeCodexScanJob = action({
     llmAnalysis: llmAnalysisValidator,
     aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    scannerReportsStorageId: v.optional(v.id("_storage")),
     runId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -4014,23 +4020,34 @@ export const completeCodexScanJob = action({
       throw new ConvexError("A.I.G analysis is required to complete skill scans");
     }
 
+    async function updateSkillVersion(versionId: Id<"skillVersions">) {
+      const scannerReportsStorageId = args.scannerReportsStorageId;
+      try {
+        if (completedAigAnalysis) {
+          await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
+            versionId,
+            aigAnalysis: completedAigAnalysis,
+          });
+        }
+        if (args.skillSpectorAnalysis) {
+          await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
+            versionId,
+            skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+          });
+        }
+        await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
+          versionId,
+          llmAnalysis: args.llmAnalysis,
+          scannerReportsStorageId,
+        });
+      } catch (error) {
+        if (scannerReportsStorageId) await ctx.storage.delete(scannerReportsStorageId);
+        throw error;
+      }
+    }
+
     if (target.job.targetKind === "skillVersion" && target.version) {
-      if (completedAigAnalysis) {
-        await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
-          versionId: target.version._id,
-          aigAnalysis: completedAigAnalysis,
-        });
-      }
-      if (args.skillSpectorAnalysis) {
-        await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
-          versionId: target.version._id,
-          skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
-        });
-      }
-      await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
-        versionId: target.version._id,
-        llmAnalysis: args.llmAnalysis,
-      });
+      await updateSkillVersion(target.version._id);
     } else if (target.job.targetKind === "packageRelease" && target.release) {
       await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
         releaseId: target.release._id,
@@ -4049,22 +4066,7 @@ export const completeCodexScanJob = action({
         target.scanRequest.update &&
         target.version
       ) {
-        if (completedAigAnalysis) {
-          await runMutationRef(ctx, internalRefs.skills.updateVersionAigAnalysisInternal, {
-            versionId: target.version._id,
-            aigAnalysis: completedAigAnalysis,
-          });
-        }
-        if (args.skillSpectorAnalysis) {
-          await runMutationRef(ctx, internalRefs.skills.updateVersionSkillSpectorAnalysisInternal, {
-            versionId: target.version._id,
-            skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
-          });
-        }
-        await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
-          versionId: target.version._id,
-          llmAnalysis: args.llmAnalysis,
-        });
+        await updateSkillVersion(target.version._id);
         writtenBack = true;
       }
       const skillSpectorAnalysis = args.skillSpectorAnalysis

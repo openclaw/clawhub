@@ -414,6 +414,75 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     } | undefined;
 }, {}>;
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
+export declare const PluginOverviewItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    displayName: string;
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    runtimeId?: string | null | undefined;
+    channel: "community" | "official" | "private";
+    isOfficial: boolean;
+    summary?: string | null | undefined;
+    icon?: string | null | undefined;
+    ownerHandle?: string | null | undefined;
+    ownerOfficial?: boolean | undefined;
+    createdAt: number;
+    updatedAt: number;
+    latestVersion?: string | null | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
+    featuredAt?: number | undefined;
+    verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+    stats?: {
+        downloads: number;
+        installs: number;
+        stars: number;
+        versions: number;
+    } | undefined;
+    featured?: boolean | undefined;
+    featuredRank?: number | undefined;
+    trending?: boolean | undefined;
+    trendingRank?: number | undefined;
+}, {}>;
+export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
+export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    categories: {
+        slug: string;
+        label: string;
+        description: string;
+        icon: string;
+        order: number;
+    }[];
+    items: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        ownerOfficial?: boolean | undefined;
+        createdAt: number;
+        updatedAt: number;
+        latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        featuredAt?: number | undefined;
+        verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
+        featured?: boolean | undefined;
+        featuredRank?: number | undefined;
+        trending?: boolean | undefined;
+        trendingRank?: number | undefined;
+    }[];
+}, {}>;
+export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];
 export declare const ApiV1PackageListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         name: string;

@@ -64,7 +64,7 @@ const featuredPlugin = {
   channel: "community" as const,
   isOfficial: false,
   summary: "Runs workflows.",
-  icon: "https://example.com/demo-plugin.png",
+  icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
   createdAt: 1,
   updatedAt: 2,
   latestVersion: "1.0.0",

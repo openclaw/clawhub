@@ -25,6 +25,19 @@ type InstallRateLimitedRoutesOptions = {
 
 const authMetadataPaths = new Set(["/.well-known/openid-configuration", "/.well-known/jwks.json"]);
 
+// These handlers validate worker credentials, signed receipts, or the OAuth
+// verifier/state themselves. Redirecting them changes the credential/cookie origin.
+const handlerAuthenticatedPaths = new Set([
+  "/api/v1/package-inspector/claim",
+  "/api/v1/package-inspector/acknowledge",
+  "/api/v1/package-inspector/artifact",
+  "/api/v1/package-inspector/results",
+  "/api/v1/package-inspector/notify",
+  "/api/internal/archive-download-metric",
+  "/api/auth/signin/",
+  "/api/auth/callback/",
+]);
+
 export function installRateLimitedRoutes(
   http: HttpRouter,
   options: InstallRateLimitedRoutesOptions = {},
@@ -50,6 +63,7 @@ function resolveDefaultRouteRateLimit(spec: RouteSpec, request: Request): RouteR
 
   const routedPath = getRoutedPath(spec);
   if (authMetadataPaths.has(routedPath)) return { kind: "none" };
+  if (handlerAuthenticatedPaths.has(routedPath)) return { kind: "none" };
   // The Trending handler owns its rollout gate before rate limiting so the
   // dark route remains indistinguishable from an absent endpoint.
   if (routedPath === ApiRoutes.trending) return { kind: "none" };
@@ -63,7 +77,6 @@ function resolveDefaultRouteRateLimit(spec: RouteSpec, request: Request): RouteR
     if (routedPath === ApiRoutes.download || routedPath === LegacyApiRoutes.download) {
       return { kind: "download" };
     }
-    if (routedPath === "/api/v1/package-inspector/artifact") return { kind: "download" };
     if ("pathPrefix" in spec && spec.pathPrefix === `${ApiRoutes.packages}/`) {
       return packageReadRouteRateLimitKind(request);
     }

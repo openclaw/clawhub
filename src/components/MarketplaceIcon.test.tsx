@@ -28,6 +28,29 @@ describe("MarketplaceIcon", () => {
     ).toBe(true);
   });
 
+  it("renders only hosted bundled plugin icons, falling back for remote URLs", () => {
+    const hostedIcon = `/api/v1/skill-icons/${"c".repeat(64)}`;
+    const { container, rerender } = render(
+      <MarketplaceIcon
+        kind="plugin"
+        label="WhatsApp"
+        categorySlug="channels"
+        imageUrl={hostedIcon}
+      />,
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(hostedIcon);
+    rerender(
+      <MarketplaceIcon
+        kind="plugin"
+        label="WhatsApp"
+        categorySlug="channels"
+        imageUrl="https://example.com/icon.png"
+      />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("svg.marketplace-icon-glyph")).toBeTruthy();
+  });
+
   it("ignores legacy skill custom-icon values", () => {
     const { container } = render(
       <MarketplaceIcon

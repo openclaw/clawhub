@@ -316,6 +316,7 @@ const completeCodexScanJobHandler = (
         }>;
         checkedAt: number;
       };
+      scannerReportsStorageId?: string;
       runId?: string;
     },
     { ok: true }
@@ -3283,7 +3284,11 @@ describe("securityScan", () => {
     );
 
     const result = await claimCodexScanJobsHandler(
-      { runMutation, runQuery, storage: { getUrl } },
+      {
+        runMutation,
+        runQuery,
+        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
+      },
       { token: "worker-secret", workerId: "worker-1", limit: 10 },
     );
 
@@ -3342,10 +3347,18 @@ describe("securityScan", () => {
     const getUrl = vi.fn(async (storageId: string) => `https://storage.example/${storageId}`);
 
     const result = (await claimCodexScanJobsHandler(
-      { runMutation, runQuery, storage: { getUrl } },
+      {
+        runMutation,
+        runQuery,
+        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
+      },
       { token: "worker-secret", workerId: "worker-1", limit: 10 },
     )) as Array<{ target: { files: Array<{ path: string }> } }>;
 
+    expect(result[0]).toHaveProperty(
+      "scannerReportsUploadUrl",
+      "https://storage.example/report-upload",
+    );
     expect(result[0]?.target.files.map((file) => file.path)).toEqual(["SKILL.md"]);
     expect(getUrl).toHaveBeenCalledWith("storage:skill");
     expect(getUrl).not.toHaveBeenCalledWith("storage:card");
@@ -3393,7 +3406,11 @@ describe("securityScan", () => {
     const getUrl = vi.fn(async (storageId: string) => `https://storage.example/${storageId}`);
 
     const result = (await claimCodexScanJobsHandler(
-      { runMutation, runQuery, storage: { getUrl } },
+      {
+        runMutation,
+        runQuery,
+        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
+      },
       { token: "worker-secret", workerId: "worker-1", limit: 10 },
     )) as Array<{ target: { files: Array<{ path: string }> } }>;
 
@@ -3434,10 +3451,15 @@ describe("securityScan", () => {
     const getUrl = vi.fn(async (storageId: string) => `https://storage.example/${storageId}`);
 
     const result = (await claimCodexScanJobsHandler(
-      { runMutation, runQuery, storage: { getUrl } },
+      {
+        runMutation,
+        runQuery,
+        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
+      },
       { token: "worker-secret", workerId: "worker-1", limit: 10 },
     )) as Array<{ target: { files: Array<{ path: string }> } }>;
 
+    expect(result[0]).toHaveProperty("scannerReportsUploadUrl", null);
     expect(result[0]?.target.files.map((file) => file.path)).toEqual(["SKILL.md"]);
     expect(getUrl).toHaveBeenCalledWith("storage:skill");
   });
@@ -3454,7 +3476,11 @@ describe("securityScan", () => {
     const getUrl = vi.fn();
 
     const result = await claimCodexScanJobLeasesHandler(
-      { runMutation, runQuery, storage: { getUrl } },
+      {
+        runMutation,
+        runQuery,
+        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
+      },
       {
         token: "worker-secret",
         workerId: "worker-1",
@@ -3518,7 +3544,14 @@ describe("securityScan", () => {
 
     await expect(
       hydrateCodexScanJobHandler(
-        { runMutation: vi.fn(), runQuery, storage: { getUrl } },
+        {
+          runMutation: vi.fn(),
+          runQuery,
+          storage: {
+            getUrl,
+            generateUploadUrl: async () => "https://storage.example/report-upload",
+          },
+        },
         {
           token: "worker-secret",
           workerId: "worker-1",
@@ -3968,7 +4001,11 @@ describe("securityScan", () => {
     const getUrl = vi.fn(async () => null);
 
     const result = await claimCodexScanJobsHandler(
-      { runMutation, runQuery, storage: { getUrl } },
+      {
+        runMutation,
+        runQuery,
+        storage: { getUrl, generateUploadUrl: async () => "https://storage.example/report-upload" },
+      },
       { token: "worker-secret", workerId: "worker-1", limit: 10 },
     );
 
@@ -5293,6 +5330,34 @@ describe("securityScan", () => {
       expect(runMutation).not.toHaveBeenCalled();
     },
   );
+
+  it("deletes a newly stored report when committing the scan verdict fails", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const runQuery = vi.fn(async () => ({
+      job: { _id: "securityScanJobs:1", targetKind: "skillVersion", leaseToken: "lease-token" },
+      version: { _id: "skillVersions:1" },
+    }));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("llmAnalysis" in args) throw new Error("commit failed");
+      return { ok: true };
+    });
+    const storage = { store: vi.fn(async () => "storage:new-report"), delete: vi.fn() };
+    await expect(
+      completeCodexScanJobHandler(
+        { runQuery, runMutation, storage },
+        {
+          token: "worker-secret",
+          jobId: "securityScanJobs:1",
+          leaseToken: "lease-token",
+          llmAnalysis: { status: "clean", checkedAt: 123 },
+          aigAnalysis: cleanAigAnalysis,
+          scannerReportsStorageId: "storage:new-report",
+        },
+      ),
+    ).rejects.toThrow("commit failed");
+    expect(storage.store).not.toHaveBeenCalled();
+    expect(storage.delete).toHaveBeenCalledWith("storage:new-report");
+  });
 
   it("caps SkillSpector findings before storing completed scan results", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");

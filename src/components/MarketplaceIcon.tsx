@@ -58,7 +58,9 @@ export function MarketplaceIcon({
         : MARKETPLACE_KIND_ICONS[kind];
   const hashedTone = hashTone(label);
   const supportedImageUrl =
-    kind !== "skill" || isHostedSkillPresentationIcon(imageUrl) ? imageUrl : null;
+    (kind !== "skill" && kind !== "plugin") || isHostedSkillPresentationIcon(imageUrl)
+      ? imageUrl
+      : null;
   const visibleImageUrl =
     supportedImageUrl && failedImageUrl !== supportedImageUrl ? supportedImageUrl : null;
 

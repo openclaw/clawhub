@@ -2,6 +2,11 @@ import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { unzipSync } from "fflate";
 import { exportJWK, exportPKCS8, generateKeyPair } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import type { ActionCtx } from "./_generated/server";
 import { __test, downloadZipHandler, recordArchiveDownloadMetricHandler } from "./downloads";
 import {
@@ -91,20 +96,20 @@ describe("downloads helpers", () => {
     expect(__test.getDownloadIdentityValue(request, "users_123")).toBe("user:users_123");
   });
 
-  it("uses cf-connecting-ip for anonymous identity when trusted headers are enabled", () => {
+  it("rejects unverified cf-connecting-ip for anonymous metrics", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const request = new Request("https://example.com", {
       headers: { "cf-connecting-ip": "1.2.3.4" },
     });
-    expect(__test.getDownloadIdentityValue(request, null)).toBe("ip:1.2.3.4");
+    expect(__test.getDownloadIdentityValue(request, null)).toBeNull();
   });
 
-  it("falls back to forwarded ip when explicitly enabled", () => {
+  it("rejects unverified forwarded addresses for metrics", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const request = new Request("https://example.com", {
       headers: { "x-forwarded-for": "10.0.0.1, 10.0.0.2" },
     });
-    expect(__test.getDownloadIdentityValue(request, null)).toBe("ip:10.0.0.1");
+    expect(__test.getDownloadIdentityValue(request, null)).toBeNull();
   });
 
   it("returns null when user and ip are missing", () => {

@@ -466,7 +466,8 @@ Admin-only canonical batch status route. It accepts `{ "jobIds": ["..."] }` and 
 
 ### `GET /api/v1/skills/{slug}/verify`
 
-Returns the Skill Card verification envelope used by `clawhub skill verify`.
+Returns the Skill Card verification envelope used by `clawhub skill verify` and
+`openclaw skills verify`.
 
 Query params:
 
@@ -480,8 +481,10 @@ Notes:
 - `ok` is `true` only when the selected version has a generated Skill Card, is not malware-blocked by moderation, and ClawScan verification is clean.
 - Skill identity, publisher identity, and selected version metadata are top-level envelope fields (`slug`, `displayName`, `publisherHandle`, `version`, `resolvedFrom`, `tag`, `createdAt`) so shell automation can read them without unpacking nested wrappers.
 - `security` is the top-level ClawScan/security verdict. Automation should key off `ok`, `decision`, `reasons`, and `security.status`.
-- `security.signals` contains supporting scanner evidence such as `staticScan`, `virusTotal`, and `skillSpector`.
-- `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
+- `security.scannerReports.aig` contains the complete upstream A.I.G SARIF JSON, and `security.scannerReports.skillspector` contains the complete upstream SkillSpector JSON, including completeness, limitations, findings, and scanner-specific metadata. These reports are supporting evidence; they do not override the ClawScan verdict or verification exit codes.
+- Verification returns scanner details only under `security.scannerReports`; it does not include duplicate `security.signals` summaries or a top-level `scannerReports` field.
+- Each raw report is `null` when it was not retained for the selected scan. Older scans require a rescan to populate it. While a rescan is committing, reports are withheld if they no longer match the stored scanner summaries. No findings or strings are truncated in these raw reports.
+- Raw reports are included by default and can make verification output substantially larger. CI can select only the existing verdict fields when needed (for example, `jq '{ok, decision, reasons}'`).
 - `provenance` is `server-resolved-github-import` only when ClawHub resolved and stored a GitHub repo/ref/commit/path during publish or import; otherwise it is `unavailable`.
 
 ### `POST /api/v1/skills/-/security-verdicts`
@@ -511,7 +514,6 @@ Notes:
 - The response is security-only. It does not include Skill Card data, generated card status, artifact file lists, or detailed scanner payloads.
 - Successful items include top-level `overview`, the canonical audit-page text composed from the ClawScan summary and guidance. Install clients may present this text without reconstructing it from scanner fields.
 - `security.signals` contains status-level supporting evidence only; use `/scan` or the ClawHub security-audit page for full scanner details.
-- `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
 - Skill Card absence does not affect this endpoint's `ok`, `decision`, or `reasons`; clients should read installed `skill-card.md` locally when they need card content.
 - Use `/verify` when you need the single-skill Skill Card verification envelope, `/card` when you need generated card markdown, and `/scan` when you need detailed scanner data.
 
@@ -670,6 +672,19 @@ On the unified `/api/v1/packages` endpoint it is plugin-only; use
 `/api/v1/skills?sort=trending` for the skill catalog.
 
 Legacy aliases are not accepted as stored or author-declared category values.
+
+### `GET /api/v1/plugins/overview`
+
+Returns the bounded data needed to render the plugin marketplace home page in
+one cacheable request: the canonical category metadata plus the union of the
+top eight Featured, Trending, and official-first/download-sorted plugins for
+each category. Items may include `featured` and `trending` markers.
+Marked items also include their zero-based `featuredRank` or `trendingRank`, so
+clients preserve each shelf's independent order after deduplicating metadata.
+
+The response is public and carries shared-cache headers. Use the paginated
+`GET /api/v1/plugins` endpoint for searches, category expansion, and complete
+catalog traversal.
 
 ### `GET /api/v1/plugins/categories`
 

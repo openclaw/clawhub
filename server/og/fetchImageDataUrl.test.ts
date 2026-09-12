@@ -3,12 +3,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchImageDataUrl,
+  fetchPublisherProfileImageDataUrl,
   isSafePublicHttpsOgImageUrl,
   isTrustedOgImageUrl,
 } from "./fetchImageDataUrl";
+import { requestPublicImage } from "./requestPublicImage";
+vi.mock("./requestPublicImage", () => ({ requestPublicImage: vi.fn() }));
 
 describe("fetchImageDataUrl", () => {
   afterEach(() => {
+    vi.mocked(requestPublicImage).mockReset();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -35,7 +39,7 @@ describe("fetchImageDataUrl", () => {
 
   it("does not fetch untrusted image URLs", async () => {
     const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(requestPublicImage).mockImplementation(fetchMock);
 
     await expect(fetchImageDataUrl("https://127.0.0.1/avatar.png")).resolves.toBeNull();
 
@@ -49,13 +53,45 @@ describe("fetchImageDataUrl", () => {
         headers: { "content-type": "image/png" },
       });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(requestPublicImage).mockImplementation(fetchMock);
 
     await expect(
       fetchImageDataUrl("https://cdn.example.com/org-logo.png", {
         allowPublicHttps: true,
       }),
     ).resolves.toBe("data:image/png;base64,AQI=");
+  });
+
+  it("validates redirects and rejects a private redirect without fetching it", async () => {
+    vi.mocked(requestPublicImage).mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: "https://127.0.0.1/internal" },
+      }),
+    );
+    await expect(
+      fetchPublisherProfileImageDataUrl("https://cdn.example.com/image.png"),
+    ).resolves.toBeNull();
+    expect(requestPublicImage).toHaveBeenCalledOnce();
+  });
+
+  it("runs every public redirect through the protected image transport", async () => {
+    vi.mocked(requestPublicImage)
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://other.example.com/image.png" },
+        }),
+      )
+      .mockRejectedValueOnce(new Error("Image destination is not public"));
+    await expect(
+      fetchPublisherProfileImageDataUrl("https://cdn.example.com/image.png"),
+    ).resolves.toBeNull();
+    expect(requestPublicImage).toHaveBeenNthCalledWith(
+      2,
+      new URL("https://other.example.com/image.png"),
+      expect.any(AbortSignal),
+    );
   });
 
   it("converts trusted image responses to data URLs", async () => {
@@ -65,7 +101,7 @@ describe("fetchImageDataUrl", () => {
         headers: { "content-type": "image/png" },
       });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(requestPublicImage).mockImplementation(fetchMock);
 
     await expect(fetchImageDataUrl("https://avatars.githubusercontent.com/u/1?v=4")).resolves.toBe(
       "data:image/png;base64,AQI=",
@@ -73,11 +109,7 @@ describe("fetchImageDataUrl", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       new URL("https://avatars.githubusercontent.com/u/1?v=4"),
-      {
-        headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/*" },
-        redirect: "manual",
-        signal: expect.any(AbortSignal),
-      },
+      expect.any(AbortSignal),
     );
   });
 
@@ -91,7 +123,7 @@ describe("fetchImageDataUrl", () => {
         },
       });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(requestPublicImage).mockImplementation(fetchMock);
 
     await expect(
       fetchImageDataUrl("https://avatars.githubusercontent.com/u/1?v=4"),
@@ -105,7 +137,7 @@ describe("fetchImageDataUrl", () => {
         headers: { "content-type": "image/png" },
       });
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(requestPublicImage).mockImplementation(fetchMock);
 
     await expect(
       fetchImageDataUrl("https://avatars.githubusercontent.com/u/1?v=4"),
