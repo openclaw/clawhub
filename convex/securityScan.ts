@@ -3088,18 +3088,29 @@ export async function listReadySourceJobsForClaimHandler(
     excludeGitHubSkillSync: boolean;
   },
 ): Promise<ReadySourceJobsForClaimPage> {
+  return await readySourceJobsForClaimQuery(
+    ctx,
+    args.source,
+    args.now,
+    args.excludeGitHubSkillSync,
+  ).paginate({ cursor: args.cursor, numItems: args.numItems });
+}
+
+function readySourceJobsForClaimQuery(
+  ctx: Pick<QueryCtx, "db">,
+  source: SecurityScanJobSource,
+  now: number,
+  excludeGitHubSkillSync: boolean,
+) {
   const query = ctx.db
     .query("securityScanJobs")
     .withIndex("by_status_source_next_run_at", (q) =>
-      q.eq("status", "queued").eq("source", args.source).lte("nextRunAt", args.now),
+      q.eq("status", "queued").eq("source", source).lte("nextRunAt", now),
     );
-  const eligibleQuery = args.excludeGitHubSkillSync
+  const eligibleQuery = excludeGitHubSkillSync
     ? query.filter((q) => q.neq(q.field("rolloutGate"), "github-skill-sync"))
     : query;
-  return await eligibleQuery.order("asc").paginate({
-    cursor: args.cursor,
-    numItems: args.numItems,
-  });
+  return eligibleQuery.order("asc");
 }
 
 export const listReadySourceJobsForClaimInternal = internalQuery({
@@ -3195,6 +3206,25 @@ export const claimQueuedJobsInternal = internalMutation({
         // Scan a bounded window independent of the current admission cap so paused
         // or canceled jobs cannot hide later runnable backlog after the cap is lowered.
         takeLimit = MAX_CODEX_SCAN_CLAIM_LIMIT;
+      }
+      // Native queues normally fit in one bounded read. Keep that read in this
+      // transaction instead of paying a nested-query round trip per source.
+      // Legacy blocked jobs still use the paginated fallback below.
+      if (source !== "skills-sh-catalog-test") {
+        const candidates = await readySourceJobsForClaimQuery(
+          ctx,
+          source,
+          now,
+          !githubSkillSyncEnabled,
+        ).take(takeLimit);
+        let allClaimable = true;
+        for (const job of candidates) {
+          if (!(await isJobRolloutClaimable(job))) {
+            allClaimable = false;
+            break;
+          }
+        }
+        if (allClaimable) return candidates;
       }
       const eligible: Doc<"securityScanJobs">[] = [];
       let cursor: string | null = null;

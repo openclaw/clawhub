@@ -4282,8 +4282,8 @@ describe("securityScan", () => {
       });
 
       expect(claimed.map((job) => job._id)).toEqual(jobs.slice(0, limit).map((job) => job._id));
-      const pages = await Promise.all(ctx.runQuery.mock.results.map((result) => result.value));
-      expect(pages.reduce((total, page) => total + page.page.length, 0)).toBe(limit);
+      // Native claims must not lengthen the transaction with nested source queries.
+      expect(ctx.runQuery).not.toHaveBeenCalled();
     },
   );
 
