@@ -709,6 +709,8 @@ export const ApiV1SkillBulkRescanBatchRequestSchema = type({
   cursor: "string|null?",
   batchSize: "number?",
   dryRun: "boolean?",
+  requestId: "string?",
+  expectedVersionIds: "string[]?",
 });
 export type ApiV1SkillBulkRescanBatchRequest =
   (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
@@ -753,6 +755,8 @@ export const ApiV1SkillScanBatchRequestSchema = type({
   cursor: "string|null?",
   batchSize: "number?",
   dryRun: "boolean?",
+  requestId: "string?",
+  expectedVersionIds: "string[]?",
 });
 export type ApiV1SkillScanBatchRequest = (typeof ApiV1SkillScanBatchRequestSchema)[inferred];
 
@@ -768,6 +772,29 @@ export const ApiV1SkillScanBatchResponseSchema = type({
   sampleSlugs: "string[]",
 });
 export type ApiV1SkillScanBatchResponse = (typeof ApiV1SkillScanBatchResponseSchema)[inferred];
+
+export const ApiV1SkillScanJobHistoryRequestSchema = type({
+  versionId: "string",
+  cursor: "string|null?",
+});
+export type ApiV1SkillScanJobHistoryRequest =
+  (typeof ApiV1SkillScanJobHistoryRequestSchema)[inferred];
+export const ApiV1SkillScanJobHistoryResponseSchema = type({
+  ok: "true",
+  jobs: type({
+    jobId: "string",
+    versionId: "string",
+    source: "string",
+    status: "string",
+    createdAt: "number",
+    updatedAt: "number",
+    completedAt: "number|null",
+  }).array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1SkillScanJobHistoryResponse =
+  (typeof ApiV1SkillScanJobHistoryResponseSchema)[inferred];
 
 export const ApiV1SkillScanBatchStatusRequestSchema = type({
   jobIds: "string[]",

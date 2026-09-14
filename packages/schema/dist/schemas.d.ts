@@ -671,6 +671,8 @@ export declare const ApiV1SkillBulkRescanBatchRequestSchema: import("arktype/int
     cursor?: string | null | undefined;
     batchSize?: number | undefined;
     dryRun?: boolean | undefined;
+    requestId?: string | undefined;
+    expectedVersionIds?: string[] | undefined;
 }, {}>;
 export type ApiV1SkillBulkRescanBatchRequest = (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
 export declare const ApiV1SkillBulkRescanBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -707,6 +709,8 @@ export declare const ApiV1SkillScanBatchRequestSchema: import("arktype/internal/
     cursor?: string | null | undefined;
     batchSize?: number | undefined;
     dryRun?: boolean | undefined;
+    requestId?: string | undefined;
+    expectedVersionIds?: string[] | undefined;
 }, {}>;
 export type ApiV1SkillScanBatchRequest = (typeof ApiV1SkillScanBatchRequestSchema)[inferred];
 export declare const ApiV1SkillScanBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -721,6 +725,26 @@ export declare const ApiV1SkillScanBatchResponseSchema: import("arktype/internal
     sampleSlugs: string[];
 }, {}>;
 export type ApiV1SkillScanBatchResponse = (typeof ApiV1SkillScanBatchResponseSchema)[inferred];
+export declare const ApiV1SkillScanJobHistoryRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    versionId: string;
+    cursor?: string | null | undefined;
+}, {}>;
+export type ApiV1SkillScanJobHistoryRequest = (typeof ApiV1SkillScanJobHistoryRequestSchema)[inferred];
+export declare const ApiV1SkillScanJobHistoryResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    jobs: {
+        jobId: string;
+        versionId: string;
+        source: string;
+        status: string;
+        createdAt: number;
+        updatedAt: number;
+        completedAt: number | null;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1SkillScanJobHistoryResponse = (typeof ApiV1SkillScanJobHistoryResponseSchema)[inferred];
 export declare const ApiV1SkillScanBatchStatusRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     jobIds: string[];
 }, {}>;

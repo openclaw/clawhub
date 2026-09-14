@@ -43,6 +43,7 @@ import {
   resolveSkillVersionV1Handler,
   searchSkillsV1Handler,
   skillScanBatchStatusV1Handler,
+  skillScanJobHistoryV1Handler,
   skillScanBatchSubmitV1Handler,
   skillScanGetRouterV1Handler,
   skillScanSubmitV1Handler,
@@ -97,6 +98,7 @@ export const skillSecurityVerdictsV1Http = httpAction(skillSecurityVerdictsV1Han
 export const skillScanSubmitV1Http = httpAction(skillScanSubmitV1Handler);
 export const skillScanGetRouterV1Http = httpAction(skillScanGetRouterV1Handler);
 export const skillScanBatchSubmitV1Http = httpAction(skillScanBatchSubmitV1Handler);
+export const skillScanJobHistoryV1Http = httpAction(skillScanJobHistoryV1Handler);
 export const skillScanBatchStatusV1Http = httpAction(skillScanBatchStatusV1Handler);
 export const skillsPostRouterV1Http = httpAction(skillsPostRouterV1Handler);
 export const skillsDeleteRouterV1Http = httpAction(skillsDeleteRouterV1Handler);
@@ -152,6 +154,7 @@ export const __handlers = {
   skillScanGetRouterV1Handler,
   skillScanBatchSubmitV1Handler,
   skillScanBatchStatusV1Handler,
+  skillScanJobHistoryV1Handler,
   skillsPostRouterV1Handler,
   skillsDeleteRouterV1Handler,
   exportSkillsV1Handler,

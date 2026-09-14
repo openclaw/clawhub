@@ -9512,6 +9512,71 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it.each(["canonical", "legacy"])(
+    "forwards recovery identity and exact baselines through %s batch submit",
+    async (route) => {
+      vi.mocked(requireApiTokenUser).mockResolvedValue({
+        userId: "users:admin",
+        user: { _id: "users:admin", role: "admin" },
+      } as never);
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+        isRateLimitArgs(args) ? okRate() : { ok: true },
+      );
+      const handler =
+        route === "canonical"
+          ? __handlers.skillScanBatchSubmitV1Handler
+          : __handlers.skillsPostRouterV1Handler;
+      const response = await handler(
+        makeCtx({ runMutation }),
+        new Request(
+          `https://example.com/api/v1/skills/-/${route === "canonical" ? "scan/batch" : "rescan-batch"}`,
+          {
+            method: "POST",
+            headers: { Authorization: "Bearer clh_test" },
+            body: JSON.stringify({
+              requestId: "campaign-305",
+              expectedVersionIds: ["skillVersions:1"],
+            }),
+          },
+        ),
+      );
+      expect(response.status).toBe(200);
+      expect(runMutation).toHaveBeenLastCalledWith(expect.anything(), {
+        actorUserId: "users:admin",
+        cursor: null,
+        requestId: "campaign-305",
+        expectedVersionIds: ["skillVersions:1"],
+      });
+    },
+  );
+
+  it.each(["admin", "moderator", "user"])(
+    "gates job history for %s and uses authenticated actor identity",
+    async (role) => {
+      vi.mocked(requireApiTokenUser).mockResolvedValue({
+        userId: "users:actor",
+        user: { _id: "users:actor", role },
+      } as never);
+      const runQuery = vi.fn(async () => ({ ok: true, jobs: [], done: true, nextCursor: null }));
+      const response = await __handlers.skillScanJobHistoryV1Handler(
+        makeCtx({ runQuery }),
+        new Request("https://example.com/api/v1/skills/-/scan/batch/jobs", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ versionId: "skillVersions:1", actorUserId: "users:spoofed" }),
+        }),
+      );
+      expect(response.status).toBe(role === "admin" ? 200 : 403);
+      if (role === "admin")
+        expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+          actorUserId: "users:actor",
+          versionId: "skillVersions:1",
+          cursor: null,
+        });
+      else expect(runQuery).not.toHaveBeenCalled();
+    },
+  );
+
   it("bulk skill rescan status aggregates via admin API", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

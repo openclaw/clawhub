@@ -171,6 +171,7 @@ import type * as lib_testSeed from "../lib/testSeed.js";
 import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_userSearch from "../lib/userSearch.js";
 import type * as lib_userSkillStats from "../lib/userSkillStats.js";
+import type * as lib_verifiedClientIp from "../lib/verifiedClientIp.js";
 import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as lib_workerTextRedaction from "../lib/workerTextRedaction.js";
 import type * as maintenance from "../maintenance.js";
@@ -400,6 +401,7 @@ declare const fullApi: ApiFromModules<{
   "lib/tokens": typeof lib_tokens;
   "lib/userSearch": typeof lib_userSearch;
   "lib/userSkillStats": typeof lib_userSkillStats;
+  "lib/verifiedClientIp": typeof lib_verifiedClientIp;
   "lib/webhooks": typeof lib_webhooks;
   "lib/workerTextRedaction": typeof lib_workerTextRedaction;
   maintenance: typeof maintenance;

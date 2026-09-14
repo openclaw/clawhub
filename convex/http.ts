@@ -41,6 +41,7 @@ import {
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
   skillScanBatchStatusV1Http,
+  skillScanJobHistoryV1Http,
   skillScanBatchSubmitV1Http,
   skillScanGetRouterV1Http,
   skillScanSubmitV1Http,
@@ -275,6 +276,12 @@ http.route({
   path: `${ApiRoutes.skillScans}/batch`,
   method: "POST",
   handler: skillScanBatchSubmitV1Http,
+});
+
+http.route({
+  path: `${ApiRoutes.skillScans}/batch/jobs`,
+  method: "POST",
+  handler: skillScanJobHistoryV1Http,
 });
 
 http.route({

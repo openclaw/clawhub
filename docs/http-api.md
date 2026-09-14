@@ -457,6 +457,27 @@ check `failed` and `missing` before reporting success. Duplicate IDs count once.
 
 Admin-only canonical batch rescan route. It accepts the same payload shape as legacy `POST /api/v1/skills/-/rescan-batch`.
 
+For recoverable campaigns, save a unique `requestId` before sending each batch.
+It accepts 1–128 letters, digits, dots, underscores, colons or hyphens and is
+scoped to the authenticated administrator. Repeating the same request returns
+the original receipt and job IDs, including after those jobs become terminal.
+Reusing the ID with a different cursor, normalized batch size, mode or expected
+version list fails. Dry runs do not reserve request IDs.
+
+Optional `expectedVersionIds` (at most 100) is the ordered list of eligible
+version IDs in the captured page. If the current page differs, the whole enqueue
+rolls back. A saved receipt is replayed before checking current page contents.
+Keep the original request parameters when recovering a lost response.
+
+### `POST /api/v1/skills/-/scan/batch/jobs`
+
+Admin-only, read-only job history for an exact skill version. Accepts
+`{ "versionId": "...", "cursor": null }`. Returns `ok`, `jobs`, `nextCursor`
+and `done`. Each job has `jobId`, `versionId`, `source`, `status`, `createdAt`,
+`updatedAt` and nullable `completedAt`. Follow `nextCursor` until `done` before
+concluding that a legacy enqueue created no jobs. This endpoint does not retry
+or replace jobs and does not expose worker lease credentials.
+
 ### `POST /api/v1/skills/-/scan/batch/status`
 
 Admin-only canonical batch status route. It accepts `{ "jobIds": ["..."] }` and returns the same aggregate counters as legacy `POST /api/v1/skills/-/rescan-batch/status`.
