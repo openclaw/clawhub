@@ -70,7 +70,7 @@ jobs:
 
   unit:
     name: unit
-    runs-on: blacksmith-32vcpu-ubuntu-2404
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 5
 
     steps:
