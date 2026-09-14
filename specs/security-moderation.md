@@ -608,6 +608,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   skill/package rescans for a chosen artifact, or paged all-active-latest skill
   rescan batches. The old suspicious LLM bucket tools (`all`, `llm-only`,
   `vt-only`, `both`) are retired.
+- Security workers back off and retry a transient claim API failure up to three
+  times before draining their existing leases. Every failed call remains in
+  claim-health counters, and the claim window/max-jobs limits still apply.
+  This does not retry terminal scan failures or change their job identities.
+  Authentication/validation failures do not enter this transient retry path.
 - Recoverable bulk skill requests use administrator-scoped request IDs. Their
   job identities, cursor boundary and counters commit atomically in the permanent
   batch audit entry. An identical replay returns that receipt before traversing

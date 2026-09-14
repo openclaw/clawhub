@@ -2227,6 +2227,17 @@ export async function processJob(
   }
 }
 
+function isTransientClaimError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  // Convex hides internal failures behind this message. Authentication and
+  // validation errors are deliberately not retried here.
+  return (
+    /(?:^|\] )Server Error$/.test(error.message.trim()) ||
+    /socket connection was closed unexpectedly|network connection was lost/i.test(error.message) ||
+    (error instanceof TypeError && /fetch failed/i.test(error.message))
+  );
+}
+
 export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   concurrency: number;
   maxJobs: number | undefined;
@@ -2244,6 +2255,7 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   let totalFailed = 0;
   let totalRetryableFailed = 0;
   let totalClaimFailures = 0;
+  let consecutiveClaimFailures = 0;
 
   while (active.size > 0 || (!queueDrained && options.canClaim(totalClaimed))) {
     while (active.size < options.concurrency && !queueDrained && options.canClaim(totalClaimed)) {
@@ -2266,7 +2278,15 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
       } catch (error) {
         totalClaimFailures += 1;
         totalFailed += 1;
-        queueDrained = true;
+        consecutiveClaimFailures += 1;
+        const retry =
+          isTransientClaimError(error) &&
+          consecutiveClaimFailures <= 3 &&
+          options.canClaim(totalClaimed);
+        const retryDelayMs = retry
+          ? 1000 * 2 ** (consecutiveClaimFailures - 1) + Math.floor(Math.random() * 500)
+          : null;
+        queueDrained = !retry;
         const message = error instanceof Error ? error.message : String(error);
         logger.error(
           {
@@ -2274,12 +2294,21 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
             publicReason: sanitizeWorkerErrorMessage(message),
             requested: remainingJobs,
             scannerPhase: "claim",
+            retryDelayMs,
+            consecutiveClaimFailures,
           },
           "failed to claim security scan jobs",
         );
+        if (retryDelayMs !== null) {
+          // Already leased jobs continue running. A new claim never replaces or
+          // retries a terminal scan; an unobserved lease uses normal expiry.
+          await sleepImpl(retryDelayMs);
+          continue;
+        }
         break;
       }
 
+      consecutiveClaimFailures = 0;
       totalClaimed += claimedCount;
       if (claimedCount < remainingJobs) {
         queueDrained = true;
