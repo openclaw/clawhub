@@ -60,18 +60,17 @@ describe("homeListingData", () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([], null));
   });
 
-  it("loads canonical Trending skills as the initial homepage catalog", async () => {
-    const item = makeTrending("first", "First", 12);
-    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([item], "next-cursor"));
+  it("loads Featured skills as the initial homepage catalog", async () => {
+    const item = makeNative("first", 100, 12);
+    convexQueryMock.mockResolvedValue({ page: [item], hasMore: false, nextCursor: null });
 
     await expect(fetchInitialHomeListing()).resolves.toEqual({
       kind: "skills",
-      tab: "trending",
+      tab: "featured",
       categorySlugs: [],
       fetchLimit: HOME_LISTING_PAGE_SIZE,
-      items: [{ trending: item }],
-      hasMore: true,
-      trendingState: "available",
+      items: [item],
+      hasMore: false,
     });
   });
 
