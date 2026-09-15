@@ -104,7 +104,10 @@ function normalizeSkillRootPath(value: unknown) {
           optionalString(value.rootPath))
         : undefined;
   if (!raw) return null;
-  return sanitizePath(raw)?.replace(/^\.\//, "").replace(/\/+$/, "") ?? null;
+  const normalized = sanitizePath(raw)
+    ?.replace(/^(?:\.\/)+/, "")
+    .replace(/\/+$/, "");
+  return normalized === "" ? "." : (normalized ?? null);
 }
 
 function normalizeSkillRootPaths(input: unknown) {
@@ -113,28 +116,34 @@ function normalizeSkillRootPaths(input: unknown) {
 }
 
 function findSkillMarkdownFile(files: PluginManifestSummaryFile[], rootPath: string) {
-  const expected = `${rootPath}/SKILL.md`;
+  const expected = rootPath === "." ? "SKILL.md" : `${rootPath}/SKILL.md`;
   const expectedLower = expected.toLowerCase();
   return (
-    files.find((file) => file.path === expected) ??
-    files.find((file) => file.path.toLowerCase() === expectedLower) ??
+    files.find((file) => file.path.replace(/^(?:\.\/)+/, "") === expected) ??
+    files.find((file) => file.path.replace(/^(?:\.\/)+/, "").toLowerCase() === expectedLower) ??
     null
   );
 }
 
 function skillRootPathFromMarkdownFile(filePath: string) {
-  return filePath.split("/").slice(0, -1).join("/");
+  return (
+    filePath
+      .replace(/^(?:\.\/)+/, "")
+      .split("/")
+      .slice(0, -1)
+      .join("/") || "."
+  );
 }
 
 function findSkillMarkdownFiles(files: PluginManifestSummaryFile[], rootPath: string) {
   const exact = findSkillMarkdownFile(files, rootPath);
   if (exact) return [{ rootPath, file: exact }];
 
-  const directoryPrefix = `${rootPath.toLowerCase()}/`;
+  const directoryPrefix = rootPath === "." ? "" : `${rootPath.toLowerCase()}/`;
   const seen = new Set<string>();
   return files
     .filter((file) => {
-      const lowerPath = file.path.toLowerCase();
+      const lowerPath = file.path.replace(/^(?:\.\/)+/, "").toLowerCase();
       return lowerPath.startsWith(directoryPrefix) && lowerPath.endsWith("/skill.md");
     })
     .map((file) => ({
@@ -305,6 +314,7 @@ export function derivePluginManifestSummary(params: {
         name: metadata.name ?? pathDerivedName(rootPath),
         ...(metadata.description ? { description: metadata.description } : {}),
         rootPath,
+        // Preserve the signed inventory path for exact file reads.
         skillMdPath: file.path,
         sha256: file.sha256,
         size: file.size,
