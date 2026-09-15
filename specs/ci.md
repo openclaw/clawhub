@@ -64,11 +64,18 @@ To run one authenticated local browser spec through the same infra:
 bun run test:pw:local-auth -- --project=chromium e2e/local-auth/<spec>.pw.test.ts
 ```
 
-The local-auth runner uses dev auth and a local Convex deployment; it does not
+The local-auth runner supports Linux and macOS and uses dev auth and a local Convex deployment; it does not
 need production credentials or a ClawHub auth token. It starts its own isolated
 local Convex process and temporarily moves aside `.env.local` plus
 `.convex/local/default`, then restores them afterward. Stop any already-running
 local Convex process before running it.
+
+The runner starts the backend without publishing functions, configures the
+backend environment, and then publishes once. Cron definitions read deployment
+environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
+set before the first push. Application readiness checks never republish code,
+and no development watcher can push again while the app builds. A persistent
+launcher retains ownership of the backend process group through cleanup.
 
 The first push builds the external dependencies for Convex `"use node"` functions
 from their installed package versions. A slow cold npm install can exceed the
