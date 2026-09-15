@@ -3,7 +3,7 @@
 
 import { convexTest } from "convex-test";
 import { strFromU8, unzipSync } from "fflate";
-import { exportJWK, exportPKCS8, generateKeyPair } from "jose";
+import { exportJWK, exportPKCS8, generateKeyPair, SignJWT } from "jose";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ARCHIVE_METRIC_AUDIENCE,
@@ -34,6 +34,79 @@ afterEach(() => {
 });
 
 describe("hosted HTTP ingress with endpoint-owned credentials", () => {
+  it("authenticates the production skills.sh sync at the Convex origin", async () => {
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "wry-manatee-359");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://wry-manatee-359.convex.cloud");
+    vi.stubEnv("CONVEX_SITE_URL", "https://wry-manatee-359.convex.site");
+    const t = convexTest(schema, modules);
+    const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
+    const kid = "skills-sh-ingress-fixture";
+    const token = await new SignJWT({
+      repository: "openclaw/clawhub",
+      repository_id: "1127248221",
+      repository_owner: "openclaw",
+      repository_owner_id: "252820863",
+      workflow_ref: "openclaw/clawhub/.github/workflows/skills-sh-sync.yml@refs/heads/main",
+      runner_environment: "github-hosted",
+      environment: "Production",
+      event_name: "schedule",
+      workflow: "skills.sh Production Sync",
+      sha: "a".repeat(40),
+      ref: "refs/heads/main",
+      run_id: "12345",
+      run_attempt: "1",
+    })
+      .setProtectedHeader({ alg: "RS256", kid })
+      .setIssuer("https://token.actions.githubusercontent.com")
+      .setAudience("clawhub")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(privateKey);
+    const jwk = { ...(await exportJWK(publicKey)), kid };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      expect(input).toBe("https://token.actions.githubusercontent.com/.well-known/jwks");
+      return Response.json({ keys: [jwk] });
+    });
+    try {
+      const response = await t.fetch("/api/v1/operator/skills-sh/mirror", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ operation: "mirror-status" }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Location")).toBeNull();
+      expect(await response.json()).toMatchObject({
+        environment: { allowed: true, environment: "production" },
+        runs: [],
+      });
+      const publicSearch = await t.fetch("/api/v1/search?q=fixture", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(publicSearch.status).toBe(307);
+      expect(publicSearch.headers.get("Location")).toBe(
+        "https://clawhub.ai/api/v1/search?q=fixture",
+      );
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it.each([undefined, "Bearer invalid-workflow-fixture"])(
+    "rejects missing or invalid skills.sh workflow credentials without redirecting: %s",
+    async (authorization) => {
+      vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production");
+      const t = convexTest(schema, modules);
+      const response = await t.fetch("/api/v1/operator/skills-sh/mirror", {
+        method: "POST",
+        headers: authorization ? { Authorization: authorization } : {},
+        body: JSON.stringify({ operation: "mirror-status" }),
+      });
+      expect(response.status).toBe(401);
+      expect(response.headers.get("Location")).toBeNull();
+    },
+  );
+
   it("lets the worker claim, download, and acknowledge a real stored artifact directly", async () => {
     const t = convexTest(schema, modules);
     const releaseId = await t.run(async (ctx) => {

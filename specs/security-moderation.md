@@ -24,11 +24,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   The legacy `TRUST_FORWARDED_IPS` flag must never authorize raw IP headers.
 - API tokens retain per-user quotas. A server-owned loopback Convex deployment
   may use a local development bucket when no hosted environment is configured.
-- Inspector worker routes, signed archive metric receipts, and Convex Auth's
-  OAuth sign-in/callback routes retain their handler-owned credential checks at
+- The production skills.sh mirror operator, inspector worker routes, signed
+  archive metric receipts, and Convex Auth's OAuth sign-in/callback routes
+  retain their handler-owned credential checks at
   the Convex origin. They do not use anonymous IP quotas or redirect credentials
   to another origin. Worker credentials never exempt ordinary public API routes
   from verified ingress.
+- The skills.sh operator accepts only the verified GitHub Actions identity for
+  this repository's sync workflow on `main` in the `Production` environment.
+  Its Test operator continues to require an admin API token and API quotas.
 - Rollout requires the identity-forwarding edge before the backend starts
   enforcing verified anonymous ingress.
 

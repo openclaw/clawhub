@@ -28,6 +28,7 @@ const authMetadataPaths = new Set(["/.well-known/openid-configuration", "/.well-
 // These handlers validate worker credentials, signed receipts, or the OAuth
 // verifier/state themselves. Redirecting them changes the credential/cookie origin.
 const handlerAuthenticatedPaths = new Set([
+  "/api/v1/operator/skills-sh/mirror",
   "/api/v1/package-inspector/claim",
   "/api/v1/package-inspector/acknowledge",
   "/api/v1/package-inspector/artifact",
