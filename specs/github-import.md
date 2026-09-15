@@ -257,6 +257,14 @@ Zip safety:
 - Max single file size.
 - Reject symlinks; reject absolute paths; reject `..` segments.
 
+Apply the archive entry count and retained uncompressed-byte budgets from ZIP
+headers before decompression. Count every entry, including skipped entries,
+toward the file-count cap. Skip junk, invalid paths, directories, and files over
+the single-file cap before inflation; skipped bytes do not consume the retained
+total. Import is selective, so an unrelated oversized file must not prevent a
+valid small skill from being previewed or imported. Keep actual-byte checks
+after extraction as well.
+
 Rate limits:
 
 - Tie to existing write limits (import == publish).
