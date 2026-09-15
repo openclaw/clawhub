@@ -63,11 +63,11 @@ import {
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
-import type { PublicPublisher } from "../lib/public";
 import {
   buildPluginSearchObservation,
   parsePluginSearchSource,
 } from "../lib/pluginSearchObservations";
+import type { PublicPublisher } from "../lib/public";
 import {
   getClawPackSizeError,
   getPackageMultipartSizeError,
