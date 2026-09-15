@@ -78,7 +78,9 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           set -euo pipefail
-          bun <<'TS'
+          bun run - <<'TS'
+          import { loadSmokeSkillFixture } from './scripts/lib/smokeSkillFixture';
+
           const previewUrl = process.env.PREVIEW_URL?.trim();
           const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
           if (!previewUrl) throw new Error("PREVIEW_URL is required");
@@ -95,27 +97,15 @@ jobs:
             return await response.text();
           }
 
-          async function fetchJson(path: string) {
-            const response = await fetch(new URL(path, base), {
-              headers: { ...headers, accept: "application/json" },
-            });
-            if (!response.ok) {
-              throw new Error(`${path} returned ${response.status} ${response.statusText}`);
-            }
-            return await response.json();
-          }
-
           const home = await fetchText("/");
           if (!home.includes("<title>ClawHub")) {
             throw new Error("Preview home page did not render the ClawHub shell");
           }
 
-          const detail = await fetchJson("/api/v1/skills/gifgrep");
-          if (detail?.skill?.slug !== "gifgrep") {
-            throw new Error(`Expected gifgrep API detail, received ${JSON.stringify(detail)}`);
-          }
-
-          const skillFile = await fetchText("/api/v1/skills/gifgrep/file?path=SKILL.md");
+          const detail = await loadSmokeSkillFixture((path) => fetch(new URL(path, base), {
+            headers: { ...headers, accept: "application/json" },
+          }));
+          const skillFile = await fetchText(detail.filePath);
           if (!skillFile.trim()) {
             throw new Error("Preview skill file route returned an empty SKILL.md");
           }
@@ -125,9 +115,9 @@ jobs:
               {
                 previewUrl: base.toString(),
                 skillSlug: detail.skill.slug,
-                ownerHandle: detail.owner?.handle ?? null,
+                ownerHandle: detail.owner.handle,
                 latestVersion: detail.latestVersion?.version ?? null,
-                skillFileBytes: skillFile.length,
+                skillFileBytes: Buffer.byteLength(skillFile),
               },
               null,
               2,
@@ -144,5 +134,5 @@ jobs:
             echo
             echo "- Git SHA: \`${actual_sha}\`"
             echo "- Preview URL: ${PREVIEW_URL}"
-            echo "- Verified routes: \`/\`, \`/api/v1/skills/gifgrep\`, \`/api/v1/skills/gifgrep/file?path=SKILL.md\`"
+            echo "- Verified routes: home, resolved skill detail, publisher-scoped SKILL.md (identity in the probe output)"
           } >> "$GITHUB_STEP_SUMMARY"

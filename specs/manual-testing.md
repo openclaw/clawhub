@@ -32,6 +32,12 @@ read_when:
   - `CLAWHUB_E2E_SITE=https://clawhub.ai`
   - `CLAWHUB_E2E_SKILL_OWNER=steipete`
   - `CLAWHUB_E2E_SKILL_SLUG=gifgrep`
+- HTTP, public-route browser, and preview-proof checks share fixture selection. Without an
+  owner override, a unique detail response supplies the publisher (including sanitized
+  Test and local preview owners). If `gifgrep` is ambiguous, select the advertised
+  `steipete` fixture; other ambiguity requires an explicit owner override. An explicit
+  owner never falls back to another publisher. File, SSR, and OG requests retain the
+  resolved publisher and slug.
 
 ## Install / list / update
 

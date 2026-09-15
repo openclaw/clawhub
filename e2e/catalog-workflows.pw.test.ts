@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
+import { buildPublisherProfileHref } from "../src/lib/ownerRoute";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 
 function escapeRegExp(value: string) {
@@ -59,26 +61,22 @@ test("skills browse can filter, change view, and open detail", async ({ page }) 
 });
 
 test("known public skill detail links to owner profile", async ({ page, request }) => {
-  const response = await request.get(seedApiUrl("/api/v1/skills/gifgrep"));
-  test.skip(!response.ok(), "gifgrep fixture missing");
-
-  const payload = (await response.json()) as {
-    owner?: { handle?: string | null };
-    skill?: { slug?: string | null };
-  };
-  const ownerHandle = payload.owner?.handle?.trim();
-  const slug = payload.skill?.slug?.trim();
-
-  test.skip(!ownerHandle || !slug, "gifgrep fixture missing owner handle or slug");
+  const payload = await loadSmokeSkillFixture(async (path) => {
+    const response = await request.get(seedApiUrl(path));
+    return { status: response.status(), json: () => response.json() };
+  });
+  const ownerHandle = payload.owner.handle;
+  const slug = payload.skill.slug;
 
   const errors = trackRuntimeErrors(page);
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
-  const ownerLink = page.locator(`a[href="/user/${ownerHandle}"]`).first();
+  const ownerHref = buildPublisherProfileHref(ownerHandle);
+  const ownerLink = page.getByRole("link", { name: /^View .* profile$/ }).first();
 
-  await expect(ownerLink).toHaveAttribute("href", new RegExp(`/user/${ownerHandle}$`));
+  await expect(ownerLink).toHaveAttribute("href", ownerHref);
   await waitForHydration(page);
   await ownerLink.click();
-  await expect(page).toHaveURL(new RegExp(`/user/${ownerHandle}$`));
+  await expect(page).toHaveURL(new RegExp(`${escapeRegExp(ownerHref)}$`));
   await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
   await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
   await expectHealthyPage(page, errors);
