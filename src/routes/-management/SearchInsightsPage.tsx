@@ -288,9 +288,9 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
             </>
           )}
           <p className="text-muted-foreground">
-            Current catalog metadata checked: {date(report.metadataCheckedAt)}. These are current
-            catalog results, not historical result snapshots. Raw searches expire after 30 days;
-            daily totals after 13 months.
+            Current search-result metadata checked: {date(report.metadataCheckedAt)}. These are
+            current catalog results, not historical result snapshots. Raw searches expire after 30
+            days; daily totals after 13 months.
           </p>
         </>
       ) : null}
