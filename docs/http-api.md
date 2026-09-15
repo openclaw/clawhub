@@ -829,7 +829,9 @@ Notes:
 
 ### `GET /api/v1/packages/{name}`
 
-Returns package detail metadata.
+Returns package detail metadata. The `owner.official` flag is the current publisher
+badge, independent of the package’s `isOfficial` flag. Response readers allow this
+field to be absent when querying registries that predate it.
 
 Notes:
 
@@ -894,6 +896,7 @@ Response:
 {
   "overview": "ClawScan found no material security concerns.\n\nUse least-privileged credentials when configuring this plugin.",
   "securityAuditUrl": "https://clawhub.ai/openclaw/plugins/example-plugin/security-audit?version=1.2.3",
+  "verdict": "malicious",
   "package": {
     "name": "@openclaw/example-plugin",
     "displayName": "Example Plugin",
@@ -925,6 +928,7 @@ Response fields:
 - `overview` is the canonical summary-and-guidance text shown by the package
   security-audit page. Install clients may present it without reconstructing
   audit text from scanner fields.
+- `verdict` is the combined display verdict used by the package security-audit page, including static analysis and visible agentic-risk findings. It can differ from the download-policy `trust.scanStatus`. Older registries may omit it; clients should treat that as unavailable display metadata.
 - `securityAuditUrl` links to the exact release's package security-audit page.
 - `package.name`, `package.displayName`, and `package.family` identify the
   resolved registry package.

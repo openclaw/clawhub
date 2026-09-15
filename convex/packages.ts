@@ -3296,7 +3296,8 @@ export const getByNameForViewerInternal = internalQuery({
     const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
     const publicPackage = toPublicPackage(pkg, latestRelease);
     if (!publicPackage) return null;
-    const owner = toPublicPublisher(
+    const owner = await toPublicPublisherWithOfficial(
+      ctx,
       await getOwnerPublisher(ctx, {
         ownerPublisherId: pkg.ownerPublisherId,
         ownerUserId: pkg.ownerUserId,

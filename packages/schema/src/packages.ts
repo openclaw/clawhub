@@ -573,6 +573,8 @@ export const ApiV1PackageResponseSchema = type({
     handle: "string|null",
     displayName: "string|null?",
     image: "string|null?",
+    // Response readers also accept registries predating the publisher badge field.
+    official: "boolean?",
   }).or("null"),
 });
 export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];
@@ -648,6 +650,8 @@ export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseS
 
 export const ApiV1PackageSecurityResponseSchema = type({
   overview: "string",
+  // Older registries omit this field; consumers must not infer a display verdict from trust.
+  verdict: "string?",
   securityAuditUrl: "string",
   package: type({
     name: "string",

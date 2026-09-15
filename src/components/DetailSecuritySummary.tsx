@@ -35,7 +35,7 @@ export function DetailSecuritySummary({
 }: DetailSecuritySummaryProps) {
   const hasVersionScanResult = Boolean(vtAnalysis || llmAnalysis);
   const auditVerdict = hasVersionScanResult
-    ? aggregateAuditVerdict({ vtAnalysis, llmAnalysis })
+    ? aggregateAuditVerdict({ llmAnalysis })
     : (githubScanStatus ?? "pending");
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   const meterLevel = auditVerdictMeterLevel(auditVerdict);

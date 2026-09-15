@@ -13937,6 +13937,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.trust).not.toHaveProperty("moderationReason");
     expect(json).toEqual({
       overview: "No security analysis has been recorded yet.",
+      verdict: "pending",
       securityAuditUrl: "https://example.com/plugins/demo-plugin/security-audit?version=1.0.0",
       package: {
         name: "demo-plugin",

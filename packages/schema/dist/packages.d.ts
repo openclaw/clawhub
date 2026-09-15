@@ -718,6 +718,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+        official?: boolean | undefined;
     } | null;
 }, {}>;
 export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];
@@ -930,6 +931,7 @@ export declare const ApiV1PackageArtifactResponseSchema: import("arktype/interna
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
 export declare const ApiV1PackageSecurityResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     overview: string;
+    verdict?: string | undefined;
     securityAuditUrl: string;
     package: {
         name: string;

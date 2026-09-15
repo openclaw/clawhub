@@ -24,6 +24,7 @@ import {
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
   formatSecurityAuditOverview,
+  aggregateAuditVerdict,
   normalizeContentType,
   isPluginCategorySlug,
   PLUGIN_CATEGORY_DEFINITIONS,
@@ -62,6 +63,7 @@ import {
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
+import type { PublicPublisher } from "../lib/public";
 import {
   getClawPackSizeError,
   getPackageMultipartSizeError,
@@ -704,6 +706,7 @@ function toPackageReleaseSecurityResponse(params: {
   if (packageBlockedFromDownload) reasons.push("package:malicious");
   return {
     overview: formatSecurityAuditOverview({ llmAnalysis: params.release.llmAnalysis }),
+    verdict: aggregateAuditVerdict(params.release),
     securityAuditUrl: buildPackageSecurityAuditUrl(
       params.request,
       params.pkg.name,
@@ -4351,7 +4354,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
-    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    owner: PublicPublisher | null;
   } | null;
   const skillDetail = detail?.package
     ? null
@@ -4413,6 +4416,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
               handle: packageOwner.handle ?? null,
               displayName: packageOwner.displayName ?? null,
               image: packageOwner.image ?? null,
+              official: packageOwner.official === true,
             }
           : null,
       },
@@ -4874,7 +4878,7 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
-    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    owner: PublicPublisher | null;
   } | null;
   if (!detail?.package) return text("Package not found", 404, rate.headers);
 

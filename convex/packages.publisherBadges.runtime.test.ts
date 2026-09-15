@@ -59,6 +59,27 @@ describe("plugin publisher badges", () => {
           distTags: ["latest"],
           files: [],
           integritySha256: "a".repeat(64),
+          llmAnalysis: {
+            status: "clean",
+            checkedAt: 1,
+            agenticRiskFindings: [
+              {
+                categoryId: "permissions",
+                categoryLabel: "Permissions",
+                riskBucket: "permission_boundary",
+                status: "concern",
+                severity: "medium",
+                confidence: "high",
+                evidence: {
+                  path: "index.js",
+                  snippet: "tool registration",
+                  explanation: "Review access",
+                },
+                userImpact: "Requests broad access",
+                recommendation: "Review before enabling",
+              },
+            ],
+          },
           createdAt: 1,
           createdBy: ownerUserId,
         });
@@ -77,6 +98,12 @@ describe("plugin publisher badges", () => {
         return { publisherId, badgeId };
       });
       const assertCatalog = async (ownerOfficial: boolean, ownerImage: string | null) => {
+        const detail = await t.fetch("/api/v1/packages/@composio/composio");
+        expect(detail.status).toBe(200);
+        expect((await detail.json()).owner).toMatchObject({
+          handle: "composio",
+          official: ownerOfficial,
+        });
         for (const route of [
           "/api/v1/plugins/search?q=composio",
           "/api/v1/plugins",
@@ -100,6 +127,14 @@ describe("plugin publisher badges", () => {
         }
       };
       await assertCatalog(true, "https://example.test/composio.png");
+      const security = await t.fetch("/api/v1/packages/@composio/composio/versions/1.0.0/security");
+      expect(security.status).toBe(200);
+      expect(await security.json()).toMatchObject({
+        verdict: "review",
+        trust: { scanStatus: "clean" },
+        securityAuditUrl:
+          "https://some.convex.site/composio/plugins/composio/security-audit?version=1.0.0",
+      });
       const officialOnly = await t.fetch("/api/v1/plugins/search?q=composio&isOfficial=true");
       expect((await officialOnly.json()).results).toEqual([]);
       // No package/digest write: revocation and grants must take effect immediately.
