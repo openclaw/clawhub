@@ -229,7 +229,7 @@ export function stripGitHubZipRoot(entries: ZipEntryMap): ZipEntryMap {
   if (!firstRoot) return entries;
   const prefix = `${firstRoot}/`;
   if (!paths.every((path) => path.startsWith(prefix))) return entries;
-  const out: ZipEntryMap = {};
+  const out: ZipEntryMap = Object.create(null);
   for (const [path, data] of Object.entries(entries)) {
     const stripped = path.slice(prefix.length);
     if (!stripped) continue;
