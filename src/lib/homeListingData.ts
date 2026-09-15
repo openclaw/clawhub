@@ -448,15 +448,14 @@ export async function fetchHomePluginListing(
 }
 
 export async function fetchInitialHomeListing(): Promise<HomeListingInitialData> {
-  const result = await fetchHomeSkillListing("trending", [], HOME_LISTING_PAGE_SIZE);
+  const result = await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);
   return {
     kind: "skills",
-    tab: "trending",
+    tab: "featured",
     categorySlugs: [],
     fetchLimit: HOME_LISTING_PAGE_SIZE,
     items: result.page,
     hasMore: result.hasMore,
-    trendingState: result.trendingState ?? "unavailable",
   };
 }
 

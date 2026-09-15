@@ -289,6 +289,7 @@ describe("HomeListingSection", () => {
     });
 
     render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
 
     await waitFor(() => expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull());
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
@@ -331,7 +332,7 @@ describe("HomeListingSection", () => {
     expect(screen.getByText(/eligible activity in the current 24-hour window/i)).toBeTruthy();
   });
 
-  it("defaults Plugins to Featured, preserves explicit New, and returns to Skills Trending", async () => {
+  it("defaults Plugins to Featured, preserves explicit New, and returns to Skills Featured", async () => {
     render(<HomeListingSection initialListing={initialTrending([])} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
@@ -362,7 +363,7 @@ describe("HomeListingSection", () => {
     expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));
-    expect(screen.getByRole("tab", { name: "Trending" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
       "true",
     );
   });
