@@ -53,7 +53,7 @@ describe("local scan worker assignments", () => {
   it("keeps job ownership stable as completed jobs leave the next dispatch", () => {
     const first = JSON.parse(planScanWorkers(ids, 32).inputs["assigned-jobs"]) as string[][];
     const next = JSON.parse(
-      planScanWorkers(ids.slice(17).toReversed(), 32).inputs["assigned-jobs"],
+      planScanWorkers([...ids.slice(50), ...ids.slice(17, 50)], 32).inputs["assigned-jobs"],
     ) as string[][];
     for (const [shard, part] of next.entries()) {
       expect(part.every((id) => first[shard].includes(id))).toBe(true);
