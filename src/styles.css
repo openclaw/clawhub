@@ -34166,6 +34166,43 @@ a[class*="rounded-full"] {
 .search-insights-table a {
   color: var(--accent);
 }
+.featured-recommendations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 16px;
+  margin-block: 20px;
+}
+.featured-recommendation-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.featured-recommendation-card h3 {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+.featured-recommendation-card a {
+  color: var(--accent);
+}
+.featured-recommendation-card span,
+.featured-recommendation-card small {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+.featured-recommendation-card summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.featured-recommendation-card details > p,
+.featured-recommendation-card details > small {
+  display: block;
+  margin-top: 8px;
+}
 @media (max-width: 700px) {
   .search-insights-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));

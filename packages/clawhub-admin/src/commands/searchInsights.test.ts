@@ -66,11 +66,66 @@ it("parses real admin CLI filters and emits the canonical JSON plus readable dem
     ],
   };
   const requests: string[] = [];
+  const intelligence = {
+    searchReport: fixture,
+    metadataCheckedAt: fixture.generatedAt,
+    adoption: {
+      status: "available",
+      generatedAt: fixture.generatedAt,
+      periodStart: fixture.window.start7d,
+      periodEnd: fixture.window.endDay,
+      snapshotId: "observed",
+      rankingVersion: "skills-trending-v4",
+      totalItems: 1,
+      inspectedItems: 1,
+      truncated: false,
+    },
+    recommendations: {
+      totalCandidates: 1,
+      omittedCandidates: 0,
+      excluded: [],
+      candidates: [
+        {
+          id: "clawhub:calendar",
+          artifactKind: "skill",
+          name: "calendar",
+          displayName: "Calendar",
+          summary: "Keep events synchronized",
+          url: "/author/skills/calendar",
+          category: "productivity",
+          eligibleForFeatured: true,
+          eligibilityReasons: [],
+          support: "adoption-only",
+          search: null,
+          adoption: {
+            source: "clawhub-trending",
+            rank: 1,
+            snapshotId: "observed",
+            rankingVersion: "skills-trending-v4",
+            periodStart: fixture.window.start7d,
+            periodEnd: fixture.window.endDay,
+            generatedAt: fixture.generatedAt,
+            sourceObservedAt: null,
+            downloads: 40,
+            installs: 3,
+            bookmarks: 2,
+            lifetimeInstalls: null,
+          },
+        },
+      ],
+    },
+  };
   const server = createServer((request, response) => {
     requests.push(request.url ?? "");
     expect(request.headers.authorization).toBe("Bearer fixture-token");
     response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify(fixture));
+    response.end(
+      JSON.stringify(
+        new URL(request.url ?? "/", "http://fixture").searchParams.get("view") === "recommendations"
+          ? intelligence
+          : fixture,
+      ),
+    );
   });
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
   try {
@@ -114,6 +169,22 @@ it("parses real admin CLI filters and emits the canonical JSON plus readable dem
     expect(new URL(requests[0], "http://fixture").searchParams.toString()).toBe(
       "artifactKind=skill&scope=catalog&source=clawhub-web&window=7&officialGap=true&intentKind=company_product",
     );
+    const recommendationArgs = [
+      ...args.slice(0, args.indexOf("--official-gap")),
+      "--view",
+      "recommendations",
+    ];
+    const recommendationsJson = await promisify(execFile)(
+      "bun",
+      [...recommendationArgs, "--json"],
+      { env },
+    );
+    expect(JSON.parse(recommendationsJson.stdout)).toEqual(intelligence);
+    const recommendationsText = await promisify(execFile)("bun", recommendationArgs, { env });
+    expect(recommendationsText.stdout).toContain("Calendar · adoption-only");
+    expect(recommendationsText.stdout).toContain("40 downloads, 3 installs, 2 bookmarks");
+    expect(recommendationsText.stdout).toContain("No matching collected search demand.");
+    expect(recommendationsText.stdout).toContain("advisory, requires approval");
   } finally {
     await new Promise<void>((done) => server.close(() => done()));
   }

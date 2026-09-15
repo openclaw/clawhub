@@ -1,10 +1,18 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { getFunctionName } from "convex/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchInsightReport } from "../../../convex/lib/searchInsights";
 import { SearchInsightsPage } from "./SearchInsightsPage";
 
-const { getReport } = vi.hoisted(() => ({ getReport: vi.fn() }));
-vi.mock("convex/react", () => ({ useAction: () => getReport }));
+const { getReport, getRecommendations } = vi.hoisted(() => ({
+  getReport: vi.fn(),
+  getRecommendations: vi.fn(),
+}));
+vi.mock("convex/react", () => ({
+  useAction: (ref: Parameters<typeof getFunctionName>[0]) =>
+    getFunctionName(ref) === "featuredIntelligence:get" ? getRecommendations : getReport,
+}));
+beforeEach(() => vi.resetAllMocks());
 
 const report: SearchInsightReport = {
   artifactKind: "plugin",
@@ -25,6 +33,69 @@ const report: SearchInsightReport = {
 };
 
 describe("SearchInsightsPage", () => {
+  it("shows adoption candidates with no search demand and clears them when a catalog load fails", async () => {
+    getReport.mockResolvedValue({ ...report, totalSearches7d: 0 });
+    getRecommendations
+      .mockResolvedValueOnce({
+        searchReport: { ...report, totalSearches7d: 0 },
+        metadataCheckedAt: report.generatedAt,
+        adoption: {
+          status: "available",
+          generatedAt: report.generatedAt,
+          periodStart: report.generatedAt - 86_400_000,
+          periodEnd: report.generatedAt,
+          totalItems: 1,
+          inspectedItems: 1,
+          truncated: false,
+        },
+        recommendations: {
+          totalCandidates: 1,
+          omittedCandidates: 0,
+          excluded: [],
+          candidates: [
+            {
+              id: "plugin:calendar",
+              displayName: "Calendar connector",
+              summary: "Keep events synchronized.",
+              url: "/plugins/calendar",
+              category: "productivity",
+              support: "adoption-only",
+              search: null,
+              adoption: {
+                source: "package-trending",
+                rank: 1,
+                downloads: 40,
+                installs: 3,
+                bookmarks: null,
+                snapshotId: "observed",
+                rankingVersion: "unversioned",
+                generatedAt: report.generatedAt,
+                periodStart: report.generatedAt - 86_400_000,
+                periodEnd: report.generatedAt,
+                lifetimeInstalls: null,
+                sourceObservedAt: null,
+              },
+            },
+          ],
+        },
+      })
+      .mockRejectedValueOnce(new Error("Catalog unavailable"));
+    render(<SearchInsightsPage />);
+    await screen.findByRole("table");
+    fireEvent.change(screen.getByRole("combobox", { name: "View" }), {
+      target: { value: "featured" },
+    });
+    await screen.findByRole("link", { name: "Calendar connector" });
+    expect(screen.getByText(/40 downloads/)).toBeTruthy();
+    expect(screen.getByText(/No matching collected search demand/)).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Catalog" }), {
+      target: { value: "skill" },
+    });
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("link", { name: "Calendar connector" })).toBeNull();
+    expect(getRecommendations.mock.lastCall?.[0].artifactKind).toBe("skill");
+  });
   it("removes the previous report when a filter fails and shows the selected source after retry", async () => {
     getReport
       .mockResolvedValueOnce(report)

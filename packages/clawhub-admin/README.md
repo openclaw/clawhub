@@ -211,6 +211,8 @@ clawhub-admin search-insights
 clawhub-admin search-insights --source openclaw-control-ui --window 30 --official-gap
 clawhub-admin search-insights --intent-kind company_product --json
 clawhub-admin search-insights --end-day 2026-09-07 --limit 100 --json
+clawhub-admin search-insights --view recommendations --artifact-kind plugin --json
+clawhub-admin search-insights --view recommendations --artifact-kind skill --json
 ```
 
 Windows contain complete UTC days before `--end-day` (exclusive; defaults to today).
@@ -221,3 +223,28 @@ selects ranking. `--intent-kind` accepts `company_product`, `generic_capability`
 and three official-gap searches. Missing or failed classification is unavailable,
 not inferred from package names. The data-through/coverage fields expose refresh
 lag or lost coverage. Current package metadata is freshness-labeled separately.
+
+Use `--artifact-kind plugin|skill` to select the catalog and `--scope catalog|shelf|legacy`
+to distinguish whole-catalog searches, filtered shelves, and older observations whose
+scope is unknown. Only whole-catalog searches qualify for company opportunities.
+
+The recommendations view joins current search matches with the existing catalog's
+Trending snapshot. It shows candidates supported by both signals, search only, or
+adoption only; within those groups it orders by search counts and then existing
+Trending rank. There is no new blended score or cross-catalog score comparison.
+Counts are matched queries, not unique users or installs of the candidate. Search
+filters affect demand evidence; adoption evidence remains the catalog-wide snapshot.
+Gap and intent filters apply only to the demand view.
+
+Adoption keeps its own exact period, generation time and original ranking. Package
+Trending includes a partial current UTC day; native skill Trending uses completed
+hours. Unknown source periods and unavailable metrics remain null. Both views expose
+coverage limits and current metadata freshness. Candidate eligibility uses current
+public releases and security status, and excludes already Featured artifacts;
+external skills without a ClawHub Featured owner remain explicit exclusions.
+
+For the first production dry run, use these read-only commands or Management →
+Search intelligence → Featured candidates. Do not invoke delivery, backfill request
+logs, or change Featured. Review usefulness, quality, security and category coverage
+with Patrick before publishing a selection. An empty search window can still have
+adoption candidates; missing evidence is never replaced with sample recommendations.

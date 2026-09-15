@@ -1,17 +1,16 @@
 import { useAction } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import type { FeaturedIntelligenceReport } from "../../../convex/featuredIntelligence";
 import type { SearchInsightArgs, SearchInsightReport } from "../../../convex/lib/searchInsights";
 import { Button } from "../../components/ui/button";
-
-function date(value: number | null) {
-  return value === null
-    ? "Not available yet"
-    : new Date(value).toISOString().replace("T", " ").replace(/Z$/, " UTC");
-}
+import { FeaturedRecommendations } from "./FeaturedRecommendations";
+import { insightTime as date } from "./insightTime";
 
 export function SearchInsightsPage({ endDay }: { endDay?: number }) {
   const getReport = useAction(api.searchInsights.get);
+  const getRecommendations = useAction(api.featuredIntelligence.get);
+  const [intelligence, setIntelligence] = useState<FeaturedIntelligenceReport | null>(null);
   const [artifactKind, setArtifactKind] = useState<"plugin" | "skill">("plugin");
   const [scope, setScope] = useState<SearchInsightArgs["scope"]>();
   const [source, setSource] = useState<SearchInsightArgs["source"]>();
@@ -25,19 +24,28 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
     let active = true;
     setLoading(true);
     setReport(null);
+    setIntelligence(null);
     setError(null);
-    void getReport({
-      endDay,
-      artifactKind,
-      scope,
-      source,
-      window,
-      officialGap: view === "gaps" || view === "company",
-      ...(view === "company" ? { intentKind: "company_product" as const } : {}),
-    })
-      .then((value) => {
-        if (active) setReport(value);
-      })
+    const request =
+      view === "featured"
+        ? getRecommendations({ endDay, artifactKind, scope, source, window }).then((value) => {
+            if (active) {
+              setIntelligence(value);
+              setReport(value.searchReport);
+            }
+          })
+        : getReport({
+            endDay,
+            artifactKind,
+            scope,
+            source,
+            window,
+            officialGap: view === "gaps" || view === "company",
+            ...(view === "company" ? { intentKind: "company_product" as const } : {}),
+          }).then((value) => {
+            if (active) setReport(value);
+          });
+    void request
       .catch(() => {
         if (active) setError("Search insights could not be loaded. Refresh to retry.");
       })
@@ -47,16 +55,15 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
     return () => {
       active = false;
     };
-  }, [getReport, artifactKind, scope, source, window, view, refresh, endDay]);
-  const rows =
-    view === "featured" ? report?.rows.filter((row) => row.featuredCandidate) : report?.rows;
+  }, [getReport, getRecommendations, artifactKind, scope, source, window, view, refresh, endDay]);
+  const rows = report?.rows;
   return (
     <div className="search-insights">
       <header className="search-insights-header">
         <div>
-          <h1>Search intelligence</h1>
+          <h1>ClawHub intelligence</h1>
           <p className="text-muted-foreground">
-            Manual plugin and skill search demand, official gaps, and curation leads.
+            Search demand, adoption trends and Featured recommendations for plugins and skills.
           </p>
         </div>
         <Button
@@ -167,9 +174,6 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
             Collection started: {date(report.coverage.collectionStartedAt)}. Earlier days have no
             collected history.
           </p>
-          {view === "featured" ? (
-            <p>Featured candidates among the top {report.rows.length} demand queries.</p>
-          ) : null}
           {report.coverage.gapStart !== null ? (
             <p role="status">
               Incomplete coverage: {date(report.coverage.gapStart)} to{" "}
@@ -197,84 +201,92 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
               Homepage shelf searches and OpenClaw skill search are not collected yet.
             </p>
           ) : null}
-          <div className="search-insights-table-wrap">
-            <table className="search-insights-table">
-              <thead>
-                <tr>
-                  <th>Query</th>
-                  <th>7 days</th>
-                  <th>Change</th>
-                  <th>30 days</th>
-                  <th>Official gaps · 7d</th>
-                  <th>Company intent</th>
-                  <th>Featured consideration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows?.map((row) => (
-                  <tr key={`${row.artifactKind}:${row.scope}:${row.query}`}>
-                    <td>
-                      <a href={row.searchUrl}>{row.query}</a>
-                      <small>
-                        {row.scope === "legacy"
-                          ? "Scope unknown"
-                          : row.scope === "catalog"
-                            ? "Whole catalog"
-                            : "Filtered shelf"}
-                      </small>
-                    </td>
-                    <td>{row.searches7d}</td>
-                    <td>
-                      {row.change7d >= 0 ? "+" : ""}
-                      {row.change7d}
-                      <small>
-                        {row.changePercent === null ? "New" : `${row.changePercent.toFixed(0)}%`} vs
-                        previous 7d
-                      </small>
-                    </td>
-                    <td>{row.searches30d}</td>
-                    <td>{row.officialGaps7d}</td>
-                    <td>
-                      {row.classification ? (
-                        <>
-                          {row.classification.companyProductName ??
-                            row.classification.intentKind.replaceAll("_", " ")}
+          {view === "featured" && intelligence ? (
+            <FeaturedRecommendations report={intelligence} />
+          ) : (
+            <>
+              <div className="search-insights-table-wrap">
+                <table className="search-insights-table">
+                  <thead>
+                    <tr>
+                      <th>Query</th>
+                      <th>7 days</th>
+                      <th>Change</th>
+                      <th>30 days</th>
+                      <th>Official gaps · 7d</th>
+                      <th>Company intent</th>
+                      <th>Featured consideration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows?.map((row) => (
+                      <tr key={`${row.artifactKind}:${row.scope}:${row.query}`}>
+                        <td>
+                          <a href={row.searchUrl}>{row.query}</a>
                           <small>
-                            {(row.classification.confidence * 100).toFixed(0)}% confidence
-                            {row.companyOpportunity ? " · opportunity" : ""}
+                            {row.scope === "legacy"
+                              ? "Scope unknown"
+                              : row.scope === "catalog"
+                                ? "Whole catalog"
+                                : "Filtered shelf"}
                           </small>
-                        </>
-                      ) : (
-                        "Unavailable"
-                      )}
-                    </td>
-                    <td>
-                      {row.featuredCandidate ? (
-                        <a href={row.featuredCandidate.url}>
-                          {row.featuredCandidate.displayName}
-                          <small>{row.featuredCandidate.version}</small>
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!rows?.length ? (
-            <p role="status">
-              No matching search demand yet. Collection starts with manually entered searches; there
-              is no historical log backfill.
-            </p>
-          ) : null}
-          {report.truncated ? (
-            <p>
-              Showing the top {report.rows.length} of {report.totalQueries} queries. Narrow the
-              filters to inspect more.
-            </p>
-          ) : null}
+                        </td>
+                        <td>{row.searches7d}</td>
+                        <td>
+                          {row.change7d >= 0 ? "+" : ""}
+                          {row.change7d}
+                          <small>
+                            {row.changePercent === null
+                              ? "New"
+                              : `${row.changePercent.toFixed(0)}%`}{" "}
+                            vs previous 7d
+                          </small>
+                        </td>
+                        <td>{row.searches30d}</td>
+                        <td>{row.officialGaps7d}</td>
+                        <td>
+                          {row.classification ? (
+                            <>
+                              {row.classification.companyProductName ??
+                                row.classification.intentKind.replaceAll("_", " ")}
+                              <small>
+                                {(row.classification.confidence * 100).toFixed(0)}% confidence
+                                {row.companyOpportunity ? " · opportunity" : ""}
+                              </small>
+                            </>
+                          ) : (
+                            "Unavailable"
+                          )}
+                        </td>
+                        <td>
+                          {row.featuredCandidate ? (
+                            <a href={row.featuredCandidate.url}>
+                              {row.featuredCandidate.displayName}
+                              <small>{row.featuredCandidate.version}</small>
+                            </a>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!rows?.length ? (
+                <p role="status">
+                  No matching search demand yet. Collection starts with manually entered searches;
+                  there is no historical log backfill.
+                </p>
+              ) : null}
+              {report.truncated ? (
+                <p>
+                  Showing the top {report.rows.length} of {report.totalQueries} queries. Narrow the
+                  filters to inspect more.
+                </p>
+              ) : null}
+            </>
+          )}
           <p className="text-muted-foreground">
             Current catalog metadata checked: {date(report.metadataCheckedAt)}. These are current
             catalog results, not historical result snapshots. Raw searches expire after 30 days;

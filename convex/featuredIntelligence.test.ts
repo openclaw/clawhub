@@ -1,10 +1,13 @@
+import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, expect, it, vi } from "vitest";
+import { FeaturedIntelligenceReportSchema } from "../packages/clawhub/src/schema/searchInsights";
 import { api, internal } from "./_generated/api";
 import { CANONICAL_TRENDING_RANKING_VERSION } from "./lib/canonicalTrending";
 import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
+import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -13,6 +16,7 @@ afterEach(() => vi.useRealTimers());
 
 it("serves existing package adoption without search history and rechecks current Featured eligibility", async () => {
   const t = convexTest(schema, modules);
+  registerRateLimiter(t);
   const now = Date.UTC(2026, 8, 15, 12);
   vi.useFakeTimers();
   vi.setSystemTime(now);
@@ -58,12 +62,29 @@ it("serves existing package adoption without search history and rechecks current
       rangeEndDay: Math.floor(now / DAY),
       items: [{ packageId: pkg, score: 49, installs: 3, downloads: 40 }],
     });
+    await ctx.db.insert("apiTokens", {
+      userId: staff,
+      label: "fixture",
+      prefix: "fixture",
+      tokenHash: await hashToken("featured-api-fixture"),
+      createdAt: now,
+    });
     return { staff, pkg };
   });
   const report = await t.withIdentity({ subject: ids.staff }).action(api.featuredIntelligence.get, {
     artifactKind: "plugin",
   });
   expect(report.searchReport.totalSearches7d).toBe(0);
+  const response = await t.fetch(
+    "/api/v1/search-insights?view=recommendations&artifactKind=plugin",
+    {
+      headers: { Authorization: "Bearer featured-api-fixture" },
+    },
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(FeaturedIntelligenceReportSchema.assert(await response.json())).toEqual(report);
+  expect((await t.fetch("/api/v1/search-insights?view=recommendations")).status).toBe(401);
   expect(report.recommendations.candidates).toMatchObject([
     {
       id: "plugin:calendar",

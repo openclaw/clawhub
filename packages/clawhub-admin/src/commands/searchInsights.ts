@@ -3,11 +3,15 @@ import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { fail } from "../../../clawhub/src/cli/ui.js";
 import { apiRequest } from "../../../clawhub/src/http.js";
-import { SearchInsightsReportSchema } from "../../../clawhub/src/schema/searchInsights.js";
+import {
+  FeaturedIntelligenceReportSchema,
+  SearchInsightsReportSchema,
+} from "../../../clawhub/src/schema/searchInsights.js";
 
 export async function cmdSearchInsights(
   opts: GlobalOpts,
   options: {
+    view?: string;
     artifactKind?: string;
     scope?: string;
     source?: string;
@@ -20,6 +24,13 @@ export async function cmdSearchInsights(
   },
 ) {
   const params = new URLSearchParams();
+  if (options.view) {
+    if (!["demand", "recommendations"].includes(options.view))
+      fail("view must be demand or recommendations");
+    params.set("view", options.view);
+  }
+  if (options.view === "recommendations" && (options.officialGap || options.intentKind))
+    fail("Recommendation view does not accept demand-only gap or intent filters");
   if (options.artifactKind) {
     if (!["plugin", "skill"].includes(options.artifactKind))
       fail("artifact-kind must be plugin or skill");
@@ -62,6 +73,65 @@ export async function cmdSearchInsights(
   }
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
+  if (options.view === "recommendations") {
+    const report = await apiRequest(
+      registry,
+      { method: "GET", path: `/api/v1/search-insights?${params}`, token },
+      FeaturedIntelligenceReportSchema,
+    );
+    if (options.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    else {
+      const time = (value: number | null) =>
+        value === null ? "unknown" : new Date(value).toISOString();
+      console.log(
+        `Featured recommendations · ${report.searchReport.artifactKind} · advisory, requires approval`,
+      );
+      console.log(
+        `Search collection started ${time(report.searchReport.coverage.collectionStartedAt)}; aggregated through ${time(report.searchReport.coverage.dataThrough)}.`,
+      );
+      console.log(
+        `Adoption ${report.adoption.status}: ${time(report.adoption.periodStart)} to ${time(report.adoption.periodEnd)}, generated ${time(report.adoption.generatedAt)}; ${report.adoption.inspectedItems}/${report.adoption.totalItems} snapshot entries inspected.`,
+      );
+      console.log(
+        `Current eligibility checked ${time(report.metadataCheckedAt)}. Search metadata ${report.searchReport.currentMetadataStatus}.`,
+      );
+      if (!report.recommendations.candidates.length)
+        console.log("No eligible Featured candidates in available evidence.");
+      for (const candidate of report.recommendations.candidates) {
+        console.log(
+          `${candidate.displayName} · ${candidate.support} · category ${candidate.category ?? "uncategorized"}`,
+        );
+        if (candidate.summary) console.log(`  ${candidate.summary}`);
+        if (candidate.search) {
+          console.log(
+            `  Matching query counts: ${candidate.search.matchedSearches7d} in 7d, ${candidate.search.previous7d} previous 7d, ${candidate.search.searches30d} in 30d; ${time(candidate.search.periodStart)} to ${time(candidate.search.periodEnd)}.`,
+          );
+          for (const query of candidate.search.queries)
+            console.log(
+              `  ${query.query} [${query.scope}]: ${query.searches7d} in 7d, ${query.previous7d} previous 7d, ${query.searches30d} in 30d.`,
+            );
+          if (candidate.search.omittedQueries)
+            console.log(`  ${candidate.search.omittedQueries} additional queries omitted.`);
+        } else console.log("  No matching collected search demand.");
+        if (candidate.adoption) {
+          const evidence = candidate.adoption;
+          console.log(
+            `  ${evidence.source} #${evidence.rank}: ${evidence.downloads ?? "unknown"} downloads, ${evidence.installs ?? "unknown"} installs, ${evidence.bookmarks ?? "unknown"} bookmarks; ${time(evidence.periodStart)} to ${time(evidence.periodEnd)}.`,
+          );
+          console.log(
+            `  Snapshot ${evidence.snapshotId}, generated ${time(evidence.generatedAt)}, ranking ${evidence.rankingVersion}.`,
+          );
+        }
+        console.log(`  ${new URL(candidate.url, opts.site)}`);
+      }
+      for (const excluded of report.recommendations.excluded)
+        console.log(`Excluded ${excluded.displayName}: ${excluded.reasons.join(", ")}`);
+      console.log(
+        `Showing ${report.recommendations.candidates.length}/${report.recommendations.totalCandidates} candidates; search coverage ${report.searchReport.rows.length}/${report.searchReport.totalQueries} queries. Review usefulness, quality, security and category coverage before publishing.`,
+      );
+    }
+    return report;
+  }
   const report = await apiRequest(
     registry,
     { method: "GET", path: `/api/v1/search-insights?${params}`, token },

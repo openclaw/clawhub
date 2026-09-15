@@ -10,6 +10,8 @@ export async function searchInsightsV1Handler(ctx: ActionCtx, request: Request) 
   const staff = requireModeratorOrResponse(auth.user, headers);
   if (!staff.ok) return staff.response;
   const params = new URL(request.url).searchParams;
+  const view = params.get("view") ?? "demand";
+  if (view !== "demand" && view !== "recommendations") return text("Invalid view", 400, headers);
   const args: SearchInsightArgs = {};
   const artifactKind = params.get("artifactKind");
   if (artifactKind !== null) {
@@ -56,5 +58,22 @@ export async function searchInsightsV1Handler(ctx: ActionCtx, request: Request) 
     return text("limit must be between 1 and 100", 400, headers);
   if (args.endDay !== undefined && args.endDay % 86_400_000 !== 0)
     return text("endDay must be a UTC day boundary", 400, headers);
+  if (view === "recommendations") {
+    const { officialGap: gapFilter, intentKind, ...recommendationArgs } = args;
+    if (gapFilter !== undefined || intentKind !== undefined)
+      return text(
+        "Recommendation view does not accept demand-only gap or intent filters",
+        400,
+        headers,
+      );
+    return json(
+      await ctx.runAction(internal.featuredIntelligence.getInternal, {
+        ...recommendationArgs,
+        artifactKind: args.artifactKind ?? "plugin",
+      }),
+      200,
+      headers,
+    );
+  }
   return json(await ctx.runAction(internal.searchInsights.getInternal, args), 200, headers);
 }

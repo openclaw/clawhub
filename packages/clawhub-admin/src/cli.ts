@@ -1031,6 +1031,7 @@ function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
 program
   .command("search-insights")
   .description("Read staff-only plugin and skill search demand and advisory opportunities")
+  .option("--view <view>", "demand|recommendations (default: demand)")
   .option("--artifact-kind <kind>", "plugin|skill (default: plugin)")
   .option("--scope <scope>", "catalog|shelf|legacy (default: all scopes)")
   .option("--source <source>", "clawhub-web|openclaw-control-ui (default: both)")
