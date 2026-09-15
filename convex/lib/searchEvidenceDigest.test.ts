@@ -236,3 +236,38 @@ it("keeps deterministic gaps on classifier failure and independently checked ado
   input.metadataCheckedAt = null;
   expect(build(input).catalogs.plugins.recommendations).toEqual([]);
 });
+
+it("preserves same-query catalog, shelf and legacy evidence while limiting company opportunities to the catalog", () => {
+  const input = catalog();
+  const scopes = ["catalog", "shelf", "legacy"] as const;
+  input.rows = scopes.map((scope, index) => ({
+    ...input.rows[0],
+    scope,
+    searches7d: 6 - index,
+    officialGaps7d: 6 - index,
+  }));
+  input.moverRows = input.rows;
+  const candidate = input.recommendations.candidates[0];
+  candidate.search = {
+    ...candidate.search!,
+    matchedSearches7d: 15,
+    searches30d: 15,
+    queries: scopes.map((scope, index) => ({
+      query: "notion",
+      scope,
+      searches7d: 6 - index,
+      previous7d: 1,
+      searches30d: 6 - index,
+    })),
+  };
+  const wire = JSON.parse(JSON.stringify(build(input))) as ReturnType<typeof build>;
+  const output = wire.catalogs.plugins;
+  expect(output.officialGaps.map((row) => [row.query, row.scope, row.searches])).toEqual([
+    ["notion", "catalog", 6],
+    ["notion", "shelf", 5],
+    ["notion", "legacy", 4],
+  ]);
+  expect(output.movers.map((row) => row.scope)).toEqual(scopes);
+  expect(output.recommendations[0].search?.queries.map((row) => row.scope)).toEqual(scopes);
+  expect(output.companyOpportunities.map((row) => row.scope)).toEqual(["catalog"]);
+});
