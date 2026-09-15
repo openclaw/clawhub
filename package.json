@@ -174,7 +174,7 @@
     "@types/yauzl": "3.4.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.1.1",
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "5.0.0",
     "convex-test": "^0.0.58",
     "jsdom": "29.1.1",
     "nitro": "3.0.260610-beta",
