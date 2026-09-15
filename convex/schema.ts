@@ -20,6 +20,7 @@ import {
   searchScope,
 } from "./lib/searchInsights";
 import { reportRequest } from "./lib/searchReportContract";
+import { endorAnalysisValidator } from "./lib/endorAnalysis";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -1938,9 +1939,11 @@ const packageReleases = defineTable({
   verification: packageVerificationValidator,
   // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
+  scannerReportsStorageId: v.optional(v.id("_storage")),
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+  endorAnalysis: v.optional(endorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),

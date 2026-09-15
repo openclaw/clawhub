@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,6 +10,7 @@ import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/se
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
+import { CommandFailure, runWorkerCommand } from "../lib/runWorkerCommand";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
@@ -19,6 +19,11 @@ import {
   redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
+import {
+  isEndorPluginScanEnabled,
+  runEndorPluginScan,
+  type EndorPluginScanResult,
+} from "./run-endor-plugin-scan";
 import {
   calculateSecurityScanWorkerHealthSummary,
   renderSecurityScanWorkerSummaryMarkdown,
@@ -887,94 +892,18 @@ function codexEnv(workspace: string) {
   return env;
 }
 
-class CommandFailure extends Error {
-  exitCode: number | null;
-  stderr: string;
-  stdout: string;
-  timedOut: boolean;
-
-  constructor(
-    message: string,
-    exitCode: number | null,
-    stdout: string,
-    stderr: string,
-    timedOut: boolean,
-  ) {
-    super(message);
-    this.name = "CommandFailure";
-    this.exitCode = exitCode;
-    this.stdout = stdout;
-    this.stderr = stderr;
-    this.timedOut = timedOut;
-  }
-}
-
 async function runCommand(
   command: string,
   args: string[],
   options: { cwd: string; input?: string; omitEnv?: string[]; timeoutMs: number },
 ) {
-  return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
-    const env = codexEnv(options.cwd);
-    for (const name of options.omitEnv ?? []) delete env[name];
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      detached: process.platform !== "win32",
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let forceKillTimeout: NodeJS.Timeout | undefined;
-    const killProcessTree = (signal: NodeJS.Signals) => {
-      if (process.platform !== "win32" && child.pid) {
-        try {
-          process.kill(-child.pid, signal);
-          return;
-        } catch {
-          // The process group may already have exited; fall back to the direct child.
-        }
-      }
-      child.kill(signal);
-    };
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      killProcessTree("SIGTERM");
-      forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
-      forceKillTimeout.unref();
-    }, options.timeoutMs);
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      if (timedOut) killProcessTree("SIGKILL");
-      if (forceKillTimeout) clearTimeout(forceKillTimeout);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (timedOut) killProcessTree("SIGKILL");
-      if (forceKillTimeout) clearTimeout(forceKillTimeout);
-      if (code === 0) resolvePromise({ stdout, stderr });
-      else {
-        reject(
-          new CommandFailure(
-            `${command} ${timedOut ? "timed out" : `exited ${code}`}; see redacted stdout/stderr diagnostics`,
-            code,
-            stdout,
-            stderr,
-            timedOut,
-          ),
-        );
-      }
-    });
-    if (options.input) child.stdin.end(options.input);
-    else child.stdin.end();
+  const env = codexEnv(options.cwd);
+  for (const name of options.omitEnv ?? []) delete env[name];
+  return await runWorkerCommand(command, args, {
+    cwd: options.cwd,
+    env,
+    ...(options.input !== undefined ? { input: options.input } : {}),
+    timeoutMs: options.timeoutMs,
   });
 }
 
@@ -1999,7 +1928,12 @@ export async function runClawScan(
   try {
     const output = await runCommand(command, args, {
       cwd: workspace,
-      omitEnv: ["VIRUSTOTAL_API_KEY"],
+      omitEnv: [
+        "VIRUSTOTAL_API_KEY",
+        "ENDOR_TOKEN",
+        "ENDOR_API_CREDENTIALS_KEY",
+        "ENDOR_API_CREDENTIALS_SECRET",
+      ],
       timeoutMs: clawScanTimeoutMs(),
     });
     onDiagnostic({
@@ -2099,16 +2033,37 @@ export async function processJob(
   let llmAnalysis: StoredLlmAnalysis | undefined;
   let aigAnalysis: AigAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
+  let endorAnalysis: EndorPluginScanResult["analysis"] | undefined;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
-    const mapped = await runClawScan(job, workspace, (next) => {
-      Object.assign(clawscan, next);
-    });
+    const shouldRunEndor = job.job.targetKind === "packageRelease" && isEndorPluginScanEnabled();
+    const [clawScanResult, endorScanResult] = await Promise.allSettled([
+      runClawScan(job, workspace, (next) => {
+        Object.assign(clawscan, next);
+      }),
+      shouldRunEndor
+        ? runEndorPluginScan({ workspace })
+        : Promise.resolve<EndorPluginScanResult | undefined>(undefined),
+    ] as const);
+    if (clawScanResult.status === "rejected") throw clawScanResult.reason;
+    if (endorScanResult.status === "rejected") throw endorScanResult.reason;
+    const mapped = clawScanResult.value;
+    const endorResult = endorScanResult.value;
+    endorAnalysis = endorResult?.analysis;
     llmAnalysis = mapped.llmAnalysis;
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
+    let scannerReportsJson = mapped.scannerReportsJson;
+    if (endorResult) {
+      const scannerReports = asRecord(JSON.parse(scannerReportsJson) as unknown);
+      if (!scannerReports) throw new Error("Security scanner reports were malformed");
+      scannerReportsJson = JSON.stringify({
+        ...scannerReports,
+        endor: endorResult.scannerReport,
+      });
+    }
     // A signed upload URL advertises support after the separately deployed
     // backend updates. Upload directly to storage to avoid action argument limits.
     let scannerReportsStorageId: string | undefined;
@@ -2116,7 +2071,7 @@ export async function processJob(
       const uploaded = await fetch(job.scannerReportsUploadUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: mapped.scannerReportsJson,
+        body: scannerReportsJson,
       });
       if (!uploaded.ok) throw new Error(`Scanner report upload failed (${uploaded.status})`);
       const uploadResult = asRecord(await uploaded.json());
@@ -2132,6 +2087,7 @@ export async function processJob(
       llmAnalysis,
       aigAnalysis,
       skillSpectorAnalysis,
+      ...(endorAnalysis ? { endorAnalysis } : {}),
       ...(scannerReportsStorageId
         ? { scannerReportsStorageId: scannerReportsStorageId as Id<"_storage"> }
         : {}),

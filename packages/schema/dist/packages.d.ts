@@ -206,6 +206,20 @@ export declare const PackageSkillSpectorAnalysisSchema: import("arktype/internal
     checkedAt: number;
 }, {}>;
 export type PackageSkillSpectorAnalysis = (typeof PackageSkillSpectorAnalysisSchema)[inferred];
+export declare const PackageEndorAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "completed";
+    checkedAt: number;
+    reachableFunctionCount: number;
+    findings: {
+        severity: string;
+        summary: string;
+    }[];
+} | {
+    status: "skipped";
+    checkedAt: number;
+    reason: string;
+}, {}>;
+export type PackageEndorAnalysis = (typeof PackageEndorAnalysisSchema)[inferred];
 export declare const PackageAigFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ruleId: string;
     level: string;
@@ -926,6 +940,19 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             error?: string | undefined;
             checkedAt: number;
         } | null | undefined;
+        endorAnalysis?: {
+            status: "completed";
+            checkedAt: number;
+            reachableFunctionCount: number;
+            findings: {
+                severity: string;
+                summary: string;
+            }[];
+        } | {
+            status: "skipped";
+            checkedAt: number;
+            reason: string;
+        } | null | undefined;
         aigAnalysis?: {
             status: string;
             issueCount: number;
@@ -1050,6 +1077,19 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
         npmShasum?: string | undefined;
         npmTarballName?: string | undefined;
         createdAt: number;
+        endorAnalysis?: {
+            status: "completed";
+            checkedAt: number;
+            reachableFunctionCount: number;
+            findings: {
+                severity: string;
+                summary: string;
+            }[];
+        } | {
+            status: "skipped";
+            checkedAt: number;
+            reason: string;
+        } | null | undefined;
     };
     trust: {
         scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";
@@ -1300,6 +1340,19 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
             error?: string | undefined;
             checkedAt: number;
         } | null | undefined;
+        endorAnalysis?: {
+            status: "completed";
+            checkedAt: number;
+            reachableFunctionCount: number;
+            findings: {
+                severity: string;
+                summary: string;
+            }[];
+        } | {
+            status: "skipped";
+            checkedAt: number;
+            reason: string;
+        } | null | undefined;
         aigAnalysis?: {
             status: string;
             issueCount: number;
@@ -1372,6 +1425,19 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
             npmShasum?: string | undefined;
             npmTarballName?: string | undefined;
             createdAt: number;
+            endorAnalysis?: {
+                status: "completed";
+                checkedAt: number;
+                reachableFunctionCount: number;
+                findings: {
+                    severity: string;
+                    summary: string;
+                }[];
+            } | {
+                status: "skipped";
+                checkedAt: number;
+                reason: string;
+            } | null | undefined;
         };
         trust: {
             scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";

@@ -1,4 +1,5 @@
 import { strToU8, zipSync } from "fflate";
+import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import type {
   AigAnalysis,
   LlmAnalysis,
@@ -39,6 +40,7 @@ type SecurityAuditExportInput = {
   llmAnalysis?: LlmAnalysis | null;
   aigAnalysis?: AigAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
+  endorAnalysis?: EndorAnalysis | null;
   staticScan?: StaticScan | null;
   exportedAt?: string;
 };
@@ -56,6 +58,7 @@ This archive contains stored scanner outcomes for one ClawHub artifact version.
 - clawscan.json: ClawScan risk review and final audit verdict material
 - aig.json: Tencent Zhuque Lab AI-Infra-Guard SARIF findings normalized by ClawHub
 - skillspector.json: SkillSpector agentic-risk findings
+- endor.json: reachable vulnerable functions reported by Endor, when available
 - static-analysis.json: deterministic static scan context
 - virustotal.json: VirusTotal engine telemetry
 `;
@@ -101,6 +104,7 @@ export function buildSecurityAuditExportEntries(input: SecurityAuditExportInput)
           aig: input.aigAnalysis?.status ?? null,
           clawscan: input.llmAnalysis?.status ?? null,
           skillspector: input.skillSpectorAnalysis?.status ?? null,
+          ...(input.endorAnalysis ? { endor: input.endorAnalysis.status } : {}),
           staticAnalysis: input.staticScan?.status ?? null,
           virustotal: input.vtAnalysis?.status ?? null,
         },
@@ -112,6 +116,8 @@ export function buildSecurityAuditExportEntries(input: SecurityAuditExportInput)
     { path: "static-analysis.json", value: input.staticScan ?? null },
     { path: "virustotal.json", value: input.vtAnalysis ?? null },
   ];
+
+  if (input.endorAnalysis) entries.push({ path: "endor.json", value: input.endorAnalysis });
 
   return entries;
 }
