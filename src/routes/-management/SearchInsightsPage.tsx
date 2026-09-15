@@ -197,8 +197,9 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
           </p>
           {artifactKind === "skill" ? (
             <p className="text-muted-foreground">
-              Skill collection covers manual global and Skills catalog searches on ClawHub web.
-              Homepage shelf searches and OpenClaw skill search are not collected yet.
+              Skill collection covers manual global, Skills catalog, and homepage Featured,
+              Official, and New searches on ClawHub web. Homepage Trending filters and OpenClaw
+              skill search are not collected.
             </p>
           ) : null}
           {view === "featured" && intelligence ? (
