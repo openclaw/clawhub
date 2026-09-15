@@ -128,6 +128,8 @@ it("reuses canonical skill ranks and exact completed-hour periods, and refuses s
     const skill = await ctx.db.insert("skills", {
       slug: "calendar",
       displayName: "Calendar",
+      summary:
+        "Manage your calendar events and schedule meetings with clear reminders for your team.",
       ownerUserId: author,
       tags: {},
       stats: { downloads: 60, stars: 2, versions: 1, comments: 0 },
@@ -156,6 +158,8 @@ it("reuses canonical skill ranks and exact completed-hour periods, and refuses s
       skillId: skill,
       slug: "calendar",
       displayName: "Calendar",
+      summary:
+        "Manage your calendar events and schedule meetings with clear reminders for your team.",
       ownerUserId: author,
       ownerHandle: "author",
       ownerKind: "user",
@@ -196,7 +200,9 @@ it("reuses canonical skill ranks and exact completed-hour periods, and refuses s
         source: "clawhub",
         slug: "calendar",
         displayName: "Calendar",
-        summary: null,
+        summary:
+          "Manage your calendar events and schedule meetings with clear reminders for your team.",
+
         canonicalUrl: "/author/skills/calendar",
         links: { canonical: "/author/skills/calendar", source: null },
         publisher: {
