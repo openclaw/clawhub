@@ -4197,7 +4197,12 @@ code {
   height: 17px;
 }
 
-.browse-page .browse-results-grid .skill-card-header .marketplace-icon-image {
+/* Preserve plugin artwork colors while keeping skill imagery subdued. */
+.browse-page
+  .browse-results-grid
+  .skill-card-header
+  .marketplace-icon:not(.marketplace-icon-plugin)
+  .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
 
@@ -23070,12 +23075,14 @@ a.search-empty-action {
 }
 
 .home-v2-listing-card-icon .marketplace-icon-glyph,
-.home-v2-listing-card-icon .marketplace-icon-image {
+.home-v2-listing-card-icon .marketplace-icon:not(.marketplace-icon-plugin) .marketplace-icon-image {
   opacity: 1;
   filter: grayscale(1) brightness(1.18);
 }
 
-.home-v2-listing-card-icon .marketplace-icon--brand .marketplace-icon-image {
+.home-v2-listing-card-icon
+  .marketplace-icon--brand:not(.marketplace-icon-plugin)
+  .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
 
@@ -23342,7 +23349,7 @@ a.search-empty-action {
 }
 
 .home-v2-listing-row-icon .marketplace-icon-glyph,
-.home-v2-listing-row-icon .marketplace-icon-image {
+.home-v2-listing-row-icon .marketplace-icon:not(.marketplace-icon-plugin) .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
 
@@ -29740,7 +29747,9 @@ a[class*="rounded-full"] {
 }
 
 .navbar-search-typeahead-icon .marketplace-icon-glyph,
-.navbar-search-typeahead-icon .marketplace-icon-image {
+.navbar-search-typeahead-icon
+  .marketplace-icon:not(.marketplace-icon-plugin)
+  .marketplace-icon-image {
   filter: grayscale(1);
   opacity: 0.82;
 }
@@ -31624,7 +31633,10 @@ a[class*="rounded-full"] {
 }
 
 .browse-page .dashboard-catalog-row-icon .marketplace-icon-glyph,
-.browse-page .dashboard-catalog-row-icon .marketplace-icon-image {
+.browse-page
+  .dashboard-catalog-row-icon
+  .marketplace-icon:not(.marketplace-icon-plugin)
+  .marketplace-icon-image {
   filter: grayscale(1) brightness(1.18);
 }
 
