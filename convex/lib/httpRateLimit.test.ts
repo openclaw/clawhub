@@ -27,15 +27,15 @@ function makeRateLimitCtx(plan: MockRateLimitPlan) {
   const runQuery = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
     if ("tokenHash" in args) {
       if (plan.tokenValid === false) return null;
-      return { _id: "token_1", revokedAt: undefined };
-    }
-    if ("tokenId" in args) {
-      if (plan.userActive === false) return null;
       return {
-        _id: "users_123",
-        deletedAt: undefined,
-        deactivatedAt: undefined,
-        role: plan.userRole ?? "user",
+        apiTokenId: "token_1",
+        user:
+          plan.userActive === false
+            ? null
+            : {
+                _id: "users_123",
+                role: plan.userRole ?? "user",
+              },
       };
     }
     throw new Error(`Unexpected runQuery args: ${JSON.stringify(args)}`);

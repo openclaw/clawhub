@@ -1,5 +1,4 @@
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { generateToken, hashToken } from "./lib/tokens";
@@ -62,13 +61,17 @@ export const revoke = mutation({
   },
 });
 
-export const getByHashInternal = internalQuery({
+export const getAuthByHashInternal = internalQuery({
   args: { tokenHash: v.string() },
   handler: async (ctx, args) => {
-    return ctx.db
+    const token = await ctx.db
       .query("apiTokens")
       .withIndex("by_hash", (q) => q.eq("tokenHash", args.tokenHash))
       .unique();
+    if (!token || token.revokedAt) return null;
+    // Resolve the token and account in one transaction so admission cannot join
+    // token state from one snapshot to account state from another.
+    return { apiTokenId: token._id, user: await ctx.db.get(token.userId) };
   },
 });
 
@@ -80,14 +83,5 @@ export const touchInternal = internalMutation({
     if (!token || token.revokedAt) return;
     if (token.lastUsedAt && now - token.lastUsedAt < TOKEN_TOUCH_MIN_INTERVAL_MS) return;
     await ctx.db.patch(token._id, { lastUsedAt: now });
-  },
-});
-
-export const getUserForTokenInternal = internalQuery({
-  args: { tokenId: v.id("apiTokens") },
-  handler: async (ctx, args): Promise<Doc<"users"> | null> => {
-    const token = await ctx.db.get(args.tokenId);
-    if (!token || token.revokedAt) return null;
-    return ctx.db.get(token.userId);
   },
 });

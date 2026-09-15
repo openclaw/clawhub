@@ -890,10 +890,7 @@ describe("downloads helpers", () => {
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("tokenHash" in args) {
-        return { _id: "apiTokens:1", revokedAt: undefined };
-      }
-      if ("tokenId" in args) {
-        return { _id: "users:token", deletedAt: undefined, deactivatedAt: undefined };
+        return { apiTokenId: "apiTokens:1", user: { _id: "users:token" } };
       }
       if ("slug" in args) {
         return {
