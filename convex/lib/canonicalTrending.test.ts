@@ -296,6 +296,9 @@ describe("canonical Trending cursors", () => {
 
 describe("canonical Trending cards", () => {
   it.each([
+    ["中文公文写作", "Draft or review Chinese official work documents"],
+    ["文書検索", "Search documents and summarize results for the user."],
+    ["Поиск документов", "Search documents and summarize results for the user."],
     ["Expense Check", "费用分摊表逐项核对，每条结论引用原文行号。触发词包括费用分摊表核对。"],
     [
       "Gestor de proyectos",
@@ -345,7 +348,7 @@ describe("canonical Trending cards", () => {
       {
         skillId: "skills:english" as never,
         slug: "project-helper",
-        displayName: "Project Helper",
+        displayName: "Résumé Builder",
         summary:
           "This skill helps you manage your projects and review changes before publishing them.",
         ownerUserId: "users:publisher" as never,

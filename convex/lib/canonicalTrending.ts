@@ -2,7 +2,7 @@ import { type Infer, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { isEnglishTrendingText } from "./trendingLanguage";
 
-export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v5";
+export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v6";
 export const CANONICAL_TRENDING_WINDOW_HOURS = 24;
 export const CANONICAL_TRENDING_FIRST_PAGE_SIZE = 20;
 export const CANONICAL_TRENDING_PUBLISHER_CAP = 2;

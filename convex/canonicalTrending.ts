@@ -1234,7 +1234,8 @@ export const getPageInternal = internalQuery({
     if (
       snapshot &&
       snapshot.rankingVersion !== CANONICAL_TRENDING_RANKING_VERSION &&
-      snapshot.rankingVersion !== "skills-trending-v4"
+      snapshot.rankingVersion !== "skills-trending-v4" &&
+      snapshot.rankingVersion !== "skills-trending-v5"
     ) {
       return { status: decoded ? ("expired" as const) : ("unavailable" as const) };
     }

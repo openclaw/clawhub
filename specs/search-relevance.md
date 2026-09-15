@@ -80,14 +80,16 @@ rising, and eligible skills.sh trending candidates. It must not be derived from 
 Suspicious or unavailable items are filtered before public display.
 
 Trending accepts only listings whose combined display name and description are detected as English
-by the pinned `franc-min` detector. Unidentified text is ineligible. This rule applies to both native
+by the pinned `franc-min` detector. Titles must use Latin letters; accents, numbers, punctuation,
+and symbols are allowed. An English description cannot make a title written in another script
+eligible. Unidentified text is ineligible. This rule applies to both native
 and skills.sh candidates before lane limits and blending, independent of publisher identity,
 geography, or viewer locale. It classifies the public listing text, not the full SKILL.md body;
 short or ambiguous descriptions can be excluded. Other browse, search, and install paths retain
 their existing language behavior.
 
 Snapshot reads recheck both the cached listing and its current source description, refilling pages
-after exclusions. Ranking version v5 invalidates old native candidate pools. Version v4 snapshots
+after exclusions. Ranking version v6 invalidates old native candidate pools. Version v4/v5 snapshots
 remain readable with these checks during deployment until materialization replaces them; their
 stored counts, like counts after other visibility changes, can temporarily overstate visible rows.
 

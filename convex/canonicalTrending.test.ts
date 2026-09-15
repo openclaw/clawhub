@@ -149,7 +149,7 @@ async function insertReadyNativePool(
 }
 
 describe("canonical Trending snapshot storage", () => {
-  it.each(["skills-trending-v4", CANONICAL_TRENDING_RANKING_VERSION])(
+  it.each(["skills-trending-v4", "skills-trending-v5", CANONICAL_TRENDING_RANKING_VERSION])(
     "filters cached and edited non-English listings before filling pages (%s)",
     async (rankingVersion) => {
       const t = convexTest(schema, modules);
@@ -173,7 +173,7 @@ describe("canonical Trending snapshot storage", () => {
         {
           ...nativeCard("clawhub:cached-chinese", 124),
           displayName: "公共费用分摊核对（免费版）",
-          summary: "费用分摊表逐项核对，每条结论引用原文行号。触发词包括费用分摊表核对。",
+          summary: "Draft or review Chinese official work documents",
         },
         nativeCard("clawhub:changed-language", 100),
         nativeCard("clawhub:english-first", 90),
