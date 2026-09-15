@@ -63,6 +63,7 @@ export function PluginListItem({
             kind="plugin"
             label={displayName}
             imageUrl={item.icon}
+            publisherImageUrl={item.ownerImage}
             categorySlug={primaryCategory?.slug}
             size="md"
           />
@@ -113,6 +114,7 @@ export function PluginListItem({
         kind="plugin"
         label={displayName}
         imageUrl={item.icon}
+        publisherImageUrl={item.ownerImage}
         categorySlug={primaryCategory?.slug}
       />
       <div className="skill-list-item-body">

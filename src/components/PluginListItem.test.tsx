@@ -84,7 +84,10 @@ describe("PluginListItem", () => {
   it("renders a hosted bundled plugin icon with safe image attributes", () => {
     render(
       <PluginListItem
-        item={makePlugin({ icon: `/api/v1/skill-icons/${"a".repeat(64)}` })}
+        item={makePlugin({
+          icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
+          ownerImage: "https://example.test/publisher.png",
+        })}
         variant="card"
       />,
     );
@@ -95,6 +98,35 @@ describe("PluginListItem", () => {
     expect(image?.getAttribute("referrerpolicy")).toBe("no-referrer");
     expect(image?.getAttribute("loading")).toBe("lazy");
     expect(image?.getAttribute("decoding")).toBe("async");
+  });
+
+  it.each(["list", "card"] as const)(
+    "uses the publisher profile image without a bundled icon in the %s variant",
+    (variant) => {
+      const { container } = render(
+        <PluginListItem
+          item={makePlugin({
+            icon: "https://composio.dev/favicon.ico",
+            ownerImage: "https://avatars.githubusercontent.com/u/128464815?v=4",
+          })}
+          variant={variant}
+        />,
+      );
+      expect(container.querySelector("img")?.getAttribute("src")).toBe(
+        "https://avatars.githubusercontent.com/u/128464815?v=4",
+      );
+    },
+  );
+
+  it("falls back to the category glyph when the publisher image fails to load", () => {
+    const { container } = render(
+      <PluginListItem
+        item={makePlugin({ categories: ["models"], ownerImage: "https://example.test/broken.png" })}
+      />,
+    );
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector(".lucide-brain")).toBeTruthy();
   });
 
   it("falls back to the category glyph when a bundled icon fails to load", () => {

@@ -76,7 +76,12 @@ the `@openclaw/` scope may recover it from `openclaw/openclaw`, using a full com
 SHA and an `extensions/<plugin>` path. Never fetch a moving branch, arbitrary
 manifest URL, or caller-selected host for this recovery. Missing/invalid images
 use the category glyph; transient fetch failures remain retryable. Plugin UI
-accepts only hosted presentation assets, including when old records contain URLs.
+accepts only hosted presentation assets as bundled icons, including when old
+records contain manifest URLs. Homepage and search listings without a bundled
+icon use the current publisher profile image when available, then the category
+glyph. Profile images remain separate from package icons and are resolved from
+the publisher already read for catalog identity, so profile updates need no
+package digest backfill. Images that fail to load fall back to the category glyph.
 
 `maintenance:repairPluginIconsInternal` repairs existing latest releases in
 bounded pages (default 10, maximum 25). It defaults to `dryRun: true`; repeat with

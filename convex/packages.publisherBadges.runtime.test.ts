@@ -26,6 +26,7 @@ describe("plugin publisher badges", () => {
           kind: "org",
           handle: "composio",
           displayName: "Composio",
+          image: "https://example.test/composio.png",
           createdAt: 1,
           updatedAt: 1,
         });
@@ -75,7 +76,7 @@ describe("plugin publisher badges", () => {
         });
         return { publisherId, badgeId };
       });
-      const assertCatalog = async (ownerOfficial: boolean) => {
+      const assertCatalog = async (ownerOfficial: boolean, ownerImage: string | null) => {
         for (const route of [
           "/api/v1/plugins/search?q=composio",
           "/api/v1/plugins",
@@ -91,20 +92,24 @@ describe("plugin publisher badges", () => {
             expect.objectContaining({
               ownerHandle: "composio",
               ownerOfficial,
+              ownerImage,
               isOfficial: false,
               channel: "community",
             }),
           ]);
         }
       };
-      await assertCatalog(true);
+      await assertCatalog(true, "https://example.test/composio.png");
       const officialOnly = await t.fetch("/api/v1/plugins/search?q=composio&isOfficial=true");
       expect((await officialOnly.json()).results).toEqual([]);
       // No package/digest write: revocation and grants must take effect immediately.
       await t.run(async (ctx) => {
         await ctx.db.delete(fixture.badgeId);
+        await ctx.db.patch(fixture.publisherId, {
+          image: "https://example.test/composio-updated.png",
+        });
       });
-      await assertCatalog(false);
+      await assertCatalog(false, "https://example.test/composio-updated.png");
       await t.run(async (ctx) => {
         await ctx.db.insert("officialPublishers", {
           publisherId: fixture.publisherId,
@@ -112,7 +117,11 @@ describe("plugin publisher badges", () => {
           updatedAt: 2,
         });
       });
-      await assertCatalog(true);
+      await assertCatalog(true, "https://example.test/composio-updated.png");
+      await t.run(async (ctx) => {
+        await ctx.db.patch(fixture.publisherId, { image: undefined });
+      });
+      await assertCatalog(true, null);
     },
   );
 });

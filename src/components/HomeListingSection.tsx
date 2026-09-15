@@ -234,6 +234,7 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
           kind="plugin"
           label={name}
           imageUrl={plugin.icon}
+          publisherImageUrl={plugin.ownerImage}
           categorySlug={plugin.categories?.[0]}
           size="sm"
         />

@@ -443,6 +443,7 @@ const PackageListItemFields = {
   summary: "string|null?",
   icon: "string|null?",
   ownerHandle: "string|null?",
+  ownerImage: "string|null?",
   ownerOfficial: "boolean?",
   createdAt: "number",
   updatedAt: "number",
