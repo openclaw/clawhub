@@ -820,7 +820,13 @@ describe("plugins publish route", () => {
     fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Remove GPU development keyword",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false);
     });
     expect(screen.queryByRole("button", { name: "Categories" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Remove GPU development keyword" }));
