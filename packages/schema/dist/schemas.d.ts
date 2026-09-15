@@ -760,6 +760,7 @@ export declare const ApiV1SkillScanBatchStatusResponseSchema: import("arktype/in
     terminal: number;
     done: boolean;
     failedJobIds: string[];
+    queuedJobIds?: string[] | undefined;
 }, {}>;
 export type ApiV1SkillScanBatchStatusResponse = (typeof ApiV1SkillScanBatchStatusResponseSchema)[inferred];
 export declare const ApiV1PackageScanBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{

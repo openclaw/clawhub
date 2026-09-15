@@ -178,8 +178,10 @@ jq '.inputs' worker-plan.json | gh workflow run security-scan-codex.yml --repo o
 ```
 
 The input is a JSON array of 1–10000 `securityScanJobs` IDs from saved admission
-receipts. Refresh their status first and pass only currently queued jobs from the
-intended bulk skill campaign. The output contains workflow `inputs` and explicit `deferredJobIds` for jobs
+receipts. Refresh their status first using the admin batch-status API and collect
+its `queuedJobIds` for the intended bulk skill campaign. Older servers omit this
+field; wait for the backend release instead of assigning all tracked IDs. Running,
+completed, failed and missing jobs must not occupy the bounded dispatch payload. The output contains workflow `inputs` and explicit `deferredJobIds` for jobs
 that do not fit this dispatch. Keep these IDs in the local backlog for later
 dispatches; never replace or discard them. A dispatch selects at most 1,728 IDs
 in input order across nine disjoint assignments (fewer if longer IDs reach the

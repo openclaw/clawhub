@@ -686,6 +686,8 @@ export const ApiV1SkillScanBatchStatusResponseSchema = type({
     terminal: "number",
     done: "boolean",
     failedJobIds: "string[]",
+    // Optional for clients talking to servers that predate local worker assignments.
+    queuedJobIds: "string[]?",
 });
 export const ApiV1PackageScanBatchRequestSchema = type({
     mode: '"all-active-latest"?',

@@ -562,6 +562,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   The dedicated priority shard remains unassigned and retains its normal queue.
   Assignment plans, admission baselines, receipts, cursor and capacity control
   remain local; no server-side campaign coordinator or assignment table is added.
+  Admin batch status exposes queued identities from the same bounded point reads
+  as its counts, so completed jobs in partial batches cannot fill the local
+  assignment payload. This is an observation; claims still recheck eligibility.
 - Normal scan claims read only enough ready queue rows to fill the worker's
   remaining capacity. Broader pagination is reserved for skipping blocked legacy
   GitHub jobs or the catalog lane's bounded admission window; disabling a rollout

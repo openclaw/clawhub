@@ -588,6 +588,7 @@ async function getBulkSkillRescanBatchStatus(ctx: QueryCtx, jobIds: Id<"security
   let failed = 0;
   let missing = 0;
   const failedJobIds: Id<"securityScanJobs">[] = [];
+  const queuedJobIds: Id<"securityScanJobs">[] = [];
 
   for (const jobId of jobIds) {
     const job = await ctx.db.get(jobId);
@@ -595,8 +596,10 @@ async function getBulkSkillRescanBatchStatus(ctx: QueryCtx, jobIds: Id<"security
       missing += 1;
       continue;
     }
-    if (job.status === "queued") queued += 1;
-    else if (job.status === "running") running += 1;
+    if (job.status === "queued") {
+      queued += 1;
+      queuedJobIds.push(job._id);
+    } else if (job.status === "running") running += 1;
     else if (job.status === "succeeded") succeeded += 1;
     else if (job.status === "failed") {
       failed += 1;
@@ -616,6 +619,7 @@ async function getBulkSkillRescanBatchStatus(ctx: QueryCtx, jobIds: Id<"security
     terminal,
     done: queued + running === 0,
     failedJobIds,
+    queuedJobIds,
   };
 }
 

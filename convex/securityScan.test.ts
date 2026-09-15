@@ -2811,6 +2811,7 @@ describe("securityScan", () => {
       terminal: 3,
       done: false,
       failedJobIds: ["securityScanJobs:failed"],
+      queuedJobIds: ["securityScanJobs:queued"],
     });
   });
 
