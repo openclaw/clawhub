@@ -1,25 +1,38 @@
 # Staff search intelligence
 
-ClawHub owns anonymous plugin search observations, daily aggregates, and the canonical
+ClawHub owns anonymous plugin and skill search observations, daily aggregates, and the canonical
 staff report used by Management, HTTP, the admin CLI, and the weekly digest.
 
 ## Trust and meaning
 
 - An official gap counts a completed visible response with `officialResultCount === 0`.
-  Capture computes that field only from returned authoritative `isOfficial === true`.
-- Daily facts retain normalized query, UTC date, source, artifact kind, category/topic
+  Capture computes that field only from returned authoritative catalog metadata.
+- Daily facts retain normalized query, UTC date, source, artifact kind, scope, category/topic
   dimensions, search count, zero-result count, and official-gap count. No identity,
   device, session, request, result snapshot, IP, or User-Agent data enters them.
 - A query can have some official-gap searches and some official-result searches. The
   Official gaps filter includes it when its selected window has at least one gap.
 - Weekly company intent is advisory, not provenance. Company opportunities require
-  company_product confidence >= 0.8 and at least three official-gap searches.
+  catalog scope, company_product confidence >= 0.8, and at least three official-gap
+  searches. Shelf and legacy rows cannot establish a catalog-wide company opportunity.
 - Current catalog enrichment uses at most three bounded public visible
   results per returned query. `metadataCheckedAt` labels its freshness. These are
-  not the historical results underlying official-gap counts. Suspicious, unpublished, and already Featured
-  results remain classifier context but cannot be Featured candidates. Featured
-  candidates alone require clean/installable gates. Candidate
-  order follows demand, never public Trending. Nothing is automatically featured.
+  not the historical results underlying official-gap counts. Public results failing
+  Featured eligibility may remain classifier context; private results are excluded.
+  Featured candidates alone require clean/installable gates. Shared type-specific hydration
+  owns eligibility for report results and recommendations: public installable plugin
+  releases, clean public native skill versions, and an existing local Featured owner.
+  External skill mirrors are explicit ineligible leads. Stable identities are
+  `plugin:<package-name>`, `clawhub:<skill-id>`, and `skills-sh:<external-id>`.
+  The separate advisory recommendation owner combines search evidence with existing
+  catalog-specific Trending/adoption evidence; it preserves each evidence period and
+  freshness instead of changing historical counts or public ranking. Nothing is
+  automatically featured.
+
+Management, HTTP, and CLI select `artifactKind: plugin | skill` (default plugin)
+and optional `scope: catalog | shelf | legacy` (omitted means all scopes, kept
+separate). Scope is part of every query row's identity. Existing rows without scope
+remain legacy/unknown; no migration guesses that they searched the whole catalog.
 
 ## Aggregation and retention
 
@@ -31,7 +44,9 @@ as an ingestion cursor: it would miss subsequent arrivals after an empty stream.
 Raw observations always expire after 30 days. A missed aggregation window older
 than that becomes an explicit query-free coverage gap, not extended raw retention.
 The singleton aggregation state stores only database position, revision, and
-coverage bounds. Daily facts and weekly derived classifications expire after 13
+coverage bounds, including the first skill observation. The existing singleton key
+and cursor remain unchanged across the additive skill upgrade. Skill coverage never
+inherits the plugin collection start. Daily facts and weekly derived classifications expire after 13
 calendar months (clamped at month-end), via indexed 500-row-per-table prune batches.
 There is no historical-log backfill.
 
@@ -55,7 +70,9 @@ the 1–100 output limit; `truncated` explicitly marks a shortlist. The paginate
 reads at most 100,000 daily rows and fails explicitly rather than silently truncating
 facts. An aggregation revision change during the read requires a refresh.
 
-Weekly classification storage is an atomic <=100-query replacement per week.
+Weekly classification storage is an atomic <=100-query replacement per week and
+artifact kind. Classification rows include scope; only catalog gaps enter the current
+classifier, and a matching query in a shelf or legacy row cannot inherit that advice.
 A query-free run record persists success/failure, expected/classified counts,
 model/version, processing time, and capped-scope flag, including failed and empty runs.
 A capped cohort is partial even when every query in that cohort was classified. The newest run

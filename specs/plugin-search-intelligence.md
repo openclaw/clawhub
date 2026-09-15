@@ -1,31 +1,38 @@
-# Plugin search intelligence
+# Plugin and skill search intelligence
 
-ClawHub owns the canonical product-data stream for manually initiated plugin
+ClawHub owns the canonical product-data stream for manually initiated plugin and skill
 searches. Generic request logs, Axiom, and Vercel page analytics are not sources
-of plugin-demand truth.
+of catalog-demand truth.
 
 ## Capture boundary
 
-Only completed requests to the combined plugin search boundary may produce a
-raw observation. The request must carry one recognized analytics-attribution
-marker:
+Completed combined plugin searches and canonical skill searches may produce a
+raw observation. Their response owner must receive one recognized analytics-attribution marker:
 
 - `clawhub-web`
 - `openclaw-control-ui`
 
 The marker is not authorization and grants no access or behavior. Missing or
-unknown markers are ignored. Generic package API, Skills, CLI, crawler, URL-load,
-and generic API requests remain unobserved unless a later product decision adds
-an explicit source.
+unknown HTTP markers are ignored. The web marks manual Header, full Search,
+Plugins, native Skills, and homepage searches. Homepage skill collection covers
+the native Featured, Official, and New shelves; Trending only filters its existing
+feed locally and remains unobserved. OpenClaw Control UI collection covers plugins,
+not skills. Generic package API, CLI, crawler, URL-load, and unmarked API requests
+remain unobserved.
 
 The observation is written after the visible response has been assembled, so
 `resultCount` and `officialResultCount` describe that exact response. Official
-means returned authoritative `package.isOfficial === true`, never truthiness,
-names, publisher guesses, popularity, ranking, relevance, or model judgment.
-Explicit plugin-family filtering can count; Skills and Claw families cannot.
-A request visibly aborted before persistence is excluded. A cancellation after
-server completion cannot retract an observation; no receipt or request tracking
-is introduced.
+means the returned catalog's authoritative metadata: plugin `package.isOfficial === true`;
+native skills' official badge or registry-backed official publisher, as used by the
+canonical search response. External skill mirrors have no native official status.
+Names, popularity, ranking, relevance, or model judgment never establish provenance.
+The server derives `scope: catalog` for an unfiltered catalog response and `scope: shelf`
+for a filtered response. The native homepage action requires Featured, Official, or
+New filters before recording; its source marker alone cannot establish shelf scope.
+An HTTP request visibly aborted before persistence is excluded. Native Convex actions
+have no Request abort signal, so a completed dispatched search can count after browser
+navigation. Neither transport retracts an observation after server completion; no
+receipt or request tracking is introduced.
 
 ## Privacy boundary
 
@@ -34,7 +41,8 @@ Raw observations contain only:
 - normalized query text (lowercase; surrounding and repeated whitespace only), at most256 characters
 - observation timestamp
 - bounded source
-- `artifactKind: "plugin"`
+- `artifactKind: "plugin" | "skill"`
+- server-derived `scope: "catalog" | "shelf"`
 - selected category and topic/intent filters, at most120 characters each
 - visible result and official-result counts
 
@@ -50,5 +58,9 @@ search authorization/private visibility is preserved but never copied into
 the observation.
 
 Raw observations expire after 30 days through indexed, bounded, resumable
-cleanup. Longer-lived daily aggregates are owned by a later layer and must not
-add identity or request metadata.
+cleanup. The existing observation table and aggregation cursor serve both catalogs;
+there is no second collection pipeline or historical-log backfill. Existing rows
+without scope remain explicitly legacy/unknown, and missing historical artifact kind
+means plugin. Skill coverage starts with its first recorded observation, never with
+the earlier plugin collection date. Longer-lived daily aggregates must not add
+identity or request metadata.

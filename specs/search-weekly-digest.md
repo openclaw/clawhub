@@ -1,4 +1,4 @@
-# Weekly plugin-search digest
+# Weekly plugin and skill search digest
 
 ClawHub owns the completed-week facts, classification, scheduling, and frozen
 delivery ledger. Hermit owns Discord credentials and the `maintainer-clawhub`
@@ -13,13 +13,23 @@ overlapping deliveries. Later ticks recover existing due failures, not historica
 weeks that were never collected. Preview/disabled-cron deployments register no job.
 
 The producer starts one bounded aggregation batch and retries if continuation is
-needed. It reads the canonical aggregate API for top demand, official gaps, and
-absolute week-over-week movers. The three reports must have the same ingestion
-revision. Source totals cover all rows before shortlist limits. Current catalog
-metadata is public and separate from historical result counts.
-Featured candidates and their metadata-availability status come exclusively from
-the demand cohort. A failed lookup for the separate gap/classifier cohort cannot
-erase successful Featured metadata or mislabel the Featured section.
+needed. It reads the shared recommendation owner and canonical aggregate API
+independently for plugins and skills. The reads must have the same ingestion revision.
+Source totals cover all rows before shortlist limits. Current catalog metadata and
+existing Trending/adoption snapshots remain separate from historical result counts,
+with their own periods, provenance, freshness and availability. A failed classifier
+lookup cannot erase successful recommendation metadata.
+
+New weeks freeze `search_intelligence_weekly_v2` with separate `plugins` and `skills`
+catalogs. Query rows and recommendation query evidence retain `catalog`, `shelf`,
+or `legacy` scope through producer validation, Hermit validation, and rendering.
+The same text in different scopes remains distinguishable; only catalog rows can
+be company opportunities. Recommendations reuse the canonical shared ordering and
+explain search-only, adoption-only, or combined support without a second scoring model.
+Existing frozen `plugin_search_weekly` payloads replay unchanged; the live v1 builder
+is removed. Deploy the compatible Hermit receiver before the coordinated ClawHub
+collection/recommendation/sender release; do not activate mixed-scope collection
+with the old scope-dropping live builder.
 
 Digest query rows require at least three searches. Official-gap/company rows
 require three official-gap searches; dropped-to-zero movers may qualify from the
@@ -32,7 +42,7 @@ preserves each section's leaders and all global totals, and marks the digest tru
 
 ## Advisory classifier
 
-Only the top 100 threshold-qualified aggregate official-gap queries enter the
+Only the top 100 threshold-qualified catalog official-gap queries per artifact kind enter the
 structured classifier. The egress allowlist is normalized query, aggregate search
 and official-gap counts, and at most three bounded public result names/summaries.
 No raw observation, identity, request context, URL, or provenance flag enters it.
@@ -47,7 +57,8 @@ the deterministic digest still ships. Capped successful cohorts are partial.
 The shared classification rows/run status and the frozen digest are committed in
 one claim-fenced transaction. Dashboard, CLI, and digest therefore use the same
 derived result. Retries never rerun the classifier or recalculate an already
-frozen payload.
+frozen payload. Historical replay preserves the original shape and deterministic
+receipt identity; it does not convert unknown-scope observations into catalog facts.
 
 ## Delivery and operations
 
