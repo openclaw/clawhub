@@ -303,7 +303,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   const initialTab =
     initialListing?.kind === "skills" && initialListing.trendingState === "unavailable"
       ? "featured"
-      : (initialListing?.tab ?? "trending");
+      : (initialListing?.tab ?? "featured");
   const [tab, setTab] = useState<ListingTab>(initialTab);
   const [categorySlug, setCategorySlug] = useState<string | undefined>();
   const [searchQuery, setSearchQuery] = useState("");
@@ -586,15 +586,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     manualSearchRef.current = null;
     setKind(nextKind);
     setCategorySlug(undefined);
-    setTab(
-      nextKind === "skills"
-        ? canonicalTrendingUnavailable
-          ? "featured"
-          : "trending"
-        : tab === "trending"
-          ? "featured"
-          : tab,
-    );
+    setTab(nextKind === "skills" || tab === "trending" ? "featured" : tab);
   };
 
   const handleTabChange = (nextTab: ListingTab) => {
