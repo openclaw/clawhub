@@ -3,13 +3,15 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
-import { buildSearchDigest, mondaySearchWeek, type SearchDigest } from "./lib/searchDigest";
+import { mondaySearchWeek } from "./lib/searchDigest";
 import {
   digestClassificationValidator,
   searchDigestValidator,
   SEARCH_DIGEST_MAX_BYTES,
+  type WeeklySearchDigest,
 } from "./lib/searchDigestContract";
 import { deliverSearchDigest } from "./lib/searchDigestDelivery";
+import { buildSearchEvidenceDigest, type DigestCatalogInput } from "./lib/searchEvidenceDigest";
 import { searchAggregateExpiration, type SearchInsightReport } from "./lib/searchInsights";
 import { classifySearchIntent } from "./lib/searchIntentClassifier";
 import { readReport } from "./searchInsights";
@@ -62,6 +64,13 @@ export const savePayloadInternal = internalMutation({
     attempt: v.number(),
     payload: searchDigestValidator,
     classification: v.optional(digestClassificationValidator),
+    catalogClassifications: v.optional(
+      v.array(
+        digestClassificationValidator.extend({
+          artifactKind: v.union(v.literal("plugin"), v.literal("skill")),
+        }),
+      ),
+    ),
   },
   handler: async (ctx, args): Promise<{ applied: boolean }> => {
     const record = await ctx.db
@@ -76,11 +85,15 @@ export const savePayloadInternal = internalMutation({
     )
       return { applied: false };
     const payload = args.payload;
+    const catalogs =
+      payload.kind === "plugin_search_weekly" ? [payload] : Object.values(payload.catalogs);
     const sections = [
-      payload.companyOpportunities,
-      payload.officialGaps,
-      payload.featuredCandidates,
-      payload.movers,
+      ...catalogs.flatMap((catalog) => [
+        catalog.companyOpportunities,
+        catalog.officialGaps,
+        catalog.movers,
+      ]),
+      ...(payload.kind === "plugin_search_weekly" ? [payload.featuredCandidates] : []),
     ];
     if (
       payload.weekEnd !== args.weekEnd ||
@@ -100,12 +113,32 @@ export const savePayloadInternal = internalMutation({
             !Number.isSafeInteger(row.previousSearches) ||
             row.previousSearches < 0,
         ) ||
-      sections
-        .slice(0, 3)
-        .flat()
-        .some((row) => row.searches < 3) ||
-      payload.movers.some((row) => Math.max(row.searches, row.previousSearches) < 3) ||
-      new TextEncoder().encode(JSON.stringify(payload)).byteLength > SEARCH_DIGEST_MAX_BYTES
+      catalogs.some(
+        (catalog) =>
+          [...catalog.companyOpportunities, ...catalog.officialGaps].some(
+            (row) => row.searches < 3,
+          ) || catalog.movers.some((row) => Math.max(row.searches, row.previousSearches) < 3),
+      ) ||
+      (payload.kind === "plugin_search_weekly"
+        ? payload.featuredCandidates.length > 5 ||
+          payload.featuredCandidates.some((row) => row.searches < 3)
+        : Object.values(payload.catalogs).some(
+            (catalog) =>
+              catalog.recommendations.length > 5 ||
+              catalog.recommendations.some(
+                (candidate) =>
+                  (candidate.support === "search-only" &&
+                    (candidate.search?.matchedSearches7d ?? 0) < 3) ||
+                  (candidate.search &&
+                    (candidate.search.queries.length > 3 ||
+                      candidate.search.queries.some((query) => query.searches7d < 3))),
+              ),
+          )) ||
+      new TextEncoder().encode(JSON.stringify(payload)).byteLength > SEARCH_DIGEST_MAX_BYTES ||
+      (args.catalogClassifications &&
+        (args.classification ||
+          args.catalogClassifications.length !== 2 ||
+          new Set(args.catalogClassifications.map((value) => value.artifactKind)).size !== 2))
     )
       throw new Error("Invalid bounded digest payload");
     // Classification and the frozen payload share this fenced transaction. A stale
@@ -113,6 +146,13 @@ export const savePayloadInternal = internalMutation({
     if (args.classification)
       await ctx.runMutation(internal.searchInsights.storeClassificationsInternal, {
         ...args.classification,
+        weekStart: payload.weekStart,
+        weekEnd: args.weekEnd,
+        processedAt: Date.now(),
+      });
+    for (const classification of args.catalogClassifications ?? [])
+      await ctx.runMutation(internal.searchInsights.storeClassificationsInternal, {
+        ...classification,
         weekStart: payload.weekStart,
         weekEnd: args.weekEnd,
         processedAt: Date.now(),
@@ -219,7 +259,7 @@ export const tickInternal = internalMutation({
 export const deliverInternal = internalAction({
   args: { weekEnd: v.number() },
   handler: async (ctx, { weekEnd }): Promise<{ delivered: boolean; skipped?: boolean }> => {
-    const claim: { weekEnd: number; attempt: number; payload?: SearchDigest } | null =
+    const claim: { weekEnd: number; attempt: number; payload?: WeeklySearchDigest } | null =
       await ctx.runMutation(internal.searchWeeklyDigest.claimInternal, { weekEnd });
     if (!claim) return { delivered: false, skipped: true };
     let payload = claim.payload;
@@ -234,80 +274,107 @@ export const deliverInternal = internalAction({
           internal.searchInsights.getAggregateStateInternal,
           {},
         );
-        const [demand, gaps, movers]: SearchInsightReport[] = await Promise.all([
-          readReport(ctx, { endDay: weekEnd, limit: 100 }),
-          readReport(ctx, {
-            endDay: weekEnd,
-            limit: 100,
-            scope: "catalog",
-            order: "official-gaps",
-            officialGap: true,
+        // Each catalog has its own bounded classifier cohort. Skills cannot be
+        // starved by plugin demand; shelves never become company opportunities.
+        const inputs = await Promise.all(
+          (["plugin", "skill"] as const).map(async (artifactKind) => {
+            const [intelligence, gaps, movers] = await Promise.all([
+              ctx.runAction(internal.featuredIntelligence.getInternal, {
+                artifactKind,
+                endDay: weekEnd,
+                limit: 100,
+              }),
+              readReport(ctx, {
+                artifactKind,
+                scope: "catalog",
+                endDay: weekEnd,
+                limit: 100,
+                order: "official-gaps",
+                officialGap: true,
+              }),
+              readReport(ctx, {
+                artifactKind,
+                endDay: weekEnd,
+                limit: 100,
+                order: "change",
+                includeCurrentResults: false,
+              }),
+            ]);
+            return { artifactKind, intelligence, gaps, movers };
           }),
-          readReport(ctx, {
-            endDay: weekEnd,
-            limit: 100,
-            order: "change",
-            includeCurrentResults: false,
-          }),
-        ]);
+        );
         const after: Doc<"searchAggregateStates"> | null = await ctx.runQuery(
           internal.searchInsights.getAggregateStateInternal,
           {},
         );
         if (before?.revision !== after?.revision) throw new Error("snapshot_changed");
-        const qualified = gaps.rows.filter(
-          (row) => row.scope === "catalog" && row.officialGaps7d >= 3,
+        const catalogs = await Promise.all(
+          inputs.map(async ({ artifactKind, intelligence, gaps, movers }) => {
+            const qualified = gaps.rows.filter(
+              (row) => row.scope === "catalog" && row.officialGaps7d >= 3,
+            );
+            const classification = await classifySearchIntent(
+              qualified.map((row) => ({
+                query: row.query,
+                searches: row.searches7d,
+                officialGaps: row.officialGaps7d,
+                topResults: row.currentResults.map((result) => ({
+                  name: result.name,
+                  displayName: result.displayName,
+                  summary: result.summary ?? "",
+                })),
+              })),
+              process.env.OPENAI_API_KEY,
+            );
+            const intentByQuery = new Map(classification.rows.map((row) => [row.query, row]));
+            const demand: SearchInsightReport = intelligence.searchReport;
+            const rows = [
+              ...new Map(
+                [...demand.rows, ...gaps.rows].map((row) => [`${row.scope}\0${row.query}`, row]),
+              ).values(),
+            ].map((row) => ({
+              ...row,
+              classification:
+                row.scope === "catalog" ? (intentByQuery.get(row.query) ?? null) : null,
+            }));
+            const input: DigestCatalogInput = {
+              totalSearches7d: demand.totalSearches7d,
+              sources7d: demand.sources7d,
+              classificationStatus:
+                classification.status === "available" && gaps.truncated
+                  ? "partial"
+                  : classification.status,
+              currentMetadataStatus: demand.currentMetadataStatus,
+              coverage: demand.coverage,
+              adoption: intelligence.adoption,
+              metadataCheckedAt: intelligence.metadataCheckedAt,
+              recommendations: intelligence.recommendations,
+              truncated: demand.truncated || gaps.truncated || movers.truncated,
+              rows,
+              moverRows: movers.rows,
+            };
+            return {
+              input,
+              classification: {
+                ...classification,
+                artifactKind,
+                rows: classification.rows.map((row) => ({ ...row, scope: "catalog" as const })),
+                expectedQualified: qualified.length,
+                truncated: gaps.truncated,
+              },
+            };
+          }),
         );
-        const classification = await classifySearchIntent(
-          qualified.map((row) => ({
-            query: row.query,
-            searches: row.searches7d,
-            officialGaps: row.officialGaps7d,
-            topResults: row.currentResults.map((result) => ({
-              name: result.name,
-              displayName: result.displayName,
-              summary: result.summary ?? "",
-            })),
-          })),
-          process.env.OPENAI_API_KEY,
-        );
-        const intentByQuery = new Map(classification.rows.map((row) => [row.query, row]));
-        const rows = [
-          ...new Map(
-            [...demand.rows, ...gaps.rows].map((row) => [`${row.scope}\0${row.query}`, row]),
-          ).values(),
-        ].map((row) => ({
-          ...row,
-          classification: row.scope === "catalog" ? (intentByQuery.get(row.query) ?? null) : null,
-        }));
-        payload = buildSearchDigest({
+        payload = buildSearchEvidenceDigest({
           weekEnd,
           siteUrl: process.env.SITE_URL?.trim() || "https://clawhub.ai",
-          totalSearches7d: demand.totalSearches7d,
-          sources7d: demand.sources7d,
-          classificationStatus:
-            classification.status === "available" && gaps.truncated
-              ? "partial"
-              : classification.status,
-          currentMetadataStatus: demand.currentMetadataStatus,
-          truncated: demand.truncated || gaps.truncated || movers.truncated,
-          coverage: demand.coverage,
-          rows,
-          // Featured hydration has its own canonical demand cohort. A failed
-          // gap-cohort lookup must not erase successfully fetched demand metadata.
-          featuredRows: demand.rows,
-          moverRows: movers.rows,
+          catalogs: { plugins: catalogs[0].input, skills: catalogs[1].input },
         });
         const frozen = await ctx.runMutation(internal.searchWeeklyDigest.savePayloadInternal, {
           weekEnd,
           attempt: claim.attempt,
           payload,
-          classification: {
-            ...classification,
-            rows: classification.rows.map((row) => ({ ...row, scope: "catalog" as const })),
-            expectedQualified: qualified.length,
-            truncated: gaps.truncated,
-          },
+          catalogClassifications: catalogs.map((catalog) => catalog.classification),
         });
         if (!frozen.applied) return { delivered: false, skipped: true };
       }

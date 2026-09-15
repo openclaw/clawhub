@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { type Infer, v } from "convex/values";
 
 export const SEARCH_DIGEST_MAX_BYTES = 30_000;
 
@@ -31,7 +31,7 @@ const row = v.object({
   officialGaps: v.number(),
   searchUrl: v.string(),
 });
-export const searchDigestValidator = v.object({
+export const legacySearchDigestValidator = v.object({
   kind: v.literal("plugin_search_weekly"),
   weekStart: v.number(),
   weekEnd: v.number(),
@@ -63,3 +63,104 @@ export const searchDigestValidator = v.object({
   ),
   movers: v.array(row),
 });
+
+const scope = v.union(v.literal("catalog"), v.literal("shelf"), v.literal("legacy"));
+const nullableNumber = v.union(v.number(), v.null());
+const nullableString = v.union(v.string(), v.null());
+export const searchRecommendationValidator = v.object({
+  artifactKind: v.union(v.literal("plugin"), v.literal("skill")),
+  id: v.string(),
+  displayName: v.string(),
+  url: v.string(),
+  category: nullableString,
+  support: v.union(v.literal("both"), v.literal("search-only"), v.literal("adoption-only")),
+  metadataCheckedAt: v.number(),
+  search: v.union(
+    v.null(),
+    v.object({
+      matchedSearches7d: v.number(),
+      previous7d: v.number(),
+      searches30d: v.number(),
+      queries: v.array(
+        v.object({
+          query: v.string(),
+          scope,
+          searches7d: v.number(),
+          previous7d: v.number(),
+          searches30d: v.number(),
+        }),
+      ),
+      omittedQueries: v.number(),
+      periodStart: v.number(),
+      periodEnd: v.number(),
+      dataThrough: nullableNumber,
+      collectionStartedAt: nullableNumber,
+    }),
+  ),
+  adoption: v.union(
+    v.null(),
+    v.object({
+      source: v.union(
+        v.literal("package-trending"),
+        v.literal("clawhub-trending"),
+        v.literal("clawhub-rising"),
+        v.literal("skills-sh-trending"),
+      ),
+      rank: nullableNumber,
+      snapshotId: nullableString,
+      rankingVersion: nullableString,
+      periodStart: nullableNumber,
+      periodEnd: nullableNumber,
+      generatedAt: nullableNumber,
+      sourceObservedAt: nullableNumber,
+      downloads: nullableNumber,
+      installs: nullableNumber,
+      bookmarks: nullableNumber,
+      lifetimeInstalls: nullableNumber,
+    }),
+  ),
+});
+const scopedRow = row.extend({ scope });
+const catalog = legacySearchDigestValidator
+  .pick(
+    "totalSearches",
+    "sourceCounts",
+    "coverage",
+    "classificationStatus",
+    "currentMetadataStatus",
+  )
+  .extend({
+    adoption: v.object({
+      status: v.union(v.literal("available"), v.literal("unavailable")),
+      generatedAt: nullableNumber,
+      periodStart: nullableNumber,
+      periodEnd: nullableNumber,
+      snapshotId: nullableString,
+      rankingVersion: nullableString,
+      totalItems: v.number(),
+      inspectedItems: v.number(),
+      truncated: v.boolean(),
+    }),
+    companyOpportunities: v.array(
+      scopedRow.extend({ companyProductName: v.optional(v.string()), confidence: v.number() }),
+    ),
+    officialGaps: v.array(scopedRow),
+    movers: v.array(scopedRow),
+    recommendations: v.array(searchRecommendationValidator),
+  });
+export const evidenceSearchDigestValidator = legacySearchDigestValidator
+  .pick("weekStart", "weekEnd", "minimumSearches", "dashboardUrl", "truncated")
+  .extend({
+    kind: v.literal("search_intelligence_weekly_v2"),
+    catalogs: v.object({ plugins: catalog, skills: catalog }),
+  });
+
+// Frozen weeks retain their original contract and receipt hash across upgrades.
+export const searchDigestValidator = v.union(
+  legacySearchDigestValidator,
+  evidenceSearchDigestValidator,
+);
+
+export type WeeklySearchDigest = Infer<typeof searchDigestValidator>;
+export type EvidenceSearchDigest = Infer<typeof evidenceSearchDigestValidator>;
+export type SearchRecommendation = Infer<typeof searchRecommendationValidator>;

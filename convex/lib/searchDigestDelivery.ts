@@ -1,7 +1,7 @@
-import type { SearchDigest } from "./searchDigest";
+import type { WeeklySearchDigest } from "./searchDigestContract";
 
 export async function deliverSearchDigest(
-  payload: SearchDigest,
+  payload: WeeklySearchDigest,
   baseUrl: string,
   token: string | undefined,
 ): Promise<{ delivered: true } | { delivered: false; failureCode: string }> {

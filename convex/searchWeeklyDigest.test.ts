@@ -1,8 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import type { Infer } from "convex/values";
 import { afterEach, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
-import { buildSearchDigest } from "./lib/searchDigest";
+import legacyFixture from "./fixtures/search-weekly-legacy.json";
+import type { legacySearchDigestValidator } from "./lib/searchDigestContract";
+import type { EvidenceSearchDigest } from "./lib/searchDigestContract";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -76,12 +79,18 @@ it("ships deterministic gaps when classification is unavailable, freezing one pa
   await t.action(internal.searchWeeklyDigest.deliverInternal, { weekEnd });
   expect(delivered).toHaveLength(1);
   expect(delivered[0]).toMatchObject({
-    totalSearches: 4,
-    sourceCounts: { clawhubWeb: 4, openclawControlUi: 0 },
-    classificationStatus: "unavailable",
-    companyOpportunities: [],
-    officialGaps: [{ query: "notion", searches: 4, officialGaps: 4 }],
-    movers: [{ query: "dropped", searches: 0, previousSearches: 9 }, { query: "notion" }],
+    kind: "search_intelligence_weekly_v2",
+    catalogs: {
+      plugins: {
+        totalSearches: 4,
+        sourceCounts: { clawhubWeb: 4, openclawControlUi: 0 },
+        classificationStatus: "unavailable",
+        companyOpportunities: [],
+        officialGaps: [{ query: "notion", searches: 4, officialGaps: 4 }],
+        movers: [{ query: "dropped", searches: 0, previousSearches: 9 }, { query: "notion" }],
+      },
+      skills: { totalSearches: 0 },
+    },
   });
   expect(
     await t.query(internal.searchInsights.getClassificationRunInternal, { endDay: weekEnd }),
@@ -130,7 +139,7 @@ it("classifies only the bounded aggregate gap cohort and shares the exact persis
   const providerInputs: Array<
     Array<{ query: string; searches: number; officialGaps: number; topResults: unknown[] }>
   > = [];
-  const deliveries: Array<ReturnType<typeof buildSearchDigest>> = [];
+  const deliveries: EvidenceSearchDigest[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init: RequestInit) => {
@@ -167,20 +176,21 @@ it("classifies only the bounded aggregate gap cohort and shares the exact persis
   );
   const t = convexTest(schema, modules);
   await t.run(async (ctx) => {
-    for (let i = 0; i < 102; i++)
-      await ctx.db.insert("searchDailyAggregates", {
-        query: `synthetic ${String(i).padStart(3, "0")}`,
-        dayStart: weekEnd - 86_400_000,
-        source: "clawhub-web",
-        artifactKind: "plugin",
-        scope: "catalog",
-        category: "",
-        intent: "",
-        searches: 5,
-        officialGaps: 4,
-        zeroResults: 0,
-        expirationTime: weekEnd + 400 * 86_400_000,
-      });
+    for (const artifactKind of ["plugin", "skill"] as const)
+      for (let i = 0; i < 102; i++)
+        await ctx.db.insert("searchDailyAggregates", {
+          query: `synthetic ${String(i).padStart(3, "0")}`,
+          dayStart: weekEnd - 86_400_000,
+          source: "clawhub-web",
+          artifactKind,
+          scope: "catalog",
+          category: "",
+          intent: "",
+          searches: 5,
+          officialGaps: 4,
+          zeroResults: 0,
+          expirationTime: weekEnd + 400 * 86_400_000,
+        });
     await ctx.db.insert("searchDailyAggregates", {
       query: "low volume",
       dayStart: weekEnd - 86_400_000,
@@ -195,7 +205,8 @@ it("classifies only the bounded aggregate gap cohort and shares the exact persis
     });
   });
   await t.action(internal.searchWeeklyDigest.deliverInternal, { weekEnd });
-  expect(providerInputs).toHaveLength(1);
+  expect(providerInputs).toHaveLength(2);
+  expect(providerInputs[1]).toHaveLength(100);
   expect(providerInputs[0]).toHaveLength(100);
   expect(
     providerInputs[0].every(
@@ -204,11 +215,15 @@ it("classifies only the bounded aggregate gap cohort and shares the exact persis
   ).toBe(true);
   expect(providerInputs[0].some((row) => row.query === "low volume")).toBe(false);
   expect(deliveries[0]).toMatchObject({
-    totalSearches: 512,
-    classificationStatus: "partial",
+    kind: "search_intelligence_weekly_v2",
     truncated: true,
+    catalogs: {
+      plugins: { totalSearches: 512, classificationStatus: "partial" },
+      skills: { totalSearches: 510, classificationStatus: "partial" },
+    },
   });
-  expect(deliveries[0].companyOpportunities).toHaveLength(5);
+  expect(deliveries[0].catalogs.plugins.companyOpportunities).toHaveLength(5);
+  expect(deliveries[0].catalogs.skills.companyOpportunities).toHaveLength(5);
   const report = await t.action(internal.searchInsights.getInternal, {
     endDay: weekEnd,
     includeCurrentResults: false,
@@ -275,16 +290,7 @@ it("freezes one identity-free payload for retries and records query-free deliver
   let now = weekEnd + 17 * 3_600_000;
   vi.spyOn(Date, "now").mockImplementation(() => now);
   const t = convexTest(schema, modules);
-  const payload = buildSearchDigest({
-    weekEnd,
-    siteUrl: "https://clawhub.ai",
-    totalSearches7d: 0,
-    sources7d: { "clawhub-web": 0, "openclaw-control-ui": 0 },
-    rows: [],
-    classificationStatus: "unavailable",
-    currentMetadataStatus: "unavailable",
-    truncated: false,
-  });
+  const payload = legacyFixture as Infer<typeof legacySearchDigestValidator>;
   await t.mutation(internal.searchWeeklyDigest.claimInternal, { weekEnd });
   expect(
     await t.mutation(internal.searchWeeklyDigest.savePayloadInternal, {
@@ -338,4 +344,38 @@ it("prunes only expired weekly payloads at the indexed retention boundary", asyn
     deleted: 2,
   });
   expect(await t.run((ctx) => ctx.db.query("searchWeeklyDigests").collect())).toHaveLength(1);
+});
+
+it("delivers a persisted legacy payload byte-for-byte after the v2 upgrade without rebuilding or classifying", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(weekEnd + 17 * 3_600_000);
+  vi.stubEnv("CLAWHUB_HERMIT_TOKEN", "fixture-only");
+  const payload = legacyFixture as Infer<typeof legacySearchDigestValidator>;
+  const t = convexTest(schema, modules);
+  await t.run((ctx) =>
+    ctx.db.insert("searchWeeklyDigests", {
+      weekEnd,
+      status: "failed",
+      attempts: 1,
+      claimedUntil: 0,
+      nextAttemptAt: 0,
+      expirationTime: weekEnd + 400 * 86_400_000,
+      payload,
+    }),
+  );
+  const persisted = await t.run((ctx) => ctx.db.query("searchWeeklyDigests").unique());
+  const requests: { url: string; body: unknown }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    requests.push({ url, body: init.body });
+    return Response.json({ ok: true, delivered: true, weekEnd });
+  });
+  expect(await t.action(internal.searchWeeklyDigest.deliverInternal, { weekEnd })).toEqual({
+    delivered: true,
+  });
+  expect(requests).toEqual([
+    {
+      url: "https://forms.openclaw.ai/api/clawhub-search-intelligence/weekly",
+      body: JSON.stringify(persisted!.payload),
+    },
+  ]);
+  expect(await t.run((ctx) => ctx.db.query("searchWeeklyClassifications").collect())).toEqual([]);
 });

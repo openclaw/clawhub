@@ -1,18 +1,11 @@
+import type { Infer } from "convex/values";
 import { afterEach, expect, it, vi } from "vitest";
-import { buildSearchDigest } from "./searchDigest";
+import legacyFixture from "../fixtures/search-weekly-legacy.json";
+import type { legacySearchDigestValidator } from "./searchDigestContract";
 import { deliverSearchDigest } from "./searchDigestDelivery";
 
 afterEach(() => vi.unstubAllGlobals());
-const payload = buildSearchDigest({
-  weekEnd: Date.parse("2026-09-07T00:00:00Z"),
-  siteUrl: "https://clawhub.ai",
-  totalSearches7d: 0,
-  sources7d: { "clawhub-web": 0, "openclaw-control-ui": 0 },
-  rows: [],
-  classificationStatus: "unavailable",
-  currentMetadataStatus: "unavailable",
-  truncated: false,
-});
+const payload = legacyFixture as Infer<typeof legacySearchDigestValidator>;
 
 it("sends only the frozen aggregate contract to authenticated Hermit and accepts confirmed duplicate receipt", async () => {
   const request = vi.fn(async () =>

@@ -1,0 +1,238 @@
+import { expect, it } from "vitest";
+import { buildSearchEvidenceDigest, type DigestCatalogInput } from "./searchEvidenceDigest";
+const weekEnd = Date.parse("2026-09-07T00:00:00Z");
+const catalog = (): DigestCatalogInput => ({
+  totalSearches7d: 25,
+  sources7d: { "clawhub-web": 20, "openclaw-control-ui": 5 },
+  classificationStatus: "available",
+  currentMetadataStatus: "available",
+  truncated: false,
+  coverage: {
+    dataThrough: weekEnd,
+    collectionStartedAt: weekEnd - 30 * 86_400_000,
+    gapStart: null,
+    gapEnd: null,
+  },
+  adoption: {
+    status: "available",
+    generatedAt: weekEnd + 86_400_000,
+    periodStart: weekEnd,
+    periodEnd: weekEnd + 86_400_000,
+    snapshotId: "latest",
+    rankingVersion: "v1",
+    totalItems: 1,
+    inspectedItems: 1,
+    truncated: false,
+  },
+  metadataCheckedAt: weekEnd + 86_400_000,
+  rows: [
+    {
+      query: "notion",
+      scope: "catalog",
+      searches7d: 5,
+      searchesPrevious7d: 1,
+      officialGaps7d: 5,
+      searchUrl: "/plugins?q=notion",
+      classification: { intentKind: "company_product", confidence: 0.9 },
+    },
+  ],
+  moverRows: [
+    {
+      query: "dropped",
+      scope: "catalog",
+      searches7d: 0,
+      searchesPrevious7d: 4,
+      officialGaps7d: 0,
+      searchUrl: "/plugins?q=dropped",
+      classification: null,
+    },
+  ],
+  recommendations: {
+    omittedCandidates: 0,
+    candidates: [
+      {
+        artifactKind: "plugin",
+        id: "plugin:memory",
+        displayName: "Memory",
+        url: "/plugins/memory",
+        category: null,
+        support: "both",
+        search: {
+          matchedSearches7d: 9,
+          previous7d: 0,
+          searches30d: 9,
+          queries: [
+            { query: "memory", scope: "catalog", searches7d: 4, previous7d: 0, searches30d: 4 },
+            { query: "memory", scope: "shelf", searches7d: 3, previous7d: 0, searches30d: 3 },
+            {
+              query: "rare private text",
+              scope: "catalog",
+              searches7d: 2,
+              previous7d: 0,
+              searches30d: 2,
+            },
+          ],
+          omittedQueries: 0,
+          periodStart: weekEnd - 604_800_000,
+          periodEnd: weekEnd,
+          dataThrough: weekEnd,
+          collectionStartedAt: weekEnd - 604_800_000,
+        },
+        adoption: {
+          source: "package-trending",
+          rank: 2,
+          snapshotId: "latest",
+          rankingVersion: "v1",
+          periodStart: weekEnd,
+          periodEnd: weekEnd + 86_400_000,
+          generatedAt: weekEnd + 86_400_000,
+          sourceObservedAt: null,
+          downloads: 341,
+          installs: 1,
+          bookmarks: null,
+          lifetimeInstalls: null,
+        },
+      },
+    ],
+  },
+});
+const build = (
+  plugins = catalog(),
+  skills: DigestCatalogInput = {
+    ...catalog(),
+    recommendations: { candidates: [], omittedCandidates: 0 },
+  },
+) =>
+  buildSearchEvidenceDigest({
+    weekEnd,
+    siteUrl: "https://clawhub.ai",
+    catalogs: { plugins, skills },
+  });
+
+it("projects both catalogs, separate periods and scoped demand without leaking identities or rare query text", () => {
+  const plugins = catalog();
+  Object.assign(plugins.recommendations.candidates[0], { userId: "private-identity" });
+  const skills = catalog();
+  skills.rows.push({ ...skills.rows[0], scope: "shelf" });
+  skills.recommendations.candidates = [
+    {
+      ...plugins.recommendations.candidates[0],
+      artifactKind: "skill",
+      id: "clawhub:skill",
+      support: "adoption-only",
+      search: null,
+      adoption: {
+        ...plugins.recommendations.candidates[0].adoption!,
+        source: "skills-sh-trending",
+        periodStart: null,
+        periodEnd: null,
+        sourceObservedAt: weekEnd - 86_400_000,
+      },
+    },
+  ];
+  const digest = build(plugins, skills);
+  expect(digest.catalogs.plugins.recommendations[0].search).toMatchObject({
+    matchedSearches7d: 9,
+    omittedQueries: 1,
+    queries: [{ scope: "catalog" }, { scope: "shelf" }],
+  });
+  expect(digest.catalogs.skills.recommendations[0]).toMatchObject({
+    search: null,
+    adoption: { sourceObservedAt: weekEnd - 86_400_000, periodStart: null, periodEnd: null },
+  });
+  expect(digest.catalogs.skills.companyOpportunities).toHaveLength(1);
+  expect(digest.catalogs.skills.officialGaps).toHaveLength(2);
+  expect(digest.catalogs.plugins.movers[0]).toMatchObject({
+    query: "dropped",
+    searches: 0,
+    previousSearches: 4,
+  });
+  expect(digest.catalogs.plugins.adoption.periodStart).toBe(weekEnd);
+  expect(JSON.stringify(digest)).not.toMatch(/rare private text|private-identity/);
+  expect(plugins.recommendations.candidates[0].search?.queries).toHaveLength(3);
+});
+
+it("retains canonical candidate order, suppresses low-volume search-only candidates and shows adoption with low demand", () => {
+  const input = catalog();
+  const base = input.recommendations.candidates[0];
+  input.recommendations.candidates = [
+    {
+      ...base,
+      id: "plugin:z-first",
+      search: {
+        ...base.search!,
+        matchedSearches7d: 2,
+        searches30d: 2,
+        queries: [base.search!.queries[2]],
+      },
+    },
+    {
+      ...base,
+      id: "plugin:excluded",
+      support: "search-only",
+      adoption: null,
+      search: {
+        ...base.search!,
+        matchedSearches7d: 2,
+        searches30d: 2,
+        queries: [base.search!.queries[2]],
+      },
+    },
+    { ...base, id: "plugin:a-next" },
+  ];
+  const digest = build(input);
+  expect(digest.catalogs.plugins.recommendations.map((row) => row.id)).toEqual([
+    "plugin:z-first",
+    "plugin:a-next",
+  ]);
+  expect(digest.catalogs.plugins.recommendations[0].search).toMatchObject({
+    matchedSearches7d: 2,
+    queries: [],
+    omittedQueries: 1,
+  });
+  expect(digest.truncated).toBe(true);
+});
+
+it("bounds sections and UTF-8 while preserving leading rows from each catalog and explicit omissions", () => {
+  const input = catalog();
+  input.rows = Array.from({ length: 6 }, (_, index) => ({
+    ...input.rows[0],
+    query: "界".repeat(190) + index,
+    searchUrl: `/plugins?q=${encodeURIComponent("界".repeat(190) + index)}`,
+  }));
+  input.moverRows = input.rows;
+  input.recommendations.candidates = Array.from({ length: 6 }, (_, index) => ({
+    ...input.recommendations.candidates[0],
+    id: `plugin:item-${index}`,
+    url: `/plugins/item-${index}?q=${"x".repeat(1700)}`,
+  }));
+  const skills = structuredClone(input);
+  skills.recommendations.candidates = skills.recommendations.candidates.map((row) => ({
+    ...row,
+    artifactKind: "skill",
+    id: row.id.replace("plugin:", "clawhub:"),
+    adoption: { ...row.adoption!, source: "clawhub-trending" },
+  }));
+  const result = build(input, skills);
+  expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(30_000);
+  expect(result.truncated).toBe(true);
+  for (const value of Object.values(result.catalogs)) {
+    expect(value.recommendations.length).toBeGreaterThan(0);
+    expect(value.recommendations.length).toBeLessThanOrEqual(5);
+    expect(value.recommendations[0].id).toContain("item-0");
+  }
+  expect(build(input, skills)).toEqual(result);
+});
+
+it("keeps deterministic gaps on classifier failure and independently checked adoption on search metadata failure", () => {
+  const input = catalog();
+  input.classificationStatus = "unavailable";
+  input.currentMetadataStatus = "unavailable";
+  input.rows.push({ ...input.rows[0], query: "rare", searches7d: 2, officialGaps7d: 2 });
+  const output = build(input).catalogs.plugins;
+  expect(output.companyOpportunities).toEqual([]);
+  expect(output.officialGaps.map((row) => row.query)).toEqual(["notion"]);
+  expect(output.recommendations.map((row) => row.id)).toEqual(["plugin:memory"]);
+  input.metadataCheckedAt = null;
+  expect(build(input).catalogs.plugins.recommendations).toEqual([]);
+});
