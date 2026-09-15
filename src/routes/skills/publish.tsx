@@ -317,8 +317,9 @@ export function Upload() {
     if (!existing?.latestVersion || !existing?.skill) return;
     const name = existing.skill.displayName;
     const nextSlug = existing.skill.slug;
-    if (nextSlug) setSlug(nextSlug);
-    if (name) setDisplayName(name);
+    // Live metadata refreshes may prefill untouched fields, never replace an author's draft.
+    if (nextSlug && !dirtyFields.slug) setSlug(nextSlug);
+    if (name && !dirtyFields.displayName) setDisplayName(name);
     if (!categoriesTouchedRef.current) {
       const nextCategories = (existing.skill.categories ?? []).filter(isSkillCategorySlug);
       setCategories((current) =>
@@ -337,8 +338,8 @@ export function Upload() {
       setSummary((current) => (current === nextSummary ? current : nextSummary));
     }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
-    if (nextVersion) setVersion(nextVersion);
-  }, [existing]);
+    if (nextVersion && !dirtyFields.version) setVersion(nextVersion);
+  }, [existing, dirtyFields.slug, dirtyFields.displayName, dirtyFields.version]);
 
   useEffect(() => {
     if (summaryTouchedRef.current) return;
