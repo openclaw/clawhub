@@ -333,24 +333,18 @@ export function Upload() {
       const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
       setTopics((current) => (current === nextTopics ? current : nextTopics));
     }
-    if (!summaryTouchedRef.current) {
-      const nextSummary = existing.skill.summary ?? "";
-      setSummary((current) => (current === nextSummary ? current : nextSummary));
-    }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion && !dirtyFields.version) setVersion(nextVersion);
   }, [existing, dirtyFields.slug, dirtyFields.displayName, dirtyFields.version]);
 
   useEffect(() => {
     if (summaryTouchedRef.current) return;
-    if (!uploadedSkillSummary) return;
-    const nextSummary = truncateSkillPublishSummary(
-      uploadedSkillSummary,
-      SKILL_PUBLISH_SUMMARY_MAX_LENGTH,
-    );
-    if (!nextSummary) return;
+    // Uploaded metadata belongs to this draft; subscription refreshes must not replace it.
+    const nextSummary = uploadedSkillSummary
+      ? truncateSkillPublishSummary(uploadedSkillSummary, SKILL_PUBLISH_SUMMARY_MAX_LENGTH)
+      : (existing?.skill?.summary ?? "");
     setSummary((current) => (current === nextSummary ? current : nextSummary));
-  }, [uploadedSkillSummary]);
+  }, [uploadedSkillSummary, existing?.skill?.summary]);
 
   useEffect(() => {
     // In update mode, default the Owner selector to the skill's current owner
