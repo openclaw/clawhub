@@ -1,7 +1,8 @@
 import { type Infer, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
+import { isEnglishTrendingText } from "./trendingLanguage";
 
-export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v4";
+export const CANONICAL_TRENDING_RANKING_VERSION = "skills-trending-v5";
 export const CANONICAL_TRENDING_WINDOW_HOURS = 24;
 export const CANONICAL_TRENDING_FIRST_PAGE_SIZE = 20;
 export const CANONICAL_TRENDING_PUBLISHER_CAP = 2;
@@ -143,7 +144,7 @@ export function buildNativeCanonicalTrendingCandidate(
   usage: { downloads: number; installs: number; bookmarks: number; updatedAt: number },
 ): CanonicalTrendingMaterializationCandidate | null {
   const ownerHandle = digest.ownerHandle?.trim();
-  if (!ownerHandle) return null;
+  if (!ownerHandle || !isEnglishTrendingText(digest.displayName, digest.summary)) return null;
   const official = Boolean(digest.badges?.official);
   const canonicalUrl = `/${encodeURIComponent(ownerHandle)}/skills/${encodeURIComponent(digest.slug)}`;
   const identity = `clawhub:${String(digest.skillId)}`;
@@ -211,6 +212,7 @@ export function buildExternalCanonicalTrendingCandidate(
   digest: ExternalTrendingDigest,
 ): CanonicalTrendingMaterializationCandidate | null {
   if (!Number.isSafeInteger(digest.trendingRank) || (digest.trendingRank ?? 0) < 1) return null;
+  if (!isEnglishTrendingText(digest.displayName, digest.searchSummary)) return null;
   const encodedIdentity = digest.externalId
     .split("/")
     .map((segment) => encodeURIComponent(segment))

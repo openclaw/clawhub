@@ -32,6 +32,25 @@ function candidate(
 }
 
 describe("canonical Trending ordering", () => {
+  it("excludes a Chinese-language skill from the native Trending candidates", () => {
+    expect(
+      buildNativeCanonicalTrendingCandidate(
+        {
+          skillId: "skills:chinese" as never,
+          slug: "expense-check",
+          displayName: "公共费用分摊核对（免费版）",
+          summary: "费用分摊表逐项核对，每条结论引用原文行号。触发词包括费用分摊表核对。",
+          ownerUserId: "users:publisher" as never,
+          ownerHandle: "publisher",
+          stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+          createdAt: 100,
+          updatedAt: 200,
+        },
+        { downloads: 124, installs: 0, bookmarks: 0, updatedAt: 300 },
+      ),
+    ).toBeNull();
+  });
+
   it("admits skills.sh only while its latest completed run is fresh", () => {
     expect(isFreshExternalTrendingRun({ runId: "run-1", completedAt: 8_001 }, 10_000, 2_000)).toBe(
       true,
@@ -276,6 +295,71 @@ describe("canonical Trending cursors", () => {
 });
 
 describe("canonical Trending cards", () => {
+  it.each([
+    ["Expense Check", "费用分摊表逐项核对，每条结论引用原文行号。触发词包括费用分摊表核对。"],
+    [
+      "Gestor de proyectos",
+      "Este asistente permite buscar documentos y organizar tareas para mejorar el trabajo del equipo.",
+    ],
+    [
+      "Gestion de projets",
+      "Cet assistant permet de rechercher des documents et de gérer les tâches de votre équipe.",
+    ],
+    [
+      "Projektverwaltung",
+      "Dieses Werkzeug hilft Ihnen dabei, Dokumente zu suchen und Aufgaben im Team zu verwalten.",
+    ],
+    [
+      "RouterOS",
+      "Ahli konfigurasi jaringan untuk membantu pengguna mengelola perangkat dan koneksi internet.",
+    ],
+    ["CLI", undefined],
+  ])(
+    "excludes non-English or unidentified skills.sh listings: %s",
+    (displayName, searchSummary) => {
+      expect(
+        buildExternalCanonicalTrendingCandidate({
+          externalId: "publisher/repository/skill",
+          owner: "publisher",
+          repo: "repository",
+          slug: "skill",
+          displayName,
+          searchSummary,
+          sourceUrl: "https://skills.sh/publisher/repository/skill",
+          upstreamInstalls: 100,
+          trendingRank: 1,
+          upstreamScanners: {
+            genAgentTrustHub: { status: "pass" },
+            socket: { status: "pass" },
+            snyk: { status: "pass" },
+          },
+          firstObservedAt: 100,
+          lastObservedAt: 200,
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it("keeps an English skill regardless of its publisher's name or handle", () => {
+    const result = buildNativeCanonicalTrendingCandidate(
+      {
+        skillId: "skills:english" as never,
+        slug: "project-helper",
+        displayName: "Project Helper",
+        summary:
+          "This skill helps you manage your projects and review changes before publishing them.",
+        ownerUserId: "users:publisher" as never,
+        ownerHandle: "chenqg618",
+        ownerDisplayName: "陈",
+        stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+        createdAt: 100,
+        updatedAt: 200,
+      },
+      { downloads: 124, installs: 0, bookmarks: 0, updatedAt: 300 },
+    );
+    expect(result?.card.publisher?.handle).toBe("chenqg618");
+  });
+
   it("keeps native 24-hour metrics separate from lifetime installs", () => {
     const result = buildNativeCanonicalTrendingCandidate(
       {
@@ -347,7 +431,7 @@ describe("canonical Trending cards", () => {
         skillId: "skills:native" as never,
         slug: "native",
         displayName: "Native",
-        summary: undefined,
+        summary: "Use this skill to search documents and summarize results for the user.",
         ownerUserId: "users:patrick" as never,
         ownerPublisherId: undefined,
         ownerHandle: "patrick",

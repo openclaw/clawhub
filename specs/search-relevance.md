@@ -75,9 +75,21 @@ install, star, and freshness signals so a large historical footprint cannot perm
 default page. Recommendation scores are refreshed by maintenance jobs because freshness changes even
 when an item receives no new events.
 
-Trending is a separate seven-day activity leaderboard built from daily install and download
-aggregates. It must not be derived from all-time totals. Skills and plugins expose the same
-trending concept; suspicious or unavailable items are filtered before public display.
+Skills Trending uses the canonical 24-hour activity snapshot, blending native trending, native
+rising, and eligible skills.sh trending candidates. It must not be derived from all-time totals.
+Suspicious or unavailable items are filtered before public display.
+
+Trending accepts only listings whose combined display name and description are detected as English
+by the pinned `franc-min` detector. Unidentified text is ineligible. This rule applies to both native
+and skills.sh candidates before lane limits and blending, independent of publisher identity,
+geography, or viewer locale. It classifies the public listing text, not the full SKILL.md body;
+short or ambiguous descriptions can be excluded. Other browse, search, and install paths retain
+their existing language behavior.
+
+Snapshot reads recheck both the cached listing and its current source description, refilling pages
+after exclusions. Ranking version v5 invalidates old native candidate pools. Version v4 snapshots
+remain readable with these checks during deployment until materialization replaces them; their
+stored counts, like counts after other visibility changes, can temporarily overstate visible rows.
 
 Publisher diversity is a product follow-up for browse ranking. The current contract guarantees
 freshness and bounded novelty, while preserving stable cursor pagination and trust filters.

@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import { CANONICAL_TRENDING_RANKING_VERSION } from "./lib/canonicalTrending";
 import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
 import schema from "./schema";
 
@@ -19,7 +20,7 @@ function nativeCard(id: string, installs24h: number) {
     source: "clawhub" as const,
     slug,
     displayName: slug,
-    summary: null,
+    summary: "Use this skill to search documents and summarize results for the user.",
     canonicalUrl: `/patrick/skills/${slug}`,
     links: { canonical: `/patrick/skills/${slug}`, source: null },
     publisher: {
@@ -68,6 +69,7 @@ async function insertEligibleNativeSource(t: ReturnType<typeof convexTest>, slug
     const skillId = await ctx.db.insert("skills", {
       slug,
       displayName: slug,
+      summary: "Use this skill to search documents and summarize results for the user.",
       ownerUserId: userId,
       tags: {},
       stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
@@ -87,6 +89,7 @@ async function insertEligibleNativeSource(t: ReturnType<typeof convexTest>, slug
       skillId,
       slug,
       displayName: slug,
+      summary: "Use this skill to search documents and summarize results for the user.",
       ownerUserId: userId,
       ownerHandle: "patrick",
       ownerKind: "user",
@@ -146,6 +149,87 @@ async function insertReadyNativePool(
 }
 
 describe("canonical Trending snapshot storage", () => {
+  it.each(["skills-trending-v4", CANONICAL_TRENDING_RANKING_VERSION])(
+    "filters cached and edited non-English listings before filling pages (%s)",
+    async (rankingVersion) => {
+      const t = convexTest(schema, modules);
+      const now = Date.now();
+      const english = await insertEligibleNativeSource(t, "document-search");
+      const changed = await insertEligibleNativeSource(t, "changed-language");
+      await t.run(async (ctx) => {
+        await ctx.db.patch(changed.digestId, {
+          summary:
+            "Este asistente permite buscar documentos y organizar tareas para mejorar el trabajo del equipo.",
+        });
+      });
+      await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
+        snapshotId: "skills-language-proof",
+        generatedAt: now,
+        expiresAt: now + 100_000,
+        windowStartDay: 40,
+        windowEndDay: 40,
+      });
+      const cards = [
+        {
+          ...nativeCard("clawhub:cached-chinese", 124),
+          displayName: "公共费用分摊核对（免费版）",
+          summary: "费用分摊表逐项核对，每条结论引用原文行号。触发词包括费用分摊表核对。",
+        },
+        nativeCard("clawhub:changed-language", 100),
+        nativeCard("clawhub:english-first", 90),
+        nativeCard("clawhub:english-second", 80),
+      ];
+      await t.mutation(internal.canonicalTrending.writeItemsInternal, {
+        snapshotId: "skills-language-proof",
+        items: cards.map((card, position) => ({
+          card,
+          position,
+          lane: "clawhub-trending" as const,
+          sourceRef: {
+            kind: "clawhub" as const,
+            skillId: position === 1 ? changed.skillId : english.skillId,
+          },
+        })),
+      });
+      await t.mutation(internal.canonicalTrending.finalizeSnapshotInternal, {
+        snapshotId: "skills-language-proof",
+        completedAt: now,
+        totalItems: 4,
+        sourceCounts: { clawhubTrending: 4, clawhubRising: 0, skillsShTrending: 0 },
+        operations: { documentsRead: 0, documentsWritten: 5, functionCalls: 3 },
+      });
+      await t.run(async (ctx) => {
+        const snapshot = await ctx.db.query("canonicalTrendingSnapshots").first();
+        await ctx.db.patch(snapshot!._id, { rankingVersion });
+      });
+      const first = await t.query(internal.canonicalTrending.getPageInternal, {
+        cursor: null,
+        limit: 1,
+      });
+      expect(first.status).toBe("ok");
+      if (first.status !== "ok") throw new Error("Expected a ready Trending page");
+      expect(first.page.items.map((item) => item.id)).toEqual(["clawhub:english-first"]);
+      expect(first.page.nextCursor).toEqual(expect.any(String));
+      const second = await t.query(internal.canonicalTrending.getPageInternal, {
+        cursor: first.page.nextCursor,
+        limit: 1,
+      });
+      expect(second.status).toBe("ok");
+      if (second.status !== "ok") throw new Error("Expected a ready Trending page");
+      expect(second.page.items.map((item) => item.id)).toEqual(["clawhub:english-second"]);
+      expect(second.page.nextCursor).toBeNull();
+      await t.run(async (ctx) => {
+        await ctx.db.patch(english.digestId, {
+          summary:
+            "Este asistente permite buscar documentos y organizar tareas para mejorar el trabajo del equipo.",
+        });
+      });
+      await expect(
+        t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+      ).resolves.toMatchObject({ status: "ok", page: { items: [], nextCursor: null } });
+    },
+  );
+
   it("selects the newest completed Trending run even when no digest references it", async () => {
     const t = convexTest(schema, modules);
     const makeRun = (snapshotId: string, startedAt: number) => ({
@@ -256,7 +340,7 @@ describe("canonical Trending snapshot storage", () => {
       snapshotId: "skills-1000",
       generatedAt: new Date(now - 1_000).toISOString(),
       windowHours: 24,
-      rankingVersion: "skills-trending-v4",
+      rankingVersion: CANONICAL_TRENDING_RANKING_VERSION,
       items: [
         { id: "clawhub:one", rank: 1, lane: "clawhub-trending" },
         { id: "clawhub:two", rank: 2, lane: "clawhub-trending" },
@@ -645,7 +729,7 @@ describe("canonical Trending snapshot storage", () => {
       snapshotId: "skills-native-preflight-ready",
       generatedAt: new Date(now - 1_000).toISOString(),
       windowHours: 24,
-      rankingVersion: "skills-trending-v4",
+      rankingVersion: CANONICAL_TRENDING_RANKING_VERSION,
       totalItems: 1,
       sourceCounts: { clawhubTrending: 1, clawhubRising: 0, skillsShTrending: 0 },
       operations: { documentsRead: 10, documentsWritten: 2, functionCalls: 3 },
@@ -1300,6 +1384,24 @@ describe("canonical Trending snapshot storage", () => {
           id: "skills-sh:patrick/repo/external",
         }),
       ],
+    });
+
+    await t.run(async (ctx) => {
+      const external = await ctx.db
+        .query("skillsShMirrorDigests")
+        .withIndex("by_external_id", (q) => q.eq("externalId", "patrick/repo/external"))
+        .unique();
+      if (!external) throw new Error("External fixture missing");
+      await ctx.db.patch(external._id, {
+        searchSummary:
+          "Esta herramienta permite buscar documentos y resumir los resultados para el usuario.",
+      });
+    });
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      page: { items: [{ source: "clawhub" }], nextCursor: null },
     });
   });
 });

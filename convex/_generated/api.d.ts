@@ -169,6 +169,7 @@ import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_storageDigests from "../lib/storageDigests.js";
 import type * as lib_testSeed from "../lib/testSeed.js";
 import type * as lib_tokens from "../lib/tokens.js";
+import type * as lib_trendingLanguage from "../lib/trendingLanguage.js";
 import type * as lib_userSearch from "../lib/userSearch.js";
 import type * as lib_userSkillStats from "../lib/userSkillStats.js";
 import type * as lib_verifiedClientIp from "../lib/verifiedClientIp.js";
@@ -399,6 +400,7 @@ declare const fullApi: ApiFromModules<{
   "lib/storageDigests": typeof lib_storageDigests;
   "lib/testSeed": typeof lib_testSeed;
   "lib/tokens": typeof lib_tokens;
+  "lib/trendingLanguage": typeof lib_trendingLanguage;
   "lib/userSearch": typeof lib_userSearch;
   "lib/userSkillStats": typeof lib_userSkillStats;
   "lib/verifiedClientIp": typeof lib_verifiedClientIp;

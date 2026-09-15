@@ -3,6 +3,7 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import { CANONICAL_TRENDING_RANKING_VERSION } from "./lib/canonicalTrending";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -122,7 +123,7 @@ describe("CLAW-590 permanent Test snapshot ownership", () => {
         snapshotId: SNAPSHOT_ID,
         kind: "skills",
         status: "failed",
-        rankingVersion: "skills-trending-v4",
+        rankingVersion: CANONICAL_TRENDING_RANKING_VERSION,
         generatedAt: 1_000,
         completedAt: 2_000,
         expiresAt: Date.now() + 100_000,
