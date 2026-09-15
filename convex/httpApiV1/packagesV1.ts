@@ -9,6 +9,7 @@ import {
   ApiV1PackageValidationReportPageSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageSecurityResponseSchema,
+  ApiV1PluginDetailResponseSchema,
   PackageHardDeleteRequestSchema,
   PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
@@ -30,6 +31,7 @@ import {
   PLUGIN_CATEGORY_DEFINITIONS,
   parseArk,
   type ApiV1PackageCategoriesBatchRequest,
+  type ApiV1PackageSecurityResponse,
   type ApiV1PluginOverviewResponse,
   type PackageListItem,
   type PackagePublishMetadata,
@@ -695,6 +697,33 @@ function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
   };
 }
 
+function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
+  const scanStatus = resolvePackageReleaseScanStatus(release);
+  const verification = release.verification ? { ...release.verification, scanStatus } : null;
+  return {
+    version: release.version,
+    createdAt: release.createdAt,
+    changelog: release.changelog,
+    distTags: release.distTags ?? [],
+    files: release.files.map((file) => ({
+      path: file.path,
+      size: file.size,
+      sha256: file.sha256,
+      contentType: file.contentType,
+    })),
+    compatibility: release.compatibility ?? null,
+    pluginManifestSummary: release.pluginManifestSummary ?? null,
+    clawManifestSummary: release.clawManifestSummary ?? null,
+    verification,
+    artifact: toReleaseArtifact(release, packageName),
+    sha256hash: release.sha256hash ?? null,
+    vtAnalysis: release.vtAnalysis ?? null,
+    skillSpectorAnalysis: release.skillSpectorAnalysis ?? null,
+    llmAnalysis: release.llmAnalysis ?? null,
+    staticScan: release.staticScan ?? null,
+  };
+}
+
 function toPackageReleaseSecurityResponse(params: {
   request: Request;
   pkg: PublicPackageDocLike;
@@ -1295,6 +1324,24 @@ function toSkillPackageDetail(
           handle: owner.handle ?? null,
           displayName: owner.displayName ?? null,
           image: owner.image ?? null,
+        }
+      : null,
+  };
+}
+
+function toPackageMetadataResponse(
+  pkg: PublicPackageDocLike,
+  owner: PublicPublisher | null,
+  tags: Record<string, string>,
+) {
+  return {
+    package: { ...toPackageDetailResponsePackage(pkg), tags },
+    owner: owner
+      ? {
+          handle: owner.handle ?? null,
+          displayName: owner.displayName ?? null,
+          image: owner.image ?? null,
+          official: owner.official === true,
         }
       : null,
   };
@@ -3816,6 +3863,34 @@ async function getReleaseForRequest(
   );
 }
 
+async function packageFileResponse(
+  ctx: ActionCtx,
+  release: ReleaseLike,
+  path: string,
+  preview: boolean,
+  headers: HeadersInit,
+) {
+  const securityBlock = getReleaseSecurityBlock(release);
+  if (securityBlock) return text(securityBlock.message, securityBlock.status, headers);
+  const file = resolvePackageFilePath(release, path);
+  if (!file) return text("File not found", 404, headers);
+  const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+  if (file.size > maxBytes) return text("File too large", 413, headers);
+  const blob = await ctx.storage.get(file.storageId);
+  if (!blob) return text("File not found", 404, headers);
+  const responseParams = {
+    blob,
+    path: file.path,
+    contentType: file.contentType,
+    sha256: file.sha256,
+    size: file.size,
+    headers: headers,
+  };
+  return preview
+    ? await safeStoredFilePreviewResponse(responseParams)
+    : await safeStoredFileResponse(responseParams);
+}
+
 function isReadmeVariantPath(path: string) {
   const normalized = path.trim().toLowerCase();
   return (
@@ -4343,6 +4418,50 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   if (!normalizedPackageName) return text("Package not found", 404, rate.headers);
 
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
+  if (packageSegments[0] === "detail" && packageSegments.length === 1) {
+    const version = new URL(request.url).searchParams.get("version")?.trim() || undefined;
+    const snapshot = await ctx.runQuery(internal.packages.getPluginDetailForViewerInternal, {
+      name: normalizedPackageName,
+      viewerUserId: viewerUserId ?? undefined,
+      version,
+    });
+    if (!snapshot) return text("Package not found", 404, rate.headers);
+    const release = snapshot.release;
+    if (version && !release) return text("Version not found", 404, rate.headers);
+    let readme: string | null = null;
+    let security: ApiV1PackageSecurityResponse | null = null;
+    if (release) {
+      const preview = await packageFileResponse(ctx, release, "README.md", true, rate.headers);
+      if (preview.ok) readme = await preview.text();
+      else if (![403, 404, 415, 423].includes(preview.status)) return preview;
+      try {
+        security = parseArk(
+          ApiV1PackageSecurityResponseSchema,
+          toPackageReleaseSecurityResponse({ request, pkg: snapshot.package, release }),
+          "Package security response",
+        );
+      } catch {
+        // Security is optional in the detail view; malformed historical scan
+        // metadata must not hide an otherwise readable package and README.
+      }
+    }
+    const { publicDownloadBlocked: _publicDownloadBlocked, ...pkg } = snapshot.package;
+    return json(
+      parseArk(
+        ApiV1PluginDetailResponseSchema,
+        {
+          ...toPackageMetadataResponse(pkg, snapshot.owner, snapshot.tags),
+          versions: snapshot.versions,
+          version: release ? toPackageVersionResponse(release, pkg.name) : null,
+          readme,
+          security,
+        },
+        "Plugin detail response",
+      ),
+      200,
+      rate.headers,
+    );
+  }
   if (
     packageSegments[0] === "versions" &&
     packageSegments[1] &&
@@ -4431,24 +4550,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const tags = await resolvePackageTags(ctx, publicPackage!.tags);
 
-    return json(
-      {
-        package: {
-          ...toPackageDetailResponsePackage(publicPackage!),
-          tags,
-        },
-        owner: packageOwner
-          ? {
-              handle: packageOwner.handle ?? null,
-              displayName: packageOwner.displayName ?? null,
-              image: packageOwner.image ?? null,
-              official: packageOwner.official === true,
-            }
-          : null,
-      },
-      200,
-      rate.headers,
-    );
+    return json(toPackageMetadataResponse(publicPackage!, packageOwner, tags), 200, rate.headers);
   }
 
   if (packageSegments[0] === "trusted-publisher" && packageSegments.length === 1) {
@@ -4638,10 +4740,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     if (!result) return text("Version not found", 404, rate.headers);
-    const scanStatus = resolvePackageReleaseScanStatus(result.version);
-    const verification = result.version.verification
-      ? { ...result.version.verification, scanStatus }
-      : null;
     return json(
       {
         package: {
@@ -4649,28 +4747,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           displayName: result.package.displayName,
           family: result.package.family,
         },
-        version: {
-          version: result.version.version,
-          createdAt: result.version.createdAt,
-          changelog: result.version.changelog,
-          distTags: result.version.distTags ?? [],
-          files: result.version.files.map((file) => ({
-            path: file.path,
-            size: file.size,
-            sha256: file.sha256,
-            contentType: file.contentType,
-          })),
-          compatibility: result.version.compatibility ?? null,
-          pluginManifestSummary: result.version.pluginManifestSummary ?? null,
-          clawManifestSummary: result.version.clawManifestSummary ?? null,
-          verification,
-          artifact: toReleaseArtifact(result.version, result.package.name),
-          sha256hash: result.version.sha256hash ?? null,
-          vtAnalysis: result.version.vtAnalysis ?? null,
-          skillSpectorAnalysis: result.version.skillSpectorAnalysis ?? null,
-          llmAnalysis: result.version.llmAnalysis ?? null,
-          staticScan: result.version.staticScan ?? null,
-        },
+        version: toPackageVersionResponse(result.version, result.package.name),
       },
       200,
       rate.headers,
@@ -4723,25 +4800,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const release = await getReleaseForRequest(ctx, publicPackage!, request);
     if (!release) return text("Version not found", 404, rate.headers);
-    const securityBlock = getReleaseSecurityBlock(release);
-    if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
-    const file = resolvePackageFilePath(release, path);
-    if (!file) return text("File not found", 404, rate.headers);
-    const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
-    if (file.size > maxBytes) return text("File too large", 413, rate.headers);
-    const blob = await ctx.storage.get(file.storageId);
-    if (!blob) return text("File not found", 404, rate.headers);
-    const responseParams = {
-      blob,
-      path: file.path,
-      contentType: file.contentType,
-      sha256: file.sha256,
-      size: file.size,
-      headers: rate.headers,
-    };
-    return preview
-      ? await safeStoredFilePreviewResponse(responseParams)
-      : await safeStoredFileResponse(responseParams);
+    return packageFileResponse(ctx, release, path, preview, rate.headers);
   }
 
   if (packageSegments[0] === "download") {

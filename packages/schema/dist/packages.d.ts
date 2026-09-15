@@ -958,6 +958,307 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
     };
 }, {}>;
 export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
+export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        createdAt: number;
+        updatedAt: number;
+        latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        tags: unknown;
+        compatibility?: {
+            pluginApiRange?: string | undefined;
+            builtWithOpenClawVersion?: string | undefined;
+            pluginSdkVersion?: string | undefined;
+            minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
+        } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
+        verification?: {
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
+            scope: "artifact-only" | "dependency-graph-aware";
+            summary?: string | undefined;
+            sourceRepo?: string | undefined;
+            sourceCommit?: string | undefined;
+            sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
+            hasProvenance?: boolean | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
+    } | null;
+    owner: {
+        handle: string | null;
+        displayName?: string | null | undefined;
+        image?: string | null | undefined;
+        official?: boolean | undefined;
+    } | null;
+    versions: {
+        items: {
+            version: string;
+            createdAt: number;
+            changelog: string;
+            distTags?: string[] | undefined;
+        }[];
+        nextCursor: string | null;
+    };
+    version: {
+        version: string;
+        createdAt: number;
+        changelog: string;
+        distTags?: string[] | undefined;
+        files: unknown;
+        compatibility?: {
+            pluginApiRange?: string | undefined;
+            builtWithOpenClawVersion?: string | undefined;
+            pluginSdkVersion?: string | undefined;
+            minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
+        } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
+        verification?: {
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
+            scope: "artifact-only" | "dependency-graph-aware";
+            summary?: string | undefined;
+            sourceRepo?: string | undefined;
+            sourceCommit?: string | undefined;
+            sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
+            hasProvenance?: boolean | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        sha256hash?: string | null | undefined;
+        vtAnalysis?: {
+            status: string;
+            verdict?: string | undefined;
+            analysis?: string | undefined;
+            source?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        skillSpectorAnalysis?: {
+            status: string;
+            score?: number | undefined;
+            severity?: string | undefined;
+            recommendation?: string | undefined;
+            issueCount: number;
+            issues: {
+                issueId: string;
+                category?: string | undefined;
+                pattern?: string | undefined;
+                severity: string;
+                confidence?: number | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                explanation: string;
+                remediation?: string | undefined;
+                finding?: string | undefined;
+                codeSnippet?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        aigAnalysis?: {
+            status: string;
+            issueCount: number;
+            findings: {
+                ruleId: string;
+                level: string;
+                message: string;
+                title?: string | undefined;
+                description?: string | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                remediation?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        llmAnalysis?: {
+            status: string;
+            verdict?: string | undefined;
+            confidence?: string | undefined;
+            summary?: string | undefined;
+            dimensions?: {
+                name: string;
+                label: string;
+                rating: string;
+                detail: string;
+            }[] | undefined;
+            guidance?: string | undefined;
+            findings?: string | undefined;
+            agenticRiskFindings?: unknown[] | undefined;
+            riskSummary?: unknown;
+            model?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        staticScan?: {
+            status: string;
+            reasonCodes: string[];
+            findings: {
+                code: string;
+                severity: string;
+                file: string;
+                line: number;
+                message: string;
+                evidence: string;
+            }[];
+            summary: string;
+            engineVersion: string;
+            checkedAt: number;
+        } | null | undefined;
+    } | null;
+    readme: string | null;
+    security: {
+        overview: string;
+        verdict?: string | undefined;
+        securityAuditUrl: string;
+        package: {
+            name: string;
+            displayName: string;
+            family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        };
+        release: {
+            releaseId: string;
+            version: string;
+            artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+            artifactSha256?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            createdAt: number;
+        };
+        trust: {
+            scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";
+            moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+            blockedFromDownload: boolean;
+            reasons: string[];
+            pending: boolean;
+            stale: boolean;
+        };
+    } | null;
+}, {}>;
+export type ApiV1PluginDetailResponse = (typeof ApiV1PluginDetailResponseSchema)[inferred];
 export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     state: "approved" | "quarantined" | "revoked";
     reason: string;

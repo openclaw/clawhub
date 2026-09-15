@@ -1352,6 +1352,10 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
       createdAt: release.createdAt,
     };
   }
+  return toPublicPluginRelease(release);
+}
+
+function toPublicPluginRelease(release: Doc<"packageReleases">) {
   const {
     capabilities: _capabilities,
     clawManifestSummary: _clawManifestSummary,
@@ -3286,6 +3290,22 @@ export async function readPackageForViewer(
   ctx: QueryCtx,
   args: { name: string; viewerUserId?: Id<"users"> },
 ) {
+  const snapshot = await readPackageSnapshotForViewer(ctx, args);
+  if (!snapshot) return null;
+  const { publicPackage, latestRelease, owner, pkg } = snapshot;
+  return {
+    package: publicPackage,
+    latestRelease: isPublishedPackageRelease(latestRelease)
+      ? toPublicPackageRelease(latestRelease, pkg.family)
+      : null,
+    owner,
+  };
+}
+
+async function readPackageSnapshotForViewer(
+  ctx: QueryCtx,
+  args: { name: string; viewerUserId?: Id<"users"> },
+) {
   const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
   if (!pkg) return null;
   const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
@@ -3298,14 +3318,68 @@ export async function readPackageForViewer(
       ownerUserId: pkg.ownerUserId,
     }),
   );
-  return {
-    package: publicPackage,
-    latestRelease: isPublishedPackageRelease(latestRelease)
-      ? toPublicPackageRelease(latestRelease, pkg.family)
-      : null,
-    owner,
-  };
+  return { pkg, publicPackage, latestRelease, owner };
 }
+
+export const getPluginDetailForViewerInternal = internalQuery({
+  args: {
+    name: v.string(),
+    version: v.optional(v.string()),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const snapshot = await readPackageSnapshotForViewer(ctx, args);
+    if (!snapshot) return null;
+    const { pkg, publicPackage, latestRelease, owner } = snapshot;
+    if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") return null;
+    const release =
+      !args.version || latestRelease?.version === args.version
+        ? latestRelease
+        : await ctx.db
+            .query("packageReleases")
+            .withIndex("by_package_version", (q) =>
+              q.eq("packageId", pkg._id).eq("version", args.version!),
+            )
+            .unique();
+    const selectedRelease = isPublishedPackageRelease(release) ? release : null;
+    // Select metadata, history and trust from one snapshot. The HTTP action only
+    // reads the selected README blob, so later reads cannot drift to a new release.
+    const [versions, taggedReleases, publicDownloadBlocked] = await Promise.all([
+      paginatePublishedPackageReleases(ctx, pkg._id, { cursor: null, numItems: 10 }),
+      Promise.all(Object.values(pkg.tags).map((id) => ctx.db.get(id))),
+      isPackageBlockedFromPublic(publicPackage.scanStatus)
+        ? viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId).then((allowed) => !allowed)
+        : false,
+    ]);
+    const tagVersions = new Map(
+      taggedReleases
+        .filter((tagged): tagged is Doc<"packageReleases"> =>
+          Boolean(tagged && !tagged.softDeletedAt),
+        )
+        .map((tagged) => [tagged._id, tagged.version]),
+    );
+    return {
+      package: { ...publicPackage, publicDownloadBlocked },
+      owner,
+      tags: Object.fromEntries(
+        Object.entries(pkg.tags).flatMap(([tag, id]) => {
+          const version = tagVersions.get(id);
+          return version ? [[tag, version]] : [];
+        }),
+      ),
+      release: selectedRelease ? toPublicPluginRelease(selectedRelease) : null,
+      versions: {
+        items: versions.page.map(({ version, createdAt, changelog, distTags }) => ({
+          version,
+          createdAt,
+          changelog,
+          distTags: distTags ?? [],
+        })),
+        nextCursor: versions.isDone ? null : versions.continueCursor,
+      },
+    };
+  },
+});
 
 export const listVersions = query({
   args: {

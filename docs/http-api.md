@@ -838,6 +838,21 @@ Notes:
 - Skills can also resolve through this route in the unified catalog.
 - Private packages return `404` unless the caller can read the owning publisher.
 
+### `GET /api/v1/packages/{name}/detail`
+
+Returns a plugin detail snapshot in one request: `package`, `owner`, `versions`
+(the first 10 published versions and `nextCursor`), the selected `version`,
+`readme`, and `security`. Existing package, version, and security field shapes are
+preserved. Code plugins and bundle plugins support this route.
+
+- `version` (optional query parameter) selects an exact release; otherwise the
+  current latest release is selected. A missing exact release returns `404`.
+- Package visibility and publisher permissions match the package metadata route.
+- Missing, moderation-blocked, or non-text README previews return `readme: null`.
+  The existing 200 KiB preview limit applies; oversized previews return `413`.
+- Security describes the selected release. Downloads still enforce their own
+  current moderation checks. Responses are not cached.
+
 ### `DELETE /api/v1/packages/{name}`
 
 Soft-deletes a package and all releases.
