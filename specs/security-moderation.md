@@ -554,6 +554,14 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
   dispatch count, worker batch limit, provider quotas, and cost monitoring.
+- Local bulk campaigns may assign disjoint lists of existing job IDs to shared
+  worker shards. Assigned claims read only those IDs, accept only queued, due,
+  ungated `bulk-rescan` skill-version jobs, and use the normal lease, hydration,
+  scan and result paths. They must not fall back to the general queue when an
+  assignment is empty or stale, claim package jobs, or retry terminal failures.
+  The dedicated priority shard remains unassigned and retains its normal queue.
+  Assignment plans, admission baselines, receipts, cursor and capacity control
+  remain local; no server-side campaign coordinator or assignment table is added.
 - Normal scan claims read only enough ready queue rows to fill the worker's
   remaining capacity. Broader pagination is reserved for skipping blocked legacy
   GitHub jobs or the catalog lane's bounded admission window; disabling a rollout

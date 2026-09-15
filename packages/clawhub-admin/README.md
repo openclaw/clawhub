@@ -163,3 +163,38 @@ resumes the reported next page. `--dry-run` reports would-queue counts without
 creating jobs or batch audit entries. `--json` emits batch/status/summary events;
 failed or missing jobs produce a nonzero exit, and `--fail-fast` stops after the
 first failed batch drains.
+
+### Local bulk scan assignments
+
+`skills plan-scan-workers` prepares workflow inputs locally from **existing admitted
+job IDs**, split across the nine shared shards. It does not admit scans, dispatch
+workers, change capacity automatically, or store campaign state on the server.
+The reserved priority shard continues processing its normal queue.
+
+```sh
+bun run admin -- skills plan-scan-workers queued-job-ids.json --batch-limit 32 > worker-plan.json
+# After validating the worker/backend release and the capacity probe:
+jq '.inputs' worker-plan.json | gh workflow run security-scan-codex.yml --repo openclaw/clawhub --ref main --json
+```
+
+The input is a JSON array of 1–10000 `securityScanJobs` IDs from saved admission
+receipts. Refresh their status first and pass only currently queued jobs from the
+intended bulk skill campaign. The output contains workflow `inputs` and explicit `deferredJobIds` for jobs
+that do not fit this dispatch. Keep these IDs in the local backlog for later
+dispatches; never replace or discard them. A dispatch selects at most 1,728 IDs
+in input order across nine disjoint assignments (fewer if longer IDs reach the
+workflow input payload limit),
+with stable job-to-shard ownership across dispatches and at most 512 IDs per shard, and a twelve-minute claim window. An explicitly
+empty shard stays empty; it never falls back to unrelated jobs. Without assignments,
+the worker retains its usual queue behavior.
+
+The local orchestrator owns the admission cursor, exact-version baselines and
+hashes, receipts, dispatch history, capacity policy, and reconciliation. It must
+save workflow inputs before dispatch and retain them if dispatch acknowledgement
+is uncertain. Backend lease/status checks prevent duplicate active leases;
+redispatching a stale plan cannot retry a permanent failure or create new jobs.
+Automatic retries keep their existing IDs and become eligible in a later dispatch
+once their normal retry delay expires. Keep the five-minute dispatch interval,
+original scope exclusions and scanner settings; qualify capacity using actual
+completed scans and raw claim errors, rather than treating assignment count as
+throughput. A 32 setting is a probe, not a claim of qualified capacity.

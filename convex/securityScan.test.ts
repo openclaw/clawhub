@@ -63,6 +63,7 @@ const claimCodexScanJobLeasesHandler = (
       limit?: number;
       leaseMs?: number;
       targetedJobIds?: string[];
+      assignedJobIds?: string[];
     },
     Array<ScanJob & { leaseToken: string; workerId: string }>
   >
@@ -85,6 +86,7 @@ const claimQueuedJobsInternalHandler = (
       limit: number;
       leaseMs?: number;
       targetedJobIds?: string[];
+      assignedJobIds?: string[];
     },
     Array<ScanJob & { leaseToken: string; workerId: string }>
   >
@@ -4147,6 +4149,87 @@ describe("securityScan", () => {
         targetedJobIds: ["securityScanJobs:github-sync"],
       }),
     ).rejects.toThrow("Exact GitHub Skill Sync job claims are Test-only");
+  });
+
+  it("claims only locally assigned bulk skill jobs without reading the shared queue", async () => {
+    const jobs = [
+      makeScanJob({ _id: "securityScanJobs:assigned", source: "bulk-rescan", nextRunAt: 1 }),
+      makeScanJob({ _id: "securityScanJobs:unassigned", source: "bulk-rescan", nextRunAt: 1 }),
+      makeScanJob({ _id: "securityScanJobs:priority", source: "publish", nextRunAt: 1 }),
+    ];
+    const { ctx } = makeClaimCtx(jobs);
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "local-assignment",
+      lane: "shared",
+      limit: 32,
+      assignedJobIds: ["securityScanJobs:assigned", "securityScanJobs:priority"],
+    });
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:assigned"]);
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("keeps stale, failed, deferred, package and gated assignments out of claims", async () => {
+    const jobs = [
+      makeScanJob({ _id: "securityScanJobs:running", source: "bulk-rescan", status: "running" }),
+      makeScanJob({ _id: "securityScanJobs:failed", source: "bulk-rescan", status: "failed" }),
+      makeScanJob({
+        _id: "securityScanJobs:future",
+        source: "bulk-rescan",
+        nextRunAt: Date.now() + 60000,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:package",
+        source: "bulk-rescan",
+        targetKind: "packageRelease",
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:gated",
+        source: "bulk-rescan",
+        rolloutGate: "github-skill-sync",
+      }),
+    ];
+    const { ctx, patches } = makeClaimCtx(jobs);
+    for (const assignedJobIds of [[], jobs.map((job) => job._id)]) {
+      expect(
+        await claimQueuedJobsInternalHandler(ctx, {
+          workerId: "assigned",
+          lane: "shared",
+          limit: 32,
+          assignedJobIds,
+        }),
+      ).toEqual([]);
+    }
+    expect(patches).toEqual([]);
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("bounds assignment reads and rejects assignments in the reserved lane or mixed Test mode", async () => {
+    const { ctx } = makeClaimCtx([]);
+    await expect(
+      claimQueuedJobsInternalHandler(ctx, {
+        workerId: "assigned",
+        lane: "priority",
+        limit: 32,
+        assignedJobIds: [],
+      }),
+    ).rejects.toThrow("shared lane");
+    await expect(
+      claimQueuedJobsInternalHandler(ctx, {
+        workerId: "assigned",
+        lane: "shared",
+        limit: 32,
+        assignedJobIds: [],
+        targetedJobIds: [],
+      }),
+    ).rejects.toThrow("no Test targets");
+    await expect(
+      claimQueuedJobsInternalHandler(ctx, {
+        workerId: "assigned",
+        lane: "shared",
+        limit: 32,
+        assignedJobIds: Array.from({ length: 513 }, () => "securityScanJobs:assigned"),
+      }),
+    ).rejects.toThrow("maximum 512");
   });
 
   it("claims bulk rescans after every supported source", async () => {

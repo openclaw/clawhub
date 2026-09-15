@@ -8,6 +8,7 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
+import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
 import { createWorkerLogger } from "../lib/workerLogger";
@@ -2408,6 +2409,20 @@ async function main() {
     await sleep(sharedShardIndex * 250);
   }
 
+  let assignedJobIds = readWorkerAssignment(
+    process.env.CODEX_SECURITY_SCAN_ASSIGNED_JOBS,
+    lane,
+    process.env.CODEX_SECURITY_SCAN_SHARD,
+  );
+  logger.info(
+    {
+      event: "security_scan_assignment",
+      mode: assignedJobIds === undefined ? "queue" : "assigned",
+      assignedJobs: assignedJobIds?.length,
+      workerId,
+    },
+    "security scan job assignment",
+  );
   const stats = await runContinuouslyRefilledWorkerPool({
     concurrency: batchLimit,
     maxJobs,
@@ -2419,7 +2434,14 @@ async function main() {
         lane,
         limit,
         leaseMs,
+        assignedJobIds: assignedJobIds as Id<"securityScanJobs">[] | undefined,
       })) as ClaimedJobLease[];
+      // Stop reading running/completed jobs during refills. Automatic retries remain
+      // on the same backend IDs and are picked up by a later local dispatch.
+      if (assignedJobIds !== undefined) {
+        const claimed = new Set(leases.map((lease) => lease._id));
+        assignedJobIds = assignedJobIds.filter((id) => !claimed.has(id));
+      }
       const hydrated = await Promise.all(
         leases.map(async (lease) => {
           try {

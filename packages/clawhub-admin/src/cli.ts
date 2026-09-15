@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
@@ -74,6 +74,7 @@ import {
   cmdUpdatePromotion,
 } from "./commands/promotions.js";
 import { cmdHardDeleteSkill } from "./commands/skills.js";
+import { planScanWorkers } from "./scanAssignments.js";
 
 const program = new Command()
   .name("clawhub-admin")
@@ -358,6 +359,15 @@ const skills = program
   .description("Skill artifact moderation")
   .showHelpAfterError()
   .showSuggestionAfterError();
+
+skills
+  .command("plan-scan-workers <job-ids-file>")
+  .description("Prepare local workflow inputs for disjoint, already-admitted bulk skill jobs")
+  .requiredOption("--batch-limit <number>", "Scans in parallel per shared worker")
+  .action(async (file: string, options: { batchLimit: string }) => {
+    const ids: unknown = JSON.parse(await readFile(resolve(file), "utf8"));
+    console.log(JSON.stringify(planScanWorkers(ids, Number(options.batchLimit)), null, 2));
+  });
 
 const promotions = program
   .command("promotions")

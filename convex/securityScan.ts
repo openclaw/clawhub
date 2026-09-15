@@ -3131,6 +3131,7 @@ export const claimQueuedJobsInternal = internalMutation({
     limit: v.number(),
     leaseMs: v.optional(v.number()),
     targetedJobIds: v.optional(v.array(v.id("securityScanJobs"))),
+    assignedJobIds: v.optional(v.array(v.id("securityScanJobs"))),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -3257,7 +3258,30 @@ export const claimQueuedJobsInternal = internalMutation({
     };
 
     const targetedJobIds = args.targetedJobIds;
-    if (targetedJobIds !== undefined) {
+    if (args.assignedJobIds !== undefined) {
+      if (args.lane !== "shared" || targetedJobIds !== undefined) {
+        throw new ConvexError("Bulk job assignments require the shared lane and no Test targets");
+      }
+      if (args.assignedJobIds.length > 512) {
+        throw new ConvexError("Too many assigned bulk jobs requested (maximum 512)");
+      }
+      // Local coordinators give workers disjoint IDs. Point reads avoid the shared
+      // queue-head read range, whose changes caused claims to conflict at high fanout.
+      // An empty or stale assignment must never fall back to the general queue.
+      for (const jobId of new Set(args.assignedJobIds)) {
+        if (remainingCapacity() === 0) break;
+        const job = await ctx.db.get(jobId);
+        if (
+          job?.status === "queued" &&
+          job.source === "bulk-rescan" &&
+          job.targetKind === "skillVersion" &&
+          !job.rolloutGate &&
+          job.nextRunAt <= now
+        ) {
+          addReadyJobs([job]);
+        }
+      }
+    } else if (targetedJobIds !== undefined) {
       const rollout = getRuntimeRolloutCapabilities();
       if (
         rollout.environment !== "test" ||
@@ -4043,6 +4067,7 @@ export const claimCodexScanJobLeases = action({
     limit: v.optional(v.number()),
     leaseMs: v.optional(v.number()),
     targetedJobIds: v.optional(v.array(v.id("securityScanJobs"))),
+    assignedJobIds: v.optional(v.array(v.id("securityScanJobs"))),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
@@ -4055,6 +4080,7 @@ export const claimCodexScanJobLeases = action({
         limit: normalizeLimit(args.limit),
         leaseMs: args.leaseMs,
         targetedJobIds: args.targetedJobIds,
+        assignedJobIds: args.assignedJobIds,
       },
     );
   },
