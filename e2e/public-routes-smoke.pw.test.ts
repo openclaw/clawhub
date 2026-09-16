@@ -268,22 +268,17 @@ test("skill hero metadata keeps semantic wrap groups on mobile", async ({ page }
   );
   expect(creatorTypeSizes[1]).toBeLessThan(creatorTypeSizes[0]!);
   await expect(creatorHandle).toHaveCSS("font-size", "12px");
-  const creatorColors = await creatorHandle.evaluate((handleElement) => {
-    const nameElement = handleElement.closest(".skill-hero-creator")?.querySelector(".user-name");
-    if (!nameElement) throw new Error("Creator display name is missing");
+  const secondaryColor = await creatorHandle.evaluate((handleElement) => {
     const secondaryProbe = document.createElement("span");
     secondaryProbe.style.color = "var(--ink-soft)";
-    document.body.append(secondaryProbe);
-    const colors = {
-      handle: getComputedStyle(handleElement).color,
-      name: getComputedStyle(nameElement).color,
-      secondary: getComputedStyle(secondaryProbe).color,
-    };
+    handleElement.parentElement!.append(secondaryProbe);
+    const color = getComputedStyle(secondaryProbe).color;
     secondaryProbe.remove();
-    return colors;
+    return color;
   });
-  expect(creatorColors.handle).toBe(creatorColors.secondary);
-  expect(creatorColors.handle).not.toBe(creatorColors.name);
+  // Hydration can start a theme color transition; wait for its observable result.
+  await expect(creatorHandle).toHaveCSS("color", secondaryColor);
+  await expect(creatorName).not.toHaveCSS("color", secondaryColor);
   await expect(taxonomy.locator(".skill-hero-taxonomy-separator").first()).not.toHaveCSS(
     "display",
     "none",
