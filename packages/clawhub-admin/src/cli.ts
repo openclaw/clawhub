@@ -389,20 +389,20 @@ const promotions = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
-const featured = program
+const featuredSelections = program
   .command("featured")
   .description("Review editorial reservations and publish approved complete catalog selections");
-featured
+featuredSelections
   .command("get <catalog>")
   .description("Read current plugin or skill editorial reservations and publication (JSON)")
   .action(async (catalog) => cmdFeaturedSelection(await resolveGlobalOpts(), catalog, "get"));
-featured
+featuredSelections
   .command("editorial <file>")
   .description("Save plugin editorial reservations from revision-checked JSON; does not publish")
   .action(async (file) =>
     cmdFeaturedSelection(await resolveGlobalOpts(), "plugin", "editorial", file),
   );
-featured
+featuredSelections
   .command("publish <catalog> <file>")
   .description("Validate a reviewed complete selection; publish only with --apply")
   .option("--apply", "Apply this approved selection atomically (default is dry run)")

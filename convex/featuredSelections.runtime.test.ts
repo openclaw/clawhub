@@ -81,7 +81,7 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
   const actorUserId = await t.run(async (ctx) => (await ctx.db.query("users").first())!._id);
   for (const artifactKind of ["plugin", "skill"] as const) {
     const items = await t.run(async (ctx) => {
-      const items = [];
+      const seededItems = [];
       const storageId = await ctx.storage.store(new Blob(["fixture"]));
       const files = [{ path: "SKILL.md", size: 7, storageId, sha256: "a".repeat(64) }];
       for (let i = 0; i < 17; i++) {
@@ -156,7 +156,7 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
             });
           id = `clawhub:${skillId}`;
         }
-        items.push({
+        seededItems.push({
           id,
           version: "1.0.0",
           selectionBasis:
@@ -165,7 +165,7 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
           ...(artifactKind === "skill" || i >= 8 ? { installs30d: 40 - i, installs7d: 2 } : {}),
         });
       }
-      return items;
+      return seededItems;
     });
     if (artifactKind === "plugin")
       await staff.mutation(api.featuredSelections.saveEditorial, {
