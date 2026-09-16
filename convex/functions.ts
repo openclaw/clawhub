@@ -438,6 +438,8 @@ triggers.register("skillVersions", async (ctx, change) => {
   if (
     change.operation === "update" &&
     change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt &&
+    change.oldDoc.ownerDeletedAt === change.newDoc.ownerDeletedAt &&
+    change.oldDoc.publicationStatus === change.newDoc.publicationStatus &&
     change.oldDoc.vtAnalysis?.status === change.newDoc.vtAnalysis?.status &&
     (change.oldDoc.llmAnalysis?.verdict ?? change.oldDoc.llmAnalysis?.status) ===
       (change.newDoc.llmAnalysis?.verdict ?? change.newDoc.llmAnalysis?.status) &&
