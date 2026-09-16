@@ -1,5 +1,6 @@
 import {
   getDeclaredPluginCategoriesFromManifest,
+  isCurrentPluginCategoryAssignment,
   PLUGIN_CATEGORY_DEFINITIONS,
   type PluginCategorySlug,
 } from "clawhub-schema";
@@ -7,7 +8,7 @@ import { v } from "convex/values";
 import { sha256Hex } from "./clawpack";
 import { extractResponseText } from "./openaiResponse";
 
-export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v3";
+export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v4";
 export const pluginCategoryClassificationValidator = v.object({
   source: v.union(
     v.literal("manifest"),
@@ -47,6 +48,7 @@ function staticMetadata(value: unknown) {
       "kind",
       "channels",
       "providers",
+      "cliBackends",
       "contracts",
       "skills",
       "mcpServers",
@@ -76,15 +78,19 @@ export async function classifyPluginCategories(
 }> {
   // An invalid declaration remains a publication error, even when model inference is available.
   const declared = getDeclaredPluginCategoriesFromManifest(input.pluginManifest);
-  if (declared && declared.length !== 1 && !allowLegacyDeclarations) {
-    throw new Error("New plugin releases must declare exactly one category.");
+  if (declared && !isCurrentPluginCategoryAssignment(declared) && !allowLegacyDeclarations) {
+    throw new Error(
+      "New plugin releases must declare exactly one category from the current taxonomy.",
+    );
   }
   const evidence = boundedEvidence(input);
   const inputHash = await sha256Hex(
     new TextEncoder().encode(JSON.stringify({ evidence, declared })),
   );
   const metadata = { classifierVersion: PLUGIN_CATEGORY_CLASSIFIER_VERSION, inputHash };
-  if (declared) {
+  // Legacy capability lists are evidence, not a canonical primary purpose. Refresh
+  // them through the same classifier so setup plugins cannot leak into discovery.
+  if (declared && isCurrentPluginCategoryAssignment(declared)) {
     return {
       categories: declared,
       classification: {

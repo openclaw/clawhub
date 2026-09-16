@@ -1,4 +1,7 @@
-import { getDeclaredPluginCategoriesFromManifest } from "clawhub-schema";
+import {
+  getDeclaredPluginCategoriesFromManifest,
+  isCurrentPluginCategoryAssignment,
+} from "clawhub-schema";
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -26,9 +29,9 @@ const bundledAssignments = new Map(
 
 function generatedAssignmentIsCurrent(row: Doc<"pluginCategoryRefreshes">) {
   return (
-    row.classification.source !== "generated" ||
-    (row.classification.classifierVersion === PLUGIN_CATEGORY_CLASSIFIER_VERSION &&
-      row.categories.length === 1)
+    isCurrentPluginCategoryAssignment(row.categories) &&
+    (row.classification.source !== "generated" ||
+      row.classification.classifierVersion === PLUGIN_CATEGORY_CLASSIFIER_VERSION)
   );
 }
 
@@ -275,9 +278,13 @@ export const preview = internalAction({
           docs.push(text);
           remaining -= text.length;
         }
-        // The published artifact's declaration wins over a newer bundled inventory assignment.
+        // Current single-purpose declarations remain authoritative; older capability
+        // categories are refreshed from reviewed source without rewriting the artifact.
         const assignment =
-          current.bundled && !getDeclaredPluginCategoriesFromManifest(pluginManifest)
+          current.bundled &&
+          !isCurrentPluginCategoryAssignment(
+            getDeclaredPluginCategoriesFromManifest(pluginManifest),
+          )
             ? {
                 categories: getDeclaredPluginCategoriesFromManifest(current.bundled)!,
                 classification: {
@@ -295,7 +302,7 @@ export const preview = internalAction({
                   bundleManifest,
                   documentation: docs.join("\n"),
                 },
-                // Refresh preserves actual declarations in already-published artifacts.
+                // Legacy declarations remain readable but no longer choose discovery purpose.
                 { allowLegacyDeclarations: true },
               );
         const id = await ctx.runMutation(internal.pluginCategoryRefresh.storePreview, {

@@ -718,9 +718,10 @@ package, and documentation evidence using `gpt-5.6-luna` by default. Operators c
 override this with `OPENAI_PLUGIN_CATEGORY_MODEL`; the skill-summary model setting
 does not affect plugin classification.
 
-Already-published multi-category declarations remain readable and are preserved
-during metadata refresh. New generated assignments and bundled manifests use one
-category. A failed model request falls back to `other` during publication and is
+Historical declarations remain readable. The reviewed metadata refresh reclassifies
+retired or multiple categories from source evidence, preserving current single-purpose
+declarations and archived artifact bytes. New generated assignments and bundled
+manifests use one active category. A failed model request falls back to `other` during publication and is
 not accepted by the reviewed backfill.
 
 ### `GET /api/v1/skills/export`

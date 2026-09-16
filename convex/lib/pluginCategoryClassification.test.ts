@@ -31,32 +31,38 @@ function modelResponse(categories: string[]) {
 }
 
 describe("single-purpose plugin classification", () => {
-  it("requires one category for new author declarations without consulting a model", async () => {
-    const request = modelResponse(["scheduling"]);
-    await expect(
-      classifyPluginCategories({
-        name: "appointments",
-        pluginManifest: { categories: ["productivity", "scheduling"] },
-      }),
-    ).rejects.toThrow("exactly one category");
-    expect(request).not.toHaveBeenCalled();
-  });
+  it.each([{ categories: ["productivity", "scheduling"] }, { categories: ["runtime"] }])(
+    "requires one active category for new author declarations without consulting a model: $categories",
+    async ({ categories }) => {
+      const request = modelResponse(["scheduling"]);
+      await expect(
+        classifyPluginCategories({
+          name: "appointments",
+          pluginManifest: { categories },
+        }),
+      ).rejects.toThrow("exactly one category");
+      expect(request).not.toHaveBeenCalled();
+    },
+  );
 
-  it("preserves an existing multi-category declaration when refreshing a published release", async () => {
-    const request = modelResponse(["scheduling"]);
-    const result = await classifyPluginCategories(
-      {
-        name: "appointments",
-        pluginManifest: { categories: ["productivity", "scheduling"] },
-      },
-      { allowLegacyDeclarations: true },
-    );
-    expect(result).toMatchObject({
-      categories: ["productivity", "scheduling"],
-      classification: { source: "manifest" },
-    });
-    expect(request).not.toHaveBeenCalled();
-  });
+  it.each([["tools", "web", "channels"], ["runtime"]])(
+    "reassesses legacy categories %s by primary purpose when refreshing",
+    async (...categories) => {
+      const request = modelResponse(["scheduling"]);
+      const result = await classifyPluginCategories(
+        {
+          name: "appointments",
+          pluginManifest: { categories, description: "Manage appointments and availability." },
+        },
+        { allowLegacyDeclarations: true },
+      );
+      expect(result).toMatchObject({
+        categories: ["scheduling"],
+        classification: { source: "generated" },
+      });
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("uses Luna independently of the skill-summary model and constrains its output to one category", async () => {
     const request = modelResponse(["scheduling"]);
@@ -96,7 +102,7 @@ describe("single-purpose plugin classification", () => {
     expect(body.instructions).toContain("agent-runtimes: Agent execution engines");
     expect(result).toMatchObject({
       categories: ["agent-runtimes"],
-      classification: { source: "generated", classifierVersion: "plugin-single-category-v3" },
+      classification: { source: "generated", classifierVersion: "plugin-single-category-v4" },
     });
   });
 

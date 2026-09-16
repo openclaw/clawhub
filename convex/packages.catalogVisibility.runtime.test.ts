@@ -19,7 +19,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const bearer = "local-catalog-visibility-fixture";
 
-async function fixture(role: "user" | "admin" = "admin") {
+async function fixture(role: "user" | "admin" = "admin", categories = ["channels"]) {
   const t = convexTest(schema, modules);
   registerRateLimiter(t);
   const fixtureOwnerUserId = await t.run(async (ctx) => {
@@ -73,7 +73,7 @@ async function fixture(role: "user" | "admin" = "admin") {
         isOfficial: !options.channel,
         scanStatus: options.scanStatus ?? "clean",
         softDeletedAt: options.softDeletedAt,
-        categories: ["channels"],
+        categories,
         topics: expectedNames.includes(options.name) ? ["WhatsApp"] : ["WhatsApp", "Withheld Only"],
         tags: {},
         stats: { downloads: 1, installs: 1, stars: 0, versions: published ? 1 : 0 },
@@ -338,7 +338,7 @@ describe("normal plugin catalog visibility", () => {
   it("filters Trending to plugin families before applying the page limit", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
-    const { t, ownerUserId } = await fixture();
+    const { t, ownerUserId } = await fixture("admin", ["web"]);
 
     try {
       await t.run(async (ctx) => {
@@ -399,15 +399,18 @@ describe("normal plugin catalog visibility", () => {
         const names = body.results
           ? body.results.map((entry: { package: { name: string } }) => entry.package.name)
           : body.items.map((entry: { name: string }) => entry.name);
-        const expected = route.includes("channel=private")
-          ? viewer === "anonymous"
+        const expected =
+          route.includes("highlightedOnly=true") || route.includes("sort=trending")
             ? []
-            : ["whatsapp-private"]
-          : route.includes("/code-plugins")
-            ? ["@openclaw/whatsapp"]
-            : route.includes("/bundle-plugins")
-              ? ["whatsapp-bundle"]
-              : expectedNames;
+            : route.includes("channel=private")
+              ? viewer === "anonymous"
+                ? []
+                : ["whatsapp-private"]
+              : route.includes("/code-plugins")
+                ? ["@openclaw/whatsapp"]
+                : route.includes("/bundle-plugins")
+                  ? ["whatsapp-bundle"]
+                  : expectedNames;
         expect(names.sort(), route).toEqual(expected);
       }
       const browser = viewer === "anonymous" ? t : t.withIdentity({ subject: ownerUserId });
@@ -472,7 +475,7 @@ describe("normal plugin catalog visibility", () => {
   it.each([false, true])(
     "paginates past placeholders without losing public plugins (authenticated=%s)",
     async (authenticated) => {
-      const { t } = await fixture();
+      const { t } = await fixture("admin", ["web"]);
       const headers: Record<string, string> = authenticated
         ? { Authorization: `Bearer ${bearer}` }
         : {};

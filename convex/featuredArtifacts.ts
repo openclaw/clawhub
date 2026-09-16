@@ -1,3 +1,4 @@
+import { getPluginDiscoveryExclusion } from "clawhub-schema";
 import { v } from "convex/values";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery } from "./functions";
@@ -60,6 +61,8 @@ async function readPlugin(ctx: QueryCtx, id: string): Promise<SearchCurrentResul
     .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
     .unique();
   const eligibilityReasons = [];
+  const discoveryExclusion = getPluginDiscoveryExclusion(pkg.categories);
+  if (discoveryExclusion) eligibilityReasons.push(`discovery-excluded:${discoveryExclusion}`);
   if (!release) eligibilityReasons.push("no-public-version");
   else {
     if (

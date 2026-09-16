@@ -4,6 +4,7 @@ import {
   validateClawPackageContents,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
+  getPluginDiscoveryExclusion,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   normalizeCatalogTopic,
@@ -2824,21 +2825,23 @@ async function fetchHighlightedPackageEntries(
 ) {
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
-  const badges = await ctx.db
+  const badges = ctx.db
     .query("packageBadges")
     .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
-    .order("desc")
-    .take(MAX_PUBLIC_LIST_PAGE_SIZE);
+    .order("desc");
   const entries: Array<{ digest: PackageDigestLike; featuredAt: number }> = [];
-  for (const badge of badges) {
+  // Count visible selections, not excluded legacy badges, toward the response limit.
+  for await (const badge of badges) {
     const digest = await ctx.db
       .query("packageSearchDigest")
       .withIndex("by_package", (q) => q.eq("packageId", badge.packageId))
       .unique();
     if (!digest || digest.softDeletedAt) continue;
+    if (getPluginDiscoveryExclusion(digest.categories)) continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
     entries.push({ digest, featuredAt: badge.at });
+    if (entries.length >= MAX_PUBLIC_LIST_PAGE_SIZE) break;
   }
   return entries;
 }
@@ -4629,6 +4632,7 @@ async function listPackagePageImpl(
       nextOffset = index + 1;
       const pkg = await ctx.db.get(entry.packageId);
       if (!pkg || pkg.softDeletedAt) continue;
+      if (getPluginDiscoveryExclusion(pkg.categories)) continue;
       if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
       if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
       page.push(await toPublicPackageListItemFromPackage(ctx, pkg));

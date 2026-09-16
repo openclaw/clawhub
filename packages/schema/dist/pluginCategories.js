@@ -1,5 +1,17 @@
-import { isPluginCategorySlug, resolvePluginCategories, } from "./catalogMetadata.js";
+import { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS, resolvePluginCategories, } from "./catalogMetadata.js";
 export { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS, PLUGIN_CATEGORY_SLUGS, } from "./catalogMetadata.js";
+export function isCurrentPluginCategoryAssignment(categories) {
+    return (categories?.length === 1 &&
+        PLUGIN_CATEGORY_DEFINITIONS.some(({ slug }) => slug === categories[0]));
+}
+/** Discovery follows the primary install purpose, not secondary capabilities or publisher. */
+export function getPluginDiscoveryExclusion(categories) {
+    // Historical capability lists have no primary purpose until the reviewed refresh.
+    const primary = categories?.length === 1 ? categories[0] : undefined;
+    return primary === "channels" || primary === "models" || primary === "agent-runtimes"
+        ? primary
+        : null;
+}
 function isRecord(value) {
     return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

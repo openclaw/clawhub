@@ -1627,6 +1627,9 @@ function makeDigestCtx(options: {
               withIndex: vi.fn(() => ({
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue(options.highlightedBadges ?? []),
+                  async *[Symbol.asyncIterator]() {
+                    yield* options.highlightedBadges ?? [];
+                  },
                 })),
               })),
             };

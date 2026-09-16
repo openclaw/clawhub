@@ -1,5 +1,6 @@
 import {
   isPluginCategorySlug,
+  PLUGIN_CATEGORY_DEFINITIONS,
   resolvePluginCategories,
   type PluginCategorySlug,
 } from "./catalogMetadata.js";
@@ -12,6 +13,22 @@ export {
 } from "./catalogMetadata.js";
 
 type JsonRecord = Record<string, unknown>;
+
+export function isCurrentPluginCategoryAssignment(categories: readonly string[] | undefined) {
+  return (
+    categories?.length === 1 &&
+    PLUGIN_CATEGORY_DEFINITIONS.some(({ slug }) => slug === categories[0])
+  );
+}
+
+/** Discovery follows the primary install purpose, not secondary capabilities or publisher. */
+export function getPluginDiscoveryExclusion(categories: readonly string[] | undefined) {
+  // Historical capability lists have no primary purpose until the reviewed refresh.
+  const primary = categories?.length === 1 ? categories[0] : undefined;
+  return primary === "channels" || primary === "models" || primary === "agent-runtimes"
+    ? primary
+    : null;
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
