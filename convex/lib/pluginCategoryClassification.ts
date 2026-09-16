@@ -4,33 +4,15 @@ import {
   PLUGIN_CATEGORY_DEFINITIONS,
   type PluginCategorySlug,
 } from "clawhub-schema";
-import { convexToJson, v, type Value } from "convex/values";
+import { convexToJson, type Value } from "convex/values";
 import type { ActionCtx } from "../_generated/server";
 import { sha256Hex } from "./clawpack";
 import { extractResponseText } from "./openaiResponse";
 import { derivePluginManifestSummary, toConvexSafeJsonValue } from "./packageRegistry";
+import type { PluginCategoryClassification } from "./pluginCategoryClassificationContract";
 
 export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v5";
 const DOCUMENTATION_CHARACTER_LIMIT = 16_000;
-export const pluginCategoryClassificationValidator = v.object({
-  source: v.union(
-    v.literal("manifest"),
-    v.literal("generated"),
-    v.literal("fallback"),
-    v.literal("bundled"),
-  ),
-  classifierVersion: v.string(),
-  inputHash: v.string(),
-  evidence: v.string(),
-});
-
-export type PluginCategoryClassification = {
-  source: "manifest" | "generated" | "fallback" | "bundled";
-  classifierVersion: string;
-  inputHash: string;
-  evidence: string;
-};
-
 export type PluginCategoryEvidence = {
   name: string;
   pluginManifest?: unknown;

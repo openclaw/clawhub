@@ -110,9 +110,11 @@ import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import {
   classifyPluginCategories,
   readPluginCategoryDocumentation,
+} from "./lib/pluginCategoryClassification";
+import {
   pluginCategoryClassificationValidator,
   type PluginCategoryClassification,
-} from "./lib/pluginCategoryClassification";
+} from "./lib/pluginCategoryClassificationContract";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,

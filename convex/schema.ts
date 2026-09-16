@@ -7,7 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
-import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassification";
+import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassificationContract";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,

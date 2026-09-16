@@ -20,8 +20,8 @@ import {
   classifyPluginCategories,
   readPluginCategoryDocumentation,
   PLUGIN_CATEGORY_CLASSIFIER_VERSION,
-  pluginCategoryClassificationValidator,
 } from "./lib/pluginCategoryClassification";
+import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassificationContract";
 import { pluginManifestSummaryValidator } from "./schema";
 
 const bundledAssignments = new Map(
