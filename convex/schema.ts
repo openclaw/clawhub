@@ -7,6 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
 import {
   pluginCategoryClassificationValidator,
   pluginCategoryReviewValidator,
@@ -1417,6 +1418,16 @@ const skillBadges = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_skill_kind", ["skillId", "kind"])
   .index("by_kind_at", ["kind", "at"]);
+
+// Two bounded catalog records; reservations are editable product data.
+const featuredSelections = defineTable({
+  artifactKind: searchArtifactKind,
+  revision: v.number(),
+  editorial: v.array(editorialSelection),
+  published: v.optional(featuredPublication),
+  updatedAt: v.number(),
+  updatedBy: v.id("users"),
+}).index("by_artifact_kind", ["artifactKind"]);
 
 const packageBadges = defineTable({
   packageId: v.id("packages"),
@@ -4697,6 +4708,7 @@ export default defineSchema({
   packagePublishTokens,
   packagePublishUploadTickets,
   packageBadges,
+  featuredSelections,
   packageSearchDigest,
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,

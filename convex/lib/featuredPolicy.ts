@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
 
-export const FEATURED_CATALOG_SIZE = 8;
+export const FEATURED_CATALOG_SIZE = 16;
 
 export async function assertFeaturedCapacity(
   ctx: Pick<MutationCtx, "db">,
