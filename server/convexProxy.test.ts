@@ -185,7 +185,7 @@ describe("Convex HTTP proxy", () => {
     expect(headers.get("x-clawhub-vercel-oidc-token")).toBe("");
   });
 
-  it("streams hosted downloads from a Convex manifest with the final attachment filename", async () => {
+  it.each(["none", "missing", "body error"])("requires complete archives (%s)", async (failure) => {
     const storedBody = new TextEncoder().encode("# streamed skill\n");
     const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
       const url = input.toString();
@@ -230,7 +230,16 @@ describe("Convex HTTP proxy", () => {
         return new Response(storedBody, { status: 200 });
       }
       if (url === "https://preview-branch-123.convex.cloud/api/storage/storage-missing") {
-        return new Response("missing", { status: 404 });
+        if (failure === "missing") return new Response("missing", { status: 404 });
+        if (failure === "body error")
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error("Storage body failed"));
+              },
+            }),
+          );
+        return new Response("second file");
       }
       if (url === "https://preview-branch-123.convex.site/api/internal/archive-download-metric") {
         return new Response(null, { status: 204 });
@@ -264,9 +273,22 @@ describe("Convex HTTP proxy", () => {
     expect(response.headers.get("ETag")).toBeNull();
     expect(response.headers.get("X-RateLimit-Remaining")).toBe("49");
     expect(response.headers.get("X-ClawHub-Preview-Backend")).toBe("preview-branch-123");
+    if (failure !== "none") {
+      await expect(response.arrayBuffer()).rejects.toThrow(
+        failure === "missing"
+          ? "Signed archive entry disappeared after manifest creation"
+          : "Storage body failed",
+      );
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          input.toString().endsWith("/archive-download-metric"),
+        ),
+      ).toBe(false);
+      return;
+    }
     const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
     expect(archive["SKILL.md"]).toEqual(storedBody);
-    expect(Object.keys(archive).sort()).toEqual(["SKILL.md", "_meta.json"]);
+    expect(Object.keys(archive).sort()).toEqual(["SKILL.md", "_meta.json", "stale.txt"]);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://preview-branch-123.convex.site/api/v1/download?slug=demo",
     );
@@ -821,9 +843,9 @@ describe("Convex HTTP proxy", () => {
       },
       TEST_ARCHIVE_DEPENDENCIES,
     );
-    const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
-
-    expect(Object.keys(archive)).toEqual(["_meta.json"]);
+    await expect(response.arrayBuffer()).rejects.toThrow(
+      "Signed archive entry disappeared after manifest creation",
+    );
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -1183,8 +1205,10 @@ describe("Convex HTTP proxy", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not wait for download metrics before emitting zip bytes", async () => {
+  it.each([false, true])("counts only completed archives (%s)", async (cancel) => {
     vi.useFakeTimers();
+    const background: Promise<unknown>[] = [];
+    let finishMetric: ((response: Response) => void) | undefined;
     const storedBody = new TextEncoder().encode("# streamed skill\n");
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString();
@@ -1216,15 +1240,21 @@ describe("Convex HTTP proxy", () => {
         return new Response(storedBody, { status: 200 });
       }
       if (url === "https://preview-branch-123.convex.site/api/internal/archive-download-metric") {
-        return new Promise<Response>(() => {});
+        return new Promise<Response>((resolve) => {
+          finishMetric = resolve;
+        });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(Date, "now").mockReturnValue(2_000);
 
+    const event = mockEvent("https://preview.example/api/v1/download?slug=demo");
+    event.req.waitUntil = (promise) => {
+      background.push(promise);
+    };
     const response = await proxyConvexRequest(
-      mockEvent("https://preview.example/api/v1/download?slug=demo"),
+      event,
       {
         VERCEL_ENV: "preview",
         VITE_CONVEX_SITE_URL: "https://preview-branch-123.convex.site",
@@ -1251,8 +1281,33 @@ describe("Convex HTTP proxy", () => {
           input.toString() ===
           "https://preview-branch-123.convex.site/api/internal/archive-download-metric",
       ),
-    ).toBe(true);
+    ).toBe(false);
 
-    await reader.cancel();
+    if (cancel) {
+      await reader.cancel();
+      expect(background).toHaveLength(0);
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          input.toString().endsWith("/archive-download-metric"),
+        ),
+      ).toBe(false);
+      return;
+    }
+    while (!(await reader.read()).done) {
+      /* consume the complete archive */
+    }
+    expect(
+      fetchMock.mock.calls.some(([input]) => input.toString().endsWith("/archive-download-metric")),
+    ).toBe(true);
+    expect(background).toHaveLength(1);
+    let settled = false;
+    void background[0].then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finishMetric?.(new Response(null, { status: 204 }));
+    await background[0];
+    expect(settled).toBe(true);
   });
 });

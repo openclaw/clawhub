@@ -202,7 +202,13 @@ export async function downloadZipHandler(
     const entries: Array<{ path: string; url: string }> = [];
     for (const file of version.files) {
       const fileUrl = await ctx.storage.getUrl(file.storageId);
-      if (fileUrl) entries.push({ path: file.path, url: fileUrl });
+      if (!fileUrl) {
+        return new Response("Skill archive file missing from storage", {
+          status: 410,
+          headers: mergeHeaders(rate.headers, corsHeaders()),
+        });
+      }
+      entries.push({ path: file.path, url: fileUrl });
     }
     const issuedAt = Date.now();
     const expiresAt = issuedAt + ARCHIVE_MANIFEST_TTL_MS;

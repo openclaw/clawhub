@@ -66,3 +66,15 @@ the visible daily graph.
 When the Convex proxy rebuilds a zip from a signed archive manifest, the
 download metric POST is best-effort. It must not be awaited on the path that
 emits the first zip byte. A hung metric origin cannot stall the download.
+
+A hosted skill archive is counted only after every declared entry has streamed
+successfully and the ZIP completes. Missing storage URLs fail before signing;
+storage failures during streaming abort the archive and do not emit a metric.
+Cancellation before ZIP assembly completes does not emit a metric. The bounded
+metric POST is registered with the request lifecycle so hosted execution can
+finish it after the streamed response closes, without awaiting it on the ZIP path.
+
+The metric capability retains its original 30-second lifetime. A healthy archive
+can finish after that lifetime, but its best-effort metric is then rejected as
+expired. Download completion never depends on metric acceptance; do not extend
+the capability or reuse expired tokens to compensate for slow downloads.

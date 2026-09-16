@@ -184,6 +184,7 @@ export async function proxyConvexRequest(
       target,
       event.req.signal,
       dependencies.verifyArchiveManifest,
+      (promise) => event.waitUntil(promise),
     );
   }
   if (
@@ -218,6 +219,7 @@ async function streamArchive(
   target: string,
   signal: AbortSignal,
   verifyArchiveManifest: ProxyDependencies["verifyArchiveManifest"],
+  waitUntil: (promise: Promise<unknown>) => void,
 ) {
   let value: unknown;
   try {
@@ -254,11 +256,11 @@ async function streamArchive(
 
   let metricRecorded = false;
   const recordMetric = () => {
-    if (metricRecorded || !manifest.metricToken) return;
+    if (metricRecorded || !manifest.metricToken || signal.aborted) return;
     metricRecorded = true;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), ARCHIVE_METRIC_FETCH_TIMEOUT_MS);
-    void fetch(new URL("/api/internal/archive-download-metric", target), {
+    const metric = fetch(new URL("/api/internal/archive-download-metric", target), {
       method: "POST",
       headers: { "content-type": "application/jose" },
       body: manifest.metricToken,
@@ -270,6 +272,8 @@ async function streamArchive(
       .finally(() => {
         clearTimeout(timeout);
       });
+    // Keep the bounded POST alive when the hosted response finishes.
+    waitUntil(metric);
   };
 
   const stream = buildDeterministicZipStream(
@@ -277,11 +281,12 @@ async function streamArchive(
       path: entry.path,
       openStream: async () => {
         const response = await fetch(entry.url, { redirect: "error", signal });
-        if (response.status === 404) return null;
+        if (response.status === 404) {
+          throw new Error("Signed archive entry disappeared after manifest creation");
+        }
         if (!response.ok || !response.body) {
           throw new Error(`Failed to fetch archive entry: ${response.status}`);
         }
-        recordMetric();
         return response.body;
       },
     })),
@@ -291,7 +296,16 @@ async function streamArchive(
   for (const name of ARCHIVE_REPRESENTATION_HEADERS) headers.delete(name);
   headers.set("content-type", "application/zip");
   headers.set("content-disposition", `attachment; filename="${manifest.filename}"`);
-  const response = new Response(stream, { status: 200, headers });
+  // Only complete archives count. Keep the original capability expiry: a slow
+  // successful download may outlive its best-effort metric, never its bytes.
+  const completedStream = stream.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      flush() {
+        recordMetric();
+      },
+    }),
+  );
+  const response = new Response(completedStream, { status: 200, headers });
   if (isPreviewFrontend(env) || isTestFrontend(env)) {
     const deployment = convexDeploymentName(target);
     if (deployment) {

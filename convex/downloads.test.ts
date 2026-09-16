@@ -250,7 +250,7 @@ describe("downloads helpers", () => {
     });
   });
 
-  it("returns a bounded archive manifest to the Nitro streaming owner", async () => {
+  it.each([false, true])("requires all manifest URLs (%s)", async (missing) => {
     vi.stubEnv("CLAWHUB_PREVIEW", "1");
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     vi.spyOn(Date, "now").mockReturnValue(10_000);
@@ -297,7 +297,9 @@ describe("downloads helpers", () => {
     const storageGetUrl = vi.fn(async (storageId: string) =>
       storageId === "_storage:1"
         ? "https://preview-branch-123.convex.cloud/api/storage/storage-1"
-        : null,
+        : missing
+          ? null
+          : "https://preview-branch-123.convex.cloud/api/storage/storage-2",
     );
 
     const response = await downloadZipHandler(
@@ -321,6 +323,12 @@ describe("downloads helpers", () => {
       { verifyArchiveRequester: vi.fn(async () => undefined) },
     );
 
+    if (missing) {
+      expect(response.status).toBe(410);
+      expect(await response.text()).toBe("Skill archive file missing from storage");
+      expect(runAfter).not.toHaveBeenCalled();
+      return;
+    }
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toBe(ARCHIVE_MANIFEST_CONTENT_TYPE);
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
@@ -346,6 +354,10 @@ describe("downloads helpers", () => {
         {
           path: "SKILL.md",
           url: "https://preview-branch-123.convex.cloud/api/storage/storage-1",
+        },
+        {
+          path: "missing.txt",
+          url: "https://preview-branch-123.convex.cloud/api/storage/storage-2",
         },
       ],
       metricToken: expect.any(String),
