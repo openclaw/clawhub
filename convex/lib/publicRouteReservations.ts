@@ -1,4 +1,4 @@
-import { OPENCLAW_EXTENSION_SLUG_TO_PACKAGE } from "clawhub-schema";
+import { OPENCLAW_EXTENSION_SLUG_TO_PACKAGE } from "clawhub-schema/openClawExtensionSlugs";
 
 const RESERVED_PUBLIC_OWNER_HANDLES = new Set([
   "admin",

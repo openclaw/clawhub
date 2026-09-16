@@ -5,7 +5,7 @@ import {
   normalizeCatalogTopic,
   resolveStoredSkillCategories,
   type SkillCategorySlug,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -56,7 +56,26 @@ type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
 
 function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
   const ownerCache = new Map<string, Promise<OwnerInfo>>();
-  return (ownerUserId: Id<"users">, ownerPublisherId?: Id<"publishers"> | null) => {
+  const officialCache = new Map<Id<"publishers">, Promise<boolean>>();
+  return async (
+    ownerUserId: Id<"users">,
+    ownerPublisherId?: Id<"publishers"> | null,
+    preResolved?: OwnerInfo | null,
+  ) => {
+    if (preResolved?.owner) {
+      if (preResolved.owner.official) return preResolved;
+      const publisherId = preResolved.owner._id;
+      // Digests retain their own public owner fields; only the authoritative
+      // official-publisher fact is shared within this query's read snapshot.
+      let official = officialCache.get(publisherId);
+      if (!official) {
+        official = hasOfficialPublisherRow(ctx, publisherId);
+        officialCache.set(publisherId, official);
+      }
+      return (await official)
+        ? { ...preResolved, owner: { ...preResolved.owner, official: true } }
+        : preResolved;
+    }
     const cacheKey = String(ownerPublisherId ?? ownerUserId);
     const cached = ownerCache.get(cacheKey);
     if (cached) return cached;
@@ -72,20 +91,6 @@ function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
     });
     ownerCache.set(cacheKey, ownerPromise);
     return ownerPromise;
-  };
-}
-
-async function withOfficialOwnerInfo(ctx: Pick<QueryCtx, "db">, ownerInfo: OwnerInfo) {
-  if (!ownerInfo.owner) return ownerInfo;
-  if (ownerInfo.owner.official) return ownerInfo;
-  const official = await hasOfficialPublisherRow(ctx, ownerInfo.owner._id);
-  if (!official) return ownerInfo;
-  return {
-    ...ownerInfo,
-    owner: {
-      ...ownerInfo.owner,
-      official: true,
-    },
   };
 }
 
@@ -300,6 +305,7 @@ type SkillDigestCandidateQuery = {
   take: (limit: number) => Promise<Doc<"skillSearchDigest">[]>;
 };
 type SkillDigestCandidateQueryFactory = () => SkillDigestCandidateQuery;
+type SkillDigestRead = { rows?: Promise<Doc<"skillSearchDigest">[]> };
 
 async function collectFilteredSkillDigestCandidates(
   createQuery: SkillDigestCandidateQueryFactory,
@@ -308,11 +314,13 @@ async function collectFilteredSkillDigestCandidates(
     scanLimit: number;
     matches: (digest: Doc<"skillSearchDigest">) => boolean;
   },
+  sharedRead?: SkillDigestRead,
 ) {
   // Convex permits only one paginated read per query function. Use one bounded
   // take so the several recall indexes can be searched in the same transaction.
-  const candidates = await createQuery().take(opts.scanLimit);
-  return candidates.filter(opts.matches).slice(0, opts.limit);
+  const candidates = sharedRead?.rows ?? createQuery().take(opts.scanLimit);
+  if (sharedRead) sharedRead.rows = candidates;
+  return (await candidates).filter(opts.matches).slice(0, opts.limit);
 }
 
 function isSlugLikeQuery(query: string) {
@@ -371,6 +379,7 @@ const nativeSkillSearch = {
     ctx: ActionCtx,
     args: SkillSearchArgs,
     preparedVector?: number[] | null,
+    preparedFallback?: () => Promise<SkillSearchEntry[]>,
   ): Promise<PublicSearchResult[]> {
     const query = args.query.trim();
     if (!query) return [];
@@ -564,22 +573,24 @@ const nativeSkillSearch = {
     const fallbackMatches =
       primaryMatches.length >= recallLimit
         ? []
-        : ((await ctx.runQuery(internal.search.lexicalFallbackSkills, {
-            query,
-            queryTokens,
-            limit: Math.min(
-              Math.max(recallLimit * FALLBACK_RECALL_MULTIPLIER, MIN_FALLBACK_SCAN_LIMIT),
-              FALLBACK_SCAN_LIMIT,
-            ),
-            highlightedOnly: args.highlightedOnly,
-            nonSuspiciousOnly: args.nonSuspiciousOnly,
-            excludePendingScan: args.excludePendingScan,
-            skipExactSlugLookup: true,
-            categorySlug,
-            topic,
-            officialOnly: args.officialOnly,
-            createdAfter: args.createdAfter,
-          })) as SkillSearchEntry[]);
+        : preparedFallback
+          ? await preparedFallback()
+          : ((await ctx.runQuery(internal.search.lexicalFallbackSkills, {
+              query,
+              queryTokens,
+              limit: Math.min(
+                Math.max(recallLimit * FALLBACK_RECALL_MULTIPLIER, MIN_FALLBACK_SCAN_LIMIT),
+                FALLBACK_SCAN_LIMIT,
+              ),
+              highlightedOnly: args.highlightedOnly,
+              nonSuspiciousOnly: args.nonSuspiciousOnly,
+              excludePendingScan: args.excludePendingScan,
+              skipExactSlugLookup: true,
+              categorySlug,
+              topic,
+              officialOnly: args.officialOnly,
+              createdAfter: args.createdAfter,
+            })) as SkillSearchEntry[]);
     const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches).filter(
       (entry) =>
         matchesCatalogFilters(entry.skill, categorySlug, topic) &&
@@ -845,8 +856,25 @@ function buildNativeCanonicalResult(
   };
 }
 
+type ExternalSkillSearchDigest = Pick<
+  Doc<"skillsShMirrorDigests">,
+  | "externalId"
+  | "displayName"
+  | "slug"
+  | "inferredCategories"
+  | "inferredTopics"
+  | "searchSummary"
+  | "owner"
+  | "sourceHost"
+  | "lastObservedAt"
+  | "sourceUrl"
+  | "repo"
+  | "upstreamInstalls"
+  | "upstreamScanners"
+>;
+
 function buildExternalCanonicalResult(
-  digest: Doc<"skillsShMirrorDigests">,
+  digest: ExternalSkillSearchDigest,
   query: string,
 ): (CanonicalSkillSearchResult & CanonicalSkillSearchCandidate) | null {
   const relevance = classifyCanonicalSkillSearchMatch(query, {
@@ -918,6 +946,7 @@ async function readCanonicalSkillCandidates(
   ctx: ActionCtx,
   args: SkillSearchArgs,
   preparedVector?: number[] | null,
+  preparedFallback?: () => Promise<SkillSearchEntry[]>,
 ) {
   const query = args.query.trim();
   if (!query) return [];
@@ -927,7 +956,7 @@ async function readCanonicalSkillCandidates(
     limit: CANONICAL_NATIVE_CANDIDATE_LIMIT,
   };
   const [nativeMatches, qualifiedNativeMatches, externalMatches] = await settleSearchReads([
-    nativeSkillSearch.handler(ctx, nativeArgs, preparedVector),
+    nativeSkillSearch.handler(ctx, nativeArgs, preparedVector, preparedFallback),
     qualified.native
       ? (ctx.runQuery(internal.search.getOwnerQualifiedSkillMatch, {
           ...qualified.native,
@@ -943,7 +972,7 @@ async function readCanonicalSkillCandidates(
       categorySlug: args.categorySlug,
       topic: args.topic,
       ...(qualified.external ? { exactExternalId: qualified.external } : {}),
-    }) as Promise<Doc<"skillsShMirrorDigests">[]>,
+    }) as Promise<ExternalSkillSearchDigest[]>,
   ]);
 
   const nativeById = new Map<string, PublicSearchResult>();
@@ -1054,6 +1083,60 @@ export const searchSkills: ReturnType<typeof action> = action({
   },
 });
 
+function createReportFallbackReads(ctx: ActionCtx) {
+  type Pending = {
+    query: string;
+    resolve: (rows: SkillSearchEntry[]) => void;
+    reject: (error: unknown) => void;
+  };
+  // Each of the eight workers leaves preparation exactly once, by requesting
+  // fallback or finishing without it. Flush only then; rich results never scan.
+  let preparing = 0;
+  let pending: Pending[] = [];
+  let failed: { error: unknown } | undefined;
+  const flush = () => {
+    if (preparing || !pending.length) return;
+    const group = pending;
+    pending = [];
+    void ctx
+      .runQuery(internal.search.lexicalFallbackSkillsBatchInternal, {
+        queries: group.map(({ query }) => query),
+      })
+      .then(
+        (rows: SkillSearchEntry[][]) => group.forEach((entry, index) => entry.resolve(rows[index])),
+        (error: unknown) => group.forEach((entry) => entry.reject(error)),
+      );
+  };
+  return {
+    start(query: string) {
+      preparing++;
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        preparing--;
+        flush();
+      };
+      return {
+        read: () =>
+          new Promise<SkillSearchEntry[]>((resolve, reject) => {
+            if (failed) reject(failed.error);
+            else pending.push({ query, resolve, reject });
+            finish();
+          }),
+        finish,
+      };
+    },
+    stop(error: unknown) {
+      // Reject queued work; dispatched waiters stay bound to their query so
+      // the caller's worker drain also waits for already-started transactions.
+      failed = { error };
+      for (const entry of pending) entry.reject(error);
+      pending = [];
+    },
+  };
+}
+
 // Reports inspect at most 100 terms. Reuse one embedding request and one
 // usage read per distinct skill while keeping the ordinary search ranking owner.
 export const searchPublicDiscoveryBatchInternal = internalAction({
@@ -1076,17 +1159,28 @@ export const searchPublicDiscoveryBatchInternal = internalAction({
     const vectorByQuery = new Map(inputs.map((query, index) => [query, vectors?.[index] ?? null]));
     const candidates: CanonicalSkillSearchCandidate[][] = Array(queries.length);
     let next = 0;
+    const fallbackReads = createReportFallbackReads(ctx);
     await settleSearchReads(
       Array.from({ length: Math.min(queries.length, 8) }, async () => {
         try {
           while (next < queries.length) {
             const index = next++;
             const query = queries[index];
-            const rows = await readCanonicalSkillCandidates(
-              ctx,
-              { query, limit: 3 },
-              vectorByQuery.get(query.trim()) ?? null,
-            );
+            const fallback = fallbackReads.start(query.trim());
+            let rows;
+            try {
+              rows = await readCanonicalSkillCandidates(
+                ctx,
+                { query, limit: 3 },
+                vectorByQuery.get(query.trim()) ?? null,
+                fallback.read,
+              );
+            } catch (error) {
+              fallbackReads.stop(error);
+              throw error;
+            } finally {
+              fallback.finish();
+            }
             // Keep at most eight rich recall pools within the action's 64 MB budget.
             // Across queries retain ranking facts only, then deduplicate adoption reads.
             candidates[index] = rows.map(
@@ -1254,7 +1348,7 @@ export const getExternalSkillSearchCandidates = internalQuery({
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<Doc<"skillsShMirrorDigests">[]> => {
+  handler: async (ctx, args): Promise<ExternalSkillSearchDigest[]> => {
     if (!(await getSkillsShPublicCatalogEnabledHandler(ctx))) return [];
     if (args.highlightedOnly) return [];
     const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
@@ -1349,19 +1443,37 @@ export const getExternalSkillSearchCandidates = internalQuery({
       ...fullText,
     ];
     const seen = new Set<string>();
-    return candidates.filter((digest) => {
-      if (seen.has(digest.externalId)) return false;
-      seen.add(digest.externalId);
-      if (!isPublicExternalSearchDigest(digest)) return false;
-      if (
-        categorySlug &&
-        !(digest.inferredCategories ?? []).some((category) => category === categorySlug)
-      ) {
-        return false;
-      }
-      if (topic && !getCatalogTopicSlugs(digest.inferredTopics).includes(topic)) return false;
-      return true;
-    });
+    // Index text and ingestion metadata can dwarf the public fields. Project
+    // here so ordinary search and report actions never receive those bodies.
+    return candidates
+      .filter((digest) => {
+        if (seen.has(digest.externalId)) return false;
+        seen.add(digest.externalId);
+        if (!isPublicExternalSearchDigest(digest)) return false;
+        if (
+          categorySlug &&
+          !(digest.inferredCategories ?? []).some((category) => category === categorySlug)
+        ) {
+          return false;
+        }
+        if (topic && !getCatalogTopicSlugs(digest.inferredTopics).includes(topic)) return false;
+        return true;
+      })
+      .map((digest) => ({
+        externalId: digest.externalId,
+        displayName: digest.displayName,
+        slug: digest.slug,
+        inferredCategories: digest.inferredCategories,
+        inferredTopics: digest.inferredTopics,
+        searchSummary: digest.searchSummary,
+        owner: digest.owner,
+        sourceHost: digest.sourceHost,
+        lastObservedAt: digest.lastObservedAt,
+        sourceUrl: digest.sourceUrl,
+        repo: digest.repo,
+        upstreamInstalls: digest.upstreamInstalls,
+        upstreamScanners: digest.upstreamScanners,
+      }));
   },
 });
 
@@ -1743,9 +1855,7 @@ export const directPrefixSkillMatches = internalQuery({
           return null;
         }
         const preResolved = digestToOwnerInfo(digest);
-        const resolved = preResolved?.owner
-          ? await withOfficialOwnerInfo(ctx, preResolved)
-          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        const resolved = await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId, preResolved);
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
         return {
@@ -1805,9 +1915,7 @@ export const hydrateResults = internalQuery({
         // Use pre-resolved owner from digest to avoid reading the users table.
         // Fall back to live lookup when digest owner is null (deactivated/deleted user).
         const preResolved = digest ? digestToOwnerInfo(digest) : null;
-        const resolved = preResolved?.owner
-          ? await withOfficialOwnerInfo(ctx, preResolved)
-          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        const resolved = await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId, preResolved);
         if (!resolved.owner) return null;
         if (
           !(await hasResolvablePublicBrowseVersionFromState(
@@ -1833,6 +1941,210 @@ export const hydrateResults = internalQuery({
   },
 });
 
+type LexicalFallbackArgs = SkillSearchArgs & {
+  queryTokens: string[];
+  skipExactSlugLookup?: boolean;
+};
+
+async function lexicalFallbackSkillsImpl(
+  ctx: QueryCtx,
+  args: LexicalFallbackArgs,
+  sharedReads?: {
+    updated: SkillDigestRead;
+    created: SkillDigestRead;
+    entries: Map<Id<"skills">, Promise<SkillSearchEntry | null>>;
+  },
+): Promise<SkillSearchEntry[]> {
+  const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
+  if (categorySlug === null) return [];
+  const topic = args.topic === undefined ? undefined : normalizeCatalogTopic(args.topic);
+  if (args.topic !== undefined && !topic) return [];
+  const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
+  const scanLimit = limit;
+  const seenSkillIds = new Set<Id<"skills">>();
+  const candidates: HydratableSkill[] = [];
+  // Keep digest rows around so we can resolve owner info without hitting users table.
+  const preResolvedOwners = new Map<
+    Id<"skills">,
+    { ownerHandle: string | null; owner: PublicPublisher | null }
+  >();
+  const publicVersions = new Map<Id<"skills">, Doc<"skillSearchDigest">["publicVersion"]>();
+
+  // Exact slug matches via the skills table. Slugs are unique per publisher,
+  // so this read must tolerate multiple rows for the same global slug.
+  // Use the lenient shape predicate so legacy rows with sub-min-length
+  // slugs stay discoverable; the caller in searchSkills already passes
+  // skipExactSlugLookup=true after running its own exact-slug lookup.
+  const slugQuery = normalizeSkillSlug(args.query);
+  if (!args.skipExactSlugLookup && isSearchableSkillSlugShape(slugQuery)) {
+    const exactSlugSkills = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slugQuery))
+      .take(MAX_EXACT_SLUG_MATCHES);
+    for (const exactSlugSkill of exactSlugSkills) {
+      if (
+        !shouldExcludeSkillFromPublicBrowse(exactSlugSkill) &&
+        (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
+        (!args.excludePendingScan || exactSlugSkill.githubScanStatus !== "pending") &&
+        matchesNativeSearchEligibility(exactSlugSkill, args) &&
+        matchesCatalogFilters(exactSlugSkill, categorySlug, topic)
+      ) {
+        seenSkillIds.add(exactSlugSkill._id);
+        candidates.push(exactSlugSkill);
+      }
+    }
+  }
+
+  // Scan recent active digests (~800 bytes each) instead of full skill docs (~3-5KB).
+  // Use updatedAt and createdAt windows so newly published skills are visible even
+  // when they are not in the most recently updated slice.
+  const createRecentByUpdatedQuery = () =>
+    args.nonSuspiciousOnly
+      ? ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_nonsuspicious_updated", (q) =>
+            q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
+          )
+          .order("desc")
+      : ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+          .order("desc");
+  const createRecentByCreatedQuery = () =>
+    args.nonSuspiciousOnly
+      ? ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_nonsuspicious_created", (q) =>
+            q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
+          )
+          .order("desc")
+      : ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+          .order("desc");
+
+  const filteredScanLimit =
+    categorySlug ||
+    topic ||
+    args.highlightedOnly ||
+    args.officialOnly ||
+    args.createdAfter !== undefined
+      ? FALLBACK_SCAN_LIMIT
+      : scanLimit;
+  const matchesFallbackRecallFilters = (digest: Doc<"skillSearchDigest">) => {
+    const skill = digestToHydratableSkill(digest);
+    return (
+      !shouldExcludeSkillFromPublicBrowse(skill) &&
+      (!args.highlightedOnly || isSkillHighlighted(skill)) &&
+      (!args.excludePendingScan || skill.githubScanStatus !== "pending") &&
+      matchesNativeSearchEligibility(skill, args) &&
+      matchesCatalogFilters(skill, categorySlug, topic) &&
+      matchesExactTokens(args.queryTokens, [
+        skill.displayName,
+        skill.slug,
+        skill.summary,
+        ...(skill.categories ?? []),
+        ...(skill.topics ?? []),
+      ])
+    );
+  };
+  const [recentByUpdated, recentByCreated] = await Promise.all([
+    collectFilteredSkillDigestCandidates(
+      createRecentByUpdatedQuery,
+      {
+        limit: scanLimit,
+        scanLimit: filteredScanLimit,
+        matches: matchesFallbackRecallFilters,
+      },
+      sharedReads?.updated,
+    ),
+    collectFilteredSkillDigestCandidates(
+      createRecentByCreatedQuery,
+      {
+        limit: scanLimit,
+        scanLimit: filteredScanLimit,
+        matches: matchesFallbackRecallFilters,
+      },
+      sharedReads?.created,
+    ),
+  ]);
+
+  const addDigestCandidates = (digests: typeof recentByUpdated) => {
+    for (const digest of digests) {
+      if (seenSkillIds.has(digest.skillId)) continue;
+      const skill = digestToHydratableSkill(digest);
+      if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
+      if (args.excludePendingScan && skill.githubScanStatus === "pending") continue;
+      if (!matchesNativeSearchEligibility(skill, args)) continue;
+      if (!matchesCatalogFilters(skill, categorySlug, topic)) continue;
+      seenSkillIds.add(digest.skillId);
+      candidates.push(skill);
+      // Pre-resolve owner from digest to avoid users table reads.
+      const ownerInfo = digestToOwnerInfo(digest);
+      if (ownerInfo) preResolvedOwners.set(digest.skillId, ownerInfo);
+      publicVersions.set(digest.skillId, digest.publicVersion);
+    }
+  };
+  addDigestCandidates(recentByUpdated);
+  addDigestCandidates(recentByCreated);
+
+  const matched = candidates.filter((skill) =>
+    matchesExactTokens(args.queryTokens, [
+      skill.displayName,
+      skill.slug,
+      skill.summary,
+      ...(skill.categories ?? []),
+      ...(skill.topics ?? []),
+    ]),
+  );
+  if (matched.length === 0) return [];
+
+  const getOwnerInfo = makeOwnerInfoGetter(ctx);
+
+  const resolveEntry = async (skill: HydratableSkill): Promise<SkillSearchEntry | null> => {
+    const preResolved = preResolvedOwners.get(skill._id);
+    const resolved = await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId, preResolved);
+    if (!resolved.owner) return null;
+    if (
+      !(await hasResolvablePublicBrowseVersionFromState(
+        ctx,
+        { ...skill, _id: skill._id },
+        publicVersions.get(skill._id),
+      ))
+    )
+      return null;
+    const publicSkill = toPublicSearchSkill(skill);
+    if (!publicSkill) return null;
+    return {
+      skill: publicSkill,
+      version: null as Doc<"skillVersions"> | null,
+      ownerHandle: resolved.ownerHandle,
+      owner: resolved.owner,
+    };
+  };
+  // All terms share one read snapshot. Resolve each matched skill once so
+  // legacy version and owner lookups retain the standalone transaction budget.
+  const entries = await Promise.all(
+    matched.map((skill) => {
+      let entry = sharedReads?.entries.get(skill._id);
+      if (!entry) {
+        entry = resolveEntry(skill);
+        sharedReads?.entries.set(skill._id, entry);
+      }
+      return entry;
+    }),
+  );
+  const validEntries = entries.filter(Boolean) as SkillSearchEntry[];
+  if (validEntries.length === 0) return [];
+
+  const filtered = validEntries.filter(
+    (entry) =>
+      (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+      matchesNativeSearchEligibility(entry.skill, args),
+  );
+  return filtered.slice(0, limit);
+}
+
 export const lexicalFallbackSkills = internalQuery({
   args: {
     query: v.string(),
@@ -1847,180 +2159,37 @@ export const lexicalFallbackSkills = internalQuery({
     officialOnly: v.optional(v.boolean()),
     createdAfter: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
-    const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
-    if (categorySlug === null) return [];
-    const topic = args.topic === undefined ? undefined : normalizeCatalogTopic(args.topic);
-    if (args.topic !== undefined && !topic) return [];
-    const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
-    const scanLimit = limit;
-    const seenSkillIds = new Set<Id<"skills">>();
-    const candidates: HydratableSkill[] = [];
-    // Keep digest rows around so we can resolve owner info without hitting users table.
-    const preResolvedOwners = new Map<
-      Id<"skills">,
-      { ownerHandle: string | null; owner: PublicPublisher | null }
-    >();
-    const publicVersions = new Map<Id<"skills">, Doc<"skillSearchDigest">["publicVersion"]>();
+  handler: lexicalFallbackSkillsImpl,
+});
 
-    // Exact slug matches via the skills table. Slugs are unique per publisher,
-    // so this read must tolerate multiple rows for the same global slug.
-    // Use the lenient shape predicate so legacy rows with sub-min-length
-    // slugs stay discoverable; the caller in searchSkills already passes
-    // skipExactSlugLookup=true after running its own exact-slug lookup.
-    const slugQuery = normalizeSkillSlug(args.query);
-    if (!args.skipExactSlugLookup && isSearchableSkillSlugShape(slugQuery)) {
-      const exactSlugSkills = await ctx.db
-        .query("skills")
-        .withIndex("by_slug", (q) => q.eq("slug", slugQuery))
-        .take(MAX_EXACT_SLUG_MATCHES);
-      for (const exactSlugSkill of exactSlugSkills) {
-        if (
-          !shouldExcludeSkillFromPublicBrowse(exactSlugSkill) &&
-          (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
-          (!args.excludePendingScan || exactSlugSkill.githubScanStatus !== "pending") &&
-          matchesNativeSearchEligibility(exactSlugSkill, args) &&
-          matchesCatalogFilters(exactSlugSkill, categorySlug, topic)
-        ) {
-          seenSkillIds.add(exactSlugSkill._id);
-          candidates.push(exactSlugSkill);
-        }
-      }
-    }
-
-    // Scan recent active digests (~800 bytes each) instead of full skill docs (~3-5KB).
-    // Use updatedAt and createdAt windows so newly published skills are visible even
-    // when they are not in the most recently updated slice.
-    const createRecentByUpdatedQuery = () =>
-      args.nonSuspiciousOnly
-        ? ctx.db
-            .query("skillSearchDigest")
-            .withIndex("by_nonsuspicious_updated", (q) =>
-              q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
-            )
-            .order("desc")
-        : ctx.db
-            .query("skillSearchDigest")
-            .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-            .order("desc");
-    const createRecentByCreatedQuery = () =>
-      args.nonSuspiciousOnly
-        ? ctx.db
-            .query("skillSearchDigest")
-            .withIndex("by_nonsuspicious_created", (q) =>
-              q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
-            )
-            .order("desc")
-        : ctx.db
-            .query("skillSearchDigest")
-            .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-            .order("desc");
-
-    const filteredScanLimit =
-      categorySlug ||
-      topic ||
-      args.highlightedOnly ||
-      args.officialOnly ||
-      args.createdAfter !== undefined
-        ? FALLBACK_SCAN_LIMIT
-        : scanLimit;
-    const matchesFallbackRecallFilters = (digest: Doc<"skillSearchDigest">) => {
-      const skill = digestToHydratableSkill(digest);
-      return (
-        !shouldExcludeSkillFromPublicBrowse(skill) &&
-        (!args.highlightedOnly || isSkillHighlighted(skill)) &&
-        (!args.excludePendingScan || skill.githubScanStatus !== "pending") &&
-        matchesNativeSearchEligibility(skill, args) &&
-        matchesCatalogFilters(skill, categorySlug, topic) &&
-        matchesExactTokens(args.queryTokens, [
-          skill.displayName,
-          skill.slug,
-          skill.summary,
-          ...(skill.categories ?? []),
-          ...(skill.topics ?? []),
-        ])
+export const lexicalFallbackSkillsBatchInternal = internalQuery({
+  args: { queries: v.array(v.string()) },
+  handler: async (ctx, { queries }): Promise<SkillSearchEntry[][]> => {
+    if (queries.length > 8 || queries.some((query) => query.length > 256))
+      throw new Error("Maximum 8 bounded fallback queries");
+    // Report workers share only this transaction's identical unfiltered windows.
+    // Resolve owners and public versions after each term's canonical filtering.
+    const reads = {
+      updated: {},
+      created: {},
+      entries: new Map<Id<"skills">, Promise<SkillSearchEntry | null>>(),
+    };
+    const results = [];
+    for (const query of queries) {
+      results.push(
+        await lexicalFallbackSkillsImpl(
+          ctx,
+          {
+            query,
+            queryTokens: tokenize(query),
+            limit: MIN_STABLE_SEARCH_RECALL_LIMIT * FALLBACK_RECALL_MULTIPLIER,
+            skipExactSlugLookup: true,
+          },
+          reads,
+        ),
       );
-    };
-    const [recentByUpdated, recentByCreated] = await Promise.all([
-      collectFilteredSkillDigestCandidates(createRecentByUpdatedQuery, {
-        limit: scanLimit,
-        scanLimit: filteredScanLimit,
-        matches: matchesFallbackRecallFilters,
-      }),
-      collectFilteredSkillDigestCandidates(createRecentByCreatedQuery, {
-        limit: scanLimit,
-        scanLimit: filteredScanLimit,
-        matches: matchesFallbackRecallFilters,
-      }),
-    ]);
-
-    const addDigestCandidates = (digests: typeof recentByUpdated) => {
-      for (const digest of digests) {
-        if (seenSkillIds.has(digest.skillId)) continue;
-        const skill = digestToHydratableSkill(digest);
-        if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
-        if (args.excludePendingScan && skill.githubScanStatus === "pending") continue;
-        if (!matchesNativeSearchEligibility(skill, args)) continue;
-        if (!matchesCatalogFilters(skill, categorySlug, topic)) continue;
-        seenSkillIds.add(digest.skillId);
-        candidates.push(skill);
-        // Pre-resolve owner from digest to avoid users table reads.
-        const ownerInfo = digestToOwnerInfo(digest);
-        if (ownerInfo) preResolvedOwners.set(digest.skillId, ownerInfo);
-        publicVersions.set(digest.skillId, digest.publicVersion);
-      }
-    };
-    addDigestCandidates(recentByUpdated);
-    addDigestCandidates(recentByCreated);
-
-    const matched = candidates.filter((skill) =>
-      matchesExactTokens(args.queryTokens, [
-        skill.displayName,
-        skill.slug,
-        skill.summary,
-        ...(skill.categories ?? []),
-        ...(skill.topics ?? []),
-      ]),
-    );
-    if (matched.length === 0) return [];
-
-    // Only used as fallback for the exact slug match (no digest available).
-    const getOwnerInfo = makeOwnerInfoGetter(ctx);
-
-    const entries = await Promise.all(
-      matched.map(async (skill) => {
-        const preResolved = preResolvedOwners.get(skill._id);
-        const resolved = preResolved?.owner
-          ? await withOfficialOwnerInfo(ctx, preResolved)
-          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
-        if (!resolved.owner) return null;
-        if (
-          !(await hasResolvablePublicBrowseVersionFromState(
-            ctx,
-            { ...skill, _id: skill._id },
-            publicVersions.get(skill._id),
-          ))
-        )
-          return null;
-        const publicSkill = toPublicSearchSkill(skill);
-        if (!publicSkill) return null;
-        return {
-          skill: publicSkill,
-          version: null as Doc<"skillVersions"> | null,
-          ownerHandle: resolved.ownerHandle,
-          owner: resolved.owner,
-        };
-      }),
-    );
-    const validEntries = entries.filter(Boolean) as SkillSearchEntry[];
-    if (validEntries.length === 0) return [];
-
-    const filtered = validEntries.filter(
-      (entry) =>
-        (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-        matchesNativeSearchEligibility(entry.skill, args),
-    );
-    return filtered.slice(0, limit);
+    }
+    return results;
   },
 });
 

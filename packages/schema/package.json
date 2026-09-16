@@ -23,6 +23,22 @@
     "./textFiles": {
       "types": "./dist/textFiles.d.ts",
       "default": "./dist/textFiles.js"
+    },
+    "./catalogMetadata": {
+      "types": "./dist/catalogMetadata.d.ts",
+      "default": "./dist/catalogMetadata.js"
+    },
+    "./pluginCategories": {
+      "types": "./dist/pluginCategories.d.ts",
+      "default": "./dist/pluginCategories.js"
+    },
+    "./openClawExtensionSlugs": {
+      "types": "./dist/openClawExtensionSlugs.d.ts",
+      "default": "./dist/openClawExtensionSlugs.js"
+    },
+    "./rolloutCapabilities": {
+      "types": "./dist/rolloutCapabilities.d.ts",
+      "default": "./dist/rolloutCapabilities.js"
     }
   },
   "scripts": {
