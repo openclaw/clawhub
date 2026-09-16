@@ -271,7 +271,7 @@ describe("skill HTTP publication boundaries", () => {
     const runQuery = vi.fn(async (_ref: unknown, args: { selections: typeof selections }) =>
       args.selections.map(({ skillId: parentId, versionId }) => ({
         status: "available",
-        skill: { _id: parentId },
+        skill: { _id: parentId, tags: { latest: versionId } },
         version: { _id: versionId, skillId: parentId, version: "1.0.0" },
       })),
     );

@@ -328,15 +328,14 @@ export async function resolveTagsBatch(
     ctx,
     keys.map((key) => selections.get(key)!),
   );
-  const versionMap = new Map<string, string>();
-  selected.forEach((selection, index) => {
-    if (selection.status === "available") versionMap.set(keys[index], selection.version.version);
-  });
+  const selectionMap = new Map(keys.map((key, index) => [key, selected[index]]));
   return tagsList.map((tags, index) => {
     const resolved: Record<string, string> = {};
     for (const [tag, versionId] of Object.entries(tags)) {
-      const version = versionMap.get(selectionKey(skillIds[index], versionId));
-      if (version) resolved[tag] = version;
+      const selection = selectionMap.get(selectionKey(skillIds[index], versionId));
+      // A published target can outlive a removed or repointed tag in a cached snapshot.
+      if (selection?.status === "available" && selection.skill.tags[tag] === versionId)
+        resolved[tag] = selection.version.version;
     }
     return resolved;
   });
