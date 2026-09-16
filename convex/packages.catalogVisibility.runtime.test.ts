@@ -156,6 +156,21 @@ const routes = [
 ];
 
 describe("batched public discovery search", () => {
+  it("hydrates real plugin identities while retaining excluded-category demand evidence", async () => {
+    const { t } = await fixture();
+    const report = await t.action(internal.searchInsights.readCurrentResultsInternal, {
+      artifactKind: "plugin",
+      queries: ["whatsapp", "bundle"],
+    });
+    expect(report.rows[0].results.map((result) => result.id).sort()).toEqual(
+      expectedNames.map((name) => `plugin:${name}`),
+    );
+    expect(report.rows[1].results.map((result) => result.id)).toEqual(["plugin:whatsapp-bundle"]);
+    expect(
+      report.rows.flatMap((row) => row.results).every((result) => !result.eligibleForFeatured),
+    ).toBe(true);
+  });
+
   it.each([1, 2, 3])(
     "preserves canonical matching, visibility and ordering at limit %i",
     async (limit) => {
@@ -185,7 +200,7 @@ describe("batched public discovery search", () => {
           identities: entries
             .sort(compareCatalogSearchEntries)
             .slice(0, limit)
-            .map((entry) => entry.package.name),
+            .map((entry) => `plugin:${entry.package.name}`),
         });
       }
       const actual = await t.query(internal.packages.searchPublicDiscoveryBatchInternal, {
@@ -195,7 +210,7 @@ describe("batched public discovery search", () => {
       expect(actual).toEqual(expected);
       expect(actual[0].identities).toHaveLength(Math.min(limit, expectedNames.length));
       expect(
-        actual.flatMap((row) => row.identities).every((name) => expectedNames.includes(name)),
+        actual.flatMap((row) => row.identities).every((id) => expectedNames.includes(id.slice(7))),
       ).toBe(true);
     },
   );

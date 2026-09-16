@@ -5177,7 +5177,7 @@ export const searchPublicDiscoveryBatchInternal = internalQuery({
         identities: entries
           .sort(compareCatalogSearchEntries)
           .slice(0, limit)
-          .map((entry) => entry.package.name),
+          .map((entry) => `plugin:${entry.package.name}`),
       });
     }
     return results;
