@@ -171,3 +171,101 @@ it("hides a blocked stored fingerprint", async () => {
   expect(visible).toBeNull();
   expect(resolved?.match).toBeNull();
 });
+
+it("retains legacy publication semantics in indexed hash lookup", async () => {
+  const f = await fixture("index");
+  await f.t.run((ctx) => ctx.db.patch(f.publishedId, { publicationStatus: undefined }));
+  expect(
+    await f.t.query(api.skills.resolveVersionByHash, {
+      slug: "rca-hash-visibility",
+      hash: publishedHash,
+    }),
+  ).toEqual({ match: { version: "1.0.0" }, latestVersion: { version: "1.0.0" } });
+});
+
+it("does not match an owner-withdrawn fingerprint even without its soft-delete marker", async () => {
+  const f = await fixture("index");
+  await f.t.run((ctx) => ctx.db.patch(f.publishedId, { ownerDeletedAt: 2 }));
+  expect(
+    await f.t.query(api.skills.resolveVersionByHash, {
+      slug: "rca-hash-visibility",
+      hash: publishedHash,
+    }),
+  ).toEqual({ match: null, latestVersion: null });
+});
+
+it("rejects a fingerprint and latest pointer whose version belongs to a different skill", async () => {
+  const f = await fixture("index");
+  await f.t.run(async (ctx) => {
+    const skill = await ctx.db.get(f.skillId);
+    if (!skill) throw new Error("Missing fixture skill");
+    const foreignSkillId = await ctx.db.insert("skills", {
+      slug: "foreign",
+      displayName: "Foreign",
+      ownerUserId: skill.ownerUserId,
+      tags: {},
+      badges: {},
+      moderationStatus: "active",
+      stats: { comments: 0, downloads: 0, stars: 0, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await ctx.db.patch(f.publishedId, { skillId: foreignSkillId });
+  });
+  expect(
+    await f.t.query(api.skills.resolveVersionByHash, {
+      slug: "rca-hash-visibility",
+      hash: publishedHash,
+    }),
+  ).toEqual({ match: null, latestVersion: null });
+});
+
+it.each(["hidden", "removed"] as const)(
+  "does not resolve hashes under a %s parent",
+  async (moderationStatus) => {
+    const f = await fixture("index");
+    await f.t.run((ctx) =>
+      ctx.db.patch(f.skillId, { moderationStatus, moderationReason: "manual.review" }),
+    );
+    expect(await f.t.query(api.skills.getBySlug, { slug: "rca-hash-visibility" })).toBeNull();
+    expect(
+      await f.t.query(api.skills.resolveVersionByHash, {
+        slug: "rca-hash-visibility",
+        hash: publishedHash,
+      }),
+    ).toBeNull();
+  },
+);
+
+it("does not resolve hashes for a deactivated legacy owner", async () => {
+  const f = await fixture("index");
+  await f.t.run(async (ctx) => {
+    const skill = await ctx.db.get(f.skillId);
+    if (!skill) throw new Error("Missing fixture skill");
+    await ctx.db.patch(skill._id, { ownerPublisherId: undefined });
+    await ctx.db.patch(skill.ownerUserId, { deactivatedAt: 2 });
+  });
+  expect(await f.t.query(api.skills.getBySlug, { slug: "rca-hash-visibility" })).toBeNull();
+  expect(
+    await f.t.query(api.skills.resolveVersionByHash, {
+      slug: "rca-hash-visibility",
+      hash: publishedHash,
+    }),
+  ).toBeNull();
+});
+
+it("keeps published hash inspection separate from per-version download scan policy", async () => {
+  const f = await fixture("index");
+  await f.t.run((ctx) =>
+    ctx.db.patch(f.publishedId, {
+      llmAnalysis: { status: "malicious", verdict: "malicious", checkedAt: 2 },
+    }),
+  );
+  expect(
+    await f.t.query(api.skills.resolveVersionByHash, {
+      slug: "rca-hash-visibility",
+      ownerHandle: "rca-owner",
+      hash: publishedHash,
+    }),
+  ).toEqual({ match: { version: "1.0.0" }, latestVersion: { version: "1.0.0" } });
+});
