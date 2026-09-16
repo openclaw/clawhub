@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 import inventory from "../convex/lib/bundledPluginCategoryAssignments.json";
+import { PLUGIN_CATEGORY_CLASSIFIER_VERSION } from "../convex/lib/pluginCategoryClassification";
 import {
   assertReviewed,
   operate,
@@ -34,7 +35,7 @@ const row = () => ({
   categories: ["developer-tools"],
   classification: {
     source: "generated",
-    classifierVersion: "plugin-single-category-v3",
+    classifierVersion: PLUGIN_CATEGORY_CLASSIFIER_VERSION,
     inputHash: "b".repeat(64),
     evidence: "Reviews code.",
   },
@@ -111,7 +112,7 @@ describe("production category operator guards", () => {
     await expect(operate(oldTaxonomy, options(), vi.fn())).rejects.toThrow("category contract");
     expect(oldTaxonomy.run).toHaveBeenCalledTimes(1);
   });
-  it("requires exact inspected evidence and current classifier while preserving old manifest arrays", () => {
+  it("requires exact inspected evidence, current classifier and a canonical single purpose", () => {
     const original = row();
     const request = options("accept", [original]);
     assertReviewed([original], request);
@@ -128,7 +129,9 @@ describe("production category operator guards", () => {
         classifierVersion: "plugin-single-category-v2",
       },
     };
-    expect(() => assertReviewed([old], options("accept", [old]))).toThrow("v3");
+    expect(() => assertReviewed([old], options("accept", [old]))).toThrow(
+      PLUGIN_CATEGORY_CLASSIFIER_VERSION,
+    );
     const fallback = {
       ...original,
       classification: { ...original.classification, source: "fallback" },
@@ -136,11 +139,24 @@ describe("production category operator guards", () => {
     expect(() => assertReviewed([fallback], options("accept", [fallback]))).toThrow("Fallback");
     const manifest = {
       ...original,
-      categories: ["tools", "runtime"],
+      categories: ["developer-tools"],
       classification: { ...original.classification, source: "manifest" },
     };
     expect(() => assertReviewed([manifest], options("accept", [manifest]))).not.toThrow();
   });
+  it.each([["tools", "runtime"], ["runtime"], ["channels", "scheduling"], ["invented-category"]])(
+    "refuses noncanonical reviewed manifest assignment %s",
+    (...categories) => {
+      const manifest = {
+        ...row(),
+        categories,
+        classification: { ...row().classification, source: "manifest" },
+      };
+      expect(() => assertReviewed([manifest], options("accept", [manifest]))).toThrow(
+        "current category",
+      );
+    },
+  );
   it("checks the exact bundled source pin, input hash, and assignment", () => {
     const entry = inventory.assignments[0];
     const bundled = {

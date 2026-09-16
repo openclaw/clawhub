@@ -2,11 +2,11 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, rename, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
+import { isCurrentPluginCategoryAssignment, PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
 import inventory from "../convex/lib/bundledPluginCategoryAssignments.json";
+import { PLUGIN_CATEGORY_CLASSIFIER_VERSION } from "../convex/lib/pluginCategoryClassification";
 
 const TARGET = "wry-manatee-359";
-const CLASSIFIER = "plugin-single-category-v3";
 const SOURCE = "3bf34b0570d3e55ad16f7c4cb25249797a59042b";
 const MIGRATION = "migrations:applyAcceptedPluginCategoryRefreshes";
 const MODES = ["preview", "report", "accept", "apply", "status", "rollback"] as const;
@@ -209,11 +209,14 @@ export function assertReviewed(rows: Row[], options: Options) {
         "Bundled preview no longer matches the pinned inventory.",
       );
     } else {
-      requireValue(c.classifierVersion === CLASSIFIER, "Generate a fresh v3 preview.");
+      requireValue(
+        c.classifierVersion === PLUGIN_CATEGORY_CLASSIFIER_VERSION,
+        `Generate a fresh ${PLUGIN_CATEGORY_CLASSIFIER_VERSION} preview.`,
+      );
     }
     requireValue(
-      row.categories.length >= 1 && row.categories.length <= (c.source === "manifest" ? 3 : 1),
-      "Invalid category count.",
+      isCurrentPluginCategoryAssignment(row.categories),
+      "Reviewed assignment must have exactly one current category.",
     );
   }
 }
