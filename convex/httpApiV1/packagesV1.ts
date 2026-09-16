@@ -2363,21 +2363,21 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
       if (!digest.latestReleaseId || !release) {
         exportErrors.push({
           package: digest.name,
-          error: `release not found (latestReleaseId: ${digest.latestReleaseId ?? "null"})`,
+          error: "release not available",
         });
         continue;
       }
       if (!isReleaseForPackage(release, digest)) {
         exportErrors.push({
           package: digest.name,
-          error: `release not found (latestReleaseId: ${digest.latestReleaseId})`,
+          error: "release not available",
         });
         continue;
       }
       if (release.softDeletedAt) {
         exportErrors.push({
           package: digest.name,
-          error: `release not available (latestReleaseId: ${digest.latestReleaseId})`,
+          error: "release not available",
         });
         continue;
       }

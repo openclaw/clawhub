@@ -3,6 +3,7 @@
 
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
+import { unzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
@@ -168,6 +169,12 @@ describe("checked package release selections", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("X-Total-Returned")).toBe("0");
     expect(response.headers.get("X-Export-Errors")).toBe("1");
+    const archive = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    const contents = Object.values(archive)
+      .map((bytes) => new TextDecoder().decode(bytes))
+      .join("\n");
+    expect(contents).not.toContain(String(selected));
+    expect(contents).not.toContain("visible bytes");
   });
 
   it("preserves legacy and published releases while rejecting a foreign parent pointer", async () => {
