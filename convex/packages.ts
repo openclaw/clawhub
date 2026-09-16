@@ -5164,16 +5164,16 @@ export const searchPublicDiscoveryBatchInternal = internalQuery({
       reads: { publicItems: new Map() } as PackageSearchBatchReads,
     }));
     const results = [];
-    for (const query of args.queries) {
+    for (const queryText of args.queries) {
       const entries = (
         await Promise.all(
           families.map(({ family, reads }) =>
-            searchPackagesImpl(ctx, { query, family, limit }, reads),
+            searchPackagesImpl(ctx, { query: queryText, family, limit }, reads),
           ),
         )
       ).flat();
       results.push({
-        query,
+        query: queryText,
         identities: entries
           .sort(compareCatalogSearchEntries)
           .slice(0, limit)

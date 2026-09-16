@@ -111,7 +111,10 @@ describe("generateEmbeddings", () => {
       [0, 1],
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).input).toEqual(["first", "second"]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).input).toEqual([
+      "first",
+      "second",
+    ]);
   });
   it("rejects an incomplete or duplicate-index batch instead of assigning another query's vector", async () => {
     fetchMock.mockResolvedValueOnce(

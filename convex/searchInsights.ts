@@ -552,9 +552,9 @@ async function readCurrentResults(
   const byId = new Map(results.map((result) => [result.id, result]));
   return {
     metadataCheckedAt: Date.now(),
-    rows: matches.map(({ query, identities }) => ({
+    rows: matches.map(({ query, identities: queryIdentities }) => ({
       query,
-      results: identities.flatMap((identity) => {
+      results: queryIdentities.flatMap((identity) => {
         const result = byId.get(identity);
         return result ? [result] : [];
       }),
