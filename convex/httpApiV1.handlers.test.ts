@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
+import { getFunctionName } from "convex/server";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArk } from "../packages/schema/src/ark";
@@ -1508,7 +1509,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1544,43 +1545,49 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:code") {
-        return {
-          packageId: "packages:code",
-          version: "1.0.0",
-          changelog: "Initial code plugin",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:package-json",
-              path: "package.json",
-              size: 2,
-              sha256: "sha-package-json",
-              contentType: "application/json",
-            },
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [
+            { packageId: "packages:code", releaseId: "packageReleases:code" },
+            { packageId: "packages:bundle", releaseId: "packageReleases:bundle" },
           ],
-          artifactKind: "npm-pack",
-          softDeletedAt: undefined,
-        };
-      }
-      if (args.releaseId === "packageReleases:bundle") {
-        return {
-          packageId: "packages:bundle",
-          version: "2.0.0",
-          changelog: "Initial bundle plugin",
-          createdAt: 3,
-          files: [
-            {
-              storageId: "storage:bundle",
-              path: "openclaw.bundle.json",
-              size: 2,
-              sha256: "sha-bundle",
-              contentType: "application/json",
-            },
-          ],
-          artifactKind: "legacy-zip",
-          softDeletedAt: undefined,
-        };
+        });
+        return [
+          {
+            packageId: "packages:code",
+            version: "1.0.0",
+            changelog: "Initial code plugin",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:package-json",
+                path: "package.json",
+                size: 2,
+                sha256: "sha-package-json",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "npm-pack",
+            softDeletedAt: undefined,
+          },
+          {
+            packageId: "packages:bundle",
+            version: "2.0.0",
+            changelog: "Initial bundle plugin",
+            createdAt: 3,
+            files: [
+              {
+                storageId: "storage:bundle",
+                path: "openclaw.bundle.json",
+                size: 2,
+                sha256: "sha-bundle",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "legacy-zip",
+            softDeletedAt: undefined,
+          },
+        ];
       }
       return null;
     });
@@ -1624,7 +1631,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1646,31 +1653,36 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:bundle") {
-        return {
-          packageId: "packages:bundle",
-          version: "1.0.0",
-          changelog: "Legacy bundle",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:first",
-              path: "plugins/humanizer/_skillhub_meta.json",
-              size: 13,
-              sha256: "sha-first",
-              contentType: "application/json",
-            },
-            {
-              storageId: "storage:second",
-              path: "plugins/humanizer/_skillhub_meta.json",
-              size: 14,
-              sha256: "sha-second",
-              contentType: "application/json",
-            },
-          ],
-          artifactKind: "legacy-zip",
-          softDeletedAt: undefined,
-        };
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [{ packageId: "packages:bundle", releaseId: "packageReleases:bundle" }],
+        });
+        return [
+          {
+            packageId: "packages:bundle",
+            version: "1.0.0",
+            changelog: "Legacy bundle",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:first",
+                path: "plugins/humanizer/_skillhub_meta.json",
+                size: 13,
+                sha256: "sha-first",
+                contentType: "application/json",
+              },
+              {
+                storageId: "storage:second",
+                path: "plugins/humanizer/_skillhub_meta.json",
+                size: 14,
+                sha256: "sha-second",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "legacy-zip",
+            softDeletedAt: undefined,
+          },
+        ];
       }
       return null;
     });
@@ -1718,7 +1730,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1740,30 +1752,35 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:blocked") {
-        return {
-          packageId: "packages:blocked",
-          version: "1.0.0",
-          changelog: "Blocked",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:blocked",
-              path: "package.json",
-              size: 2,
-              sha256: "sha-blocked",
-              contentType: "application/json",
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [{ packageId: "packages:blocked", releaseId: "packageReleases:blocked" }],
+        });
+        return [
+          {
+            packageId: "packages:blocked",
+            version: "1.0.0",
+            changelog: "Blocked",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:blocked",
+                path: "package.json",
+                size: 2,
+                sha256: "sha-blocked",
+                contentType: "application/json",
+              },
+            ],
+            manualModeration: {
+              state: "quarantined",
+              reason: "malware",
+              reviewerUserId: "users:mod",
+              updatedAt: 2,
             },
-          ],
-          manualModeration: {
-            state: "quarantined",
-            reason: "malware",
-            reviewerUserId: "users:mod",
-            updatedAt: 2,
+            artifactKind: "npm-pack",
+            softDeletedAt: undefined,
           },
-          artifactKind: "npm-pack",
-          softDeletedAt: undefined,
-        };
+        ];
       }
       return null;
     });
@@ -1795,7 +1812,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1817,24 +1834,29 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:collision") {
-        return {
-          packageId: "packages:collision",
-          version: "1.0.0",
-          changelog: "Collision",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:plugin-meta-file",
-              path: "_export_plugin_meta.json",
-              size: 2,
-              sha256: "sha-plugin-meta-file",
-              contentType: "application/json",
-            },
-          ],
-          artifactKind: "npm-pack",
-          softDeletedAt: undefined,
-        };
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [{ packageId: "packages:collision", releaseId: "packageReleases:collision" }],
+        });
+        return [
+          {
+            packageId: "packages:collision",
+            version: "1.0.0",
+            changelog: "Collision",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:plugin-meta-file",
+                path: "_export_plugin_meta.json",
+                size: 2,
+                sha256: "sha-plugin-meta-file",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "npm-pack",
+            softDeletedAt: undefined,
+          },
+        ];
       }
       return null;
     });
@@ -16100,7 +16122,7 @@ describe("httpApiV1 handlers", () => {
   it("package download uses download rate limiting", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16118,21 +16140,26 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16161,7 +16188,7 @@ describe("httpApiV1 handlers", () => {
   it("package file uses read rate limiting", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16179,21 +16206,26 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "README.md",
-              size: 5,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "text/markdown",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "README.md",
+                size: 5,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "text/markdown",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16222,7 +16254,7 @@ describe("httpApiV1 handlers", () => {
   it("package file previews UTF-8 by bytes and downloads opaque artifacts", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16240,28 +16272,33 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "main.tf",
-              size: 37,
-              sha256: "b".repeat(64),
-              storageId: "storage:text",
-              contentType: "application/octet-stream",
-            },
-            {
-              path: "assets/payload.bin",
-              size: 4,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/octet-stream",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "main.tf",
+                size: 37,
+                sha256: "b".repeat(64),
+                storageId: "storage:text",
+                contentType: "application/octet-stream",
+              },
+              {
+                path: "assets/payload.bin",
+                size: 4,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/octet-stream",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16307,7 +16344,7 @@ describe("httpApiV1 handlers", () => {
   it("package file resolves lowercase readme variants from the canonical request path", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16325,21 +16362,26 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "readme.md",
-              size: 5,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "text/markdown",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "readme.md",
+                size: 5,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "text/markdown",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16364,7 +16406,7 @@ describe("httpApiV1 handlers", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16382,28 +16424,33 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-            {
-              path: "dist/index.js",
-              size: 17,
-              sha256: "b".repeat(64),
-              storageId: "storage:2",
-              contentType: "text/javascript",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+              {
+                path: "dist/index.js",
+                size: 17,
+                sha256: "b".repeat(64),
+                storageId: "storage:2",
+                contentType: "text/javascript",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16450,7 +16497,7 @@ describe("httpApiV1 handlers", () => {
 
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16468,21 +16515,26 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16519,7 +16571,7 @@ describe("httpApiV1 handlers", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16537,21 +16589,26 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16580,7 +16637,7 @@ describe("httpApiV1 handlers", () => {
   it("package download fails when any stored file is missing", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16598,28 +16655,33 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-            {
-              path: "dist/index.js",
-              size: 2,
-              sha256: "b".repeat(64),
-              storageId: "storage:missing",
-              contentType: "text/javascript",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+              {
+                path: "dist/index.js",
+                size: 2,
+                sha256: "b".repeat(64),
+                storageId: "storage:missing",
+                contentType: "text/javascript",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16645,7 +16707,7 @@ describe("httpApiV1 handlers", () => {
   it("allows package downloads while VT scan is pending", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16663,22 +16725,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          sha256hash: "a".repeat(64),
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            sha256hash: "a".repeat(64),
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16699,7 +16766,7 @@ describe("httpApiV1 handlers", () => {
     const archive = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16717,22 +16784,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          artifactKind: "legacy-zip",
-          clawpackStorageId: "storage:archive",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:file-that-must-not-be-read",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            artifactKind: "legacy-zip",
+            clawpackStorageId: "storage:archive",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:file-that-must-not-be-read",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16757,7 +16829,7 @@ describe("httpApiV1 handlers", () => {
     const packageJson = new TextEncoder().encode('{"name":"demo-plugin"}');
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16775,22 +16847,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          artifactKind: "npm-pack",
-          clawpackStorageId: "storage:tarball",
-          files: [
-            {
-              path: "package.json",
-              size: packageJson.byteLength,
-              sha256: "a".repeat(64),
-              storageId: "storage:package-json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:tarball",
+            files: [
+              {
+                path: "package.json",
+                size: packageJson.byteLength,
+                sha256: "a".repeat(64),
+                storageId: "storage:package-json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16818,7 +16895,7 @@ describe("httpApiV1 handlers", () => {
   it("allows package downloads when verification is clean even without cached vtAnalysis", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16836,23 +16913,28 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          sha256hash: "a".repeat(64),
-          verification: { scanStatus: "clean" },
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            sha256hash: "a".repeat(64),
+            verification: { scanStatus: "clean" },
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16875,7 +16957,7 @@ describe("httpApiV1 handlers", () => {
   it("blocks package file access when release is malicious", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16893,22 +16975,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          verification: { scanStatus: "malicious" },
-          files: [
-            {
-              path: "README.md",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "text/markdown",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            verification: { scanStatus: "malicious" },
+            files: [
+              {
+                path: "README.md",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "text/markdown",
+              },
+            ],
+          },
         };
       }
       return null;
