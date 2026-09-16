@@ -28,6 +28,11 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
 export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     schemaVersion: number;
+    contracts?: {
+        [x: string]: string[];
+    } | undefined;
+    providers?: string[] | undefined;
+    channels?: string[] | undefined;
     categories?: string[] | undefined;
     icon?: string | undefined;
     compatibility?: {
@@ -645,6 +650,11 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
             categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {
@@ -752,6 +762,11 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
             categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {
@@ -983,6 +998,11 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
             categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {
@@ -1081,6 +1101,11 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
             categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {

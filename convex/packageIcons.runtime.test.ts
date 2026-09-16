@@ -76,6 +76,72 @@ async function fixture() {
 }
 
 describe("plugin icon repair", () => {
+  it("backfills declared capabilities while preserving current icon and category ownership", async () => {
+    const { t, releaseId } = await fixture();
+    const originalSummary = {
+      schemaVersion: 1 as const,
+      icon,
+      categories: ["channels"],
+      configFields: [],
+      mcpServers: [],
+      bundledSkills: [],
+    };
+    await t.run(async (ctx) =>
+      ctx.db.patch(releaseId, {
+        pluginManifestSummary: originalSummary,
+        extractedPluginManifest: { contracts: { tools: ["demo-tool"] }, channels: ["whatsapp"] },
+      }),
+    );
+    const args = { family: "code-plugin" as const };
+    expect(
+      await t.action(internal.migrations.runPluginManifestSummaryBackfillPage, args),
+    ).toMatchObject({ changedReleases: 1, patchedReleases: 0 });
+    expect(
+      await t.run(async (ctx) => (await ctx.db.get(releaseId))?.pluginManifestSummary),
+    ).toEqual(originalSummary);
+    expect(
+      await t.action(internal.migrations.runPluginManifestSummaryBackfillPage, {
+        ...args,
+        dryRun: false,
+        confirm: "backfill-plugin-manifest-summaries",
+      }),
+    ).toMatchObject({ changedReleases: 1, patchedReleases: 1 });
+    const rebuilt = {
+      ...originalSummary,
+      contracts: { tools: ["demo-tool"] },
+      channels: ["whatsapp"],
+    };
+    expect(
+      await t.run(async (ctx) => (await ctx.db.get(releaseId))?.pluginManifestSummary),
+    ).toEqual(rebuilt);
+    expect(
+      await t.action(internal.migrations.runPluginManifestSummaryBackfillPage, args),
+    ).toMatchObject({ changedReleases: 0, unchangedReleases: 1 });
+    for (const route of [
+      "/api/v1/packages/%40openclaw%2Fwhatsapp/detail?version=1.0.0",
+      "/api/v1/packages/%40openclaw%2Fwhatsapp/versions/1.0.0",
+    ]) {
+      const response = await t.fetch(route);
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.version.pluginManifestSummary).toEqual(rebuilt);
+    }
+    // Planning may precede category classification or icon repair; the mutation reads their current values.
+    const newerIcon = `/api/v1/skill-icons/${"c".repeat(64)}`;
+    await t.run(async (ctx) =>
+      ctx.db.patch(releaseId, {
+        pluginManifestSummary: { ...rebuilt, icon: newerIcon, categories: ["tools"] },
+      }),
+    );
+    await t.mutation(internal.migrations.applyPluginManifestSummaryBackfillPatch, {
+      releaseId,
+      pluginManifestSummary: rebuilt,
+    });
+    expect(
+      await t.run(async (ctx) => (await ctx.db.get(releaseId))?.pluginManifestSummary),
+    ).toEqual({ ...rebuilt, icon: newerIcon, categories: ["tools"] });
+  });
+
   it("updates the release, latest summary, and every public catalog projection atomically and idempotently", async () => {
     const { t, ...ids } = await fixture();
     const before = await t.fetch("/api/v1/plugins");

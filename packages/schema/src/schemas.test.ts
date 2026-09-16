@@ -203,6 +203,38 @@ describe("clawhub-schema", () => {
     );
   });
 
+  it.each([
+    {},
+    {
+      contracts: { tools: ["apify"], videoGenerationProviders: ["heygen"] },
+      providers: ["model-provider"],
+      channels: ["chat"],
+    },
+  ])("reads old and capability-enriched version summaries: %j", (capabilities) => {
+    const summary = {
+      schemaVersion: 1,
+      configFields: [],
+      mcpServers: [],
+      bundledSkills: [],
+      ...capabilities,
+    };
+    const response = parseArk(
+      ApiV1PackageVersionResponseSchema,
+      {
+        package: { name: "demo", displayName: "Demo", family: "code-plugin" },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "",
+          files: [],
+          pluginManifestSummary: summary,
+        },
+      },
+      "Package version response",
+    );
+    expect(response.version?.pluginManifestSummary).toEqual(summary);
+  });
+
   it("accepts publish payload with github source", () => {
     const payload = parseArk(
       CliPublishRequestSchema,

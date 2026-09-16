@@ -289,6 +289,12 @@ function parseSkillMarkdownMetadata(text: string | undefined) {
   };
 }
 
+function declaredCapabilityNames(value: unknown): string[] {
+  return Array.isArray(value)
+    ? uniq(value.filter((entry): entry is string => typeof entry === "string")).sort()
+    : [];
+}
+
 export function derivePluginManifestSummary(params: {
   pluginManifest: JsonRecord;
   skillManifest?: JsonRecord;
@@ -301,6 +307,16 @@ export function derivePluginManifestSummary(params: {
     params.compatibility,
   );
   const manifestIdentity = extractManifestIdentity(params.pluginManifest);
+  const contracts = Object.fromEntries(
+    Object.entries(isRecord(params.pluginManifest.contracts) ? params.pluginManifest.contracts : {})
+      // Convex record keys cannot be reserved, empty, non-ASCII, or longer than 1024 characters.
+      .filter(([key]) => /^(?![$_])[ -~]{1,1024}$/.test(key))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [key, declaredCapabilityNames(value)] as const)
+      .filter(([, names]) => names.length > 0),
+  );
+  const providers = declaredCapabilityNames(params.pluginManifest.providers);
+  const channels = declaredCapabilityNames(params.pluginManifest.channels);
   const skillManifest = params.skillManifest ?? params.pluginManifest;
   const skillRoots = uniq([
     ...normalizeSkillRootPaths(skillManifest.skills),
@@ -332,6 +348,9 @@ export function derivePluginManifestSummary(params: {
     ...(params.categories ? { categories: [...params.categories] } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
+    ...(Object.keys(contracts).length ? { contracts } : {}),
+    ...(providers.length ? { providers } : {}),
+    ...(channels.length ? { channels } : {}),
     configFields: extractConfigFields(params.pluginManifest),
     mcpServers: extractMcpServerNames(params.pluginManifest).map((name) => ({ name })),
     bundledSkills,

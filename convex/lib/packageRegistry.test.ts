@@ -79,6 +79,45 @@ describe("packageRegistry", () => {
     expect(result.verification.scanStatus).toBe("not-run");
   });
 
+  it("preserves declared capability families without inventing tools or activating loose skill files", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        contracts: {
+          tools: [" apify ", "apify", "", 42, { name: "not-a-tool" }],
+          videoGenerationProviders: ["heygen"],
+          futureFamily: ["future-provider"],
+          empty: [],
+          malformed: "not-an-array",
+          $invalid: ["ignored"],
+        },
+        providers: [" model-provider ", "model-provider"],
+        channels: ["chat"],
+        tools: ["not-declared"],
+      },
+      files: [{ path: "SKILL.md", size: 20, sha256: "a".repeat(64), text: "# Loose skill" }],
+    });
+    expect(summary).toMatchObject({
+      contracts: {
+        tools: ["apify"],
+        videoGenerationProviders: ["heygen"],
+        futureFamily: ["future-provider"],
+      },
+      providers: ["model-provider"],
+      channels: ["chat"],
+      bundledSkills: [],
+    });
+    expect(Object.keys(summary.contracts ?? {})).toEqual([
+      "futureFamily",
+      "tools",
+      "videoGenerationProviders",
+    ]);
+    expect(JSON.stringify(summary)).not.toContain("not-declared");
+    const absent = derivePluginManifestSummary({ pluginManifest: {}, files: [] });
+    expect(absent).not.toHaveProperty("contracts");
+    expect(absent).not.toHaveProperty("providers");
+    expect(absent).not.toHaveProperty("channels");
+  });
+
   it("derives a safe bundled plugin manifest summary from dummy plugin metadata", () => {
     const summary = derivePluginManifestSummary({
       compatibility: { pluginApiRange: "^1.2.0" },

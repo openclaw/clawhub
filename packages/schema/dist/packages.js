@@ -37,6 +37,9 @@ export const PackageCompatibilitySchema = type({
 });
 export const PluginManifestSummarySchema = type({
     schemaVersion: "number",
+    contracts: type({ "[string]": "string[]" }).optional(),
+    providers: "string[]?",
+    channels: "string[]?",
     categories: "string[]?",
     icon: "string?",
     compatibility: PackageCompatibilitySchema.optional(),

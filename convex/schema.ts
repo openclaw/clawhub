@@ -715,6 +715,9 @@ const packageCompatibilityValidator = v.optional(
 
 export const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
+  contracts: v.optional(v.record(v.string(), v.array(v.string()))),
+  providers: v.optional(v.array(v.string())),
+  channels: v.optional(v.array(v.string())),
   categories: v.optional(v.array(v.string())),
   icon: v.optional(v.string()),
   compatibility: v.optional(

@@ -882,6 +882,12 @@ verification, artifact metadata, and scan data.
 
 Notes:
 
+- `version.pluginManifestSummary` exposes optional declared `contracts` (capability
+  family to name arrays), `providers`, and `channels`. For example, `contracts.tools`
+  names plugin tools; `contracts.videoGenerationProviders` names providers, not tools.
+  These declarations describe the published artifact, not current Gateway registrations.
+  Older summaries may omit these fields. A loose `SKILL.md` is not a bundled skill
+  unless the plugin manifest declares its skill root.
 - `version.artifact.kind` is `legacy-zip` for old-world package archives or
   `npm-pack` for ClawPack-backed releases.
 - ClawPack releases include npm-compatible `npmIntegrity`, `npmShasum`, and
