@@ -11,6 +11,8 @@ const LOCAL_AUTH_TRENDING_SNAPSHOT_ID = "local-auth-canonical-trending-v1";
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const SNAPSHOT_RETENTION_MS = 2 * DAY_MS;
 const LOCAL_AUTH_BACKEND_HTTP_TIMEOUT_SECONDS = 900;
+// Reserve room for the generated directory suffix and Convex's Unix socket names.
+const MAX_LOCAL_AUTH_TMP_BASE_BYTES = 32;
 
 type RunnerEnv = Record<string, string | undefined>;
 
@@ -133,18 +135,22 @@ export function resolveLocalAuthRunnerConfig(
 }
 
 export function createLocalAuthTempDir() {
-  const workspaceDevice = statSync(process.cwd()).dev;
+  const workspace = process.cwd();
+  const workspaceDevice = statSync(workspace).dev;
   let base = tmpdir();
-  if (statSync(base).dev !== workspaceDevice) {
-    base = process.cwd();
+  const sameDevice = statSync(base).dev === workspaceDevice;
+  if (!sameDevice) {
+    base = workspace;
+  }
+  if (!sameDevice || Buffer.byteLength(base) > MAX_LOCAL_AUTH_TMP_BASE_BYTES) {
     for (
-      let ancestor = dirname(base);
+      let ancestor = workspace;
       statSync(ancestor).dev === workspaceDevice;
       ancestor = dirname(ancestor)
     ) {
       try {
         accessSync(ancestor, constants.W_OK | constants.X_OK);
-        base = ancestor;
+        if (Buffer.byteLength(ancestor) < Buffer.byteLength(base)) base = ancestor;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") throw error;

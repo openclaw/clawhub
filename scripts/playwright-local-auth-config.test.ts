@@ -1,15 +1,46 @@
 /* @vitest-environment node */
 
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { createServer } from "node:net";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildLocalAuthBackendEnv,
   buildLocalAuthTrendingSnapshotArgs,
+  createLocalAuthTempDir,
   resolveLocalAuthDeployment,
   resolveLocalAuthExternalNodeDependencies,
   resolveLocalAuthRunnerConfig,
 } from "./playwright-local-auth-config";
 
 describe("playwright local-auth runner config", () => {
+  it.skipIf(process.platform === "win32")(
+    "shortens a deep same-volume TMPDIR for Unix sockets",
+    async () => {
+      const parent = mkdtempSync(join(process.cwd(), ".auth-scratch-test-"));
+      const deepTemp = join(parent, "nested-".repeat(20));
+      mkdirSync(deepTemp);
+      vi.stubEnv("TMPDIR", deepTemp);
+      const server = createServer();
+      let scratch: string | undefined;
+      try {
+        scratch = createLocalAuthTempDir();
+        expect(statSync(scratch).dev).toBe(statSync(process.cwd()).dev);
+        const socketPath = join(scratch, "node-executor.sock");
+        expect(Buffer.byteLength(socketPath)).toBeLessThan(100);
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject);
+          server.listen(socketPath, resolve);
+        });
+      } finally {
+        if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+        vi.unstubAllEnvs();
+        if (scratch) rmSync(scratch, { recursive: true, force: true });
+        rmSync(parent, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("sets the backend transport timeout and bounded, cache-preferring npm fetches", () => {
     expect(buildLocalAuthBackendEnv()).toEqual({
       HTTP_SERVER_TIMEOUT_SECONDS: "900",

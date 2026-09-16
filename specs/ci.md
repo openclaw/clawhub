@@ -70,6 +70,8 @@ local Convex process and temporarily moves aside `.env.local` plus
 `.convex/local/default`, then restores them afterward. Stop any already-running
 local Convex process before running it.
 
+Long or cross-filesystem scratch paths use a short writable ancestor on the workspace filesystem. Short `TMPDIR` overrides on that filesystem are preserved. This keeps module renames on one device and leaves room for Convex's Unix socket paths on macOS.
+
 The runner starts the backend without publishing functions, configures the
 backend environment, and then publishes once. Cron definitions read deployment
 environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
