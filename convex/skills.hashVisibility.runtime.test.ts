@@ -269,3 +269,34 @@ it("keeps published hash inspection separate from per-version download scan poli
     }),
   ).toEqual({ match: { version: "1.0.0" }, latestVersion: { version: "1.0.0" } });
 });
+
+it.each(["malicious", "blocked.malware"] as const)(
+  "preserves published hash inspection for a parent hidden by %s",
+  async (reason) => {
+    const f = await fixture(reason === "malicious" ? "index" : "stored-fallback");
+    await f.t.run((ctx) =>
+      ctx.db.patch(f.skillId, {
+        moderationStatus: "hidden",
+        ...(reason === "malicious"
+          ? { moderationVerdict: "malicious" as const }
+          : { moderationFlags: ["blocked.malware"] }),
+      }),
+    );
+    const resolve = (hash: string) =>
+      f.t.query(api.skills.resolveVersionByHash, { slug: "rca-hash-visibility", hash });
+
+    expect(await resolve(publishedHash)).toEqual({
+      match: { version: "1.0.0" },
+      latestVersion: { version: "1.0.0" },
+    });
+    for (const publicationStatus of ["pending", "blocked"] as const) {
+      await f.t.run((ctx) => ctx.db.patch(f.pendingId, { publicationStatus }));
+      expect(await resolve(f.hash)).toEqual({
+        match: null,
+        latestVersion: { version: "1.0.0" },
+      });
+    }
+    await f.t.run((ctx) => ctx.db.patch(f.skillId, { softDeletedAt: 2 }));
+    expect(await resolve(publishedHash)).toBeNull();
+  },
+);

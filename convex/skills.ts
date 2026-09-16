@@ -10481,12 +10481,7 @@ export const resolveVersionByHash = query({
       };
     }
     const skill = resolved.skill;
-    if (!isPublicSkillDoc(skill)) return null;
-    const ownerPublisher = await getOwnerPublisher(ctx, {
-      ownerPublisherId: skill.ownerPublisherId,
-      ownerUserId: skill.ownerUserId,
-    });
-    if (!toPublicPublisher(ownerPublisher)) return null;
+    if (!skill || !(await getPublicSkillMetadataOwner(ctx, skill))) return null;
 
     const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
     const latestVersion = isPublicSkillVersionAvailableForSkill(latestVersionDoc, skill._id)
