@@ -151,7 +151,7 @@ it("public Featured reads follow approved identity order and omit unbadged reser
   let cursor: string | null = null;
   const paginated: string[] = [];
   for (let index = 0; index < expected.length; index++) {
-    const page = await t.query(api.skills.listPackageCatalogPage, {
+    const page: typeof skillPackages = await t.query(api.skills.listPackageCatalogPage, {
       highlightedOnly: true,
       paginationOpts: { cursor, numItems: 1 },
     });
