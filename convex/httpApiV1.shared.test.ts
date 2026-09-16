@@ -23,7 +23,7 @@ describe("http API v1 shared helpers", () => {
     expect(
       formatUserFacingErrorMessage(
         new Error(
-          "[CONVEX A] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Bad publish payload",
+          "[CONVEX A] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Bad publish payload\n    at save (../convex/featuredSelections.ts:100:19)\n    at async handler (functions.js:2:7)",
         ),
         "Request failed",
       ),

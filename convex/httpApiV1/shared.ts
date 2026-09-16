@@ -609,6 +609,7 @@ export function cleanUserFacingErrorMessage(message: string) {
   let cleaned = message
     .replace(/\[CONVEX[^\]]*\]\s*/g, "")
     .replace(/\[Request ID:[^\]]*\]\s*/g, "")
+    .replace(/\n\s+at [\s\S]*$/, "")
     .replace(/^Server Error Called by client\s*/i, "")
     .trim();
 
