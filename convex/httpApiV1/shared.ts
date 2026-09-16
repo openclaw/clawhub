@@ -12,6 +12,7 @@ import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenA
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
+import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
 export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
 export const MAX_RAW_FILE_BYTES = 200 * 1024;
@@ -281,76 +282,61 @@ export function toOptionalNumber(value: string | null) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-type LatestVersionTag =
-  | {
-      _id: Id<"skillVersions">;
-      version?: string;
-      softDeletedAt?: unknown;
-      skillId?: Id<"skills">;
+/** Batch checked selections without one action RPC per catalog item. */
+export async function readPublicSkillVersionSelections(
+  ctx: ActionCtx,
+  selections: Array<{ skillId: Id<"skills">; versionId: Id<"skillVersions"> }>,
+): Promise<PublicSkillVersionSelection[]> {
+  const results: PublicSkillVersionSelection[] = [];
+  // A selection reads two potentially large documents; keep each transaction
+  // below the read-byte limit even for near-limit version file manifests.
+  const batchSize = 5;
+  for (let offset = 0; offset < selections.length; offset += batchSize * 4) {
+    const batches: Array<Promise<PublicSkillVersionSelection[]>> = [];
+    for (
+      let start = offset;
+      start < Math.min(selections.length, offset + batchSize * 4);
+      start += batchSize
+    ) {
+      batches.push(
+        ctx.runQuery(internal.skills.getPublicVersionSelectionsInternal, {
+          selections: selections.slice(start, start + batchSize),
+        }),
+      );
     }
-  | null
-  | undefined;
+    for (const batch of await Promise.all(batches)) results.push(...batch);
+  }
+  return results;
+}
 
-/**
- * Batch resolve version tags to version strings.
- * Collects all version IDs, fetches them in a single query, then maps back.
- *
- * Notes:
- * - Uses `internal.*` queries to avoid expanding the public Convex API surface.
- * - Sorts ids for stable query args (helps caching/log diffs).
- */
+/** Resolve every tag through current documents; cached summaries omit lifecycle state. */
 export async function resolveTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<"skillVersions">>>,
-  latestVersions: Array<LatestVersionTag>,
   skillIds: Array<Id<"skills">>,
 ): Promise<Array<Record<string, string>>> {
-  const allVersionIds = new Set<Id<"skillVersions">>();
-  const preResolvedTags = tagsList.map((tags, idx) => {
-    const resolved: Record<string, string> = {};
-    const latest = latestVersions[idx];
-    const skillId = skillIds[idx];
-    for (const [tag, versionId] of Object.entries(tags)) {
-      if (
-        latest?._id === versionId &&
-        latest.version &&
-        !latest.softDeletedAt &&
-        latest.skillId === skillId
-      ) {
-        resolved[tag] = latest.version;
-      } else {
-        allVersionIds.add(versionId);
-      }
-    }
-    return resolved;
+  const selections = new Map<string, { skillId: Id<"skills">; versionId: Id<"skillVersions"> }>();
+  const selectionKey = (skillId: Id<"skills">, versionId: Id<"skillVersions">) =>
+    `${skillId}/${versionId}`;
+  tagsList.forEach((tags, index) => {
+    const skillId = skillIds[index];
+    for (const versionId of Object.values(tags))
+      selections.set(selectionKey(skillId, versionId), { skillId, versionId });
   });
-
-  if (allVersionIds.size === 0) {
-    return preResolvedTags;
-  }
-
-  const versionIds = [...allVersionIds].sort();
-  const versions =
-    (await ctx.runQuery(internal.skills.getVersionsByIdsInternal, { versionIds })) ?? [];
-
-  const versionMap = new Map<
-    Id<"skillVersions">,
-    {
-      version: string;
-      skillId?: Id<"skills">;
-    }
-  >();
-  for (const v of versions) {
-    if (!v?.softDeletedAt) versionMap.set(v._id, { version: v.version, skillId: v.skillId });
-  }
-
-  return tagsList.map((tags, idx) => {
-    const resolved = { ...preResolvedTags[idx] };
-    const skillId = skillIds[idx];
+  const keys = [...selections.keys()].sort();
+  const selected = await readPublicSkillVersionSelections(
+    ctx,
+    keys.map((key) => selections.get(key)!),
+  );
+  const versionMap = new Map<string, string>();
+  selected.forEach((selection, index) => {
+    if (selection.status === "available") versionMap.set(keys[index], selection.version.version);
+  });
+  return tagsList.map((tags, index) => {
+    const resolved: Record<string, string> = {};
     for (const [tag, versionId] of Object.entries(tags)) {
-      if (resolved[tag]) continue;
-      const version = versionMap.get(versionId);
-      if (version?.skillId === skillId) resolved[tag] = version.version;
+      const version = versionMap.get(selectionKey(skillIds[index], versionId));
+      if (version) resolved[tag] = version;
     }
     return resolved;
   });
