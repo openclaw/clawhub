@@ -463,6 +463,7 @@ const publishPackageForUserInternalHandler = (
     {
       actorUserId: string;
       payload: unknown;
+      requestStorageIds?: string[];
     },
     unknown
   >
@@ -475,6 +476,7 @@ const publishPackageForTrustedPublisherInternalHandler = (
     {
       publishTokenId: string;
       payload: unknown;
+      requestStorageIds?: string[];
     },
     unknown
   >
@@ -11042,6 +11044,36 @@ describe("packages public queries", () => {
     );
   });
 
+  it("reclaims only request-created blobs when package validation rejects before adoption", async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      publishPackageForUserInternalHandler({ storage: { delete: remove } } as never, {
+        actorUserId: "users:owner",
+        requestStorageIds: ["storage:request-file"],
+        payload: { invalid: true, artifact: { storageId: "storage:reused-tarball" } },
+      }),
+    ).rejects.toThrow(/Package publish payload/i);
+    expect(remove).toHaveBeenCalledExactlyOnceWith("storage:request-file");
+  });
+
+  it("reclaims request files when trusted authorization expires before publication", async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      publishPackageForTrustedPublisherInternalHandler(
+        {
+          runQuery: vi.fn().mockResolvedValue(null),
+          storage: { delete: remove },
+        } as never,
+        {
+          publishTokenId: "packagePublishTokens:expired",
+          requestStorageIds: ["storage:request-file"],
+          payload: { artifact: { storageId: "storage:reused-tarball" } },
+        },
+      ),
+    ).rejects.toThrow("Trusted publish token is missing or expired");
+    expect(remove).toHaveBeenCalledExactlyOnceWith("storage:request-file");
+  });
+
   it("validates package publish payloads inside the action path", async () => {
     await expect(
       publishPackageForUserInternalHandler({} as never, {
@@ -12558,13 +12590,14 @@ describe("packages public queries", () => {
       scheduler: {
         runAfter: vi.fn(),
       },
-      storage: makePackageManifestStorage(),
+      storage: { ...makePackageManifestStorage(), delete: vi.fn() },
     };
 
     try {
       await expect(
         publishPackageForTrustedPublisherInternalHandler(ctx as never, {
           publishTokenId: "packagePublishTokens:1",
+          requestStorageIds: [packageManifestFile.storageId],
           payload: {
             name: "demo-plugin",
             family: "bundle-plugin",
@@ -12591,6 +12624,7 @@ describe("packages public queries", () => {
         createdNewParent: false,
       }),
     );
+    expect(ctx.storage.delete).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalledWith(expect.anything(), {
       tokenId: "packagePublishTokens:1",
     });
@@ -12849,7 +12883,7 @@ describe("packages public queries", () => {
   });
 
   it.each(["rejected", "reused", "created", "followup-failure"] as const)(
-    "keeps legacy ZIP ownership after %s insertion",
+    "keeps generated ZIP and request-file ownership after %s insertion",
     async (outcome) => {
       const storedIds: string[] = [];
       const deletedIds: string[] = [];
@@ -12933,6 +12967,7 @@ describe("packages public queries", () => {
 
       const publication = publishPackageForTrustedPublisherInternalHandler(ctx as never, {
         publishTokenId: "packagePublishTokens:1",
+        requestStorageIds: [packageManifestFile.storageId],
         payload: {
           name: "demo-plugin",
           family: "bundle-plugin",
@@ -12957,7 +12992,9 @@ describe("packages public queries", () => {
 
       expect(storedIds).toEqual(["storage:legacy-zip"]);
       expect(deletedIds).toEqual(
-        outcome === "rejected" || outcome === "reused" ? ["storage:legacy-zip"] : [],
+        outcome === "rejected" || outcome === "reused"
+          ? ["storage:legacy-zip", packageManifestFile.storageId]
+          : [],
       );
     },
   );

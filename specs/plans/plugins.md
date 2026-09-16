@@ -72,6 +72,15 @@ that ownership. Staged retries resolve existing attempts before insertion. A
 concurrent pending insertion that finds an existing version rejects instead of
 creating an attempt that points at a discarded candidate ZIP.
 
+Multipart package requests track only blobs created by that request. Parsing
+waits for all in-flight stores before cleaning a failure. Staged upload-ticket
+artifacts are reusable and never enter request-local cleanup. When HTTP dispatches
+publication, it hands these IDs to the internal action; an ambiguous RPC failure
+is not permission for HTTP to delete them. The action reclaims unadopted files on
+failure or successful reuse, and relinquishes cleanup immediately after a new
+published or pending release commits, before later fallible work. Pending-release
+compensation remains responsible for its own adopted artifacts.
+
 ### Portable plugin icons
 
 Plugin publication resolves only the fixed `assets/icon.png` path used by OpenClaw.

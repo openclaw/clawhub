@@ -698,6 +698,7 @@ type PackagePublishAuthContext =
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
 type PackagePublishOptions = {
   stagePrePublicationChecks?: boolean;
+  onFilesAdopted?: () => void;
 };
 type PackageDoc = Doc<"packages">;
 type PublicPackageListItem = {
@@ -9339,6 +9340,7 @@ async function publishPackageImpl(
     const legacyZipStorageId = await storeLegacyZipIfNeeded();
     try {
       const { reusedExistingRelease, ...result } = await insert();
+      if (!reusedExistingRelease) options.onFilesAdopted?.();
       if (reusedExistingRelease && legacyZipStorageId) {
         // An idempotent retry keeps the old archive instead of adopting this ZIP.
         await ctx.storage.delete(legacyZipStorageId).catch(() => undefined);
@@ -9729,17 +9731,37 @@ function toPackageInspectorPublishResponseFinding(
   };
 }
 
+async function withRequestPackageStorage<TResult>(
+  ctx: Pick<ActionCtx, "storage">,
+  requestStorageIds: Id<"_storage">[] | undefined,
+  publish: (onFilesAdopted: () => void) => Promise<TResult>,
+) {
+  let adopted = false;
+  try {
+    return await publish(() => {
+      adopted = true;
+    });
+  } finally {
+    // These IDs come only from the HTTP request's stores, never from reused tickets.
+    // Successful retries may reuse old rows without adopting any of these new files.
+    if (!adopted && requestStorageIds?.length) {
+      await Promise.allSettled(requestStorageIds.map((id) => ctx.storage.delete(id)));
+    }
+  }
+}
+
 export const publishPackageForUserInternal = internalAction({
   args: {
     actorUserId: v.id("users"),
     payload: v.any(),
+    requestStorageIds: v.optional(v.array(v.id("_storage"))),
   },
   handler: async (ctx, args) => {
-    return await publishPackageImpl(
-      ctx,
-      { kind: "user", actorUserId: args.actorUserId },
-      args.payload,
-      { stagePrePublicationChecks: stagedPrePublicationPublishesEnabled() },
+    return await withRequestPackageStorage(ctx, args.requestStorageIds, (onFilesAdopted) =>
+      publishPackageImpl(ctx, { kind: "user", actorUserId: args.actorUserId }, args.payload, {
+        stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
+        onFilesAdopted,
+      }),
     );
   },
 });
@@ -9911,38 +9933,42 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
   args: {
     publishTokenId: v.id("packagePublishTokens"),
     payload: v.any(),
+    requestStorageIds: v.optional(v.array(v.id("_storage"))),
   },
   handler: async (ctx, args) => {
-    const publishToken = await runQueryRef<Doc<"packagePublishTokens"> | null>(
-      ctx,
-      internalRefs.packagePublishTokens.getByIdInternal,
-      { tokenId: args.publishTokenId },
-    );
-    if (
-      !publishToken ||
-      publishToken.revokedAt ||
-      publishToken.consumedAt ||
-      publishToken.expiresAt <= Date.now()
-    ) {
-      throw new ConvexError("Trusted publish token is missing or expired");
-    }
-    if ((publishToken.scope ?? "publish") !== "publish") {
-      throw new ConvexError("Trusted upload token cannot authorize package publication");
-    }
-    assertOpenClawPublishAuthorizationVersion(publishToken);
-    const trustedPublisher = await runQueryRef<PackageTrustedPublisherDoc | null>(
-      ctx,
-      internalRefs.packages.getTrustedPublisherByPackageIdInternal,
-      { packageId: publishToken.packageId },
-    );
-    if (!doesTrustedPublisherMatchPublishToken(trustedPublisher, publishToken)) {
-      throw new ConvexError(
-        "Trusted publish token no longer matches the current package trusted publisher",
+    return await withRequestPackageStorage(ctx, args.requestStorageIds, async (onFilesAdopted) => {
+      const publishToken = await runQueryRef<Doc<"packagePublishTokens"> | null>(
+        ctx,
+        internalRefs.packagePublishTokens.getByIdInternal,
+        { tokenId: args.publishTokenId },
       );
-    }
-    return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload, {
-      stagePrePublicationChecks:
-        publishToken.authorizationVersion === 2 || stagedPrePublicationPublishesEnabled(),
+      if (
+        !publishToken ||
+        publishToken.revokedAt ||
+        publishToken.consumedAt ||
+        publishToken.expiresAt <= Date.now()
+      ) {
+        throw new ConvexError("Trusted publish token is missing or expired");
+      }
+      if ((publishToken.scope ?? "publish") !== "publish") {
+        throw new ConvexError("Trusted upload token cannot authorize package publication");
+      }
+      assertOpenClawPublishAuthorizationVersion(publishToken);
+      const trustedPublisher = await runQueryRef<PackageTrustedPublisherDoc | null>(
+        ctx,
+        internalRefs.packages.getTrustedPublisherByPackageIdInternal,
+        { packageId: publishToken.packageId },
+      );
+      if (!doesTrustedPublisherMatchPublishToken(trustedPublisher, publishToken)) {
+        throw new ConvexError(
+          "Trusted publish token no longer matches the current package trusted publisher",
+        );
+      }
+      return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload, {
+        onFilesAdopted,
+        stagePrePublicationChecks:
+          publishToken.authorizationVersion === 2 || stagedPrePublicationPublishesEnabled(),
+      });
     });
   },
 });

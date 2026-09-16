@@ -1391,12 +1391,34 @@ function bytesToArrayBuffer(bytes: Uint8Array) {
   return copy.buffer;
 }
 
+async function storeRequestPackageBlob(
+  ctx: ActionCtx,
+  requestStorageIds: Set<Id<"_storage">>,
+  blob: Blob,
+) {
+  const storageId = await ctx.storage.store(blob);
+  requestStorageIds.add(storageId);
+  return storageId;
+}
+
+async function settlePackageFileStores(stores: Array<Promise<StoredPackagePublishFile>>) {
+  // A rejected store does not cancel its siblings. Wait before reclaiming their blobs.
+  const results = await Promise.allSettled(stores);
+  return results.map((result) => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  });
+}
+
 async function storeClawPackFile(
   ctx: ActionCtx,
   entry: { path: string; bytes: Uint8Array },
+  requestStorageIds: Set<Id<"_storage">>,
 ): Promise<StoredPackagePublishFile> {
   const contentType = defaultStoredPackageContentType();
-  const storageId = await ctx.storage.store(
+  const storageId = await storeRequestPackageBlob(
+    ctx,
+    requestStorageIds,
     new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
   );
   return {
@@ -1417,12 +1439,17 @@ const CLAWPACK_STORE_BATCH_FILES = 16;
 async function storeClawPackFiles(
   ctx: ActionCtx,
   entries: Array<{ path: string; bytes: Uint8Array }>,
+  requestStorageIds: Set<Id<"_storage">>,
 ) {
   const files: StoredPackagePublishFile[] = [];
   let batch: Array<{ path: string; bytes: Uint8Array }> = [];
   let batchBytes = 0;
   const flush = async () => {
-    files.push(...(await Promise.all(batch.map((entry) => storeClawPackFile(ctx, entry)))));
+    files.push(
+      ...(await settlePackageFileStores(
+        batch.map((entry) => storeClawPackFile(ctx, entry, requestStorageIds)),
+      )),
+    );
     batch = [];
     batchBytes = 0;
   };
@@ -1441,13 +1468,16 @@ async function storeClawPackFiles(
 async function storeUploadedPackageFile(
   ctx: ActionCtx,
   entry: File,
+  requestStorageIds: Set<Id<"_storage">>,
 ): Promise<StoredPackagePublishFile> {
   if (entry.size > MAX_PUBLISH_FILE_BYTES) {
     throw new Error(getPublishFileSizeError(entry.name));
   }
   const buffer = new Uint8Array(await entry.arrayBuffer());
   const contentType = normalizeContentType(entry.type) ?? defaultStoredPackageContentType();
-  const storageId = await ctx.storage.store(
+  const storageId = await storeRequestPackageBlob(
+    ctx,
+    requestStorageIds,
     new Blob([bytesToArrayBuffer(buffer)], { type: contentType }),
   );
   return {
@@ -1530,6 +1560,7 @@ async function buildPackagePublishRequestFromClawPack(
   parsed: ParsedPackageClawPack,
   artifactBytes: Uint8Array,
   artifactStorageId: Id<"_storage">,
+  requestStorageIds: Set<Id<"_storage">>,
 ): Promise<ServerPackagePublishRequest> {
   if (parsed.unpackedSize > MAX_PUBLISH_TOTAL_BYTES) {
     throw new Error(getPublishTotalSizeError("package"));
@@ -1546,7 +1577,7 @@ async function buildPackagePublishRequestFromClawPack(
     npmUnpackedSize: parsed.unpackedSize,
     npmFileCount: parsed.fileCount,
   };
-  const files = await storeClawPackFiles(ctx, parsed.entries);
+  const files = await storeClawPackFiles(ctx, parsed.entries, requestStorageIds);
   return { ...metadata, files, artifact };
 }
 
@@ -1597,6 +1628,7 @@ async function parseMultipartPackagePublish(
   ctx: ActionCtx,
   auth: PackagePublishAuth,
   request: Request,
+  requestStorageIds: Set<Id<"_storage">>,
 ): Promise<ServerPackagePublishRequest> {
   const form = await request.formData();
   for (const field of form.keys()) {
@@ -1645,6 +1677,7 @@ async function parseMultipartPackagePublish(
         parsed,
         artifactBytes,
         tarballPart.storageId,
+        requestStorageIds,
       );
     }
 
@@ -1664,7 +1697,9 @@ async function parseMultipartPackagePublish(
     const artifactBytes = new Uint8Array(await tarballEntry.arrayBuffer());
     const parsed = await parseClawPack(artifactBytes);
     assertClawPackPublicationIdentity(metadata, parsed);
-    const artifactStorageId = await ctx.storage.store(
+    const artifactStorageId = await storeRequestPackageBlob(
+      ctx,
+      requestStorageIds,
       new Blob([bytesToArrayBuffer(artifactBytes)], { type: "application/octet-stream" }),
     );
     return await buildPackagePublishRequestFromClawPack(
@@ -1673,6 +1708,7 @@ async function parseMultipartPackagePublish(
       parsed,
       artifactBytes,
       artifactStorageId,
+      requestStorageIds,
     );
   }
 
@@ -1687,8 +1723,8 @@ async function parseMultipartPackagePublish(
   }
 
   const packageFileParts = fileParts.filter((entry) => !isMacJunkPath(entry.name));
-  const files = await Promise.all(
-    packageFileParts.map((entry) => storeUploadedPackageFile(ctx, entry)),
+  const files = await settlePackageFileStores(
+    packageFileParts.map((entry) => storeUploadedPackageFile(ctx, entry, requestStorageIds)),
   );
   if (files.length === 0) throw new Error("files required");
   return { ...metadata, files };
@@ -2669,24 +2705,34 @@ export async function publishPackageV1Handler(ctx: ActionCtx, request: Request) 
   const auth = await requirePackagePublishAuthOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
+  const requestStorageIds = new Set<Id<"_storage">>();
+  let publicationOwnsCleanup = false;
   try {
     const contentType = request.headers.get("content-type") ?? "";
     if (!contentType.includes("multipart/form-data")) {
       return text("Package publish requires multipart/form-data", 415, rate.headers);
     }
-    const payload = await parseMultipartPackagePublish(ctx, auth.auth, request);
+    const payload = await parseMultipartPackagePublish(ctx, auth.auth, request, requestStorageIds);
+    // After dispatch, only the action can know whether a release adopted these blobs.
+    // An ambiguous RPC failure is not authority for HTTP cleanup.
+    publicationOwnsCleanup = true;
     const result =
       auth.auth.kind === "user"
         ? await runActionRef(ctx, internalRefs.packages.publishPackageForUserInternal, {
             actorUserId: auth.auth.userId,
             payload,
+            requestStorageIds: [...requestStorageIds],
           })
         : await runActionRef(ctx, internalRefs.packages.publishPackageForTrustedPublisherInternal, {
             publishTokenId: auth.auth.publishToken._id,
             payload,
+            requestStorageIds: [...requestStorageIds],
           });
     return json(result, 200, rate.headers);
   } catch (error) {
+    if (!publicationOwnsCleanup) {
+      await Promise.allSettled([...requestStorageIds].map((id) => ctx.storage.delete(id)));
+    }
     return packagePublishErrorToResponse(error, rate.headers);
   }
 }
