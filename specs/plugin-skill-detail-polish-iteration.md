@@ -26,7 +26,9 @@ This note preserves the complete UI direction established during the June 2026 d
 - Hide the breadcrumb on detail pages. The earlier 12 px, extra-muted breadcrumb treatment is superseded by hiding it.
 - Place taxonomy above the title.
 - Show category icon plus category name, not icon-only.
-- Support up to three categories, separated by commas.
+- Support up to three categories without literal commas (the later #2849 decision supersedes the original comma treatment).
+- Skill heroes render source, category, topic, and creator-handle text at weight 400. Keep the display name primary.
+- At mobile widths, keep source, each category, and each topic intact and let these units share a line when they fit. Attach vertical dividers to the following unit so they cannot wrap alone; do not force topics onto a full-width row.
 - Follow categories with a vertical separator and up to five topics.
 - Render topics lowercase, prefixed with `#`, and muted.
 - Keep category/topic typography compact and muted.
