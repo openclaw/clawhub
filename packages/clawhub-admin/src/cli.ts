@@ -1051,7 +1051,9 @@ program
   .option("--intent-kind <kind>", "company_product|generic_capability|ambiguous")
   .option("--end-day <date>", "Exclusive UTC window end, YYYY-MM-DD")
   .option("--limit <count>", "Maximum query rows, 1–100")
-  .option("--json", "Output canonical aggregate JSON")
+  .option("--report-id <id>", "Resume a saved report using its original filters")
+  .option("--refresh <id>", "Create a fresh report using a saved report’s original filters")
+  .option("--json", "Output only the completed aggregate JSON; progress goes to stderr")
   .action(async (options) => {
     await cmdSearchInsights(await resolveGlobalOpts(), options);
   });

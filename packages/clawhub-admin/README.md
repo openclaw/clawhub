@@ -218,7 +218,8 @@ throughput. A 32 setting is a probe, not a claim of qualified capacity.
 ### Search intelligence
 
 Admins and moderators can read the same aggregate report as Management → Search
-intelligence. This is read-only and does not change Featured or Trending.
+intelligence. Reports are saved for 24 hours; creating or reading one does not change
+Featured or Trending.
 
 ```sh
 clawhub-admin search-insights
@@ -227,7 +228,20 @@ clawhub-admin search-insights --intent-kind company_product --json
 clawhub-admin search-insights --end-day 2026-09-07 --limit 100 --json
 clawhub-admin search-insights --view recommendations --artifact-kind plugin --json
 clawhub-admin search-insights --view recommendations --artifact-kind skill --json
+clawhub-admin search-insights --report-id <report-id> --json
+clawhub-admin search-insights --refresh <report-id> --json
 ```
+
+The command starts or reuses a saved report, prints its ID and progress to stderr,
+and stops polling after five minutes. An in-flight request can finish within its
+existing request/retry budget; each request keeps the normal 15-second limit.
+`--json` writes only the completed report to stdout. Ctrl+C or the wait limit stops
+this client from waiting; the server job continues. Resume with `--report-id`.
+Failed, incomplete or expired reports produce an error instead of partial JSON.
+Use `--refresh` to request a new generation with the same original view and filters;
+resume and refresh do not accept filter overrides. Matching requests reuse the saved
+generation, including a failed one, while its source evidence and time window remain
+unchanged and it has not expired. Use `--refresh` to request another attempt.
 
 Windows contain complete UTC days before `--end-day` (exclusive; defaults to today).
 Every response includes seven-day, previous-seven-day and 30-day counts. Source can

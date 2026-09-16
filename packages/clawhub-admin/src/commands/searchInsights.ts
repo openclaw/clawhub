@@ -1,12 +1,17 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
 import { fail } from "../../../clawhub/src/cli/ui.js";
 import { apiRequest } from "../../../clawhub/src/http.js";
+import { parseArk } from "../../../clawhub/src/schema/ark.js";
 import {
-  FeaturedIntelligenceReportSchema,
-  SearchInsightsReportSchema,
-} from "../../../clawhub/src/schema/searchInsights.js";
+  SearchReportRequestSchema,
+  SearchReportResponseSchema,
+  SearchReportStatusSchema,
+  type SearchReportResponse,
+  type SearchReportStatus,
+} from "../../../clawhub/src/schema/searchReports.js";
 
 export async function cmdSearchInsights(
   opts: GlobalOpts,
@@ -21,40 +26,48 @@ export async function cmdSearchInsights(
     endDay?: string;
     limit?: string;
     json?: boolean;
+    reportId?: string;
+    refresh?: string;
   },
 ) {
-  const params = new URLSearchParams();
+  if (options.reportId && options.refresh) fail("Use either --report-id or --refresh");
+  const { json: _json, reportId, refresh, ...filters } = options;
+  if ((reportId || refresh) && Object.values(filters).some((value) => value !== undefined))
+    fail(
+      "A saved report uses its original filters; omit view and filter options when resuming or refreshing",
+    );
+  const request: Record<string, string | number | boolean> = { view: options.view ?? "demand" };
   if (options.view) {
     if (!["demand", "recommendations"].includes(options.view))
       fail("view must be demand or recommendations");
-    params.set("view", options.view);
+    request.view = options.view;
   }
   if (options.view === "recommendations" && (options.officialGap || options.intentKind))
     fail("Recommendation view does not accept demand-only gap or intent filters");
   if (options.artifactKind) {
     if (!["plugin", "skill"].includes(options.artifactKind))
       fail("artifact-kind must be plugin or skill");
-    params.set("artifactKind", options.artifactKind);
+    request.artifactKind = options.artifactKind;
   }
   if (options.scope) {
     if (!["catalog", "shelf", "legacy"].includes(options.scope))
       fail("scope must be catalog, shelf, or legacy");
-    params.set("scope", options.scope);
+    request.scope = options.scope;
   }
   if (options.source) {
     if (!["clawhub-web", "openclaw-control-ui"].includes(options.source))
       fail("source must be clawhub-web or openclaw-control-ui");
-    params.set("source", options.source);
+    request.source = options.source;
   }
   if (options.window) {
     if (!["7", "30"].includes(options.window)) fail("window must be 7 or 30");
-    params.set("window", options.window);
+    request.window = Number(options.window);
   }
-  if (options.officialGap) params.set("officialGap", "true");
+  if (options.officialGap) request.officialGap = true;
   if (options.intentKind) {
     if (!["company_product", "generic_capability", "ambiguous"].includes(options.intentKind))
       fail("intent-kind must be company_product, generic_capability, or ambiguous");
-    params.set("intentKind", options.intentKind);
+    request.intentKind = options.intentKind;
   }
   if (options.endDay) {
     const time = Date.parse(`${options.endDay}T00:00:00.000Z`);
@@ -64,21 +77,48 @@ export async function cmdSearchInsights(
       new Date(time).toISOString().slice(0, 10) !== options.endDay
     )
       fail("end-day must be a UTC date (YYYY-MM-DD)");
-    params.set("endDay", String(time));
+    request.endDay = time;
   }
   if (options.limit) {
     if (!/^\d+$/.test(options.limit) || Number(options.limit) < 1 || Number(options.limit) > 100)
       fail("limit must be between 1 and 100");
-    params.set("limit", options.limit);
+    request.limit = Number(options.limit);
   }
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  if (options.view === "recommendations") {
-    const report = await apiRequest(
+  const path = "/api/v1/search-insights/reports";
+  const read = (id: string) =>
+    apiRequest(
       registry,
-      { method: "GET", path: `/api/v1/search-insights?${params}`, token },
-      FeaturedIntelligenceReportSchema,
+      {
+        method: "GET",
+        path: `${path}/${encodeURIComponent(id)}`,
+        token,
+      },
+      SearchReportResponseSchema,
     );
+  const previous = reportId || refresh ? await read((reportId || refresh)!) : undefined;
+  if (previous && previous.reportId !== (reportId || refresh))
+    throw new Error("Saved report identity did not match the requested ID");
+  const initial = reportId
+    ? previous!
+    : await apiRequest(
+        registry,
+        {
+          method: "POST",
+          path,
+          token,
+          body: parseArk(
+            SearchReportRequestSchema,
+            refresh ? { view: previous!.view, refreshOf: refresh } : request,
+            "Invalid report request",
+          ),
+        },
+        SearchReportStatusSchema,
+      );
+  const result = await waitForReport(initial, read, registry);
+  if (result.view === "recommendations") {
+    const report = result.report;
     if (options.json) process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     else {
       const time = (value: number | null) =>
@@ -144,11 +184,7 @@ export async function cmdSearchInsights(
     }
     return report;
   }
-  const report = await apiRequest(
-    registry,
-    { method: "GET", path: `/api/v1/search-insights?${params}`, token },
-    SearchInsightsReportSchema,
-  );
+  const report = result.report;
   if (options.json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     return report;
@@ -195,4 +231,51 @@ export async function cmdSearchInsights(
   if (report.truncated)
     console.log(`Showing ${report.rows.length} of ${report.totalQueries} queries.`);
   return report;
+}
+
+async function waitForReport(
+  initial: SearchReportStatus | SearchReportResponse,
+  read: (id: string) => Promise<SearchReportResponse>,
+  registry: string,
+) {
+  const { reportId } = initial;
+  // Copying a resume command must retain this registry, including shell metacharacters.
+  const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const command = `clawhub-admin --registry ${shellQuote(registry)} search-insights`;
+  const resume = `${command} --report-id ${shellQuote(reportId)}`;
+  process.stderr.write(`Report ${reportId}. Resume: ${resume}\n`);
+  // Waiting is a client concern: stopping here or with Ctrl+C leaves the saved job running.
+  const deadline = Date.now() + 5 * 60_000;
+  let result: SearchReportStatus | SearchReportResponse = initial;
+  let previousProgress = "";
+  while (true) {
+    if (result.reportId !== reportId || result.view !== initial.view)
+      throw new Error(`Report identity changed while waiting. Resume: ${resume}`);
+    const progress = `${result.status} (previous attempts: ${result.previousAttempts})`;
+    if (progress !== previousProgress) process.stderr.write(`Report ${reportId}: ${progress}\n`);
+    previousProgress = progress;
+    if (result.status === "ready" && "report" in result) return result;
+    if (
+      !["pending", "running", "ready"].includes(result.status) ||
+      Date.now() >= result.expirationTime
+    )
+      throw new Error(
+        `Report ${reportId} ${Date.now() >= result.expirationTime ? "expired" : result.status}${result.failureCode ? `: ${result.failureCode}` : ""}. Start a fresh report: ${command} --refresh ${shellQuote(reportId)}`,
+      );
+    if (Date.now() >= deadline)
+      throw new Error(
+        `Stopped waiting after five minutes; report ${reportId} continues. Resume: ${resume}`,
+      );
+    // Admission returns status only; even a reused ready report is read through the result owner.
+    if (result.status !== "ready")
+      await delay(Math.min(1_000, deadline - Date.now(), result.expirationTime - Date.now()));
+    try {
+      result = await read(reportId);
+    } catch (error) {
+      throw new Error(
+        `Could not read report ${reportId}: ${error instanceof Error ? error.message : String(error)}. Resume: ${resume}`,
+        { cause: error },
+      );
+    }
+  }
 }
