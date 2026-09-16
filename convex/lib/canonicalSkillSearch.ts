@@ -96,7 +96,7 @@ export type CanonicalSkillSearchCandidate = {
   updatedAt: number;
 };
 
-export function compareCanonicalSkillSearchCandidates(
+export function compareCanonicalSkillSearchPriority(
   left: CanonicalSkillSearchCandidate,
   right: CanonicalSkillSearchCandidate,
 ) {
@@ -107,7 +107,16 @@ export function compareCanonicalSkillSearchCandidates(
     right.relevance.lexicalScore - left.relevance.lexicalScore ||
     right.relevance.semanticScore - left.relevance.semanticScore ||
     Number(right.official) - Number(left.official) ||
-    Number(right.featured) - Number(left.featured) ||
+    Number(right.featured) - Number(left.featured)
+  );
+}
+
+export function compareCanonicalSkillSearchCandidates(
+  left: CanonicalSkillSearchCandidate,
+  right: CanonicalSkillSearchCandidate,
+) {
+  return (
+    compareCanonicalSkillSearchPriority(left, right) ||
     right.rolling60DayInstalls - left.rolling60DayInstalls ||
     right.bookmarks - left.bookmarks ||
     right.updatedAt - left.updatedAt ||

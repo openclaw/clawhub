@@ -15,6 +15,7 @@ import { isSkillHighlighted, isSkillOfficial } from "./lib/badges";
 import {
   classifyCanonicalSkillSearchMatch,
   compareCanonicalSkillSearchCandidates,
+  compareCanonicalSkillSearchPriority,
   type CanonicalSkillSearchCandidate,
 } from "./lib/canonicalSkillSearch";
 import { CANONICAL_SKILL_SEARCH_BOUNDS } from "./lib/canonicalSkillSearchBounds";
@@ -356,6 +357,15 @@ type SkillSearchArgs = {
   createdAfter?: number;
 };
 
+async function settleSearchReads<T extends readonly unknown[]>(
+  reads: [...T],
+): Promise<{ [K in keyof T]: Awaited<T[K]> }> {
+  // Finish already-started sibling reads before propagating a failure out of
+  // the action. Promise.all retains the tuple types and rejects partial results.
+  await Promise.allSettled(reads);
+  return Promise.all(reads);
+}
+
 const nativeSkillSearch = {
   async handler(
     ctx: ActionCtx,
@@ -400,16 +410,133 @@ const nativeSkillSearch = {
           semanticScore: 0,
         }));
     }
-    const rawExactSlugMatches = isSlugLikeQuery(query)
-      ? ((await ctx.runQuery(internal.search.getExactSkillSlugMatch, {
-          slug: query.toLowerCase(),
-          nonSuspiciousOnly: args.nonSuspiciousOnly,
-          categorySlug,
-          topic,
-          officialOnly: args.officialOnly,
-          createdAfter: args.createdAfter,
-        })) as SkillSearchEntry[] | SkillSearchEntry | null)
-      : [];
+    const limit = args.limit ?? 10;
+    // Keep ordinary first-page and load-more requests ranking the same recall pool
+    // before slicing, so expanding the display limit does not reshuffle the prefix.
+    const recallLimit = Math.max(limit, MIN_STABLE_SEARCH_RECALL_LIMIT);
+    const [
+      rawExactSlugMatches,
+      rawDirectPrefixMatches,
+      {
+        exactMatches: semanticMatches,
+        scoreById: vectorScoresById,
+        scoreBySkillId: vectorScoresBySkillId,
+      },
+    ] = await settleSearchReads([
+      isSlugLikeQuery(query)
+        ? (ctx.runQuery(internal.search.getExactSkillSlugMatch, {
+            slug: query.toLowerCase(),
+            nonSuspiciousOnly: args.nonSuspiciousOnly,
+            categorySlug,
+            topic,
+            officialOnly: args.officialOnly,
+            createdAfter: args.createdAfter,
+          }) as Promise<SkillSearchEntry[] | SkillSearchEntry | null>)
+        : Promise.resolve([]),
+      ctx.runQuery(internal.search.directPrefixSkillMatches, {
+        query,
+        highlightedOnly: args.highlightedOnly,
+        nonSuspiciousOnly: args.nonSuspiciousOnly,
+        categorySlug,
+        topic,
+        officialOnly: args.officialOnly,
+        createdAfter: args.createdAfter,
+      }) as Promise<SkillSearchEntry[]>,
+      (async () => {
+        let vector: number[] | null;
+        try {
+          vector = preparedVector === undefined ? await generateEmbedding(query) : preparedVector;
+        } catch (error) {
+          console.warn("Search embedding generation failed, falling back to lexical search", error);
+          vector = null;
+        }
+        // Keep the vector pool bounded; exact slug, prefix, and lexical fallback cover
+        // literal recall without hydrating hundreds of semantic candidates per search.
+        const maxCandidate = Math.min(
+          Math.max(limit * 4, MIN_VECTOR_SEARCH_CANDIDATES),
+          MAX_VECTOR_SEARCH_CANDIDATES,
+        );
+        let candidateLimit = Math.min(
+          Math.max(limit * 2, MIN_VECTOR_SEARCH_CANDIDATES),
+          maxCandidate,
+        );
+        let hydrated: SkillSearchEntry[] = [];
+        const seenEmbeddingIds = new Set<Id<"skillEmbeddings">>();
+        let scoreById = new Map<Id<"skillEmbeddings">, number>();
+        const scoreBySkillId = new Map<Id<"skills">, number>();
+        let exactMatches: SkillSearchEntry[] = [];
+
+        if (vector) {
+          while (candidateLimit <= maxCandidate) {
+            const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
+              vector,
+              limit: candidateLimit,
+              filter: (q) =>
+                q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
+            });
+
+            // Only hydrate embedding IDs we haven't seen yet (incremental).
+            // Track all attempted IDs, not just successful hydrations, to avoid
+            // re-hydrating filtered-out entries (soft-deleted, suspicious) each loop.
+            const newEmbeddingIds = results
+              .map((r) => r._id)
+              .filter((id) => !seenEmbeddingIds.has(id));
+            for (const id of newEmbeddingIds) seenEmbeddingIds.add(id);
+
+            if (newEmbeddingIds.length > 0) {
+              const newEntries = (await ctx.runQuery(internal.search.hydrateResults, {
+                embeddingIds: newEmbeddingIds,
+                nonSuspiciousOnly: args.nonSuspiciousOnly,
+                categorySlug,
+                topic,
+                officialOnly: args.officialOnly,
+                createdAfter: args.createdAfter,
+              })) as SkillSearchEntry[];
+              hydrated = [...hydrated, ...newEntries];
+            }
+
+            for (const result of results) {
+              scoreById.set(result._id, result._score);
+            }
+
+            for (const entry of hydrated) {
+              if (!entry.embeddingId) continue;
+              const score = scoreById.get(entry.embeddingId);
+              if (score !== undefined) scoreBySkillId.set(entry.skill._id, score);
+            }
+
+            // Skills already have badges from their docs (via toPublicSkill).
+            // No need for a separate badge table lookup.
+            const filtered = hydrated.filter(
+              (entry) =>
+                (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+                (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
+                matchesNativeSearchEligibility(entry.skill, args),
+            );
+
+            exactMatches = filtered.filter((entry) =>
+              matchesExactTokens(queryTokens, [
+                entry.skill.displayName,
+                entry.skill.slug,
+                entry.skill.summary,
+                ...(entry.skill.categories ?? []),
+                ...(entry.skill.topics ?? []),
+              ]),
+            );
+
+            if (exactMatches.length >= recallLimit || results.length < candidateLimit) {
+              break;
+            }
+
+            const nextLimit = getNextCandidateLimit(candidateLimit, maxCandidate);
+            if (!nextLimit) break;
+            candidateLimit = nextLimit;
+          }
+        }
+
+        return { exactMatches, scoreById, scoreBySkillId };
+      })(),
+    ]);
     const exactSlugMatches = (
       Array.isArray(rawExactSlugMatches)
         ? rawExactSlugMatches
@@ -422,115 +549,17 @@ const nativeSkillSearch = {
         (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
         matchesNativeSearchEligibility(entry.skill, args),
     );
-    const directPrefixMatches = (
-      (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
-        query,
-        highlightedOnly: args.highlightedOnly,
-        nonSuspiciousOnly: args.nonSuspiciousOnly,
-        categorySlug,
-        topic,
-        officialOnly: args.officialOnly,
-        createdAfter: args.createdAfter,
-      })) as SkillSearchEntry[]
-    ).filter(
+    const directPrefixMatches = rawDirectPrefixMatches.filter(
       (entry) =>
         (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
         matchesNativeSearchEligibility(entry.skill, args),
     );
-    let vector: number[] | null;
-    try {
-      vector = preparedVector === undefined ? await generateEmbedding(query) : preparedVector;
-    } catch (error) {
-      console.warn("Search embedding generation failed, falling back to lexical search", error);
-      vector = null;
-    }
-    const limit = args.limit ?? 10;
-    // Keep ordinary first-page and load-more requests ranking the same recall pool
-    // before slicing, so expanding the display limit does not reshuffle the prefix.
-    const recallLimit = Math.max(limit, MIN_STABLE_SEARCH_RECALL_LIMIT);
-    // Keep the vector pool bounded; exact slug, prefix, and lexical fallback cover
-    // literal recall without hydrating hundreds of semantic candidates per search.
-    const maxCandidate = Math.min(
-      Math.max(limit * 4, MIN_VECTOR_SEARCH_CANDIDATES),
-      MAX_VECTOR_SEARCH_CANDIDATES,
-    );
-    let candidateLimit = Math.min(Math.max(limit * 2, MIN_VECTOR_SEARCH_CANDIDATES), maxCandidate);
-    let hydrated: SkillSearchEntry[] = [];
-    const seenEmbeddingIds = new Set<Id<"skillEmbeddings">>();
-    let scoreById = new Map<Id<"skillEmbeddings">, number>();
-    const scoreBySkillId = new Map<Id<"skills">, number>();
-    let exactMatches: SkillSearchEntry[] = [];
-
-    if (vector) {
-      while (candidateLimit <= maxCandidate) {
-        const results = await ctx.vectorSearch("skillEmbeddings", "by_embedding", {
-          vector,
-          limit: candidateLimit,
-          filter: (q) => q.or(q.eq("visibility", "latest"), q.eq("visibility", "latest-approved")),
-        });
-
-        // Only hydrate embedding IDs we haven't seen yet (incremental).
-        // Track all attempted IDs, not just successful hydrations, to avoid
-        // re-hydrating filtered-out entries (soft-deleted, suspicious) each loop.
-        const newEmbeddingIds = results.map((r) => r._id).filter((id) => !seenEmbeddingIds.has(id));
-        for (const id of newEmbeddingIds) seenEmbeddingIds.add(id);
-
-        if (newEmbeddingIds.length > 0) {
-          const newEntries = (await ctx.runQuery(internal.search.hydrateResults, {
-            embeddingIds: newEmbeddingIds,
-            nonSuspiciousOnly: args.nonSuspiciousOnly,
-            categorySlug,
-            topic,
-            officialOnly: args.officialOnly,
-            createdAfter: args.createdAfter,
-          })) as SkillSearchEntry[];
-          hydrated = [...hydrated, ...newEntries];
-        }
-
-        for (const result of results) {
-          scoreById.set(result._id, result._score);
-        }
-
-        for (const entry of hydrated) {
-          if (!entry.embeddingId) continue;
-          const score = scoreById.get(entry.embeddingId);
-          if (score !== undefined) scoreBySkillId.set(entry.skill._id, score);
-        }
-
-        // Skills already have badges from their docs (via toPublicSkill).
-        // No need for a separate badge table lookup.
-        const filtered = hydrated.filter(
-          (entry) =>
-            (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending") &&
-            matchesNativeSearchEligibility(entry.skill, args),
-        );
-
-        exactMatches = filtered.filter((entry) =>
-          matchesExactTokens(queryTokens, [
-            entry.skill.displayName,
-            entry.skill.slug,
-            entry.skill.summary,
-            ...(entry.skill.categories ?? []),
-            ...(entry.skill.topics ?? []),
-          ]),
-        );
-
-        if (exactMatches.length >= recallLimit || results.length < candidateLimit) {
-          break;
-        }
-
-        const nextLimit = getNextCandidateLimit(candidateLimit, maxCandidate);
-        if (!nextLimit) break;
-        candidateLimit = nextLimit;
-      }
-    }
 
     const directMatches =
       exactSlugMatches.length > 0
         ? mergeUniqueBySkillId(exactSlugMatches, directPrefixMatches)
         : directPrefixMatches;
-    const primaryMatches = mergeUniqueBySkillId(directMatches, exactMatches);
+    const primaryMatches = mergeUniqueBySkillId(directMatches, semanticMatches);
 
     const fallbackMatches =
       primaryMatches.length >= recallLimit
@@ -561,8 +590,10 @@ const nativeSkillSearch = {
     const rankedMatches = mergedMatches
       .map((entry): SearchResult | null => {
         const vectorScore = entry.embeddingId
-          ? (scoreById.get(entry.embeddingId) ?? scoreBySkillId.get(entry.skill._id) ?? 0)
-          : (scoreBySkillId.get(entry.skill._id) ?? 0);
+          ? (vectorScoresById.get(entry.embeddingId) ??
+            vectorScoresBySkillId.get(entry.skill._id) ??
+            0)
+          : (vectorScoresBySkillId.get(entry.skill._id) ?? 0);
         const match = classifySkillMatch(query, queryTokens, entry.skill, vectorScore);
         if (!match) return null;
         const candidateRelevance = classifyCanonicalSkillSearchMatch(query, {
@@ -736,7 +767,6 @@ function omitPublisherBio(owner: PublicPublisher | null) {
 
 function buildNativeCanonicalResult(
   entry: PublicSearchResult,
-  usage: RollingSkillUsage | undefined,
   query: string,
 ): (CanonicalSkillSearchResult & CanonicalSkillSearchCandidate) | null {
   const ownerHandle = entry.ownerHandle ?? entry.owner?.handle ?? null;
@@ -768,8 +798,8 @@ function buildNativeCanonicalResult(
     relevance,
     official,
     featured,
-    rolling60DayInstalls: usage?.installs ?? 0,
-    bookmarks: usage?.bookmarks ?? 0,
+    rolling60DayInstalls: 0,
+    bookmarks: 0,
     updatedAt: entry.skill.updatedAt,
     slug: entry.skill.slug,
     displayName: entry.skill.displayName,
@@ -799,8 +829,8 @@ function buildNativeCanonicalResult(
       sourceFreshness: "native",
     },
     metrics: {
-      rolling60DayInstalls: usage?.installs ?? 0,
-      bookmarks: usage?.bookmarks ?? 0,
+      rolling60DayInstalls: 0,
+      bookmarks: 0,
       updatedAt: entry.skill.updatedAt,
     },
     native: {
@@ -890,13 +920,13 @@ async function readCanonicalSkillCandidates(
   preparedVector?: number[] | null,
 ) {
   const query = args.query.trim();
-  if (!query) return { nativeCandidates: [], externalMatches: [] };
+  if (!query) return [];
   const qualified = parseQualifiedSearchIdentity(query);
   const nativeArgs = {
     ...args,
     limit: CANONICAL_NATIVE_CANDIDATE_LIMIT,
   };
-  const [nativeMatches, qualifiedNativeMatches, externalMatches] = await Promise.all([
+  const [nativeMatches, qualifiedNativeMatches, externalMatches] = await settleSearchReads([
     nativeSkillSearch.handler(ctx, nativeArgs, preparedVector),
     qualified.native
       ? (ctx.runQuery(internal.search.getOwnerQualifiedSkillMatch, {
@@ -925,23 +955,46 @@ async function readCanonicalSkillCandidates(
       score: "score" in entry ? Number(entry.score) : 0,
     });
   }
-  const nativeCandidates = [...nativeById.values()];
-
-  return { nativeCandidates, externalMatches };
+  const candidates = [
+    ...[...nativeById.values()].map((entry) => buildNativeCanonicalResult(entry, query)),
+    ...externalMatches.map((digest) => buildExternalCanonicalResult(digest, query)),
+  ]
+    .filter(
+      (result): result is CanonicalSkillSearchResult & CanonicalSkillSearchCandidate =>
+        result !== null,
+    )
+    .filter((result) => args.mode !== "exact" || result.slug.toLowerCase() === query.toLowerCase())
+    .sort(compareCanonicalSkillSearchPriority);
+  const limit = Math.min(Math.max(Math.trunc(args.limit ?? 10), 1), CANONICAL_RESULT_LIMIT_MAX);
+  const cutoff = candidates[limit - 1];
+  // Adoption only breaks ties after curation and relevance. Keep the entire
+  // boundary tie, including external rows, so pruning cannot change a winner.
+  return cutoff
+    ? candidates.filter((row) => compareCanonicalSkillSearchPriority(row, cutoff) <= 0)
+    : candidates;
 }
 
-async function readCanonicalSkillUsage(ctx: ActionCtx, nativeCandidates: PublicSearchResult[]) {
+async function readCanonicalSkillUsage(
+  ctx: ActionCtx,
+  candidates: CanonicalSkillSearchCandidate[],
+) {
   const endDay = toDayKey(Date.now());
   const usageRows: RollingSkillUsage[] = [];
   const batches = chunkValues(
-    [...new Set(nativeCandidates.map((entry) => entry.skill._id))],
+    [
+      ...new Set(
+        candidates
+          .filter((row) => row.source === "clawhub")
+          .map((row) => row.id.slice("clawhub:".length) as Id<"skills">),
+      ),
+    ],
     ROLLING_USAGE_QUERY_BATCH_SIZE,
   );
   // Each transaction retains the existing 20-skill/1,200-daily-row ceiling.
   for (const group of chunkValues(batches, 8)) {
     usageRows.push(
       ...(
-        await Promise.all(
+        await settleSearchReads(
           group.map(
             (skillIds) =>
               ctx.runQuery(internal.search.getRollingSkillSearchUsage, {
@@ -959,36 +1012,28 @@ async function readCanonicalSkillUsage(ctx: ActionCtx, nativeCandidates: PublicS
   return usageBySkill;
 }
 
-function rankCanonicalSkillCandidates(
+function rankCanonicalSkillCandidates<T extends CanonicalSkillSearchCandidate>(
   args: SkillSearchArgs,
-  candidates: Awaited<ReturnType<typeof readCanonicalSkillCandidates>>,
+  candidates: T[],
   usageBySkill: Map<string, RollingSkillUsage>,
 ) {
-  const query = args.query.trim();
   const limit = Math.min(Math.max(Math.trunc(args.limit ?? 10), 1), CANONICAL_RESULT_LIMIT_MAX);
-  const { nativeCandidates, externalMatches } = candidates;
-  const ranked = [
-    ...nativeCandidates.map((entry) =>
-      buildNativeCanonicalResult(entry, usageBySkill.get(String(entry.skill._id)), query),
-    ),
-    ...externalMatches.map((digest) => buildExternalCanonicalResult(digest, query)),
-  ]
-    .filter(
-      (result): result is CanonicalSkillSearchResult & CanonicalSkillSearchCandidate =>
-        result !== null,
-    )
-    .filter((result) => args.mode !== "exact" || result.slug.toLowerCase() === query.toLowerCase())
+  const ranked = candidates
+    .map((row) => {
+      const usage =
+        row.source === "clawhub" ? usageBySkill.get(row.id.slice("clawhub:".length)) : undefined;
+      return usage
+        ? {
+            ...row,
+            rolling60DayInstalls: usage.installs,
+            bookmarks: usage.bookmarks,
+          }
+        : row;
+    })
     .sort(compareCanonicalSkillSearchCandidates)
     .slice(0, limit);
 
-  return ranked.map(
-    ({
-      relevance: _relevance,
-      rolling60DayInstalls: _installs,
-      bookmarks: _bookmarks,
-      ...result
-    }) => result,
-  );
+  return ranked;
 }
 
 export const searchSkills: ReturnType<typeof action> = action({
@@ -998,8 +1043,14 @@ export const searchSkills: ReturnType<typeof action> = action({
     return rankCanonicalSkillCandidates(
       args,
       candidates,
-      await readCanonicalSkillUsage(ctx, candidates.nativeCandidates),
-    );
+      await readCanonicalSkillUsage(ctx, candidates),
+    ).map(({ relevance: _relevance, rolling60DayInstalls, bookmarks, ...result }) => ({
+      ...result,
+      metrics:
+        result.source === "clawhub"
+          ? { ...result.metrics, rolling60DayInstalls, bookmarks }
+          : result.metrics,
+    }));
   },
 });
 
@@ -1023,39 +1074,58 @@ export const searchPublicDiscoveryBatchInternal = internalAction({
       vectors = null;
     }
     const vectorByQuery = new Map(inputs.map((query, index) => [query, vectors?.[index] ?? null]));
-    const usage = new Map<string, RollingSkillUsage>();
-    const results: Array<{ query: string; identities: string[] }> = [];
-    for (const batch of chunkValues(queries, 8)) {
-      const candidates = await Promise.all(
-        batch.map((query) =>
-          readCanonicalSkillCandidates(
-            ctx,
-            { query, limit: 3 },
-            vectorByQuery.get(query.trim()) ?? null,
-          ),
-        ),
-      );
-      const missingUsage = await readCanonicalSkillUsage(
-        ctx,
-        candidates.flatMap((candidate) =>
-          candidate.nativeCandidates.filter((entry) => !usage.has(String(entry.skill._id))),
-        ),
-      );
-      for (const [id, row] of missingUsage) usage.set(id, row);
-      // Rich native/external candidates must be released between groups to fit
-      // Convex's 64 MB action budget; only identities and usage facts survive.
-      results.push(
-        ...batch.map((query, index) => ({
-          query,
-          identities: rankCanonicalSkillCandidates(
-            { query, limit: 3 },
-            candidates[index],
-            usage,
-          ).map((result) => result.id),
-        })),
-      );
-    }
-    return results;
+    const candidates: CanonicalSkillSearchCandidate[][] = Array(queries.length);
+    let next = 0;
+    await settleSearchReads(
+      Array.from({ length: Math.min(queries.length, 8) }, async () => {
+        try {
+          while (next < queries.length) {
+            const index = next++;
+            const query = queries[index];
+            const rows = await readCanonicalSkillCandidates(
+              ctx,
+              { query, limit: 3 },
+              vectorByQuery.get(query.trim()) ?? null,
+            );
+            // Keep at most eight rich recall pools within the action's 64 MB budget.
+            // Across queries retain ranking facts only, then deduplicate adoption reads.
+            candidates[index] = rows.map(
+              ({
+                id,
+                source,
+                relevance,
+                official,
+                featured,
+                rolling60DayInstalls,
+                bookmarks,
+                updatedAt,
+              }) => ({
+                id,
+                source,
+                relevance,
+                official,
+                featured,
+                rolling60DayInstalls,
+                bookmarks,
+                updatedAt,
+              }),
+            );
+          }
+        } catch (error) {
+          // Stop admitting reads after a failed recall; drain the current workers
+          // before rejecting so no partial report or detached queue survives.
+          next = queries.length;
+          throw error;
+        }
+      }),
+    );
+    const usage = await readCanonicalSkillUsage(ctx, candidates.flat());
+    return queries.map((query, index) => ({
+      query,
+      identities: rankCanonicalSkillCandidates({ query, limit: 3 }, candidates[index], usage).map(
+        (row) => row.id,
+      ),
+    }));
   },
 });
 

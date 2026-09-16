@@ -3719,6 +3719,157 @@ describe("batched canonical search for intelligence", () => {
       ) => Promise<Array<{ query: string; identities: string[] }>>;
     }
   )?._handler;
+  it("reads adoption only for candidates that can enter the top three, including the entire cutoff tie", async () => {
+    const native = Array.from({ length: 100 }, (_, index) => ({
+      skill: makePublicSkill({
+        id: `skills:calendar-${index}`,
+        slug: `calendar-${index}`,
+        displayName: `Calendar ${index}`,
+        featured: index < 2,
+      }),
+      version: null,
+      ownerHandle: "acme",
+      owner: null,
+    }));
+    // Two curated results consume two slots; four exact-name matches compete
+    // for the third. All remaining prefix matches lose before adoption is read.
+    for (const index of [2, 3, 4, 5]) native[index].skill.displayName = "Calendar";
+    const usageIds: string[] = [];
+    const runQuery = vi.fn(async (ref, args) => {
+      switch (getFunctionName(ref)) {
+        case "search:getExactSkillSlugMatch":
+        case "search:lexicalFallbackSkills":
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:directPrefixSkillMatches":
+          return native;
+        case "search:getRollingSkillSearchUsage":
+          usageIds.push(...args.skillIds);
+          return args.skillIds.map((skillId: string) => ({
+            skillId,
+            installs: skillId === "skills:calendar-5" ? 100 : 0,
+            bookmarks: 0,
+          }));
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+    generateEmbeddingMock.mockResolvedValue([1, 0]);
+    generateEmbeddingsMock.mockResolvedValue([[1, 0]]);
+    const ctx = { runQuery, vectorSearch: vi.fn(async () => []) };
+    const expected = [
+      "clawhub:skills:calendar-0",
+      "clawhub:skills:calendar-1",
+      "clawhub:skills:calendar-5",
+    ];
+    const ordinary = await canonicalSearchSkillsHandler(ctx, { query: "calendar", limit: 3 });
+    expect(ordinary.map((row) => row.id)).toEqual(expected);
+    expect(ordinary[2]).toMatchObject({ metrics: { rolling60DayInstalls: 100, bookmarks: 0 } });
+    expect(usageIds.sort()).toEqual(
+      native
+        .slice(0, 6)
+        .map((row) => row.skill._id)
+        .sort(),
+    );
+    usageIds.length = 0;
+    await expect(
+      batchHandler(ctx, { queries: Array.from({ length: 100 }, () => "calendar") }),
+    ).resolves.toEqual(
+      Array.from({ length: 100 }, () => ({ query: "calendar", identities: expected })),
+    );
+    expect(usageIds.sort()).toEqual(
+      native
+        .slice(0, 6)
+        .map((row) => row.skill._id)
+        .sort(),
+    );
+  });
+  it.each([
+    {
+      slug: "calendar-tools",
+      installs: 100,
+      expected: [
+        "skills-sh:a/skills/calendar",
+        "skills-sh:b/skills/calendar",
+        "skills-sh:c/skills/calendar",
+      ],
+      readsUsage: false,
+    },
+    {
+      slug: "calendar-native",
+      installs: 100,
+      expected: [
+        "clawhub:skills:calendar",
+        "skills-sh:a/skills/calendar",
+        "skills-sh:b/skills/calendar",
+      ],
+      readsUsage: true,
+    },
+    {
+      slug: "calendar-native",
+      installs: 0,
+      expected: [
+        "skills-sh:a/skills/calendar",
+        "skills-sh:b/skills/calendar",
+        "skills-sh:c/skills/calendar",
+      ],
+      readsUsage: true,
+    },
+  ])(
+    "preserves mixed-source ranking for $slug with $installs installs",
+    async ({ slug, installs, expected, readsUsage }) => {
+      const native = {
+        skill: makePublicSkill({
+          id: "skills:calendar",
+          slug,
+          displayName: slug === "calendar-native" ? "Calendar" : slug,
+        }),
+        version: null,
+        ownerHandle: "acme",
+        owner: null,
+      };
+      const external = ["a", "b", "c"].map((owner) => ({
+        ...makeExternalSearchDigest({ externalId: `${owner}/skills/calendar` }),
+        lastObservedAt: 2,
+      }));
+      const usage = vi.fn(async () => [{ skillId: native.skill._id, installs, bookmarks: 0 }]);
+      const runQuery = vi.fn(async (ref) => {
+        switch (getFunctionName(ref)) {
+          case "search:getExactSkillSlugMatch":
+          case "search:lexicalFallbackSkills":
+            return [];
+          case "search:directPrefixSkillMatches":
+            return [native];
+          case "search:getExternalSkillSearchCandidates":
+            return external;
+          case "search:getRollingSkillSearchUsage":
+            return usage();
+          default:
+            throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+        }
+      });
+      generateEmbeddingMock.mockResolvedValue([1, 0]);
+      generateEmbeddingsMock.mockResolvedValue([[1, 0]]);
+      const ctx = { runQuery, vectorSearch: vi.fn(async () => []) };
+      expect(
+        (await canonicalSearchSkillsHandler(ctx, { query: "calendar", limit: 3 })).map(
+          (row) => row.id,
+        ),
+      ).toEqual(expected);
+      expect(usage).toHaveBeenCalledTimes(Number(readsUsage));
+      usage.mockClear();
+      await expect(batchHandler(ctx, { queries: ["calendar"] })).resolves.toEqual([
+        { query: "calendar", identities: expected },
+      ]);
+      expect(usage).toHaveBeenCalledTimes(Number(readsUsage));
+      if (readsUsage) {
+        usage.mockRejectedValueOnce(new Error("adoption unavailable"));
+        await expect(batchHandler(ctx, { queries: ["calendar"] })).rejects.toThrow(
+          "adoption unavailable",
+        );
+      }
+    },
+  );
   it("matches single-search ranking with one vector batch and one usage read per distinct skill", async () => {
     const native = {
       skill: makePublicSkill({
