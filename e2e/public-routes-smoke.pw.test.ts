@@ -394,6 +394,48 @@ test("skill hero metadata keeps semantic wrap groups on mobile", async ({ page }
   await expectHealthyPage(page, errors);
 });
 
+test("plugin hero metadata retains its full-width mobile topic row", async ({ page }) => {
+  const errors = trackRuntimeErrors(page);
+  await page.route("**/_vercel/image?**", (route) => route.fulfill({ status: 204 }));
+  await page.goto("/plugins/@openclaw/codex", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  const taxonomy = page.locator('.skill-hero-taxonomy-row[aria-label="Plugin metadata"]');
+  const categories = taxonomy.getByLabel("Categories");
+  const topics = taxonomy.getByLabel("Topics");
+  const separator = taxonomy.locator(".skill-hero-taxonomy-separator").first();
+  await expect(categories).toBeVisible();
+  await expect(topics).toBeVisible();
+
+  for (const width of [320, 360, 600]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(separator).toBeHidden();
+    const layout = await taxonomy.evaluate((row) => {
+      const category = row.querySelector('[aria-label="Categories"]')!.getBoundingClientRect();
+      const topic = row.querySelector('[aria-label="Topics"]')!.getBoundingClientRect();
+      return {
+        categoryBottom: category.bottom,
+        topicTop: topic.top,
+        topicWidth: topic.width,
+        rowWidth: row.getBoundingClientRect().width,
+        pageWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(layout.topicTop).toBeGreaterThan(layout.categoryBottom);
+    expect(Math.abs(layout.topicWidth - layout.rowWidth)).toBeLessThanOrEqual(1);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.pageWidth + 1);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(separator).toBeVisible();
+  const [categoryBox, topicBox] = await Promise.all([
+    categories.boundingBox(),
+    topics.boundingBox(),
+  ]);
+  expect(Math.abs(categoryBox!.y - topicBox!.y)).toBeLessThanOrEqual(2);
+  await expectHealthyPage(page, errors);
+});
+
 test("removed creators route renders not found", async ({ page }) => {
   await stubExternalMediaInVitePreview(page);
   await page.goto("/creators", { waitUntil: "domcontentloaded" });
