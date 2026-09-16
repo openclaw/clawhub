@@ -5,8 +5,10 @@ on:
     - cron: "17 * * * *"
   workflow_dispatch:
 
+# Deploy pauses rollouts; share its group until synchronization and rollback finish.
 concurrency:
-  group: skills-sh-production-sync
+  group: deploy-production
+  queue: max
   cancel-in-progress: false
 
 permissions:

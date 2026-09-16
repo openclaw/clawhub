@@ -9,6 +9,8 @@
 
 ### Fixes
 
+- Workers: redact quoted credentials completely in serialized JSON diagnostics while preserving adjacent non-secret context.
+- Deploy: queue production deployments and hourly skills.sh synchronization together so rollout pauses cannot interrupt synchronization or rollback; retain bounded, redacted failure receipts when synchronization fails.
 - Tests: shorten local Convex scratch paths when a deeply nested `TMPDIR` shares the workspace filesystem, while retaining short overrides and avoiding Unix socket path failures.
 - API/CLI: preserve owner-qualified skill identities in catalog listings and accept explicit null public versions consistently across API and CLI schemas (thanks @HwangBae for the report and @goutamadwant for the fix).
 - Workers: delete a newly generated Skill Card blob when attachment fails, while preserving successfully attached cards and historical bundle fingerprints (thanks @SebTardif).

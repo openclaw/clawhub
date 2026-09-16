@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 describe("skills.sh production synchronization workflow", () => {
-  it("runs hourly without overlap from main using Production OIDC", async () => {
+  it("queues hourly sync with production deployment using Production OIDC", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/skills-sh-sync.yml", "utf8")) as {
-      concurrency?: { group?: string; "cancel-in-progress"?: boolean };
+      concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };
       jobs: Record<
         string,
         {
@@ -30,10 +30,15 @@ describe("skills.sh production synchronization workflow", () => {
 
     expect(workflow.on?.schedule).toEqual([{ cron: "17 * * * *" }]);
     expect(workflow.on?.workflow_dispatch).toBeDefined();
+    const deploy = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
+      concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };
+    };
     expect(workflow.concurrency).toEqual({
-      group: "skills-sh-production-sync",
+      group: "deploy-production",
+      queue: "max",
       "cancel-in-progress": false,
     });
+    expect(deploy.concurrency).toEqual(workflow.concurrency);
     expect(workflow.permissions).toEqual({ contents: "read", "id-token": "write" });
 
     const job = workflow.jobs.sync;

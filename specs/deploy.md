@@ -49,6 +49,17 @@ Production deploy notes:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
   - `frontend`: wait for the Vercel production deploy for the selected `main` SHA, then run smoke tests
+- Production deploys and hourly skills.sh synchronization share the `deploy-production` concurrency
+  group. `queue: max` retains up to 100 pending runs without cancelling the active run, so an hourly
+  sync cannot replace a queued manual deploy. The group covers synchronization cleanup and deployment
+  rollout restoration. Neither workflow dispatches or waits for the other while holding the group.
+  The existing job timeouts remain 180 minutes for synchronization and 45 minutes for deployment;
+  either workflow can wait behind the other, including frontend deployment readiness checks.
+- The sync CLI writes `skills-sh-sync-proof.json` before exiting nonzero on failure. Failure receipts
+  contain `ok: false`, a redacted primary `error`, and separately redacted `rollbackErrors`, with each
+  message capped at 2,000 characters plus a truncation marker. `rollbackErrors: null` means execution
+  failed before the rollback scope; an empty array means the attempted rollback completed without
+  error. A failed artifact write remains a failure and is not retried.
 - Ordinary backend deploys require both external-skill rollout modes to be missing or `off`.
   When either rollout is intentionally active, use a backend-only deploy and set
   `active_rollout_deploy_confirm=pause-and-restore-active-rollouts`. The workflow records the
