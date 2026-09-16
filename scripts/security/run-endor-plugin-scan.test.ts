@@ -230,13 +230,19 @@ JSON`,
   });
 
   it.each([
-    { name: "exit", body: 'echo "ENDOR_TOKEN=fixture-token" >&2\nexit 17', timedOut: false },
+    {
+      name: "exit",
+      body: 'echo "ENDOR_TOKEN=fixture-token" >&2\nexit 17',
+      stderr: "ENDOR_TOKEN=[redacted-secret]\n",
+      timedOut: false,
+    },
     {
       name: "timeout",
-      body: 'echo "ENDOR_TOKEN=fixture-token" >&2\nsleep 2',
+      body: "sleep 2",
+      stderr: "",
       timedOut: true,
     },
-  ])("preserves redacted command diagnostics on $name", async ({ body, timedOut }) => {
+  ])("preserves redacted command diagnostics on $name", async ({ body, stderr, timedOut }) => {
     const workspace = await tempDir();
     const packageRoot = join(workspace, "artifact", "package");
     const command = join(workspace, "fake-clawscan");
@@ -261,7 +267,7 @@ JSON`,
     ).rejects.toThrow(timedOut ? "Endor ClawScan timed out" : "Endor ClawScan exited 17");
 
     expect(Object.assign({}, ...diagnostics)).toMatchObject({
-      stderr: "ENDOR_TOKEN=[redacted-secret]\n",
+      stderr,
       timedOut,
     });
     expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");

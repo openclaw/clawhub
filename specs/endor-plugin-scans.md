@@ -27,6 +27,8 @@ supports paced batches and preserves active jobs.
   report in file storage. Keep the total count when the displayed list is capped.
 - An unsupported package is explicitly not analyzed. A scanner failure uses the
   existing job failure/retry path and must never become a successful empty report.
+  Retries require an active, eligible release. If the primary scan quarantines a
+  release, later attempts stop through the existing missing-target handling.
 - Preserve the last stored result while replacement work is queued or running.
   Its check time identifies the analysis being displayed.
 - Settle both concurrent scan processes before deleting their workspace.
