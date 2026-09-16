@@ -42,6 +42,8 @@ describe("resolveVersionByHash", () => {
     const skill = {
       _id: "skills:demo",
       slug: "demo",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:owner",
       latestVersionId: "skillVersions:latest",
     };
     const latestVersion = {
@@ -65,6 +67,14 @@ describe("resolveVersionByHash", () => {
 
     const db = {
       get: vi.fn(async (id: string) => {
+        if (id === "publishers:owner")
+          return {
+            _id: id,
+            kind: "user",
+            handle: "owner",
+            displayName: "Owner",
+            linkedUserId: "users:owner",
+          };
         if (id === latestVersion._id) return latestVersion;
         if (id === matchedVersion._id) return matchedVersion;
         return null;

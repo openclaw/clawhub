@@ -355,6 +355,18 @@ function makeResolveCtx(args: {
     throw new Error(`Unexpected query table: ${table}`);
   });
   const get = vi.fn(async (id: string) => {
+    if (id === args.skill.ownerUserId)
+      return makeOwner(id, "demo-owner", {
+        personalPublisherId: "publishers:owner",
+      });
+    if (id === "publishers:owner")
+      return {
+        _id: id,
+        kind: "user",
+        handle: "demo-owner",
+        displayName: "Demo Owner",
+        linkedUserId: args.skill.ownerUserId,
+      };
     if (id === args.skill.latestVersionId) return args.latestVersion ?? null;
     if (id === "skillVersions:match") return args.matchVersion ?? null;
     return null;
