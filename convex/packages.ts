@@ -1549,8 +1549,14 @@ async function upsertPackageBadge(
   if (existing) {
     return false;
   }
-  if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin")
+  if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin") {
+    if (getPluginDiscoveryExclusion(pkg.categories)) {
+      throw new ConvexError(
+        "Channels, model providers, and agent runtimes are excluded from Featured discovery.",
+      );
+    }
     await assertFeaturedCapacity(ctx, "plugin");
+  }
   await ctx.db.insert("packageBadges", {
     packageId,
     kind,

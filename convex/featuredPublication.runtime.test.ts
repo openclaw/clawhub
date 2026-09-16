@@ -179,6 +179,39 @@ describe("Featured publication", () => {
     expect(counts).toEqual({ plugins: 9, skills: 8 });
   });
 
+  it("rejects excluded install purposes through UI and admin publication while allowing removal", async () => {
+    const { t, actorUserId, items } = await fixture();
+    const staff = t.withIdentity({ subject: `${actorUserId}|test-session` });
+    for (const [index, category] of ["channels", "models", "agent-runtimes"].entries()) {
+      const item = items[index];
+      await t.run((ctx) => ctx.db.patch(item.packageId, { categories: [category] }));
+      await expect(
+        staff.mutation(api.packages.setBatch, { packageId: item.packageId, batch: "highlighted" }),
+      ).rejects.toThrow(/discovery/i);
+      await expect(
+        t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
+          actorUserId,
+          name: item.name,
+          featured: true,
+        }),
+      ).rejects.toThrow(/discovery/i);
+      await t.run((ctx) =>
+        ctx.db.insert("packageBadges", {
+          packageId: item.packageId,
+          kind: "highlighted",
+          byUserId: actorUserId,
+          at: 1,
+        }),
+      );
+      await t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
+        actorUserId,
+        name: item.name,
+        featured: false,
+      });
+    }
+    expect(await t.run((ctx) => ctx.db.query("packageBadges").collect())).toEqual([]);
+  });
+
   it("retains badge timestamps, audit history and skill update time when keeping existing selections", async () => {
     const { t, actorUserId, items } = await fixture();
     const item = items[0];
