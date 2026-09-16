@@ -135,6 +135,10 @@ describe("security-scan-codex workflow", () => {
     ]);
     expectSecretStepAllowlist(steps, "LLM_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
+    expectSecretStepAllowlist(steps, "ENDOR_API_CREDENTIALS_KEY", ["Run Codex security worker"]);
+    expectSecretStepAllowlist(steps, "ENDOR_API_CREDENTIALS_SECRET", ["Run Codex security worker"]);
+    expect(jobEnv).not.toHaveProperty("ENDOR_API_CREDENTIALS_KEY");
+    expect(jobEnv).not.toHaveProperty("ENDOR_API_CREDENTIALS_SECRET");
     expectSecretStepAllowlist(steps, "VT_API_KEY", []);
     expect(scanStep?.env ?? {}).not.toHaveProperty("CODEX_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("OPENAI_API_KEY");
@@ -148,8 +152,18 @@ describe("security-scan-codex workflow", () => {
     const skillspectorInstall = steps.find((step) => step.name === "Install SkillSpector")?.run;
     expect(codexInstall).toContain("npm install -g @openai/codex@0.142.3");
     expect(codexInstall).not.toContain("@latest");
-    expect(clawScanInstall).toContain("npm install -g @openclaw/clawscan@0.1.8");
+    expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_VERSION).toBe(
+      "${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_VERSION || '0.1.8' }}",
+    );
+    expect(clawScanInstall).toContain(
+      'npm install -g "@openclaw/clawscan@$CODEX_SECURITY_SCAN_CLAWSCAN_VERSION"',
+    );
     expect(clawScanInstall).not.toContain("@latest");
+    const endorPrepare = steps.find((step) => step.name === "Prepare Endor scanner");
+    expect(endorPrepare?.if).toBe("${{ env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}");
+    expect(endorPrepare?.run).toContain("clawscan scanners endor");
+    expect(endorPrepare?.run).toContain("@sha256:[a-f0-9]{64}$");
+    expect(endorPrepare?.run).toContain('docker pull "$CODEX_SECURITY_SCAN_ENDOR_IMAGE"');
     expect(aigInstall).toContain(
       "python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt",
     );
@@ -170,6 +184,10 @@ describe("security-scan-codex workflow", () => {
       LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
+      ENDOR_NAMESPACE: "${{ vars.ENDOR_NAMESPACE }}",
+      ENDOR_API: "${{ vars.ENDOR_API }}",
+      ENDOR_API_CREDENTIALS_KEY: "${{ secrets.ENDOR_API_CREDENTIALS_KEY }}",
+      ENDOR_API_CREDENTIALS_SECRET: "${{ secrets.ENDOR_API_CREDENTIALS_SECRET }}",
     });
   });
 });

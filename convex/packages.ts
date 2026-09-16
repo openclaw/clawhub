@@ -68,6 +68,7 @@ import {
   buildPackageInspectorFindingsEmail,
   buildPackageInspectorValidationUrl,
 } from "./lib/emails";
+import { endorAnalysisSchema, endorAnalysisValidator } from "./lib/endorAnalysis";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
@@ -1354,6 +1355,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
       vtAnalysis: release.vtAnalysis,
       aigAnalysis: release.aigAnalysis,
       skillSpectorAnalysis: release.skillSpectorAnalysis,
+      endorAnalysis: release.endorAnalysis,
       llmAnalysis: release.llmAnalysis,
       staticScan: release.staticScan,
       createdAt: release.createdAt,
@@ -1367,6 +1369,7 @@ function toPublicPluginRelease(release: Doc<"packageReleases">) {
     capabilities: _capabilities,
     clawManifestSummary: _clawManifestSummary,
     extractedClawManifest: _extractedClawManifest,
+    scannerReportsStorageId: _scannerReportsStorageId,
     ...publicRelease
   } = release as Doc<"packageReleases"> & {
     capabilities?: unknown;
@@ -3765,6 +3768,7 @@ export const listAuditPage = query({
               version: latestRelease.version,
               createdAt: latestRelease.createdAt,
               vtAnalysis: latestRelease.vtAnalysis,
+              endorAnalysis: latestRelease.endorAnalysis,
               llmAnalysis: latestRelease.llmAnalysis,
               staticScan: latestRelease.staticScan
                 ? {
@@ -6042,7 +6046,7 @@ async function deletePackageModerationEventsForAppeal(
 }
 
 async function hardDeletePackageDoc(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: Pick<MutationCtx, "db" | "storage">,
   pkg: Doc<"packages">,
   params: {
     actorUserId: Id<"users">;
@@ -6119,6 +6123,11 @@ async function hardDeletePackageDoc(
   for (const dailyStat of dailyStats) await ctx.db.delete(dailyStat._id);
 
   for (const release of releases) await ctx.db.delete(release._id);
+  await Promise.allSettled(
+    releases.flatMap((release) =>
+      release.scannerReportsStorageId ? [ctx.storage.delete(release.scannerReportsStorageId)] : [],
+    ),
+  );
   await ctx.db.delete(pkg._id);
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
@@ -11567,6 +11576,9 @@ export const discardPendingPackagePublicationInternal = internalMutation({
     if (typeof release?.clawpackStorageId === "string") {
       storageIds.add(release.clawpackStorageId as Id<"_storage">);
     }
+    if (release?.scannerReportsStorageId) {
+      storageIds.add(release.scannerReportsStorageId);
+    }
 
     if (release) await ctx.db.delete(release._id);
     await Promise.allSettled([...storageIds].map((storageId) => ctx.storage.delete(storageId)));
@@ -12611,9 +12623,122 @@ export const updateReleaseAigAnalysisInternal = internalMutation({
   },
 });
 
+type ReleaseLlmAnalysis = NonNullable<Doc<"packageReleases">["llmAnalysis"]>;
+
+async function applyReleaseLlmAnalysis(
+  ctx: Pick<MutationCtx, "db"> & Partial<Pick<MutationCtx, "scheduler">>,
+  release: Doc<"packageReleases">,
+  llmAnalysis: ReleaseLlmAnalysis,
+) {
+  await ctx.db.patch(release._id, { llmAnalysis });
+  const updatedRelease: Doc<"packageReleases"> = {
+    ...release,
+    llmAnalysis,
+  };
+  const llmVerdict = (llmAnalysis.verdict ?? llmAnalysis.status).trim().toLowerCase();
+  await syncLatestPackageVerification(ctx, updatedRelease, {
+    quarantineMaliciousLatest: llmVerdict === "malicious",
+    maliciousTrigger: "malicious.llm_malicious",
+  });
+}
+
+export const completeReleaseSecurityScanInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    jobId: v.id("securityScanJobs"),
+    leaseToken: v.string(),
+    runId: v.optional(v.string()),
+    llmAnalysis: v.object({
+      status: v.string(),
+      verdict: v.optional(v.string()),
+      confidence: v.optional(v.string()),
+      summary: v.optional(v.string()),
+      dimensions: v.optional(
+        v.array(
+          v.object({
+            name: v.string(),
+            label: v.string(),
+            rating: v.string(),
+            detail: v.string(),
+          }),
+        ),
+      ),
+      guidance: v.optional(v.string()),
+      findings: v.optional(v.string()),
+      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
+      riskSummary: v.optional(
+        v.object({
+          abnormal_behavior_control: llmRiskSummaryBucketValidator,
+          permission_boundary: llmRiskSummaryBucketValidator,
+          sensitive_data_protection: llmRiskSummaryBucketValidator,
+        }),
+      ),
+      model: v.optional(v.string()),
+      checkedAt: v.number(),
+    }),
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    endorAnalysis: v.optional(endorAnalysisValidator),
+    scannerReportsStorageId: v.optional(v.id("_storage")),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (
+      !job ||
+      job.status !== "running" ||
+      job.targetKind !== "packageRelease" ||
+      job.packageReleaseId !== args.releaseId ||
+      job.leaseToken !== args.leaseToken
+    ) {
+      throw new ConvexError("Lease mismatch");
+    }
+    const release = await ctx.db.get(args.releaseId);
+    if (!isReleaseActive(release)) throw new ConvexError("Package release not found");
+    const endorAnalysis = args.endorAnalysis
+      ? endorAnalysisSchema.parse(args.endorAnalysis)
+      : undefined;
+
+    const previousScannerReportsStorageId = release.scannerReportsStorageId;
+    const releaseWithScannerResults: Doc<"packageReleases"> = {
+      ...release,
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
+      endorAnalysis,
+      scannerReportsStorageId: args.scannerReportsStorageId,
+    };
+    await ctx.db.patch(args.releaseId, {
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
+      endorAnalysis,
+      scannerReportsStorageId: args.scannerReportsStorageId,
+    });
+    await applyReleaseLlmAnalysis(ctx, releaseWithScannerResults, args.llmAnalysis);
+
+    const now = Date.now();
+    await ctx.db.patch(args.jobId, {
+      status: "succeeded",
+      runId: args.runId,
+      completedAt: now,
+      leaseToken: undefined,
+      leaseExpiresAt: undefined,
+      updatedAt: now,
+    });
+    if (
+      previousScannerReportsStorageId &&
+      previousScannerReportsStorageId !== args.scannerReportsStorageId
+    ) {
+      await ctx.storage.delete(previousScannerReportsStorageId);
+    }
+    return { ok: true as const };
+  },
+});
+
 export const updateReleaseLlmAnalysisInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
+    securityScanJob: v.optional(
+      v.object({
+        jobId: v.id("securityScanJobs"),
+        leaseToken: v.string(),
+      }),
+    ),
     llmAnalysis: v.object({
       status: v.string(),
       verdict: v.optional(v.string()),
@@ -12644,18 +12769,21 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
+    if (args.securityScanJob) {
+      const job = await ctx.db.get(args.securityScanJob.jobId);
+      if (
+        !job ||
+        job.status !== "running" ||
+        job.targetKind !== "packageRelease" ||
+        job.packageReleaseId !== args.releaseId ||
+        job.leaseToken !== args.securityScanJob.leaseToken
+      ) {
+        return;
+      }
+    }
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
-    await ctx.db.patch(args.releaseId, { llmAnalysis: args.llmAnalysis });
-    const updatedRelease = {
-      ...release,
-      llmAnalysis: args.llmAnalysis,
-    } as Doc<"packageReleases">;
-    const llmVerdict = (args.llmAnalysis.verdict ?? args.llmAnalysis.status).trim().toLowerCase();
-    await syncLatestPackageVerification(ctx, updatedRelease, {
-      quarantineMaliciousLatest: llmVerdict === "malicious",
-      maliciousTrigger: "malicious.llm_malicious",
-    });
+    await applyReleaseLlmAnalysis(ctx, release, args.llmAnalysis);
   },
 });
 

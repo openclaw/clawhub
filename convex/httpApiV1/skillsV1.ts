@@ -483,11 +483,13 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     "- `clean` means ClawHub did not find blocking security issues in this scan.",
     "",
     "VirusTotal results are supporting reputation telemetry. They can help explain a risk signal, but they are not the sole source of ClawHub's final verdict.",
+    "Endor results summarize reachable dependency findings. They supplement the ClawScan verdict; a missing or skipped Endor result is not a clean result.",
     "",
     "## Files",
     "",
     "- `manifest.json`: artifact identity, scan status, timestamps, and writeback state.",
     "- `clawscan.json`: final ClawScan verdict, summary, guidance, and findings.",
+    "- `endor.json`: bounded Endor reachability summary when available.",
     "- `skillspector.json`: SkillSpector structure and agentic-risk signals when available.",
     "- `static-analysis.json`: deterministic scanner findings, reason codes, and static summary.",
     "- `virustotal.json`: external reputation counts and status when available.",
@@ -498,6 +500,7 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
   return buildDeterministicZip([
     { path: "manifest.json", bytes: encodeJsonEntry(manifest) },
     { path: "clawscan.json", bytes: encodeJsonEntry(scanReportPart(status, "clawscan")) },
+    { path: "endor.json", bytes: encodeJsonEntry(scanReportPart(status, "endor")) },
     { path: "skillspector.json", bytes: encodeJsonEntry(scanReportPart(status, "skillspector")) },
     {
       path: "static-analysis.json",

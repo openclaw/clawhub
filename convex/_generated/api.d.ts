@@ -86,6 +86,7 @@ import type * as lib_emailRendering from "../lib/emailRendering.js";
 import type * as lib_emails from "../lib/emails.js";
 import type * as lib_embeddingVisibility from "../lib/embeddingVisibility.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
+import type * as lib_endorAnalysis from "../lib/endorAnalysis.js";
 import type * as lib_experimentalClaws from "../lib/experimentalClaws.js";
 import type * as lib_featuredIntelligence from "../lib/featuredIntelligence.js";
 import type * as lib_featuredPolicy from "../lib/featuredPolicy.js";
@@ -335,6 +336,7 @@ declare const fullApi: ApiFromModules<{
   "lib/emails": typeof lib_emails;
   "lib/embeddingVisibility": typeof lib_embeddingVisibility;
   "lib/embeddings": typeof lib_embeddings;
+  "lib/endorAnalysis": typeof lib_endorAnalysis;
   "lib/experimentalClaws": typeof lib_experimentalClaws;
   "lib/featuredIntelligence": typeof lib_featuredIntelligence;
   "lib/featuredPolicy": typeof lib_featuredPolicy;

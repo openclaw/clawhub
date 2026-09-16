@@ -6,6 +6,7 @@ import type {
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
+import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { hasOwnProperty } from "./hasOwnProperty";
 import { publicApiUrl } from "./publicApiUrl";
 
@@ -45,6 +46,7 @@ export type PackageVersionDetail = {
     family: "skill" | "code-plugin" | "bundle-plugin";
   } | null;
   version: {
+    endorAnalysis?: EndorAnalysis | null;
     version: string;
     createdAt: number;
     changelog: string;

@@ -142,6 +142,9 @@ describe("worker transport redaction", () => {
     maskKnownWorkerSecrets(
       {
         GITHUB_ACTIONS: "true",
+        ENDOR_API_CREDENTIALS_KEY: "endor-key-secret",
+        ENDOR_API_CREDENTIALS_SECRET: "endor-credential-secret",
+        ENDOR_TOKEN: "endor-token-secret",
         OPENAI_API_KEY: "sk-runtime-secret",
         SECURITY_SCAN_WORKER_TOKEN: "worker-token-secret",
       } as NodeJS.ProcessEnv,
@@ -150,5 +153,8 @@ describe("worker transport redaction", () => {
 
     expect(lines).toContain("::add-mask::sk-runtime-secret\n");
     expect(lines).toContain("::add-mask::worker-token-secret\n");
+    expect(lines).toContain("::add-mask::endor-token-secret\n");
+    expect(lines).toContain("::add-mask::endor-key-secret\n");
+    expect(lines).toContain("::add-mask::endor-credential-secret\n");
   });
 });

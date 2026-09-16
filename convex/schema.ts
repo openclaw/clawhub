@@ -7,6 +7,7 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { endorAnalysisValidator } from "./lib/endorAnalysis";
 import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassificationContract";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
@@ -1904,9 +1905,11 @@ const packageReleases = defineTable({
   verification: packageVerificationValidator,
   // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
+  scannerReportsStorageId: v.optional(v.id("_storage")),
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+  endorAnalysis: v.optional(endorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
       status: v.string(),

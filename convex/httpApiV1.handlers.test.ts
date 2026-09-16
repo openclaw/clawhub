@@ -539,6 +539,63 @@ describe("httpApiV1 handlers", () => {
     expect(readme).toContain("`clawscan.json`: final ClawScan verdict");
   });
 
+  it("includes the bounded Endor summary in stored plugin report downloads", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const endor = {
+      status: "completed",
+      checkedAt: 2,
+      reachableFunctionCount: 1,
+      findings: [{ severity: "high", summary: "Reachable vulnerable function" }],
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      expect(args).toMatchObject({
+        actorUserId: "users:owner",
+        kind: "plugin",
+        name: "demo-plugin",
+        version: "1.2.3",
+      });
+      return {
+        ok: true,
+        scanId: "plugin:demo-plugin:1.2.3",
+        status: "succeeded",
+        sourceKind: "published",
+        update: false,
+        writtenBack: true,
+        artifact: { kind: "plugin", name: "demo-plugin", version: "1.2.3" },
+        report: {
+          clawscan: { status: "clean", checkedAt: 1 },
+          endor,
+          skillspector: null,
+          staticAnalysis: null,
+          virustotal: null,
+        },
+        createdAt: 1,
+        updatedAt: 2,
+        completedAt: 2,
+      };
+    });
+    const response = await __handlers.skillScanGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/skills/-/scan/download/demo-plugin?version=1.2.3&kind=plugin",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    const endorEntry = entries["endor.json"];
+    const readmeEntry = entries["README.md"];
+    if (!endorEntry || !readmeEntry) throw new Error("Expected scan report entries missing");
+    expect(JSON.parse(strFromU8(endorEntry))).toEqual(endor);
+    expect(strFromU8(readmeEntry)).toContain(
+      "a missing or skipped Endor result is not a clean result",
+    );
+  });
+
   it("forwards the owner namespace when downloading a stored skill report", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:owner",
@@ -13906,6 +13963,12 @@ describe("httpApiV1 handlers", () => {
               summary: "Looks safe.",
               checkedAt: 1,
             },
+            endorAnalysis: {
+              status: "completed",
+              checkedAt: 2,
+              reachableFunctionCount: 2,
+              findings: [{ severity: "high", summary: "Reachable dependency finding" }],
+            },
             staticScan: {
               status: "malicious",
               reasonCodes: ["malicious.static_fixture"],
@@ -13942,6 +14005,11 @@ describe("httpApiV1 handlers", () => {
         llmAnalysis: {
           status: "clean",
           verdict: "clean",
+        },
+        endorAnalysis: {
+          status: "completed",
+          reachableFunctionCount: 2,
+          findings: [{ severity: "high", summary: "Reachable dependency finding" }],
         },
         verification: {
           scanStatus: "clean",
@@ -14309,6 +14377,11 @@ describe("httpApiV1 handlers", () => {
             npmTarballName: "demo-plugin-1.0.0.tgz",
             verification: { scanStatus: "malicious" },
             manualModeration: { state: "quarantined", reason: "private reviewer note" },
+            endorAnalysis: {
+              status: "skipped",
+              checkedAt: 2,
+              reason: "No supported call graph",
+            },
           },
         };
       }
@@ -14349,6 +14422,11 @@ describe("httpApiV1 handlers", () => {
         npmShasum: "d".repeat(40),
         npmTarballName: "demo-plugin-1.0.0.tgz",
         createdAt: 1,
+        endorAnalysis: {
+          status: "skipped",
+          checkedAt: 2,
+          reason: "No supported call graph",
+        },
       },
       trust: {
         scanStatus: "malicious",
