@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from "node:fs";
-import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,9 +19,11 @@ import {
   redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
+import { resolveClawScanTargetForRoot } from "./clawScanTarget";
 import {
   isEndorPluginScanEnabled,
   runEndorPluginScan,
+  type EndorCommandDiagnostic,
   type EndorPluginScanResult,
 } from "./run-endor-plugin-scan";
 import {
@@ -170,6 +172,7 @@ type JobDiagnosticInput = {
   clawscan?: ClawScanCommandDiagnostic;
   completedAt: number;
   diagnosticsRoot?: string;
+  endor?: EndorCommandDiagnostic;
   error?: string;
   job: ClaimedJob;
   llmAnalysis?: unknown;
@@ -743,6 +746,27 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
           rawArtifact: input.clawscan.rawArtifact,
         })
       : [];
+  const endorStdoutPath = await writeDiagnosticText(
+    jobDir,
+    "endor-clawscan.stdout.redacted.log",
+    input.endor?.stdout,
+    "endorClawscanStdout",
+  );
+  const endorStderrPath = await writeDiagnosticText(
+    jobDir,
+    "endor-clawscan.stderr.redacted.log",
+    input.endor?.stderr,
+    "endorClawscanStderr",
+  );
+  const endorArtifactPath = await writeDiagnosticText(
+    jobDir,
+    "endor-clawscan-artifact.redacted.json",
+    input.endor?.rawArtifact
+      ? redactEvidenceText(input.endor.rawArtifact, ["endorClawscanArtifact"])
+      : undefined,
+    "endorClawscanArtifact",
+    { structured: false },
+  );
 
   const diagnostic = {
     completedAt: input.completedAt,
@@ -784,6 +808,19 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       stderrPath: clawscanStderrPath,
       stdoutPath: clawscanStdoutPath,
     },
+    endorResult: input.endor
+      ? {
+          args: input.endor.args,
+          exitCode: input.endor.exitCode,
+          rawArtifactPath: endorArtifactPath,
+          scannerError: input.endor.scannerError
+            ? redactDiagnosticText(input.endor.scannerError)
+            : undefined,
+          stderrPath: endorStderrPath,
+          stdoutPath: endorStdoutPath,
+          timedOut: input.endor.timedOut,
+        }
+      : undefined,
   };
 
   await writeFile(join(jobDir, "diagnostic.json"), `${JSON.stringify(diagnostic, null, 2)}\n`);
@@ -1972,17 +2009,11 @@ async function resolveScanArtifactRoot(workspace: string, job: ClaimedJob) {
 
 export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) {
   const root = await resolveScanArtifactRoot(workspace, job);
-  const manifests = ["SKILL.md", "openclaw.plugin.json"];
-  const present = await Promise.all(
-    manifests.map(async (name) =>
-      (await lstat(join(workspace, root, name)).catch(() => null))?.isFile(),
-    ),
-  );
-  // ClawScan rejects dual-manifest directories. An explicit manifest selects the
-  // claimed kind while ClawScan still scans the entire dual-layout directory.
-  return present.every(Boolean)
-    ? `${root}/${manifests[job.job.targetKind === "packageRelease" ? 1 : 0]}`
-    : root;
+  return await resolveClawScanTargetForRoot({
+    artifactKind: job.job.targetKind === "packageRelease" ? "packageRelease" : "skill",
+    root,
+    workspace,
+  });
 }
 
 export function scanHealthClassification(input: {
@@ -2028,6 +2059,7 @@ export async function processJob(
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
   const clawscan: ClawScanCommandDiagnostic = {};
+  const endor: EndorCommandDiagnostic = {};
   let errorMessage: string | undefined;
   let scanCompletedAt: number | undefined;
   let llmAnalysis: StoredLlmAnalysis | undefined;
@@ -2043,7 +2075,12 @@ export async function processJob(
         Object.assign(clawscan, next);
       }),
       shouldRunEndor
-        ? runEndorPluginScan({ workspace })
+        ? runEndorPluginScan({
+            workspace,
+            onDiagnostic: (next) => {
+              Object.assign(endor, next);
+            },
+          })
         : Promise.resolve<EndorPluginScanResult | undefined>(undefined),
     ] as const);
     if (clawScanResult.status === "rejected") throw clawScanResult.reason;
@@ -2162,6 +2199,7 @@ export async function processJob(
         completedAt: Date.now(),
         clawscan,
         diagnosticsRoot,
+        endor: Object.keys(endor).length > 0 ? endor : undefined,
         error: errorMessage,
         job,
         llmAnalysis,

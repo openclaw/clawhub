@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runEndorPluginScan } from "./run-endor-plugin-scan";
+import { runEndorPluginScan, type EndorCommandDiagnostic } from "./run-endor-plugin-scan";
 
 const tempDirs: string[] = [];
 
@@ -36,6 +36,8 @@ describe("runEndorPluginScan", () => {
       })}\n`,
     );
     await writeFile(join(packageRoot, "npm-shrinkwrap.json"), '{"lockfileVersion":3}\n');
+    await writeFile(join(packageRoot, "SKILL.md"), "# Bundled skill\n");
+    await writeFile(join(packageRoot, "openclaw.plugin.json"), '{"id":"fixture-plugin"}\n');
 
     const command = join(workspace, "fake-clawscan");
     const argsLog = join(workspace, "args.log");
@@ -147,7 +149,7 @@ JSON`,
       '"lockfileVersion":3',
     );
     expect((await readFile(argsLog, "utf8")).trim().split("\n")).toEqual([
-      "./endor-artifact",
+      "./endor-artifact/openclaw.plugin.json",
       "--scanner",
       "endor",
       "--sandbox",
@@ -183,6 +185,86 @@ JSON`,
         preparation: { normalizations: [] },
       },
     });
+  });
+
+  it("preserves a failed scanner artifact cause with configured secrets redacted", async () => {
+    const workspace = await tempDir();
+    const packageRoot = join(workspace, "artifact", "package");
+    const command = join(workspace, "fake-clawscan");
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(join(packageRoot, "package.json"), '{"name":"fixture"}\n');
+    await writeFakeClawScan(
+      command,
+      `output=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then output="$2"; shift 2; else shift; fi
+done
+cat > "$output" <<'JSON'
+{"completedAt":"2026-09-16T00:00:00Z","scanners":{"endor":{"status":"failed","error":"Dependency resolution failed with ENDOR_TOKEN=fixture-token and fixture-token"}}}
+JSON`,
+    );
+    const diagnostics: Array<Partial<EndorCommandDiagnostic>> = [];
+
+    await expect(
+      runEndorPluginScan({
+        workspace,
+        env: {
+          CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND: command,
+          CODEX_SECURITY_SCAN_ENDOR_IMAGE: "clawscan-endor:test",
+          ENDOR_NAMESPACE: "fixture-namespace",
+          ENDOR_TOKEN: "fixture-token",
+          PATH: process.env.PATH,
+        },
+        onDiagnostic: (next) => diagnostics.push(next),
+      }),
+    ).rejects.toThrow(
+      "Endor ClawScan scanner status was failed: Dependency resolution failed with ENDOR_TOKEN=[redacted-secret] and [redacted-secret]",
+    );
+
+    expect(Object.assign({}, ...diagnostics)).toMatchObject({
+      exitCode: 0,
+      scannerError:
+        "Dependency resolution failed with ENDOR_TOKEN=[redacted-secret] and [redacted-secret]",
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
+  });
+
+  it.each([
+    { name: "exit", body: 'echo "ENDOR_TOKEN=fixture-token" >&2\nexit 17', timedOut: false },
+    {
+      name: "timeout",
+      body: 'echo "ENDOR_TOKEN=fixture-token" >&2\nsleep 2',
+      timedOut: true,
+    },
+  ])("preserves redacted command diagnostics on $name", async ({ body, timedOut }) => {
+    const workspace = await tempDir();
+    const packageRoot = join(workspace, "artifact", "package");
+    const command = join(workspace, "fake-clawscan");
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(join(packageRoot, "package.json"), '{"name":"fixture"}\n');
+    await writeFakeClawScan(command, body);
+    const diagnostics: Array<Partial<EndorCommandDiagnostic>> = [];
+
+    await expect(
+      runEndorPluginScan({
+        workspace,
+        env: {
+          CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND: command,
+          CODEX_SECURITY_SCAN_ENDOR_IMAGE: "clawscan-endor:test",
+          CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS: timedOut ? "1000" : undefined,
+          ENDOR_NAMESPACE: "fixture-namespace",
+          ENDOR_TOKEN: "fixture-token",
+          PATH: process.env.PATH,
+        },
+        onDiagnostic: (next) => diagnostics.push(next),
+      }),
+    ).rejects.toThrow(timedOut ? "Endor ClawScan timed out" : "Endor ClawScan exited 17");
+
+    expect(Object.assign({}, ...diagnostics)).toMatchObject({
+      stderr: "ENDOR_TOKEN=[redacted-secret]\n",
+      timedOut,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
   });
 
   it("rejects an external artifact symlink before invoking ClawScan", async () => {

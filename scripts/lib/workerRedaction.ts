@@ -54,6 +54,9 @@ export function maskKnownWorkerSecrets(
     "GITHUB_TOKEN",
     "CONVEX_DEPLOY_KEY",
     "HOMEBREW_GITHUB_API_TOKEN",
+    "ENDOR_TOKEN",
+    "ENDOR_API_CREDENTIALS_KEY",
+    "ENDOR_API_CREDENTIALS_SECRET",
   ];
   for (const key of secretKeys) {
     maskGitHubActionsSecret(env[key], { env, write });

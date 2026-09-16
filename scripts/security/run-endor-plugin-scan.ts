@@ -2,7 +2,9 @@ import { cp, lstat, readFile, readdir, readlink, rename, writeFile } from "node:
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
-import { runWorkerCommand } from "../lib/runWorkerCommand";
+import { CommandFailure, runWorkerCommand } from "../lib/runWorkerCommand";
+import { redactWorkerPublicText } from "../lib/workerRedaction";
+import { resolveClawScanTargetForRoot } from "./clawScanTarget";
 
 const ENDOR_ENV_KEYS = [
   "ENDOR_API",
@@ -24,6 +26,7 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "PATHEXT",
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
+const MAX_ENDOR_DIAGNOSTIC_CHARS = 20_000;
 const MAX_SUMMARY_FINDINGS = 50;
 const MAX_SUMMARY_TEXT_CHARS = 2_000;
 const REACHABLE_FUNCTION_TAG = "FINDING_TAGS_REACHABLE_FUNCTION";
@@ -100,6 +103,17 @@ export type EndorScannerReport =
 export type EndorPluginScanResult = {
   analysis: EndorAnalysis;
   scannerReport: EndorScannerReport;
+};
+
+export type EndorCommandDiagnostic = {
+  args?: string[];
+  artifactPath?: string;
+  exitCode?: number | null;
+  rawArtifact?: string;
+  scannerError?: string;
+  stderr?: string;
+  stdout?: string;
+  timedOut?: boolean;
 };
 
 function isPathWithin(root: string, candidate: string) {
@@ -218,6 +232,19 @@ function endorCommandEnv(workspace: string, source: NodeJS.ProcessEnv) {
   return env;
 }
 
+function redactEndorDiagnosticText(value: string, env: NodeJS.ProcessEnv) {
+  let redacted = value;
+  for (const key of [
+    "ENDOR_TOKEN",
+    "ENDOR_API_CREDENTIALS_KEY",
+    "ENDOR_API_CREDENTIALS_SECRET",
+  ] as const) {
+    const secret = env[key];
+    if (secret) redacted = redacted.replaceAll(secret, "[redacted-secret]");
+  }
+  return redactWorkerPublicText(redacted, MAX_ENDOR_DIAGNOSTIC_CHARS);
+}
+
 function normalizeSeverity(value: string | undefined) {
   return (
     value
@@ -263,6 +290,7 @@ export function isEndorPluginScanEnabled(env: NodeJS.ProcessEnv = process.env) {
 
 export async function runEndorPluginScan(input: {
   env?: NodeJS.ProcessEnv;
+  onDiagnostic?: (diagnostic: Partial<EndorCommandDiagnostic>) => void;
   workspace: string;
 }): Promise<EndorPluginScanResult> {
   const env = input.env ?? process.env;
@@ -293,36 +321,71 @@ export async function runEndorPluginScan(input: {
   const normalizations = await normalizePackageTree(scanRoot);
   const outputPath = join(input.workspace, "endor-clawscan-artifact.json");
   const command = env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND?.trim() || "clawscan";
-  await runWorkerCommand(
-    command,
-    [
-      "./endor-artifact",
-      "--scanner",
-      "endor",
-      "--sandbox",
-      "docker",
-      "--sandbox-image",
-      image,
-      "--output",
-      outputPath,
-    ],
-    {
+  const target = await resolveClawScanTargetForRoot({
+    artifactKind: "packageRelease",
+    root: "./endor-artifact",
+    workspace: input.workspace,
+  });
+  const args = [
+    target,
+    "--scanner",
+    "endor",
+    "--sandbox",
+    "docker",
+    "--sandbox-image",
+    image,
+    "--output",
+    outputPath,
+  ];
+  input.onDiagnostic?.({ args: [command, ...args], artifactPath: outputPath });
+
+  const captureArtifact = async () => {
+    const rawArtifact = await readFile(outputPath, "utf8").catch(() => undefined);
+    if (rawArtifact === undefined) return undefined;
+    input.onDiagnostic?.({ rawArtifact: redactEndorDiagnosticText(rawArtifact, env) });
+    try {
+      const parsed = endorArtifactSchema.safeParse(JSON.parse(rawArtifact) as unknown);
+      return parsed.success ? parsed.data : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  try {
+    const output = await runWorkerCommand(command, args, {
       commandLabel: "Endor ClawScan",
       cwd: input.workspace,
       env: endorCommandEnv(input.workspace, env),
       timeoutMs: endorTimeoutMs(env),
-    },
-  );
-
-  let parsedArtifact: unknown;
-  try {
-    parsedArtifact = JSON.parse(await readFile(outputPath, "utf8"));
+    });
+    input.onDiagnostic?.({
+      exitCode: 0,
+      stderr: redactEndorDiagnosticText(output.stderr, env),
+      stdout: redactEndorDiagnosticText(output.stdout, env),
+    });
   } catch (error) {
-    throw new Error("Endor ClawScan did not emit a valid JSON artifact", { cause: error });
+    if (error instanceof CommandFailure) {
+      input.onDiagnostic?.({
+        exitCode: error.exitCode,
+        stderr: redactEndorDiagnosticText(error.stderr, env),
+        stdout: redactEndorDiagnosticText(error.stdout, env),
+        timedOut: error.timedOut,
+      });
+    }
+    await captureArtifact();
+    throw error;
   }
-  const artifact = endorArtifactSchema.parse(parsedArtifact);
+
+  const artifact = await captureArtifact();
+  if (!artifact) throw new Error("Endor ClawScan did not emit a valid JSON artifact");
   if (artifact.scanners.endor.status !== "completed") {
-    throw new Error(`Endor ClawScan scanner status was ${artifact.scanners.endor.status}`);
+    const scannerError = artifact.scanners.endor.error
+      ? redactEndorDiagnosticText(artifact.scanners.endor.error, env)
+      : undefined;
+    input.onDiagnostic?.({ scannerError });
+    throw new Error(
+      `Endor ClawScan scanner status was ${artifact.scanners.endor.status}${scannerError ? `: ${scannerError}` : ""}`,
+    );
   }
   if (!artifact.scanners.endor.raw) {
     throw new Error("Endor ClawScan scanner output was missing");

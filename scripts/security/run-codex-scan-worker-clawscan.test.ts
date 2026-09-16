@@ -1019,6 +1019,7 @@ JSON`,
 
   it("waits for the primary scan to settle and retries the queue job when Endor fails", async () => {
     const workspace = await tempDir();
+    const diagnosticsRoot = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const primaryCompleted = join(workspace, "primary-completed");
     await writeFakeClawScanCommand(
@@ -1041,7 +1042,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ "$is_endor" == "true" ]]; then
-  exit 17
+  cat > "$output" <<'JSON'
+{"completedAt":"2026-09-16T00:00:00Z","scanners":{"endor":{"status":"failed","error":"Dependency resolution failed with ENDOR_TOKEN=fixture-token"}}}
+JSON
+  exit 0
 fi
 sleep 0.1
 cat > "$output" <<'JSON'
@@ -1098,7 +1102,7 @@ touch ${JSON.stringify(primaryCompleted)}`,
         }),
       };
 
-      await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
+      await expect(processJob(client, "worker-auth", job, diagnosticsRoot)).resolves.toEqual({
         completed: false,
         hardFailed: false,
         retryableFailed: true,
@@ -1106,8 +1110,110 @@ touch ${JSON.stringify(primaryCompleted)}`,
       expect(primaryHadSettledAtFailure).toBe(true);
       expect(client.action).toHaveBeenCalledTimes(1);
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-        error: expect.stringContaining("Endor ClawScan exited 17"),
+        error:
+          "Endor ClawScan scanner status was failed: Dependency resolution failed with ENDOR_TOKEN=[redacted-secret]",
       });
+      const jobDir = join(diagnosticsRoot, "securityScanJobs_endor-retry");
+      const artifact = await readFile(
+        join(jobDir, "endor-clawscan-artifact.redacted.json"),
+        "utf8",
+      );
+      const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
+      expect(artifact).toContain("Dependency resolution failed");
+      expect(artifact).not.toContain("fixture-token");
+      expect(diagnostic.endorResult).toMatchObject({
+        exitCode: 0,
+        rawArtifactPath: "endor-clawscan-artifact.redacted.json",
+        scannerError: "Dependency resolution failed with ENDOR_TOKEN=[redacted-secret]",
+      });
+    } finally {
+      if (previousEnv.command === undefined)
+        delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousEnv.command;
+      if (previousEnv.enabled === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED;
+      else process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = previousEnv.enabled;
+      if (previousEnv.image === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE;
+      else process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = previousEnv.image;
+      if (previousEnv.namespace === undefined) delete process.env.ENDOR_NAMESPACE;
+      else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
+      if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
+      else process.env.ENDOR_TOKEN = previousEnv.token;
+    }
+  });
+
+  it("retains diagnostics when the primary and Endor commands both fail", async () => {
+    const workspace = await tempDir();
+    const diagnosticsRoot = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `is_endor=false
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--scanner" && "$2" == "endor" ]]; then is_endor=true; fi
+  shift
+done
+if [[ "$is_endor" == "true" ]]; then
+  echo "ENDOR_TOKEN=fixture-token Endor command failed" >&2
+  exit 17
+fi
+echo "primary ClawScan command failed" >&2
+exit 18`,
+    );
+    const packageJson = '{"name":"fixture-plugin","version":"1.0.0"}\n';
+    const job = claimedJob({
+      jobId: "securityScanJobs:both-commands-failed",
+      source: "publish",
+      targetKind: "packageRelease",
+      target: {
+        files: [
+          {
+            path: "package/package.json",
+            sha256: sha256(packageJson),
+            size: Buffer.byteLength(packageJson),
+            url: `data:application/json,${encodeURIComponent(packageJson)}`,
+          },
+        ],
+      },
+    });
+    const previousEnv = {
+      command: process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND,
+      enabled: process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED,
+      image: process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
+      namespace: process.env.ENDOR_NAMESPACE,
+      token: process.env.ENDOR_TOKEN,
+    };
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = "1";
+    process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
+    process.env.ENDOR_NAMESPACE = "fixture-namespace";
+    process.env.ENDOR_TOKEN = "fixture-token";
+
+    try {
+      const client = {
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: true } : {};
+        }),
+      };
+      await expect(processJob(client, "worker-auth", job, diagnosticsRoot)).resolves.toEqual({
+        completed: false,
+        hardFailed: false,
+        retryableFailed: true,
+      });
+
+      const jobDir = join(diagnosticsRoot, "securityScanJobs_both-commands-failed");
+      const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
+      expect(diagnostic.clawscanResult).toMatchObject({ exitCode: 18 });
+      expect(diagnostic.endorResult).toMatchObject({ exitCode: 17, timedOut: false });
+      expect(await readFile(join(jobDir, "clawscan.stderr.redacted.log"), "utf8")).toContain(
+        "primary ClawScan command failed",
+      );
+      const endorStderr = await readFile(
+        join(jobDir, "endor-clawscan.stderr.redacted.log"),
+        "utf8",
+      );
+      expect(endorStderr).toContain("ENDOR_TOKEN=[redacted-secret]");
+      expect(endorStderr).not.toContain("fixture-token");
     } finally {
       if (previousEnv.command === undefined)
         delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
