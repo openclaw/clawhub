@@ -11,6 +11,7 @@ vi.mock("./lib/verifiedClientIp", () => ({
 }));
 import { api, internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
+import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { hashToken } from "./lib/tokens";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
@@ -153,6 +154,76 @@ const routes = [
   "/api/v1/plugins?channel=private&highlightedOnly=true",
   "/api/v1/plugins?channel=private&sort=downloads",
 ];
+
+describe("batched public discovery search", () => {
+  it.each([1, 2, 3])(
+    "preserves canonical matching, visibility and ordering at limit %i",
+    async (limit) => {
+      const { t } = await fixture();
+      const queries = [
+        "whatsapp",
+        "@openclaw/whatsapp",
+        "bundle",
+        "channels",
+        "withheld",
+        "missing",
+        "",
+        " WhatsApp ",
+        "whatsapp",
+      ];
+      const expected = [];
+      for (const query of queries) {
+        const entries = (
+          await Promise.all(
+            (["code-plugin", "bundle-plugin"] as const).map((family) =>
+              t.query(internal.packages.searchForViewerInternal, { query, family, limit }),
+            ),
+          )
+        ).flat();
+        expected.push({
+          query,
+          identities: entries
+            .sort(compareCatalogSearchEntries)
+            .slice(0, limit)
+            .map((entry) => entry.package.name),
+        });
+      }
+      const actual = await t.query(internal.packages.searchPublicDiscoveryBatchInternal, {
+        queries,
+        limit,
+      });
+      expect(actual).toEqual(expected);
+      expect(actual[0].identities).toHaveLength(Math.min(limit, expectedNames.length));
+      expect(
+        actual.flatMap((row) => row.identities).every((name) => expectedNames.includes(name)),
+      ).toBe(true);
+    },
+  );
+
+  it("bounds transaction work without truncating or padding the requested terms", async () => {
+    const { t } = await fixture();
+    await expect(
+      t.query(internal.packages.searchPublicDiscoveryBatchInternal, { queries: [] }),
+    ).resolves.toEqual([]);
+    const queries = Array.from({ length: 10 }, (_, index) => `missing-${index}`);
+    await expect(
+      t.query(internal.packages.searchPublicDiscoveryBatchInternal, { queries }),
+    ).resolves.toEqual(queries.map((query) => ({ query, identities: [] })));
+    await expect(
+      t.query(internal.packages.searchPublicDiscoveryBatchInternal, {
+        queries: [...queries, "overflow"],
+      }),
+    ).rejects.toThrow("at most 10");
+    for (const limit of [0, 1.5, 4]) {
+      await expect(
+        t.query(internal.packages.searchPublicDiscoveryBatchInternal, {
+          queries: ["whatsapp"],
+          limit,
+        }),
+      ).rejects.toThrow("1–3 results");
+    }
+  });
+});
 
 describe("normal plugin catalog visibility", () => {
   it("bounds version requests and continues after an unpublished scan page", async () => {

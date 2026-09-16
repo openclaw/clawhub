@@ -39,6 +39,7 @@ import {
   mutation,
   query,
 } from "./functions";
+import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import {
   assertAdmin,
   assertModerator,
@@ -5142,6 +5143,47 @@ export const searchForViewerInternal = internalQuery({
   },
 });
 
+type PackageSearchBatchReads = {
+  highlighted?: Promise<Array<{ digest: PackageDigestLike; featuredAt: number }>>;
+  official?: Promise<PackageDigestLike[][]>;
+  fallback?: Promise<PackageDigestLike[]>;
+  publicItems: Map<string, Promise<PublicPackageListItem>>;
+};
+
+export const searchPublicDiscoveryBatchInternal = internalQuery({
+  args: { queries: v.array(v.string()), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 3;
+    if (args.queries.length > 10 || !Number.isInteger(limit) || limit < 1 || limit > 3) {
+      throw new ConvexError("Discovery search accepts at most 10 queries and 1–3 results each.");
+    }
+    // Share only within this transaction and identical family/filter/limit scope.
+    // Each term retains canonical recall and ranking without rereading common catalog rows.
+    const families = (["code-plugin", "bundle-plugin"] as const).map((family) => ({
+      family,
+      reads: { publicItems: new Map() } as PackageSearchBatchReads,
+    }));
+    const results = [];
+    for (const query of args.queries) {
+      const entries = (
+        await Promise.all(
+          families.map(({ family, reads }) =>
+            searchPackagesImpl(ctx, { query, family, limit }, reads),
+          ),
+        )
+      ).flat();
+      results.push({
+        query,
+        identities: entries
+          .sort(compareCatalogSearchEntries)
+          .slice(0, limit)
+          .map((entry) => entry.package.name),
+      });
+    }
+    return results;
+  },
+});
+
 async function searchPackagesImpl(
   ctx: DbReaderCtx,
   args: {
@@ -5157,6 +5199,7 @@ async function searchPackagesImpl(
     excludedScanStatuses?: PackageListScanStatus[];
     viewerUserId?: Id<"users">;
   },
+  batchReads?: PackageSearchBatchReads,
 ) {
   const queryText = args.query.trim().toLowerCase();
   if (!queryText) return [];
@@ -5170,6 +5213,15 @@ async function searchPackagesImpl(
   const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
   if (args.topic !== undefined && !topic) return [];
+  const publicItem = (digest: PackageDigestLike, featuredAt?: number) => {
+    const id = String(digest.packageId);
+    let item = batchReads?.publicItems.get(id);
+    if (!item) {
+      item = toPublicPackageListItem(ctx, digest, featuredAt);
+      batchReads?.publicItems.set(id, item);
+    }
+    return item;
+  };
   if (args.highlightedOnly) {
     const highlightedEntries = await fetchHighlightedPackageEntries(ctx, {
       ...args,
@@ -5204,7 +5256,7 @@ async function searchPackagesImpl(
       results.push({
         score: entry.score,
         rankTier: entry.rankTier,
-        package: await toPublicPackageListItem(ctx, entry.package, entry.featuredAt),
+        package: await publicItem(entry.package, entry.featuredAt),
       });
     }
     return results;
@@ -5241,15 +5293,24 @@ async function searchPackagesImpl(
   const seen = new Set<string>();
   const shouldRecallOfficial =
     args.isOfficial === undefined && args.channel !== "community" && args.channel !== "private";
-  const [highlightedEntries, officialDigestGroups, directDigests] = await Promise.all([
-    fetchHighlightedPackageEntries(ctx, { ...args, category, topic }),
-    shouldRecallOfficial
+  const highlighted =
+    batchReads?.highlighted ?? fetchHighlightedPackageEntries(ctx, { ...args, category, topic });
+  const official =
+    batchReads?.official ??
+    (shouldRecallOfficial
       ? Promise.all(
           searchFamilies.map(async (family) =>
             buildSearchDigestQuery(family, true).order("desc").take(MAX_PUBLIC_LIST_PAGE_SIZE),
           ),
         )
-      : Promise.resolve([]),
+      : Promise.resolve([]));
+  if (batchReads) {
+    batchReads.highlighted = highlighted;
+    batchReads.official = official;
+  }
+  const [highlightedEntries, officialDigestGroups, directDigests] = await Promise.all([
+    highlighted,
+    official,
     category && !topic
       ? Promise.resolve([])
       : Promise.all(
@@ -5276,11 +5337,7 @@ async function searchPackagesImpl(
     seen.add(digest.packageId);
     matches.push({
       ...match,
-      package: await toPublicPackageListItem(
-        ctx,
-        digest,
-        featuredAtByPackage.get(String(digest.packageId)),
-      ),
+      package: await publicItem(digest, featuredAtByPackage.get(String(digest.packageId))),
     });
   }
 
@@ -5302,11 +5359,7 @@ async function searchPackagesImpl(
         seen.add(digest.packageId);
         matches.push({
           ...match,
-          package: await toPublicPackageListItem(
-            ctx,
-            digest,
-            featuredAtByPackage.get(String(digest.packageId)),
-          ),
+          package: await publicItem(digest, featuredAtByPackage.get(String(digest.packageId))),
         });
       }
     };
@@ -5352,17 +5405,18 @@ async function searchPackagesImpl(
         }
       }
     } else {
-      const digests = (
-        await Promise.all(
+      const fallback =
+        batchReads?.fallback ??
+        Promise.all(
           searchFamilies.map(
             async (family) =>
               (await buildSearchDigestQuery(family)
                 .order("desc")
                 .take(scanLimit)) as PackageDigestLike[],
           ),
-        )
-      ).flat();
-      await collectDigestMatches(digests);
+        ).then((groups) => groups.flat());
+      if (batchReads) batchReads.fallback = fallback;
+      await collectDigestMatches(await fallback);
     }
   }
 
