@@ -47,6 +47,7 @@ import type * as httpApiV1_packagesV1 from "../httpApiV1/packagesV1.js";
 import type * as httpApiV1_promotionsV1 from "../httpApiV1/promotionsV1.js";
 import type * as httpApiV1_publishersV1 from "../httpApiV1/publishersV1.js";
 import type * as httpApiV1_searchInsightsV1 from "../httpApiV1/searchInsightsV1.js";
+import type * as httpApiV1_searchReportsV1 from "../httpApiV1/searchReportsV1.js";
 import type * as httpApiV1_shared from "../httpApiV1/shared.js";
 import type * as httpApiV1_skillsShCatalogV1 from "../httpApiV1/skillsShCatalogV1.js";
 import type * as httpApiV1_skillsV1 from "../httpApiV1/skillsV1.js";
@@ -149,6 +150,8 @@ import type * as lib_searchEvidenceDigest from "../lib/searchEvidenceDigest.js";
 import type * as lib_searchInsights from "../lib/searchInsights.js";
 import type * as lib_searchIntentClassifier from "../lib/searchIntentClassifier.js";
 import type * as lib_searchRanking from "../lib/searchRanking.js";
+import type * as lib_searchReportContract from "../lib/searchReportContract.js";
+import type * as lib_searchReportEvidence from "../lib/searchReportEvidence.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
 import type * as lib_securityScanPolicy from "../lib/securityScanPolicy.js";
@@ -216,6 +219,7 @@ import type * as rolloutCapabilities from "../rolloutCapabilities.js";
 import type * as search from "../search.js";
 import type * as searchInsights from "../searchInsights.js";
 import type * as searchInsightsFixtures from "../searchInsightsFixtures.js";
+import type * as searchReports from "../searchReports.js";
 import type * as searchTestFixtures from "../searchTestFixtures.js";
 import type * as searchWeeklyDigest from "../searchWeeklyDigest.js";
 import type * as securityDataset from "../securityDataset.js";
@@ -296,6 +300,7 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/promotionsV1": typeof httpApiV1_promotionsV1;
   "httpApiV1/publishersV1": typeof httpApiV1_publishersV1;
   "httpApiV1/searchInsightsV1": typeof httpApiV1_searchInsightsV1;
+  "httpApiV1/searchReportsV1": typeof httpApiV1_searchReportsV1;
   "httpApiV1/shared": typeof httpApiV1_shared;
   "httpApiV1/skillsShCatalogV1": typeof httpApiV1_skillsShCatalogV1;
   "httpApiV1/skillsV1": typeof httpApiV1_skillsV1;
@@ -398,6 +403,8 @@ declare const fullApi: ApiFromModules<{
   "lib/searchInsights": typeof lib_searchInsights;
   "lib/searchIntentClassifier": typeof lib_searchIntentClassifier;
   "lib/searchRanking": typeof lib_searchRanking;
+  "lib/searchReportContract": typeof lib_searchReportContract;
+  "lib/searchReportEvidence": typeof lib_searchReportEvidence;
   "lib/searchText": typeof lib_searchText;
   "lib/securityPrompt": typeof lib_securityPrompt;
   "lib/securityScanPolicy": typeof lib_securityScanPolicy;
@@ -465,6 +472,7 @@ declare const fullApi: ApiFromModules<{
   search: typeof search;
   searchInsights: typeof searchInsights;
   searchInsightsFixtures: typeof searchInsightsFixtures;
+  searchReports: typeof searchReports;
   searchTestFixtures: typeof searchTestFixtures;
   searchWeeklyDigest: typeof searchWeeklyDigest;
   securityDataset: typeof securityDataset;
@@ -529,4 +537,5 @@ export declare const internal: FilterApi<
 export declare const components: {
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+  searchReports: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"searchReports">;
 };

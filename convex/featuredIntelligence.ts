@@ -8,6 +8,7 @@ import {
   recommendFeatured,
   type AdoptionArtifact,
   type AdoptionSummary,
+  type CurrentFeaturedArtifact,
 } from "./lib/featuredIntelligence";
 import {
   SEARCH_DAY_MS,
@@ -19,6 +20,7 @@ import {
   type SearchInsightReport,
 } from "./lib/searchInsights";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
+import { readReport as readSearchReport } from "./searchInsights";
 
 const ADOPTION_INSPECTION_LIMIT = 100;
 const args = {
@@ -48,21 +50,30 @@ export const get = action({
 
 export const getInternal = internalAction({ args, handler: readReport });
 
+export type FeaturedEvidence = {
+  searchReport: SearchInsightReport;
+  currentFeatured: CurrentFeaturedArtifact[];
+  adoption: AdoptionReport;
+  metadataCheckedAt: number;
+};
+
 async function readReport(
   ctx: ActionCtx,
   input: SearchInsightArgs & { artifactKind: SearchArtifactKind },
 ): Promise<FeaturedIntelligenceReport> {
+  return renderFeaturedEvidence(await collectFeaturedEvidence(ctx, input), input.limit ?? 20);
+}
+
+export async function collectFeaturedEvidence(
+  ctx: ActionCtx,
+  input: SearchInsightArgs & { artifactKind: SearchArtifactKind },
+): Promise<FeaturedEvidence> {
   const limit = input.limit ?? 20;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error("limit must be between 1 and 100");
-  const currentMetadataCheckedAt = Date.now();
+  const startedAt = Date.now();
   const [searchReport, currentFeatured, adoption] = await Promise.all([
-    ctx.runAction(internal.searchInsights.getInternal, {
-      ...input,
-      includeCurrentResults: true,
-      // Candidate coverage is independent of how many cards the caller displays.
-      limit: 100,
-    }),
+    readSearchReport(ctx, { ...input, includeCurrentResults: true, limit: 100 }),
     ctx.runQuery(internal.featuredArtifacts.readCurrentFeaturedInternal, {
       artifactKind: input.artifactKind,
     }),
@@ -70,6 +81,23 @@ async function readReport(
       artifactKind: input.artifactKind,
     }),
   ]);
+  return {
+    searchReport,
+    currentFeatured,
+    adoption,
+    metadataCheckedAt: Math.max(
+      startedAt,
+      adoption.metadataCheckedAt ?? 0,
+      searchReport.metadataCheckedAt ?? 0,
+    ),
+  };
+}
+
+export function renderFeaturedEvidence(
+  evidence: FeaturedEvidence,
+  limit: number,
+): FeaturedIntelligenceReport {
+  const { searchReport, currentFeatured, adoption, metadataCheckedAt } = evidence;
   return {
     searchReport,
     recommendations: recommendFeatured({
@@ -81,21 +109,18 @@ async function readReport(
       currentFeatured,
     }),
     adoption: adoption.summary,
-    metadataCheckedAt: Math.max(
-      currentMetadataCheckedAt,
-      adoption.metadataCheckedAt ?? 0,
-      searchReport.metadataCheckedAt ?? 0,
-    ),
+    metadataCheckedAt,
   };
 }
 
-type AdoptionReport = {
+export type AdoptionReport = {
+  snapshotCursor?: string;
   summary: AdoptionSummary;
   artifacts: AdoptionArtifact[];
   metadataCheckedAt: number | null;
 };
 
-const unavailable: AdoptionReport = {
+export const unavailableAdoption: AdoptionReport = {
   summary: {
     status: "unavailable",
     generatedAt: null,
@@ -123,7 +148,7 @@ async function readPluginAdoption(ctx: QueryCtx): Promise<AdoptionReport> {
     .withIndex("by_kind", (q) => q.eq("kind", PACKAGE_TRENDING_LEADERBOARD_KIND))
     .order("desc")
     .first();
-  if (!snapshot) return unavailable;
+  if (!snapshot) return unavailableAdoption;
   // Old snapshots can still contain setup categories. Filter the canonical
   // purpose before the inspection cap so they cannot starve discovery candidates.
   const inspected: Array<{
@@ -194,7 +219,7 @@ async function readSkillAdoption(ctx: QueryCtx): Promise<AdoptionReport> {
     cursor: null,
     limit: ADOPTION_INSPECTION_LIMIT,
   });
-  if (result.status !== "ok") return unavailable;
+  if (result.status !== "ok") return unavailableAdoption;
   const page = result.page;
   const snapshot = await ctx.db
     .query("canonicalTrendingSnapshots")
@@ -232,6 +257,7 @@ async function readSkillAdoption(ctx: QueryCtx): Promise<AdoptionReport> {
     });
   }
   return {
+    snapshotCursor: page.snapshotCursor,
     summary: {
       status: "available",
       generatedAt,

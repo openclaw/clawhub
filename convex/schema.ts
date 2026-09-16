@@ -15,6 +15,7 @@ import {
   searchInsightSource,
   searchScope,
 } from "./lib/searchInsights";
+import { reportRequest } from "./lib/searchReportContract";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -4616,7 +4617,38 @@ const searchWeeklyDigests = defineTable({
   .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
   .index("by_expiration_time", ["expirationTime"]);
 
+const searchReportRuns = defineTable({
+  request: reportRequest,
+  requestKey: v.string(),
+  sourceRevision: v.string(),
+  reportVersion: v.literal("search-report-v1"),
+  refreshOf: v.optional(v.id("searchReportRuns")),
+  workId: v.optional(v.string()),
+  requestedAt: v.number(),
+  expirationTime: v.number(),
+  completedAt: v.optional(v.number()),
+  previousAttempts: v.optional(v.number()),
+  state: v.union(v.literal("pending"), v.literal("ready"), v.literal("failed")),
+  failureCode: v.optional(v.string()),
+  chunkCount: v.optional(v.number()),
+  resultBytes: v.optional(v.number()),
+  resultHash: v.optional(v.string()),
+})
+  .index("by_requestKey", ["requestKey"])
+  .index("by_refreshOf", ["refreshOf"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchReportChunks = defineTable({
+  reportId: v.id("searchReportRuns"),
+  index: v.number(),
+  bytes: v.bytes(),
+  expirationTime: v.number(),
+})
+  .index("by_reportId_index", ["reportId", "index"])
+  .index("by_expirationTime", ["expirationTime"]);
+
 export default defineSchema({
+  searchReportRuns,
+  searchReportChunks,
   searchAggregateStates,
   searchDailyAggregates,
   searchWeeklyClassifications,

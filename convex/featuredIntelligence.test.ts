@@ -1,4 +1,5 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerWorkpool } from "@convex-dev/workpool/test";
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
@@ -192,6 +193,7 @@ it("serves existing package adoption without search history and rechecks current
 
 it("reuses canonical skill ranks and exact completed-hour periods, and refuses stale public snapshots", async () => {
   const t = convexTest(schema, modules);
+  registerWorkpool(t, "searchReports");
   const now = Date.UTC(2026, 8, 15, 12, 30);
   vi.useFakeTimers();
   vi.setSystemTime(now);
@@ -333,12 +335,27 @@ it("reuses canonical skill ranks and exact completed-hour periods, and refuses s
       },
     },
   ]);
+  const queued = await t.mutation(internal.searchReports.startInternal, {
+    view: "recommendations",
+    artifactKind: "skill",
+  });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  const saved = await t.action(internal.searchReports.getInternal, { reportId: queued.reportId });
+  if (saved.status !== "ready" || saved.view !== "recommendations")
+    throw new Error("Expected saved skill evidence");
+  expect(saved.report.adoption.status).toBe("available");
   vi.setSystemTime(now + 3 * 3_600_000);
   const stale = await t.action(internal.featuredIntelligence.getInternal, {
     artifactKind: "skill",
   });
   expect(stale.adoption.status).toBe("unavailable");
   expect(stale.recommendations.candidates).toEqual([]);
+  const expired = await t.action(internal.searchReports.getInternal, { reportId: queued.reportId });
+  if (expired.status !== "ready" || expired.view !== "recommendations")
+    throw new Error("Expected retained evidence with stale adoption withheld");
+  expect(expired.report.adoption.status).toBe("unavailable");
+  expect(expired.report.recommendations.candidates).toEqual([]);
+  expect(expired.report.searchReport.generatedAt).toBe(saved.report.searchReport.generatedAt);
 });
 
 it("denies anonymous and ordinary users access to candidate evidence", async () => {

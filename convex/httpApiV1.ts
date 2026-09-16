@@ -33,6 +33,7 @@ import {
 } from "./httpApiV1/promotionsV1";
 import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
 import { searchInsightsV1Handler } from "./httpApiV1/searchInsightsV1";
+import { searchReportsV1Handler } from "./httpApiV1/searchReportsV1";
 import {
   skillsShCatalogPublicV1Handler,
   skillsShCatalogTestV1Handler,
@@ -64,6 +65,7 @@ import {
 } from "./httpApiV1/usersV1";
 import { whoamiV1Handler } from "./httpApiV1/whoamiV1";
 
+export const searchReportsV1Http = httpAction(searchReportsV1Handler);
 export const searchInsightsV1Http = httpAction(searchInsightsV1Handler);
 
 export const listPackagesV1Http = httpAction(listPackagesV1Handler);

@@ -81,8 +81,11 @@ There is no historical-log backfill.
 `searchInsights.get` authenticates an active admin/moderator. The internal equivalent
 is for trusted HTTP/digest callers only. `GET /api/v1/search-insights` authenticates
 an API token and verifies the same staff role, returning private/no-store responses.
-No client-supplied user ID is accepted. Management uses an explicit-refresh action,
-not a subscription to raw or high-churn data.
+No client-supplied user ID is accepted. The existing GET keeps its final-report
+response contract and delegates to the same evidence owner as background reports.
+Management and the admin CLI use the asynchronous report flow below. Management
+subscribes only to the small requested generation's status, not raw observations
+or high-churn aggregates.
 
 Report bounds are complete UTC days ending at exclusive `endDay` (default today's
 UTC midnight): [endDay-7d,endDay), [endDay-14d,endDay-7d), and [endDay-30d,endDay).
@@ -105,6 +108,57 @@ A capped cohort is partial even when every query in that cohort was classified. 
 ending no later than the report window and within seven days owns classification;
 failed or stale runs never fall back to older successful advice. The report still
 serves deterministic counts when classification or current catalog enrichment fails.
+
+## Background report generation
+
+The first full production skill report took 31.6 seconds, exceeding the admin CLI's
+15-second request deadline. Report generation therefore runs through the maintained
+Convex Workpool component, with one whole report executing at a time. The canonical
+search workers and ranking remain shared; report generation does not implement a
+second search algorithm, reduce the 100-query recommendation cohort, or extend the
+generic HTTP deadline.
+
+- Staff `POST /api/v1/search-insights/reports` returns a small status envelope and
+  generation handle promptly, including when it reuses an already ready generation.
+  `GET /api/v1/search-insights/reports/:reportId` returns its lifecycle status and,
+  once ready, the existing final report shape. Every request checks current staff
+  authorization and uses private/no-store responses.
+- Normalized inputs identify matching requests. Concurrent starts and a retried
+  start reuse their generation. Explicit refresh names `refreshOf`; retrying that
+  refresh resolves to the same successor. Filter changes cannot replace the current
+  view with an older request's result. Leaving a view stops waiting, not shared work.
+- The CLI emits progress on stderr and one final report on stdout in JSON mode.
+  `--report-id` resumes waiting, and `--refresh` creates a new generation with the
+  saved filters. Each request retains the normal 15-second deadline; after five
+  minutes the CLI stops waiting with a resume command, leaving shared work running.
+  Pending, running, failed, expired and incomplete outcomes remain distinguishable.
+  A completed Workpool item without a committed report never implies success.
+- Workpool owns execution concurrency, retry and recovery. The report owner commits
+  immutable evidence before returning a small completion reference. Workpool arguments,
+  results and errors contain no report body, search query text, credentials or user identity.
+- Private report chunks retain the full evidence ingredients, including all inspected
+  search associations and adoption artifacts, rather than only the displayed candidate
+  cards. Encoded evidence is capped at 2 MiB per report in at most eight 256 KiB chunks;
+  oversize or incomplete content fails explicitly without truncating the cohort.
+- On result retrieval, canonical hydration rechecks visibility, category/security
+  eligibility and independent live Featured membership. The existing recommendation
+  function recomputes the proposed set from those facts and the saved evidence. This
+  does not rerun searches or silently add replacement search results.
+- Search association timestamps and adoption snapshot/source/ranking timestamps remain
+  the original observed times. Current eligibility has its own check time. Adoption
+  expiry remains governed by its canonical source; reading a report never renews it.
+- Report working state and chunks expire after 24 hours through indexed bounded cleanup.
+  This is a deletion bound, not a freshness promise. Expired or removed generations
+  cannot be revived by late result writes or callbacks.
+  An open dashboard rechecks expiry and offers a fresh generation if cleanup has
+  already removed its report.
+
+Generating a report writes derived analysis working state only. It never records new
+search observations, drains aggregation, changes catalog metadata or Featured badges,
+stores weekly classifications, claims a digest, or contacts Hermit. The weekly producer
+continues to use the shared evidence builder inside its own delivery lifecycle. Its
+separate recommendation and official-gap cohorts keep their original independent bounds;
+an interactive report is not a digest delivery attempt.
 
 ## Verification and local fixtures
 
