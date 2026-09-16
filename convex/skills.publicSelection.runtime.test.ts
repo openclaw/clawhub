@@ -217,3 +217,30 @@ it("bounds batch reads before loading records", async () => {
     }),
   ).rejects.toThrow("At most 250");
 });
+
+it("preserves authenticated owner preview of pending bytes while anonymous preview is withheld", async () => {
+  const f = await fixture();
+  await f.t.run(async (ctx) => {
+    const blob = new Blob(["# Pending owner preview"], { type: "text/markdown" });
+    const storageId = await ctx.storage.store(blob);
+    await ctx.db.patch(f.pendingId, {
+      files: [
+        {
+          path: "SKILL.md",
+          storageId,
+          size: blob.size,
+          sha256: "a".repeat(64),
+          contentType: "text/markdown",
+        },
+      ],
+    });
+  });
+  const owner = f.t.withIdentity({ subject: f.userId });
+  expect(await owner.action(api.skills.getReadme, { versionId: f.pendingId })).toEqual({
+    path: "SKILL.md",
+    text: "# Pending owner preview",
+  });
+  await expect(f.t.action(api.skills.getReadme, { versionId: f.pendingId })).rejects.toThrow(
+    "Version not available",
+  );
+});
