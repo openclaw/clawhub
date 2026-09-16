@@ -52,8 +52,16 @@ Run `mode=report` with `cursor`/`max_pages` to export up to 2,000 journal rows p
 dispatch. Report cursors and preview cursors belong to different tables; do not
 interchange them. Inspect proposed categories, source, evidence, previous
 categories, version, and status. Fallback rows cannot be accepted; retry failed
-classifications under a new run ID. Existing author declarations, including
-valid legacy arrays, remain authoritative.
+classifications under a new run ID. A current single-category author declaration
+remains authoritative. Legacy capability arrays and retired categories are
+reassessed from the plugin's main purpose.
+
+Publication and refresh share bounded manifest, README/MDX, and bundled-skill
+evidence. Declared skills take priority over secondary documentation; a long
+README cannot consume the whole document budget. A plugin that enhances an
+existing channel or adapts tools for an existing model is categorized by that
+workflow, rather than by the transport or model it uses. Insufficient evidence
+produces Other with an explanation; review that explanation before accepting.
 
 Choose at most 100 rows for a wave, starting with a small pilot. Use `report`
 with the JSON `reviewed_ids` array to get the exact selected rows and their
@@ -74,7 +82,7 @@ gh workflow run plugin-category-refresh.yml --repo openclaw/clawhub --ref main \
 Accept marks reviewed rows accepted and rehearses the first ten through a
 transaction that rolls back. Category state stays unchanged. A failed rehearsal
 leaves accepted rows available for inspection. Fresh generated previews must use
-classifier `plugin-single-category-v3`; bundled previews must match the pinned
+classifier `plugin-single-category-v5`; bundled previews must match the pinned
 OpenClaw source commit and manifest hashes in the checked-out inventory.
 
 ## Apply, monitor, and undo
