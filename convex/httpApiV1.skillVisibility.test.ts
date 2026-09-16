@@ -26,6 +26,7 @@ const ids = {
   blocked: "skillVersions:blocked",
   deleted: "skillVersions:deleted",
   foreign: "skillVersions:foreign",
+  ownerDeleted: "skillVersions:ownerDeleted",
 } as const;
 
 function fixture(selected: keyof typeof ids = "published") {
@@ -44,6 +45,7 @@ function fixture(selected: keyof typeof ids = "published") {
           ? {}
           : { publicationStatus: kind === "pending" || kind === "blocked" ? kind : "published" }),
         ...(kind === "deleted" ? { softDeletedAt: 2 } : {}),
+        ...(kind === "ownerDeleted" ? { ownerDeletedAt: 2 } : {}),
         llmAnalysis: { status: "completed", verdict: "benign" },
         files: [
           { path: "SKILL.md", size: 12, storageId: `_storage:${kind}`, sha256: "a".repeat(64) },
@@ -72,7 +74,7 @@ function fixture(selected: keyof typeof ids = "published") {
         : args.tag
           ? skill.tags[args.tag as string]
           : skill.latestVersionId)) as string | undefined;
-    if (id === ids.deleted) return { status: "deleted" };
+    if (id === ids.deleted || id === ids.ownerDeleted) return { status: "deleted" };
     if (args.skillId !== skillId || (id !== ids.published && id !== ids.legacy))
       return { status: "not_found" };
     return { status: "available", skill, version: versions[id] };
@@ -215,7 +217,7 @@ describe("skill HTTP publication boundaries", () => {
     ).toBe(true);
   });
 
-  it.each(["pending", "blocked", "foreign", "deleted"] as const)(
+  it.each(["pending", "blocked", "foreign", "deleted", "ownerDeleted"] as const)(
     "keeps %s selections out of file, card, version, scan and verification responses",
     async (status) => {
       const f = fixture(status);
@@ -228,7 +230,9 @@ describe("skill HTTP publication boundaries", () => {
         `verify?version=${version}`,
       ]) {
         const response = await skillsGetRouterV1Handler(f.ctx, request(`catalog/${route}`));
-        expect(response.status, route).toBe(status === "deleted" ? 410 : 404);
+        const deleted = status === "deleted" || status === "ownerDeleted";
+        const metadata = route.startsWith("versions/") || route.startsWith("scan?");
+        expect(response.status, route).toBe(deleted && !metadata ? 410 : 404);
       }
       expect(f.storage.get).not.toHaveBeenCalled();
     },

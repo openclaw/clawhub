@@ -2192,8 +2192,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const selection = await readPublicSkillVersionSelection(ctx, skillResult.skill._id, {
       version: third,
     });
-    if (selection.status !== "available")
-      return unavailableSkillVersionResponse(selection, rate.headers);
+    if (selection.status !== "available") return text("Version not found", 404, rate.headers);
     const { skill: selectedSkill, version } = selection;
     const moderationBlock = getPublicSkillVersionAccessBlock(
       getSkillFileModerationInfoFromSkill(selectedSkill),
@@ -2255,8 +2254,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       result.skill._id,
       versionParam ? { version: versionParam } : tagParam ? { tag: tagParam } : {},
     );
-    if (selection.status !== "available")
-      return unavailableSkillVersionResponse(selection, rate.headers);
+    if (selection.status !== "available") return text("Version not found", 404, rate.headers);
     const { skill: selectedSkill, version } = selection;
     const selectedModerationInfo = getSkillFileModerationInfoFromSkill(selectedSkill);
     const moderationBlock = getPublicSkillVersionAccessBlock(
