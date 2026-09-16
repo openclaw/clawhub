@@ -957,7 +957,7 @@ describe("public skill version queries", () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
-          if (table === "officialPublishers") {
+          if (table === "officialPublishers" || table === "featuredSelections") {
             return {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),
