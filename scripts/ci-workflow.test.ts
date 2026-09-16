@@ -52,7 +52,7 @@ describe("CI workflow", () => {
       expect(job.steps).toContainEqual(expect.objectContaining({ run: command }));
     }
 
-    expect(workflow.jobs.unit["runs-on"]).toBe("blacksmith-32vcpu-ubuntu-2404");
+    expect(workflow.jobs.unit["runs-on"]).toBe("blacksmith-16vcpu-ubuntu-2404");
     expect(workflow.jobs.unit.steps).toContainEqual(
       expect.objectContaining({
         uses: "actions/checkout@v7.0.1",

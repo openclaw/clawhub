@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { generateKeyPairSync } from "node:crypto";
+import { zipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { __test } from "./githubImport";
@@ -22,6 +23,22 @@ const originalGitHubAppEnv = {
   installationId: process.env.GITHUB_APP_INSTALLATION_ID,
   privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
 };
+
+function corruptZipEntry(zip: Uint8Array, path: string) {
+  const header = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  for (let offset = 0; header.getUint32(offset, true) === 0x04034b50;) {
+    const nameLength = header.getUint16(offset + 26, true);
+    const dataOffset = offset + 30 + nameLength + header.getUint16(offset + 28, true);
+    const name = new TextDecoder().decode(zip.subarray(offset + 30, offset + 30 + nameLength));
+    if (name === path) {
+      // An invalid DEFLATE block makes any attempted inflation of this entry fail.
+      zip[dataOffset] = 0x07;
+      return zip;
+    }
+    offset = dataOffset + header.getUint32(offset + 18, true);
+  }
+  throw new Error(`Missing ZIP fixture entry: ${path}`);
+}
 
 describe("githubImport", () => {
   beforeEach(() => {
@@ -84,6 +101,48 @@ describe("githubImport", () => {
       "demo-repo/skill/SKILL.md",
       "demo-repo/skill/notes.md",
     ]);
+  });
+
+  it("skips oversized entries before inflation while retaining a valid skill", () => {
+    const zip = zipSync({
+      "demo-repo/model.bin": new Uint8Array(10 * 1024 * 1024 + 1),
+      "demo-repo/skill/SKILL.md": new TextEncoder().encode("# Demo\n"),
+    });
+    expect(Object.keys(__test.unzipToEntries(zip))).toEqual(["demo-repo/skill/SKILL.md"]);
+    corruptZipEntry(zip, "demo-repo/model.bin");
+
+    const entries = __test.unzipToEntries(zip);
+
+    expect(Object.keys(entries)).toEqual(["demo-repo/skill/SKILL.md"]);
+    expect(new TextDecoder().decode(entries["demo-repo/skill/SKILL.md"])).toBe("# Demo\n");
+  });
+
+  it("rejects excessive file counts before inflating the over-limit entry", () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 7_500 }, (_, index) => [`demo-repo/${index}.md`, new Uint8Array()]),
+    );
+    expect(Object.keys(__test.unzipToEntries(zipSync(files)))).toHaveLength(7_500);
+
+    files["demo-repo/overflow.md"] = new TextEncoder().encode("overflow");
+    const zip = corruptZipEntry(zipSync(files), "demo-repo/overflow.md");
+    expect(() => __test.unzipToEntries(zip)).toThrow("Repo archive has too many files");
+  });
+
+  it("rejects excessive total bytes before inflating the over-limit entry", () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 8 }, (_, index) => [
+        `demo-repo/${index}.bin`,
+        new Uint8Array(10 * 1024 * 1024),
+      ]),
+    );
+    const entries = __test.unzipToEntries(zipSync(files));
+    expect(Object.values(entries).reduce((sum, bytes) => sum + bytes.byteLength, 0)).toBe(
+      80 * 1024 * 1024,
+    );
+
+    files["demo-repo/overflow.md"] = new TextEncoder().encode("x");
+    const zip = corruptZipEntry(zipSync(files), "demo-repo/overflow.md");
+    expect(() => __test.unzipToEntries(zip)).toThrow("Repo archive is too large");
   });
 
   it("rejects a public repo owned by another GitHub account before repo lookup", async () => {

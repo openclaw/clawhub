@@ -7,6 +7,7 @@ import {
   ApiV1SkillRepairVtPendingRequestSchema,
   ApiV1SkillScanBatchRequestSchema,
   ApiV1SkillScanBatchStatusRequestSchema,
+  ApiV1SkillScanJobHistoryRequestSchema,
   ApiV1SkillScanSubmitRequestSchema,
   SkillAppealRequestSchema,
   SkillAppealResolveRequestSchema,
@@ -30,6 +31,7 @@ import {
   type SkillExportArchiveManifest,
 } from "../lib/archiveManifest";
 import { serializeCanonicalSkillSearchResults } from "../lib/canonicalSkillSearchResponse";
+import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import {
   ARCHIVE_REQUEST_IDENTITY_HEADER,
   expectedVercelEnvironmentForConvexSite,
@@ -386,6 +388,7 @@ const internalRefs = internal as unknown as {
   securityScan: {
     createPublishedSkillScanRequestInternal: unknown;
     enqueueBulkSkillRescanBatchForAdminInternal: unknown;
+    getSkillScanJobHistoryForAdminInternal: unknown;
     getStoredScanReportForUserInternal: unknown;
     getSkillScanRequestForUserInternal: unknown;
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
@@ -528,6 +531,8 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
       cursor?: string | null;
       batchSize?: number;
       dryRun?: boolean;
+      requestId?: string;
+      expectedVersionIds?: string[];
     };
     const result = await runMutationRef(
       ctx,
@@ -535,6 +540,10 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
       {
         actorUserId: auth.userId,
         ...(body.mode ? { mode: body.mode } : {}),
+        ...(body.requestId !== undefined ? { requestId: body.requestId } : {}),
+        ...(body.expectedVersionIds !== undefined
+          ? { expectedVersionIds: body.expectedVersionIds }
+          : {}),
         cursor: body.cursor ?? null,
         ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
         ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
@@ -1313,6 +1322,39 @@ export async function skillScanBatchSubmitV1Handler(ctx: ActionCtx, request: Req
   return handleSkillScanBatchSubmit(ctx, request, rate.headers);
 }
 
+export async function skillScanJobHistoryV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+  const admin = requireAdminOrResponse(auth.user, rate.headers);
+  if (!admin.ok) return admin.response;
+  try {
+    const body = parseArk(
+      ApiV1SkillScanJobHistoryRequestSchema,
+      await request.json(),
+      "Skill scan job history payload",
+    );
+    const result = await runQueryRef(
+      ctx,
+      internalRefs.securityScan.getSkillScanJobHistoryForAdminInternal,
+      {
+        actorUserId: auth.userId,
+        versionId: body.versionId,
+        cursor: body.cursor ?? null,
+      },
+    );
+    return json(result, 200, rate.headers);
+  } catch (error) {
+    if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+    return text(
+      error instanceof Error ? error.message : "Skill scan job history failed",
+      400,
+      rate.headers,
+    );
+  }
+}
+
 export async function skillScanBatchStatusV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -1326,6 +1368,8 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url);
   const query = url.searchParams.get("q")?.trim() ?? "";
   const limit = toOptionalNumber(url.searchParams.get("limit"));
+  const category = url.searchParams.get("category")?.trim() || undefined;
+  const topic = url.searchParams.get("topic")?.trim() || undefined;
   const rawMode = url.searchParams.get("mode")?.trim().toLowerCase();
   const highlightedOnly = parseBooleanQueryParam(url.searchParams.get("highlightedOnly"));
   const nonSuspiciousOnly = resolveBooleanQueryParam(
@@ -1344,11 +1388,24 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
     ...(rawMode ? { mode: "exact" as const } : {}),
     highlightedOnly: highlightedOnly || undefined,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    ...(category ? { categorySlug: category } : {}),
+    ...(topic ? { topic } : {}),
   })) as unknown[];
 
   // The action owns the canonical shape and ordering for every consumer.
   // This HTTP surface must serialize it without projecting or re-sorting.
-  return json({ results: serializeCanonicalSkillSearchResults(results) }, 200, rate.headers);
+  const publicResults = serializeCanonicalSkillSearchResults(results);
+  await recordCatalogSearchObservation(ctx, request, {
+    artifactKind: "skill",
+    query,
+    category,
+    topic,
+    filtered: Boolean(category || topic || highlightedOnly),
+    officialResults: publicResults.map(
+      (result) => "official" in result && result.official === true,
+    ),
+  });
+  return json({ results: publicResults }, 200, rate.headers);
 }
 
 export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Request) {
@@ -3135,6 +3192,8 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         cursor?: string | null;
         batchSize?: number;
         dryRun?: boolean;
+        requestId?: string;
+        expectedVersionIds?: string[];
       };
       const result = await runMutationRef(
         ctx,
@@ -3142,6 +3201,10 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         {
           actorUserId: auth.userId,
           ...(body.mode ? { mode: body.mode } : {}),
+          ...(body.requestId !== undefined ? { requestId: body.requestId } : {}),
+          ...(body.expectedVersionIds !== undefined
+            ? { expectedVersionIds: body.expectedVersionIds }
+            : {}),
           cursor: body.cursor ?? null,
           ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
           ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),

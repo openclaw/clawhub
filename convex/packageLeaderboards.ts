@@ -1,13 +1,32 @@
-import { PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema";
+import { getPluginDiscoveryExclusion, PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
-import { getTrendingRange, topN, TRENDING_DAYS } from "./lib/leaderboards";
+import { isPublicPluginDoc } from "./lib/globalStats";
+import { getTrendingRange, TRENDING_DAYS } from "./lib/leaderboards";
 
 const DAILY_STATS_PAGE_SIZE = 1_000;
 const KEEP_LEADERBOARD_ENTRIES = 3;
+const DISCOVERY_BATCH_SIZE = 100;
 export const PACKAGE_TRENDING_LEADERBOARD_KIND = "package_trending";
+
+export const getDiscoveryPackageIds = internalQuery({
+  args: { packageIds: v.array(v.id("packages")) },
+  handler: async (ctx, { packageIds }) => {
+    if (packageIds.length > DISCOVERY_BATCH_SIZE) throw new Error("Maximum 100 package identities");
+    const eligible: Id<"packages">[] = [];
+    for (const packageId of packageIds) {
+      const digest = await ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_package", (q) => q.eq("packageId", packageId))
+        .unique();
+      if (isPublicPluginDoc(digest) && !getPluginDiscoveryExclusion(digest.categories))
+        eligible.push(packageId);
+    }
+    return eligible;
+  },
+});
 
 export const getDailyStatsPage = internalQuery({
   args: {
@@ -112,16 +131,31 @@ export const rebuildTrendingLeaderboardAction = internalAction({
       score: entry.installs * 3 + entry.downloads,
     })).sort((a, b) => b.score - a.score || b.downloads - a.downloads || b.installs - a.installs);
 
+    // Apply discovery visibility before the top-N budget. Otherwise setup plugins
+    // with high adoption crowd out tools even when the public reader hides them.
+    const items: typeof entries = [];
+    for (
+      let offset = 0;
+      offset < entries.length && items.length < limit;
+      offset += DISCOVERY_BATCH_SIZE
+    ) {
+      const batch = entries.slice(offset, offset + DISCOVERY_BATCH_SIZE);
+      const eligible = new Set<Id<"packages">>(
+        await ctx.runQuery(internal.packageLeaderboards.getDiscoveryPackageIds, {
+          packageIds: batch.map(({ packageId }) => packageId),
+        }),
+      );
+      items.push(
+        ...batch.filter(({ packageId }) => eligible.has(packageId)).slice(0, limit - items.length),
+      );
+    }
+
     await ctx.runMutation(internal.packageLeaderboards.writeTrendingLeaderboard, {
-      items: topN(
-        entries,
-        limit,
-        (a, b) => a.score - b.score || a.downloads - b.downloads || a.installs - b.installs,
-      ).sort((a, b) => b.score - a.score || b.downloads - a.downloads || b.installs - a.installs),
+      items,
       startDay,
       endDay,
     });
-    return { ok: true as const, count: Math.min(entries.length, limit) };
+    return { ok: true as const, count: items.length };
   },
 });
 

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
 import { stubExternalMediaInVitePreview } from "./helpers/externalMedia";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 
@@ -37,7 +38,7 @@ async function getSeedFixture(request: APIRequestContext, path: string) {
   let lastResponse: Awaited<ReturnType<APIRequestContext["get"]>> | null = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     lastResponse = await request.get(seedApiUrl(path));
-    if (lastResponse.ok()) return lastResponse;
+    if (lastResponse.ok() || lastResponse.status() === 409) return lastResponse;
     await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
   }
   return lastResponse!;
@@ -59,22 +60,10 @@ async function expectHomeHeroBackgroundCentered(page: Page) {
 }
 
 async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtures> {
-  const skillPath = "/api/v1/skills/gifgrep";
-  const skillResponse = await getSeedFixture(request, skillPath);
-  expect(
-    skillResponse.ok(),
-    `seed skill fixture ${skillPath} returned ${skillResponse.status()}`,
-  ).toBe(true);
-  const skillPayload = (await skillResponse.json()) as {
-    owner?: { handle?: string | null };
-    skill?: { displayName?: string | null; slug?: string | null };
-  };
-  const ownerHandle = skillPayload.owner?.handle?.trim();
-  const skillSlug = skillPayload.skill?.slug?.trim();
-  const skillDisplayName = skillPayload.skill?.displayName?.trim();
-  expect(ownerHandle, "gifgrep seed fixture needs an owner handle").toBeTruthy();
-  expect(skillSlug, "gifgrep seed fixture needs a slug").toBeTruthy();
-  expect(skillDisplayName, "gifgrep seed fixture needs a display name").toBeTruthy();
+  const skillPayload = await loadSmokeSkillFixture(async (path) => {
+    const response = await getSeedFixture(request, path);
+    return { status: response.status(), json: () => response.json() };
+  });
 
   const pluginPath = "/api/v1/plugins?limit=1";
   const pluginResponse = await getSeedFixture(request, pluginPath);
@@ -90,9 +79,9 @@ async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtur
 
   return {
     skill: {
-      displayName: skillDisplayName!,
-      ownerHandle: ownerHandle!,
-      slug: skillSlug!,
+      displayName: skillPayload.skill.displayName,
+      ownerHandle: skillPayload.owner.handle,
+      slug: skillPayload.skill.slug,
     },
     plugin: {
       displayName: plugin!.displayName!.trim(),

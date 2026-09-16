@@ -106,6 +106,7 @@ describe("plugins route", () => {
     resetConvexReactMocks();
     setupDefaultConvexReactMocks();
     navigateMock.mockReset();
+    navigateMock.mockResolvedValue(undefined);
     redirectMock.mockClear();
     searchMock = {};
     loaderDataMock = undefined;

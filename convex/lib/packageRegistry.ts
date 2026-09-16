@@ -104,7 +104,10 @@ function normalizeSkillRootPath(value: unknown) {
           optionalString(value.rootPath))
         : undefined;
   if (!raw) return null;
-  return sanitizePath(raw)?.replace(/^\.\//, "").replace(/\/+$/, "") ?? null;
+  const normalized = sanitizePath(raw)
+    ?.replace(/^(?:\.\/)+/, "")
+    .replace(/\/+$/, "");
+  return normalized === "" ? "." : (normalized ?? null);
 }
 
 function normalizeSkillRootPaths(input: unknown) {
@@ -113,28 +116,34 @@ function normalizeSkillRootPaths(input: unknown) {
 }
 
 function findSkillMarkdownFile(files: PluginManifestSummaryFile[], rootPath: string) {
-  const expected = `${rootPath}/SKILL.md`;
+  const expected = rootPath === "." ? "SKILL.md" : `${rootPath}/SKILL.md`;
   const expectedLower = expected.toLowerCase();
   return (
-    files.find((file) => file.path === expected) ??
-    files.find((file) => file.path.toLowerCase() === expectedLower) ??
+    files.find((file) => file.path.replace(/^(?:\.\/)+/, "") === expected) ??
+    files.find((file) => file.path.replace(/^(?:\.\/)+/, "").toLowerCase() === expectedLower) ??
     null
   );
 }
 
 function skillRootPathFromMarkdownFile(filePath: string) {
-  return filePath.split("/").slice(0, -1).join("/");
+  return (
+    filePath
+      .replace(/^(?:\.\/)+/, "")
+      .split("/")
+      .slice(0, -1)
+      .join("/") || "."
+  );
 }
 
 function findSkillMarkdownFiles(files: PluginManifestSummaryFile[], rootPath: string) {
   const exact = findSkillMarkdownFile(files, rootPath);
   if (exact) return [{ rootPath, file: exact }];
 
-  const directoryPrefix = `${rootPath.toLowerCase()}/`;
+  const directoryPrefix = rootPath === "." ? "" : `${rootPath.toLowerCase()}/`;
   const seen = new Set<string>();
   return files
     .filter((file) => {
-      const lowerPath = file.path.toLowerCase();
+      const lowerPath = file.path.replace(/^(?:\.\/)+/, "").toLowerCase();
       return lowerPath.startsWith(directoryPrefix) && lowerPath.endsWith("/skill.md");
     })
     .map((file) => ({
@@ -280,6 +289,12 @@ function parseSkillMarkdownMetadata(text: string | undefined) {
   };
 }
 
+function declaredCapabilityNames(value: unknown): string[] {
+  return Array.isArray(value)
+    ? uniq(value.filter((entry): entry is string => typeof entry === "string")).sort()
+    : [];
+}
+
 export function derivePluginManifestSummary(params: {
   pluginManifest: JsonRecord;
   skillManifest?: JsonRecord;
@@ -292,6 +307,16 @@ export function derivePluginManifestSummary(params: {
     params.compatibility,
   );
   const manifestIdentity = extractManifestIdentity(params.pluginManifest);
+  const contracts = Object.fromEntries(
+    Object.entries(isRecord(params.pluginManifest.contracts) ? params.pluginManifest.contracts : {})
+      // Convex record keys cannot be reserved, empty, non-ASCII, or longer than 1024 characters.
+      .filter(([key]) => /^(?![$_])[ -~]{1,1024}$/.test(key))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [key, declaredCapabilityNames(value)] as const)
+      .filter(([, names]) => names.length > 0),
+  );
+  const providers = declaredCapabilityNames(params.pluginManifest.providers);
+  const channels = declaredCapabilityNames(params.pluginManifest.channels);
   const skillManifest = params.skillManifest ?? params.pluginManifest;
   const skillRoots = uniq([
     ...normalizeSkillRootPaths(skillManifest.skills),
@@ -305,6 +330,7 @@ export function derivePluginManifestSummary(params: {
         name: metadata.name ?? pathDerivedName(rootPath),
         ...(metadata.description ? { description: metadata.description } : {}),
         rootPath,
+        // Preserve the signed inventory path for exact file reads.
         skillMdPath: file.path,
         sha256: file.sha256,
         size: file.size,
@@ -322,6 +348,9 @@ export function derivePluginManifestSummary(params: {
     ...(params.categories ? { categories: [...params.categories] } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
+    ...(Object.keys(contracts).length ? { contracts } : {}),
+    ...(providers.length ? { providers } : {}),
+    ...(channels.length ? { channels } : {}),
     configFields: extractConfigFields(params.pluginManifest),
     mcpServers: extractMcpServerNames(params.pluginManifest).map((name) => ({ name })),
     bundledSkills,

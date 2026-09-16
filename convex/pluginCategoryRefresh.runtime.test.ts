@@ -226,7 +226,7 @@ describe("latest plugin category refresh", () => {
       await t.run(async (ctx) => {
         const text = JSON.stringify({
           id: "appointments",
-          categories: invalid ? [] : ["models", "voice"],
+          categories: invalid ? [] : ["models"],
         });
         const storageId = await ctx.storage.store(new Blob([text]));
         await ctx.db.patch(latest.packageId, { family: "bundle-plugin" });
@@ -250,7 +250,7 @@ describe("latest plugin category refresh", () => {
       } else {
         expect(result).toMatchObject({ previewed: 1, failed: 0 });
         expect(rows.page[0]).toMatchObject({
-          categories: ["models", "voice"],
+          categories: ["models"],
           classification: { source: "manifest" },
         });
       }
@@ -339,7 +339,7 @@ describe("latest plugin category refresh", () => {
         normalizedName: "@openclaw/imap",
       });
       await ctx.db.patch(latest.releaseId, {
-        extractedPluginManifest: { id: "imap" },
+        extractedPluginManifest: { id: "imap", categories: ["tools", "channels"] },
         source: { repo: "openclaw/openclaw" },
       });
     });
@@ -363,7 +363,7 @@ describe("latest plugin category refresh", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it.each([{ categories: ["tools"] }, { categories: ["productivity", "scheduling"] }])(
+  it.each([{ categories: ["scheduling"] }, { categories: ["productivity"] }])(
     "preserves explicit bundled release categories $categories through preview and apply",
     async ({ categories }) => {
       const { t, latest, publisherId } = await fixture();
@@ -430,14 +430,14 @@ describe("latest plugin category refresh", () => {
 
   it("keeps explicit categories and preserves a reviewed run when preview restarts", async () => {
     const { t, publish } = await fixture();
-    await publish("3.0.0", ["productivity", "scheduling"]);
+    await publish("3.0.0", ["productivity"]);
     await t.action(internal.pluginCategoryRefresh.preview, { runId: "declared" });
     const first = await t.query(internal.pluginCategoryRefresh.list, {
       runId: "declared",
       paginationOpts: { cursor: null, numItems: 10 },
     });
     expect(first.page).toMatchObject([
-      { categories: ["productivity", "scheduling"], classification: { source: "manifest" } },
+      { categories: ["productivity"], classification: { source: "manifest" } },
     ]);
     expect(fetch).not.toHaveBeenCalled();
     await t.mutation(internal.pluginCategoryRefresh.accept, {

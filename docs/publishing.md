@@ -119,6 +119,8 @@ jobs:
 
 Use `dry_run: true` to preview new and changed skills without publishing.
 
+Automatic changelog generation and preview use a ten-second provider deadline, including response-body reads. If the provider is unavailable or times out, ClawHub returns local fallback notes so publishing and preview can continue.
+
 The workflow forwards optional `changelog`, `categories`, and `topics` inputs to
 `skill publish`, plus `clear_categories` and `clear_topics` for removing metadata
 a skill already carries. A skill first published without `categories` is stored
@@ -235,7 +237,7 @@ publishes and skill publishing retain their existing category behavior.
 
 Topics remain separate: use `--topics` or the workflow's `topics` input to set
 them, omit the input to preserve existing topics, or use `--topics ""` /
-`clear_topics: true` to clear them. See the [package CLI reference](./cli.md#package-publish-source)
+`clear_topics: true` to clear them. See the [package CLI reference](./cli.md#package-publish-%3Csource%3E)
 and [topic rules](#skill-catalog-metadata).
 
 ### Trusted Publishing for Packages

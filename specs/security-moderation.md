@@ -24,11 +24,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   The legacy `TRUST_FORWARDED_IPS` flag must never authorize raw IP headers.
 - API tokens retain per-user quotas. A server-owned loopback Convex deployment
   may use a local development bucket when no hosted environment is configured.
-- Inspector worker routes, signed archive metric receipts, and Convex Auth's
-  OAuth sign-in/callback routes retain their handler-owned credential checks at
+- The production skills.sh mirror operator, inspector worker routes, signed
+  archive metric receipts, and Convex Auth's OAuth sign-in/callback routes
+  retain their handler-owned credential checks at
   the Convex origin. They do not use anonymous IP quotas or redirect credentials
   to another origin. Worker credentials never exempt ordinary public API routes
   from verified ingress.
+- The skills.sh operator accepts only the verified GitHub Actions identity for
+  this repository's sync workflow on `main` in the `Production` environment.
+  Its Test operator continues to require an admin API token and API quotas.
 - Rollout requires the identity-forwarding edge before the backend starts
   enforcing verified anonymous ingress.
 
@@ -554,11 +558,27 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
   dispatch count, worker batch limit, provider quotas, and cost monitoring.
+- Local bulk campaigns may assign disjoint lists of existing job IDs to shared
+  worker shards. Assigned claims read only those IDs, accept only queued, due,
+  ungated `bulk-rescan` skill-version jobs, and use the normal lease, hydration,
+  scan and result paths. They must not fall back to the general queue when an
+  assignment is empty or stale, claim package jobs, or retry terminal failures.
+  The dedicated priority shard remains unassigned and retains its normal queue.
+  Assignment plans, admission baselines, receipts, cursor and capacity control
+  remain local; no server-side campaign coordinator or assignment table is added.
+  Admin batch status exposes queued identities from the same bounded point reads
+  as its counts, so completed jobs in partial batches cannot fill the local
+  assignment payload. This is an observation; claims still recheck eligibility.
+- Normal scan claims read only enough ready queue rows to fill the worker's
+  remaining capacity. Broader pagination is reserved for skipping blocked legacy
+  GitHub jobs or the catalog lane's bounded admission window; disabling a rollout
+  must not make every native one-job claim read hundreds of unrelated jobs.
 - The Skill Card verification envelope exposes ClawScan as the top-level
   `security` verdict for install automation, with deterministic and third-party
   scanner evidence grouped under `security.signals`. Clients should key install
   decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
   re-deriving trust from individual signal payloads.
+- Skill Card completion owns a newly stored card until its attachment mutation succeeds. If attachment rejects a stale lease or unavailable version, delete only that new blob and preserve the original error if cleanup fails. Successful replacement retains prior card blobs and generated bundle fingerprints so existing installs remain resolvable.
 - Exact-version security verdict reads preserve the complete skill identity.
   Batch callers may qualify a request with the publisher handle; owner, slug,
   and version form the dedupe identity, and qualified success or failure results
@@ -608,6 +628,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   skill/package rescans for a chosen artifact, or paged all-active-latest skill
   rescan batches. The old suspicious LLM bucket tools (`all`, `llm-only`,
   `vt-only`, `both`) are retired.
+- Security workers back off and retry a transient claim API failure up to three
+  times before draining their existing leases. Every failed call remains in
+  claim-health counters, and the claim window/max-jobs limits still apply.
+  This does not retry terminal scan failures or change their job identities.
+  Authentication/validation failures do not enter this transient retry path.
+- Recoverable bulk skill requests use administrator-scoped request IDs. Their
+  job identities, cursor boundary and counters commit atomically in the permanent
+  batch audit entry. An identical replay returns that receipt before traversing
+  current skills, even after completion or permanent failure; it must not create
+  replacement jobs. Conflicting reuse fails. Optional ordered version baselines
+  reject page drift atomically. Legacy batches without receipt IDs require
+  read-only, fully paginated exact-version job reconciliation before admission.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
 - ClawPack package releases materialize parsed npm-pack artifact entries into the release file

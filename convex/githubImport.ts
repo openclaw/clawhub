@@ -892,10 +892,24 @@ function normalizeRepoSearchQuery(query: string) {
 }
 
 function unzipToEntries(zipBytes: Uint8Array) {
-  const entries = unzipSync(zipBytes);
+  let fileCount = 0;
+  let declaredBytes = 0;
+  const entries = unzipSync(zipBytes, {
+    filter: (file) => {
+      fileCount += 1;
+      if (fileCount > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
+      if (file.name.endsWith("/")) return false;
+      const normalizedPath = normalizeZipPath(file.name);
+      if (!normalizedPath || isMacJunkPath(normalizedPath)) return false;
+      // Import is selective: an unrelated oversized file must not block a valid skill.
+      // Reject it before fflate allocates its decompression buffer.
+      if (file.originalSize > MAX_SINGLE_FILE_BYTES) return false;
+      declaredBytes += file.originalSize;
+      if (declaredBytes > MAX_UNZIPPED_BYTES) throw new ConvexError("Repo archive is too large");
+      return true;
+    },
+  });
   const out: Record<string, Uint8Array> = {};
-  const rawPaths = Object.keys(entries);
-  if (rawPaths.length > MAX_FILE_COUNT) throw new ConvexError("Repo archive has too many files");
   let totalBytes = 0;
   for (const [rawPath, bytes] of Object.entries(entries)) {
     const normalizedPath = normalizeZipPath(rawPath);

@@ -55,6 +55,9 @@ export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred]
 
 export const PluginManifestSummarySchema = type({
   schemaVersion: "number",
+  contracts: type({ "[string]": "string[]" }).optional(),
+  providers: "string[]?",
+  channels: "string[]?",
   categories: "string[]?",
   icon: "string?",
   compatibility: PackageCompatibilitySchema.optional(),
@@ -443,6 +446,7 @@ const PackageListItemFields = {
   summary: "string|null?",
   icon: "string|null?",
   ownerHandle: "string|null?",
+  ownerImage: "string|null?",
   ownerOfficial: "boolean?",
   createdAt: "number",
   updatedAt: "number",
@@ -572,6 +576,8 @@ export const ApiV1PackageResponseSchema = type({
     handle: "string|null",
     displayName: "string|null?",
     image: "string|null?",
+    // Response readers also accept registries predating the publisher badge field.
+    official: "boolean?",
   }).or("null"),
 });
 export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];
@@ -647,6 +653,8 @@ export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseS
 
 export const ApiV1PackageSecurityResponseSchema = type({
   overview: "string",
+  // Older registries omit this field; consumers must not infer a display verdict from trust.
+  verdict: "string?",
   securityAuditUrl: "string",
   package: type({
     name: "string",
@@ -673,6 +681,14 @@ export const ApiV1PackageSecurityResponseSchema = type({
   }),
 });
 export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
+
+export const ApiV1PluginDetailResponseSchema = ApiV1PackageResponseSchema.and({
+  versions: ApiV1PackageVersionListResponseSchema,
+  version: ApiV1PackageVersionResponseSchema.get("version"),
+  readme: "string|null",
+  security: ApiV1PackageSecurityResponseSchema.or("null"),
+});
+export type ApiV1PluginDetailResponse = (typeof ApiV1PluginDetailResponseSchema)[inferred];
 
 export const PackageReleaseModerationRequestSchema = type({
   state: PackageReleaseModerationStateSchema,

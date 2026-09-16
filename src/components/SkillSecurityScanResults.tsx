@@ -1,3 +1,5 @@
+import { getClawScanDisplayStatus, isVisibleAgenticRiskFinding } from "clawhub-schema";
+export { getClawScanDisplayStatus } from "clawhub-schema";
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Badge, type BadgeProps } from "./ui/badge";
@@ -194,56 +196,6 @@ export function getScanStatusInfo(status: string) {
     default:
       return { label: status, className: "scan-status-unknown", badgeVariant: "default" };
   }
-}
-
-function severityRank(severity?: string) {
-  switch (severity?.trim().toLowerCase()) {
-    case "critical":
-      return 5;
-    case "high":
-      return 4;
-    case "medium":
-      return 3;
-    case "low":
-      return 2;
-    case "info":
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-function isLowConfidence(value: unknown) {
-  return typeof value === "string" && value.trim().toLowerCase() === "low";
-}
-
-function isVisibleAgenticRiskFinding(finding: LlmAgenticRiskFinding) {
-  return (
-    (finding.status === "note" || finding.status === "concern") &&
-    Boolean(finding.evidence) &&
-    !isLowConfidence(finding.confidence)
-  );
-}
-
-function highestVisibleFindingSeverityRank(analysis?: LlmAnalysis | null) {
-  let highest = 0;
-  for (const finding of getVisibleAgenticRiskFindings(analysis)) {
-    highest = Math.max(highest, severityRank(finding.severity));
-  }
-  return highest;
-}
-
-export function getClawScanDisplayStatus(analysis?: LlmAnalysis | null) {
-  const status = (analysis?.verdict ?? analysis?.status)?.trim().toLowerCase();
-  if (!status) return "pending";
-  const highestSeverity = highestVisibleFindingSeverityRank(analysis);
-  if (status === "suspicious") {
-    return "review";
-  }
-  if ((status === "clean" || status === "benign") && highestSeverity >= severityRank("medium")) {
-    return "review";
-  }
-  return status;
 }
 
 export function ScanResultBadge({

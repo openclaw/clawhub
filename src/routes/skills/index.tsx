@@ -25,6 +25,12 @@ import {
 } from "../../lib/browseTopicSearch";
 import { fetchCatalogDiscoveryCapabilities } from "../../lib/catalogDiscoveryCapabilities";
 import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
+import {
+  consumeManualCatalogSearch,
+  takeManualCatalogSearch,
+  type ManualCatalogSearch,
+} from "../../lib/manualCatalogSearch";
+import { fetchSkillSearch } from "../../lib/skillSearchApi";
 import { fetchCanonicalTrendingPage } from "../../lib/trendingApi";
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { parseSort } from "./-params";
@@ -101,16 +107,20 @@ export const Route = createFileRoute("/skills/")({
       dir: hasQuery ? undefined : search.dir,
     };
   },
-  loader: async ({ deps, abortController }): Promise<InitialSkillsLoaderData> =>
+  beforeLoad: ({ search, preload }) => ({
+    manualCatalogSearch: preload ? null : takeManualCatalogSearch(search.q),
+  }),
+  loader: async ({ deps, abortController, context }): Promise<InitialSkillsLoaderData> =>
     isCanonicalSkillsBrowse(deps)
       ? await loadInitialSkillsDataWithinBudget(deps, abortController.signal)
-      : await loadInitialSkillsData(deps, abortController.signal),
+      : await loadInitialSkillsData(deps, abortController.signal, context.manualCatalogSearch),
   component: SkillsIndex,
 });
 
 export async function loadInitialSkillsData(
   search: SkillsSearchState,
   signal?: AbortSignal,
+  manualCatalogSearch?: ManualCatalogSearch | null,
 ): Promise<InitialSkillsLoaderData> {
   const query = search.q?.trim();
   if (query) {
@@ -122,13 +132,20 @@ export async function loadInitialSkillsData(
       topic: search.topic,
     });
     try {
-      const results = (await convexHttp.action(api.search.searchSkills, {
+      const args = {
         query,
         highlightedOnly: featuredOnly,
         categorySlug: search.category,
         topic: search.topic,
         limit: SKILLS_INITIAL_SEARCH_LIMIT,
-      })) as SkillSearchEntry[];
+      };
+      const results = consumeManualCatalogSearch(manualCatalogSearch, "skill", query)
+        ? ((await fetchSkillSearch({
+            ...args,
+            searchSource: "clawhub-web",
+            signal,
+          })) as SkillSearchEntry[])
+        : ((await convexHttp.action(api.search.searchSkills, args)) as SkillSearchEntry[]);
       return { key, limit: SKILLS_INITIAL_SEARCH_LIMIT, results };
     } catch (error) {
       console.error("Failed to load initial skills search:", error);
@@ -400,20 +417,26 @@ export function SkillsIndex() {
           />
         )}
         <div className="browse-results">
-          <SkillsResults
-            isLoadingSkills={model.isLoadingSkills}
-            sorted={model.sorted}
-            view={model.view}
-            listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
-            hasQuery={model.hasQuery}
-            canLoadMore={model.canLoadMore}
-            isLoadingMore={model.isLoadingMore}
-            canAutoLoad={model.canAutoLoad}
-            loadMoreRef={model.loadMoreRef}
-            loadMore={model.loadMore}
-            catalogTab={model.catalogTab}
-            trendingState={model.trendingState}
-          />
+          {model.searchError ? (
+            <p role="alert">Unable to search skills. Refresh to retry.</p>
+          ) : (
+            <SkillsResults
+              isLoadingSkills={model.isLoadingSkills}
+              sorted={model.sorted}
+              view={model.view}
+              listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
+              hasQuery={model.hasQuery}
+              canLoadMore={model.canLoadMore}
+              isLoadingMore={model.isLoadingMore}
+              canAutoLoad={model.canAutoLoad}
+              loadMoreRef={model.loadMoreRef}
+              loadMore={model.loadMore}
+              listFailed={model.listFailed}
+              retryLoad={model.retryLoad}
+              catalogTab={model.catalogTab}
+              trendingState={model.trendingState}
+            />
+          )}
         </div>
       </div>
     </main>

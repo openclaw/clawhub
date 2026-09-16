@@ -895,6 +895,100 @@ describe("Upload route", () => {
     expect(await screen.findByDisplayValue("1.2.4")).toBeTruthy();
   });
 
+  it.each([
+    ["uploaded", null, "Uploaded description."],
+    ["edited", "My summary.", "My summary."],
+    ["cleared", "", ""],
+  ])(
+    "publishes the draft with %s summary after metadata refreshes",
+    async (_, editedSummary, expectedSummary) => {
+      useSearchMock.mockReturnValue({ updateSlug: "existing-skill" });
+      let existing = {
+        skill: {
+          slug: "existing-skill",
+          displayName: "Existing Skill",
+          summary: "Published description.",
+        },
+        latestVersion: { version: "1.0.0" },
+        owner: { handle: "local", displayName: "Local" },
+      };
+      const defaultQuery = useQueryMock.getMockImplementation()!;
+      useQueryMock.mockImplementation((fn: unknown, args: unknown) =>
+        getFunctionName(fn as Parameters<typeof getFunctionName>[0]) === "skills:getBySlug"
+          ? existing
+          : defaultQuery(fn, args),
+      );
+      generateUploadUrl.mockResolvedValue("https://upload.local");
+      publishVersion.mockResolvedValue({ status: "pending" });
+
+      const { rerender } = render(<Upload />);
+      expect(await screen.findByDisplayValue("1.0.1")).toBeTruthy();
+
+      // Untouched fields still follow the current published metadata.
+      existing = { ...existing, latestVersion: { version: "1.0.1" } };
+      rerender(<Upload />);
+      expect(await screen.findByDisplayValue("1.0.2")).toBeTruthy();
+
+      fireEvent.change(screen.getByTestId("upload-input"), {
+        target: {
+          files: [
+            new File(["---\ndescription: Uploaded description.\n---\n# Skill"], "SKILL.md", {
+              type: "text/markdown",
+            }),
+          ],
+        },
+      });
+      expect(await screen.findByDisplayValue("Uploaded description.")).toBeTruthy();
+
+      fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
+        target: { value: "1.0.3" },
+      });
+      expect(screen.getByLabelText("Summary")).toHaveProperty("value", "Uploaded description.");
+      fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+        target: { value: "edited-skill" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("My skill"), {
+        target: { value: "Edited Skill" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("Describe what changed in this skill..."), {
+        target: { value: "Publish my selected version." },
+      });
+      fireEvent.click(
+        screen.getByRole("checkbox", {
+          name: /i have the rights to publish this skill under mit-0/i,
+        }),
+      );
+
+      if (editedSummary !== null) {
+        fireEvent.change(screen.getByLabelText("Summary"), { target: { value: editedSummary } });
+      }
+
+      // A live update must not replace uploaded metadata or the author's edits.
+      existing = {
+        ...existing,
+        skill: { ...existing.skill, summary: "Updated published description." },
+      };
+      rerender(<Upload />);
+      expect(screen.getByPlaceholderText("1.0.0")).toHaveProperty("value", "1.0.3");
+      expect(screen.getByPlaceholderText("skill-name")).toHaveProperty("value", "edited-skill");
+      expect(screen.getByPlaceholderText("My skill")).toHaveProperty("value", "Edited Skill");
+
+      const publishButton = screen.getByRole("button", { name: /publish skill/i });
+      await waitFor(() => expect(publishButton.getAttribute("disabled")).toBeNull());
+      fireEvent.click(publishButton);
+      await waitFor(() => {
+        expect(publishVersion).toHaveBeenCalledWith(
+          expect.objectContaining({
+            slug: "edited-skill",
+            displayName: "Edited Skill",
+            version: "1.0.3",
+            summary: expectedSummary,
+          }),
+        );
+      });
+    },
+  );
+
   it("reconciles the selected owner when publisher memberships change", async () => {
     let memberships = [
       {

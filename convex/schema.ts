@@ -8,6 +8,13 @@ import {
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassification";
+import { searchDigestValidator } from "./lib/searchDigestContract";
+import {
+  searchArtifactKind,
+  searchClassification,
+  searchInsightSource,
+  searchScope,
+} from "./lib/searchInsights";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -708,6 +715,9 @@ const packageCompatibilityValidator = v.optional(
 
 export const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
+  contracts: v.optional(v.record(v.string(), v.array(v.string()))),
+  providers: v.optional(v.array(v.string())),
+  channels: v.optional(v.array(v.string())),
   categories: v.optional(v.array(v.string())),
   icon: v.optional(v.string()),
   compatibility: v.optional(
@@ -2322,6 +2332,18 @@ const packageStatEvents = defineTable({
 })
   .index("by_unprocessed", ["processedAt"])
   .index("by_package", ["packageId"]);
+
+const pluginSearchObservations = defineTable({
+  normalizedQuery: v.string(),
+  observedAt: v.number(),
+  source: v.union(v.literal("clawhub-web"), v.literal("openclaw-control-ui")),
+  artifactKind: v.union(v.literal("plugin"), v.literal("skill")),
+  scope: v.optional(v.union(v.literal("catalog"), v.literal("shelf"))),
+  category: v.optional(v.string()),
+  topic: v.optional(v.string()),
+  resultCount: v.number(),
+  officialResultCount: v.number(),
+}).index("by_observed_at", ["observedAt"]);
 
 const packageDailyStats = defineTable({
   packageId: v.id("packages"),
@@ -4510,7 +4532,96 @@ const skillOwnershipTransfers = defineTable({
   .index("by_from_user_status", ["fromUserId", "status"])
   .index("by_skill_status", ["skillId", "status"]);
 
+const searchAggregateStates = defineTable({
+  key: v.literal("plugin"),
+  cursor: v.union(v.string(), v.null()),
+  processedThrough: v.number(),
+  revision: v.number(),
+  coverageStart: v.number(),
+  skillCoverageStart: v.optional(v.number()),
+  coverageGapStart: v.optional(v.number()),
+  coverageGapEnd: v.optional(v.number()),
+}).index("by_key", ["key"]);
+const searchDailyAggregates = defineTable({
+  dayStart: v.number(),
+  query: v.string(),
+  source: searchInsightSource,
+  artifactKind: searchArtifactKind,
+  scope: v.optional(searchScope),
+  category: v.string(),
+  intent: v.string(),
+  searches: v.number(),
+  officialGaps: v.number(),
+  zeroResults: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_dayStart_and_source_and_query_and_category_and_intent", [
+    "dayStart",
+    "source",
+    "query",
+    "category",
+    "intent",
+  ])
+  .index("by_artifact_day", ["artifactKind", "dayStart"])
+  .index("by_artifact_source_day", ["artifactKind", "source", "dayStart"])
+  .index("by_bucket", [
+    "artifactKind",
+    "scope",
+    "dayStart",
+    "source",
+    "query",
+    "category",
+    "intent",
+  ])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchClassificationRuns = defineTable({
+  artifactKind: v.optional(searchArtifactKind),
+  weekStart: v.number(),
+  weekEnd: v.number(),
+  processedAt: v.number(),
+  status: v.union(v.literal("available"), v.literal("unavailable")),
+  expectedQualified: v.number(),
+  classifiedCount: v.number(),
+  truncated: v.optional(v.boolean()),
+  model: v.string(),
+  modelVersion: v.string(),
+  failureCode: v.optional(v.string()),
+  expirationTime: v.number(),
+})
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchWeeklyClassifications = defineTable(
+  searchClassification.extend({ expirationTime: v.number() }),
+)
+  .index("by_query_and_weekEnd", ["query", "weekEnd"])
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchWeeklyDigests = defineTable({
+  weekEnd: v.number(),
+  status: v.union(
+    v.literal("claimed"),
+    v.literal("sent"),
+    v.literal("failed"),
+    v.literal("exhausted"),
+  ),
+  attempts: v.number(),
+  claimedUntil: v.number(),
+  nextAttemptAt: v.number(),
+  sentAt: v.optional(v.number()),
+  failureCode: v.optional(v.string()),
+  expirationTime: v.number(),
+  payload: v.optional(searchDigestValidator),
+})
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
+  .index("by_expiration_time", ["expirationTime"]);
+
 export default defineSchema({
+  searchAggregateStates,
+  searchDailyAggregates,
+  searchWeeklyClassifications,
+  searchClassificationRuns,
+  searchWeeklyDigests,
   ...authTables,
   authSessions,
   authRefreshTokens,
@@ -4543,6 +4654,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  pluginSearchObservations,
   packageDailyStats,
   packageLeaderboards,
   packageTrustedPublishers,

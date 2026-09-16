@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
@@ -73,7 +73,9 @@ import {
   cmdSetPromotionStatus,
   cmdUpdatePromotion,
 } from "./commands/promotions.js";
+import { cmdSearchInsights } from "./commands/searchInsights.js";
 import { cmdHardDeleteSkill } from "./commands/skills.js";
+import { planScanWorkers } from "./scanAssignments.js";
 
 const program = new Command()
   .name("clawhub-admin")
@@ -358,6 +360,15 @@ const skills = program
   .description("Skill artifact moderation")
   .showHelpAfterError()
   .showSuggestionAfterError();
+
+skills
+  .command("plan-scan-workers <job-ids-file>")
+  .description("Prepare local workflow inputs for disjoint, already-admitted bulk skill jobs")
+  .requiredOption("--batch-limit <number>", "Scans in parallel per shared worker")
+  .action(async (file: string, options: { batchLimit: string }) => {
+    const ids: unknown = JSON.parse(await readFile(resolve(file), "utf8"));
+    console.log(JSON.stringify(planScanWorkers(ids, Number(options.batchLimit)), null, 2));
+  });
 
 const promotions = program
   .command("promotions")
@@ -1016,6 +1027,23 @@ function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
       });
   }
 }
+
+program
+  .command("search-insights")
+  .description("Read staff-only plugin and skill search demand and advisory opportunities")
+  .option("--view <view>", "demand|recommendations (default: demand)")
+  .option("--artifact-kind <kind>", "plugin|skill (default: plugin)")
+  .option("--scope <scope>", "catalog|shelf|legacy (default: all scopes)")
+  .option("--source <source>", "clawhub-web|openclaw-control-ui (default: both)")
+  .option("--window <days>", "Rank by 7 or 30 completed UTC days")
+  .option("--official-gap", "Only queries with zero-official-result searches")
+  .option("--intent-kind <kind>", "company_product|generic_capability|ambiguous")
+  .option("--end-day <date>", "Exclusive UTC window end, YYYY-MM-DD")
+  .option("--limit <count>", "Maximum query rows, 1–100")
+  .option("--json", "Output canonical aggregate JSON")
+  .action(async (options) => {
+    await cmdSearchInsights(await resolveGlobalOpts(), options);
+  });
 
 program.action(() => {
   program.outputHelp();

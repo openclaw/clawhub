@@ -10,6 +10,8 @@ vi.mock("./lib/verifiedClientIp", () => ({
   getVerifiedClientIp: async () => "203.0.113.1",
 }));
 import { api, internal } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
+import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { hashToken } from "./lib/tokens";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
@@ -18,7 +20,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const bearer = "local-catalog-visibility-fixture";
 
-async function fixture(role: "user" | "admin" = "admin") {
+async function fixture(role: "user" | "admin" = "admin", categories = ["channels"]) {
   const t = convexTest(schema, modules);
   registerRateLimiter(t);
   const fixtureOwnerUserId = await t.run(async (ctx) => {
@@ -72,7 +74,7 @@ async function fixture(role: "user" | "admin" = "admin") {
         isOfficial: !options.channel,
         scanStatus: options.scanStatus ?? "clean",
         softDeletedAt: options.softDeletedAt,
-        categories: ["channels"],
+        categories,
         topics: expectedNames.includes(options.name) ? ["WhatsApp"] : ["WhatsApp", "Withheld Only"],
         tags: {},
         stats: { downloads: 1, installs: 1, stars: 0, versions: published ? 1 : 0 },
@@ -153,7 +155,244 @@ const routes = [
   "/api/v1/plugins?channel=private&sort=downloads",
 ];
 
+describe("batched public discovery search", () => {
+  it("hydrates real plugin identities while retaining excluded-category demand evidence", async () => {
+    const { t } = await fixture();
+    const report = await t.action(internal.searchInsights.readCurrentResultsInternal, {
+      artifactKind: "plugin",
+      queries: ["whatsapp", "bundle"],
+    });
+    expect(report.rows[0].results.map((result) => result.id).sort()).toEqual(
+      expectedNames.map((name) => `plugin:${name}`),
+    );
+    expect(report.rows[1].results.map((result) => result.id)).toEqual(["plugin:whatsapp-bundle"]);
+    expect(
+      report.rows.flatMap((row) => row.results).every((result) => !result.eligibleForFeatured),
+    ).toBe(true);
+  });
+
+  it.each([1, 2, 3])(
+    "preserves canonical matching, visibility and ordering at limit %i",
+    async (limit) => {
+      const { t } = await fixture();
+      const queries = [
+        "whatsapp",
+        "@openclaw/whatsapp",
+        "bundle",
+        "channels",
+        "withheld",
+        "missing",
+        "",
+        " WhatsApp ",
+        "whatsapp",
+      ];
+      const expected = [];
+      for (const query of queries) {
+        const entries = (
+          await Promise.all(
+            (["code-plugin", "bundle-plugin"] as const).map((family) =>
+              t.query(internal.packages.searchForViewerInternal, { query, family, limit }),
+            ),
+          )
+        ).flat();
+        expected.push({
+          query,
+          identities: entries
+            .sort(compareCatalogSearchEntries)
+            .slice(0, limit)
+            .map((entry) => `plugin:${entry.package.name}`),
+        });
+      }
+      const actual = await t.query(internal.packages.searchPublicDiscoveryBatchInternal, {
+        queries,
+        limit,
+      });
+      expect(actual).toEqual(expected);
+      expect(actual[0].identities).toHaveLength(Math.min(limit, expectedNames.length));
+      expect(
+        actual.flatMap((row) => row.identities).every((id) => expectedNames.includes(id.slice(7))),
+      ).toBe(true);
+    },
+  );
+
+  it("bounds transaction work without truncating or padding the requested terms", async () => {
+    const { t } = await fixture();
+    await expect(
+      t.query(internal.packages.searchPublicDiscoveryBatchInternal, { queries: [] }),
+    ).resolves.toEqual([]);
+    const queries = Array.from({ length: 10 }, (_, index) => `missing-${index}`);
+    await expect(
+      t.query(internal.packages.searchPublicDiscoveryBatchInternal, { queries }),
+    ).resolves.toEqual(queries.map((query) => ({ query, identities: [] })));
+    await expect(
+      t.query(internal.packages.searchPublicDiscoveryBatchInternal, {
+        queries: [...queries, "overflow"],
+      }),
+    ).rejects.toThrow("at most 10");
+    for (const limit of [0, 1.5, 4]) {
+      await expect(
+        t.query(internal.packages.searchPublicDiscoveryBatchInternal, {
+          queries: ["whatsapp"],
+          limit,
+        }),
+      ).rejects.toThrow("1–3 results");
+    }
+  });
+});
+
 describe("normal plugin catalog visibility", () => {
+  it("bounds version requests and continues after an unpublished scan page", async () => {
+    const { t, ownerUserId } = await fixture();
+    await t.run(async (ctx) => {
+      const pkg = await ctx.db
+        .query("packages")
+        .filter((q) => q.eq(q.field("name"), "@openclaw/whatsapp"))
+        .unique();
+      if (!pkg) throw new Error("Missing version fixture package");
+      for (let index = 1; index <= 201; index += 1) {
+        await ctx.db.insert("packageReleases", {
+          packageId: pkg._id,
+          version: `1.0.${index}`,
+          publicationStatus: "published",
+          changelog: "Published release",
+          distTags: [],
+          files: [],
+          integritySha256: "a".repeat(64),
+          createdAt: index + 1,
+          createdBy: ownerUserId,
+        });
+      }
+      for (let index = 0; index < 7; index += 1) {
+        await ctx.db.insert("packageReleases", {
+          packageId: pkg._id,
+          version: `2.0.${index}`,
+          publicationStatus: "pending",
+          changelog: "Pending release",
+          distTags: [],
+          files: [],
+          integritySha256: "b".repeat(64),
+          createdAt: 300 + index,
+          createdBy: ownerUserId,
+        });
+      }
+    });
+
+    for (const query of [
+      api.packages.listVersions,
+      internal.packages.listVersionsForViewerInternal,
+    ]) {
+      const bounded = await t.query(query, {
+        name: "@openclaw/whatsapp",
+        paginationOpts: { cursor: null, numItems: 1000 },
+      });
+      expect(bounded.page).toHaveLength(200);
+      expect(bounded.isDone).toBe(false);
+
+      const skipped = await t.query(query, {
+        name: "@openclaw/whatsapp",
+        paginationOpts: { cursor: null, numItems: 1 },
+      });
+      expect(skipped.page).toEqual([]);
+      expect(skipped.isDone).toBe(false);
+      expect(skipped.pageStatus).toBe("SplitRequired");
+      expect(skipped.splitCursor).toBeTruthy();
+
+      const next = await t.query(query, {
+        name: "@openclaw/whatsapp",
+        paginationOpts: { cursor: skipped.continueCursor, numItems: 1 },
+      });
+      expect(next.page.map((release) => release.version)).toEqual(["1.0.201"]);
+    }
+  });
+
+  it("paginates published versions past a pending release with native cursors", async () => {
+    const t = convexTest(schema, modules);
+    const { packageId, ownerUserId } = await t.run(async (ctx) => {
+      const createdOwnerUserId = await ctx.db.insert("users", { handle: "version-owner" });
+      const createdPackageId = await ctx.db.insert("packages", {
+        name: "@runtime/version-pagination",
+        normalizedName: "@runtime/version-pagination",
+        displayName: "Version pagination",
+        ownerUserId: createdOwnerUserId,
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        tags: {},
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 2 },
+        createdAt: 1,
+        updatedAt: 3,
+      });
+      return { packageId: createdPackageId, ownerUserId: createdOwnerUserId };
+    });
+    const insertRelease = async (
+      version: string,
+      createdAt: number,
+      visibility: Partial<
+        Pick<Doc<"packageReleases">, "publicationStatus" | "ownerDeletedAt" | "softDeletedAt">
+      > = {},
+    ) =>
+      await t.run(async (ctx) =>
+        ctx.db.insert("packageReleases", {
+          packageId,
+          version,
+          ...visibility,
+          changelog: "Runtime fixture",
+          distTags: [],
+          files: [],
+          integritySha256: version.padEnd(64, "0").slice(0, 64),
+          createdAt,
+          createdBy: ownerUserId,
+        }),
+      );
+
+    await insertRelease("6.0.0", 6, { softDeletedAt: 10 });
+    await insertRelease("5.0.0", 5, { ownerDeletedAt: 10 });
+    await insertRelease("4.0.0", 4, { publicationStatus: "blocked" });
+    await insertRelease("3.0.0", 3, { publicationStatus: "pending" });
+    const publishedReleaseId = await insertRelease("2.0.0", 2, {
+      publicationStatus: "published",
+    });
+    await insertRelease("1.0.0", 1);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(packageId, {
+        latestReleaseId: publishedReleaseId,
+        latestVersionSummary: {
+          version: "2.0.0",
+          createdAt: 2,
+          changelog: "Runtime fixture",
+        },
+      });
+    });
+
+    const first = await t.query(api.packages.listVersions, {
+      name: "@runtime/version-pagination",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    const second = await t.query(api.packages.listVersions, {
+      name: "@runtime/version-pagination",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+
+    expect(first.page.map((release) => release.version)).toEqual(["2.0.0"]);
+    expect(first.isDone).toBe(false);
+    expect(second.page.map((release) => release.version)).toEqual(["1.0.0"]);
+    expect(second.isDone).toBe(true);
+
+    const limited = await t.query(api.packages.listVersions, {
+      name: "@runtime/version-pagination",
+      paginationOpts: { cursor: null, numItems: 1, maximumRowsRead: 2 },
+    });
+    expect(limited.page).toEqual([]);
+    expect(limited.isDone).toBe(false);
+    expect(limited.splitCursor).toBeTruthy();
+
+    const expanded = await t.query(api.packages.listVersions, {
+      name: "@runtime/version-pagination",
+      paginationOpts: { cursor: null, numItems: 1, endCursor: second.continueCursor },
+    });
+    expect(expanded.page.map((release) => release.version)).toEqual(["2.0.0", "1.0.0"]);
+  });
+
   it("continues family-less official-first category pages without restarting", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
@@ -185,7 +424,7 @@ describe("normal plugin catalog visibility", () => {
   it("filters Trending to plugin families before applying the page limit", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
-    const { t, ownerUserId } = await fixture();
+    const { t, ownerUserId } = await fixture("admin", ["web"]);
 
     try {
       await t.run(async (ctx) => {
@@ -246,15 +485,18 @@ describe("normal plugin catalog visibility", () => {
         const names = body.results
           ? body.results.map((entry: { package: { name: string } }) => entry.package.name)
           : body.items.map((entry: { name: string }) => entry.name);
-        const expected = route.includes("channel=private")
-          ? viewer === "anonymous"
+        const expected =
+          route.includes("highlightedOnly=true") || route.includes("sort=trending")
             ? []
-            : ["whatsapp-private"]
-          : route.includes("/code-plugins")
-            ? ["@openclaw/whatsapp"]
-            : route.includes("/bundle-plugins")
-              ? ["whatsapp-bundle"]
-              : expectedNames;
+            : route.includes("channel=private")
+              ? viewer === "anonymous"
+                ? []
+                : ["whatsapp-private"]
+              : route.includes("/code-plugins")
+                ? ["@openclaw/whatsapp"]
+                : route.includes("/bundle-plugins")
+                  ? ["whatsapp-bundle"]
+                  : expectedNames;
         expect(names.sort(), route).toEqual(expected);
       }
       const browser = viewer === "anonymous" ? t : t.withIdentity({ subject: ownerUserId });
@@ -319,7 +561,7 @@ describe("normal plugin catalog visibility", () => {
   it.each([false, true])(
     "paginates past placeholders without losing public plugins (authenticated=%s)",
     async (authenticated) => {
-      const { t } = await fixture();
+      const { t } = await fixture("admin", ["web"]);
       const headers: Record<string, string> = authenticated
         ? { Authorization: `Bearer ${bearer}` }
         : {};

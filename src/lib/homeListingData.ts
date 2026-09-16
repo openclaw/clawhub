@@ -60,7 +60,8 @@ export type HomeListingInitialData =
     });
 
 export const HOME_LISTING_PAGE_SIZE = 20;
-export const HOME_NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1_000;
+export { DISCOVERY_RECENT_WINDOW_MS as HOME_NEW_WINDOW_MS } from "../../convex/lib/discoveryWindows";
+import { DISCOVERY_RECENT_WINDOW_MS as HOME_NEW_WINDOW_MS } from "../../convex/lib/discoveryWindows";
 
 const PLUGIN_CATALOG_PAGE_LIMIT = 100;
 const LEGACY_NEW_PLUGIN_MAX_REQUESTS = 10;

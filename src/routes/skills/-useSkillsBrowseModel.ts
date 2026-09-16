@@ -9,6 +9,10 @@ import {
   getSkillCategoryBySlug,
   getSkillCategoriesForSkill,
 } from "../../lib/categories";
+import {
+  navigateWithManualCatalogSearch,
+  type ManualCatalogSearch,
+} from "../../lib/manualCatalogSearch";
 import { fetchCanonicalTrendingPage, type TrendingFeedState } from "../../lib/trendingApi";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import {
@@ -84,7 +88,7 @@ type SkillsNavigate = (options: {
   replace?: boolean;
 }) => void | Promise<void>;
 
-type ListStatus = "loading" | "idle" | "loadingMore" | "done";
+type ListStatus = "loading" | "idle" | "loadingMore" | "done" | "error";
 
 export function buildSkillsSearchKey({
   categorySlug,
@@ -121,7 +125,9 @@ export function useSkillsBrowseModel({
   const searchRequest = useRef(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
+  const retryInFlightRef = useRef(false);
   const navigateTimer = useRef<number>(0);
+  const manualSearch = useRef<ManualCatalogSearch | null>(null);
 
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
@@ -172,6 +178,7 @@ export function useSkillsBrowseModel({
   const [searchLimit, setSearchLimit] = useState(() =>
     matchedInitialSearch ? matchedInitialSearch.limit : SKILLS_PAGE_SIZE,
   );
+  const [searchError, setSearchError] = useState(false);
   const [isSearching, setIsSearching] = useState(() => hasQuery && !initialSearchMatches);
   const appliedInitialSearchKey = useRef(matchedInitialSearch ? matchedInitialSearch.key : null);
 
@@ -294,10 +301,14 @@ export function useSkillsBrowseModel({
           setListResults([]);
           setTrendingState("unavailable");
         }
-        // Keep canonical Trending's dedicated unavailable state; other pages remain retryable.
+        // Keep canonical Trending's dedicated unavailable state. Elsewhere a failed first page
+        // gets its own error state, so neither the empty state nor the load-more affordance has
+        // to stand in for "the request failed"; later pages stay retryable through load-more.
         setListCursor(pageCursor);
         setListAutoLoadPaused(Boolean(pageCursor));
-        setListStatus(catalogTab === "trending" && !pageCursor ? "done" : "idle");
+        setListStatus(
+          catalogTab === "trending" && !pageCursor ? "done" : pageCursor ? "idle" : "error",
+        );
       }
     },
     [
@@ -350,6 +361,7 @@ export function useSkillsBrowseModel({
   const isLoadingList = listStatus === "loading";
   const canLoadMoreList = listStatus === "idle";
   const isLoadingMoreList = listStatus === "loadingMore";
+  const listFailedList = listStatus === "error";
 
   useEffect(() => {
     window.clearTimeout(navigateTimer.current);
@@ -364,6 +376,7 @@ export function useSkillsBrowseModel({
   }, [navigate, search.focus, searchInputRef]);
 
   useEffect(() => {
+    setSearchError(false);
     if (!searchKey) {
       setSearchResults([]);
       setIsSearching(false);
@@ -384,7 +397,8 @@ export function useSkillsBrowseModel({
   }, [matchedInitialSearch, searchKey]);
 
   useEffect(() => {
-    if (!hasQuery) return () => {};
+    searchRequest.current += 1;
+    if (!hasQuery || trimmedQuery !== search.q?.trim()) return () => {};
     if (matchedInitialSearch && searchLimit === matchedInitialSearch.limit) {
       searchRequest.current += 1;
       setIsSearching(false);
@@ -394,6 +408,7 @@ export function useSkillsBrowseModel({
     searchRequest.current += 1;
     const requestId = searchRequest.current;
     setIsSearching(true);
+    setSearchError(false);
     void (async () => {
       try {
         const data = (await searchSkills({
@@ -406,13 +421,17 @@ export function useSkillsBrowseModel({
         if (requestId === searchRequest.current) {
           setSearchResults(data);
         }
+      } catch {
+        if (requestId === searchRequest.current) setSearchError(true);
       } finally {
         if (requestId === searchRequest.current) {
           setIsSearching(false);
         }
       }
     })();
-    return () => {};
+    return () => {
+      searchRequest.current += 1;
+    };
   }, [
     activeCategory?.slug,
     activeTopic,
@@ -421,6 +440,7 @@ export function useSkillsBrowseModel({
     matchedInitialSearch,
     searchLimit,
     searchSkills,
+    search.q,
     trimmedQuery,
   ]);
 
@@ -511,6 +531,7 @@ export function useSkillsBrowseModel({
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
   const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList;
+  const listFailed = !hasQuery && listFailedList;
   const canAutoLoad = false;
 
   const loadMore = useCallback(() => {
@@ -525,11 +546,27 @@ export function useSkillsBrowseModel({
     }
   }, [canLoadMore, fetchPage, hasQuery, isLoadingMore, listCursor]);
 
+  // The failed first page never advanced a cursor, so a retry just replays it. Two activations
+  // can reach this callback before a rerender clears the failure, and both would replay the
+  // first page under the same generation, so an older reply could overwrite the newer one.
+  const retryLoad = useCallback(() => {
+    if (retryInFlightRef.current || !listFailed) return;
+    retryInFlightRef.current = true;
+    setListStatus("loading");
+    void fetchPage(null, fetchGeneration.current);
+  }, [fetchPage, listFailed]);
+
   useEffect(() => {
     if (!isLoadingMore) {
       loadMoreInFlightRef.current = false;
     }
   }, [isLoadingMore]);
+
+  useEffect(() => {
+    if (!isLoadingSkills) {
+      retryInFlightRef.current = false;
+    }
+  }, [isLoadingSkills]);
 
   useEffect(() => {
     return () => window.clearTimeout(navigateTimer.current);
@@ -540,25 +577,29 @@ export function useSkillsBrowseModel({
       setQuery(next);
       window.clearTimeout(navigateTimer.current);
       const trimmed = next.trim();
+      if (trimmed !== query.trim())
+        manualSearch.current = { query: trimmed, consumed: {}, kinds: ["skill"] };
       navigateTimer.current = window.setTimeout(() => {
-        void navigate({
-          search: (prev) => {
-            const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
-            const enteringSearch = Boolean(trimmed) && !hadQuery;
-            return {
-              ...prev,
-              q: trimmed ? next : undefined,
-              ...(enteringSearch ? { category: undefined, topic: undefined } : null),
-              ...(enteringSearch && parseSort(prev.sort) === "recommended"
-                ? { sort: undefined, dir: undefined }
-                : null),
-            };
-          },
-          replace: true,
-        });
+        void navigateWithManualCatalogSearch(manualSearch.current, () =>
+          navigate({
+            search: (prev) => {
+              const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
+              const enteringSearch = Boolean(trimmed) && !hadQuery;
+              return {
+                ...prev,
+                q: trimmed ? next : undefined,
+                ...(enteringSearch ? { category: undefined, topic: undefined } : null),
+                ...(enteringSearch && parseSort(prev.sort) === "recommended"
+                  ? { sort: undefined, dir: undefined }
+                  : null),
+              };
+            },
+            replace: true,
+          }),
+        );
       }, 250);
     },
-    [navigate],
+    [navigate, query],
   );
 
   const onToggleFeatured = useCallback(() => {
@@ -668,6 +709,8 @@ export function useSkillsBrowseModel({
     featuredOnly,
     isLoadingMore,
     isLoadingSkills,
+    listFailed,
+    searchError,
     loadMore,
     loadMoreRef,
     onClearFilters,
@@ -678,6 +721,7 @@ export function useSkillsBrowseModel({
     onToggleFeatured,
     onToggleView,
     query,
+    retryLoad,
     sort,
     sorted,
     trendingState,

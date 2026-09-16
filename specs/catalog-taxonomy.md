@@ -14,8 +14,9 @@
   a specific skill category is present.
 - New plugin releases may declare `categories` in `openclaw.plugin.json`. When present, the array
   contains exactly one controlled slug describing the primary reason to install the plugin.
-  Generated assignments and bundled manifests also contain exactly one category. Readers and the
-  refresh preserve actual one-to-three-category declarations in previously published artifacts.
+  Generated assignments and bundled manifests also contain exactly one active category. Readers
+  retain historical declarations, while the reviewed refresh reclassifies retired or multiple
+  categories from static source evidence. Current single-purpose declarations remain authoritative.
 - The active registry has 22 categories. `agent-runtimes` uses the `bot` icon after Models. It covers
   execution engines and backends that run the agent loop and manage native sessions. Context
   covers active-context assembly and compaction; Agent orchestration covers coordination and
@@ -70,6 +71,14 @@
 - Public v1 plugin read endpoints accept the retired documented filter slugs as aliases to their
   closest controlled categories. These compatibility aliases never become stored or author-facing
   taxonomy values.
+- Featured and Trending discovery exclude plugins whose primary category is Channels, Models,
+  or Agent runtimes. Only a single current category establishes that purpose; historical
+  capability-list order never does. Complete the reviewed category repair before generating the
+  final production selection. Official and community workflow/tool plugins remain eligible. All, search,
+  category browse, and setup retain the complete public catalog. Search-demand and integration-gap
+  reporting also retain these setup categories; only Featured candidate eligibility changes.
+- Trending keeps its existing adoption ordering, selects eligible plugins before its snapshot limit,
+  and filters older snapshots on read. Featured skips excluded badges before its returned-entry limit.
 - Category browse places official or curated entries before community entries.
 - Skill category browse paginates an indexed curated projection before community results; it does
   not cap the curated corpus or hydrate curated entries outside the requested page.
@@ -92,7 +101,9 @@
 
 The product-category refresh uses the same bounded static-evidence classifier as publication.
 It never executes plugin code, imports another marketplace, or filters by license. Explicit
-manifest declarations win; canonical database categories alone do not establish authorship.
+current single-purpose manifest declarations win; canonical database categories alone do not
+establish authorship. Legacy capability lists and retired categories are reclassified rather than
+choosing a primary purpose by array order. Archived artifact bytes remain unchanged.
 Failed model requests produce an observable Other fallback and do not reject valid publication.
 
 `pluginCategoryRefreshes` retains separate review runs with before/after category state. The
@@ -115,7 +126,7 @@ completion. The retained journal is the audit/rollback record.
 
 Operator entry points (run only against the deliberately selected deployment):
 
-- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v3-prod","batchSize":10}` returns
+- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v4-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
 - `pluginCategoryRefresh:accept` accepts at most 100 inspected row IDs with
@@ -131,7 +142,7 @@ Operator entry points (run only against the deliberately selected deployment):
 
 Classification uses `OPENAI_API_KEY` and defaults to `gpt-5.6-luna`, with a dedicated
 `OPENAI_PLUGIN_CATEGORY_MODEL` override independent of skill-summary configuration. The current
-classifier revision is `plugin-single-category-v3`; superseded generated previews cannot be
+classifier revision is `plugin-single-category-v4`; superseded generated previews cannot be
 accepted or applied. The model receives all 22 purpose definitions and must return exactly one
 category. Missing credentials, timeouts, and
 invalid output are recorded as failed fallback classifications. They cannot be accepted by the

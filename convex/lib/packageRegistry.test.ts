@@ -1,16 +1,19 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { buildGitHubFolderContentHash } from "../../packages/clawhub/src/skills";
 import {
   derivePluginManifestSummary,
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
   normalizePackageName,
+  normalizePublishFiles,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
   tryNormalizePackageName,
 } from "./packageRegistry";
+import { buildPackageInventoryDigest } from "./skills";
 
 describe("packageRegistry", () => {
   it("can validate package names without throwing", () => {
@@ -74,6 +77,45 @@ describe("packageRegistry", () => {
     expect(result).not.toHaveProperty("capabilities");
     expect(result.verification.tier).toBe("source-linked");
     expect(result.verification.scanStatus).toBe("not-run");
+  });
+
+  it("preserves declared capability families without inventing tools or activating loose skill files", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        contracts: {
+          tools: [" apify ", "apify", "", 42, { name: "not-a-tool" }],
+          videoGenerationProviders: ["heygen"],
+          futureFamily: ["future-provider"],
+          empty: [],
+          malformed: "not-an-array",
+          $invalid: ["ignored"],
+        },
+        providers: [" model-provider ", "model-provider"],
+        channels: ["chat"],
+        tools: ["not-declared"],
+      },
+      files: [{ path: "SKILL.md", size: 20, sha256: "a".repeat(64), text: "# Loose skill" }],
+    });
+    expect(summary).toMatchObject({
+      contracts: {
+        tools: ["apify"],
+        videoGenerationProviders: ["heygen"],
+        futureFamily: ["future-provider"],
+      },
+      providers: ["model-provider"],
+      channels: ["chat"],
+      bundledSkills: [],
+    });
+    expect(Object.keys(summary.contracts ?? {})).toEqual([
+      "futureFamily",
+      "tools",
+      "videoGenerationProviders",
+    ]);
+    expect(JSON.stringify(summary)).not.toContain("not-declared");
+    const absent = derivePluginManifestSummary({ pluginManifest: {}, files: [] });
+    expect(absent).not.toHaveProperty("contracts");
+    expect(absent).not.toHaveProperty("providers");
+    expect(absent).not.toHaveProperty("channels");
   });
 
   it("derives a safe bundled plugin manifest summary from dummy plugin metadata", () => {
@@ -194,6 +236,65 @@ describe("packageRegistry", () => {
     expect(JSON.stringify(summary)).not.toContain("transport");
     expect(JSON.stringify(summary)).not.toContain("shared_deps");
     expect(JSON.stringify(summary)).not.toContain("contracts");
+  });
+
+  it.each(["SKILL.md", "./SKILL.md"])(
+    "discovers a package-root skill without rewriting the signed %s path",
+    (filePath) => {
+      const files = normalizePublishFiles([
+        { path: filePath, storageId: "skill", size: 48, sha256: "a".repeat(64) },
+        {
+          path: "./references/config.md",
+          storageId: "reference",
+          size: 32,
+          sha256: "b".repeat(64),
+        },
+      ]);
+      const summary = derivePluginManifestSummary({
+        pluginManifest: { id: "example", skills: [".", "./"] },
+        files: files.map((file) => ({
+          ...file,
+          text:
+            file.storageId === "skill" ? "---\nname: root-guide\n---\n# Guide" : "# Configuration",
+        })),
+      });
+      expect(files.map((file) => file.path)).toEqual([filePath, "./references/config.md"]);
+      expect(summary.bundledSkills).toEqual([
+        {
+          name: "root-guide",
+          rootPath: ".",
+          skillMdPath: filePath,
+          size: 48,
+          sha256: "a".repeat(64),
+        },
+      ]);
+    },
+  );
+
+  it("preserves the scoped publisher inventory digest for leading dot paths", async () => {
+    const files = [{ path: "./SKILL.md", storageId: "skill", size: 48, sha256: "a".repeat(64) }];
+    const mintedDigest = buildGitHubFolderContentHash(files);
+    expect(await buildPackageInventoryDigest(normalizePublishFiles(files))).toBe(mintedDigest);
+  });
+
+  it("discovers nested skills from a package-root declaration without a direct entry", () => {
+    const files = ["./skills/first/SKILL.md", "skills/second/SKILL.md"].map((path, index) => ({
+      path,
+      size: 48,
+      sha256: "a".repeat(64),
+      text: `---\nname: guide-${index}\n---\n# Guide`,
+    }));
+    expect(
+      derivePluginManifestSummary({ pluginManifest: { skills: ["."] }, files }).bundledSkills,
+    ).toEqual(
+      files.map((file, index) => ({
+        name: `guide-${index}`,
+        rootPath: `skills/${index === 0 ? "first" : "second"}`,
+        skillMdPath: file.path,
+        size: file.size,
+        sha256: file.sha256,
+      })),
+    );
   });
 
   it("omits invalid plugin icons from the stored manifest summary", () => {

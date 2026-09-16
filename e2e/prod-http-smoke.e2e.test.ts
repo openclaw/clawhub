@@ -2,6 +2,7 @@
 
 import { Agent, setGlobalDispatcher } from "undici";
 import { describe, expect, it } from "vitest";
+import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_RATE_LIMIT_RETRIES = 3;
@@ -27,14 +28,6 @@ function getSiteBase() {
 
 function getCanonicalSiteBase() {
   return process.env.CLAWHUB_E2E_CANONICAL_SITE?.trim() || getSiteBase();
-}
-
-function getSkillSlug() {
-  return process.env.CLAWHUB_E2E_SKILL_SLUG?.trim() || "gifgrep";
-}
-
-function getSkillOwner() {
-  return process.env.CLAWHUB_E2E_SKILL_OWNER?.trim() || "steipete";
 }
 
 function withDeploymentProtection(init?: RequestInit): RequestInit {
@@ -138,30 +131,20 @@ function expectLinkWithRelAndHref(html: string, rel: string, href: string) {
   );
 }
 
-type SkillDetailResponse = {
-  skill: { slug: string; displayName: string; summary: string | null };
-  latestVersion: { version: string | null } | null;
-  owner: { handle: string | null };
-};
-
-let skillDetailPromise: Promise<SkillDetailResponse> | null = null;
+let skillDetailPromise: ReturnType<typeof loadSmokeSkillFixture> | null = null;
 
 async function fetchSkillDetail() {
   if (!skillDetailPromise) {
-    skillDetailPromise = (async () => {
-      const response = await fetchWithRetry(
-        new URL(`/api/v1/skills/${getSkillSlug()}`, getSiteBase()),
-        {
-          headers: { Accept: "application/json" },
-        },
-      );
-      expect(response.ok).toBe(true);
+    skillDetailPromise = loadSmokeSkillFixture(async (path) => {
+      const response = await fetchWithRetry(new URL(path, getSiteBase()), {
+        headers: { Accept: "application/json" },
+      });
       const expectedTestBackend = process.env.CLAWHUB_E2E_EXPECT_TEST_BACKEND?.trim();
       if (expectedTestBackend) {
         expect(response.headers.get("x-clawhub-test-backend")).toBe(expectedTestBackend);
       }
-      return (await response.json()) as SkillDetailResponse;
-    })();
+      return response;
+    });
   }
 
   return skillDetailPromise;
@@ -179,7 +162,7 @@ describe("prod http smoke", () => {
 
   it("serves SSR skill html for a public skill page", async () => {
     const detail = await fetchSkillDetail();
-    const owner = detail.owner.handle || getSkillOwner();
+    const owner = detail.owner.handle;
     const html = await fetchHtml(`/${owner}/${detail.skill.slug}`);
 
     expect(html).toContain(`<title>${detail.skill.displayName} — ClawHub</title>`);
@@ -196,7 +179,7 @@ describe("prod http smoke", () => {
 
   it("serves the skill og image for the latest published version", async () => {
     const detail = await fetchSkillDetail();
-    const owner = detail.owner.handle || getSkillOwner();
+    const owner = detail.owner.handle;
     const params = new URLSearchParams({
       slug: detail.skill.slug,
       owner,
@@ -220,12 +203,9 @@ describe("prod http smoke", () => {
 
   it("serves the published SKILL.md file", async () => {
     const detail = await fetchSkillDetail();
-    const response = await fetchWithRetry(
-      new URL(`/api/v1/skills/${detail.skill.slug}/file?path=SKILL.md`, getSiteBase()),
-      {
-        headers: { Accept: "text/plain" },
-      },
-    );
+    const response = await fetchWithRetry(new URL(detail.filePath, getSiteBase()), {
+      headers: { Accept: "text/plain" },
+    });
 
     expect(response.ok).toBe(true);
     expect((await response.text()).trim().length).toBeGreaterThan(0);

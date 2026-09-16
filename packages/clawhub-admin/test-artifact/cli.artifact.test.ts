@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -58,6 +58,27 @@ describe("packed admin CLI", () => {
       },
     );
     expect(result.status).toBe(0);
+    const jobIdsFile = join(tempDir, "job-ids.json");
+    const jobIds = ["v5700000000000000000000000000000", "v5710000000000000000000000000000"];
+    await writeFile(jobIdsFile, JSON.stringify(jobIds));
+    const plan = spawnSync(
+      process.execPath,
+      [
+        join(installDir, "package", "bin", "clawhub-admin.js"),
+        "skills",
+        "plan-scan-workers",
+        jobIdsFile,
+        "--batch-limit",
+        "32",
+      ],
+      { cwd: tempDir, encoding: "utf8" },
+    );
+    expect(plan.status).toBe(0);
+    const { inputs, deferredJobIds } = JSON.parse(plan.stdout);
+    expect(deferredJobIds).toEqual([]);
+    expect(inputs["batch-limit"]).toBe("32");
+    expect(JSON.parse(inputs["assigned-jobs"]).flat()).toEqual(jobIds);
+
     expect(result.stdout).toContain("Usage: clawhub-admin");
     expect(result.stdout.replace(/\s+/g, " ")).toContain(
       "registry discovery and device verification",

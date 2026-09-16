@@ -4,6 +4,7 @@ import {
   validateClawPackageContents,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
+  getPluginDiscoveryExclusion,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   normalizeCatalogTopic,
@@ -24,7 +25,7 @@ import {
   type PackageVerificationTier,
 } from "clawhub-schema";
 import { getPage, type IndexKey } from "convex-helpers/server/pagination";
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator, type PaginationOptions } from "convex/server";
 import { ConvexError, v, type Value } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
@@ -38,6 +39,7 @@ import {
   mutation,
   query,
 } from "./functions";
+import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import {
   assertAdmin,
   assertModerator,
@@ -67,6 +69,7 @@ import {
   buildPackageInspectorValidationUrl,
 } from "./lib/emails";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
+import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -704,6 +707,7 @@ type PublicPackageListItem = {
   summary: string | null;
   icon: string | null;
   ownerHandle: string | null;
+  ownerImage: string | null;
   ownerOfficial: boolean;
   createdAt: number;
   updatedAt: number;
@@ -1351,6 +1355,10 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
       createdAt: release.createdAt,
     };
   }
+  return toPublicPluginRelease(release);
+}
+
+function toPublicPluginRelease(release: Doc<"packageReleases">) {
   const {
     capabilities: _capabilities,
     clawManifestSummary: _clawManifestSummary,
@@ -1382,45 +1390,34 @@ function toManagerPackageRelease(release: Doc<"packageReleases">, family: Packag
 async function paginatePublishedPackageReleases(
   ctx: QueryCtx,
   packageId: Id<"packages">,
-  paginationOpts: { cursor: string | null; numItems: number },
+  paginationOpts: PaginationOptions,
 ) {
-  const targetCount = Math.max(1, Math.min(paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
-  const page: Doc<"packageReleases">[] = [];
-  let cursor = paginationOpts.cursor;
-  let isDone = false;
-  let continueCursor = "";
-  let remainingScanBudget = Math.max(
-    targetCount,
-    Math.min(
-      MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS,
-      targetCount * MAX_PUBLIC_LIST_FILTER_SCAN_PAGES,
-    ),
+  const numItems = Math.max(1, Math.min(paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+  const scanLimit = Math.min(
+    MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS,
+    numItems * MAX_PUBLIC_LIST_FILTER_SCAN_PAGES,
   );
-
-  for (let scanPages = 0; scanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES; scanPages += 1) {
-    if (page.length >= targetCount || isDone || remainingScanBudget <= 0) break;
-    const pageSize = Math.min(remainingScanBudget, targetCount - page.length);
-    const result = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_active_created", (q) =>
-        q.eq("packageId", packageId).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: pageSize });
-    remainingScanBudget -= pageSize;
-    cursor = result.continueCursor;
-    continueCursor = result.continueCursor;
-    isDone = result.isDone;
-    for (const release of result.page) {
-      if (isPublishedPackageRelease(release)) {
-        page.push(release);
-        if (page.length >= targetCount) break;
-      }
-    }
-    if (result.page.length === 0) break;
-  }
-
-  return { page, isDone, continueCursor: isDone ? "" : continueCursor };
+  // Convex allows one native pagination call per query, including filtered pages.
+  return await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_active_created", (q) =>
+      q.eq("packageId", packageId).eq("softDeletedAt", undefined),
+    )
+    .filter((q) =>
+      q.and(
+        q.eq(q.field("ownerDeletedAt"), undefined),
+        q.or(
+          q.eq(q.field("publicationStatus"), undefined),
+          q.eq(q.field("publicationStatus"), "published"),
+        ),
+      ),
+    )
+    .order("desc")
+    .paginate({
+      ...paginationOpts,
+      numItems,
+      maximumRowsRead: Math.min(paginationOpts.maximumRowsRead ?? scanLimit, scanLimit),
+    });
 }
 
 function packageArtifactSummary(
@@ -1540,18 +1537,26 @@ function packageMatchesListFilters(
 
 async function upsertPackageBadge(
   ctx: MutationCtx,
-  packageId: Id<"packages">,
+  pkg: Doc<"packages">,
   kind: PackageBadgeKind,
   userId: Id<"users">,
   at: number,
 ) {
+  const packageId = pkg._id;
   const existing = await ctx.db
     .query("packageBadges")
     .withIndex("by_package_kind", (q) => q.eq("packageId", packageId).eq("kind", kind))
     .unique();
   if (existing) {
-    await ctx.db.patch(existing._id, { byUserId: userId, at });
-    return;
+    return false;
+  }
+  if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin") {
+    if (getPluginDiscoveryExclusion(pkg.categories)) {
+      throw new ConvexError(
+        "Channels, model providers, and agent runtimes are excluded from Featured discovery.",
+      );
+    }
+    await assertFeaturedCapacity(ctx, "plugin");
   }
   await ctx.db.insert("packageBadges", {
     packageId,
@@ -1559,6 +1564,7 @@ async function upsertPackageBadge(
     byUserId: userId,
     at,
   });
+  return true;
 }
 
 async function removePackageBadge(
@@ -1570,7 +1576,9 @@ async function removePackageBadge(
     .query("packageBadges")
     .withIndex("by_package_kind", (q) => q.eq("packageId", packageId).eq("kind", kind))
     .unique();
-  if (existing) await ctx.db.delete(existing._id);
+  if (!existing) return false;
+  await ctx.db.delete(existing._id);
+  return true;
 }
 
 function defaultPackageStats(): Doc<"packages">["stats"] {
@@ -1605,6 +1613,7 @@ async function toPublicPackageListItem(
     summary: digest.summary ?? null,
     icon: digest.icon ?? null,
     ownerHandle: digest.ownerHandle || null,
+    ownerImage: toPublicPublisher(publisher)?.image ?? null,
     ownerOfficial: await isOfficialPublisher(ctx, publisher),
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
@@ -1642,6 +1651,7 @@ async function toPublicPackageListItemFromPackage(
     summary: pkg.summary ?? null,
     icon: pkg.icon ?? null,
     ownerHandle: owner?.handle ?? null,
+    ownerImage: owner?.image ?? null,
     ownerOfficial: owner?.official === true,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
@@ -2822,21 +2832,23 @@ async function fetchHighlightedPackageEntries(
 ) {
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
-  const badges = await ctx.db
+  const badges = ctx.db
     .query("packageBadges")
     .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
-    .order("desc")
-    .take(MAX_PUBLIC_LIST_PAGE_SIZE);
+    .order("desc");
   const entries: Array<{ digest: PackageDigestLike; featuredAt: number }> = [];
-  for (const badge of badges) {
+  // Count visible selections, not excluded legacy badges, toward the response limit.
+  for await (const badge of badges) {
     const digest = await ctx.db
       .query("packageSearchDigest")
       .withIndex("by_package", (q) => q.eq("packageId", badge.packageId))
       .unique();
     if (!digest || digest.softDeletedAt) continue;
+    if (getPluginDiscoveryExclusion(digest.categories)) continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
     entries.push({ digest, featuredAt: badge.at });
+    if (entries.length >= MAX_PUBLIC_LIST_PAGE_SIZE) break;
   }
   return entries;
 }
@@ -3287,24 +3299,100 @@ export const getByNameForViewerInternal = internalQuery({
     name: v.string(),
     viewerUserId: v.optional(v.id("users")),
   },
+  handler: readPackageForViewer,
+});
+
+export async function readPackageForViewer(
+  ctx: QueryCtx,
+  args: { name: string; viewerUserId?: Id<"users"> },
+) {
+  const snapshot = await readPackageSnapshotForViewer(ctx, args);
+  if (!snapshot) return null;
+  const { publicPackage, latestRelease, owner, pkg } = snapshot;
+  return {
+    package: publicPackage,
+    latestRelease: isPublishedPackageRelease(latestRelease)
+      ? toPublicPackageRelease(latestRelease, pkg.family)
+      : null,
+    owner,
+  };
+}
+
+async function readPackageSnapshotForViewer(
+  ctx: QueryCtx,
+  args: { name: string; viewerUserId?: Id<"users"> },
+) {
+  const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
+  if (!pkg) return null;
+  const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+  const publicPackage = toPublicPackage(pkg, latestRelease);
+  if (!publicPackage) return null;
+  const owner = await toPublicPublisherWithOfficial(
+    ctx,
+    await getOwnerPublisher(ctx, {
+      ownerPublisherId: pkg.ownerPublisherId,
+      ownerUserId: pkg.ownerUserId,
+    }),
+  );
+  return { pkg, publicPackage, latestRelease, owner };
+}
+
+export const getPluginDetailForViewerInternal = internalQuery({
+  args: {
+    name: v.string(),
+    version: v.optional(v.string()),
+    viewerUserId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args) => {
-    const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
-    if (!pkg) return null;
-    const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-    const publicPackage = toPublicPackage(pkg, latestRelease);
-    if (!publicPackage) return null;
-    const owner = toPublicPublisher(
-      await getOwnerPublisher(ctx, {
-        ownerPublisherId: pkg.ownerPublisherId,
-        ownerUserId: pkg.ownerUserId,
-      }),
+    const snapshot = await readPackageSnapshotForViewer(ctx, args);
+    if (!snapshot) return null;
+    const { pkg, publicPackage, latestRelease, owner } = snapshot;
+    if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") return null;
+    const release =
+      !args.version || latestRelease?.version === args.version
+        ? latestRelease
+        : await ctx.db
+            .query("packageReleases")
+            .withIndex("by_package_version", (q) =>
+              q.eq("packageId", pkg._id).eq("version", args.version!),
+            )
+            .unique();
+    const selectedRelease = isPublishedPackageRelease(release) ? release : null;
+    // Select metadata, history and trust from one snapshot. The HTTP action only
+    // reads the selected README blob, so later reads cannot drift to a new release.
+    const [versions, taggedReleases, publicDownloadBlocked] = await Promise.all([
+      paginatePublishedPackageReleases(ctx, pkg._id, { cursor: null, numItems: 10 }),
+      Promise.all(Object.values(pkg.tags).map((id) => ctx.db.get(id))),
+      isPackageBlockedFromPublic(publicPackage.scanStatus)
+        ? viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId).then((allowed) => !allowed)
+        : false,
+    ]);
+    const tagVersions = new Map(
+      taggedReleases
+        .filter((tagged): tagged is Doc<"packageReleases"> =>
+          Boolean(tagged && !tagged.softDeletedAt),
+        )
+        .map((tagged) => [tagged._id, tagged.version]),
     );
     return {
-      package: publicPackage,
-      latestRelease: isPublishedPackageRelease(latestRelease)
-        ? toPublicPackageRelease(latestRelease, pkg.family)
-        : null,
+      package: { ...publicPackage, publicDownloadBlocked },
       owner,
+      tags: Object.fromEntries(
+        Object.entries(pkg.tags).flatMap(([tag, id]) => {
+          const version = tagVersions.get(id);
+          return version ? [[tag, version]] : [];
+        }),
+      ),
+      release: selectedRelease ? toPublicPluginRelease(selectedRelease) : null,
+      versions: {
+        items: versions.page.map(({ version, createdAt, changelog, distTags }) => ({
+          version,
+          createdAt,
+          changelog,
+          distTags: distTags ?? [],
+        })),
+        nextCursor: versions.isDone ? null : versions.continueCursor,
+      },
     };
   },
 });
@@ -3426,34 +3514,37 @@ export const getVersionByNameForViewerInternal = internalQuery({
     version: v.string(),
     viewerUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, args) => {
-    const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
-    if (!pkg) return null;
-    const release = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_version", (q) =>
-        q.eq("packageId", pkg._id).eq("version", args.version),
-      )
-      .unique();
-    if (!isPublishedPackageRelease(release)) return null;
-    const latestRelease =
-      pkg.latestReleaseId === release._id
-        ? release
-        : pkg.latestReleaseId
-          ? await ctx.db.get(pkg.latestReleaseId)
-          : null;
-    const publicPackage = toPublicPackage(pkg, latestRelease);
-    if (!publicPackage) return null;
-    return {
-      package: publicPackage,
-      version: {
-        ...toPublicPackageRelease(release, pkg.family),
-        // Internal HTTP handlers need the opaque storage id to stream exact ClawPack bytes.
-        ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
-      },
-    };
-  },
+  handler: readPackageVersionForViewer,
 });
+
+export async function readPackageVersionForViewer(
+  ctx: QueryCtx,
+  args: { name: string; version: string; viewerUserId?: Id<"users"> },
+) {
+  const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
+  if (!pkg) return null;
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
+    .unique();
+  if (!isPublishedPackageRelease(release)) return null;
+  const latestRelease =
+    pkg.latestReleaseId === release._id
+      ? release
+      : pkg.latestReleaseId
+        ? await ctx.db.get(pkg.latestReleaseId)
+        : null;
+  const publicPackage = toPublicPackage(pkg, latestRelease);
+  if (!publicPackage) return null;
+  return {
+    package: publicPackage,
+    version: {
+      ...toPublicPackageRelease(release, pkg.family),
+      // Internal HTTP handlers need the opaque storage id to stream exact ClawPack bytes.
+      ...(release.clawpackStorageId ? { clawpackStorageId: release.clawpackStorageId } : {}),
+    },
+  };
+}
 
 export const resolveVersionCategoriesBatchInternal = internalQuery({
   args: {
@@ -4548,6 +4639,7 @@ async function listPackagePageImpl(
       nextOffset = index + 1;
       const pkg = await ctx.db.get(entry.packageId);
       if (!pkg || pkg.softDeletedAt) continue;
+      if (getPluginDiscoveryExclusion(pkg.categories)) continue;
       if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
       if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
       page.push(await toPublicPackageListItemFromPackage(ctx, pkg));
@@ -5051,6 +5143,47 @@ export const searchForViewerInternal = internalQuery({
   },
 });
 
+type PackageSearchBatchReads = {
+  highlighted?: Promise<Array<{ digest: PackageDigestLike; featuredAt: number }>>;
+  official?: Promise<PackageDigestLike[][]>;
+  fallback?: Promise<PackageDigestLike[]>;
+  publicItems: Map<string, Promise<PublicPackageListItem>>;
+};
+
+export const searchPublicDiscoveryBatchInternal = internalQuery({
+  args: { queries: v.array(v.string()), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 3;
+    if (args.queries.length > 10 || !Number.isInteger(limit) || limit < 1 || limit > 3) {
+      throw new ConvexError("Discovery search accepts at most 10 queries and 1–3 results each.");
+    }
+    // Share only within this transaction and identical family/filter/limit scope.
+    // Each term retains canonical recall and ranking without rereading common catalog rows.
+    const families = (["code-plugin", "bundle-plugin"] as const).map((family) => ({
+      family,
+      reads: { publicItems: new Map() } as PackageSearchBatchReads,
+    }));
+    const results = [];
+    for (const queryText of args.queries) {
+      const entries = (
+        await Promise.all(
+          families.map(({ family, reads }) =>
+            searchPackagesImpl(ctx, { query: queryText, family, limit }, reads),
+          ),
+        )
+      ).flat();
+      results.push({
+        query: queryText,
+        identities: entries
+          .sort(compareCatalogSearchEntries)
+          .slice(0, limit)
+          .map((entry) => `plugin:${entry.package.name}`),
+      });
+    }
+    return results;
+  },
+});
+
 async function searchPackagesImpl(
   ctx: DbReaderCtx,
   args: {
@@ -5066,6 +5199,7 @@ async function searchPackagesImpl(
     excludedScanStatuses?: PackageListScanStatus[];
     viewerUserId?: Id<"users">;
   },
+  batchReads?: PackageSearchBatchReads,
 ) {
   const queryText = args.query.trim().toLowerCase();
   if (!queryText) return [];
@@ -5079,6 +5213,15 @@ async function searchPackagesImpl(
   const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
   if (args.topic !== undefined && !topic) return [];
+  const publicItem = (digest: PackageDigestLike, featuredAt?: number) => {
+    const id = String(digest.packageId);
+    let item = batchReads?.publicItems.get(id);
+    if (!item) {
+      item = toPublicPackageListItem(ctx, digest, featuredAt);
+      batchReads?.publicItems.set(id, item);
+    }
+    return item;
+  };
   if (args.highlightedOnly) {
     const highlightedEntries = await fetchHighlightedPackageEntries(ctx, {
       ...args,
@@ -5113,7 +5256,7 @@ async function searchPackagesImpl(
       results.push({
         score: entry.score,
         rankTier: entry.rankTier,
-        package: await toPublicPackageListItem(ctx, entry.package, entry.featuredAt),
+        package: await publicItem(entry.package, entry.featuredAt),
       });
     }
     return results;
@@ -5150,15 +5293,24 @@ async function searchPackagesImpl(
   const seen = new Set<string>();
   const shouldRecallOfficial =
     args.isOfficial === undefined && args.channel !== "community" && args.channel !== "private";
-  const [highlightedEntries, officialDigestGroups, directDigests] = await Promise.all([
-    fetchHighlightedPackageEntries(ctx, { ...args, category, topic }),
-    shouldRecallOfficial
+  const highlighted =
+    batchReads?.highlighted ?? fetchHighlightedPackageEntries(ctx, { ...args, category, topic });
+  const official =
+    batchReads?.official ??
+    (shouldRecallOfficial
       ? Promise.all(
           searchFamilies.map(async (family) =>
             buildSearchDigestQuery(family, true).order("desc").take(MAX_PUBLIC_LIST_PAGE_SIZE),
           ),
         )
-      : Promise.resolve([]),
+      : Promise.resolve([]));
+  if (batchReads) {
+    batchReads.highlighted = highlighted;
+    batchReads.official = official;
+  }
+  const [highlightedEntries, officialDigestGroups, directDigests] = await Promise.all([
+    highlighted,
+    official,
     category && !topic
       ? Promise.resolve([])
       : Promise.all(
@@ -5185,11 +5337,7 @@ async function searchPackagesImpl(
     seen.add(digest.packageId);
     matches.push({
       ...match,
-      package: await toPublicPackageListItem(
-        ctx,
-        digest,
-        featuredAtByPackage.get(String(digest.packageId)),
-      ),
+      package: await publicItem(digest, featuredAtByPackage.get(String(digest.packageId))),
     });
   }
 
@@ -5211,11 +5359,7 @@ async function searchPackagesImpl(
         seen.add(digest.packageId);
         matches.push({
           ...match,
-          package: await toPublicPackageListItem(
-            ctx,
-            digest,
-            featuredAtByPackage.get(String(digest.packageId)),
-          ),
+          package: await publicItem(digest, featuredAtByPackage.get(String(digest.packageId))),
         });
       }
     };
@@ -5261,17 +5405,18 @@ async function searchPackagesImpl(
         }
       }
     } else {
-      const digests = (
-        await Promise.all(
+      const fallback =
+        batchReads?.fallback ??
+        Promise.all(
           searchFamilies.map(
             async (family) =>
               (await buildSearchDigestQuery(family)
                 .order("desc")
                 .take(scanLimit)) as PackageDigestLike[],
           ),
-        )
-      ).flat();
-      await collectDigestMatches(digests);
+        ).then((groups) => groups.flat());
+      if (batchReads) batchReads.fallback = fallback;
+      await collectDigestMatches(await fallback);
     }
   }
 
@@ -12822,11 +12967,11 @@ async function setPackageFeaturedForActor(
   featured: boolean,
 ) {
   const now = Date.now();
-  if (featured) {
-    await upsertPackageBadge(ctx, pkg._id, "highlighted", actor._id, now);
-  } else {
-    await removePackageBadge(ctx, pkg._id, "highlighted");
-  }
+  const changed = featured
+    ? await upsertPackageBadge(ctx, pkg, "highlighted", actor._id, now)
+    : await removePackageBadge(ctx, pkg._id, "highlighted");
+  const result = { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
+  if (!changed) return result;
 
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
@@ -12837,7 +12982,7 @@ async function setPackageFeaturedForActor(
     createdAt: now,
   });
 
-  return { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
+  return result;
 }
 
 export const setPackageFeaturedForUserInternal = internalMutation({

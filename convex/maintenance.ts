@@ -10,6 +10,7 @@ import {
   syncPackageSearchDigestForPackageId,
 } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import {
@@ -1915,8 +1916,8 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
     at: v.number(),
   },
   handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
     const syncDenormalizedBadge = async () => {
-      const skill = await ctx.db.get(args.skillId);
       if (!skill) return;
       await ctx.db.patch(args.skillId, {
         badges: {
@@ -1933,6 +1934,15 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
     if (existing) {
       await syncDenormalizedBadge();
       return { inserted: false as const };
+    }
+    // Restore persisted legacy membership even above the cap. Only a new
+    // selection consumes capacity; an upgrade must not silently drop selections.
+    if (
+      args.kind === "highlighted" &&
+      !skill?.badges?.highlighted &&
+      skill?.batch !== "highlighted"
+    ) {
+      await assertFeaturedCapacity(ctx, "skill");
     }
     await ctx.db.insert("skillBadges", {
       skillId: args.skillId,

@@ -1627,6 +1627,9 @@ function makeDigestCtx(options: {
               withIndex: vi.fn(() => ({
                 order: vi.fn(() => ({
                   take: vi.fn().mockResolvedValue(options.highlightedBadges ?? []),
+                  async *[Symbol.asyncIterator]() {
+                    yield* options.highlightedBadges ?? [];
+                  },
                 })),
               })),
             };
@@ -2933,13 +2936,24 @@ function makePackageCtx(options: {
           if (table === "packageReleases") {
             const filteredVersionsPage = {
               ...versionsPage,
-              page: versionsPage.page.filter((release) => release.softDeletedAt === undefined),
+              page: versionsPage.page.filter(
+                (release) =>
+                  release.softDeletedAt === undefined &&
+                  release.ownerDeletedAt === undefined &&
+                  (release.publicationStatus === undefined ||
+                    release.publicationStatus === "published"),
+              ),
             };
             return {
               withIndex: vi.fn((indexName: string) => {
                 releaseIndexNames.push(indexName);
                 if (indexName === "by_package_active_created") {
                   return {
+                    filter: vi.fn(() => ({
+                      order: vi.fn(() => ({
+                        paginate: vi.fn().mockResolvedValue(filteredVersionsPage),
+                      })),
+                    })),
                     order: vi.fn(() => ({
                       paginate: vi.fn().mockResolvedValue(filteredVersionsPage),
                     })),
@@ -7459,7 +7473,7 @@ describe("packages public queries", () => {
   });
 
   it("fills public package version pages after skipping pending releases", async () => {
-    const releases = [
+    const releases: Array<Record<string, unknown>> = [
       makeReleaseDoc({
         _id: "packageReleases:pending",
         version: "2.0.0",
@@ -7470,8 +7484,11 @@ describe("packages public queries", () => {
         version: "1.0.0",
       }),
     ];
-    const paginate = vi.fn(
+    const paginateUnfiltered = vi.fn(
       async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+        if (cursor !== null) {
+          throw new Error("A query can only invoke paginate once");
+        }
         const start = cursor ? Number(cursor) : 0;
         const page = releases.slice(start, start + numItems);
         const next = start + page.length;
@@ -7479,6 +7496,22 @@ describe("packages public queries", () => {
           page,
           isDone: next >= releases.length,
           continueCursor: next >= releases.length ? "" : String(next),
+        };
+      },
+    );
+    const paginatePublished = vi.fn(
+      async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+        const published = releases.filter(
+          (release) =>
+            release.publicationStatus === undefined || release.publicationStatus === "published",
+        );
+        const start = cursor ? Number(cursor) : 0;
+        const page = published.slice(start, start + numItems);
+        const next = start + page.length;
+        return {
+          page,
+          isDone: next >= published.length,
+          continueCursor: next >= published.length ? "" : String(next),
         };
       },
     );
@@ -7503,8 +7536,13 @@ describe("packages public queries", () => {
               withIndex: vi.fn((indexName: string) => {
                 releaseIndexNames.push(indexName);
                 return {
+                  filter: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      paginate: paginatePublished,
+                    })),
+                  })),
                   order: vi.fn(() => ({
-                    paginate,
+                    paginate: paginateUnfiltered,
                   })),
                 };
               }),
@@ -7525,9 +7563,14 @@ describe("packages public queries", () => {
       isDone: true,
       continueCursor: "",
     });
-    expect(paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 1 });
-    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "1", numItems: 1 });
-    expect(releaseIndexNames).toEqual(["by_package_active_created", "by_package_active_created"]);
+    expect(paginatePublished).toHaveBeenCalledTimes(1);
+    expect(paginatePublished).toHaveBeenCalledWith({
+      cursor: null,
+      numItems: 1,
+      maximumRowsRead: 6,
+    });
+    expect(paginateUnfiltered).not.toHaveBeenCalled();
+    expect(releaseIndexNames).toEqual(["by_package_active_created"]);
   });
 
   it("soft-deletes packages and active releases for the owner", async () => {

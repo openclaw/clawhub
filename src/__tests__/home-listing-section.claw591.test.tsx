@@ -301,9 +301,12 @@ describe("HomeListingSection", () => {
     );
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
-    expect(convexQueryMock).toHaveBeenCalledWith(
-      "skills:listPublicPageV4",
-      expect.objectContaining({ highlightedOnly: true }),
+    // The Featured request runs in the effect after the tab change commits.
+    await waitFor(() =>
+      expect(convexQueryMock).toHaveBeenCalledWith(
+        "skills:listPublicPageV4",
+        expect.objectContaining({ highlightedOnly: true }),
+      ),
     );
   });
 
