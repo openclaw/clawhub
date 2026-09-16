@@ -2,6 +2,7 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { type FunctionReference, getFunctionName } from "convex/server";
+import { convexToJson, jsonToConvex, type Value } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./lib/clawpack";
 import { verifyOpenClawPublishAuthorization } from "./lib/openClawPublishAuthorization";
@@ -79,6 +80,7 @@ import {
   searchForViewerInternal,
   searchPublic,
 } from "./packages";
+import { preview as previewPluginCategoryRefresh } from "./pluginCategoryRefresh";
 import { runStaticPublishScanInternal } from "./staticPublishScanNode";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -12961,6 +12963,7 @@ describe("packages public queries", () => {
       bundleManifest?: Record<string, unknown>,
       declaredCategories?: string[],
       portableIcon?: Uint8Array,
+      documentation?: Array<{ path: string; text: string }>,
     ) {
       const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
         if ("sha256" in args && "contentType" in args) return args;
@@ -12994,9 +12997,13 @@ describe("packages public queries", () => {
             icon,
             categories: declaredCategories,
             description: "Manages appointments and availability.",
-            contracts: { tools: ["demoTool"] },
+            contracts: { webFetchProviders: ["fetch"], tools: ["demoTool"] },
+            ...(documentation ? { skills: ["./skills"] } : {}),
           }),
         ],
+        ...(documentation ?? []).map(
+          ({ path, text }) => [`storage:${path}`, text] as [string, string],
+        ),
         ...(bundleManifest
           ? ([["storage:bundle-manifest", JSON.stringify(bundleManifest)]] as Array<
               [string, string]
@@ -13098,6 +13105,13 @@ describe("packages public queries", () => {
               sha256: "code",
               contentType: "application/javascript",
             },
+            ...(documentation ?? []).map(({ path, text }) => ({
+              path,
+              size: new TextEncoder().encode(text).byteLength,
+              storageId: `storage:${path}`,
+              sha256: "documentation",
+              contentType: "text/markdown",
+            })),
             ...(portableIcon
               ? [
                   {
@@ -13120,7 +13134,47 @@ describe("packages public queries", () => {
           (args as { name?: string }).name === "demo-plugin" &&
           (args as { version?: string }).version === "1.0.0",
       );
-      return insertCall?.[1] as Record<string, unknown>;
+      const published = insertCall?.[1] as Record<string, unknown>;
+      if (documentation) {
+        const previewMutation = vi.fn(
+          async (
+            _ref: unknown,
+            _args: {
+              classification: { inputHash: string };
+            },
+          ) => "preview:same-release",
+        );
+        const previewHandler = (
+          previewPluginCategoryRefresh as unknown as WrappedHandler<
+            { runId: string },
+            { previewed: number; failed: number }
+          >
+        )._handler;
+        const result = await previewHandler(
+          {
+            storage: ctx.storage,
+            runQuery: vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+              "batchSize" in args
+                ? { ids: ["packages:demo"], cursor: "done", isDone: true }
+                : {
+                    pkg: { name: "demo-plugin", family: published.family },
+                    release: jsonToConvex(
+                      convexToJson({ ...published, _id: "releases:demo-1" } as Value),
+                    ),
+                    beforeHash: "same-release",
+                  },
+            ),
+            runMutation: previewMutation,
+          },
+          { runId: "same-published-artifact" },
+        );
+        expect(result).toMatchObject({ previewed: 1, failed: 0 });
+        const preview = previewMutation.mock.calls[0][1];
+        expect
+          .soft(preview.classification.inputHash, documentation.map(({ path }) => path).join(", "))
+          .toBe((published.categoryClassification as { inputHash: string }).inputHash);
+      }
+      return published;
     }
 
     const portableIcon = new Uint8Array(
@@ -13160,9 +13214,47 @@ describe("packages public queries", () => {
       pluginManifestSummary: { categories: ["scheduling"] },
     });
 
+    for (const documentation of [
+      [
+        {
+          path: "skills/appointments/SKILL.md",
+          text: "Calendar appointments and booking availability.",
+        },
+      ],
+      [
+        { path: "README.md", text: "Packaging notes. ".repeat(1_500) },
+        {
+          path: "skills/appointments/SKILL.md",
+          text: "Calendar appointments and booking availability.",
+        },
+      ],
+      [{ path: "README.mdx", text: "Calendar appointments and booking availability." }],
+    ]) {
+      modelFetch.mockClear();
+      await publishWithManifestIcon(
+        undefined,
+        { name: "Appointments", skills: ["./skills"] },
+        undefined,
+        undefined,
+        documentation,
+      );
+      expect(modelFetch).toHaveBeenCalledTimes(2);
+      for (const [, request] of modelFetch.mock.calls as unknown as Array<[string, RequestInit]>) {
+        const input = JSON.parse(JSON.parse(request.body as string).input);
+        expect
+          .soft(input.documentation)
+          .toContain("Calendar appointments and booking availability.");
+      }
+    }
+
     modelFetch.mockClear();
     await expect(
-      publishWithManifestIcon(undefined, undefined, ["productivity"]),
+      publishWithManifestIcon(undefined, undefined, ["productivity"], undefined, [
+        {
+          path: "skills/appointments/SKILL.md",
+          text: "Calendar appointments and booking availability.",
+        },
+      ]),
     ).resolves.toMatchObject({
       categories: ["productivity"],
       categoryClassification: { source: "manifest" },

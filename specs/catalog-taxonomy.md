@@ -35,7 +35,9 @@
   latest release also updates the package-level categories used by browse, search, and filters.
 - Plugin categories are package-owned and are not editable in ClawHub publish or settings UI.
   Publishers change them by publishing a new package version.
-- Backports and non-latest plugin releases do not replace current categories.
+- Backports and non-latest plugin releases do not replace current categories. When administrative
+  cleanup repoints latest to a surviving release, package categories follow that exact release’s
+  stored summary; missing historical evidence does not retain the removed release’s category.
 - Capability tags are not taxonomy inputs.
 - A reviewed one-time refresh covers only each plugin's latest published release and package
   projection. Older releases are unchanged; exact-version lookup remains null for historical
@@ -105,7 +107,15 @@
 
 ## Follow-Up
 
-The product-category refresh uses the same bounded static-evidence classifier as publication.
+The product-category refresh and publication use the same static-evidence classifier and
+bounded documentation collector. Both select root README.md/README.mdx and declared bundled
+SKILL.md files first, followed by other bounded README/SKILL documentation. Selection is
+deterministic and preserves file-path provenance. The collector
+shares its 16,000-character budget across at most eight files so a long README cannot consume
+all evidence space before a declared skill is read; files above 512,000 bytes are excluded.
+Static metadata uses Convex’s canonical recursive key ordering before model input and hashing,
+so persistence cannot change classification evidence for the same artifact. Runtime source is
+not a classification input.
 It never executes plugin code, imports another marketplace, or filters by license. Explicit
 current single-purpose manifest declarations win; canonical database categories alone do not
 establish authorship. Legacy capability lists and retired categories are reclassified rather than

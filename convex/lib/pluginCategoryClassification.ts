@@ -4,11 +4,14 @@ import {
   PLUGIN_CATEGORY_DEFINITIONS,
   type PluginCategorySlug,
 } from "clawhub-schema";
-import { v } from "convex/values";
+import { convexToJson, v, type Value } from "convex/values";
+import type { ActionCtx } from "../_generated/server";
 import { sha256Hex } from "./clawpack";
 import { extractResponseText } from "./openaiResponse";
+import { derivePluginManifestSummary, toConvexSafeJsonValue } from "./packageRegistry";
 
 export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v5";
+const DOCUMENTATION_CHARACTER_LIMIT = 16_000;
 export const pluginCategoryClassificationValidator = v.object({
   source: v.union(
     v.literal("manifest"),
@@ -51,6 +54,7 @@ function staticMetadata(value: unknown) {
       "cliBackends",
       "contracts",
       "skills",
+      "bundledSkills",
       "mcpServers",
     ]
       .filter((key) => Object.hasOwn(record, key))
@@ -59,13 +63,62 @@ function staticMetadata(value: unknown) {
 }
 
 function boundedEvidence(input: PluginCategoryEvidence) {
+  // Match Convex's recursive key ordering before hashing or sending evidence, so
+  // persistence cannot change the classifier input for the same published artifact.
+  const serializeMetadata = (value: unknown) =>
+    JSON.stringify(convexToJson(toConvexSafeJsonValue(staticMetadata(value)) as Value));
   return JSON.stringify({
     name: input.name.slice(0, 256),
-    manifest: JSON.stringify(staticMetadata(input.pluginManifest)).slice(0, 12_000),
-    package: JSON.stringify(staticMetadata(input.packageJson)).slice(0, 4_000),
-    bundle: JSON.stringify(staticMetadata(input.bundleManifest)).slice(0, 8_000),
-    documentation: (input.documentation ?? "").slice(0, 16_000),
+    manifest: serializeMetadata(input.pluginManifest).slice(0, 12_000),
+    package: serializeMetadata(input.packageJson).slice(0, 4_000),
+    bundle: serializeMetadata(input.bundleManifest).slice(0, 8_000),
+    documentation: (input.documentation ?? "").slice(0, DOCUMENTATION_CHARACTER_LIMIT),
   });
+}
+
+// Publication and refresh must classify identical artifact evidence. Prioritize
+// declared skills and divide the budget so a long README cannot hide their purpose.
+export async function readPluginCategoryDocumentation(
+  ctx: Pick<ActionCtx, "storage">,
+  input: {
+    files: Array<{ path: string; size: number; sha256: string; storageId: string }>;
+    pluginManifest?: unknown;
+    bundleManifest?: unknown;
+  },
+): Promise<string> {
+  const declaredSkills = new Set(
+    [input.pluginManifest, input.bundleManifest].flatMap((manifest) =>
+      derivePluginManifestSummary({
+        pluginManifest: staticMetadata(manifest),
+        files: input.files,
+      }).bundledSkills.map((skill) => skill.skillMdPath),
+    ),
+  );
+  const priority = (path: string) =>
+    /^readme\.mdx?$/i.test(path) ? 0 : declaredSkills.has(path) ? 1 : 2;
+  const files = input.files
+    .filter(
+      (file) => file.size <= 512_000 && /(?:^|\/)(?:readme\.mdx?|skills?\.md)$/i.test(file.path),
+    )
+    .sort(
+      (a, b) =>
+        priority(a.path) - priority(b.path) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+    )
+    .slice(0, 8);
+  const perFileLimit = Math.floor(DOCUMENTATION_CHARACTER_LIMIT / Math.max(1, files.length));
+  const docs: string[] = [];
+  for (const file of files) {
+    const label = `[${file.path.slice(0, 512)}]\n`;
+    const textLimit = perFileLimit - label.length - 1;
+    const blob = await ctx.storage.get(file.storageId as never);
+    if (!blob) throw new Error(`Plugin documentation unavailable: ${file.path}`);
+    const text = (await blob.slice(0, Math.min(blob.size, textLimit * 4)).text()).slice(
+      0,
+      textLimit,
+    );
+    docs.push(label + text);
+  }
+  return docs.join("\n");
 }
 
 /** Shared by publication and the latest-release refresh; stored categories are not authorship. */

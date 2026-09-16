@@ -18,6 +18,7 @@ import {
 } from "./lib/packageRegistry";
 import {
   classifyPluginCategories,
+  readPluginCategoryDocumentation,
   PLUGIN_CATEGORY_CLASSIFIER_VERSION,
   pluginCategoryClassificationValidator,
 } from "./lib/pluginCategoryClassification";
@@ -259,25 +260,11 @@ export const preview = internalAction({
           continue;
         }
         const { pluginManifest, bundleManifest } = manifests;
-        const docs: string[] = [];
-        let remaining = 16_000;
-        for (const file of current.release.files
-          .filter(
-            (candidate) =>
-              candidate.size <= 512_000 && /(?:^|\/)(?:readme|skills?)\.md$/i.test(candidate.path),
-          )
-          .sort((a, b) => a.path.localeCompare(b.path))
-          .slice(0, 8)) {
-          if (remaining <= 0) break;
-          const blob = await ctx.storage.get(file.storageId);
-          if (!blob) continue;
-          const text = (await blob.slice(0, Math.min(blob.size, remaining * 4)).text()).slice(
-            0,
-            remaining,
-          );
-          docs.push(text);
-          remaining -= text.length;
-        }
+        const documentation = await readPluginCategoryDocumentation(ctx, {
+          files: current.release.files,
+          pluginManifest,
+          bundleManifest,
+        });
         // Current single-purpose declarations remain authoritative; older capability
         // categories are refreshed from reviewed source without rewriting the artifact.
         const assignment =
@@ -300,7 +287,7 @@ export const preview = internalAction({
                   pluginManifest,
                   packageJson: current.release.extractedPackageJson,
                   bundleManifest,
-                  documentation: docs.join("\n"),
+                  documentation,
                 },
                 // Legacy declarations remain readable but no longer choose discovery purpose.
                 { allowLegacyDeclarations: true },

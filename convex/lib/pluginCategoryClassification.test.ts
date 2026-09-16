@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { classifyPluginCategories } from "./pluginCategoryClassification";
+import {
+  classifyPluginCategories,
+  readPluginCategoryDocumentation,
+} from "./pluginCategoryClassification";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -129,4 +132,67 @@ describe("single-purpose plugin classification", () => {
       });
     },
   );
+});
+
+describe("plugin classification documentation", () => {
+  it.each(["plugin", "bundle"])(
+    "preserves %s-declared skill evidence within the shared file and character budgets",
+    async (declaration) => {
+      const contents = new Map([
+        ["README.md", "Package overview. ".repeat(1_500)],
+        ["skills/appointments/SKILL.md", "Review calendar appointments and booking availability."],
+        ...Array.from({ length: 9 }, (_, index): [string, string] => [
+          `a${index}/README.md`,
+          "Secondary documentation.",
+        ]),
+      ]);
+      const files = [...contents].map(([path, text]) => ({
+        path,
+        size: new TextEncoder().encode(text).byteLength,
+        storageId: path,
+        sha256: "published-doc",
+      }));
+      files.push(
+        { path: "README.mdx", size: 512_001, storageId: "oversized", sha256: "oversized" },
+        { path: "index.js", size: 10, storageId: "runtime", sha256: "runtime" },
+      );
+      const get = vi.fn(async (id: string) => {
+        const text = contents.get(id);
+        if (text === undefined) throw new Error("Read outside bounded documentation");
+        return new Blob([text]);
+      });
+      const input = {
+        files,
+        pluginManifest:
+          declaration === "plugin" ? { skills: ["./skills"] } : { id: "appointments" },
+        bundleManifest:
+          declaration === "bundle" ? { bundledSkills: ["./skills"] } : { name: "Appointments" },
+      };
+      const documentation = await readPluginCategoryDocumentation(
+        { storage: { get } } as never,
+        input,
+      );
+      expect(documentation).toContain("Package overview.");
+      expect(documentation).toContain("[skills/appointments/SKILL.md]");
+      expect(documentation).toContain("Review calendar appointments and booking availability.");
+      expect(documentation.length).toBeLessThanOrEqual(16_000);
+      expect(get).toHaveBeenCalledTimes(8);
+      const reversedFiles = [...files];
+      reversedFiles.reverse();
+      await expect(
+        readPluginCategoryDocumentation({ storage: { get } } as never, {
+          ...input,
+          files: reversedFiles,
+        }),
+      ).resolves.toBe(documentation);
+    },
+  );
+
+  it("reports a missing selected document instead of classifying incomplete artifact evidence", async () => {
+    await expect(
+      readPluginCategoryDocumentation({ storage: { get: async () => null } } as never, {
+        files: [{ path: "README.md", size: 50, storageId: "missing", sha256: "published-doc" }],
+      }),
+    ).rejects.toThrow("README.md");
+  });
 });
