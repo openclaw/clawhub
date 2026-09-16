@@ -365,9 +365,20 @@ skills
   .command("plan-scan-workers <job-ids-file>")
   .description("Prepare local workflow inputs for disjoint, already-admitted bulk skill jobs")
   .requiredOption("--batch-limit <number>", "Scans in parallel per shared worker")
-  .action(async (file: string, options: { batchLimit: string }) => {
+  .option(
+    "--shared-workers <number>",
+    "Shared worker machines (9 or 18); drain old workers before changing",
+    "9",
+  )
+  .action(async (file: string, options: { batchLimit: string; sharedWorkers: string }) => {
     const ids: unknown = JSON.parse(await readFile(resolve(file), "utf8"));
-    console.log(JSON.stringify(planScanWorkers(ids, Number(options.batchLimit)), null, 2));
+    console.log(
+      JSON.stringify(
+        planScanWorkers(ids, Number(options.batchLimit), Number(options.sharedWorkers)),
+        null,
+        2,
+      ),
+    );
   });
 
 const promotions = program

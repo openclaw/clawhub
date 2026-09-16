@@ -14,9 +14,14 @@ on:
         required: true
         default: "4"
       assigned-jobs:
-        description: "Optional JSON of nine disjoint bulk skill job ID arrays from the local coordinator"
+        description: "Optional JSON of disjoint bulk skill job ID arrays, one per shared worker"
         required: false
         default: ""
+      shared-workers:
+        description: "Shared machines for assigned jobs; drain the old pool before changing"
+        type: choice
+        options: ["9", "18"]
+        default: "9"
       max-jobs:
         description: "Optional total jobs cap per worker shard"
         required: false
@@ -39,34 +44,19 @@ jobs:
       cancel-in-progress: false
     strategy:
       fail-fast: false
-      max-parallel: 10
+      max-parallel: 19
       matrix:
+        lane: [shared]
+        shard: ${{ fromJSON(inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
         include:
           - lane: priority
             shard: priority-0
-          - lane: shared
-            shard: shared-0
-          - lane: shared
-            shard: shared-1
-          - lane: shared
-            shard: shared-2
-          - lane: shared
-            shard: shared-3
-          - lane: shared
-            shard: shared-4
-          - lane: shared
-            shard: shared-5
-          - lane: shared
-            shard: shared-6
-          - lane: shared
-            shard: shared-7
-          - lane: shared
-            shard: shared-8
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
+      CODEX_SECURITY_SCAN_SHARED_WORKERS: ${{ inputs['shared-workers'] || '9' }}
       CODEX_SECURITY_SCAN_ASSIGNED_JOBS: ${{ inputs['assigned-jobs'] || '' }}
       CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
       CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}

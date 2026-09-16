@@ -167,7 +167,9 @@ first failed batch drains.
 ### Local bulk scan assignments
 
 `skills plan-scan-workers` prepares workflow inputs locally from **existing admitted
-job IDs**, split across the nine shared shards. It does not admit scans, dispatch
+job IDs**, split across nine shared shards by default. `--shared-workers 18`
+spreads them across eighteen machines independently of `--batch-limit`, which
+controls concurrent scans on each machine. It does not admit scans, dispatch
 workers, change capacity automatically, or store campaign state on the server.
 The reserved priority shard continues processing its normal queue.
 
@@ -177,6 +179,15 @@ bun run admin -- skills plan-scan-workers queued-job-ids.json --batch-limit 32 >
 jq '.inputs' worker-plan.json | gh workflow run security-scan-codex.yml --repo openclaw/clawhub --ref main --json
 ```
 
+To compare machine fan-out without doubling total scan concurrency, compare
+nine workers at `--batch-limit 64` with eighteen at `--batch-limit 32`.
+Drain the old shared worker pool and stop pending old-pool dispatches before
+changing the worker count: changing the pool changes job-to-shard ownership.
+Keep admission receipts and queued IDs, then refresh status and generate the
+new plan. Use the plan's complete `inputs` object with a matching worker release;
+mismatched assignment and worker counts fail before any shared job is claimed.
+The priority worker remains independent of bulk assignment validation.
+
 The input is a JSON array of 1–10000 `securityScanJobs` IDs from saved admission
 receipts. Refresh their status first using the admin batch-status API and collect
 its `queuedJobIds` for the intended bulk skill campaign. Older servers omit this
@@ -184,7 +195,7 @@ field; wait for the backend release instead of assigning all tracked IDs. Runnin
 completed, failed and missing jobs must not occupy the bounded dispatch payload. The output contains workflow `inputs` and explicit `deferredJobIds` for jobs
 that do not fit this dispatch. Keep these IDs in the local backlog for later
 dispatches; never replace or discard them. A dispatch selects at most 1,728 IDs
-in input order across nine disjoint assignments (fewer if longer IDs reach the
+in input order across the selected number of disjoint assignments (fewer if longer IDs reach the
 workflow input payload limit),
 with stable job-to-shard ownership across dispatches and at most 512 IDs per shard, and a twelve-minute claim window. An explicitly
 empty shard stays empty; it never falls back to unrelated jobs. Without assignments,

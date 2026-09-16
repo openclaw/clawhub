@@ -46,7 +46,11 @@ describe("security-scan-codex workflow", () => {
           steps: WorkflowStep[];
           strategy?: {
             "max-parallel"?: number;
-            matrix?: { include?: Array<{ lane?: string; shard?: string }> };
+            matrix?: {
+              lane?: string[];
+              shard?: string;
+              include?: Array<{ lane?: string; shard?: string }>;
+            };
           };
           "timeout-minutes"?: number;
         };
@@ -94,18 +98,22 @@ describe("security-scan-codex workflow", () => {
       group: "clawhub-security-scan-${{ matrix.shard }}",
       "cancel-in-progress": false,
     });
-    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(10);
+    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(19);
+    const matrix = workflow.jobs["codex-security-scan"].strategy?.matrix;
+    expect(matrix?.lane).toEqual(["shared"]);
+    expect(matrix?.shard).toContain("inputs['assigned-jobs'] && inputs['shared-workers'] == '18'");
+    const choices = [...(matrix?.shard ?? "").matchAll(/'(\[.*?\])'/g)].map((match) =>
+      JSON.parse(match[1]),
+    );
+    expect(choices).toEqual([
+      Array.from({ length: 18 }, (_, n) => `shared-${n}`),
+      Array.from({ length: 9 }, (_, n) => `shared-${n}`),
+    ]);
+    expect(jobEnv.CODEX_SECURITY_SCAN_SHARED_WORKERS).toBe(
+      "${{ inputs['shared-workers'] || '9' }}",
+    );
     expect(workflow.jobs["codex-security-scan"].strategy?.matrix?.include).toEqual([
       { lane: "priority", shard: "priority-0" },
-      { lane: "shared", shard: "shared-0" },
-      { lane: "shared", shard: "shared-1" },
-      { lane: "shared", shard: "shared-2" },
-      { lane: "shared", shard: "shared-3" },
-      { lane: "shared", shard: "shared-4" },
-      { lane: "shared", shard: "shared-5" },
-      { lane: "shared", shard: "shared-6" },
-      { lane: "shared", shard: "shared-7" },
-      { lane: "shared", shard: "shared-8" },
     ]);
     expect(jobEnv.CODEX_SECURITY_SCAN_LANE).toBe("${{ matrix.lane }}");
     expect(jobEnv.CODEX_SECURITY_SCAN_LIMIT).toBe(

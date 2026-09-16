@@ -569,6 +569,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Admin batch status exposes queued identities from the same bounded point reads
   as its counts, so completed jobs in partial batches cannot fill the local
   assignment payload. This is an observation; claims still recheck eligibility.
+  The local planner may select nine or eighteen shared worker machines separately
+  from per-worker scan concurrency. Default queue dispatches retain nine shared
+  workers and one reserved priority worker. Changing pool size requires draining
+  the previous shared pool because stable hashing depends on pool size. A worker
+  must reject an assignment count that differs from its dispatched pool size
+  before claiming any shared job; priority work remains independent of that check.
 - Normal scan claims read only enough ready queue rows to fill the worker's
   remaining capacity. Broader pagination is reserved for skipping blocked legacy
   GitHub jobs or the catalog lane's bounded admission window; disabling a rollout

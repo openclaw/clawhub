@@ -1,5 +1,8 @@
-// Match the existing workflow matrix. The priority worker never receives bulk assignments.
-const SHARED_SHARDS = 9;
+// The priority worker never receives bulk assignments. Change pool sizes only
+// after previous shared workers drain: shard ownership depends on pool size.
+function validateSharedWorkers(count: number) {
+  if (count !== 9 && count !== 18) throw new Error("Shared worker count must be 9 or 18");
+}
 const MAX_JOBS_PER_SHARD = 512;
 const MAX_JOBS_PER_DISPATCH = 1728;
 
@@ -15,11 +18,14 @@ function readJobIds(value: unknown): string[] {
   return value;
 }
 
-function parseAssignments(raw: string): string[][] {
+function parseAssignments(raw: string, sharedWorkers: number): string[][] {
+  validateSharedWorkers(sharedWorkers);
   if (raw.length > 65_000) throw new Error("Worker assignments exceed the workflow input budget");
   const value: unknown = JSON.parse(raw);
-  if (!Array.isArray(value) || value.length !== SHARED_SHARDS) {
-    throw new Error("Expected exactly nine shared worker assignments");
+  if (!Array.isArray(value) || value.length !== sharedWorkers) {
+    throw new Error(
+      `Expected exactly ${sharedWorkers === 9 ? "nine" : "eighteen"} shared worker assignments`,
+    );
   }
   const assignments = value.map(readJobIds);
   const ids = assignments.flat();
@@ -31,7 +37,8 @@ function parseAssignments(raw: string): string[][] {
   return assignments;
 }
 
-export function planScanWorkers(value: unknown, batchLimit: number) {
+export function planScanWorkers(value: unknown, batchLimit: number, sharedWorkers = 9) {
+  validateSharedWorkers(sharedWorkers);
   const ids = readJobIds(value);
   if (ids.length === 0 || ids.length > 10_000) {
     throw new Error("Supply 1–10000 admitted job IDs; overflow is returned for later dispatches");
@@ -45,13 +52,13 @@ export function planScanWorkers(value: unknown, batchLimit: number) {
   // Include JSON escaping of the assignment string and reserve space for the
   // workflow input keys. IDs are opaque; longer IDs reduce this dispatch's size.
   let inputBytes = 200;
-  const assignments: string[][] = Array.from({ length: SHARED_SHARDS }, () => []);
+  const assignments: string[][] = Array.from({ length: sharedWorkers }, () => []);
   for (const id of ids) {
     // Stable ownership across overlapping workflow runs: removing completed IDs
     // must not move another job onto a different shard that is already running.
     let hash = 2166136261;
     for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
-    const shard = assignments[hash % SHARED_SHARDS];
+    const shard = assignments[hash % sharedWorkers];
     const encodedBytes = id.length + 5;
     if (
       shard.length === MAX_JOBS_PER_SHARD ||
@@ -66,11 +73,12 @@ export function planScanWorkers(value: unknown, batchLimit: number) {
     }
   }
   const raw = JSON.stringify(assignments);
-  parseAssignments(raw);
+  parseAssignments(raw, sharedWorkers);
   return {
     inputs: {
       "assigned-jobs": raw,
       "batch-limit": String(batchLimit),
+      "shared-workers": String(sharedWorkers),
       "max-runtime-minutes": "12",
     },
     deferredJobIds,
@@ -81,13 +89,16 @@ export function readWorkerAssignment(
   raw: string | undefined,
   lane: string,
   shard: string | undefined,
+  sharedWorkers = 9,
 ): string[] | undefined {
   if (!raw) return undefined;
   if (lane === "priority" && shard === "priority-0") return undefined;
-  const assignments = parseAssignments(raw);
-  const index = Number(shard?.match(/^shared-([0-8])$/)?.[1] ?? Number.NaN);
-  if (lane !== "shared" || !Number.isInteger(index)) {
-    throw new Error("Bulk assignments require a shared-0 through shared-8 worker");
+  const assignments = parseAssignments(raw, sharedWorkers);
+  const index = Number(shard?.match(/^shared-(0|[1-9]\d*)$/)?.[1] ?? Number.NaN);
+  if (lane !== "shared" || !Number.isInteger(index) || index >= sharedWorkers) {
+    throw new Error(
+      `Bulk assignments require a shared-0 through shared-${sharedWorkers - 1} worker`,
+    );
   }
   return assignments[index];
 }

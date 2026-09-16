@@ -2413,6 +2413,7 @@ async function main() {
     process.env.CODEX_SECURITY_SCAN_ASSIGNED_JOBS,
     lane,
     process.env.CODEX_SECURITY_SCAN_SHARD,
+    Number(process.env.CODEX_SECURITY_SCAN_SHARED_WORKERS || "9"),
   );
   logger.info(
     {
