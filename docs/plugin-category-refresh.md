@@ -12,7 +12,12 @@ The **Plugin Category Refresh** GitHub workflow operates on production
 `wry-manatee-359` using the existing Production environment credential. It never
 deploys code. First deploy the matching frontend and backend from main through
 the normal release workflow. Every operation verifies the exact deployed commit
-and public category vocabulary before proceeding.
+and public category vocabulary before proceeding. Dispatch from main even if
+main has advanced: the workflow checks out `expected_sha` and verifies it is an
+ancestor of the main revision that received the dispatch before running any
+repository code. The operator independently verifies its actual Git checkout.
+This requires a deployed revision containing the resumable operator; an older
+operator cannot acquire this behavior just by changing the dispatch revision.
 
 Keep production deployments frozen for the whole refresh window. The SHA check
 is a preflight, not a global deployment lock. Apply starts an asynchronous

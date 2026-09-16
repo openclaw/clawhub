@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, rename, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
@@ -66,9 +66,20 @@ export function parseOptions(env: NodeJS.ProcessEnv): Options {
   requireValue(env.GITHUB_REF === "refs/heads/main", "Production operator requires main.");
   const sha = env.CATEGORY_EXPECTED_SHA ?? "";
   requireValue(
-    /^[a-f0-9]{40}$/.test(sha) && sha === env.GITHUB_SHA,
-    "Exact checkout SHA required.",
+    /^[a-f0-9]{40}$/.test(sha) && /^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? ""),
+    "Exact deployed and dispatch SHAs required.",
   );
+  // GITHUB_SHA identifies the main workflow revision, not the deployed source
+  // checked out by that workflow. Read Git so neither identity can substitute.
+  const checkout = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  requireValue(checkout === sha, "Exact checkout SHA required.");
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", sha, env.GITHUB_SHA!], {
+      stdio: "pipe",
+    });
+  } catch {
+    throw new OperatorError("Checkout must be an ancestor of dispatched main.");
+  }
   requireValue(
     env.CONVEX_DEPLOY_KEY?.startsWith(`prod:${TARGET}|`),
     "Production credential must target wry-manatee-359.",

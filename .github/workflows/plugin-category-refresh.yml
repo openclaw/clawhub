@@ -53,20 +53,33 @@ jobs:
     environment:
       name: Production
     steps:
-      - name: Require exact main revision
+      - name: Require main dispatch and deployed revision
         env:
           CATEGORY_EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" != refs/heads/main || ! "$CATEGORY_EXPECTED_SHA" =~ ^[a-f0-9]{40}$ || "$GITHUB_SHA" != "$CATEGORY_EXPECTED_SHA" ]]; then
-            echo '::error::Category refresh requires the exact deployed main SHA.'
+          if [[ "$GITHUB_REF" != refs/heads/main || ! "$CATEGORY_EXPECTED_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo '::error::Category refresh requires main dispatch and an exact deployed SHA.'
             exit 1
           fi
 
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.expected_sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      # Verify source before executing any checked-out code or exposing the
+      # production credential. Main may advance while deployment stays frozen.
+      - name: Verify deployed main ancestor checkout
+        env:
+          CATEGORY_EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$CATEGORY_EXPECTED_SHA" ]] || ! git merge-base --is-ancestor "$CATEGORY_EXPECTED_SHA" "$GITHUB_SHA"; then
+            echo '::error::Checkout must be the exact deployed ancestor of dispatched main.'
+            exit 1
+          fi
 
       - uses: ./.github/actions/setup-bun
 

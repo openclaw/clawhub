@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import inventory from "../convex/lib/bundledPluginCategoryAssignments.json";
 import { PLUGIN_CATEGORY_CLASSIFIER_VERSION } from "../convex/lib/pluginCategoryClassification";
@@ -11,7 +12,7 @@ import {
   reviewRow,
 } from "./plugin-category-operator";
 
-const sha = "a".repeat(40);
+const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 const id = "a".repeat(32);
 const secondId = "b".repeat(32);
 const env = {
