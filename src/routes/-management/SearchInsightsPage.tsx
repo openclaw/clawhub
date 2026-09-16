@@ -1,15 +1,19 @@
-import { useAction } from "convex/react";
-import { useEffect, useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { FeaturedIntelligenceReport } from "../../../convex/featuredIntelligence";
 import type { SearchInsightArgs, SearchInsightReport } from "../../../convex/lib/searchInsights";
+import type {
+  SearchReportRequest,
+  SearchReportStatus,
+} from "../../../packages/clawhub/src/schema/searchReports";
 import { Button } from "../../components/ui/button";
 import { FeaturedRecommendations } from "./FeaturedRecommendations";
 import { insightTime as date } from "./insightTime";
 
 export function SearchInsightsPage({ endDay }: { endDay?: number }) {
-  const getReport = useAction(api.searchInsights.get);
-  const getRecommendations = useAction(api.featuredIntelligence.get);
+  const startReport = useMutation(api.searchReports.start);
+  const getReport = useAction(api.searchReports.get);
   const [intelligence, setIntelligence] = useState<FeaturedIntelligenceReport | null>(null);
   const [artifactKind, setArtifactKind] = useState<"plugin" | "skill">("plugin");
   const [scope, setScope] = useState<SearchInsightArgs["scope"]>();
@@ -17,45 +21,113 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
   const [window, setWindow] = useState<7 | 30>(7);
   const [view, setView] = useState("all");
   const [refresh, setRefresh] = useState(0);
-  const [report, setReport] = useState<SearchInsightReport | null>(null);
+  const [loadedReport, setReport] = useState<SearchInsightReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [job, setJob] = useState<(SearchReportStatus & { requestKey: string }) | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const windowEnd = endDay ?? new Date(now).setUTCHours(0, 0, 0, 0);
+  const lastRequest = useRef<{ requestKey: string; reportId: string } | null>(null);
+  const input = useMemo<SearchReportRequest>(
+    () => ({
+      view: view === "featured" ? "recommendations" : "demand",
+      endDay: windowEnd,
+      artifactKind,
+      scope,
+      source,
+      window,
+      ...(view === "featured"
+        ? {}
+        : {
+            officialGap: view === "gaps" || view === "company",
+            ...(view === "company" ? { intentKind: "company_product" as const } : {}),
+          }),
+    }),
+    [windowEnd, artifactKind, scope, source, window, view],
+  );
+  const requestKey = JSON.stringify(input);
+  const currentJob = job?.requestKey === requestKey ? job : null;
+  const report = currentJob ? loadedReport : null;
+  const status = useQuery(
+    api.searchReports.status,
+    currentJob
+      ? {
+          reportId: currentJob.reportId,
+          now,
+        }
+      : "skip",
+  );
+  useEffect(() => {
+    // Time alone does not invalidate a Convex query. Refresh expiry checks even
+    // when an open report receives no further lifecycle updates.
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
   useEffect(() => {
     let active = true;
-    setLoading(true);
     setReport(null);
     setIntelligence(null);
     setError(null);
-    const request =
-      view === "featured"
-        ? getRecommendations({ endDay, artifactKind, scope, source, window }).then((value) => {
-            if (active) {
-              setIntelligence(value);
-              setReport(value.searchReport);
-            }
-          })
-        : getReport({
-            endDay,
-            artifactKind,
-            scope,
-            source,
-            window,
-            officialGap: view === "gaps" || view === "company",
-            ...(view === "company" ? { intentKind: "company_product" as const } : {}),
-          }).then((value) => {
-            if (active) setReport(value);
-          });
-    void request
-      .catch(() => {
-        if (active) setError("Search insights could not be loaded. Refresh to retry.");
+    setJob(null);
+    setNow(Date.now());
+    const previous = lastRequest.current;
+    void startReport({
+      ...input,
+      ...(refresh > 0 && previous?.requestKey === requestKey
+        ? { refreshOf: previous.reportId }
+        : {}),
+    })
+      .then((value) => {
+        if (!active) return;
+        lastRequest.current = { requestKey, reportId: value.reportId };
+        setJob({ ...value, requestKey });
       })
-      .finally(() => {
-        if (active) setLoading(false);
+      .catch(() => {
+        if (active) {
+          // A refresh parent may expire during admission. The next explicit
+          // attempt can use normal request deduplication after any lost response.
+          lastRequest.current = null;
+          setError("The report could not be started. Refresh to retry.");
+        }
       });
     return () => {
       active = false;
     };
-  }, [getReport, getRecommendations, artifactKind, scope, source, window, view, refresh, endDay]);
+  }, [startReport, input, requestKey, refresh]);
+  const reportId = currentJob?.reportId;
+  const phase = status === null ? undefined : (status?.status ?? currentJob?.status);
+  useEffect(() => {
+    if (!reportId || phase !== "ready") return undefined;
+    let active = true;
+    void getReport({ reportId })
+      .then((value) => {
+        if (!active) return;
+        if (value.status !== "ready") {
+          setError(reportFailure(value.status));
+          return;
+        }
+        if (value.view === "recommendations") {
+          setIntelligence(value.report);
+          setReport(value.report.searchReport);
+        } else setReport(value.report);
+      })
+      .catch(() => {
+        if (active) setError("The completed report could not be loaded. Refresh to retry.");
+      });
+    return () => {
+      // Changing filters stops this view from consuming a shared generation;
+      // it does not cancel work another staff member may be waiting for.
+      active = false;
+    };
+  }, [getReport, reportId, phase]);
+  const failure =
+    error ??
+    (currentJob && status === null
+      ? "This report is no longer available. Refresh to generate a new report."
+      : null) ??
+    (phase === "failed" || phase === "expired" || phase === "incomplete"
+      ? reportFailure(phase)
+      : null);
+  const loading = !failure && !report;
   const rows = report?.rows;
   return (
     <div className="search-insights">
@@ -69,7 +141,10 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
         <Button
           variant="outline"
           disabled={loading}
-          onClick={() => setRefresh((value) => value + 1)}
+          onClick={() => {
+            if (status === null) lastRequest.current = null;
+            setRefresh((value) => value + 1);
+          }}
         >
           Refresh
         </Button>
@@ -144,10 +219,30 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
           </select>
         </label>
       </div>
-      {error ? <p role="alert">{error}</p> : null}
-      {loading ? <p role="status">Loading search demand…</p> : null}
-      {!loading && report ? (
+      {failure ? <p role="alert">{failure}</p> : null}
+      {loading ? (
+        <div role="status" aria-live="polite">
+          <p>
+            {phase === "ready"
+              ? "Checking current eligibility…"
+              : phase === "running"
+                ? view === "featured"
+                  ? "Analyzing search demand and adoption…"
+                  : "Analyzing search demand…"
+                : "Waiting to generate the report…"}
+          </p>
+          <p className="text-muted-foreground">
+            Analysis runs in the background. You can change filters or leave this page while it
+            finishes.
+          </p>
+        </div>
+      ) : null}
+      {!failure && report ? (
         <>
+          <p className="text-muted-foreground">
+            Report generated {date(status?.completedAt ?? currentJob?.completedAt ?? null)}. Refresh
+            to collect a new set of search-result associations.
+          </p>
           <div className="search-insights-summary">
             <div>
               <strong>{report.totalSearches7d.toLocaleString()}</strong>
@@ -289,12 +384,19 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
             </>
           )}
           <p className="text-muted-foreground">
-            Current search-result metadata checked: {date(report.metadataCheckedAt)}. These are
-            current catalog results, not historical result snapshots. Raw searches expire after 30
-            days; daily totals after 13 months.
+            Search-result associations checked: {date(report.metadataCheckedAt)}. These are current
+            catalog results, not historical result snapshots. Raw searches expire after 30 days;
+            daily totals after 13 months.
           </p>
         </>
       ) : null}
     </div>
   );
+}
+
+function reportFailure(status: SearchReportStatus["status"]) {
+  if (status === "expired") return "This report has expired. Refresh to generate a new report.";
+  if (status === "incomplete")
+    return "Analysis ended without a usable report. Refresh to generate a new report.";
+  return "The report could not be completed. Refresh to retry.";
 }
