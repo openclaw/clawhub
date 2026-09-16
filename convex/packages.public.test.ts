@@ -1626,6 +1626,8 @@ function makeDigestCtx(options: {
           return null;
         }),
         query: vi.fn((table: string) => {
+          if (table === "featuredSelections")
+            return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
           if (table === "packageBadges") {
             return {
               withIndex: vi.fn(() => ({

@@ -53,6 +53,7 @@ import {
 } from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { orderPublishedFeatured, readPublishedFeaturedOrder } from "./lib/featuredSelections";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
@@ -2366,8 +2367,13 @@ async function loadHighlightedSkills(ctx: QueryCtx, limit: number) {
     .order("desc")
     .take(MAX_LIST_TAKE);
 
+  const ordered = orderPublishedFeatured(
+    entries,
+    await readPublishedFeaturedOrder(ctx, "skill"),
+    (badge) => `clawhub:${badge.skillId}`,
+  );
   const skills: Doc<"skills">[] = [];
-  for (const badge of entries) {
+  for (const badge of ordered) {
     const skill = await ctx.db.get(badge.skillId);
     if (!skill || skill.softDeletedAt) continue;
     skills.push(skill);
@@ -3938,13 +3944,7 @@ export const listWithLatest = query({
       entries.filter((skill) => !skill.softDeletedAt),
     );
     const withBadges = await attachBadgesToSkills(ctx, filtered);
-    const ordered =
-      args.batch === "highlighted"
-        ? [...withBadges].sort(
-            (a, b) => (b.badges?.highlighted?.at ?? 0) - (a.badges?.highlighted?.at ?? 0),
-          )
-        : withBadges;
-    const limited = ordered.slice(0, limit);
+    const limited = withBadges.slice(0, limit);
     const items = await Promise.all(
       limited.map(async (skill) => {
         const latestVersion = await loadPublicLatestVersionForSkill(ctx, skill);
@@ -6714,6 +6714,32 @@ export const listPackageCatalogPage = query({
     if (args.topic !== undefined && !topic) {
       return { page: [], isDone: true, continueCursor: "" };
     }
+    if (args.highlightedOnly) {
+      const skills = await loadHighlightedSkills(ctx, MAX_LIST_TAKE);
+      const page: PublicSkillCatalogItem[] = [];
+      for (const skill of skills) {
+        const digest = await ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+          .unique();
+        if (!digest || !skillCatalogMatchesFilters(digest, { ...args, topic })) continue;
+        const item = await toPublicSkillCatalogItem(ctx, digest);
+        if (item) page.push(item);
+      }
+      const { offset } = decodeSkillCatalogCursor(args.paginationOpts.cursor);
+      const end = offset + args.paginationOpts.numItems;
+      const isDone = end >= page.length;
+      return {
+        page: page.slice(offset, end),
+        isDone,
+        continueCursor: encodeSkillCatalogCursor({
+          cursor: null,
+          offset: isDone ? 0 : end,
+          pageSize: null,
+          done: isDone,
+        }),
+      };
+    }
     if (topic) {
       return await listSkillPackageCatalogTopicPage(ctx, {
         ...args,
@@ -7481,7 +7507,7 @@ async function listOfficialFirstSkillCategoryPage(
   };
 }
 
-/** Fetch highlighted skills newest-first via the skillBadges timestamp index. */
+/** Resolve current highlighted membership in its approved publication order. */
 async function fetchHighlightedPage(
   ctx: QueryCtx,
   opts: {
@@ -7524,7 +7550,11 @@ async function fetchHighlightedPage(
     digests.push(digest);
   }
 
-  const trimmed = digests.slice(0, opts.numItems);
+  const trimmed = orderPublishedFeatured(
+    digests,
+    await readPublishedFeaturedOrder(ctx, "skill"),
+    (digest) => `clawhub:${digest.skillId}`,
+  ).slice(0, opts.numItems);
 
   const items: PublicSkillEntry[] = [];
   for (const digest of trimmed) {

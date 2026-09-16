@@ -219,7 +219,7 @@ describe("homeListingData", () => {
     ]);
     expect(convexQueryMock).toHaveBeenCalledWith(
       "skills:listPublicPageV4",
-      expect.objectContaining({ highlightedOnly: true, numItems: 40 }),
+      expect.objectContaining({ highlightedOnly: true, numItems: 16 }),
     );
   });
 
@@ -260,11 +260,11 @@ describe("homeListingData", () => {
     );
     expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ featured: true, isOfficial: undefined }),
+      expect.objectContaining({ featured: true, limit: 16 }),
     );
     expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ featured: undefined, isOfficial: true }),
+      expect.objectContaining({ isOfficial: true }),
     );
   });
 

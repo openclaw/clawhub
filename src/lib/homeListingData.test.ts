@@ -76,111 +76,73 @@ describe("homeListingData", () => {
       "skills:listPublicPageV4",
       expect.objectContaining({
         highlightedOnly: true,
-        numItems: 40,
-        sort: "updated",
+        numItems: 16,
       }),
     );
   });
 
-  it("sorts filtered Featured skills newest-first by featuredAt", async () => {
-    convexQueryMock
-      .mockResolvedValueOnce({
-        page: [
-          {
-            skill: {
-              _id: "skills:older",
-              slug: "older",
-              displayName: "Older Featured",
-              categories: ["development"],
-              badges: { highlighted: { at: 100 } },
-              stats: { downloads: 10_000 },
-            },
+  it("preserves the published Featured skill order while filtering across categories", async () => {
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:editorial",
+            slug: "editorial",
+            categories: ["development"],
+            badges: { highlighted: { at: 100 } },
+            stats: { downloads: 1 },
           },
-        ],
-        hasMore: false,
-        nextCursor: null,
-      })
-      .mockResolvedValueOnce({
-        page: [
-          {
-            skill: {
-              _id: "skills:newest",
-              slug: "newest",
-              displayName: "Newest Featured",
-              categories: ["integrations"],
-              badges: { highlighted: { at: 200 } },
-              stats: { downloads: 1 },
-            },
+        },
+        {
+          skill: {
+            _id: "skills:excluded",
+            slug: "excluded",
+            categories: ["writing"],
+            badges: { highlighted: { at: 500 } },
+            stats: { downloads: 1000 },
           },
-        ],
-        hasMore: false,
-        nextCursor: null,
-      });
-
+        },
+        {
+          skill: {
+            _id: "skills:telemetry",
+            slug: "telemetry",
+            categories: ["integrations"],
+            badges: { highlighted: { at: 200 } },
+            stats: { downloads: 10000 },
+          },
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
     const result = await fetchHomeSkillListing(
       "featured",
       ["development", "integrations"],
       HOME_LISTING_PAGE_SIZE,
     );
-
     expect(
       result.page.map((entry) => ("skill" in entry ? entry.skill.slug : entry.trending.slug)),
-    ).toEqual(["newest", "older"]);
-    expect(convexQueryMock).toHaveBeenCalledTimes(2);
-    expect(convexQueryMock).toHaveBeenNthCalledWith(
-      1,
-      "skills:listPublicPageV4",
-      expect.objectContaining({ categorySlug: "development" }),
-    );
-    expect(convexQueryMock).toHaveBeenNthCalledWith(
-      2,
-      "skills:listPublicPageV4",
-      expect.objectContaining({ categorySlug: "integrations" }),
-    );
+    ).toEqual(["editorial", "telemetry"]);
+    expect(result.hasMore).toBe(false);
+    expect(convexQueryMock).toHaveBeenCalledTimes(1);
   });
 
-  it("sorts filtered Featured plugins newest-first by featuredAt", async () => {
-    fetchPluginCatalogMock
-      .mockResolvedValueOnce({
-        items: [
-          {
-            ...featuredPlugin,
-            name: "older",
-            categories: ["tools"],
-            featuredAt: 100,
-            stats: { downloads: 10_000 },
-          },
-        ],
-        nextCursor: null,
-      })
-      .mockResolvedValueOnce({
-        items: [
-          {
-            ...featuredPlugin,
-            name: "newest",
-            categories: ["gateway"],
-            featuredAt: 200,
-            stats: { downloads: 1 },
-          },
-        ],
-        nextCursor: null,
-      });
-
+  it("preserves the published Featured plugin order while filtering across categories", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({
+      items: [
+        { ...featuredPlugin, name: "editorial", categories: ["tools"], featuredAt: 100 },
+        { ...featuredPlugin, name: "excluded", categories: ["other"], featuredAt: 500 },
+        { ...featuredPlugin, name: "telemetry", categories: ["gateway"], featuredAt: 200 },
+      ],
+      nextCursor: null,
+    });
     const result = await fetchHomePluginListing(
       "featured",
       ["tools", "gateway"],
       HOME_LISTING_PAGE_SIZE,
     );
-
-    expect(result.items.map((item) => item.name)).toEqual(["newest", "older"]);
-    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(2);
-    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ category: "tools" }),
-    );
-    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ category: "gateway" }),
-    );
+    expect(result.items.map((item) => item.name)).toEqual(["editorial", "telemetry"]);
+    expect(result.hasMore).toBe(false);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(1);
   });
 });

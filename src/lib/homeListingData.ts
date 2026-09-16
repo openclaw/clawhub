@@ -1,9 +1,10 @@
 import { api } from "../../convex/_generated/api";
+import { FEATURED_CATALOG_SIZE } from "../../convex/lib/featuredPolicy";
 import { convexHttp } from "../convex/client";
 import { fetchCatalogDiscoveryCapabilities } from "./catalogDiscoveryCapabilities";
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
-import type { PublicSkill, PublicUser } from "./publicUser";
+import type { PublicPublisher, PublicSkill, PublicUser } from "./publicUser";
 import {
   fetchCanonicalTrendingPage,
   type CanonicalTrendingItem,
@@ -17,7 +18,7 @@ export type { TrendingFeedState } from "./trendingApi";
 export type HomeNativeSkillListingEntry = {
   skill: PublicSkill;
   ownerHandle?: string | null;
-  owner?: PublicUser | null;
+  owner?: PublicUser | PublicPublisher | null;
 };
 
 type HomeTrendingSkillListingEntry = {
@@ -66,8 +67,6 @@ import { DISCOVERY_RECENT_WINDOW_MS as HOME_NEW_WINDOW_MS } from "../../convex/l
 const PLUGIN_CATALOG_PAGE_LIMIT = 100;
 const LEGACY_NEW_PLUGIN_MAX_REQUESTS = 10;
 const TRENDING_SEARCH_PAGE_LIMIT = 100;
-// Featured is intentionally a finite editorial feed: the latest 40 badge-history rows.
-const FEATURED_SKILL_LIMIT = 40;
 
 export function homeListingCacheKey({
   kind,
@@ -235,12 +234,21 @@ export async function fetchHomeSkillListing(
     };
   }
 
-  // highlightedOnly is a dedicated backend path ordered by skillBadges.by_kind_at;
-  // the nominal sort below is ignored for Featured and never chooses its candidate set.
+  if (tab === "featured") {
+    // Filter the finite published selection once, preserving order across categories.
+    const result = await convexHttp.query(api.skills.listPublicPageV4, {
+      numItems: FEATURED_CATALOG_SIZE,
+      highlightedOnly: true,
+    });
+    const items = result.page.filter((entry) =>
+      skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
+    );
+    return { page: items.slice(0, numItems), hasMore: items.length > numItems };
+  }
   const capabilities =
     tab === "new" ? await fetchCatalogDiscoveryCapabilities() : { apiVersion: 1 as const };
   const newestCutoff = Date.now() - HOME_NEW_WINDOW_MS;
-  const requestLimit = tab === "featured" ? FEATURED_SKILL_LIMIT : numItems;
+  const requestLimit = numItems;
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const results = await Promise.all(
     categoriesToFetch.map(async (categorySlug) => {
@@ -254,7 +262,6 @@ export async function fetchHomeSkillListing(
           numItems: requestLimit - page.length,
           sort: tab === "new" || tab === "official" ? "newest" : "updated",
           dir: "desc",
-          highlightedOnly: tab === "featured" ? true : undefined,
           officialOnly: tab === "official" ? true : undefined,
           ...(tab === "new" && capabilities.apiVersion >= 1 ? { createdAfter: newestCutoff } : {}),
           categorySlug: categorySlug ?? undefined,
@@ -288,11 +295,6 @@ export async function fetchHomeSkillListing(
   );
   const items = uniqueHomeSkillEntries(results.flatMap((result) => result.page)).sort(
     (left, right) => {
-      if (tab === "featured") {
-        return (
-          (right.skill.badges?.highlighted?.at ?? 0) - (left.skill.badges?.highlighted?.at ?? 0)
-        );
-      }
       if (tab === "new" || tab === "official") {
         return right.skill.createdAt - left.skill.createdAt;
       }
@@ -301,11 +303,7 @@ export async function fetchHomeSkillListing(
   );
   return {
     page: items.slice(0, numItems),
-    hasMore:
-      tab === "featured"
-        ? numItems < FEATURED_SKILL_LIMIT &&
-          (items.length > numItems || results.some((result) => result.hasMore))
-        : items.length > numItems || results.some((result) => result.hasMore),
+    hasMore: items.length > numItems || results.some((result) => result.hasMore),
   };
 }
 
@@ -315,6 +313,15 @@ export async function fetchHomePluginListing(
   limit: number,
   signal?: AbortSignal,
 ) {
+  if (tab === "featured") {
+    const result = await fetchPluginCatalog({
+      featured: true,
+      limit: FEATURED_CATALOG_SIZE,
+      signal,
+    });
+    const items = result.items.filter((item) => itemMatchesAnyHomeCategory(item, categorySlugs));
+    return { items: items.slice(0, limit), hasMore: items.length > limit };
+  }
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const newestCutoff = Date.now() - HOME_NEW_WINDOW_MS;
   if (tab === "new") {
@@ -417,7 +424,6 @@ export async function fetchHomePluginListing(
         const result = await fetchPluginCatalog({
           category: categorySlug ?? undefined,
           cursor: cursor ?? undefined,
-          featured: tab === "featured" ? true : undefined,
           isOfficial: tab === "official" ? true : undefined,
           sort: "updated",
           limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
@@ -433,7 +439,6 @@ export async function fetchHomePluginListing(
     }),
   );
   const items = uniqueHomePlugins(results.flatMap((result) => result.items)).sort((left, right) => {
-    if (tab === "featured") return (right.featuredAt ?? 0) - (left.featuredAt ?? 0);
     return right.updatedAt - left.updatedAt;
   });
   return {

@@ -70,6 +70,7 @@ import {
 } from "./lib/emails";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { orderPublishedFeatured, readPublishedFeaturedOrder } from "./lib/featuredSelections";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -2872,14 +2873,17 @@ async function fetchHighlightedPackagePage(
     numItems: number;
   },
 ) {
-  const entries = await fetchHighlightedPackageEntries(ctx, args);
+  const entries = orderPublishedFeatured(
+    await fetchHighlightedPackageEntries(ctx, args),
+    await readPublishedFeaturedOrder(ctx, "plugin"),
+    ({ digest }) => `plugin:${digest.name}`,
+  );
   const items = await Promise.all(
     entries.map(
       async ({ digest, featuredAt }) => await toPublicPackageListItem(ctx, digest, featuredAt),
     ),
   );
-  // fetchHighlightedPackageEntries follows the badge timestamp index newest-first.
-  // Preserve that editorial order instead of re-ranking Featured by popularity.
+  // The published selection supplies order independently from badge timestamps.
   if (!args.officialFirst) {
     return items.slice(0, args.numItems);
   }

@@ -62,3 +62,17 @@ export async function readPublishedFeaturedOrder(
     .unique();
   return selection?.published?.items.map((item) => item.id) ?? [];
 }
+
+// The approved snapshot owns order; legacy/manual badges absent from it retain
+// their existing stable order after the published selection.
+export function orderPublishedFeatured<T>(
+  items: readonly T[],
+  publishedIds: readonly string[],
+  identity: (item: T) => string,
+): T[] {
+  const ranks = new Map(publishedIds.map((id, index) => [id, index]));
+  return [...items].sort(
+    (left, right) =>
+      (ranks.get(identity(left)) ?? Infinity) - (ranks.get(identity(right)) ?? Infinity),
+  );
+}

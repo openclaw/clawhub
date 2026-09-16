@@ -385,7 +385,7 @@ describe("HomeListingSection", () => {
     await waitFor(() => {
       expect(convexQueryMock).toHaveBeenCalledWith(
         "skills:listPublicPageV4",
-        expect.objectContaining({ highlightedOnly: true, numItems: 40 }),
+        expect.objectContaining({ highlightedOnly: true, numItems: 16 }),
       );
     });
 
