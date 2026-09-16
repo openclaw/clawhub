@@ -179,3 +179,78 @@ export const seedInternal = internalMutation({
     return { state: args.state, endDay, seededRaw };
   },
 });
+
+// Disposable local data for the same staff workflow used in production. Keeping
+// this in the existing fixture owner makes populated dashboard proof repeatable.
+export const seedFeaturedLineup = internalAction({
+  args: {},
+  handler: async (
+    ctx,
+  ): Promise<{ fixture: string; expected: number; actorUserId: Id<"users"> }> => {
+    assertLocal();
+    const storageId = await ctx.storage.store(new Blob(["x"]));
+    return ctx.runMutation(internal.searchInsightsFixtures.seedFeaturedLineupInternal, {
+      storageId,
+    });
+  },
+});
+export const seedFeaturedLineupInternal = internalMutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, { storageId }) => {
+    assertLocal();
+    const now = Date.now();
+    const ownerId = await ctx.db.insert("users", {
+      handle: `lineup-fixture-${now}`,
+      role: "admin",
+    });
+    const file = { path: "index.js", size: 1, storageId, sha256: "a".repeat(64) };
+    const items = [];
+    for (let index = 0; index < 10; index++) {
+      const name = `lineup-tool-${index}`;
+      const packageId = await ctx.db.insert("packages", {
+        name,
+        normalizedName: name,
+        displayName: `Local discovery tool ${index + 1}`,
+        summary: "Local fixture: a useful workflow with observed adoption.",
+        ownerUserId: ownerId,
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        categories: [index === 9 ? "channels" : "developer-tools"],
+        tags: {},
+        scanStatus: "clean",
+        stats: { downloads: 100 - index, installs: 10 - index, stars: 0, versions: 1 },
+        createdAt: now - (index === 0 ? 1 : 100) * SEARCH_DAY_MS,
+        updatedAt: now,
+      });
+      const releaseId = await ctx.db.insert("packageReleases", {
+        packageId,
+        version: "1.0.0",
+        changelog: "Local lineup fixture",
+        distTags: ["latest"],
+        files: [file],
+        integritySha256: "a".repeat(64),
+        verification: { tier: "structural", scope: "artifact-only", scanStatus: "clean" },
+        createdBy: ownerId,
+        createdAt: now,
+      });
+      await ctx.db.patch(packageId, { latestReleaseId: releaseId, tags: { latest: releaseId } });
+      if (index === 0 || index >= 8)
+        await ctx.db.insert("packageBadges", {
+          packageId,
+          kind: "highlighted",
+          byUserId: ownerId,
+          at: now - index,
+        });
+      items.push({ packageId, score: 100 - index, downloads: 100 - index, installs: 10 - index });
+    }
+    await ctx.db.insert("packageLeaderboards", {
+      kind: "package_trending",
+      generatedAt: now,
+      rangeStartDay: Math.floor(now / SEARCH_DAY_MS) - 6,
+      rangeEndDay: Math.floor(now / SEARCH_DAY_MS),
+      items,
+    });
+    return { fixture: "local-featured-lineup", expected: 8, actorUserId: ownerId };
+  },
+});

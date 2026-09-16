@@ -155,12 +155,56 @@ export const evidenceSearchDigestValidator = legacySearchDigestValidator
     catalogs: v.object({ plugins: catalog, skills: catalog }),
   });
 
+export const lineupRecommendationValidator = searchRecommendationValidator.omit("support").extend({
+  version: nullableString,
+  support: v.union(
+    v.literal("both"),
+    v.literal("search-only"),
+    v.literal("adoption-only"),
+    v.literal("current-only"),
+  ),
+});
+export const featuredLineupValidator = v.object({
+  targetSize: v.literal(8),
+  baseline: v.array(v.object({ id: v.string(), version: nullableString, featuredAt: v.number() })),
+  changes: v.array(
+    v.object({
+      id: v.string(),
+      change: v.union(v.literal("retain"), v.literal("add")),
+      emerging: v.boolean(),
+    }),
+  ),
+  removals: v.array(
+    v.object({
+      id: v.string(),
+      displayName: v.string(),
+      url: v.string(),
+      reasons: v.array(v.string()),
+    }),
+  ),
+  shortfall: v.number(),
+});
+const lineupCatalog = catalog.omit("recommendations").extend({
+  recommendations: v.array(lineupRecommendationValidator),
+  lineup: featuredLineupValidator,
+});
+export const lineupSearchDigestValidator = evidenceSearchDigestValidator
+  .omit("kind", "catalogs")
+  .extend({
+    kind: v.literal("search_intelligence_weekly_v3"),
+    catalogs: v.object({ plugins: lineupCatalog, skills: lineupCatalog }),
+  });
+
 // Frozen weeks retain their original contract and receipt hash across upgrades.
 export const searchDigestValidator = v.union(
   legacySearchDigestValidator,
   evidenceSearchDigestValidator,
+  lineupSearchDigestValidator,
 );
 
 export type WeeklySearchDigest = Infer<typeof searchDigestValidator>;
 export type EvidenceSearchDigest = Infer<typeof evidenceSearchDigestValidator>;
 export type SearchRecommendation = Infer<typeof searchRecommendationValidator>;
+
+export type LineupSearchDigest = Infer<typeof lineupSearchDigestValidator>;
+export type LineupSearchRecommendation = Infer<typeof lineupRecommendationValidator>;

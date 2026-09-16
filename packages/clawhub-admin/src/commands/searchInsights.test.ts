@@ -81,6 +81,13 @@ it("parses real admin CLI filters and emits the canonical JSON plus readable dem
       truncated: false,
     },
     recommendations: {
+      lineup: {
+        targetSize: 8,
+        baseline: [],
+        removals: [],
+        shortfall: 7,
+        proposed: [] as unknown[],
+      },
       totalCandidates: 1,
       omittedCandidates: 0,
       excluded: [],
@@ -93,6 +100,7 @@ it("parses real admin CLI filters and emits the canonical JSON plus readable dem
           summary: "Keep events synchronized",
           url: "/author/skills/calendar",
           category: "productivity",
+          version: "1.0.0",
           eligibleForFeatured: true,
           eligibilityReasons: [],
           support: "adoption-only",
@@ -115,6 +123,9 @@ it("parses real admin CLI filters and emits the canonical JSON plus readable dem
       ],
     },
   };
+  intelligence.recommendations.lineup.proposed = intelligence.recommendations.candidates.map(
+    (candidate) => ({ ...candidate, change: "add", emerging: false }),
+  );
   const server = createServer((request, response) => {
     requests.push(request.url ?? "");
     expect(request.headers.authorization).toBe("Bearer fixture-token");
@@ -183,7 +194,7 @@ it("parses real admin CLI filters and emits the canonical JSON plus readable dem
     const recommendationsText = await promisify(execFile)("bun", recommendationArgs, { env });
     expect(recommendationsText.stdout).toContain("Calendar · adoption-only");
     expect(recommendationsText.stdout).toContain("40 downloads, 3 installs, 2 bookmarks");
-    expect(recommendationsText.stdout).toContain("No matching collected search demand.");
+    expect(recommendationsText.stdout).toContain("No search evidence in the inspected queries.");
     expect(recommendationsText.stdout).toContain("advisory, requires approval");
   } finally {
     await new Promise<void>((done) => server.close(() => done()));

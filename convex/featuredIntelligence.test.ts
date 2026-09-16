@@ -110,10 +110,83 @@ it("serves existing package adoption without search history and rechecks current
   const changed = await t.action(internal.featuredIntelligence.getInternal, {
     artifactKind: "plugin",
   });
-  expect(changed.recommendations.candidates).toEqual([]);
-  expect(changed.recommendations.excluded).toMatchObject([
-    { id: "plugin:calendar", reasons: ["already-featured"] },
+  expect(changed.recommendations.lineup.proposed).toMatchObject([
+    { id: "plugin:calendar", change: "retain" },
   ]);
+  expect(changed.recommendations.lineup.baseline).toEqual([
+    { id: "plugin:calendar", version: "1.0.0", featuredAt: now },
+  ]);
+  expect(changed.recommendations.excluded).toEqual([]);
+  // An old unfiltered snapshot must not let setup entries consume the first
+  // 100 discovery slots, and membership remains visible beyond that limit.
+  const setupIds = await t.run(async (ctx) => {
+    const source = await ctx.db.get(ids.pkg);
+    const { _id, _creationTime, latestReleaseId: _release, ...fields } = source!;
+    const packages = [];
+    for (let index = 0; index < 100; index++)
+      packages.push(
+        await ctx.db.insert("packages", {
+          ...fields,
+          tags: {},
+          name: `setup-${index}`,
+          normalizedName: `setup-${index}`,
+          categories: ["channels"],
+        }),
+      );
+    const snapshot = await ctx.db.query("packageLeaderboards").unique();
+    await ctx.db.patch(snapshot!._id, {
+      items: [
+        ...packages.map((packageId) => ({ packageId, score: 100, downloads: 90, installs: 3 })),
+        ...snapshot!.items,
+      ],
+    });
+    return packages;
+  });
+  const filtered = await t.action(internal.featuredIntelligence.getInternal, {
+    artifactKind: "plugin",
+  });
+  expect(filtered.recommendations.lineup.proposed).toMatchObject([
+    { id: "plugin:calendar", adoption: { rank: 101 }, change: "retain" },
+  ]);
+  await t.run(async (ctx) => {
+    for (const packageId of setupIds)
+      await ctx.db.patch(packageId, { categories: ["productivity"] });
+  });
+  const beyondLimit = await t.action(internal.featuredIntelligence.getInternal, {
+    artifactKind: "plugin",
+  });
+  expect(beyondLimit.adoption).toMatchObject({
+    inspectedItems: 100,
+    totalItems: 101,
+    truncated: true,
+  });
+  expect(beyondLimit.recommendations.lineup.proposed).toMatchObject([
+    { id: "plugin:calendar", support: "current-only", adoption: null, change: "retain" },
+  ]);
+  expect(beyondLimit.recommendations.lineup.shortfall).toBe(7);
+  await t.run(async (ctx) => {
+    const source = await ctx.db.get(ids.pkg);
+    const { _id, _creationTime, ...fields } = source!;
+    for (let index = 0; index < 101; index++) {
+      const packageId = await ctx.db.insert("packages", {
+        ...fields,
+        family: "claw",
+        name: `claw-${index}`,
+        normalizedName: `claw-${index}`,
+      });
+      await ctx.db.insert("packageBadges", {
+        packageId,
+        kind: "highlighted",
+        byUserId: ids.staff,
+        at: now + index + 1,
+      });
+    }
+  });
+  const withoutClaws = await t.query(internal.featuredArtifacts.readCurrentFeaturedInternal, {
+    artifactKind: "plugin",
+  });
+  expect(withoutClaws.map((entry) => entry.id)).toEqual(["plugin:calendar"]);
+
   expect(await t.run((ctx) => ctx.db.query("searchWeeklyDigests").collect())).toEqual([]);
 });
 

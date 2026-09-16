@@ -95,11 +95,23 @@ export async function cmdSearchInsights(
       console.log(
         `Current eligibility checked ${time(report.metadataCheckedAt)}. Search metadata ${report.searchReport.currentMetadataStatus}.`,
       );
-      if (!report.recommendations.candidates.length)
-        console.log("No eligible Featured candidates in available evidence.");
-      for (const candidate of report.recommendations.candidates) {
+      const { lineup } = report.recommendations;
+      console.log(
+        `Complete proposed set: ${lineup.proposed.length}/${lineup.targetSize}; ${lineup.shortfall} open places. No automatic publication.`,
+      );
+      for (const entry of lineup.baseline)
         console.log(
-          `${candidate.displayName} · ${candidate.support} · category ${candidate.category ?? "uncategorized"}`,
+          `Current ${entry.id}: ${entry.version ?? "unavailable"}; Featured ${time(entry.featuredAt)}.`,
+        );
+      for (const entry of lineup.removals)
+        console.log(
+          `Remove ${entry.displayName}: ${entry.reasons.includes("outside-proposed-set") ? "replaced by evidence-ranked selections, not a safety or zero-demand finding" : entry.reasons.join(", ")}`,
+        );
+      if (!lineup.proposed.length)
+        console.log("No eligible Featured candidates in available evidence.");
+      for (const candidate of lineup.proposed) {
+        console.log(
+          `${candidate.change === "retain" ? "Retain" : "Add"} ${candidate.displayName}${candidate.emerging ? " · Emerging (recent publication or Rising feed with observed adoption)" : ""} · ${candidate.support} · category ${candidate.category ?? "uncategorized"}`,
         );
         if (candidate.summary) console.log(`  ${candidate.summary}`);
         if (candidate.search) {
@@ -112,7 +124,7 @@ export async function cmdSearchInsights(
             );
           if (candidate.search.omittedQueries)
             console.log(`  ${candidate.search.omittedQueries} additional queries omitted.`);
-        } else console.log("  No matching collected search demand.");
+        } else console.log("  No search evidence in the inspected queries.");
         if (candidate.adoption) {
           const evidence = candidate.adoption;
           console.log(

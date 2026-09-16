@@ -6,7 +6,7 @@ import { internal } from "./_generated/api";
 import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 
-it("uses the public version and current badge owner to require clean, unfeatured native skills", async () => {
+it("uses the public version and current badge owner to require clean native skills independently of Featured membership", async () => {
   const t = convexTest(schema, modules);
   const ids = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", { handle: "author" });
@@ -73,10 +73,11 @@ it("uses the public version and current badge owner to require clean, unfeatured
   expect(results.map((row) => row.name)).not.toContain("hidden");
   expect(results.filter((row) => row.eligibleForFeatured).map((row) => row.name)).toEqual([
     "clean",
+    "featured",
   ]);
   expect(results.find((row) => row.name === "featured")).toMatchObject({
     isFeatured: true,
-    eligibilityReasons: ["already-featured"],
+    eligibilityReasons: [],
   });
   expect(results.find((row) => row.name === "unscanned")?.eligibilityReasons).toContain(
     "security-not-clean",

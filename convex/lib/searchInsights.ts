@@ -117,6 +117,7 @@ export function searchAggregateExpiration(day: number) {
   return target.getTime();
 }
 export type SearchCurrentResult = {
+  createdAt?: number;
   id: string;
   artifactKind: SearchArtifactKind;
   nativeSkillId?: string;

@@ -5,9 +5,14 @@ const supportLabels = {
   both: "Search demand + adoption",
   "search-only": "Search demand",
   "adoption-only": "Adoption",
+  "current-only": "Current Featured · no observed window evidence",
 };
 const reasonLabels: Record<string, string> = {
-  "already-featured": "Already Featured",
+  "discovery-excluded:channels": "Channels belong in setup and direct browsing",
+  "discovery-excluded:models": "Model providers belong in setup and direct browsing",
+  "discovery-excluded:agent-runtimes": "Agent runtimes belong in setup and direct browsing",
+  "outside-proposed-set":
+    "Replaced by evidence-ranked selections; this is not a safety finding or evidence of zero demand",
   "security-not-clean": "A completed clean security review is required",
   "no-public-version": "No published version is available",
   "not-installable": "No installable artifact is available",
@@ -16,13 +21,15 @@ const reasonLabels: Record<string, string> = {
 
 export function FeaturedRecommendations({ report }: { report: FeaturedIntelligenceReport }) {
   const { adoption, recommendations, searchReport } = report;
+  const { lineup } = recommendations;
   return (
     <section aria-labelledby="featured-recommendations-title">
       <h2 id="featured-recommendations-title">Featured recommendations</h2>
       <p>
-        Advisory shortlist for {searchReport.artifactKind === "plugin" ? "plugins" : "skills"}.
-        Review usefulness, quality, security and category coverage before approving a selection.
-        This report does not publish Featured changes.
+        Complete proposed Featured set: {lineup.proposed.length} of {lineup.targetSize}{" "}
+        {searchReport.artifactKind === "plugin" ? "plugins" : "skills"}. Review usefulness, quality,
+        security and category coverage before approving a selection. This report does not publish
+        Featured changes.
       </p>
       <p className="text-muted-foreground">
         Evidence groups appear in this order: both signals, search demand, adoption. Within each
@@ -43,15 +50,33 @@ export function FeaturedRecommendations({ report }: { report: FeaturedIntelligen
           ? " Current search-result metadata is unavailable; adoption candidates may still be available."
           : ""}
       </p>
-      {recommendations.candidates.length ? (
+      <p>
+        {lineup.proposed.filter((entry) => entry.change === "retain").length} retained ·{" "}
+        {lineup.proposed.filter((entry) => entry.change === "add").length} additions ·{" "}
+        {lineup.removals.length} removals proposed.
+      </p>
+      {lineup.shortfall > 0 ? (
+        <p role="status">
+          {lineup.shortfall} open Featured {lineup.shortfall === 1 ? "place" : "places"}. We do not
+          fill the set with entries that fail the quality checks.
+        </p>
+      ) : null}
+      <p className="text-muted-foreground">
+        Emerging means recently published (within 14 days) with observed adoption, or an entry in
+        the existing Rising feed with adoption. It does not imply accelerating growth.
+      </p>
+      {lineup.proposed.length ? (
         <div className="featured-recommendations-grid">
-          {recommendations.candidates.map((candidate) => (
+          {lineup.proposed.map((candidate) => (
             <article key={candidate.id} className="featured-recommendation-card">
               <header>
                 <h3>
                   <a href={candidate.url}>{candidate.displayName}</a>
                 </h3>
-                <span>{supportLabels[candidate.support]}</span>
+                <span>
+                  {candidate.change === "retain" ? "Retain" : "Add"}
+                  {candidate.emerging ? " · Emerging" : ""} · {supportLabels[candidate.support]}
+                </span>
               </header>
               <p>
                 {candidate.summary ??
@@ -84,7 +109,7 @@ export function FeaturedRecommendations({ report }: { report: FeaturedIntelligen
                   ) : null}
                 </details>
               ) : (
-                <p>No matching collected search demand in this period.</p>
+                <p>No search evidence in the inspected queries.</p>
               )}
               {candidate.adoption ? (
                 <details open>
@@ -126,10 +151,35 @@ export function FeaturedRecommendations({ report }: { report: FeaturedIntelligen
           below.
         </p>
       )}
-      {recommendations.omittedCandidates ? (
+      {lineup.removals.length ? (
+        <section aria-label="Proposed removals">
+          <h3>Proposed removals</h3>
+          <ul>
+            {lineup.removals.map((entry) => (
+              <li key={entry.id}>
+                <a href={entry.url}>{entry.displayName}</a>:{" "}
+                {entry.reasons.map((reason) => reasonLabels[reason] ?? reason).join("; ")}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      <details>
+        <summary>Current Featured baseline ({lineup.baseline.length})</summary>
+        <ul>
+          {lineup.baseline.map((entry) => (
+            <li key={entry.id}>
+              {entry.id} · version {entry.version ?? "unavailable"} · Featured{" "}
+              {date(entry.featuredAt)}
+            </li>
+          ))}
+        </ul>
+      </details>
+      {recommendations.totalCandidates > lineup.proposed.length ? (
         <p>
-          Showing {recommendations.candidates.length} of {recommendations.totalCandidates} eligible
-          candidates.
+          Proposed {lineup.proposed.length} of {recommendations.totalCandidates} eligible
+          candidates. Evidence-ranked candidates are reassessed each iteration; current entries with
+          unknown evidence can fill remaining places.
         </p>
       ) : null}
       {recommendations.excluded.length ? (

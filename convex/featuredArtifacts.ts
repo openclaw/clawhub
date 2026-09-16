@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery } from "./functions";
 import { getSkillBadgeMap, isSkillHighlighted, isSkillOfficial } from "./lib/badges";
+import type { CurrentFeaturedArtifact } from "./lib/featuredIntelligence";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { buildSkillInstallResolution } from "./lib/installResolver";
 import { isOfficialPublisher } from "./lib/officialPublishers";
@@ -15,6 +16,7 @@ import {
   shouldExcludeSkillFromPublicBrowse,
 } from "./lib/publicBrowse";
 import { getOwnerPublisher } from "./lib/publishers";
+import { searchArtifactKind } from "./lib/searchInsights";
 import type { SearchCurrentResult } from "./lib/searchInsights";
 import { normalizeSecurityScanStatus } from "./lib/securityScanPolicy";
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
@@ -73,10 +75,10 @@ async function readPlugin(ctx: QueryCtx, id: string): Promise<SearchCurrentResul
     if (!release.files.length && !release.clawpackStorageId)
       eligibilityReasons.push("not-installable");
   }
-  if (badge) eligibilityReasons.push("already-featured");
   return {
     id,
     artifactKind: "plugin",
+    createdAt: pkg.createdAt,
     name: pkg.name,
     displayName: pkg.displayName.slice(0, 120),
     summary: pkg.summary?.slice(0, 500) ?? null,
@@ -122,10 +124,10 @@ async function readSkill(ctx: QueryCtx, id: string): Promise<SearchCurrentResult
       eligibilityReasons.push("not-installable");
   } else if (publicVersion && !publicVersion.files.length)
     eligibilityReasons.push("not-installable");
-  if (isFeatured) eligibilityReasons.push("already-featured");
   return {
     id,
     artifactKind: "skill",
+    createdAt: skill.createdAt,
     nativeSkillId: String(skill._id),
     name: skill.slug,
     displayName: skill.displayName.slice(0, 120),
@@ -162,3 +164,53 @@ async function readExternal(ctx: QueryCtx, id: string): Promise<SearchCurrentRes
     ...(digest.inferredCategories?.[0] ? { category: digest.inferredCategories[0] } : {}),
   };
 }
+
+// The complete current set is an independent input, not the intersection with
+// this week's top search or Trending results. Keep unavailable members visible
+// for an explicit removal decision instead of silently losing their membership.
+export const readCurrentFeaturedInternal = internalQuery({
+  args: { artifactKind: searchArtifactKind },
+  handler: async (ctx, { artifactKind }): Promise<CurrentFeaturedArtifact[]> => {
+    const rows: CurrentFeaturedArtifact[] = [];
+    const badges =
+      artifactKind === "plugin"
+        ? ctx.db
+            .query("packageBadges")
+            .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
+            .order("desc")
+        : ctx.db
+            .query("skillBadges")
+            .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
+            .order("desc");
+    for await (const badge of badges) {
+      const pkg = "packageId" in badge ? await ctx.db.get(badge.packageId) : null;
+      const skill = "skillId" in badge ? await ctx.db.get(badge.skillId) : null;
+      if (pkg && pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") continue;
+      const id = pkg
+        ? `plugin:${pkg.name}`
+        : "skillId" in badge
+          ? `clawhub:${badge.skillId}`
+          : `package:${badge.packageId}`;
+      const artifact = pkg ? await readPlugin(ctx, id) : skill ? await readSkill(ctx, id) : null;
+      rows.push({
+        ...(artifact ?? {
+          id,
+          artifactKind,
+          name: pkg?.name ?? skill?.slug ?? id,
+          displayName: pkg?.displayName ?? skill?.displayName ?? "Unavailable Featured entry",
+          summary: null,
+          version: null,
+          url: pkg
+            ? `/plugins/${encodeURIComponent(pkg.name)}`
+            : `/management?view=${artifactKind === "plugin" ? "plugins" : "skills"}`,
+          eligibleForFeatured: false,
+          eligibilityReasons: ["no-public-version"],
+        }),
+        featuredAt: badge.at,
+      });
+      if (rows.length > 100)
+        throw new Error("Featured membership exceeds the bounded review limit");
+    }
+    return rows;
+  },
+});

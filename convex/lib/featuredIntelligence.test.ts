@@ -113,3 +113,75 @@ describe("Featured recommendation evidence", () => {
     expect(report.candidates[0].search?.queries.every((row) => row.scope === "shelf")).toBe(true);
   });
 });
+
+it("reassesses a complete eight-member lineup, retains observed members and explains removals without padding", () => {
+  const existing = { ...artifact("plugin:existing"), version: "1.0.0", featuredAt: 10 };
+  const unknown = { ...artifact("plugin:unknown"), version: "1.0.0", featuredAt: 11 };
+  const unsafe = {
+    ...artifact("plugin:unsafe"),
+    featuredAt: 12,
+    eligibleForFeatured: false,
+    eligibilityReasons: ["security-not-clean"],
+  };
+  const newcomers = Array.from({ length: 9 }, (_, index) => artifact(`plugin:new-${index}`));
+  const result = recommendFeatured({
+    rows: [],
+    adoption: [
+      { artifact: existing, evidence: adoption(2) },
+      ...newcomers.map((entry, index) => ({ artifact: entry, evidence: adoption(index + 3) })),
+    ],
+    currentFeatured: [existing, unknown, unsafe],
+    window,
+    coverage,
+    limit: 1,
+  });
+  expect(result.lineup.proposed).toHaveLength(8);
+  expect(result.lineup.proposed[0]).toMatchObject({ id: existing.id, change: "retain" });
+  expect(result.lineup.proposed.slice(1).every((entry) => entry.change === "add")).toBe(true);
+  expect(result.lineup.removals).toMatchObject([
+    { id: unknown.id, reasons: ["outside-proposed-set"] },
+    { id: unsafe.id, reasons: ["security-not-clean"] },
+  ]);
+  expect(result.lineup.baseline).toHaveLength(3);
+  expect(result.lineup.shortfall).toBe(0);
+  const sparse = recommendFeatured({
+    rows: [],
+    adoption: [],
+    currentFeatured: [unknown, unsafe],
+    window,
+    coverage,
+    limit: 20,
+  });
+  expect(sparse.lineup.proposed).toMatchObject([
+    { id: unknown.id, change: "retain", support: "current-only", search: null, adoption: null },
+  ]);
+  expect(sparse.lineup.shortfall).toBe(7);
+});
+
+it("labels recent publication with observed adoption and existing Rising evidence without inventing growth", () => {
+  const recent = { ...artifact("plugin:recent"), createdAt: 1_500 };
+  const old = { ...artifact("plugin:old"), createdAt: 0 };
+  const snapshot = { ...adoption(1), generatedAt: 20 * 86_400_000 };
+  const rows = [recent, old].map((entry, index) => ({
+    artifact: { ...entry, createdAt: index ? 0 : snapshot.generatedAt - 86_400_000 },
+    evidence: snapshot,
+  }));
+  const result = recommendFeatured({
+    rows: [],
+    adoption: rows,
+    currentFeatured: [],
+    window,
+    coverage,
+    limit: 20,
+  });
+  expect(result.lineup.proposed.find((entry) => entry.id === recent.id)?.emerging).toBe(true);
+  expect(result.lineup.proposed.find((entry) => entry.id === old.id)?.emerging).toBe(false);
+  const noUsage = recommendFeatured({
+    rows: [],
+    adoption: [{ artifact: recent, evidence: { ...adoption(1), downloads: 0, installs: 0 } }],
+    window,
+    coverage,
+    limit: 20,
+  });
+  expect(noUsage.lineup.proposed[0].emerging).toBe(false);
+});

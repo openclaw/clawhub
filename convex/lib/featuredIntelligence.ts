@@ -1,3 +1,5 @@
+import { DISCOVERY_RECENT_WINDOW_MS } from "./discoveryWindows";
+import { FEATURED_CATALOG_SIZE } from "./featuredPolicy";
 export type RecommendationArtifact = {
   id: string;
   artifactKind: "plugin" | "skill";
@@ -6,6 +8,8 @@ export type RecommendationArtifact = {
   summary: string | null;
   url: string;
   category?: string;
+  version?: string | null;
+  createdAt?: number;
   eligibleForFeatured: boolean;
   eligibilityReasons: string[];
 };
@@ -35,7 +39,8 @@ export type RecommendationQuery = {
 
 export type FeaturedRecommendation = Omit<RecommendationArtifact, "category"> & {
   category: string | null;
-  support: "both" | "search-only" | "adoption-only";
+  version: string | null;
+  support: "both" | "search-only" | "adoption-only" | "current-only";
   search: {
     matchedSearches7d: number;
     previous7d: number;
@@ -59,6 +64,8 @@ type DemandRow = {
   currentResults: RecommendationArtifact[];
 };
 
+export type CurrentFeaturedArtifact = RecommendationArtifact & { featuredAt: number };
+
 export type AdoptionArtifact = { artifact: RecommendationArtifact; evidence: AdoptionEvidence };
 
 export type AdoptionSummary = {
@@ -81,6 +88,7 @@ export function recommendFeatured(params: {
   window: { start7d: number; start30d: number; endDay: number; days: 7 | 30 };
   coverage: { dataThrough: number | null; collectionStartedAt: number | null };
   limit: number;
+  currentFeatured?: CurrentFeaturedArtifact[];
 }) {
   const candidates = new Map<
     string,
@@ -117,6 +125,10 @@ export function recommendFeatured(params: {
     // The adoption adapter hydrates current eligibility through the same owner.
     entry.artifact = artifact;
   }
+  // Membership is independently hydrated even when no inspected search or
+  // Trending result mentions the item. Missing evidence is not zero demand.
+  const currentFeatured = params.currentFeatured ?? [];
+  for (const artifact of currentFeatured) entryFor(artifact).artifact = artifact;
   const excluded: Array<{ id: string; displayName: string; url: string; reasons: string[] }> = [];
   const recommendations: FeaturedRecommendation[] = [];
   for (const { artifact, queries: byQuery, adoption } of candidates.values()) {
@@ -138,7 +150,14 @@ export function recommendFeatured(params: {
     recommendations.push({
       ...artifact,
       category: artifact.category ?? null,
-      support: queries.length ? (adoption ? "both" : "search-only") : "adoption-only",
+      version: artifact.version ?? null,
+      support: queries.length
+        ? adoption
+          ? "both"
+          : "search-only"
+        : adoption
+          ? "adoption-only"
+          : "current-only",
       search: queries.length
         ? {
             matchedSearches7d: queries.reduce((sum, query) => sum + query.searches7d, 0),
@@ -154,7 +173,7 @@ export function recommendFeatured(params: {
       adoption,
     });
   }
-  const cohort = { both: 0, "search-only": 1, "adoption-only": 2 };
+  const cohort = { both: 0, "search-only": 1, "adoption-only": 2, "current-only": 3 };
   recommendations.sort(
     (a, b) =>
       cohort[a.support] - cohort[b.support] ||
@@ -165,7 +184,47 @@ export function recommendFeatured(params: {
         (b.adoption?.rank ?? Number.MAX_SAFE_INTEGER) ||
       a.id.localeCompare(b.id),
   );
+  const previous = new Set(currentFeatured.map((artifact) => artifact.id));
+  const proposed = recommendations.slice(0, FEATURED_CATALOG_SIZE).map((candidate) => {
+    const adoption = candidate.adoption;
+    const observed =
+      adoption &&
+      [adoption.downloads, adoption.installs, adoption.bookmarks].some(
+        (count) => count !== null && count > 0,
+      );
+    const recentlyPublished =
+      candidate.createdAt !== undefined &&
+      adoption &&
+      candidate.createdAt <= adoption.generatedAt &&
+      candidate.createdAt >= adoption.generatedAt - DISCOVERY_RECENT_WINDOW_MS;
+    return {
+      ...candidate,
+      change: previous.has(candidate.id) ? ("retain" as const) : ("add" as const),
+      emerging: Boolean(observed && (adoption?.source === "clawhub-rising" || recentlyPublished)),
+    };
+  });
+  const selected = new Set(proposed.map((candidate) => candidate.id));
   return {
+    lineup: {
+      targetSize: FEATURED_CATALOG_SIZE as 8,
+      baseline: currentFeatured.map((artifact) => ({
+        id: artifact.id,
+        version: artifact.version ?? null,
+        featuredAt: artifact.featuredAt,
+      })),
+      proposed,
+      removals: currentFeatured
+        .filter((artifact) => !selected.has(artifact.id))
+        .map((artifact) => ({
+          id: artifact.id,
+          displayName: artifact.displayName,
+          url: artifact.url,
+          reasons: artifact.eligibleForFeatured
+            ? ["outside-proposed-set"]
+            : artifact.eligibilityReasons,
+        })),
+      shortfall: FEATURED_CATALOG_SIZE - proposed.length,
+    },
     candidates: recommendations.slice(0, params.limit),
     totalCandidates: recommendations.length,
     omittedCandidates: Math.max(0, recommendations.length - params.limit),

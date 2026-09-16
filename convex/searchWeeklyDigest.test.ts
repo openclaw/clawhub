@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import legacyFixture from "./fixtures/search-weekly-legacy.json";
 import type { legacySearchDigestValidator } from "./lib/searchDigestContract";
-import type { EvidenceSearchDigest } from "./lib/searchDigestContract";
+import type { LineupSearchDigest as EvidenceSearchDigest } from "./lib/searchDigestContract";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -79,7 +79,7 @@ it("ships deterministic gaps when classification is unavailable, freezing one pa
   await t.action(internal.searchWeeklyDigest.deliverInternal, { weekEnd });
   expect(delivered).toHaveLength(1);
   expect(delivered[0]).toMatchObject({
-    kind: "search_intelligence_weekly_v2",
+    kind: "search_intelligence_weekly_v3",
     catalogs: {
       plugins: {
         totalSearches: 4,
@@ -215,7 +215,7 @@ it("classifies only the bounded aggregate gap cohort and shares the exact persis
   ).toBe(true);
   expect(providerInputs[0].some((row) => row.query === "low volume")).toBe(false);
   expect(deliveries[0]).toMatchObject({
-    kind: "search_intelligence_weekly_v2",
+    kind: "search_intelligence_weekly_v3",
     truncated: true,
     catalogs: {
       plugins: { totalSearches: 512, classificationStatus: "partial" },

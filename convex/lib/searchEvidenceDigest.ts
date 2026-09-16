@@ -1,4 +1,4 @@
-import type { EvidenceSearchDigest, SearchRecommendation } from "./searchDigestContract";
+import type { LineupSearchDigest, LineupSearchRecommendation } from "./searchDigestContract";
 import { SEARCH_DIGEST_MAX_BYTES } from "./searchDigestContract";
 
 type Scope = "catalog" | "shelf" | "legacy";
@@ -11,7 +11,7 @@ type EvidenceRow = {
   searchUrl: string;
   classification: { intentKind: string; confidence: number; companyProductName?: string } | null;
 };
-type Catalog = EvidenceSearchDigest["catalogs"]["plugins"];
+type Catalog = LineupSearchDigest["catalogs"]["plugins"];
 export type DigestCatalogInput = {
   totalSearches7d: number;
   sources7d: { "clawhub-web": number; "openclaw-control-ui": number };
@@ -24,7 +24,15 @@ export type DigestCatalogInput = {
   rows: EvidenceRow[];
   moverRows: EvidenceRow[];
   recommendations: {
-    candidates: Omit<SearchRecommendation, "metadataCheckedAt">[];
+    candidates: Omit<LineupSearchRecommendation, "metadataCheckedAt">[];
+    lineup: Omit<Catalog["lineup"], "changes"> & {
+      proposed: Array<
+        Omit<LineupSearchRecommendation, "metadataCheckedAt"> & {
+          change: "retain" | "add";
+          emerging: boolean;
+        }
+      >;
+    };
     omittedCandidates: number;
   };
 };
@@ -34,7 +42,7 @@ export function buildSearchEvidenceDigest(input: {
   weekEnd: number;
   siteUrl: string;
   catalogs: { plugins: DigestCatalogInput; skills: DigestCatalogInput };
-}): EvidenceSearchDigest {
+}): LineupSearchDigest {
   const site = new URL(input.siteUrl);
   const absolute = (path: string) => {
     const url = new URL(path, site);
@@ -109,17 +117,15 @@ export function buildSearchEvidenceDigest(input: {
     const qualified =
       source.metadataCheckedAt === null
         ? []
-        : source.recommendations.candidates.filter(
+        : source.recommendations.lineup.proposed.filter(
             (candidate) =>
               candidate.artifactKind === kind &&
               representable(candidate.id, 256) &&
-              absolute(candidate.url).length <= 2048 &&
-              (candidate.support !== "search-only" ||
-                (candidate.search?.matchedSearches7d ?? 0) >= 3),
+              absolute(candidate.url).length <= 2048,
           );
-    truncated ||=
-      qualified.length !== source.recommendations.candidates.length ||
-      [gaps, company, moving, qualified].some((section) => section.length > 5);
+    if (qualified.length !== source.recommendations.lineup.proposed.length)
+      throw new Error("The complete Featured selection cannot be represented in this digest");
+    truncated ||= [gaps, company, moving].some((section) => section.length > 5);
     return {
       totalSearches: source.totalSearches7d,
       sourceCounts: {
@@ -154,7 +160,23 @@ export function buildSearchEvidenceDigest(input: {
       })),
       officialGaps: gaps.slice(0, 5).map(row),
       movers: moving.slice(0, 5).map(row),
-      recommendations: qualified.slice(0, 5).map((candidate) => {
+      lineup: {
+        targetSize: 8,
+        baseline: source.recommendations.lineup.baseline.map(({ id, version, featuredAt }) => ({
+          id,
+          version,
+          featuredAt,
+        })),
+        changes: qualified.map(({ id, change, emerging }) => ({ id, change, emerging })),
+        removals: source.recommendations.lineup.removals.map((entry) => ({
+          id: entry.id,
+          displayName: descriptor(entry.displayName),
+          url: absolute(entry.url),
+          reasons: entry.reasons,
+        })),
+        shortfall: 8 - qualified.length,
+      },
+      recommendations: qualified.map((candidate) => {
         const search = candidate.search;
         // Counts remain available for adoption-supported candidates; rare query
         // text never leaves the staff report. Preserve the canonical candidate order.
@@ -165,6 +187,7 @@ export function buildSearchEvidenceDigest(input: {
         const adoption = candidate.adoption;
         return {
           artifactKind: candidate.artifactKind,
+          version: candidate.version,
           id: candidate.id,
           displayName: descriptor(candidate.displayName) || descriptor(candidate.id),
           url: absolute(candidate.url),
@@ -214,8 +237,8 @@ export function buildSearchEvidenceDigest(input: {
     plugins: project(input.catalogs.plugins, "plugin"),
     skills: project(input.catalogs.skills, "skill"),
   };
-  const digest: EvidenceSearchDigest = {
-    kind: "search_intelligence_weekly_v2",
+  const digest: LineupSearchDigest = {
+    kind: "search_intelligence_weekly_v3",
     weekStart: input.weekEnd - 604_800_000,
     weekEnd: input.weekEnd,
     minimumSearches: 3,
@@ -225,11 +248,24 @@ export function buildSearchEvidenceDigest(input: {
   };
   const sections = Object.values(catalogs).flatMap((catalog) => [
     catalog.movers,
-    catalog.recommendations,
     catalog.officialGaps,
     catalog.companyOpportunities,
   ]);
+  // Preserve every proposed member and its change; trim query detail and
+  // secondary opportunity rows before the complete lineup can be obscured.
+  const candidateQueries = Object.values(catalogs).flatMap((catalog) =>
+    catalog.recommendations
+      .map((candidate) => candidate.search)
+      .filter((search) => search !== null),
+  );
   while (new TextEncoder().encode(JSON.stringify(digest)).byteLength > SEARCH_DIGEST_MAX_BYTES) {
+    const search = candidateQueries.find((entry) => entry.queries.length > 0);
+    if (search) {
+      search.queries.pop();
+      search.omittedQueries += 1;
+      digest.truncated = true;
+      continue;
+    }
     const longest = sections.reduce((best, section) =>
       section.length > best.length ? section : best,
     );

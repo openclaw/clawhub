@@ -240,11 +240,29 @@ Adoption keeps its own exact period, generation time and original ranking. Packa
 Trending includes a partial current UTC day; native skill Trending uses completed
 hours. Unknown source periods and unavailable metrics remain null. Both views expose
 coverage limits and current metadata freshness. Candidate eligibility uses current
-public releases and security status, and excludes already Featured artifacts;
+public releases and security status. Channels, model providers and agent runtimes
+are excluded from plugin discovery using their canonical category; official and
+community workflow tools remain eligible. Current Featured entries are reassessed;
 external skills without a ClawHub Featured owner remain explicit exclusions.
 
+Every iteration proposes the complete set of up to eight plugins and eight skills,
+including retained selections, additions, removals, the current membership baseline,
+and any unfilled places. Current Featured members are checked even outside the
+inspected Trending/search cohort. Eligible members with no observed window evidence
+are labeled `current-only` and can fill remaining places; their missing evidence
+is not zero demand. An evidence-ranked replacement is not a safety finding.
+The quality floor is never lowered to fill eight places. The Emerging label reuses
+the public New tab's 14-day publication window with observed adoption, or the
+existing skill Rising feed with adoption; it does not claim accelerating growth.
+
+The weekly digest carries the same complete proposed membership. It shortens query
+details and other sections before dropping any selected identity; an unrepresentable
+selection fails explicitly. Publication remains a separate moderator action requiring
+Patrick's approval. Publishing a newly Featured skill can trigger its existing
+Featured notification; reading this report does not send it.
+
 For the first production dry run, use these read-only commands or Management →
-Search intelligence → Featured candidates. Do not invoke delivery, backfill request
+Search intelligence → Featured selection. Do not invoke delivery, backfill request
 logs, or change Featured. Review usefulness, quality, security and category coverage
 with Patrick before publishing a selection. An empty search window can still have
 adoption candidates; missing evidence is never replaced with sample recommendations.

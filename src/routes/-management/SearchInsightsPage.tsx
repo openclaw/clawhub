@@ -140,7 +140,7 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
             <option value="all">All demand</option>
             <option value="gaps">Official gaps</option>
             <option value="company">Company opportunities</option>
-            <option value="featured">Featured candidates</option>
+            <option value="featured">Featured selection</option>
           </select>
         </label>
       </div>

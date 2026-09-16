@@ -1,3 +1,4 @@
+import { getPluginDiscoveryExclusion } from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
@@ -60,6 +61,11 @@ async function readReport(
     // Candidate coverage is independent of how many cards the caller displays.
     limit: 100,
   });
+  const currentMetadataCheckedAt = Date.now();
+  const currentFeatured = await ctx.runQuery(
+    internal.featuredArtifacts.readCurrentFeaturedInternal,
+    { artifactKind: input.artifactKind },
+  );
   const adoption = await ctx.runQuery(internal.featuredIntelligence.readAdoptionInternal, {
     artifactKind: input.artifactKind,
   });
@@ -71,9 +77,14 @@ async function readReport(
       window: searchReport.window,
       coverage: searchReport.coverage,
       limit,
+      currentFeatured,
     }),
     adoption: adoption.summary,
-    metadataCheckedAt: adoption.metadataCheckedAt ?? searchReport.metadataCheckedAt,
+    metadataCheckedAt: Math.max(
+      currentMetadataCheckedAt,
+      adoption.metadataCheckedAt ?? 0,
+      searchReport.metadataCheckedAt ?? 0,
+    ),
   };
 }
 
@@ -112,15 +123,23 @@ async function readPluginAdoption(ctx: QueryCtx): Promise<AdoptionReport> {
     .order("desc")
     .first();
   if (!snapshot) return unavailable;
-  const inspected = snapshot.items.slice(0, ADOPTION_INSPECTION_LIMIT);
-  const identities = await Promise.all(
-    inspected.map(async (item) => {
-      const pkg = await ctx.db.get(item.packageId);
-      return pkg ? `plugin:${pkg.name}` : null;
-    }),
-  );
+  // Old snapshots can still contain setup categories. Filter the canonical
+  // purpose before the inspection cap so they cannot starve discovery candidates.
+  const inspected: Array<{
+    item: (typeof snapshot.items)[number];
+    rank: number;
+    identity: string;
+  }> = [];
+  let scannedItems = 0;
+  for (const [index, item] of snapshot.items.entries()) {
+    scannedItems += 1;
+    const pkg = await ctx.db.get(item.packageId);
+    if (!pkg || getPluginDiscoveryExclusion(pkg.categories)) continue;
+    inspected.push({ item, rank: index + 1, identity: `plugin:${pkg.name}` });
+    if (inspected.length === ADOPTION_INSPECTION_LIMIT) break;
+  }
   const artifacts = await ctx.runQuery(internal.featuredArtifacts.readInternal, {
-    identities: identities.filter((id): id is string => id !== null),
+    identities: inspected.map((entry) => entry.identity),
   });
   const byId = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
   const periodStart = snapshot.rangeStartDay * SEARCH_DAY_MS;
@@ -129,15 +148,14 @@ async function readPluginAdoption(ctx: QueryCtx): Promise<AdoptionReport> {
   const periodEnd = Math.min((snapshot.rangeEndDay + 1) * SEARCH_DAY_MS, snapshot.generatedAt);
   const rankingVersion = "unversioned";
   const evidence: AdoptionArtifact[] = [];
-  inspected.forEach((item, index) => {
-    const identity = identities[index];
+  inspected.forEach(({ item, rank, identity }) => {
     const artifact = identity ? byId.get(identity) : undefined;
     if (!artifact) return;
     evidence.push({
       artifact,
       evidence: {
         source: "package-trending",
-        rank: index + 1,
+        rank,
         snapshotId: String(snapshot._id),
         rankingVersion,
         periodStart,
@@ -160,8 +178,8 @@ async function readPluginAdoption(ctx: QueryCtx): Promise<AdoptionReport> {
       snapshotId: String(snapshot._id),
       rankingVersion,
       totalItems: snapshot.items.length,
-      inspectedItems: inspected.length,
-      truncated: snapshot.items.length > inspected.length,
+      inspectedItems: scannedItems,
+      truncated: snapshot.items.length > scannedItems,
     },
     artifacts: evidence,
     metadataCheckedAt: Date.now(),

@@ -52,31 +52,40 @@ describe("SearchInsightsPage", () => {
           totalCandidates: 1,
           omittedCandidates: 0,
           excluded: [],
-          candidates: [
-            {
-              id: "plugin:calendar",
-              displayName: "Calendar connector",
-              summary: "Keep events synchronized.",
-              url: "/plugins/calendar",
-              category: "productivity",
-              support: "adoption-only",
-              search: null,
-              adoption: {
-                source: "package-trending",
-                rank: 1,
-                downloads: 40,
-                installs: 3,
-                bookmarks: null,
-                snapshotId: "observed",
-                rankingVersion: "unversioned",
-                generatedAt: report.generatedAt,
-                periodStart: report.generatedAt - 86_400_000,
-                periodEnd: report.generatedAt,
-                lifetimeInstalls: null,
-                sourceObservedAt: null,
+          candidates: [],
+          lineup: {
+            targetSize: 8,
+            baseline: [],
+            removals: [],
+            shortfall: 7,
+            proposed: [
+              {
+                id: "plugin:calendar",
+                displayName: "Calendar connector",
+                summary: "Keep events synchronized.",
+                url: "/plugins/calendar",
+                category: "productivity",
+                change: "add",
+                emerging: true,
+                support: "adoption-only",
+                search: null,
+                adoption: {
+                  source: "package-trending",
+                  rank: 1,
+                  downloads: 40,
+                  installs: 3,
+                  bookmarks: null,
+                  snapshotId: "observed",
+                  rankingVersion: "unversioned",
+                  generatedAt: report.generatedAt,
+                  periodStart: report.generatedAt - 86_400_000,
+                  periodEnd: report.generatedAt,
+                  lifetimeInstalls: null,
+                  sourceObservedAt: null,
+                },
               },
-            },
-          ],
+            ],
+          },
         },
       })
       .mockRejectedValueOnce(new Error("Catalog unavailable"));
@@ -87,7 +96,10 @@ describe("SearchInsightsPage", () => {
     });
     await screen.findByRole("link", { name: "Calendar connector" });
     expect(screen.getByText(/40 downloads/)).toBeTruthy();
-    expect(screen.getByText(/No matching collected search demand/)).toBeTruthy();
+    expect(screen.getByText(/1 of 8 plugins/)).toBeTruthy();
+    expect(screen.getByText(/7 open Featured places/)).toBeTruthy();
+    expect(screen.getByText(/Add · Emerging · Adoption/)).toBeTruthy();
+    expect(screen.getByText(/No search evidence in the inspected queries/)).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "Catalog" }), {
       target: { value: "skill" },
