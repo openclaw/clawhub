@@ -3752,7 +3752,9 @@ describe("batched canonical search for intelligence", () => {
       async (_table: string, _index: string, _args: { vector: number[] }) => [],
     );
     const ctx = { runQuery, vectorSearch };
-    const queries = ["calendar", "calendar tools"];
+    const queries = Array.from({ length: 100 }, (_, index) =>
+      index % 2 === 0 ? "calendar" : "calendar tools",
+    );
     generateEmbeddingMock.mockResolvedValue([1, 0]);
     const expected = [];
     for (const query of queries)
@@ -3772,14 +3774,14 @@ describe("batched canonical search for intelligence", () => {
     await expect(batchHandler(ctx, { queries })).resolves.toEqual(expected);
     expect(usage).toHaveBeenCalledTimes(1);
     expect(generateEmbeddingMock).not.toHaveBeenCalled();
-    expect(generateEmbeddingsMock).toHaveBeenLastCalledWith(queries);
+    expect(generateEmbeddingsMock).toHaveBeenLastCalledWith(["calendar", "calendar tools"]);
     expect(vectorSearch.mock.calls.map((call) => call[2].vector)).toEqual(
       expect.arrayContaining([
         [1, 0],
         [0, 1],
       ]),
     );
-    expect(vectorSearch).toHaveBeenCalledTimes(2);
+    expect(vectorSearch).toHaveBeenCalledTimes(100);
   });
   it("keeps lexical fallback for embedding failures and rejects database failures without partial results", async () => {
     generateEmbeddingsMock.mockRejectedValue(new Error("embedding unavailable"));

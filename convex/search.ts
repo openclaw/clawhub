@@ -1023,30 +1023,39 @@ export const searchPublicDiscoveryBatchInternal = internalAction({
       vectors = null;
     }
     const vectorByQuery = new Map(inputs.map((query, index) => [query, vectors?.[index] ?? null]));
-    const candidates: Awaited<ReturnType<typeof readCanonicalSkillCandidates>>[] = [];
+    const usage = new Map<string, RollingSkillUsage>();
+    const results: Array<{ query: string; identities: string[] }> = [];
     for (const batch of chunkValues(queries, 8)) {
-      candidates.push(
-        ...(await Promise.all(
-          batch.map((query) =>
-            readCanonicalSkillCandidates(
-              ctx,
-              { query, limit: 3 },
-              vectorByQuery.get(query.trim()) ?? null,
-            ),
+      const candidates = await Promise.all(
+        batch.map((query) =>
+          readCanonicalSkillCandidates(
+            ctx,
+            { query, limit: 3 },
+            vectorByQuery.get(query.trim()) ?? null,
           ),
-        )),
+        ),
+      );
+      const missingUsage = await readCanonicalSkillUsage(
+        ctx,
+        candidates.flatMap((candidate) =>
+          candidate.nativeCandidates.filter((entry) => !usage.has(String(entry.skill._id))),
+        ),
+      );
+      for (const [id, row] of missingUsage) usage.set(id, row);
+      // Rich native/external candidates must be released between groups to fit
+      // Convex's 64 MB action budget; only identities and usage facts survive.
+      results.push(
+        ...batch.map((query, index) => ({
+          query,
+          identities: rankCanonicalSkillCandidates(
+            { query, limit: 3 },
+            candidates[index],
+            usage,
+          ).map((result) => result.id),
+        })),
       );
     }
-    const usage = await readCanonicalSkillUsage(
-      ctx,
-      candidates.flatMap((candidate) => candidate.nativeCandidates),
-    );
-    return queries.map((query, index) => ({
-      query,
-      identities: rankCanonicalSkillCandidates({ query, limit: 3 }, candidates[index], usage).map(
-        (result) => result.id,
-      ),
-    }));
+    return results;
   },
 });
 
