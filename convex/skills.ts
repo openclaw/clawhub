@@ -138,6 +138,7 @@ import {
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
+  getPublicSkillMetadataOwner,
   readPublicSkillVersion,
   readPublicSkillVersionSelections,
 } from "./lib/skills/publicVersions";
@@ -2811,14 +2812,8 @@ export const getVerifyTargetBySlugInternal = internalQuery({
     const isMalwareBlocked =
       skill.moderationVerdict === "malicious" ||
       (skill.moderationFlags?.includes("blocked.malware") ?? false);
-    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
 
-    const owner = toPublicPublisher(
-      await getOwnerPublisher(ctx, {
-        ownerPublisherId: skill.ownerPublisherId,
-        ownerUserId: skill.ownerUserId,
-      }),
-    );
+    const owner = await getPublicSkillMetadataOwner(ctx, skill);
     if (!owner) return null;
 
     const isPendingScan =
@@ -3360,14 +3355,8 @@ export const getSecurityVerdictTargetInternal = internalQuery({
       (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
-    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
 
-    const owner = toPublicPublisher(
-      await getOwnerPublisher(ctx, {
-        ownerPublisherId: skill.ownerPublisherId,
-        ownerUserId: skill.ownerUserId,
-      }),
-    );
+    const owner = await getPublicSkillMetadataOwner(ctx, skill);
     if (!owner) return null;
 
     const version = await ctx.db
@@ -7598,6 +7587,9 @@ async function paginatePublicSkillVersions(
   initialCursor: string | null,
   limit: number,
 ) {
+  if (!(await getPublicSkillMetadataOwner(ctx, await ctx.db.get(skillId)))) {
+    return { items: [] as Doc<"skillVersions">[], nextCursor: null };
+  }
   const scanLimit = Math.max(
     limit,
     Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, limit * MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES),
@@ -7718,12 +7710,9 @@ export const getVersionById = query({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
-    return version &&
-      !version.softDeletedAt &&
-      version.ownerDeletedAt === undefined &&
-      isPublicSkillVersionAvailableForSkill(version, version.skillId)
-      ? toPublicSkillVersion(version)
-      : null;
+    if (!version || !isPublicSkillVersionAvailableForSkill(version, version.skillId)) return null;
+    const owner = await getPublicSkillMetadataOwner(ctx, await ctx.db.get(version.skillId));
+    return owner ? toPublicSkillVersion(version) : null;
   },
 });
 
@@ -9686,12 +9675,9 @@ export const getVersionBySkillAndVersion = query({
         q.eq("skillId", args.skillId).eq("version", args.version),
       )
       .unique();
-    return version &&
-      !version.softDeletedAt &&
-      version.ownerDeletedAt === undefined &&
-      isPublicSkillVersionAvailableForSkill(version, args.skillId)
-      ? toPublicSkillVersion(version)
-      : null;
+    if (!version || !isPublicSkillVersionAvailableForSkill(version, args.skillId)) return null;
+    const owner = await getPublicSkillMetadataOwner(ctx, await ctx.db.get(args.skillId));
+    return owner ? toPublicSkillVersion(version) : null;
   },
 });
 

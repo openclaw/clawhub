@@ -1,5 +1,8 @@
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
+import { isPublicSkillDoc } from "../globalStats";
+import { toPublicPublisher } from "../public";
+import { getOwnerPublisher } from "../publishers";
 import {
   isPublishedSkillVersion,
   isPublicSkillVersionAvailableForSkill,
@@ -80,5 +83,23 @@ export async function readPublicSkillVersionSelections(
   const versionMap = new Map(versionIds.map((id, index) => [id, versions[index] ?? null]));
   return selections.map(({ skillId, versionId }) =>
     checkPublicVersionSelection(skillMap.get(skillId) ?? null, versionMap.get(versionId) ?? null),
+  );
+}
+
+/** Existing metadata inspection policy: retain malware transparency, never bytes. */
+export async function getPublicSkillMetadataOwner(
+  ctx: Pick<QueryCtx, "db">,
+  skill: Doc<"skills"> | null,
+) {
+  if (!skill || skill.softDeletedAt) return null;
+  const isMalwareBlocked =
+    skill.moderationVerdict === "malicious" ||
+    (skill.moderationFlags?.includes("blocked.malware") ?? false);
+  if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
+  return toPublicPublisher(
+    await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    }),
   );
 }

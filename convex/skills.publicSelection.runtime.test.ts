@@ -244,3 +244,85 @@ it("preserves authenticated owner preview of pending bytes while anonymous previ
     "Version not available",
   );
 });
+
+async function publicVersionMetadata(f: Awaited<ReturnType<typeof fixture>>) {
+  const [byId, byVersion, page, list] = await Promise.all([
+    f.t.query(api.skills.getVersionById, { versionId: f.publishedId }),
+    f.t.query(api.skills.getVersionBySkillAndVersion, { skillId: f.skillId, version: "1.0.0" }),
+    f.t.query(api.skills.listVersionsPage, { skillId: f.skillId }),
+    f.t.query(api.skills.listVersions, { skillId: f.skillId }),
+  ]);
+  return {
+    byId: byId?.version ?? null,
+    byVersion: byVersion?.version ?? null,
+    page: page.items.map((version) => version.version),
+    list: list.map((version) => version.version),
+  };
+}
+
+it.each(["hidden", "removed"] as const)(
+  "hides direct public version metadata for a %s parent",
+  async (moderationStatus) => {
+    const f = await fixture();
+    await f.t.run((ctx) =>
+      ctx.db.patch(f.skillId, { moderationStatus, moderationReason: "manual.review" }),
+    );
+    expect(await publicVersionMetadata(f)).toEqual({
+      byId: null,
+      byVersion: null,
+      page: [],
+      list: [],
+    });
+  },
+);
+
+it("hides direct public version metadata after parent deletion", async () => {
+  const f = await fixture();
+  await f.t.run((ctx) => ctx.db.patch(f.skillId, { softDeletedAt: 3 }));
+  expect(await publicVersionMetadata(f)).toEqual({
+    byId: null,
+    byVersion: null,
+    page: [],
+    list: [],
+  });
+});
+
+it("hides direct public version metadata for an inactive legacy owner", async () => {
+  const f = await fixture();
+  await f.t.run((ctx) => ctx.db.patch(f.userId, { deactivatedAt: 3 }));
+  expect(await publicVersionMetadata(f)).toEqual({
+    byId: null,
+    byVersion: null,
+    page: [],
+    list: [],
+  });
+});
+
+it("preserves published metadata transparency for a malware-blocked parent", async () => {
+  const f = await fixture();
+  await f.t.run((ctx) =>
+    ctx.db.patch(f.skillId, { moderationStatus: "hidden", moderationVerdict: "malicious" }),
+  );
+  const metadata = await publicVersionMetadata(f);
+  expect(metadata.byId).toBe("1.0.0");
+  expect(metadata.byVersion).toBe("1.0.0");
+  expect(metadata.page.sort()).toEqual(["0.9.0", "1.0.0"]);
+  expect(metadata.list.sort()).toEqual(["0.9.0", "1.0.0"]);
+});
+
+it.each(["owner", "moderator"] as const)(
+  "preserves the %s version-list preview under a hidden parent",
+  async (actorKind) => {
+    const f = await fixture();
+    const actorId = await f.t.run(async (ctx) => {
+      await ctx.db.patch(f.skillId, { moderationStatus: "hidden" });
+      return actorKind === "owner"
+        ? f.userId
+        : ctx.db.insert("users", { handle: "moderator", role: "moderator" });
+    });
+    const versions = await f.t
+      .withIdentity({ subject: actorId })
+      .query(api.skills.listVersions, { skillId: f.skillId });
+    expect(versions.map((version) => version.version)).toContain("2.0.0");
+  },
+);
