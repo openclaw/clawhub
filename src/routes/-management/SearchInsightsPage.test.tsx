@@ -16,8 +16,18 @@ const { getReport, getRecommendations, startReport, getResult, requests, statuse
 vi.mock("convex/react", () => ({
   useAction: () => getResult,
   useMutation: () => startReport,
-  useQuery: (_ref: unknown, args: { reportId: string } | "skip") =>
-    args === "skip" ? undefined : statuses.get(args.reportId),
+  useQuery: (_ref: unknown, args: { reportId?: string; artifactKind?: string } | "skip") =>
+    args === "skip"
+      ? undefined
+      : args.artifactKind
+        ? {
+            artifactKind: args.artifactKind,
+            revision: 0,
+            editorial: [],
+            reservations: [],
+            published: null,
+          }
+        : statuses.get(args.reportId!),
 }));
 beforeEach(() => {
   vi.resetAllMocks();
@@ -74,6 +84,8 @@ describe("SearchInsightsPage", () => {
         metadataCheckedAt: report.generatedAt,
         adoption: {
           status: "available",
+          collectionStartedAt: report.generatedAt - 30 * 86_400_000,
+          scannedRows: 1,
           generatedAt: report.generatedAt,
           periodStart: report.generatedAt - 86_400_000,
           periodEnd: report.generatedAt,
@@ -87,10 +99,18 @@ describe("SearchInsightsPage", () => {
           excluded: [],
           candidates: [],
           lineup: {
-            targetSize: 8,
+            targetSize: 16,
+            reservedSlots: 8,
+            telemetryTarget: 8,
+            editorialRevision: 0,
+            currentEditorialRevision: 0,
+            staleEditorial: false,
+            pendingCount: 8,
+            telemetryShortfall: 7,
+            reservations: [],
             baseline: [],
             removals: [],
-            shortfall: 7,
+            shortfall: 15,
             proposed: [
               {
                 id: "plugin:calendar",
@@ -99,14 +119,20 @@ describe("SearchInsightsPage", () => {
                 url: "/plugins/calendar",
                 category: "productivity",
                 change: "add",
+                selectionBasis: "telemetry",
+                slot: 8,
+                reason: "Highest recorded installs among eligible remaining plugins.",
                 emerging: true,
                 support: "adoption-only",
                 search: null,
                 adoption: {
-                  source: "package-trending",
+                  source: "package-daily-installs",
                   rank: 1,
-                  downloads: 40,
-                  installs: 3,
+                  installs30d: 40,
+                  installs7d: 3,
+                  importedRows: 0,
+                  importDatasetVersions: [],
+                  periodStart7d: report.generatedAt - 7 * 86_400_000,
                   bookmarks: null,
                   snapshotId: "observed",
                   rankingVersion: "unversioned",
@@ -128,11 +154,11 @@ describe("SearchInsightsPage", () => {
       target: { value: "featured" },
     });
     await screen.findByRole("link", { name: "Calendar connector" });
-    expect(screen.getByText(/40 downloads/)).toBeTruthy();
-    expect(screen.getByText(/1 of 8 plugins/)).toBeTruthy();
-    expect(screen.getByText(/7 open Featured places/)).toBeTruthy();
-    expect(screen.getByText(/Add · Emerging · Adoption/)).toBeTruthy();
-    expect(screen.getByText(/No search evidence in the inspected queries/)).toBeTruthy();
+    expect(screen.getByText(/recorded installs \/ 30 days/)).toBeTruthy();
+    expect(screen.getByText(/1 ready of 16 plugins/)).toBeTruthy();
+    expect(screen.getByText(/7 open telemetry places. We do not pad/)).toBeTruthy();
+    expect(screen.getByText(/Slot 9 · Recorded installs/)).toBeTruthy();
+    expect(screen.getByText(/do not establish demand for an individual artifact/)).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "Catalog" }), {
       target: { value: "skill" },

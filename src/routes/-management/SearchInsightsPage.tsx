@@ -1,15 +1,18 @@
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import type { FeaturedIntelligenceReport } from "../../../convex/featuredIntelligence";
 import type { SearchInsightArgs, SearchInsightReport } from "../../../convex/lib/searchInsights";
+import type { FeaturedIntelligenceReportSchema } from "../../../packages/clawhub/src/schema/searchInsights";
 import type {
   SearchReportRequest,
   SearchReportStatus,
 } from "../../../packages/clawhub/src/schema/searchReports";
 import { Button } from "../../components/ui/button";
+import { FeaturedEditorial } from "./FeaturedEditorial";
 import { FeaturedRecommendations } from "./FeaturedRecommendations";
 import { insightTime as date } from "./insightTime";
+
+type FeaturedIntelligenceReport = typeof FeaturedIntelligenceReportSchema.infer;
 
 export function SearchInsightsPage({ endDay }: { endDay?: number }) {
   const startReport = useMutation(api.searchReports.start);
@@ -34,7 +37,7 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
       artifactKind,
       scope,
       source,
-      window,
+      window: view === "featured" ? 30 : window,
       ...(view === "featured"
         ? {}
         : {
@@ -199,10 +202,11 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
           </select>
         </label>
         <label>
-          Rank by
+          Search evidence period
           <select
-            aria-label="Rank by"
-            value={window}
+            aria-label="Search evidence period"
+            value={view === "featured" ? 30 : window}
+            disabled={view === "featured"}
             onChange={(event) => setWindow(Number(event.target.value) as 7 | 30)}
           >
             <option value={7}>Last 7 complete days</option>
@@ -219,6 +223,13 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
           </select>
         </label>
       </div>
+      {view === "featured" ? (
+        <FeaturedEditorial
+          key={artifactKind}
+          artifactKind={artifactKind}
+          reportRevision={intelligence?.recommendations.lineup.editorialRevision}
+        />
+      ) : null}
       {failure ? <p role="alert">{failure}</p> : null}
       {loading ? (
         <div role="status" aria-live="polite">
@@ -227,7 +238,7 @@ export function SearchInsightsPage({ endDay }: { endDay?: number }) {
               ? "Checking current eligibility…"
               : phase === "running"
                 ? view === "featured"
-                  ? "Analyzing search demand and adoption…"
+                  ? "Analyzing recorded installs and search context…"
                   : "Analyzing search demand…"
                 : "Waiting to generate the report…"}
           </p>
