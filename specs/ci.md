@@ -77,6 +77,14 @@ set before the first push. Application readiness checks never republish code,
 and no development watcher can push again while the app builds. A persistent
 launcher retains ownership of the backend process group through cleanup.
 
+The disposable backend defaults `FUNRUN_ISOLATE_ACTIVE_THREADS` to `2` before
+bootstrap, limiting simultaneous V8 execution on small runners. Convex pauses
+the user watchdog while a request waits for an execution permit; the one-second
+UDF limit and existing system and admission limits remain unchanged. This reduces
+CPU contention without serializing whole requests or changing production
+configuration. An explicit process-environment override,
+including `0` for the upstream unlimited default, is preserved for diagnosis.
+
 The first push builds the external dependencies for Convex `"use node"` functions
 from their installed package versions. A slow cold npm install can exceed the
 backend's default 300-second HTTP timeout: its 408 response prompts a CLI retry

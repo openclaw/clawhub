@@ -11,11 +11,18 @@ import {
 
 describe("playwright local-auth runner config", () => {
   it("sets the backend transport timeout and bounded, cache-preferring npm fetches", () => {
-    expect(buildLocalAuthBackendEnv()).toEqual({
+    expect(buildLocalAuthBackendEnv({})).toEqual({
       HTTP_SERVER_TIMEOUT_SECONDS: "900",
+      FUNRUN_ISOLATE_ACTIVE_THREADS: "2",
       npm_config_prefer_offline: "true",
       npm_config_fetch_timeout: "60000",
       npm_config_fetch_retries: "5",
+    });
+  });
+
+  it("preserves an explicit unlimited isolate override for runtime diagnosis", () => {
+    expect(buildLocalAuthBackendEnv({ FUNRUN_ISOLATE_ACTIVE_THREADS: "0" })).toMatchObject({
+      FUNRUN_ISOLATE_ACTIVE_THREADS: "0",
     });
   });
 

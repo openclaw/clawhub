@@ -21,11 +21,13 @@ export type LocalAuthRunnerConfig = {
   playwrightArgs: string[];
 };
 
-export function buildLocalAuthBackendEnv() {
+export function buildLocalAuthBackendEnv(env: RunnerEnv = process.env) {
   // A 300s backend 408 makes the CLI retry into the executor's shared build_deps directory.
   // 900s exceeds its 605s build_deps cap, so a stuck install hits the executor timeout first.
   return {
     HTTP_SERVER_TIMEOUT_SECONDS: String(LOCAL_AUTH_BACKEND_HTTP_TIMEOUT_SECONDS),
+    // Bound simultaneous V8 work; queued permits do not consume the 1s UDF watchdog.
+    FUNRUN_ISOLATE_ACTIVE_THREADS: env.FUNRUN_ISOLATE_ACTIVE_THREADS ?? "2",
     npm_config_prefer_offline: "true",
     npm_config_fetch_timeout: "60000",
     npm_config_fetch_retries: "5",
