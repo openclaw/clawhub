@@ -110,6 +110,8 @@ it("public Featured reads follow approved identity order and omit unbadged reser
         updatedAt: 1,
         updatedBy: data.ownerUserId,
         published: {
+          reportId: "retained-report-fixture",
+          reportHash: "retained-evidence-hash",
           at: 1,
           byUserId: data.ownerUserId,
           periodStart: 0,
