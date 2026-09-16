@@ -55,20 +55,21 @@ async function readReport(
   const limit = input.limit ?? 20;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
     throw new Error("limit must be between 1 and 100");
-  const searchReport = await ctx.runAction(internal.searchInsights.getInternal, {
-    ...input,
-    includeCurrentResults: true,
-    // Candidate coverage is independent of how many cards the caller displays.
-    limit: 100,
-  });
   const currentMetadataCheckedAt = Date.now();
-  const currentFeatured = await ctx.runQuery(
-    internal.featuredArtifacts.readCurrentFeaturedInternal,
-    { artifactKind: input.artifactKind },
-  );
-  const adoption = await ctx.runQuery(internal.featuredIntelligence.readAdoptionInternal, {
-    artifactKind: input.artifactKind,
-  });
+  const [searchReport, currentFeatured, adoption] = await Promise.all([
+    ctx.runAction(internal.searchInsights.getInternal, {
+      ...input,
+      includeCurrentResults: true,
+      // Candidate coverage is independent of how many cards the caller displays.
+      limit: 100,
+    }),
+    ctx.runQuery(internal.featuredArtifacts.readCurrentFeaturedInternal, {
+      artifactKind: input.artifactKind,
+    }),
+    ctx.runQuery(internal.featuredIntelligence.readAdoptionInternal, {
+      artifactKind: input.artifactKind,
+    }),
+  ]);
   return {
     searchReport,
     recommendations: recommendFeatured({

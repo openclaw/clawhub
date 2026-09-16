@@ -2,10 +2,12 @@
 /* @vitest-environment edge-runtime */
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
+import { getFunctionName } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
+import { readCurrentResultsInternal } from "./searchInsights";
 
 const modules = import.meta.glob("./**/*.ts");
 const END = Date.UTC(2026, 8, 8);
@@ -570,4 +572,79 @@ describe("staff search intelligence report", () => {
       changePercent: -100,
     });
   });
+});
+
+describe("current search metadata batching", () => {
+  const handler = (
+    readCurrentResultsInternal as unknown as {
+      _handler: (
+        ctx: unknown,
+        args: unknown,
+      ) => Promise<{ rows: Array<{ query: string; results: Array<{ id: string }> }> }>;
+    }
+  )._handler;
+  it.each(["plugin", "skill"])(
+    "hydrates shared identities once while preserving every %s query's order",
+    async (artifactKind) => {
+      const identity = (name: string) => `${artifactKind}:${name}`;
+      const lookup = (query: string) =>
+        query === "first"
+          ? [identity("shared"), identity("first")]
+          : [identity("second"), identity("shared")];
+      const hydrate = vi.fn(async ({ identities }: { identities: string[] }) =>
+        identities.map((id) => ({ id })),
+      );
+      const dispatch = vi.fn(async (ref, args) => {
+        const name = getFunctionName(ref);
+        if (name === "featuredArtifacts:readInternal") return hydrate(args);
+        if (name.endsWith("searchPublicDiscoveryBatchInternal"))
+          return args.queries.map((query: string) => ({ query, identities: lookup(query) }));
+        // Baseline uses one search and hydration per query; preserve its IO contract for RED.
+        if (name === "search:searchSkills") return lookup(args.query).map((id) => ({ id }));
+        if (name === "packages:searchForViewerInternal")
+          return args.family === "code-plugin"
+            ? lookup(args.query).map((id, index) => ({
+                package: { name: id.slice(7) },
+                score: 10 - index,
+              }))
+            : [];
+        throw new Error(`Unexpected query ${name}`);
+      });
+      const result = await handler(
+        { runAction: dispatch, runQuery: dispatch },
+        { queries: ["first", "second"], artifactKind },
+      );
+      expect(result.rows).toEqual([
+        { query: "first", results: lookup("first").map((id) => ({ id })) },
+        { query: "second", results: lookup("second").map((id) => ({ id })) },
+      ]);
+      expect(hydrate).toHaveBeenCalledTimes(1);
+      expect(hydrate).toHaveBeenCalledWith({
+        identities: [identity("shared"), identity("first"), identity("second")],
+      });
+    },
+  );
+  it.each(["plugin", "skill"])(
+    "covers all 100 %s terms with bounded metadata transactions and fails atomically",
+    async (artifactKind) => {
+      const queries = Array.from({ length: 100 }, (_, index) => `term ${index}`);
+      const matches = (query: string) =>
+        [0, 1, 2].map((index) => `${artifactKind}:${query}/${index}`);
+      const hydrate = vi.fn(async ({ identities }: { identities: string[] }) =>
+        identities.map((id) => ({ id })),
+      );
+      const dispatch = vi.fn(async (ref, args) => {
+        if (getFunctionName(ref) === "featuredArtifacts:readInternal") return hydrate(args);
+        return args.queries.map((query: string) => ({ query, identities: matches(query) }));
+      });
+      const ctx = { runQuery: dispatch, runAction: dispatch };
+      const result = await handler(ctx, { queries, artifactKind });
+      expect(result.rows).toEqual(
+        queries.map((query) => ({ query, results: matches(query).map((id) => ({ id })) })),
+      );
+      expect(hydrate.mock.calls.map(([args]) => args.identities.length)).toEqual([100, 100, 100]);
+      hydrate.mockRejectedValueOnce(new Error("metadata unavailable"));
+      await expect(handler(ctx, { queries, artifactKind })).rejects.toThrow("metadata unavailable");
+    },
+  );
 });

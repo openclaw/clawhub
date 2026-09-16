@@ -14,16 +14,19 @@ import {
   lexicalFallbackSkills,
   searchSkills as canonicalSearchSkills,
   searchNativeSkills,
+  searchPublicDiscoveryBatchInternal,
 } from "./search";
 
-const { generateEmbeddingMock } = vi.hoisted(() => ({
+const { generateEmbeddingMock, generateEmbeddingsMock } = vi.hoisted(() => ({
   generateEmbeddingMock: vi.fn(),
+  generateEmbeddingsMock: vi.fn(),
 }));
 
 afterEach(() => vi.unstubAllEnvs());
 
 vi.mock("./lib/embeddings", () => ({
   generateEmbedding: generateEmbeddingMock,
+  generateEmbeddings: generateEmbeddingsMock,
 }));
 
 vi.mock("./lib/badges", () => ({
@@ -3706,3 +3709,103 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
     },
   };
 }
+
+describe("batched canonical search for intelligence", () => {
+  const batchHandler = (
+    searchPublicDiscoveryBatchInternal as unknown as {
+      _handler: (
+        ctx: unknown,
+        args: { queries: string[] },
+      ) => Promise<Array<{ query: string; identities: string[] }>>;
+    }
+  )?._handler;
+  it("matches single-search ranking with one vector batch and one usage read per distinct skill", async () => {
+    const native = {
+      skill: makePublicSkill({
+        id: "skills:calendar",
+        slug: "calendar",
+        displayName: "Calendar Tools",
+        downloads: 1,
+      }),
+      version: null,
+      ownerHandle: "acme",
+      owner: { _id: "publishers:acme", kind: "org", handle: "acme", displayName: "Acme" },
+    };
+    const external = makeExternalSearchDigest({ externalId: "acme/skills/calendar" });
+    const usage = vi.fn(async () => [{ skillId: native.skill._id, installs: 12, bookmarks: 3 }]);
+    const runQuery = vi.fn(async (ref) => {
+      switch (getFunctionName(ref)) {
+        case "search:getExactSkillSlugMatch":
+        case "search:directPrefixSkillMatches":
+          return [native];
+        case "search:lexicalFallbackSkills":
+          return [];
+        case "search:getExternalSkillSearchCandidates":
+          return [external];
+        case "search:getRollingSkillSearchUsage":
+          return usage();
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+    const vectorSearch = vi.fn(
+      async (_table: string, _index: string, _args: { vector: number[] }) => [],
+    );
+    const ctx = { runQuery, vectorSearch };
+    const queries = ["calendar", "calendar tools"];
+    generateEmbeddingMock.mockResolvedValue([1, 0]);
+    const expected = [];
+    for (const query of queries)
+      expected.push({
+        query,
+        identities: (await canonicalSearchSkillsHandler(ctx, { query, limit: 3 })).map(
+          (result) => result.id,
+        ),
+      });
+    usage.mockClear();
+    vectorSearch.mockClear();
+    generateEmbeddingMock.mockClear();
+    generateEmbeddingsMock.mockResolvedValueOnce([
+      [1, 0],
+      [0, 1],
+    ]);
+    await expect(batchHandler(ctx, { queries })).resolves.toEqual(expected);
+    expect(usage).toHaveBeenCalledTimes(1);
+    expect(generateEmbeddingMock).not.toHaveBeenCalled();
+    expect(generateEmbeddingsMock).toHaveBeenLastCalledWith(queries);
+    expect(vectorSearch.mock.calls.map((call) => call[2].vector)).toEqual(
+      expect.arrayContaining([
+        [1, 0],
+        [0, 1],
+      ]),
+    );
+    expect(vectorSearch).toHaveBeenCalledTimes(2);
+  });
+  it("keeps lexical fallback for embedding failures and rejects database failures without partial results", async () => {
+    generateEmbeddingsMock.mockRejectedValue(new Error("embedding unavailable"));
+    const runQuery = vi.fn(async () => []);
+    const vectorSearch = vi.fn();
+    await expect(
+      batchHandler({ runQuery, vectorSearch }, { queries: ["calendar", "tools"] }),
+    ).resolves.toEqual([
+      { query: "calendar", identities: [] },
+      { query: "tools", identities: [] },
+    ]);
+    expect(vectorSearch).not.toHaveBeenCalled();
+    runQuery.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(
+      batchHandler({ runQuery, vectorSearch }, { queries: ["calendar", "tools"] }),
+    ).rejects.toThrow("database unavailable");
+  });
+  it("bounds report work and preserves empty-query results without external recall", async () => {
+    generateEmbeddingsMock.mockResolvedValueOnce([]);
+    const runQuery = vi.fn();
+    await expect(batchHandler({ runQuery }, { queries: [" "] })).resolves.toEqual([
+      { query: " ", identities: [] },
+    ]);
+    expect(runQuery).not.toHaveBeenCalled();
+    await expect(
+      batchHandler({ runQuery }, { queries: Array.from({ length: 101 }, () => "calendar") }),
+    ).rejects.toThrow("Maximum 100 bounded queries");
+  });
+});

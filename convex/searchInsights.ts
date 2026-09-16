@@ -1,11 +1,10 @@
 import { getPage, type IndexKey } from "convex-helpers/server/pagination";
-import { paginationOptsValidator, type FunctionReturnType } from "convex/server";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action, internalAction, internalQuery, internalMutation } from "./functions";
-import { compareCatalogSearchEntries } from "./httpApiV1/packagesV1";
 import { assertModerator, requireUserFromAction } from "./lib/access";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import {
@@ -520,36 +519,47 @@ async function readCurrentResults(
 ): Promise<SearchCurrentResults> {
   if (args.queries.length > 100 || args.queries.some((query) => !query || query.length > 256))
     throw new Error("Maximum 100 bounded queries");
-  const rows: SearchCurrentResults["rows"] = [];
-  for (const query of args.queries) {
-    // Current public metadata is separate from historical visible-result facts. No attribution marker.
-    let identities: string[];
-    if (args.artifactKind === "skill") {
-      const matches: Array<{ id: string }> = await ctx.runAction(api.search.searchSkills, {
-        query,
-        limit: 3,
-      });
-      identities = matches.map((entry) => entry.id);
-    } else {
-      const groups: FunctionReturnType<typeof internal.packages.searchForViewerInternal>[] =
-        await Promise.all(
-          (["code-plugin", "bundle-plugin"] as const).map((family) =>
-            ctx.runQuery(internal.packages.searchForViewerInternal, { query, family, limit: 3 }),
-          ),
+  // Metadata is a current read, never another attributed search observation.
+  let matches: Array<{ query: string; identities: string[] }> = [];
+  if (args.artifactKind === "skill") {
+    matches = await ctx.runAction(internal.search.searchPublicDiscoveryBatchInternal, {
+      queries: args.queries,
+    });
+  } else {
+    // Ten terms share one bounded catalog recall transaction. Four concurrent
+    // transactions avoid both serial network latency and an unbounded read burst.
+    for (let index = 0; index < args.queries.length; index += 40) {
+      const batches = [];
+      for (let offset = index; offset < Math.min(index + 40, args.queries.length); offset += 10)
+        batches.push(
+          ctx.runQuery(internal.packages.searchPublicDiscoveryBatchInternal, {
+            queries: args.queries.slice(offset, offset + 10),
+            limit: 3,
+          }),
         );
-      identities = groups
-        .flat()
-        .sort(compareCatalogSearchEntries)
-        .slice(0, 3)
-        .map((entry) => `plugin:${entry.package.name}`);
+      matches.push(...(await Promise.all(batches)).flat());
     }
-    const results: SearchCurrentResult[] = await ctx.runQuery(
-      internal.featuredArtifacts.readInternal,
-      { identities },
-    );
-    rows.push({ query, results });
   }
-  return { metadataCheckedAt: Date.now(), rows };
+  const identities = [...new Set(matches.flatMap((match) => match.identities))];
+  const results: SearchCurrentResult[] = [];
+  // Up to 300 distinct results; the authoritative metadata owner accepts 100.
+  for (let index = 0; index < identities.length; index += 100)
+    results.push(
+      ...(await ctx.runQuery(internal.featuredArtifacts.readInternal, {
+        identities: identities.slice(index, index + 100),
+      })),
+    );
+  const byId = new Map(results.map((result) => [result.id, result]));
+  return {
+    metadataCheckedAt: Date.now(),
+    rows: matches.map(({ query, identities }) => ({
+      query,
+      results: identities.flatMap((identity) => {
+        const result = byId.get(identity);
+        return result ? [result] : [];
+      }),
+    })),
+  };
 }
 
 export const getAggregateStateInternal = internalQuery({
