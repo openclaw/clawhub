@@ -171,7 +171,10 @@ job IDs**, split across nine shared shards by default. `--shared-workers 18`
 spreads them across eighteen machines independently of `--batch-limit`, which
 controls concurrent scans on each machine. It does not admit scans, dispatch
 workers, change capacity automatically, or store campaign state on the server.
-The reserved priority shard continues processing its normal queue.
+Assigned shared workers use separate concurrency groups from ordinary queue
+workers. The reserved priority shard keeps its existing group and normal queue.
+When upgrading from a worker release that shared the ordinary groups, drain
+assigned workers and pending assigned dispatches before switching releases.
 
 ```sh
 bun run admin -- skills plan-scan-workers queued-job-ids.json --batch-limit 32 > worker-plan.json

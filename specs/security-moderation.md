@@ -563,7 +563,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   ungated `bulk-rescan` skill-version jobs, and use the normal lease, hydration,
   scan and result paths. They must not fall back to the general queue when an
   assignment is empty or stale, claim package jobs, or retry terminal failures.
-  The dedicated priority shard remains unassigned and retains its normal queue.
+  Assigned shared workers use separate GitHub concurrency groups from ordinary
+  queue workers, so a slow general-queue wave cannot block local bulk assignments.
+  Each assigned shard still permits only one running and one pending worker.
+  The dedicated priority shard remains unassigned, retains its normal queue, and
+  uses the same reserved concurrency group for every dispatch mode. Drain assigned
+  workers and pending assigned dispatches before changing their group naming.
   Assignment plans, admission baselines, receipts, cursor and capacity control
   remain local; no server-side campaign coordinator or assignment table is added.
   Admin batch status exposes queued identities from the same bounded point reads

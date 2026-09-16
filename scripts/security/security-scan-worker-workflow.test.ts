@@ -95,7 +95,8 @@ describe("security-scan-codex workflow", () => {
     expect(workflow.on?.schedule).toBeUndefined();
     expect(workflow.concurrency).toBeUndefined();
     expect(workflow.jobs["codex-security-scan"].concurrency).toEqual({
-      group: "clawhub-security-scan-${{ matrix.shard }}",
+      group:
+        "clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}",
       "cancel-in-progress": false,
     });
     expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(19);

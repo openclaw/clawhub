@@ -40,7 +40,9 @@ jobs:
     timeout-minutes: 40
     environment: Production
     concurrency:
-      group: clawhub-security-scan-${{ matrix.shard }}
+      # Bulk assignments must not wait behind ordinary queue workers on the same shard.
+      # Priority remains one reserved lane shared by every dispatch mode.
+      group: clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
