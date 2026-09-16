@@ -138,6 +138,10 @@ import {
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
+  readPublicSkillVersion,
+  readPublicSkillVersionSelections,
+} from "./lib/skills/publicVersions";
+import {
   getSkillBySlugForPublisher,
   getSkillSlugAliasBySlugForPublisher,
   getSkillSlugAliasBySlugScoped,
@@ -7723,6 +7727,29 @@ export const getVersionById = query({
   },
 });
 
+// Publication selection is separate from each route's parent authorization and
+// scan policy. These internal snapshots must never be serialized wholesale.
+export const getPublicVersionSelectionInternal = internalQuery({
+  args: {
+    skillId: v.id("skills"),
+    versionId: v.optional(v.id("skillVersions")),
+    version: v.optional(v.string()),
+    tag: v.optional(v.string()),
+  },
+  handler: readPublicSkillVersion,
+});
+
+export const getPublicVersionSelectionsInternal = internalQuery({
+  args: {
+    selections: v.array(v.object({ skillId: v.id("skills"), versionId: v.id("skillVersions") })),
+  },
+  handler: async (ctx, args) => {
+    if (args.selections.length > 250)
+      throw new ConvexError("At most 250 version selections are allowed.");
+    return readPublicSkillVersionSelections(ctx, args.selections);
+  },
+});
+
 export const getVersionsByIdsInternal = internalQuery({
   args: { versionIds: v.array(v.id("skillVersions")) },
   handler: async (ctx, args) => {
@@ -10468,7 +10495,7 @@ export const resolveVersionByHash = query({
       };
     }
     const skill = resolved.skill;
-    if (!skill) return null;
+    if (!skill || skill.softDeletedAt) return null;
 
     const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
     const latestVersion = isPublicSkillVersionAvailableForSkill(latestVersionDoc, skill._id)
@@ -10482,13 +10509,15 @@ export const resolveVersionByHash = query({
 
     let match: { version: string } | null = null;
     if (fingerprintMatches.length > 0) {
-      const newest = fingerprintMatches.reduce(
-        (best, entry) => (entry.createdAt > best.createdAt ? entry : best),
-        fingerprintMatches[0] as (typeof fingerprintMatches)[number],
-      );
-      const version = await ctx.db.get(newest.versionId);
-      if (version && !version.softDeletedAt) {
-        match = { version: version.version };
+      // Staged publishes already have fingerprint rows. A newer withheld match
+      // must not hide an older published version with the same content.
+      const newestFirst = [...fingerprintMatches].sort((a, b) => b.createdAt - a.createdAt);
+      for (const entry of newestFirst) {
+        const version = await ctx.db.get(entry.versionId);
+        if (version && isPublicSkillVersionAvailableForSkill(version, skill._id)) {
+          match = { version: version.version };
+          break;
+        }
       }
     }
 
@@ -10500,7 +10529,7 @@ export const resolveVersionByHash = query({
         .take(200);
 
       for (const version of versions) {
-        if (version.softDeletedAt) continue;
+        if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) continue;
         if (typeof version.fingerprint === "string" && version.fingerprint === hash) {
           match = { version: version.version };
           break;

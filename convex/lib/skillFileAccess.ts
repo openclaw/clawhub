@@ -159,6 +159,7 @@ export function isPublicSkillVersionAvailableForSkill(
     | {
         skillId?: Id<"skills"> | string | null;
         softDeletedAt?: number | null;
+        ownerDeletedAt?: number | null;
         publicationStatus?: string | null;
       }
     | null
@@ -168,6 +169,7 @@ export function isPublicSkillVersionAvailableForSkill(
   return Boolean(
     version &&
     !version.softDeletedAt &&
+    version.ownerDeletedAt === undefined &&
     isPublishedSkillVersion(version) &&
     isSkillVersionForSkill(version, skillId),
   );
