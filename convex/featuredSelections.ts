@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { renderFeaturedEvidence } from "./featuredIntelligence";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertModerator, requireUser } from "./lib/access";
 import { FEATURED_CATALOG_SIZE } from "./lib/featuredPolicy";
@@ -136,6 +137,7 @@ export const saveEditorialForUserInternal = internalMutation({
 });
 
 const publishArgs = {
+  reportId: v.string(),
   artifactKind: searchArtifactKind,
   expectedEditorialRevision: v.number(),
   expectedPublicationAt: v.union(v.number(), v.null()),
@@ -145,6 +147,7 @@ const publishArgs = {
   dryRun: v.boolean(),
 };
 type PublishInput = {
+  reportId: string;
   artifactKind: Kind;
   expectedEditorialRevision: number;
   expectedPublicationAt: number | null;
@@ -190,33 +193,39 @@ async function publishForActor(
   const editorial = args.artifactKind === "plugin" ? (row?.editorial ?? []) : [];
   if (args.artifactKind === "plugin" && editorial.length !== FEATURED_EDITORIAL_SLOTS)
     throw new ConvexError("Save all eight editorial reservations before publishing plugins.");
-  for (const [index, item] of args.items.entries()) {
-    const isEditorial = index < editorial.length;
-    if (
-      !item.id.startsWith(args.artifactKind === "plugin" ? "plugin:" : "clawhub:") ||
-      item.id.length > 300 ||
-      !item.version ||
-      item.version.length > 120 ||
-      !item.reason.trim() ||
-      item.reason.length > 500 ||
-      item.selectionBasis !== (isEditorial ? "editorial" : "telemetry") ||
-      (isEditorial && item.id !== editorial[index].id)
-    )
-      throw new ConvexError(
-        "Selection identities, order and provenance must match the reviewed catalog and editorial reservations.",
+  const { evidence: saved, reportHash } = await ctx.runQuery(
+    internal.searchReports.evidenceInternal,
+    { reportId: args.reportId, now: Date.now() },
+  );
+  if (
+    saved.view !== "recommendations" ||
+    saved.evidence.searchReport.artifactKind !== args.artifactKind
+  )
+    throw new ConvexError("Use a saved recommendation report for this catalog.");
+  const report = renderFeaturedEvidence(saved.evidence, FEATURED_CATALOG_SIZE);
+  const lineup = report.recommendations.lineup;
+  // The stored cohort owns evidence and ordering. A refreshed eligibility view
+  // cannot silently substitute for the frozen proposal that staff approved.
+  if (
+    lineup.editorialRevision !== args.expectedEditorialRevision ||
+    report.adoption.periodStart !== args.periodStart ||
+    report.adoption.periodEnd !== args.periodEnd ||
+    lineup.proposed.length !== args.items.length ||
+    lineup.proposed.some((candidate, index) => {
+      const item = args.items[index];
+      return (
+        candidate.id !== item.id ||
+        candidate.version !== item.version ||
+        candidate.selectionBasis !== item.selectionBasis ||
+        candidate.reason !== item.reason ||
+        candidate.adoption?.installs30d !== item.installs30d ||
+        candidate.adoption?.installs7d !== item.installs7d
       );
-    if (
-      !isEditorial &&
-      (!Number.isSafeInteger(item.installs30d) ||
-        !Number.isSafeInteger(item.installs7d) ||
-        item.installs30d! <= 0 ||
-        item.installs7d! < 0 ||
-        item.installs7d! > item.installs30d!)
-    )
-      throw new ConvexError(
-        "Telemetry selections require positive recorded installs and valid final-seven-day counts.",
-      );
-  }
+    })
+  )
+    throw new ConvexError(
+      "Selection changed from the saved report evidence. Generate and review a new report.",
+    );
   // All eligibility reads and badge changes belong to one transaction. A scan,
   // version, editorial edit or competing publication cannot race this approval.
   const current: SearchCurrentResult[] = await ctx.runQuery(
@@ -273,6 +282,8 @@ async function publishForActor(
   }
   const now = Math.max(Date.now(), (row?.published?.at ?? 0) + 1);
   const published = {
+    reportId: args.reportId,
+    reportHash,
     items: args.items,
     periodStart: args.periodStart,
     periodEnd: args.periodEnd,

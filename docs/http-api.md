@@ -1827,7 +1827,7 @@ uncached results. Recommendations never publish themselves.
   eight `{ id, name, displayName, reason }` entries. Identities use `plugin:<package>`.
   Missing catalog entries remain reserved; saving does not change public badges.
 - `POST /api/v1/featured/{plugin|skill}/publish` accepts exactly sixteen distinct
-  `items`, `expectedEditorialRevision`, `expectedPublicationAt` (null initially),
+  `items`, the reviewed recommendation `reportId`, `expectedEditorialRevision`, `expectedPublicationAt` (null initially),
   `periodStart`, `periodEnd`, and `dryRun`. Timestamps are Unix milliseconds;
   the evidence period is thirty completed UTC days, end exclusive.
 
@@ -1835,7 +1835,15 @@ Each publication item has `id`, `version`, `selectionBasis` (`editorial` or
 `telemetry`) and `reason`. Telemetry entries include positive `installs30d` and
 nonnegative `installs7d`, counted within that same window. Plugin order is all eight
 saved editorial reservations followed by eight telemetry selections. Skills use
-sixteen native `clawhub:<skill-id>` identities, all telemetry selections.
+sixteen native `clawhub:<skill-id>` identities, all telemetry selections. Include
+editorial install counts too when the report provides them.
+
+Create the recommendation report through `POST /api/v1/search-insights/reports`
+with `view: "recommendations"`, the catalog and completed `endDay`, then read its
+ready result. Publication must match that saved report's exact identities, order,
+versions, reasons, counts and period. Expired reports or changed evidence require a
+new report and review. The publication retains its report ID and evidence hash
+after the private report expires.
 
 Publication revalidates current public versions, security and installability before
 changing any badges. Version/revision/publication conflicts return `409`; other

@@ -341,15 +341,32 @@ export const completedInternal = internalMutation({
   },
 });
 
-export const chunksInternal = internalQuery({
+export const evidenceInternal = internalQuery({
   args: { ...idArgs, now: v.number() },
-  handler: async (ctx, { reportId, now }) => {
+  handler: async (
+    ctx,
+    { reportId, now },
+  ): Promise<{ evidence: ReportEvidence; reportHash: string }> => {
     const row = await readRun(ctx, reportId);
-    if (row.expirationTime <= now || row.state !== "ready") throw new Error("report_unavailable");
-    return ctx.db
+    if (row.expirationTime <= now || row.state !== "ready" || row.reportVersion !== REPORT_VERSION)
+      throw new ConvexError("Saved report unavailable. Generate and review a new report.");
+    const chunks = await ctx.db
       .query("searchReportChunks")
       .withIndex("by_reportId_index", (q) => q.eq("reportId", row._id))
       .take(REPORT_MAX_CHUNKS + 1);
+    if (chunks.length !== row.chunkCount || chunks.some((chunk, index) => chunk.index !== index))
+      throw new ConvexError("Saved report evidence incomplete. Generate a new report.");
+    const bytes = new Uint8Array(row.resultBytes!);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(new Uint8Array(chunk.bytes), offset);
+      offset += chunk.bytes.byteLength;
+    }
+    if (offset !== bytes.length) throw new ConvexError("Saved report evidence incomplete.");
+    const serialized = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    if ((await hashToken(serialized)) !== row.resultHash)
+      throw new ConvexError("Saved report evidence hash changed. Generate a new report.");
+    return { evidence: JSON.parse(serialized) as ReportEvidence, reportHash: row.resultHash! };
   },
 });
 async function getReport(ctx: ActionCtx, reportId: string): Promise<SearchReportResponse> {
@@ -359,26 +376,11 @@ async function getReport(ctx: ActionCtx, reportId: string): Promise<SearchReport
   });
   if (state.status !== "ready") return state as SearchReportResponse;
   try {
-    const chunks = await ctx.runQuery(internal.searchReports.chunksInternal, {
+    const { evidence } = await ctx.runQuery(internal.searchReports.evidenceInternal, {
       reportId,
       now: Date.now(),
     });
-    if (chunks.length !== row.chunkCount || chunks.some((chunk, index) => chunk.index !== index))
-      throw new Error("report_incomplete");
-    const bytes = new Uint8Array(row.resultBytes!);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(new Uint8Array(chunk.bytes), offset);
-      offset += chunk.bytes.byteLength;
-    }
-    if (offset !== bytes.length) throw new Error("report_incomplete");
-    const serialized = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    if ((await hashToken(serialized)) !== row.resultHash) throw new Error("report_incomplete");
-    const rendered = await renderReportEvidence(
-      ctx,
-      JSON.parse(serialized) as ReportEvidence,
-      row.request.limit!,
-    );
+    const rendered = await renderReportEvidence(ctx, evidence, row.request.limit!);
     if (row.expirationTime <= Date.now())
       return { ...state, status: "expired", failureCode: "report_expired" };
     return { ...state, ...rendered, status: "ready" };

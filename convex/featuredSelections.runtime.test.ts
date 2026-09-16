@@ -1,13 +1,15 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
+import { register as registerWorkpool } from "@convex-dev/workpool/test";
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import { hashToken } from "./lib/tokens";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+afterEach(() => vi.useRealTimers());
 const reservation = {
   id: "plugin:community-workflow",
   name: "community-workflow",
@@ -18,6 +20,7 @@ const reservation = {
 async function fixture() {
   const t = convexTest(schema, modules);
   registerRateLimiter(t);
+  registerWorkpool(t, "searchReports");
   const actor = await t.run((ctx) =>
     ctx.db.insert("users", { handle: "curator", role: "moderator" }),
   );
@@ -76,10 +79,13 @@ describe("editable Featured reservations", () => {
   });
 });
 
-it("publishes an approved lineup atomically, preserving retained badges and rejecting changed versions", async () => {
-  const { t, staff } = await fixture();
-  const actorUserId = await t.run(async (ctx) => (await ctx.db.query("users").first())!._id);
-  for (const artifactKind of ["plugin", "skill"] as const) {
+it.each(["plugin", "skill"] as const)(
+  "publishes the approved %s report atomically, preserving retained badges and rejecting altered evidence",
+  async (artifactKind) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 8, 16));
+    const { t, staff } = await fixture();
+    const actorUserId = await t.run(async (ctx) => (await ctx.db.query("users").first())!._id);
     const items = await t.run(async (ctx) => {
       const seededItems = [];
       const storageId = await ctx.storage.store(new Blob(["fixture"]));
@@ -118,6 +124,17 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
             latestReleaseId: releaseId,
             tags: { latest: releaseId },
           });
+          for (const [daysAgo, installs] of [
+            [20, 38 - i],
+            [1, 2],
+          ])
+            await ctx.db.insert("packageDailyStats", {
+              packageId,
+              day: Math.floor(Date.now() / 86_400_000) - daysAgo,
+              installs,
+              downloads: 0,
+              updatedAt: Date.now(),
+            });
           if (i === 0 || i === 16)
             await ctx.db.insert("packageBadges", {
               packageId,
@@ -147,6 +164,17 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
             llmAnalysis: { status: "clean", checkedAt: 1 },
           });
           await ctx.db.patch(skillId, { latestVersionId: versionId });
+          for (const [daysAgo, installs] of [
+            [20, 38 - i],
+            [1, 2],
+          ])
+            await ctx.db.insert("skillDailyStats", {
+              skillId,
+              day: Math.floor(Date.now() / 86_400_000) - daysAgo,
+              installs,
+              downloads: 0,
+              updatedAt: Date.now(),
+            });
           if (i === 0 || i === 16)
             await ctx.db.insert("skillBadges", {
               skillId,
@@ -177,13 +205,31 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
           reason: item.reason,
         })),
       });
+    const queued = await staff.mutation(api.searchReports.start, {
+      view: "recommendations",
+      artifactKind,
+      window: 30,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const ready = await staff.action(api.searchReports.get, { reportId: queued.reportId });
+    if (ready.status !== "ready" || ready.view !== "recommendations")
+      throw new Error(`Expected generated recommendation report: ${JSON.stringify(ready)}`);
     const payload = {
+      reportId: queued.reportId,
       artifactKind,
       expectedEditorialRevision: artifactKind === "plugin" ? 1 : 0,
       expectedPublicationAt: null,
       periodStart: Date.UTC(2026, 7, 17),
       periodEnd: Date.UTC(2026, 8, 16),
-      items: items.slice(0, 16),
+      items: ready.report.recommendations.lineup.proposed.map((item) => ({
+        id: item.id,
+        version: item.version!,
+        selectionBasis: item.selectionBasis,
+        reason: item.reason,
+        ...(item.adoption
+          ? { installs30d: item.adoption.installs30d, installs7d: item.adoption.installs7d }
+          : {}),
+      })),
     };
     const snapshot = () =>
       t.run(async (ctx) => ({
@@ -197,18 +243,67 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
     await expect(
       staff.mutation(api.featuredSelections.publish, {
         ...payload,
+        dryRun: true,
+        items: payload.items.map((item, index) =>
+          index === 15 ? { ...item, installs30d: item.installs30d! + 1 } : item,
+        ),
+      }),
+    ).rejects.toThrow(/report|evidence/i);
+    await expect(
+      staff.mutation(api.featuredSelections.publish, {
+        ...payload,
         dryRun: false,
         items: payload.items.map((item, i) =>
           i === 15 ? { ...item, version: "old-version" } : item,
         ),
       }),
+    ).rejects.toThrow(/changed.*report/i);
+    const swapped = [...payload.items];
+    [swapped[14], swapped[15]] = [swapped[15], swapped[14]];
+    for (const changed of [
+      { items: swapped },
+      { periodStart: payload.periodStart - 86_400_000, periodEnd: payload.periodEnd - 86_400_000 },
+      {
+        items: payload.items.map((item, index) =>
+          index === 15 ? { ...item, id: items[16].id } : item,
+        ),
+      },
+    ])
+      await expect(
+        staff.mutation(api.featuredSelections.publish, {
+          ...payload,
+          ...changed,
+          dryRun: true,
+        }),
+      ).rejects.toThrow(/report/i);
+    expect(await snapshot()).toEqual(before);
+    const changedVersionId = await t.run(async (ctx) => {
+      const selectedId = payload.items[15].id;
+      const versionId =
+        artifactKind === "plugin"
+          ? (await ctx.db
+              .query("packages")
+              .withIndex("by_name", (q) => q.eq("normalizedName", selectedId.slice(7)))
+              .unique())!.latestReleaseId!
+          : (await ctx.db.get(ctx.db.normalizeId("skills", selectedId.slice(8))!))!
+              .latestVersionId!;
+      await ctx.db.patch(versionId, { version: "2.0.0" });
+      return versionId;
+    });
+    await expect(
+      staff.mutation(api.featuredSelections.publish, { ...payload, dryRun: false }),
     ).rejects.toThrow(/version changed/i);
     expect(await snapshot()).toEqual(before);
+    await t.run((ctx) => ctx.db.patch(changedVersionId, { version: "1.0.0" }));
     await staff.mutation(api.featuredSelections.publish, { ...payload, dryRun: true });
     expect(await snapshot()).toEqual(before);
     await staff.mutation(api.featuredSelections.publish, { ...payload, dryRun: false });
     const state = await staff.query(api.featuredSelections.get, { artifactKind });
     expect(state.published?.items).toEqual(payload.items);
+    expect(state.published).toMatchObject({
+      reportId: queued.reportId,
+      reportHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     const after = await snapshot();
     expect(after.badges).toHaveLength(16);
     expect(after.badges.find((badge) => badge._id === before.badges[0]._id)).toEqual(
@@ -219,8 +314,16 @@ it("publishes an approved lineup atomically, preserving retained badges and reje
     await expect(
       staff.mutation(api.featuredSelections.publish, { ...payload, dryRun: false }),
     ).rejects.toThrow(/publication changed/i);
-  }
-});
+    vi.setSystemTime(queued.expirationTime);
+    await expect(
+      staff.mutation(api.featuredSelections.publish, {
+        ...payload,
+        expectedPublicationAt: state.published!.at,
+        dryRun: true,
+      }),
+    ).rejects.toThrow(/report unavailable/i);
+  },
+);
 
 it("exposes revision-checked editorial changes only to authenticated staff over HTTP", async () => {
   const { t } = await fixture();

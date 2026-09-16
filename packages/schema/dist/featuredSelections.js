@@ -14,6 +14,7 @@ export const FeaturedEditorialSaveSchema = type({
 });
 export const FeaturedSelectionPublishSchema = type({
     "+": "reject",
+    reportId: "string > 0",
     expectedEditorialRevision: "number.integer >= 0",
     expectedPublicationAt: "number | null",
     periodStart: "number.integer",

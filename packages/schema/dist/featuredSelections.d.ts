@@ -8,6 +8,7 @@ export declare const FeaturedEditorialSaveSchema: import("arktype/internal/varia
     }[];
 }, {}>;
 export declare const FeaturedSelectionPublishSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    reportId: string;
     expectedEditorialRevision: number;
     expectedPublicationAt: number | null;
     periodStart: number;

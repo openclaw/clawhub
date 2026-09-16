@@ -18,6 +18,8 @@ export const publishedSelection = v.object({
   installs7d: v.optional(v.number()),
 });
 export const featuredPublication = v.object({
+  reportId: v.string(),
+  reportHash: v.string(),
   items: v.array(publishedSelection),
   periodStart: v.number(),
   periodEnd: v.number(),
