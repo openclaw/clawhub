@@ -3,13 +3,13 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import inventory from "../convex/lib/bundledPluginCategoryAssignments.json";
 import { PLUGIN_CATEGORY_CLASSIFIER_VERSION } from "../convex/lib/pluginCategoryClassification";
+import { reviewRow } from "../convex/lib/pluginCategoryReview";
 import {
   assertReviewed,
   operate,
   parseOptions,
   previewPages,
   reviewHash,
-  reviewRow,
 } from "./plugin-category-operator";
 
 const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -180,6 +180,60 @@ describe("production category operator guards", () => {
       "pinned inventory",
     );
   });
+  it("binds explicit corrections to selected evidence and requires workflow provenance", () => {
+    const correction = {
+      id,
+      category: "scheduling",
+      evidence: "README supplies availability and booking.",
+    };
+    const request = {
+      ...env,
+      CATEGORY_MODE: "accept",
+      CATEGORY_REVIEWED_IDS: JSON.stringify([id]),
+      CATEGORY_CORRECTIONS: JSON.stringify([correction]),
+      CATEGORY_REVIEW_HASH: reviewHash([row()], [correction]),
+      GITHUB_REPOSITORY: "openclaw/clawhub",
+      GITHUB_ACTOR: "reviewer",
+      GITHUB_RUN_ID: "123",
+      GITHUB_RUN_ATTEMPT: "1",
+    };
+    const parsed = parseOptions(request);
+    expect(parsed.provenance).toEqual({
+      actor: "reviewer",
+      repository: "openclaw/clawhub",
+      runId: "123",
+      runAttempt: "1",
+      sha,
+    });
+    assertReviewed([row()], parsed);
+    expect(() =>
+      assertReviewed([row()], {
+        ...parsed,
+        corrections: [{ ...correction, category: "channels" }],
+      }),
+    ).toThrow("Review hash changed");
+    for (const change of [
+      { GITHUB_ACTOR: "" },
+      { GITHUB_REPOSITORY: "another/repository" },
+      { CATEGORY_MODE: "apply" },
+      { CATEGORY_CORRECTIONS: JSON.stringify([{ ...correction, id: secondId }]) },
+      { CATEGORY_CORRECTIONS: JSON.stringify([{ ...correction, category: "runtime" }]) },
+      { CATEGORY_CORRECTIONS: JSON.stringify([{ ...correction, evidence: " " }]) },
+      { CATEGORY_CORRECTIONS: JSON.stringify([{ ...correction, evidence: "x".repeat(501) }]) },
+      { CATEGORY_CORRECTIONS: JSON.stringify([{ ...correction, actor: "forged" }]) },
+      { CATEGORY_CORRECTIONS: JSON.stringify([correction, correction]) },
+    ])
+      expect(() => parseOptions({ ...request, ...change })).toThrow();
+    for (const source of ["manifest", "bundled", "reviewed"]) {
+      const protectedRow = { ...row(), classification: { ...row().classification, source } };
+      expect(() =>
+        assertReviewed([protectedRow], {
+          ...parsed,
+          reviewHash: reviewHash([protectedRow], [correction]),
+        }),
+      ).toThrow("authored and bundled");
+    }
+  });
   it("hashes ordered assignments independently of status and drops unrelated document bodies", () => {
     const original = {
       ...row(),
@@ -345,6 +399,89 @@ describe("reviewed write waves", () => {
       reset: true,
       dryRun: true,
     });
+  });
+  it("reports the original proposal, seals a fallback correction, and preserves its hash during apply", async () => {
+    const original = {
+      ...row(),
+      categories: ["other"],
+      classification: { ...row().classification, source: "fallback" },
+    };
+    const correction = {
+      id,
+      category: "scheduling",
+      evidence: "Published documentation supplies booking availability.",
+    };
+    const reportRequest = parseOptions({
+      ...env,
+      CATEGORY_MODE: "report",
+      CATEGORY_REVIEWED_IDS: JSON.stringify([id]),
+      CATEGORY_CORRECTIONS: JSON.stringify([correction]),
+    });
+    const report = await operate(writeClient([original]), reportRequest, async () => {});
+    expect(report).toMatchObject({
+      rows: [
+        {
+          categories: ["other"],
+          classification: { source: "fallback" },
+          review: { category: "scheduling", evidence: correction.evidence },
+        },
+      ],
+    });
+    const provenance = {
+      actor: "reviewer",
+      repository: "openclaw/clawhub" as const,
+      runId: "123",
+      runAttempt: "1",
+      sha,
+    };
+    const hash = reviewHash([original], [correction]);
+    const acceptClient = writeClient([original]);
+    await expect(
+      operate(
+        acceptClient,
+        { ...reportRequest, mode: "accept", reviewHash: hash, provenance },
+        async () => {},
+      ),
+    ).resolves.toMatchObject({ accepted: 1, dryRun: { transactionRolledBack: true } });
+    expect(acceptClient.run).toHaveBeenCalledWith("pluginCategoryRefresh:accept", {
+      ids: [id],
+      confirm: "apply-plugin-category-refresh",
+      reviewHash: hash,
+      corrections: [correction],
+      provenance,
+    });
+    const sealed = {
+      ...original,
+      status: "accepted",
+      review: {
+        category: correction.category,
+        evidence: correction.evidence,
+        sourceHash: "c".repeat(64),
+        provenance,
+      },
+    };
+    expect(reviewHash([sealed])).toBe(hash);
+    const acceptedReport = await operate(
+      writeClient([sealed]),
+      { ...reportRequest, corrections: [] },
+      async () => {},
+    );
+    expect(acceptedReport).toMatchObject({
+      reviewHash: hash,
+      rows: [{ reviewSourceHash: "c".repeat(64), reviewProvenance: provenance }],
+    });
+    const applyClient = writeClient([sealed], [{ id, runId: env.CATEGORY_RUN_ID }]);
+    await expect(
+      operate(
+        applyClient,
+        { ...reportRequest, corrections: [], mode: "apply", reviewHash: hash },
+        async () => {},
+      ),
+    ).resolves.toMatchObject({ started: true });
+    expect(applyClient.run).not.toHaveBeenCalledWith(
+      "pluginCategoryRefresh:accept",
+      expect.anything(),
+    );
   });
   it("blocks global migration when a foreign or unreviewed accepted row exists", async () => {
     const acceptedRow = { ...row(), status: "accepted" };

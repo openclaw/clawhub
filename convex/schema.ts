@@ -7,7 +7,10 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
-import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassificationContract";
+import {
+  pluginCategoryClassificationValidator,
+  pluginCategoryReviewValidator,
+} from "./lib/pluginCategoryClassificationContract";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,
@@ -1986,6 +1989,7 @@ const pluginCategoryRefreshes = defineTable({
   beforeHadSummary: v.boolean(),
   newReleaseSummary: v.optional(pluginManifestSummaryValidator),
   beforeClassification: v.optional(pluginCategoryClassificationValidator),
+  review: v.optional(pluginCategoryReviewValidator),
   categories: v.array(v.string()),
   classification: pluginCategoryClassificationValidator,
   status: v.union(

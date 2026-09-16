@@ -33,6 +33,10 @@ on:
         description: "JSON array of at most 100 journal IDs; report computes their review hash"
         type: string
         default: "[]"
+      corrections:
+        description: "Optional report/accept JSON: [{id,category,evidence}]; generated/fallback proposals only"
+        type: string
+        default: "[]"
       review_hash:
         description: "Exact report SHA-256 required by accept, apply, and rollback"
         type: string
@@ -94,6 +98,7 @@ jobs:
           CATEGORY_WORKERS: ${{ inputs.workers }}
           CATEGORY_REVIEWED_IDS: ${{ inputs.reviewed_ids }}
           CATEGORY_REVIEW_HASH: ${{ inputs.review_hash }}
+          CATEGORY_CORRECTIONS: ${{ inputs.corrections }}
         run: bun scripts/plugin-category-operator.ts
 
       - name: Preserve bounded operator evidence

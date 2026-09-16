@@ -2,6 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { reviewHash } from "../scripts/plugin-category-operator";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
@@ -89,7 +90,280 @@ async function fixture() {
   return { t, publish, latest, readCategories, publisherId };
 }
 
+const reviewProvenance = {
+  actor: "category-reviewer",
+  repository: "openclaw/clawhub" as const,
+  runId: "123",
+  runAttempt: "1",
+  sha: "a".repeat(40),
+};
+
+async function staffFixture(fallback = false) {
+  const state = await fixture();
+  if (fallback) vi.stubEnv("OPENAI_API_KEY", "");
+  await state.t.action(internal.pluginCategoryRefresh.preview, { runId: "review-boundary" });
+  const rows = await state.t.query(internal.pluginCategoryRefresh.list, {
+    runId: "review-boundary",
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  const row = rows.page[0];
+  const corrections = [
+    {
+      id: row._id,
+      category: "productivity",
+      evidence: "The source organizes personal activities.",
+    },
+  ];
+  const args = {
+    ids: [row._id],
+    corrections,
+    reviewHash: reviewHash(rows.page, corrections),
+    provenance: reviewProvenance,
+    confirm: "apply-plugin-category-refresh",
+  };
+  return { ...state, row, args };
+}
+
 describe("latest plugin category refresh", () => {
+  it("requires an explicit source review to correct a fallback, and records its provenance", async () => {
+    const { t, row, args, latest } = await staffFixture(true);
+    expect(row.classification.source).toBe("fallback");
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.accept, { ids: [row._id], confirm: args.confirm }),
+    ).rejects.toThrow("explicit reviewed correction");
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+    expect(await t.run(async (ctx) => ctx.db.get(row._id))).toMatchObject({
+      classification: row.classification,
+      review: { provenance: reviewProvenance },
+    });
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.categoryClassification,
+    ).toMatchObject({ source: "reviewed", reviewId: row._id });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["category", "evidence"] as const)(
+    "rejects an altered %s under the approved decision hash",
+    async (field) => {
+      const { t, row, args } = await staffFixture();
+      const corrections = [
+        {
+          ...args.corrections[0],
+          [field]: field === "category" ? "channels" : "Different rationale",
+        },
+      ];
+      await expect(
+        t.mutation(internal.pluginCategoryRefresh.accept, { ...args, corrections }),
+      ).rejects.toThrow("Review hash changed");
+      expect(await t.run(async (ctx) => ctx.db.get(row._id))).toEqual(row);
+    },
+  );
+
+  it.each(["manifest", "stored-manifest", "bundled"])(
+    "cannot correct authoritative %s evidence",
+    async (source) => {
+      const { t, latest, publisherId } = await fixture();
+      await t.run(async (ctx) => {
+        if (source === "bundled") {
+          await ctx.db.patch(publisherId, { kind: "org", handle: "openclaw" });
+          await ctx.db.patch(latest.packageId, {
+            name: "@openclaw/imap",
+            normalizedName: "@openclaw/imap",
+          });
+          await ctx.db.patch(latest.releaseId, {
+            extractedPluginManifest: { id: "imap", categories: ["tools", "channels"] },
+            source: { repo: "openclaw/openclaw" },
+          });
+        } else if (source === "stored-manifest") {
+          const content = JSON.stringify({ id: "appointments", categories: ["scheduling"] });
+          const storageId = await ctx.storage.store(new Blob([content]));
+          await ctx.db.patch(latest.releaseId, {
+            extractedPluginManifest: undefined,
+            files: [
+              { path: "openclaw.plugin.json", size: content.length, sha256: "stored", storageId },
+            ],
+          });
+        } else
+          await ctx.db.patch(latest.releaseId, {
+            extractedPluginManifest: { id: "appointments", categories: ["scheduling"] },
+          });
+      });
+      await t.action(internal.pluginCategoryRefresh.preview, { runId: "authoritative" });
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "authoritative",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      const row = rows.page[0];
+      const corrections = [
+        { id: row._id, category: "productivity", evidence: "Attempted override" },
+      ];
+      await expect(
+        t.mutation(internal.pluginCategoryRefresh.accept, {
+          ids: [row._id],
+          corrections,
+          reviewHash: reviewHash(rows.page, corrections),
+          provenance: reviewProvenance,
+          confirm: "apply-plugin-category-refresh",
+        }),
+      ).rejects.toThrow("authoritative");
+      expect(await t.run(async (ctx) => ctx.db.get(row._id))).toEqual(row);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["before-accept", "after-accept"])(
+    "rejects changed artifact evidence %s",
+    async (stage) => {
+      const { t, row, args, latest, readCategories } = await staffFixture();
+      if (stage === "after-accept") await t.mutation(internal.pluginCategoryRefresh.accept, args);
+      await t.run(async (ctx) =>
+        ctx.db.patch(latest.releaseId, { integritySha256: "c".repeat(64) }),
+      );
+      if (stage === "before-accept")
+        await expect(t.mutation(internal.pluginCategoryRefresh.accept, args)).rejects.toThrow(
+          "source evidence",
+        );
+      else
+        await expect(
+          t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id }),
+        ).resolves.toEqual({ applied: false });
+      expect((await readCategories())[1].categories).toEqual(["tools"]);
+      expect((await t.run(async (ctx) => ctx.db.get(row._id)))?.status).toBe(
+        stage === "before-accept" ? "preview" : "stale",
+      );
+    },
+  );
+
+  it("does not replace a sealed correction and keeps its hash stable after acceptance", async () => {
+    const { t, row, args } = await staffFixture();
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    const accepted = (await t.run(async (ctx) => ctx.db.get(row._id)))!;
+    expect(reviewHash([accepted])).toBe(args.reviewHash);
+    const corrections = [{ ...args.corrections[0], category: "channels" }];
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.accept, {
+        ...args,
+        corrections,
+        reviewHash: reviewHash([accepted], corrections),
+      }),
+    ).resolves.toEqual({ accepted: 0 });
+    expect(await t.run(async (ctx) => ctx.db.get(row._id))).toEqual(accepted);
+  });
+
+  it("reuses a reviewed survivor after a newer publication is quarantined, without inheriting it forward", async () => {
+    const { t, row, args, latest, publish } = await staffFixture();
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+    const newer = await publish("3.0.0");
+    expect((await t.run(async (ctx) => ctx.db.get(newer.packageId)))?.categories).toEqual([
+      "tools",
+    ]);
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(newer.releaseId)))?.categoryClassification,
+    ).toBeUndefined();
+    await t.mutation(internal.packages.updateReleaseLlmAnalysisInternal, {
+      releaseId: newer.releaseId,
+      llmAnalysis: { status: "malicious", verdict: "malicious", checkedAt: 1 },
+    });
+    expect(await t.run(async (ctx) => ctx.db.get(latest.packageId))).toMatchObject({
+      latestReleaseId: latest.releaseId,
+      categories: ["productivity"],
+    });
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "reviewed-survivor" });
+    const retained = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "reviewed-survivor",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(retained.page[0]).toMatchObject({
+      categories: ["productivity"],
+      classification: { source: "reviewed", reviewId: row._id },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks an invalidated same-release staff decision for fresh review", async () => {
+    const { t, row, args, latest } = await staffFixture();
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+    await t.run(async (ctx) => ctx.db.patch(latest.releaseId, { integritySha256: "d".repeat(64) }));
+    const result = await t.action(internal.pluginCategoryRefresh.preview, {
+      runId: "changed-reviewed-source",
+    });
+    expect(result.diagnostics).toContainEqual({
+      packageId: latest.packageId,
+      reason: "Prior staff decision no longer matches this source. Fresh review required.",
+    });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "changed-reviewed-source",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(rows.page[0].classification.source).toBe("generated");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.rollback, {
+        id: row._id,
+        confirm: "rollback-plugin-category-refresh",
+      }),
+    ).rejects.toThrow("overwrite newer work");
+  });
+
+  it("records a source-bound staff correction without replacing the model proposal", async () => {
+    const { t, latest, readCategories } = await fixture();
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "staff-correction" });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "staff-correction",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    const original = rows.page[0];
+    const corrections = [
+      {
+        id: original._id,
+        category: "productivity",
+        evidence: "The reviewed artifact organizes personal activities.",
+      },
+    ];
+    await t.mutation(internal.pluginCategoryRefresh.accept, {
+      ids: [original._id],
+      confirm: "apply-plugin-category-refresh",
+      corrections,
+      reviewHash: reviewHash(rows.page, corrections),
+      provenance: {
+        actor: "category-reviewer",
+        repository: "openclaw/clawhub",
+        runId: "123",
+        runAttempt: "1",
+        sha: "a".repeat(40),
+      },
+    });
+    const accepted = await t.run(async (ctx) => ctx.db.get(original._id));
+    expect(accepted).toMatchObject({
+      categories: original.categories,
+      classification: original.classification,
+      status: "accepted",
+      review: { category: "productivity", evidence: corrections[0].evidence },
+    });
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: original._id });
+    expect((await readCategories())[1].categories).toEqual(["productivity"]);
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.categoryClassification,
+    ).toMatchObject({ source: "reviewed", reviewId: original._id });
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "same-artifact" });
+    const retained = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "same-artifact",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(retained.page[0]).toMatchObject({
+      categories: ["productivity"],
+      classification: { source: "reviewed", reviewId: original._id },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await t.mutation(internal.pluginCategoryRefresh.rollback, {
+      id: original._id,
+      confirm: "rollback-plugin-category-refresh",
+    });
+    expect((await readCategories())[1].categories).toEqual(["tools"]);
+  });
   it.each([
     "normalized",
     ".codex-plugin/plugin.json",
