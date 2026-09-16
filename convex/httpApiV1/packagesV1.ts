@@ -83,10 +83,9 @@ import {
   getPublicSkillVersionAccessBlock,
   getPublicSkillVersionDownloadBlock,
   getSkillFileModerationInfoFromSkill,
-  isPublicSkillVersionAvailableForSkill,
-  isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
 import { isMacJunkPath } from "../lib/skills";
+import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
 import {
   buildDeterministicPackageZip,
   buildMergedExportZip,
@@ -152,9 +151,9 @@ const internalRefs = internal as unknown as {
     deleteTrustedPublisherForUserInternal: unknown;
     deleteOwnedReleaseForUserInternal: unknown;
     restoreOwnedReleaseForUserInternal: unknown;
-    getReleasesByIdsInternal: unknown;
-    getReleaseByPackageAndVersionInternal: unknown;
-    getReleaseByIdInternal: unknown;
+    getTagsForViewerInternal: unknown;
+    getReleaseForViewerInternal: unknown;
+    getPublicReleaseSelectionsInternal: unknown;
     insertAuditLogInternal: unknown;
     recordPackageDownloadInternal: unknown;
     recordPackageInstallInternal: unknown;
@@ -188,8 +187,7 @@ const internalRefs = internal as unknown as {
     getSkillBySlugInternal: unknown;
     hasMissingPackageCatalogRecommendationScoresInternal: unknown;
     searchPackageCatalogForHttpInternal: unknown;
-    getVersionByIdInternal: unknown;
-    getVersionBySkillAndVersionInternal: unknown;
+    getPublicVersionSelectionInternal: unknown;
   };
   publishers: {
     getByHandleInternal: unknown;
@@ -629,15 +627,6 @@ type AdminRepairPackageLike = Pick<
 
 type RepairOwnerPublisherLike = Pick<Doc<"publishers">, "_id" | "handle" | "deletedAt">;
 
-function toVisibleRelease(release: ReleaseLike | null) {
-  if (!release || ("softDeletedAt" in release && release.softDeletedAt !== undefined)) return null;
-  if (release.ownerDeletedAt !== undefined) return null;
-  if (release.publicationStatus !== undefined && release.publicationStatus !== "published") {
-    return null;
-  }
-  return release;
-}
-
 function toPublicTrustedPublisher(trustedPublisher: PackageTrustedPublisherLike | null) {
   if (!trustedPublisher) return null;
   return {
@@ -897,23 +886,14 @@ async function streamClawPackRelease(
 
 async function resolvePackageTags(
   ctx: ActionCtx,
-  tags: Record<string, Id<"packageReleases">>,
+  pkg: Pick<PublicPackageDocLike, "_id" | "name">,
+  viewerUserId?: Id<"users">,
 ): Promise<Record<string, string>> {
-  const releaseIds = Object.values(tags);
-  if (releaseIds.length === 0) return {};
-  const releases = await runQueryRef<ReleaseLike[]>(
-    ctx,
-    internalRefs.packages.getReleasesByIdsInternal,
-    {
-      releaseIds,
-    },
-  );
-  const byId = new Map(releases.map((release) => [release._id, release.version]));
-  return Object.fromEntries(
-    Object.entries(tags)
-      .map(([tag, releaseId]) => [tag, byId.get(releaseId)])
-      .filter((entry): entry is [string, string] => Boolean(entry[1])),
-  );
+  return await runQueryRef(ctx, internalRefs.packages.getTagsForViewerInternal, {
+    name: pkg.name,
+    packageId: pkg._id,
+    viewerUserId,
+  });
 }
 
 type CatalogListItem = PackageListItem & {
@@ -2342,13 +2322,26 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
 
   try {
     logContext.phase = "load_releases";
-    const releases = await chunkedParallel(result.page, 100, (digest) =>
-      digest.latestReleaseId
-        ? runQueryRef<ReleaseLike | null>(ctx, internalRefs.packages.getReleaseByIdInternal, {
-            releaseId: digest.latestReleaseId,
-          })
-        : Promise.resolve(null),
-    );
+    const releases: Array<ReleaseLike | null> = [];
+    // Each query rechecks current parents and release visibility after the digest read.
+    // Keep full-document batches small enough for Convex's transaction read budget.
+    for (let offset = 0; offset < result.page.length; offset += 5) {
+      const page = result.page.slice(offset, offset + 5);
+      const selections = page.flatMap((digest) =>
+        digest.latestReleaseId
+          ? [{ packageId: digest.packageId, releaseId: digest.latestReleaseId }]
+          : [],
+      );
+      const selected = await runQueryRef<Array<ReleaseLike | null>>(
+        ctx,
+        internalRefs.packages.getPublicReleaseSelectionsInternal,
+        { selections },
+      );
+      let index = 0;
+      releases.push(
+        ...page.map((digest) => (digest.latestReleaseId ? (selected[index++] ?? null) : null)),
+      );
+    }
     logContext.releaseCount = releases.filter(Boolean).length;
     const exportableReleases: Array<ReleaseLike | null> = Array.from(
       { length: result.page.length },
@@ -3881,40 +3874,23 @@ export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Req
 
 async function getReleaseForRequest(
   ctx: ActionCtx,
-  pkg: Pick<PublicPackageDocLike, "_id" | "tags" | "latestReleaseId">,
+  pkg: Pick<PublicPackageDocLike, "_id" | "name">,
   request: Request,
+  viewerUserId?: Id<"users">,
 ): Promise<ReleaseLike | null> {
   const url = new URL(request.url);
-  const versionParam = url.searchParams.get("version")?.trim();
-  const tagParam = url.searchParams.get("tag")?.trim();
-
-  if (versionParam) {
-    return toVisibleRelease(
-      await runQueryRef<ReleaseLike | null>(
-        ctx,
-        internalRefs.packages.getReleaseByPackageAndVersionInternal,
-        {
-          packageId: pkg._id,
-          version: versionParam,
-        },
-      ),
-    );
-  }
-  if (tagParam) {
-    const releaseId = pkg.tags[tagParam];
-    if (!releaseId) return null;
-    return toVisibleRelease(
-      await runQueryRef<ReleaseLike | null>(ctx, internalRefs.packages.getReleaseByIdInternal, {
-        releaseId,
-      }),
-    );
-  }
-  if (!pkg.latestReleaseId) return null;
-  return toVisibleRelease(
-    await runQueryRef<ReleaseLike | null>(ctx, internalRefs.packages.getReleaseByIdInternal, {
-      releaseId: pkg.latestReleaseId,
-    }),
+  const snapshot = await runQueryRef<{ release: ReleaseLike } | null>(
+    ctx,
+    internalRefs.packages.getReleaseForViewerInternal,
+    {
+      name: pkg.name,
+      packageId: pkg._id,
+      version: url.searchParams.get("version")?.trim() || undefined,
+      tag: url.searchParams.get("tag")?.trim() || undefined,
+      viewerUserId,
+    },
   );
+  return snapshot?.release ?? null;
 }
 
 async function packageFileResponse(
@@ -4062,54 +4038,35 @@ async function getUnavailableSkillPackageVersionBlock(
   );
   if (!skill || skill.softDeletedAt) return null;
 
-  const version = (await runQueryRef(ctx, internalRefs.skills.getVersionBySkillAndVersionInternal, {
-    skillId: skill._id,
-    version: versionName,
-  })) as SkillVersionLike | null;
-  if (!version || !isSkillVersionForSkill(version, skill._id)) return null;
-  if (version.softDeletedAt) return { status: 410, message: "Version not available" };
-
+  const selection = await runQueryRef<PublicSkillVersionSelection>(
+    ctx,
+    internalRefs.skills.getPublicVersionSelectionInternal,
+    { skillId: skill._id, version: versionName },
+  );
+  if (selection.status === "deleted") return { status: 410, message: "Version not available" };
+  if (selection.status !== "available") return null;
   return getPublicSkillVersionAccessBlock(
-    getSkillFileModerationInfoFromSkill(skill),
-    version._id,
-    skill.latestVersionId ?? skill.tags?.latest,
+    getSkillFileModerationInfoFromSkill(selection.skill),
+    selection.version._id,
+    selection.skill.latestVersionId ?? selection.skill.tags?.latest,
   );
 }
 
 async function getSkillVersionForRequest(
   ctx: ActionCtx,
-  skill: Pick<SkillPackageDocLike, "_id" | "latestVersionId" | "tags">,
+  skill: Pick<SkillPackageDocLike, "_id">,
   request: Request,
 ) {
   const url = new URL(request.url);
-  const versionParam = url.searchParams.get("version")?.trim();
-  const tagParam = url.searchParams.get("tag")?.trim();
-
-  if (versionParam) {
-    const version = (await runQueryRef(
-      ctx,
-      internalRefs.skills.getVersionBySkillAndVersionInternal,
-      {
-        skillId: skill._id,
-        version: versionParam,
-      },
-    )) as SkillVersionLike | null;
-    return isSkillVersionForSkill(version, skill._id) ? version : null;
-  }
-  if (tagParam) {
-    const versionId = skill.tags[tagParam];
-    if (!versionId) return null;
-    const version = (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
-      versionId,
-    })) as SkillVersionLike | null;
-    return isSkillVersionForSkill(version, skill._id) ? version : null;
-  }
-  const latestVersionId = skill.latestVersionId ?? skill.tags.latest;
-  if (!latestVersionId) return null;
-  const version = (await runQueryRef(ctx, internalRefs.skills.getVersionByIdInternal, {
-    versionId: latestVersionId,
-  })) as SkillVersionLike | null;
-  return isSkillVersionForSkill(version, skill._id) ? version : null;
+  return await runQueryRef<PublicSkillVersionSelection>(
+    ctx,
+    internalRefs.skills.getPublicVersionSelectionInternal,
+    {
+      skillId: skill._id,
+      version: url.searchParams.get("version")?.trim() || undefined,
+      tag: url.searchParams.get("tag")?.trim() || undefined,
+    },
+  );
 }
 
 async function searchPackages(
@@ -4602,7 +4559,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
       );
     }
-    const tags = await resolvePackageTags(ctx, publicPackage!.tags);
+    const tags = await resolvePackageTags(ctx, publicPackage!, viewerUserId ?? undefined);
 
     return json(toPackageMetadataResponse(publicPackage!, packageOwner, tags), 200, rate.headers);
   }
@@ -4738,23 +4695,17 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
 
   if (packageSegments[0] === "versions" && packageSegments[1]) {
     if (skillDetail?.skill) {
-      const version = (await runQueryRef(
+      const selection = await runQueryRef<PublicSkillVersionSelection>(
         ctx,
-        internalRefs.skills.getVersionBySkillAndVersionInternal,
-        {
-          skillId: skillDetail.skill._id,
-          version: packageSegments[1],
-        },
-      )) as SkillVersionLike | null;
-      if (!version || !isPublicSkillVersionAvailableForSkill(version, skillDetail.skill._id)) {
-        return text("Version not found", 404, rate.headers);
-      }
-      const effectiveLatestVersionId =
-        skillDetail.skill.latestVersionId ?? skillDetail.skill.tags?.latest;
+        internalRefs.skills.getPublicVersionSelectionInternal,
+        { skillId: skillDetail.skill._id, version: packageSegments[1] },
+      );
+      if (selection.status !== "available") return text("Version not found", 404, rate.headers);
+      const { skill, version } = selection;
       const moderationBlock = getPublicSkillVersionAccessBlock(
-        skillDetail.moderationInfo,
+        getSkillFileModerationInfoFromSkill(skill),
         version._id,
-        effectiveLatestVersionId,
+        skill.latestVersionId ?? skill.tags?.latest,
       );
       if (moderationBlock)
         return text(moderationBlock.message, moderationBlock.status, rate.headers);
@@ -4816,14 +4767,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!path) return text("Missing path", 400, rate.headers);
     const preview = requestUrl.searchParams.get("preview") === "1";
     if (skillDetail?.skill) {
-      const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
-      if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
-      const effectiveLatestVersionId =
-        skillDetail.skill.latestVersionId ?? skillDetail.skill.tags?.latest;
+      const selection = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
+      if (selection.status !== "available") return text("Version not found", 404, rate.headers);
+      const { skill, version } = selection;
       const moderationBlock = getPublicSkillVersionDownloadBlock(
-        skillDetail.moderationInfo,
+        getSkillFileModerationInfoFromSkill(skill),
         version,
-        effectiveLatestVersionId,
+        skill.latestVersionId ?? skill.tags?.latest,
       );
       if (moderationBlock)
         return text(moderationBlock.message, moderationBlock.status, rate.headers);
@@ -4854,7 +4804,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         headers: rate.headers,
       });
     }
-    const release = await getReleaseForRequest(ctx, publicPackage!, request);
+    const release = await getReleaseForRequest(
+      ctx,
+      publicPackage!,
+      request,
+      viewerUserId ?? undefined,
+    );
     if (!release) return text("Version not found", 404, rate.headers);
     return packageFileResponse(ctx, release, path, preview, rate.headers);
   }
@@ -4876,7 +4831,12 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         headers: mergeHeaders(rate.headers, { Location: url.toString() }, corsHeaders()),
       });
     }
-    const release = await getReleaseForRequest(ctx, publicPackage!, request);
+    const release = await getReleaseForRequest(
+      ctx,
+      publicPackage!,
+      request,
+      viewerUserId ?? undefined,
+    );
     if (!release) return text("Version not found", 404, rate.headers);
     const securityBlock = getReleaseSecurityBlock(release);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);

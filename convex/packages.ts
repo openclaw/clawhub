@@ -1219,11 +1219,13 @@ function resolvePublicPackageScanStatus(
 
 function isPublishedPackageRelease(
   release: Doc<"packageReleases"> | null | undefined,
+  packageId?: Id<"packages">,
 ): release is Doc<"packageReleases"> {
   return Boolean(
     release &&
-    !release.softDeletedAt &&
+    release.softDeletedAt === undefined &&
     release.ownerDeletedAt === undefined &&
+    (packageId === undefined || release.packageId === packageId) &&
     (release.publicationStatus === undefined || release.publicationStatus === "published"),
   );
 }
@@ -1263,7 +1265,8 @@ function toPublicPackage(
   pkg: Doc<"packages"> | null | undefined,
   latestRelease?: Doc<"packageReleases"> | null,
 ): PublicPackageDoc | null {
-  if (!pkg || pkg.softDeletedAt) return null;
+  if (!pkg || pkg.softDeletedAt !== undefined) return null;
+  if (latestRelease && latestRelease.packageId !== pkg._id) return null;
   if (hasNoPublishedPackageVersions(pkg)) return null;
   if (
     latestRelease !== undefined &&
@@ -2902,7 +2905,7 @@ async function getReadablePackageByName(
 ) {
   const normalizedName = normalizePackageName(name);
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
-  if (!pkg || pkg.softDeletedAt) return null;
+  if (!pkg || pkg.softDeletedAt !== undefined) return null;
   if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
   if (pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)) {
     const canAccessOwner = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
@@ -2917,13 +2920,71 @@ async function getReadablePackageByName(
   return pkg;
 }
 
+type PackageReleaseSelector = {
+  version?: string;
+  tag?: string;
+  releaseId?: Id<"packageReleases">;
+};
+
+async function selectPublishedPackageRelease(
+  ctx: DbReaderCtx,
+  pkg: Doc<"packages">,
+  selector: PackageReleaseSelector,
+) {
+  const releaseId =
+    selector.releaseId ?? (selector.tag ? pkg.tags[selector.tag] : pkg.latestReleaseId);
+  const release = selector.version
+    ? await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_version", (q) =>
+          q.eq("packageId", pkg._id).eq("version", selector.version!),
+        )
+        .unique()
+    : releaseId
+      ? await ctx.db.get(releaseId)
+      : null;
+  return isPublishedPackageRelease(release, pkg._id) ? release : null;
+}
+
+async function readPublishedPackageTags(ctx: DbReaderCtx, pkg: Doc<"packages">) {
+  // Convex objects have at most 1024 fields; aliases share one read per release.
+  const releases = await Promise.all(
+    [...new Set(Object.values(pkg.tags))].map((releaseId) =>
+      selectPublishedPackageRelease(ctx, pkg, { releaseId }),
+    ),
+  );
+  const versions = new Map(
+    releases.flatMap((release) => (release ? [[release._id, release.version] as const] : [])),
+  );
+  return Object.fromEntries(
+    Object.entries(pkg.tags).flatMap(([tag, releaseId]) => {
+      const version = versions.get(releaseId);
+      return version ? [[tag, version]] : [];
+    }),
+  );
+}
+
+export const getTagsForViewerInternal = internalQuery({
+  args: {
+    name: v.string(),
+    packageId: v.optional(v.id("packages")),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
+    return pkg && (!args.packageId || pkg._id === args.packageId)
+      ? await readPublishedPackageTags(ctx, pkg)
+      : {};
+  },
+});
+
 async function getPackageReadableForPublicTrust(
   ctx: DbReaderCtx,
   name: string,
   viewerUserId?: Id<"users">,
 ) {
   const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(name));
-  if (!pkg || pkg.softDeletedAt) return null;
+  if (!pkg || pkg.softDeletedAt !== undefined) return null;
   if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
   if (pkg.channel === "private" && !(await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId))) {
     return null;
@@ -3350,43 +3411,23 @@ export const getPluginDetailForViewerInternal = internalQuery({
   handler: async (ctx, args) => {
     const snapshot = await readPackageSnapshotForViewer(ctx, args);
     if (!snapshot) return null;
-    const { pkg, publicPackage, latestRelease, owner } = snapshot;
+    const { pkg, publicPackage, owner } = snapshot;
     if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") return null;
-    const release =
-      !args.version || latestRelease?.version === args.version
-        ? latestRelease
-        : await ctx.db
-            .query("packageReleases")
-            .withIndex("by_package_version", (q) =>
-              q.eq("packageId", pkg._id).eq("version", args.version!),
-            )
-            .unique();
-    const selectedRelease = isPublishedPackageRelease(release) ? release : null;
-    // Select metadata, history and trust from one snapshot. The HTTP action only
-    // reads the selected README blob, so later reads cannot drift to a new release.
-    const [versions, taggedReleases, publicDownloadBlocked] = await Promise.all([
+    const selectedRelease = await selectPublishedPackageRelease(ctx, pkg, {
+      version: args.version,
+    });
+    // Metadata, history and tags share a snapshot; download safety remains separate.
+    const [versions, tags, publicDownloadBlocked] = await Promise.all([
       paginatePublishedPackageReleases(ctx, pkg._id, { cursor: null, numItems: 10 }),
-      Promise.all(Object.values(pkg.tags).map((id) => ctx.db.get(id))),
+      readPublishedPackageTags(ctx, pkg),
       isPackageBlockedFromPublic(publicPackage.scanStatus)
         ? viewerCanAccessPackageOwner(ctx, pkg, args.viewerUserId).then((allowed) => !allowed)
         : false,
     ]);
-    const tagVersions = new Map(
-      taggedReleases
-        .filter((tagged): tagged is Doc<"packageReleases"> =>
-          Boolean(tagged && !tagged.softDeletedAt),
-        )
-        .map((tagged) => [tagged._id, tagged.version]),
-    );
     return {
       package: { ...publicPackage, publicDownloadBlocked },
       owner,
-      tags: Object.fromEntries(
-        Object.entries(pkg.tags).flatMap(([tag, id]) => {
-          const version = tagVersions.get(id);
-          return version ? [[tag, version]] : [];
-        }),
-      ),
+      tags,
       release: selectedRelease ? toPublicPluginRelease(selectedRelease) : null,
       versions: {
         items: versions.page.map(({ version, createdAt, changelog, distTags }) => ({
@@ -3488,26 +3529,11 @@ export const getVersionByName = query({
   },
   handler: async (ctx, args) => {
     const viewerUserId = await getOptionalViewerUserId(ctx);
-    const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
-    if (!pkg) return null;
-    const release = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_version", (q) =>
-        q.eq("packageId", pkg._id).eq("version", args.version),
-      )
-      .unique();
-    if (!isPublishedPackageRelease(release)) return null;
-    const latestRelease =
-      pkg.latestReleaseId === release._id
-        ? release
-        : pkg.latestReleaseId
-          ? await ctx.db.get(pkg.latestReleaseId)
-          : null;
-    const publicPackage = toPublicPackage(pkg, latestRelease);
-    if (!publicPackage) return null;
+    const snapshot = await readPackageReleaseSnapshotForViewer(ctx, { ...args, viewerUserId });
+    if (!snapshot) return null;
     return {
-      package: publicPackage,
-      version: toPublicPackageRelease(release, pkg.family),
+      package: snapshot.package,
+      version: toPublicPackageRelease(snapshot.release, snapshot.package.family),
     };
   },
 });
@@ -3521,17 +3547,18 @@ export const getVersionByNameForViewerInternal = internalQuery({
   handler: readPackageVersionForViewer,
 });
 
-export async function readPackageVersionForViewer(
+async function readPackageReleaseSnapshotForViewer(
   ctx: QueryCtx,
-  args: { name: string; version: string; viewerUserId?: Id<"users"> },
+  args: {
+    name: string;
+    packageId?: Id<"packages">;
+    viewerUserId?: Id<"users">;
+  } & PackageReleaseSelector,
 ) {
   const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
-  if (!pkg) return null;
-  const release = await ctx.db
-    .query("packageReleases")
-    .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
-    .unique();
-  if (!isPublishedPackageRelease(release)) return null;
+  if (!pkg || (args.packageId && pkg._id !== args.packageId)) return null;
+  const release = await selectPublishedPackageRelease(ctx, pkg, args);
+  if (!release) return null;
   const latestRelease =
     pkg.latestReleaseId === release._id
       ? release
@@ -3539,9 +3566,29 @@ export async function readPackageVersionForViewer(
         ? await ctx.db.get(pkg.latestReleaseId)
         : null;
   const publicPackage = toPublicPackage(pkg, latestRelease);
-  if (!publicPackage) return null;
+  return publicPackage ? { package: publicPackage, release } : null;
+}
+
+export const getReleaseForViewerInternal = internalQuery({
+  args: {
+    name: v.string(),
+    packageId: v.optional(v.id("packages")),
+    version: v.optional(v.string()),
+    tag: v.optional(v.string()),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: readPackageReleaseSnapshotForViewer,
+});
+
+export async function readPackageVersionForViewer(
+  ctx: QueryCtx,
+  args: { name: string; version: string; viewerUserId?: Id<"users"> },
+) {
+  const snapshot = await readPackageReleaseSnapshotForViewer(ctx, args);
+  if (!snapshot) return null;
+  const { package: pkg, release } = snapshot;
   return {
-    package: publicPackage,
+    package: pkg,
     version: {
       ...toPublicPackageRelease(release, pkg.family),
       // Internal HTTP handlers need the opaque storage id to stream exact ClawPack bytes.
@@ -3549,6 +3596,45 @@ export async function readPackageVersionForViewer(
     },
   };
 }
+
+// Revalidate export selections after pagination, before an action reads storage.
+// Small batches bound full release-document reads; IDs never confer public access.
+export const getPublicReleaseSelectionsInternal = internalQuery({
+  args: {
+    selections: v.array(
+      v.object({ packageId: v.id("packages"), releaseId: v.id("packageReleases") }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (args.selections.length > 5) throw new ConvexError("At most 5 release selections per batch");
+    const packages = new Map<string, Promise<Doc<"packages"> | null>>();
+    const releases = new Map<string, Promise<Doc<"packageReleases"> | null>>();
+    return await Promise.all(
+      args.selections.map(async ({ packageId, releaseId }) => {
+        let packageRead = packages.get(packageId);
+        if (!packageRead) {
+          packageRead = ctx.db.get(packageId);
+          packages.set(packageId, packageRead);
+        }
+        const pkg = await packageRead;
+        if (
+          !pkg ||
+          pkg.softDeletedAt !== undefined ||
+          !isClawFamilyPubliclyVisible(pkg.family) ||
+          !(await canViewerReadPackage(ctx, pkg, undefined))
+        )
+          return null;
+        let releaseRead = releases.get(releaseId);
+        if (!releaseRead) {
+          releaseRead = ctx.db.get(releaseId);
+          releases.set(releaseId, releaseRead);
+        }
+        const release = await releaseRead;
+        return isPublishedPackageRelease(release, pkg._id) ? release : null;
+      }),
+    );
+  },
+});
 
 export const resolveVersionCategoriesBatchInternal = internalQuery({
   args: {
@@ -3608,13 +3694,8 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
   handler: async (ctx, args) => {
     const pkg = await getPackageReadableForPublicTrust(ctx, args.name, args.viewerUserId);
     if (!pkg) return null;
-    const release = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_version", (q) =>
-        q.eq("packageId", pkg._id).eq("version", args.version),
-      )
-      .unique();
-    if (!isPublishedPackageRelease(release)) return null;
+    const release = await selectPublishedPackageRelease(ctx, pkg, { version: args.version });
+    if (!release) return null;
     const latestRelease =
       pkg.latestReleaseId === release._id
         ? release
@@ -4104,7 +4185,14 @@ async function listPluginExportFamilyPage(
   for (const digest of result.page) {
     if (!(await canViewerReadPackage(ctx, digest, undefined, membershipCache))) continue;
     const pkg = await ctx.db.get(digest.packageId);
-    if (!pkg || pkg.softDeletedAt || pkg.family !== args.family || !pkg.latestReleaseId) continue;
+    if (
+      !pkg ||
+      pkg.softDeletedAt !== undefined ||
+      pkg.family !== args.family ||
+      !pkg.latestReleaseId
+    )
+      continue;
+    if (!(await canViewerReadPackage(ctx, pkg, undefined, membershipCache))) continue;
     page.push({
       packageId: digest.packageId,
       name: digest.name,
@@ -4286,7 +4374,7 @@ export const listPluginValidationReportPageInternal = internalQuery({
     for (const digest of result.page) {
       if (!digest.latestReleaseId) continue;
       const release = await ctx.db.get(digest.latestReleaseId);
-      if (!release || release.softDeletedAt || release.packageId !== digest.packageId) continue;
+      if (!isPublishedPackageRelease(release, digest.packageId)) continue;
       const scanState = await ctx.db
         .query("packageInspectorScanStates")
         .withIndex("by_release_and_completed_at", (q) => q.eq("releaseId", release._id))
