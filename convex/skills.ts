@@ -10873,11 +10873,12 @@ export const setBatch = mutation({
   },
 });
 
-async function setSkillFeaturedForActor(
+export async function setSkillFeaturedForActor(
   ctx: MutationCtx,
   actor: Doc<"users">,
   skill: Doc<"skills">,
   nextBatch: string | undefined,
+  notify = true,
 ) {
   const existingBadges = await getSkillBadgeMap(ctx, skill._id);
   const previousHighlighted = isSkillHighlighted({ badges: existingBadges });
@@ -10907,7 +10908,7 @@ async function setSkillFeaturedForActor(
     createdAt: now,
   });
 
-  if (featured && !previousHighlighted) {
+  if (featured && !previousHighlighted && notify) {
     await queueHighlightedWebhook(ctx, skill._id);
   }
 

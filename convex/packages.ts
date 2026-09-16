@@ -13020,7 +13020,7 @@ export const setBatch = mutation({
   },
 });
 
-async function setPackageFeaturedForActor(
+export async function setPackageFeaturedForActor(
   ctx: MutationCtx,
   actor: Doc<"users">,
   pkg: Doc<"packages">,

@@ -17,6 +17,7 @@ import {
   searchSkillsHttp,
 } from "./httpApi";
 import {
+  featuredV1Http,
   searchInsightsV1Http,
   searchReportsV1Http,
   exportSkillsV1Http,
@@ -200,6 +201,9 @@ http.route({
   method: "GET",
   handler: listBundlePluginsV1Http,
 });
+
+http.route({ pathPrefix: `${ApiRoutes.featured}/`, method: "GET", handler: featuredV1Http });
+http.route({ pathPrefix: `${ApiRoutes.featured}/`, method: "POST", handler: featuredV1Http });
 
 http.route({
   path: ApiRoutes.promotions,

@@ -25,6 +25,7 @@ export const ApiRoutes = {
   packages: "/api/v1/packages",
   codePlugins: "/api/v1/code-plugins",
   bundlePlugins: "/api/v1/bundle-plugins",
+  featured: "/api/v1/featured",
   promotions: "/api/v1/promotions",
   stars: "/api/v1/stars",
   transfers: "/api/v1/transfers",

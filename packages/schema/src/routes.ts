@@ -30,6 +30,7 @@ export const ApiRoutes = {
   packageCategoriesBatch: "/api/v1/packages/categories:batch",
   codePlugins: "/api/v1/code-plugins",
   bundlePlugins: "/api/v1/bundle-plugins",
+  featured: "/api/v1/featured",
   promotions: "/api/v1/promotions",
   catalogFeed: "/api/v1/feeds/plugins",
   catalogSkillsFeed: "/api/v1/feeds/skills",

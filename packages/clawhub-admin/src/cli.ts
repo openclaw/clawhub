@@ -28,6 +28,7 @@ import {
 } from "./commands/contentRights.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
 import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
+import { cmdFeaturedSelection } from "./commands/featuredSelections.js";
 import {
   cmdBanUser,
   cmdLiftModerationHold,
@@ -387,6 +388,27 @@ const promotions = program
   .description("Platform promotion records (admin only)")
   .showHelpAfterError()
   .showSuggestionAfterError();
+
+const featured = program
+  .command("featured")
+  .description("Review editorial reservations and publish approved complete catalog selections");
+featured
+  .command("get <catalog>")
+  .description("Read current plugin or skill editorial reservations and publication (JSON)")
+  .action(async (catalog) => cmdFeaturedSelection(await resolveGlobalOpts(), catalog, "get"));
+featured
+  .command("editorial <file>")
+  .description("Save plugin editorial reservations from revision-checked JSON; does not publish")
+  .action(async (file) =>
+    cmdFeaturedSelection(await resolveGlobalOpts(), "plugin", "editorial", file),
+  );
+featured
+  .command("publish <catalog> <file>")
+  .description("Validate a reviewed complete selection; publish only with --apply")
+  .option("--apply", "Apply this approved selection atomically (default is dry run)")
+  .action(async (catalog, file, options) =>
+    cmdFeaturedSelection(await resolveGlobalOpts(), catalog, "publish", file, !options.apply),
+  );
 
 registerPluginOperations(plugins);
 registerPluginModerationCommands(plugins);

@@ -29,6 +29,7 @@ export declare const ApiRoutes: {
     readonly packageCategoriesBatch: "/api/v1/packages/categories:batch";
     readonly codePlugins: "/api/v1/code-plugins";
     readonly bundlePlugins: "/api/v1/bundle-plugins";
+    readonly featured: "/api/v1/featured";
     readonly promotions: "/api/v1/promotions";
     readonly catalogFeed: "/api/v1/feeds/plugins";
     readonly catalogSkillsFeed: "/api/v1/feeds/skills";

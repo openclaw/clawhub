@@ -43,6 +43,7 @@ import type * as httpApiV1 from "../httpApiV1.js";
 import type * as httpApiV1_catalogFeedV1 from "../httpApiV1/catalogFeedV1.js";
 import type * as httpApiV1_contentRightsV1 from "../httpApiV1/contentRightsV1.js";
 import type * as httpApiV1_docsSessionV1 from "../httpApiV1/docsSessionV1.js";
+import type * as httpApiV1_featuredV1 from "../httpApiV1/featuredV1.js";
 import type * as httpApiV1_packagePublishRecoveryV1 from "../httpApiV1/packagePublishRecoveryV1.js";
 import type * as httpApiV1_packagesV1 from "../httpApiV1/packagesV1.js";
 import type * as httpApiV1_promotionsV1 from "../httpApiV1/promotionsV1.js";
@@ -299,6 +300,7 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/catalogFeedV1": typeof httpApiV1_catalogFeedV1;
   "httpApiV1/contentRightsV1": typeof httpApiV1_contentRightsV1;
   "httpApiV1/docsSessionV1": typeof httpApiV1_docsSessionV1;
+  "httpApiV1/featuredV1": typeof httpApiV1_featuredV1;
   "httpApiV1/packagePublishRecoveryV1": typeof httpApiV1_packagePublishRecoveryV1;
   "httpApiV1/packagesV1": typeof httpApiV1_packagesV1;
   "httpApiV1/promotionsV1": typeof httpApiV1_promotionsV1;
