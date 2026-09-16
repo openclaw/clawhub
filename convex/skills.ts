@@ -52,6 +52,7 @@ import {
   getActivityTrendRangeForEndDay,
 } from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
+import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
@@ -2390,6 +2391,7 @@ async function upsertSkillBadge(
   if (existing) {
     await ctx.db.patch(existing._id, { byUserId: userId, at });
   } else {
+    if (kind === "highlighted") await assertFeaturedCapacity(ctx, "skill");
     await ctx.db.insert("skillBadges", {
       skillId,
       kind,
@@ -10879,6 +10881,10 @@ async function setSkillFeaturedForActor(
   const existingBadges = await getSkillBadgeMap(ctx, skill._id);
   const previousHighlighted = isSkillHighlighted({ badges: existingBadges });
   const featured = nextBatch === "highlighted";
+  const result = { ok: true as const, featured, skillId: skill._id, slug: skill.slug };
+  // Keeping a selection must preserve its timestamp, ordering and notifications.
+  if (featured && previousHighlighted) return result;
+  if (!featured && !previousHighlighted && nextBatch === skill.batch) return result;
   const now = Date.now();
 
   if (featured) {
@@ -10901,10 +10907,10 @@ async function setSkillFeaturedForActor(
   });
 
   if (featured && !previousHighlighted) {
-    void queueHighlightedWebhook(ctx, skill._id);
+    await queueHighlightedWebhook(ctx, skill._id);
   }
 
-  return { ok: true as const, featured, skillId: skill._id, slug: skill.slug };
+  return result;
 }
 
 export const setSkillFeaturedForUserInternal = internalMutation({

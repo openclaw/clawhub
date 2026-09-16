@@ -10,6 +10,7 @@ import {
   syncPackageSearchDigestForPackageId,
 } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import {
@@ -1934,6 +1935,7 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
       await syncDenormalizedBadge();
       return { inserted: false as const };
     }
+    if (args.kind === "highlighted") await assertFeaturedCapacity(ctx, "skill");
     await ctx.db.insert("skillBadges", {
       skillId: args.skillId,
       kind: args.kind,

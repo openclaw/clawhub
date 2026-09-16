@@ -67,6 +67,7 @@ import {
   buildPackageInspectorValidationUrl,
 } from "./lib/emails";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
+import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -1544,15 +1545,16 @@ async function upsertPackageBadge(
     .withIndex("by_package_kind", (q) => q.eq("packageId", packageId).eq("kind", kind))
     .unique();
   if (existing) {
-    await ctx.db.patch(existing._id, { byUserId: userId, at });
-    return;
+    return false;
   }
+  await assertFeaturedCapacity(ctx, "plugin");
   await ctx.db.insert("packageBadges", {
     packageId,
     kind,
     byUserId: userId,
     at,
   });
+  return true;
 }
 
 async function removePackageBadge(
@@ -1564,7 +1566,9 @@ async function removePackageBadge(
     .query("packageBadges")
     .withIndex("by_package_kind", (q) => q.eq("packageId", packageId).eq("kind", kind))
     .unique();
-  if (existing) await ctx.db.delete(existing._id);
+  if (!existing) return false;
+  await ctx.db.delete(existing._id);
+  return true;
 }
 
 function defaultPackageStats(): Doc<"packages">["stats"] {
@@ -12897,11 +12901,11 @@ async function setPackageFeaturedForActor(
   featured: boolean,
 ) {
   const now = Date.now();
-  if (featured) {
-    await upsertPackageBadge(ctx, pkg._id, "highlighted", actor._id, now);
-  } else {
-    await removePackageBadge(ctx, pkg._id, "highlighted");
-  }
+  const changed = featured
+    ? await upsertPackageBadge(ctx, pkg._id, "highlighted", actor._id, now)
+    : await removePackageBadge(ctx, pkg._id, "highlighted");
+  const result = { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
+  if (!changed) return result;
 
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
@@ -12912,7 +12916,7 @@ async function setPackageFeaturedForActor(
     createdAt: now,
   });
 
-  return { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
+  return result;
 }
 
 export const setPackageFeaturedForUserInternal = internalMutation({

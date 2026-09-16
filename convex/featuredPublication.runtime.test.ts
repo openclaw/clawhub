@@ -1,0 +1,171 @@
+/// <reference types="vite/client" />
+/* @vitest-environment edge-runtime */
+import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
+import { api, internal } from "./_generated/api";
+import schema from "./schema";
+
+const modules = import.meta.glob("./**/*.ts");
+
+async function fixture() {
+  const t = convexTest(schema, modules);
+  const data = await t.run(async (ctx) => {
+    const actorUserId = await ctx.db.insert("users", { handle: "curator", role: "moderator" });
+    const publisherId = await ctx.db.insert("publishers", {
+      kind: "user",
+      handle: "curator",
+      displayName: "Curator",
+      linkedUserId: actorUserId,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await ctx.db.patch(actorUserId, { personalPublisherId: publisherId });
+    const items = [];
+    for (let i = 0; i < 9; i++) {
+      const name = `workflow-${i}`;
+      const packageId = await ctx.db.insert("packages", {
+        name,
+        normalizedName: name,
+        displayName: name,
+        family: "code-plugin",
+        ownerUserId: actorUserId,
+        ownerPublisherId: publisherId,
+        channel: "community",
+        isOfficial: false,
+        categories: ["developer-tools"],
+        tags: {},
+        stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const skillId = await ctx.db.insert("skills", {
+        slug: name,
+        displayName: name,
+        ownerUserId: actorUserId,
+        ownerPublisherId: publisherId,
+        tags: {},
+        badges: {},
+        moderationStatus: "active",
+        stats: { comments: 0, downloads: 1, stars: 0, versions: 1 },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      items.push({ name, packageId, skillId });
+    }
+    return { actorUserId, items };
+  });
+  return { t, ...data };
+}
+
+describe("Featured publication", () => {
+  it("limits each catalog to eight through both UI and admin entry points, and allows replacement", async () => {
+    const { t, actorUserId, items } = await fixture();
+    const staff = t.withIdentity({ subject: `${actorUserId}|test-session` });
+    for (const item of items.slice(0, 8)) {
+      await staff.mutation(api.packages.setBatch, {
+        packageId: item.packageId,
+        batch: "highlighted",
+      });
+      await staff.mutation(api.skills.setBatch, { skillId: item.skillId, batch: "highlighted" });
+    }
+    const ninth = items[8];
+    for (const operation of [
+      () =>
+        staff.mutation(api.packages.setBatch, { packageId: ninth.packageId, batch: "highlighted" }),
+      () => staff.mutation(api.skills.setBatch, { skillId: ninth.skillId, batch: "highlighted" }),
+      () =>
+        t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
+          actorUserId,
+          name: ninth.name,
+          featured: true,
+        }),
+      () =>
+        t.mutation(internal.skills.setSkillFeaturedForUserInternal, {
+          actorUserId,
+          slug: ninth.name,
+          ownerHandle: "curator",
+          featured: true,
+        }),
+      () =>
+        t.mutation(internal.maintenance.upsertSkillBadgeRecordInternal, {
+          skillId: ninth.skillId,
+          kind: "highlighted",
+          byUserId: actorUserId,
+          at: 2,
+        }),
+    ])
+      await expect(operation()).rejects.toThrow(/eight|8/i);
+
+    await t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
+      actorUserId,
+      name: items[0].name,
+      featured: false,
+    });
+    await t.mutation(internal.skills.setSkillFeaturedForUserInternal, {
+      actorUserId,
+      slug: items[0].name,
+      ownerHandle: "curator",
+      featured: false,
+    });
+    await t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
+      actorUserId,
+      name: ninth.name,
+      featured: true,
+    });
+    await t.mutation(internal.skills.setSkillFeaturedForUserInternal, {
+      actorUserId,
+      slug: ninth.name,
+      ownerHandle: "curator",
+      featured: true,
+    });
+    const counts = await t.run(async (ctx) => ({
+      plugins: (await ctx.db.query("packageBadges").collect()).length,
+      skills: (await ctx.db.query("skillBadges").collect()).length,
+    }));
+    expect(counts).toEqual({ plugins: 8, skills: 8 });
+  });
+
+  it("retains badge timestamps, audit history and skill update time when keeping existing selections", async () => {
+    const { t, actorUserId, items } = await fixture();
+    const item = items[0];
+    await t.run(async (ctx) => {
+      await ctx.db.insert("packageBadges", {
+        packageId: item.packageId,
+        kind: "highlighted",
+        byUserId: actorUserId,
+        at: 1,
+      });
+      await ctx.db.insert("skillBadges", {
+        skillId: item.skillId,
+        kind: "highlighted",
+        byUserId: actorUserId,
+        at: 1,
+      });
+      await ctx.db.patch(item.skillId, {
+        batch: "highlighted",
+        badges: { highlighted: { byUserId: actorUserId, at: 1 } },
+      });
+    });
+    const snapshot = () =>
+      t.run(async (ctx) => ({
+        plugins: await ctx.db.query("packageBadges").collect(),
+        skills: await ctx.db.query("skillBadges").collect(),
+        skill: await ctx.db.get(item.skillId),
+        audits: await ctx.db.query("auditLogs").collect(),
+        scheduled: await ctx.db.system.query("_scheduled_functions").collect(),
+      }));
+    const before = await snapshot();
+    await t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
+      actorUserId,
+      name: item.name,
+      featured: true,
+    });
+    await t.mutation(internal.skills.setSkillFeaturedForUserInternal, {
+      actorUserId,
+      slug: item.name,
+      ownerHandle: "curator",
+      featured: true,
+    });
+    expect(await snapshot()).toEqual(before);
+  });
+});
