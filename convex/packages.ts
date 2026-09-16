@@ -6397,6 +6397,9 @@ async function restorePackageDoc(
     softDeletedByRole: undefined,
     tags: nextTags,
     latestReleaseId: nextLatest?._id,
+    ...(pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+      ? { categories: nextLatest?.pluginManifestSummary?.categories }
+      : {}),
     latestVersionSummary: nextLatest
       ? {
           version: nextLatest.version,
@@ -6415,17 +6418,8 @@ async function restorePackageDoc(
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : pkg.scanStatus,
     updatedAt: now,
   };
-  const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+  // The package trigger projects this exact survivor into both category/search indexes.
   await ctx.db.patch(pkg._id, packagePatch);
-  const restoreOwner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: pkg.ownerPublisherId,
-    ownerUserId: pkg.ownerUserId,
-  });
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(nextPackage),
-    ownerHandle: restoreOwner?.handle ?? "",
-    ownerKind: restoreOwner?.kind,
-  });
   await ctx.db.insert("auditLogs", {
     ...(params.actorUserId ? { actorUserId: params.actorUserId } : {}),
     action: "package.undelete",
@@ -12456,6 +12450,9 @@ async function quarantineMaliciousLatestPackageRelease(
   const packagePatch: Partial<Doc<"packages">> = {
     tags: nextTags,
     latestReleaseId: nextLatest?._id,
+    ...(pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+      ? { categories: nextLatest?.pluginManifestSummary?.categories }
+      : {}),
     latestVersionSummary: packageLatestSummaryFromRelease(nextLatest),
     summary: nextLatest?.summary,
     icon: nextLatest?.icon,
@@ -12467,17 +12464,8 @@ async function quarantineMaliciousLatestPackageRelease(
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : "malicious",
     updatedAt: now,
   };
-  const nextPackage: Doc<"packages"> = { ...pkg, ...packagePatch };
+  // The package trigger projects this exact survivor into both category/search indexes.
   await ctx.db.patch(pkg._id, packagePatch);
-  const owner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: pkg.ownerPublisherId,
-    ownerUserId: pkg.ownerUserId,
-  });
-  await upsertPackageSearchDigest(ctx, {
-    ...extractPackageDigestFields(nextPackage),
-    ownerHandle: owner?.handle ?? "",
-    ownerKind: owner?.kind,
-  });
 
   if (ctx.scheduler) {
     await recordMaliciousPluginReleaseFinding(
