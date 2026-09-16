@@ -58,6 +58,47 @@ async function fixture() {
 }
 
 describe("Featured publication", () => {
+  it("restores over-cap legacy membership without admitting new selections", async () => {
+    const { t, actorUserId, items } = await fixture();
+    const newSkillId = await t.run(async (ctx) => {
+      for (const [index, item] of items.entries()) {
+        await ctx.db.patch(
+          item.skillId,
+          index % 2 === 0
+            ? { badges: { highlighted: { byUserId: actorUserId, at: 1 } } }
+            : { batch: "highlighted" },
+        );
+      }
+      const original = await ctx.db.get(items[0].skillId);
+      if (!original) throw new Error("Missing fixture");
+      const { _id, _creationTime, ...fields } = original;
+      return ctx.db.insert("skills", {
+        ...fields,
+        slug: "new-selection",
+        badges: { official: { byUserId: actorUserId, at: 1 } },
+      });
+    });
+    const runBackfill = () => t.action(internal.maintenance.backfillSkillBadgeTableInternal, {});
+    expect((await runBackfill()).stats).toEqual({ skillsScanned: 10, recordsInserted: 10 });
+    const before = await t.run((ctx) => ctx.db.query("skillBadges").collect());
+    expect(before.filter((badge) => badge.kind === "highlighted")).toHaveLength(9);
+    expect((await runBackfill()).stats.recordsInserted).toBe(0);
+    expect(await t.run((ctx) => ctx.db.query("skillBadges").collect())).toEqual(before);
+    await expect(
+      t.mutation(internal.maintenance.upsertSkillBadgeRecordInternal, {
+        skillId: newSkillId,
+        kind: "highlighted",
+        byUserId: actorUserId,
+        at: 2,
+      }),
+    ).rejects.toThrow(/eight|8/i);
+    await expect(
+      t
+        .withIdentity({ subject: `${actorUserId}|test-session` })
+        .mutation(api.skills.setBatch, { skillId: newSkillId, batch: "highlighted" }),
+    ).rejects.toThrow(/eight|8/i);
+  });
+
   it("limits each catalog to eight through both UI and admin entry points, and allows replacement", async () => {
     const { t, actorUserId, items } = await fixture();
     const staff = t.withIdentity({ subject: `${actorUserId}|test-session` });

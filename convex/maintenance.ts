@@ -1916,8 +1916,8 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
     at: v.number(),
   },
   handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
     const syncDenormalizedBadge = async () => {
-      const skill = await ctx.db.get(args.skillId);
       if (!skill) return;
       await ctx.db.patch(args.skillId, {
         badges: {
@@ -1935,7 +1935,15 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
       await syncDenormalizedBadge();
       return { inserted: false as const };
     }
-    if (args.kind === "highlighted") await assertFeaturedCapacity(ctx, "skill");
+    // Restore persisted legacy membership even above the cap. Only a new
+    // selection consumes capacity; an upgrade must not silently drop selections.
+    if (
+      args.kind === "highlighted" &&
+      !skill?.badges?.highlighted &&
+      skill?.batch !== "highlighted"
+    ) {
+      await assertFeaturedCapacity(ctx, "skill");
+    }
     await ctx.db.insert("skillBadges", {
       skillId: args.skillId,
       kind: args.kind,
