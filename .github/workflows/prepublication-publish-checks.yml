@@ -112,10 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
-          # Backport Tencent/AI-Infra-Guard@f18ae642d62be142192d6bd4c21c4ea7e098bbc8 until its next PyPI release.
-          AIG_SITE_PACKAGES="$(python -c 'import site; print(site.getsitepackages()[0])')"
-          patch --batch --fuzz=0 --strip=1 --directory="$AIG_SITE_PACKAGES" < scripts/security/aig-skill-scan-0.2.1-gpt5.patch
-          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.1"'
+          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.2"'
           python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
           aig-skill-scan --help >/dev/null
 

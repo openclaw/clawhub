@@ -172,9 +172,10 @@ describe("pre-publication publish worker workflow", () => {
       "python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt",
     );
     expect(aigInstall).not.toContain("pip install 'aig-skill-scan==0.2.1'");
-    expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.1"');
-    expect(aigInstall).toContain("aig-skill-scan-0.2.1-gpt5.patch");
-    expect(aigInstall).toContain("f18ae642d62be142192d6bd4c21c4ea7e098bbc8");
+    expect(aigInstall).not.toContain('version("aig-skill-scan") == "0.2.1"');
+    expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.2"');
+    expect(aigInstall).not.toContain("aig-skill-scan-0.2.1-gpt5.patch");
+    expect(aigInstall).not.toContain("f18ae642d62be142192d6bd4c21c4ea7e098bbc8");
     expect(aigInstall).toContain('assert "temperature=" not in inspect.getsource(LLM.chat_stream)');
     expect(aigInstall).toContain("aig-skill-scan --help");
     expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(

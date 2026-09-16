@@ -2,8 +2,8 @@
 # Regenerate deliberately when upgrading aig-skill-scan or one of its dependencies.
 --only-binary=:all:
 
-aig-skill-scan==0.2.1 \
-  --hash=sha256:1a55f99199b0d0c2e2270a00ef8a1913b15eab69752bdd662630205ae453a62c
+aig-skill-scan==0.2.2 \
+  --hash=sha256:4828c69a3f6a052af4760c7f06c9ac425b25a4b76584a695186026e314a62eaa
 annotated-types==0.8.0 \
   --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
 anyio==4.15.0 \
