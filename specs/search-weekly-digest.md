@@ -20,25 +20,36 @@ existing Trending/adoption snapshots remain separate from historical result coun
 with their own periods, provenance, freshness and availability. A failed classifier
 lookup cannot erase successful recommendation metadata.
 
-New weeks freeze `search_intelligence_weekly_v2` with separate `plugins` and `skills`
+New weeks freeze `search_intelligence_weekly_v3` with separate `plugins` and `skills`
 catalogs. Query rows and recommendation query evidence retain `catalog`, `shelf`,
 or `legacy` scope through producer validation, Hermit validation, and rendering.
 The same text in different scopes remains distinguishable; only catalog rows can
 be company opportunities. Recommendations reuse the canonical shared ordering and
-explain search-only, adoption-only, or combined support without a second scoring model.
-Existing frozen `plugin_search_weekly` payloads replay unchanged; the live v1 builder
-is removed. Deploy the compatible Hermit receiver before the coordinated ClawHub
-collection/recommendation/sender release; do not activate mixed-scope collection
-with the old scope-dropping live builder.
+explain search-only, adoption-only, combined, or current-only support without a second
+scoring model. Each catalog includes the complete advisory eight-item lineup,
+membership baseline, keeps/additions/removals, and any eligibility shortfall.
+Current-only members explicitly have no observed evidence in the inspected cohorts.
+Existing frozen `plugin_search_weekly` and `search_intelligence_weekly_v2` payloads
+replay unchanged, including their original receipt identity. Deploy and verify the
+compatible Hermit v3 receiver before deploying the v3 producer. Receiver support for
+all three schemas must remain available while retained frozen payloads can retry.
 
 Digest query rows require at least three searches. Official-gap/company rows
 require three official-gap searches; dropped-to-zero movers may qualify from the
-previous week's volume. Each section has at most five rows. The query cohort is
-capped at 100 per ranking and marked truncated; it is not a complete catalog scan.
-Unrepresentable canonical query/package identities are omitted, never truncated or
-rewritten. Display-only descriptors are sanitized. A 30,000-byte UTF-8 payload budget
-drops whole lowest-ranked rows from the longest section in a fixed tie order; this
-preserves each section's leaders and all global totals, and marks the digest truncated.
+previous week's volume. Auxiliary query sections have at most five rows. The query
+cohort is capped at 100 per ranking and marked truncated; it is not a complete catalog
+scan. A candidate can carry lower-volume adoption or aggregate search evidence while
+query text below the three-search threshold is suppressed. Display-only descriptors
+are sanitized. Unrepresentable auxiliary query identities are omitted, never rewritten.
+
+The 30,000-byte UTF-8 budget compacts only auxiliary rows and details, preserving all
+selected members, baseline/removal identities, global totals, and explicit truncation.
+An unrepresentable selected identity or full lineup that still exceeds the budget
+fails explicitly; it never silently drops a Featured candidate. Hermit's component
+budget likewise preserves all sixteen possible selected members. Links exceeding
+Discord's button URL limit visibly open the dashboard; a v3-only full-payload
+fingerprint preserves exact uncertain-send reconciliation. No digest generation or
+delivery changes Featured membership, and the first production dry run sends nothing.
 
 ## Advisory classifier
 

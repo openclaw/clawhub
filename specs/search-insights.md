@@ -34,6 +34,32 @@ and optional `scope: catalog | shelf | legacy` (omitted means all scopes, kept
 separate). Scope is part of every query row's identity. Existing rows without scope
 remain legacy/unknown; no migration guesses that they searched the whole catalog.
 
+## Featured selection
+
+Each catalog has an eight-member target. Every recommendation iteration proposes the
+complete set, including keeps, additions, removals, exact existing membership and its
+version/timestamp baseline. Fewer eligible candidates yield an explicit shortfall;
+the system never fills slots with ineligible items. Current members are rechecked.
+Evidence ordering stays within each catalog: combined search/adoption, search-only,
+adoption-only, then eligible current members without inspected evidence. Supporting
+counts, periods and freshness remain visible; no cross-catalog weighted score is added.
+Emerging means an existing New/Rising signal plus positive observed adoption, not an
+invented growth estimate. Quality, usefulness and category coverage still need review.
+
+Plugins with a canonical single category of channels, models or agent-runtimes are
+excluded from Featured/Trending discovery and Featured recommendations. Official and
+community tools remain eligible; other adapters are not broadly excluded. All, search,
+direct access and full search-demand/company-gap reports retain those plugins. Legacy
+multi-category assignments require reviewed source repair before final recommendations.
+
+New publications enforce the eight-member cap transactionally per catalog. Keeping a
+member preserves timestamps, audit history and notifications. Badge-table backfill
+restores already persisted legacy membership, even above eight, without applying new
+admission rules. Existing over-cap membership stays visible for curator review; no
+automatic removal occurs, and new additions wait until there is capacity. Publishing
+the proposed set requires Patrick's approval. The homepage default changes only after
+the deployed pipeline's initial selection has been reviewed.
+
 ## Aggregation and retention
 
 `searchInsights.aggregateInternal` runs hourly. The bounded 200-row ingestion batch
