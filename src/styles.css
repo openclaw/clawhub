@@ -23463,6 +23463,9 @@ a.search-empty-action {
 }
 
 .home-v2-listing-row-by {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 12px;
   font-weight: 500;
