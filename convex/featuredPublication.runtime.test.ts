@@ -61,6 +61,18 @@ describe("Featured publication", () => {
   it("limits each catalog to eight through both UI and admin entry points, and allows replacement", async () => {
     const { t, actorUserId, items } = await fixture();
     const staff = t.withIdentity({ subject: `${actorUserId}|test-session` });
+    const clawId = await t.run(async (ctx) => {
+      const original = await ctx.db.get(items[0].packageId);
+      if (!original) throw new Error("Missing fixture");
+      const { _id, _creationTime, ...fields } = original;
+      return ctx.db.insert("packages", {
+        ...fields,
+        name: "companion-claw",
+        normalizedName: "companion-claw",
+        family: "claw",
+      });
+    });
+    await staff.mutation(api.packages.setBatch, { packageId: clawId, batch: "highlighted" });
     for (const item of items.slice(0, 8)) {
       await staff.mutation(api.packages.setBatch, {
         packageId: item.packageId,
@@ -122,7 +134,8 @@ describe("Featured publication", () => {
       plugins: (await ctx.db.query("packageBadges").collect()).length,
       skills: (await ctx.db.query("skillBadges").collect()).length,
     }));
-    expect(counts).toEqual({ plugins: 8, skills: 8 });
+    // Claws use the same badge table but are a separate catalog.
+    expect(counts).toEqual({ plugins: 9, skills: 8 });
   });
 
   it("retains badge timestamps, audit history and skill update time when keeping existing selections", async () => {

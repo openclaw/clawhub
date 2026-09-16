@@ -1535,11 +1535,12 @@ function packageMatchesListFilters(
 
 async function upsertPackageBadge(
   ctx: MutationCtx,
-  packageId: Id<"packages">,
+  pkg: Doc<"packages">,
   kind: PackageBadgeKind,
   userId: Id<"users">,
   at: number,
 ) {
+  const packageId = pkg._id;
   const existing = await ctx.db
     .query("packageBadges")
     .withIndex("by_package_kind", (q) => q.eq("packageId", packageId).eq("kind", kind))
@@ -1547,7 +1548,8 @@ async function upsertPackageBadge(
   if (existing) {
     return false;
   }
-  await assertFeaturedCapacity(ctx, "plugin");
+  if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin")
+    await assertFeaturedCapacity(ctx, "plugin");
   await ctx.db.insert("packageBadges", {
     packageId,
     kind,
@@ -12902,7 +12904,7 @@ async function setPackageFeaturedForActor(
 ) {
   const now = Date.now();
   const changed = featured
-    ? await upsertPackageBadge(ctx, pkg._id, "highlighted", actor._id, now)
+    ? await upsertPackageBadge(ctx, pkg, "highlighted", actor._id, now)
     : await removePackageBadge(ctx, pkg._id, "highlighted");
   const result = { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
   if (!changed) return result;
