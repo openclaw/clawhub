@@ -257,7 +257,11 @@ describe("latest plugin category refresh", () => {
     },
   );
 
-  it.each(["plugin-product-categories-v1", "plugin-single-category-v4"])(
+  it.each([
+    "plugin-product-categories-v1",
+    "plugin-single-category-v4",
+    "plugin-single-category-v5",
+  ])(
     "rejects superseded %s previews, including rows accepted before a classifier upgrade",
     async (classifierVersion) => {
       const { t, readCategories } = await fixture();

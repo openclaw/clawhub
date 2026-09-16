@@ -28,21 +28,21 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Channels",
     icon: "message-circle",
     description:
-      "Providing a messaging transport or channel adapter that connects people to the agent through a messaging service, even if it also exposes workspace tools. Enhancing an existing channel with reply notifications, inbox triage, or a communication persona belongs in Inbox & collaboration; using a channel does not make a plugin a transport.",
+      "Providing the main conversational transport between people and the agent through a messaging service, even if it also exposes workspace tools. Reply notifications, approval interfaces, inbox triage, and communication enhancements belong in Inbox & collaboration. A secondary channel capability does not override a different main purpose.",
   },
   {
     slug: "models",
     label: "Models",
     icon: "brain",
     description:
-      "Providing general model inference backends or selecting which model/provider handles inference. Selecting, condensing, or formatting tools for an already selected model belongs in Context. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media.",
+      "Providing inference backends, or selecting and routing which model/provider handles inference as the main service. The selected backend may execute the request. Incidental budget guards, usage reports, or optional fallback advice belong to their own workflow. Selecting and formatting tools for an existing model belongs in Context; specialized speech or media generators belong in Voice or Media.",
   },
   {
     slug: "agent-runtimes",
     label: "Agent runtimes",
     icon: "bot",
     description:
-      "Agent execution engines and backends that run model/tool loops and manage native sessions, including Codex, ACP, and Copilot runtimes. Context assembly belongs in Context; coordinating work across agents belongs in Agent orchestration.",
+      "Agent execution engines and backends that provide the agent model/tool loop and native session lifecycle, including Codex, ACP, and Copilot runtimes. A tool that invokes a separately running coding agent for a development task belongs in Developer tools; coordinating agents belongs in Agent orchestration.",
   },
   {
     slug: "memory",
@@ -91,7 +91,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Integrations",
     icon: "plug",
     description:
-      "General-purpose platforms for connecting services or orchestrating APIs. A connector dedicated to a particular workflow belongs in that workflow's category, even if it only exposes the service's data or tools. MCP/client wiring alone is insufficient; use Other when the connected service's user purpose is unspecified.",
+      "General-purpose platforms or reusable clients that let users choose which services, APIs, or MCP servers to connect. A fixed-service adapter belongs with its service's known workflow, or Other if that purpose is not established. Configuring credentials or an executable path does not make a fixed-service adapter general-purpose.",
   },
   {
     slug: "developer-tools",
@@ -175,7 +175,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Other",
     icon: "package",
     description:
-      "Use only when the plugin's main purpose does not fit another category or the available evidence is insufficient. Do not use this just because a plugin has several capabilities.",
+      "Use only when the evidence does not establish a main purpose or that purpose does not reasonably fit any broader category. Category descriptions give examples, not exhaustive specialty lists; a missing exact specialty label or several capabilities is not a reason to use Other.",
   },
 ] as const;
 

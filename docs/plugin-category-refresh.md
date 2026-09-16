@@ -65,8 +65,11 @@ Publication and refresh share bounded manifest, README/MDX, and bundled-skill
 evidence. Declared skills take priority over secondary documentation; a long
 README cannot consume the whole document budget. A plugin that enhances an
 existing channel or adapts tools for an existing model is categorized by that
-workflow, rather than by the transport or model it uses. Insufficient evidence
-produces Other with an explanation; review that explanation before accepting.
+workflow, rather than by the transport or model it uses. Reusable configurable
+API/MCP clients have Integrations as their own purpose. Category examples are
+illustrative: a known workflow can fit a broad category without an exact specialty
+label. Other requires an unsupported purpose or insufficient evidence; inspect
+that explanation before accepting.
 
 Choose at most 100 rows for a wave, starting with a small pilot. Use `report`
 with the JSON `reviewed_ids` array to get the exact selected rows and their
@@ -87,7 +90,7 @@ gh workflow run plugin-category-refresh.yml --repo openclaw/clawhub --ref main \
 Accept marks reviewed rows accepted and rehearses the first ten through a
 transaction that rolls back. Category state stays unchanged. A failed rehearsal
 leaves accepted rows available for inspection. Fresh generated previews must use
-classifier `plugin-single-category-v5`; bundled previews must match the pinned
+classifier `plugin-single-category-v6`; bundled previews must match the pinned
 OpenClaw source commit and manifest hashes in the checked-out inventory.
 
 ## Apply, monitor, and undo
