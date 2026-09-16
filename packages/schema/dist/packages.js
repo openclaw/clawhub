@@ -3,6 +3,7 @@ import { ClawManifestSummarySchema } from "./claws.js";
 import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
+export const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
 export function normalizePackageOwnerHandle(handle) {
     const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
     return normalized || undefined;
@@ -36,6 +37,10 @@ export const PackageCompatibilitySchema = type({
 });
 export const PluginManifestSummarySchema = type({
     schemaVersion: "number",
+    contracts: type({ "[string]": "string[]" }).optional(),
+    providers: "string[]?",
+    channels: "string[]?",
+    categories: "string[]?",
     icon: "string?",
     compatibility: PackageCompatibilitySchema.optional(),
     manifestIdentity: type({
@@ -60,6 +65,24 @@ export const PluginManifestSummarySchema = type({
         skillMdPath: "string",
         sha256: "string",
         size: "number",
+    }).array(),
+});
+const PackageVersionIdentitySchema = type({
+    "+": "reject",
+    name: "string",
+    version: "string",
+});
+export const ApiV1PackageCategoriesBatchRequestSchema = type({
+    "+": "reject",
+    packages: PackageVersionIdentitySchema.array(),
+});
+export const ApiV1PackageCategoriesBatchResponseSchema = type({
+    "+": "reject",
+    packages: type({
+        "+": "reject",
+        name: "string",
+        version: "string",
+        categories: "string[]|null",
     }).array(),
 });
 export const PackageVerificationSummarySchema = type({
@@ -156,6 +179,26 @@ export const PackageSkillSpectorAnalysisSchema = type({
     error: "string?",
     checkedAt: "number",
 });
+export const PackageAigFindingSchema = type({
+    ruleId: "string",
+    level: "string",
+    message: "string",
+    title: "string?",
+    description: "string?",
+    file: "string?",
+    startLine: "number?",
+    endLine: "number?",
+    remediation: "string?",
+});
+export const PackageAigAnalysisSchema = type({
+    status: "string",
+    issueCount: "number",
+    findings: PackageAigFindingSchema.array(),
+    scannerVersion: "string?",
+    summary: "string?",
+    error: "string?",
+    checkedAt: "number",
+});
 export const PackageLlmAnalysisDimensionSchema = type({
     name: "string",
     label: "string",
@@ -205,7 +248,11 @@ export const PackageTrustedPublisherSchema = type({
     workflowFilename: "string",
     environment: "string?",
 });
-export const MAX_PACKAGE_MULTIPART_BYTES = 18 * 1024 * 1024;
+// The public registry API is served through Vercel functions, which reject request
+// bodies over 4.5 MB before ClawHub code runs. Inline multipart publishes stay under
+// that cap; larger ClawPacks stage through the upload-url flow straight into storage.
+const MAX_PACKAGE_MULTIPART_MB = 4;
+export const MAX_PACKAGE_MULTIPART_BYTES = MAX_PACKAGE_MULTIPART_MB * 1024 * 1024;
 export const MAX_PACKAGE_CLAWPACK_BYTES = 120 * 1024 * 1024;
 const PACKAGE_MULTIPART_FIXED_OVERHEAD_BYTES = 4096;
 const PACKAGE_MULTIPART_PART_OVERHEAD_BYTES = 1024;
@@ -218,7 +265,7 @@ export function isPackageMultipartUploadTooLarge(input) {
     return estimatePackageMultipartUploadBytes(input) > MAX_PACKAGE_MULTIPART_BYTES;
 }
 export function getPackageMultipartSizeError() {
-    return "Package upload exceeds 18MB multipart upload limit";
+    return `Package upload exceeds ${MAX_PACKAGE_MULTIPART_MB}MB multipart upload limit`;
 }
 function estimateMultipartStringPartBytes(fieldName, value) {
     return PACKAGE_MULTIPART_PART_OVERHEAD_BYTES + utf8ByteLength(fieldName) + utf8ByteLength(value);
@@ -279,7 +326,7 @@ export const ServerPackagePublishRequestSchema = type({
     artifact: PackagePublishArtifactSchema.optional(),
     files: CliPublishFileSchema.array(),
 });
-export const PackageListItemSchema = type({
+const PackageListItemFields = {
     name: "string",
     displayName: "string",
     family: PackageFamilySchema,
@@ -289,6 +336,8 @@ export const PackageListItemSchema = type({
     summary: "string|null?",
     icon: "string|null?",
     ownerHandle: "string|null?",
+    ownerImage: "string|null?",
+    ownerOfficial: "boolean?",
     createdAt: "number",
     updatedAt: "number",
     latestVersion: "string|null?",
@@ -297,6 +346,27 @@ export const PackageListItemSchema = type({
     featuredAt: "number?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
+};
+export const PackageListItemSchema = type(PackageListItemFields);
+export const PluginOverviewItemSchema = type({
+    "+": "reject",
+    ...PackageListItemFields,
+    featured: "boolean?",
+    featuredRank: "number?",
+    trending: "boolean?",
+    trendingRank: "number?",
+});
+export const ApiV1PluginOverviewResponseSchema = type({
+    "+": "reject",
+    categories: type({
+        "+": "reject",
+        slug: "string",
+        label: "string",
+        description: "string",
+        icon: "string",
+        order: "number",
+    }).array(),
+    items: PluginOverviewItemSchema.array(),
 });
 export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),
@@ -372,6 +442,8 @@ export const ApiV1PackageResponseSchema = type({
         handle: "string|null",
         displayName: "string|null?",
         image: "string|null?",
+        // Response readers also accept registries predating the publisher badge field.
+        official: "boolean?",
     }).or("null"),
 });
 export const ApiV1PackageVersionListResponseSchema = type({
@@ -404,6 +476,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         sha256hash: "string|null?",
         vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
         skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),
+        aigAnalysis: PackageAigAnalysisSchema.or("null").optional(),
         llmAnalysis: PackageLlmAnalysisSchema.or("null").optional(),
         staticScan: PackageStaticScanSchema.or("null").optional(),
     }).or("null"),
@@ -437,6 +510,8 @@ export const ApiV1PackageArtifactResponseSchema = type({
 });
 export const ApiV1PackageSecurityResponseSchema = type({
     overview: "string",
+    // Older registries omit this field; consumers must not infer a display verdict from trust.
+    verdict: "string?",
     securityAuditUrl: "string",
     package: type({
         name: "string",
@@ -461,6 +536,12 @@ export const ApiV1PackageSecurityResponseSchema = type({
         pending: "boolean",
         stale: "boolean",
     }),
+});
+export const ApiV1PluginDetailResponseSchema = ApiV1PackageResponseSchema.and({
+    versions: ApiV1PackageVersionListResponseSchema,
+    version: ApiV1PackageVersionResponseSchema.get("version"),
+    readme: "string|null",
+    security: ApiV1PackageSecurityResponseSchema.or("null"),
 });
 export const PackageReleaseModerationRequestSchema = type({
     state: PackageReleaseModerationStateSchema,
@@ -788,6 +869,21 @@ export const ApiV1PackagePublishResponseSchema = type({
 });
 export const PackagePublishAttemptStatusSchema = type('"pending_checks"|"ready_to_finalize"|"finalizing"|"finalized"|"blocked"|"failed"|"expired"');
 export const PackagePublicationStatusSchema = type('"pending"|"published"|"blocked"|"failed"|"expired"');
+export const ApiV1PackagePublishRecoveryRequestSchema = type({
+    manualOverrideReason: "string",
+});
+export const ApiV1PackagePublishRecoveryResponseSchema = type({
+    ok: "true",
+    attemptId: "string",
+    recoveredFromAttemptId: "string",
+    packageId: "string",
+    releaseId: "string",
+    name: "string",
+    version: "string",
+    status: PackagePublishAttemptStatusSchema,
+    publicationStatus: PackagePublicationStatusSchema,
+    reused: "boolean",
+});
 export const PackagePublishAttemptCheckSchema = type({
     status: '"pending"|"clean"|"blocked"|"failed"',
     summary: "string?",

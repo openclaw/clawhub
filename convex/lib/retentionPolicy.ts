@@ -25,7 +25,13 @@ type EphemeralRetentionPolicy = BaseRetentionPolicy & {
   classification: "ephemeral";
   standardBatchSize: typeof RETENTION_STANDARD_BATCH_SIZE;
   prune: string;
-  expirationField?: "expiresAt" | "expirationTime" | "dayStart" | "processedAt" | "createdAt";
+  expirationField?:
+    | "expiresAt"
+    | "expirationTime"
+    | "dayStart"
+    | "processedAt"
+    | "createdAt"
+    | "observedAt";
   expirationIndex?: string;
   retention: string;
 };
@@ -58,6 +64,39 @@ const ephemeral = (
 });
 
 export const RETENTION_POLICIES = {
+  searchAggregateStates: permanent(
+    "One ingestion cursor and query-free coverage bounds; no identities.",
+  ),
+  searchDailyAggregates: ephemeral("Daily anonymous search facts; no historical log backfill.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expirationTime",
+    prune: "searchInsights.pruneExpiredInternal",
+    retention: "13 calendar months after the UTC day.",
+  }),
+  searchClassificationRuns: ephemeral(
+    "Query-free weekly classification completion/failure status.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expirationTime",
+      prune: "searchInsights.pruneExpiredInternal",
+      retention: "13 calendar months after the week.",
+    },
+  ),
+  searchWeeklyClassifications: ephemeral(
+    "Advisory weekly intent only; never official provenance.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expirationTime",
+      prune: "searchInsights.pruneExpiredInternal",
+      retention: "13 calendar months after the week.",
+    },
+  ),
+  searchWeeklyDigests: ephemeral("Bounded weekly aggregate digest payloads and delivery status.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expiration_time",
+    prune: "searchWeeklyDigest.pruneExpiredInternal",
+    retention: "13 calendar months from the completed week boundary.",
+  }),
   users: permanent("Canonical user profiles and account state."),
   authSessions: ephemeral("Convex Auth sessions expire after their total session duration.", {
     expirationField: "expirationTime",
@@ -139,6 +178,9 @@ export const RETENTION_POLICIES = {
     "Catalog classification output can be recomputed from package and skill metadata.",
     "skills/packages",
   ),
+  pluginCategoryRefreshes: permanent(
+    "Reviewed category migration decisions and before/after evidence required for guarded rollback.",
+  ),
   packageInspectorWarnings: permanent("Package inspector findings are user-facing review history."),
   packageInspectorFindingNotifications: permanent(
     "Notification sent-log prevents duplicate emails.",
@@ -173,6 +215,15 @@ export const RETENTION_POLICIES = {
     prune: "packages.pruneProcessedPackageStatEventsInternal",
     retention: "Processed and older than 7 days.",
   }),
+  pluginSearchObservations: ephemeral(
+    "Raw plugin search observations are retained only to build privacy-preserving aggregates.",
+    {
+      expirationField: "observedAt",
+      expirationIndex: "by_observed_at",
+      prune: "pluginSearchObservations.pruneExpiredInternal",
+      retention: "30 days after observation.",
+    },
+  ),
   packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
   packageLeaderboards: derived(
     "Package trending snapshots can be rebuilt from packageDailyStats.",
@@ -325,8 +376,10 @@ export const RETENTION_POLICIES = {
   publisherAbuseScores: permanent("Abuse score history used for review decisions."),
   publisherAbuseReviewNominations: permanent("Abuse review workflow state."),
   publisherAbuseReviewEvents: permanent("Abuse review event history."),
-  publisherAbuseSignals: permanent("Durable publisher abuse signal archive for staff review."),
-  publisherAbuseSignalReviewEvents: permanent("Abuse signal review event history."),
+  publisherAbuseSignals: permanent("Durable publisher abuse signal archive for staff visibility."),
+  publisherAbuseSignalReviewEvents: permanent(
+    "Dormant abuse signal review history retained until an approved migration removes it.",
+  ),
   vtScanLogs: permanent("VirusTotal scan log history."),
   apiTokens: permanent("User API tokens until revoked."),
   cliDeviceCodes: ephemeral("CLI device codes expire quickly.", {

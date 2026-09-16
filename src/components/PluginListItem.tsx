@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
+import { isPluginCategorySlug } from "clawhub-schema";
 import { Download } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
+import { getPluginCategoryBySlug } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
@@ -18,18 +19,12 @@ type PluginListItemProps = {
   showOfficialBadge?: boolean;
 };
 
-const PLUGIN_CATEGORIES_BY_SLUG = new Map(
-  PLUGIN_CATEGORY_DEFINITIONS.map((category) => [category.slug, category]),
-);
-
 function getPluginTaxonomyDisplay(item: PackageListItem) {
   const topics = (item.topics ?? []).filter((topic) => topic.trim());
   if (topics.length > 0) return { labels: topics, ariaLabel: "Topics" };
 
   const categories = (item.categories ?? []).flatMap((category) => {
-    return isPluginCategorySlug(category) && PLUGIN_CATEGORIES_BY_SLUG.has(category)
-      ? [category]
-      : [];
+    return isPluginCategorySlug(category) && getPluginCategoryBySlug(category) ? [category] : [];
   });
   return { labels: categories, ariaLabel: "Categories" };
 }
@@ -37,7 +32,7 @@ function getPluginTaxonomyDisplay(item: PackageListItem) {
 function getPluginCategories(item: PackageListItem) {
   return (item.categories ?? []).flatMap((slug) => {
     if (!isPluginCategorySlug(slug)) return [];
-    const category = PLUGIN_CATEGORIES_BY_SLUG.get(slug);
+    const category = getPluginCategoryBySlug(slug);
     return category ? [category] : [];
   });
 }
@@ -48,14 +43,11 @@ export function PluginListItem({
   href,
   showOfficialBadge = true,
 }: PluginListItemProps) {
+  const isOfficial = item.isOfficial || item.ownerOfficial === true;
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
   const categories = getPluginCategories(item);
   const primaryCategory = categories[0] ?? null;
-  const categoryLabel = categories
-    .slice(0, 3)
-    .map((category) => category.label)
-    .join(", ");
   const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
   const displayName = presentationTitle(item.displayName, item.name);
 
@@ -71,6 +63,7 @@ export function PluginListItem({
             kind="plugin"
             label={displayName}
             imageUrl={item.icon}
+            publisherImageUrl={item.ownerImage}
             categorySlug={primaryCategory?.slug}
             size="md"
           />
@@ -82,7 +75,7 @@ export function PluginListItem({
               <span className="skill-card-owner">
                 {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
               </span>
-              {showOfficialBadge && item.isOfficial ? <OfficialBadge /> : null}
+              {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
             </span>
           </div>
         </div>
@@ -116,15 +109,12 @@ export function PluginListItem({
   }
 
   return (
-    <Link
-      to={pluginHref}
-      className="skill-list-item skill-list-item-with-taxonomy"
-      aria-label={`Plugin: ${displayName}`}
-    >
+    <Link to={pluginHref} className="skill-list-item" aria-label={`Plugin: ${displayName}`}>
       <MarketplaceIcon
         kind="plugin"
         label={displayName}
         imageUrl={item.icon}
+        publisherImageUrl={item.ownerImage}
         categorySlug={primaryCategory?.slug}
       />
       <div className="skill-list-item-body">
@@ -137,15 +127,12 @@ export function PluginListItem({
               <span className="skill-list-item-owner">@{item.ownerHandle}</span>
             ) : null}
           </span>
-          {showOfficialBadge && item.isOfficial ? <OfficialBadge /> : null}
+          {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
           <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
         </div>
         <p className="skill-list-item-summary">
           {truncateText(item.summary ?? "Plugin package for agent workflows.", 80)}
         </p>
-      </div>
-      <div className="skill-list-item-taxonomy" aria-label="Category">
-        {categoryLabel ? <span className="skill-list-item-category">{categoryLabel}</span> : null}
       </div>
       <div className="skill-list-item-meta">
         <span className="skill-list-item-meta-item">

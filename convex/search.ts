@@ -18,6 +18,7 @@ import {
   type CanonicalSkillSearchCandidate,
 } from "./lib/canonicalSkillSearch";
 import { CANONICAL_SKILL_SEARCH_BOUNDS } from "./lib/canonicalSkillSearchBounds";
+import { recordCatalogSearchFacts } from "./lib/catalogSearchObservations";
 import { generateEmbedding } from "./lib/embeddings";
 import { toDayKey } from "./lib/leaderboards";
 import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
@@ -32,6 +33,8 @@ import {
   getOwnerPublisher,
   getPublisherByHandle,
 } from "./lib/publishers";
+import { searchInsightSource } from "./lib/searchInsights";
+import { isCuratedSearchResult } from "./lib/searchRanking";
 import {
   matchesAllTokens,
   matchesExactTokens,
@@ -107,6 +110,13 @@ type PublicSearchResult = SkillSearchEntry & {
   score: number;
   semanticScore: number;
 };
+
+function isCuratedSkillSearchEntry(entry: SkillSearchEntry): boolean {
+  return isCuratedSearchResult({
+    isOfficial: Boolean(entry.owner?.official || entry.skill.badges?.official),
+    featured: isSkillHighlighted(entry.skill),
+  });
+}
 
 const EXACT_SLUG_BOOST = 2.5;
 const SLUG_TOKEN_BOOST = 1.4;
@@ -576,6 +586,7 @@ const nativeSkillSearch = {
       .filter((entry): entry is SearchResult => Boolean(entry?.skill))
       .sort(
         (a, b) =>
+          Number(isCuratedSkillSearchEntry(b)) - Number(isCuratedSkillSearchEntry(a)) ||
           a.candidateRelevance.tier - b.candidateRelevance.tier ||
           b.candidateRelevance.lexicalScore - a.candidateRelevance.lexicalScore ||
           b.candidateRelevance.semanticScore - a.candidateRelevance.semanticScore ||
@@ -590,8 +601,25 @@ const nativeSkillSearch = {
 };
 
 export const searchNativeSkills: ReturnType<typeof action> = action({
-  args: nativeSkillSearchArgs,
-  handler: async (ctx, args) => nativeSkillSearch.handler(ctx, args),
+  args: { ...nativeSkillSearchArgs, searchSource: v.optional(searchInsightSource) },
+  handler: async (ctx, { searchSource, ...args }) => {
+    const results = await nativeSkillSearch.handler(ctx, args);
+    // This native read serves filtered homepage shelves, not merged catalog search.
+    // Convex actions have no Request abort signal; only completed responses are recorded.
+    if (args.highlightedOnly || args.officialOnly || args.createdAfter !== undefined)
+      await recordCatalogSearchFacts(ctx, {
+        source: searchSource,
+        artifactKind: "skill",
+        query: args.query,
+        category: args.categorySlug,
+        topic: args.topic,
+        filtered: true,
+        officialResults: results.map(
+          (entry) => entry.owner?.official === true || isSkillOfficial(entry.skill),
+        ),
+      });
+    return results;
+  },
 });
 
 type RollingSkillUsage = {
@@ -1244,6 +1272,50 @@ export const directPrefixSkillMatches = internalQuery({
         matchesCatalogFilters(skill, categorySlug, topic)
       );
     };
+    const matchesCuratedRecallFilters = (digest: Doc<"skillSearchDigest">) => {
+      const skill = digestToHydratableSkill(digest);
+      const relevance = classifyCanonicalSkillSearchMatch(args.query, {
+        identities: [digest.slug],
+        name: digest.displayName,
+        slug: digest.slug,
+        taxonomy: [...(digest.categories ?? []), ...(digest.topics ?? [])],
+        summary: digest.summary ?? null,
+      });
+      return (
+        relevance !== null &&
+        !shouldExcludeSkillFromPublicBrowse(skill) &&
+        (!args.highlightedOnly || isSkillHighlighted(skill)) &&
+        matchesNativeSearchEligibility(skill, args) &&
+        matchesCatalogFilters(skill, categorySlug, topic)
+      );
+    };
+    const loadCuratedDigests = async () => {
+      const rows = await (
+        args.nonSuspiciousOnly
+          ? ctx.db
+              .query("curatedSkillSearchDigest")
+              .withIndex("by_nonsuspicious_updated", (q) =>
+                q.eq("softDeletedAt", undefined).eq("isSuspicious", false),
+              )
+          : ctx.db
+              .query("curatedSkillSearchDigest")
+              .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+      )
+        .order("desc")
+        .take(MAX_FILTERED_DIRECT_SKILL_SCAN_CANDIDATES);
+      const digests = await Promise.all(
+        rows.map((row) =>
+          ctx.db
+            .query("skillSearchDigest")
+            .withIndex("by_skill", (q) => q.eq("skillId", row.skillId))
+            .unique(),
+        ),
+      );
+      return digests.filter(
+        (digest): digest is Doc<"skillSearchDigest"> =>
+          digest !== null && matchesCuratedRecallFilters(digest),
+      );
+    };
     const needsExpandedRecall = Boolean(
       categorySlug ||
       topic ||
@@ -1313,6 +1385,7 @@ export const directPrefixSkillMatches = internalQuery({
         matches: matchesDirectRecallFilters,
       });
     const [
+      curatedDigests,
       slugDigests,
       displayNameDigests,
       slugFirstTokenDigests,
@@ -1321,6 +1394,7 @@ export const directPrefixSkillMatches = internalQuery({
       ftSlugDigests,
       exactTopicDigestPages,
     ] = await Promise.all([
+      loadCuratedDigests(),
       collectDirectCandidates(
         () =>
           args.nonSuspiciousOnly
@@ -1478,6 +1552,7 @@ export const directPrefixSkillMatches = internalQuery({
           all.findIndex((candidate) => candidate.skillId === digest.skillId) === index,
       );
     const digests = [
+      ...curatedDigests,
       ...slugDigests,
       ...displayNameDigests,
       ...slugFirstTokenDigests,

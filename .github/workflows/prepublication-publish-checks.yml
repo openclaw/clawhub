@@ -73,12 +73,18 @@ jobs:
       PREPUBLICATION_CHECK_SLUG: ${{ github.event.client_payload.slug || inputs.slug || '' }}
       PREPUBLICATION_CHECK_VERSION: ${{ github.event.client_payload.version || inputs.version || '' }}
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: ${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}
+      # The runner is disposable and installs the reviewed, hash-locked host scanners above.
+      PREPUBLICATION_CLAWSCAN_SANDBOX: "off"
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}
       PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
     steps:
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
 
       - name: Install Codex CLI
         run: |
@@ -89,12 +95,36 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.6
+          npm install -g @openclaw/clawscan@0.1.8
           clawscan --version
+
+      - name: Install SkillSpector
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/skillspector-venv"
+          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
+          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
+          skillspector --help >/dev/null
+
+      - name: Install A.I.G scanner
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
+          # Backport Tencent/AI-Infra-Guard@f18ae642d62be142192d6bd4c21c4ea7e098bbc8 until its next PyPI release.
+          AIG_SITE_PACKAGES="$(python -c 'import site; print(site.getsitepackages()[0])')"
+          patch --batch --fuzz=0 --strip=1 --directory="$AIG_SITE_PACKAGES" < scripts/security/aig-skill-scan-0.2.1-gpt5.patch
+          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.1"'
+          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
+          aig-skill-scan --help >/dev/null
 
       - name: Run pre-publication publish worker
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.6
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
         run: |

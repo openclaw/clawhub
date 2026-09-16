@@ -31,6 +31,7 @@ describe("verificationRank", () => {
 describe("hasStrongTrustSignal", () => {
   it("accepts official packages and strong verification", () => {
     expect(hasStrongTrustSignal(community({ isOfficial: true }))).toBe(true);
+    expect(hasStrongTrustSignal(community({ featured: true }))).toBe(true);
     expect(hasStrongTrustSignal(community({ verificationTier: "provenance-verified" }))).toBe(true);
     expect(hasStrongTrustSignal(community({ verificationTier: "rebuild-verified" }))).toBe(true);
   });
@@ -130,6 +131,20 @@ describe("compareRankedSearchKeys", () => {
         { name: "official", key: official },
       ]),
     ).toEqual(["official", "adopted"]);
+  });
+
+  it("ranks curated matches ahead of stronger community matches", () => {
+    const featured = rankedSearchKey({ rankTier: 2, score: 20 }, community({ featured: true }));
+    const communityExact = rankedSearchKey(
+      { rankTier: 0, score: 200 },
+      community({ installs: 90_000 }),
+    );
+    expect(
+      sortKeys([
+        { name: "community-exact", key: communityExact },
+        { name: "featured", key: featured },
+      ]),
+    ).toEqual(["featured", "community-exact"]);
   });
 
   it("prefers adoption magnitude before text score within a tier", () => {

@@ -42,6 +42,7 @@ describe("packageLeaderboards", () => {
 
   it("aggregates recent installs and downloads into a weighted top list", async () => {
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (Array.isArray(args.packageIds)) return args.packageIds;
       if (args.day === Math.floor(Date.now() / 86_400_000)) {
         return {
           rows: [

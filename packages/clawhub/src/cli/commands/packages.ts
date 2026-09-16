@@ -30,6 +30,7 @@ import {
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackagePublishAttemptResponseSchema,
   type ApiV1PackagePublishAttemptResponse,
+  ApiV1PackagePublishRecoveryResponseSchema,
   ApiV1PackagePublishResponseSchema,
   type ApiV1PackagePublishResponse,
   ApiV1PackageReadinessResponseSchema,
@@ -83,6 +84,10 @@ const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
 const PACKAGE_PUBLISH_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_PACKAGE_PUBLISH_WAIT_TIMEOUT_SECONDS = 30 * 60;
+// ClawHub unpacks and stores a ClawPack inside one HTTP action before it
+// answers the publish request, so large packages need far more than the
+// default upload timeout; 5 minutes matches the front-end function budget.
+const PACKAGE_PUBLISH_REQUEST_TIMEOUT_MS = 5 * 60_000;
 const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
 const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
   "channel-env-vars":
@@ -965,6 +970,15 @@ export async function cmdPublishPackage(
   try {
     plan = await preparePackagePublishPlan(opts, sourceArg, options);
 
+    if (options.categories !== undefined && plan.payload.family !== "claw") {
+      console.warn(
+        "Warning: --categories is deprecated and ignored for plugin publishes, including an empty value. " +
+          "Declare exactly one category in openclaw.plugin.json. " +
+          "Omit categories from the manifest to let ClawHub classify the plugin automatically. " +
+          "--topics is unchanged.",
+      );
+    }
+
     if (options.dryRun) {
       if (options.json) {
         process.stdout.write(`${JSON.stringify(plan.output, null, 2)}\n`);
@@ -1075,6 +1089,7 @@ export async function cmdPublishPackage(
           token: publishToken,
           form,
           retryCount: trustedToolingBoundary ? 0 : PACKAGE_PUBLISH_RETRY_COUNT,
+          timeoutMs: PACKAGE_PUBLISH_REQUEST_TIMEOUT_MS,
         },
         ApiV1PackagePublishResponseSchema,
       );
@@ -1165,6 +1180,67 @@ export async function cmdPublishPackage(
   }
 }
 
+export async function cmdRecoverPackage(
+  opts: GlobalOpts,
+  attemptIdArg: string,
+  options: Pick<PackagePublishOptions, "manualOverrideReason" | "wait" | "waitTimeout" | "json">,
+  runtime: PackagePublishRuntime = {},
+) {
+  const attemptId = attemptIdArg.trim();
+  if (!attemptId) fail("Publish attempt ID required");
+  const manualOverrideReason = options.manualOverrideReason?.trim();
+  if (!manualOverrideReason || manualOverrideReason.length > 500) {
+    fail("--manual-override-reason must contain 1 through 500 characters");
+  }
+  const waitTimeoutSeconds = resolvePackagePublishWaitTimeout(options);
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createCrabLoader("Recovering staged publication");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.publishAttempts}/${encodeURIComponent(attemptId)}/recover`,
+        token,
+        body: { manualOverrideReason },
+        retryCount: 0,
+      },
+      ApiV1PackagePublishRecoveryResponseSchema,
+    );
+    if (["blocked", "failed", "expired"].includes(result.publicationStatus)) {
+      fail(
+        `Recovery ${result.publicationStatus} for ${result.name}@${result.version}. Attempt ${result.attemptId}.`,
+      );
+    }
+    const finalResult =
+      options.wait && result.publicationStatus !== "published"
+        ? await waitForPackagePublication({
+            registry,
+            attemptId: result.attemptId,
+            packageName: result.name,
+            version: result.version,
+            publishToken: token,
+            waitTimeoutSeconds,
+            spinner,
+            runtime,
+          })
+        : result;
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify({ ...result, ...finalResult }, null, 2)}\n`);
+    } else if (finalResult.publicationStatus === "published") {
+      spinner?.succeed(`Published ${result.name}@${result.version} (${result.releaseId})`);
+    } else {
+      spinner?.succeed(
+        `Recovery submitted for ${result.name}@${result.version}; pending security checks. Attempt ${result.attemptId}.`,
+      );
+    }
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
 function revalidateTrustedToolingIdentityAtMutationBoundary() {
   if (!process.env.TRUSTED_TOOLING_IDENTITY_JSON?.trim()) return;
 
@@ -1199,7 +1275,7 @@ async function waitForPackagePublication(params: {
   waitTimeoutSeconds: number;
   spinner: ReturnType<typeof createCrabLoader> | null;
   runtime: PackagePublishRuntime;
-  refreshPublishToken: () => Promise<string>;
+  refreshPublishToken?: () => Promise<string>;
 }) {
   const now = params.runtime.now ?? Date.now;
   const sleep =
@@ -1221,6 +1297,7 @@ async function waitForPackagePublication(params: {
     } catch (error) {
       if (
         getHttpErrorStatus(error) === 401 &&
+        params.refreshPublishToken &&
         hasGitHubActionsOidcEnv() &&
         !refreshedAfterUnauthorized
       ) {

@@ -11,6 +11,8 @@ import {
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
 import {
+  assertAigFilePathsHaveNoCompiledPython,
+  normalizeAigAnalysis,
   normalizeSkillSpectorAnalysis,
   publishWorkerHealthSummary,
   processJob,
@@ -193,6 +195,134 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(claimJobs).toHaveBeenCalledTimes(1);
   });
 
+  it("recovers a transient claim error and refills without retrying a failed scan", async () => {
+    const claimJobs = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("[Request ID: fixture] Server Error"))
+      .mockResolvedValueOnce({ claimedCount: 1, jobs: [{ id: "permanent-failure" }] })
+      .mockResolvedValueOnce({ claimedCount: 1, jobs: [{ id: "healthy" }] })
+      .mockResolvedValue({ claimedCount: 0, jobs: [] });
+    const processClaimedJob = vi.fn(async (job: { id: string }) => ({
+      completed: job.id === "healthy",
+      hardFailed: job.id !== "healthy",
+      retryableFailed: false,
+    }));
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const result = await runContinuouslyRefilledWorkerPool({
+      concurrency: 1,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+      sleep,
+    });
+    expect(result).toMatchObject({
+      totalClaimed: 2,
+      totalCompleted: 1,
+      totalClaimFailures: 1,
+      totalFailed: 2,
+    });
+    expect(processClaimedJob.mock.calls.map(([job]) => job.id)).toEqual([
+      "permanent-failure",
+      "healthy",
+    ]);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds consecutive transient claim retries and uses increasing backoff", async () => {
+    const claimJobs = vi.fn().mockRejectedValue(new Error("[Request ID: fixture] Server Error"));
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const result = await runContinuouslyRefilledWorkerPool({
+      concurrency: 8,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob: vi.fn(),
+      sleep,
+    });
+    expect(result).toMatchObject({ totalClaimed: 0, totalClaimFailures: 4 });
+    expect(claimJobs).toHaveBeenCalledTimes(4);
+    const delays = sleep.mock.calls.map(([delay]) => delay);
+    expect(delays).toHaveLength(3);
+    expect(delays[0]).toBeGreaterThanOrEqual(1000);
+    expect(delays[1]).toBeGreaterThan(delays[0]);
+    expect(delays[2]).toBeGreaterThan(delays[1]);
+  });
+
+  it("honors the claim deadline during backoff and still finishes leased work", async () => {
+    let canClaim = true;
+    const claimJobs = vi
+      .fn()
+      .mockResolvedValueOnce({ claimedCount: 2, jobs: [{ id: "one" }, { id: "two" }] })
+      .mockRejectedValue(new Error("[Request ID: fixture] Server Error"));
+    const sleep = vi.fn(async () => {
+      canClaim = false;
+    });
+    const result = await runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => canClaim,
+      claimJobs,
+      processClaimedJob: vi.fn(async () => ({
+        completed: true,
+        hardFailed: false,
+        retryableFailed: false,
+      })),
+      sleep,
+    });
+    expect(result).toMatchObject({ totalClaimed: 2, totalCompleted: 2, totalClaimFailures: 1 });
+    expect(claimJobs).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    new Error("Unauthorized"),
+    new Error("ArgumentValidationError: limit"),
+    new TypeError("invalid argument"),
+  ])("does not retry permanent claim errors: %s", async (error) => {
+    const claimJobs = vi.fn().mockRejectedValue(error);
+    const sleep = vi.fn();
+    await runContinuouslyRefilledWorkerPool({
+      concurrency: 16,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob: vi.fn(),
+      sleep,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new TypeError("fetch failed"),
+    new Error("ConnectionClosed: The socket connection was closed unexpectedly"),
+    new Error("The network connection was lost"),
+  ])("recovers transport errors and preserves the max-jobs cap: %s", async (transportError) => {
+    const claimJobs = vi
+      .fn()
+      .mockRejectedValueOnce(transportError)
+      .mockResolvedValueOnce({ claimedCount: 1, jobs: [{ id: "one" }] })
+      .mockRejectedValueOnce(new Error("Server Error"))
+      .mockResolvedValueOnce({ claimedCount: 1, jobs: [{ id: "two" }] });
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const result = await runContinuouslyRefilledWorkerPool({
+      concurrency: 1,
+      maxJobs: 2,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob: vi.fn(async () => ({
+        completed: true,
+        hardFailed: false,
+        retryableFailed: false,
+      })),
+      sleep,
+    });
+    expect(result).toMatchObject({ totalClaimed: 2, totalCompleted: 2, totalClaimFailures: 2 });
+    expect(claimJobs).toHaveBeenCalledTimes(4);
+    expect(sleep.mock.calls.every(([ms]) => ms >= 1000 && ms < 1500)).toBe(true);
+  });
+
   it("keeps the priority lane alive after processing a partial batch", async () => {
     let canClaim = true;
     const sleep = vi.fn(async () => {
@@ -367,6 +497,127 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(analysis.issues).toHaveLength(25);
     expect(analysis.issues[0]?.codeSnippet).toContain("...[truncated ");
     expect(analysis.issues[0]?.codeSnippet?.length).toBeLessThan(longSnippet.length);
+  });
+
+  it("normalizes A.I.G SARIF findings and scanner metadata", () => {
+    const analysis = normalizeAigAnalysis(
+      JSON.stringify({
+        version: "2.1.0",
+        runs: [
+          {
+            tool: {
+              driver: {
+                name: "aig-skill-scan",
+                version: "0.2.1",
+                rules: [{ id: "T04", name: "Embedded Malicious Code" }],
+              },
+            },
+            results: [
+              {
+                ruleId: "T04",
+                level: "error",
+                message: { text: "Embedded payload executes a downloaded script." },
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: "SKILL.md" },
+                      region: { startLine: 12, endLine: 14 },
+                    },
+                  },
+                ],
+                properties: {
+                  description: "The payload bypasses review by downloading code at runtime.",
+                  severity: "High",
+                },
+                fixes: [{ description: { text: "Remove the downloaded payload." } }],
+              },
+            ],
+          },
+        ],
+      }),
+      123,
+    );
+
+    expect(analysis).toEqual({
+      checkedAt: 123,
+      findings: [
+        {
+          description: "The payload bypasses review by downloading code at runtime.",
+          endLine: 14,
+          file: "SKILL.md",
+          level: "error",
+          message:
+            "Embedded payload executes a downloaded script. The payload bypasses review by downloading code at runtime.",
+          remediation: "Remove the downloaded payload.",
+          ruleId: "T04",
+          startLine: 12,
+          title: "Embedded payload executes a downloaded script.",
+        },
+      ],
+      issueCount: 1,
+      scannerVersion: "0.2.1",
+      status: "suspicious",
+      summary: "A.I.G reported 1 finding.",
+    });
+  });
+
+  it("rejects A.I.G SARIF without an actual run", () => {
+    expect(normalizeAigAnalysis(JSON.stringify({ version: "2.1.0", runs: [] }), 123)).toEqual({
+      checkedAt: 123,
+      error: "A.I.G SARIF output did not contain a run.",
+      findings: [],
+      issueCount: 0,
+      status: "error",
+    });
+  });
+
+  it("rejects malformed A.I.G SARIF runs instead of treating them as clean", () => {
+    expect(normalizeAigAnalysis(JSON.stringify({ version: "2.1.0", runs: [{}] }), 123)).toEqual({
+      checkedAt: 123,
+      error: "A.I.G SARIF output did not contain a valid aig-skill-scan run.",
+      findings: [],
+      issueCount: 0,
+      status: "error",
+    });
+  });
+
+  it("ignores unrelated SARIF runs when a valid A.I.G run is present", () => {
+    const analysis = normalizeAigAnalysis(
+      JSON.stringify({
+        version: "2.1.0",
+        runs: [
+          {
+            tool: { driver: { name: "metadata-generator", version: "1.0.0" } },
+            results: [],
+          },
+          {
+            tool: { driver: { name: "aig-skill-scan", version: "0.2.1" } },
+            results: [],
+          },
+        ],
+      }),
+      123,
+    );
+
+    expect(analysis).toMatchObject({
+      checkedAt: 123,
+      issueCount: 0,
+      scannerVersion: "0.2.1",
+      status: "clean",
+    });
+  });
+
+  it.each(["pyc", "pyo", "pyd", "PYC"])(
+    "rejects packaged Python .%s files before invoking A.I.G 0.2.1",
+    (extension) => {
+      expect(() =>
+        assertAigFilePathsHaveNoCompiledPython([`scripts/__pycache__/payload.${extension}`]),
+      ).toThrow("CVE-2026-84809");
+    },
+  );
+
+  it("allows source-only Python targets through the A.I.G bytecode guard", () => {
+    expect(() => assertAigFilePathsHaveNoCompiledPython(["scanner.py"])).not.toThrow();
   });
 
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {

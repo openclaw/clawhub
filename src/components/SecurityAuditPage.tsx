@@ -1,14 +1,5 @@
 import { getSecurityAuditOverviewCopy } from "clawhub-schema";
-import {
-  ArrowLeft,
-  Check,
-  Clock,
-  Download,
-  ExternalLink,
-  Info,
-  RefreshCw,
-  TriangleAlert,
-} from "lucide-react";
+import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -17,6 +8,7 @@ import {
   buildSecurityAuditExportZip,
   type StaticScan,
 } from "../lib/securityAuditExport";
+import { ScannerInfoTooltip } from "./ScannerInfoTooltip";
 import {
   aggregateAuditVerdict,
   AUDIT_SCANNER_LABELS,
@@ -32,6 +24,7 @@ import {
   hasSkillSpectorFindings,
   ScanResultBadge,
   SkillSpectorFindings,
+  type AigAnalysis,
   type LlmAnalysis,
   type SkillSpectorAnalysis,
   type SkillSpectorIssue,
@@ -60,6 +53,7 @@ type SecurityAuditPageProps = {
   entity: EntityRef;
   sha256hash?: string | null;
   vtAnalysis?: VtAnalysis | null;
+  aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   skillSpectorApplicable?: boolean;
@@ -71,6 +65,65 @@ type SecurityAuditPageProps = {
 
 const EMPTY_SKILLSPECTOR_ISSUES: SkillSpectorIssue[] = [];
 const SKILLSPECTOR_VISIBLE_CHECK_LIMIT = 5;
+const AIG_VISIBLE_RULE_LIMIT = 5;
+const AUDIT_SCANNER_LINKS: Partial<Record<AuditScannerKind, { href: string; title: string }>> = {
+  aig: {
+    href: "https://github.com/Tencent/AI-Infra-Guard/tree/main/skill-scan",
+    title: "View A.I.G scanner methodology",
+  },
+  skillspector: {
+    href: "https://github.com/NVIDIA/SkillSpector",
+    title: "View SkillSpector source repository",
+  },
+};
+const AIG_RULES = [
+  {
+    id: "T01",
+    name: "Skill Instruction Hijacking",
+    description: "Alters the agent's session goals or safety constraints when the skill loads",
+  },
+  {
+    id: "T02",
+    name: "Agent Memory Poisoning",
+    description: "Writes attacker-controlled rules into memory that affect later sessions",
+  },
+  {
+    id: "T03",
+    name: "Remote Payload Retrieval and Execution",
+    description: "Fetches external code whose behavior can change after review",
+  },
+  {
+    id: "T04",
+    name: "Embedded Malicious Code",
+    description: "Ships malicious scripts inside the skill and executes them locally",
+  },
+  {
+    id: "T05",
+    name: "Unauthorized Access and Privilege Escalation",
+    description: "Obtains permissions beyond the task's legitimate needs",
+  },
+  {
+    id: "T06",
+    name: "System Persistence",
+    description: "Installs backdoors, hooks, services, or scheduled tasks that survive the run",
+  },
+  {
+    id: "T07",
+    name: "Tool Hijacking and Spoofing",
+    description: "Modifies or replaces tools so legitimate-looking calls execute attacker logic",
+  },
+  {
+    id: "T08",
+    name: "Insecure Dependencies",
+    description: "Introduces malicious components through unsafe dependency sources",
+  },
+  {
+    id: "T09",
+    name: "Insecure Skill Coding Practices",
+    description: "Finds exploitable flaws such as hardcoded secrets or command injection",
+  },
+] as const;
+const AIG_RULE_BY_ID = new Map(AIG_RULES.map((rule) => [rule.id, rule]));
 const SKILLSPECTOR_CLEAN_CHECKS = [
   {
     category: "Prompt Injection",
@@ -377,103 +430,6 @@ function SecurityAuditHero({ props }: { props: SecurityAuditPageProps }) {
   );
 }
 
-function getVirusTotalEngineStats(analysis?: VtAnalysis | null) {
-  return analysis?.engineStats ?? analysis?.metadata?.stats ?? null;
-}
-
-function joinReadableClauses(clauses: string[]) {
-  if (clauses.length <= 1) return clauses[0] ?? "";
-  if (clauses.length === 2) return `${clauses[0]}, and ${clauses[1]}`;
-  return `${clauses.slice(0, -1).join(", ")}, and ${clauses.at(-1)}`;
-}
-
-function hasNonEngineVirusTotalSource(analysis?: VtAnalysis | null) {
-  if (!analysis) return false;
-  const source = analysis.source?.trim().toLowerCase();
-  const scanner = analysis.scanner?.trim().toLowerCase();
-  return Boolean(
-    (source && !source.startsWith("engines")) || (scanner && !scanner.startsWith("engines")),
-  );
-}
-
-function getArtifactKindLabel(entity: EntityRef) {
-  return entity.kind === "plugin" ? "plugin" : "skill";
-}
-
-function getVirusTotalNoFindingsCopy(_entity: EntityRef) {
-  return "No VirusTotal findings";
-}
-
-function getVirusTotalPendingCopy(entity: EntityRef) {
-  return `VirusTotal findings are pending for this ${getArtifactKindLabel(entity)} version.`;
-}
-
-function getVirusTotalEngineOverview(analysis: VtAnalysis | null | undefined, entity: EntityRef) {
-  const stats = getVirusTotalEngineStats(analysis);
-  if (stats) {
-    const malicious = stats.malicious ?? 0;
-    const suspicious = stats.suspicious ?? 0;
-    const clean = (stats.harmless ?? 0) + (stats.undetected ?? 0);
-    const total = malicious + suspicious + clean;
-    if (total <= 0) return getVirusTotalNoFindingsCopy(entity);
-
-    const artifactKind = getArtifactKindLabel(entity);
-    const hasFullEngineStats =
-      stats.malicious !== undefined &&
-      stats.suspicious !== undefined &&
-      stats.harmless !== undefined &&
-      stats.undetected !== undefined;
-    const firstCountLabel = (count: number) =>
-      hasFullEngineStats
-        ? `${count}/${total} vendors`
-        : `${count} ${count === 1 ? "vendor" : "vendors"}`;
-    const followupCountLabel = (count: number) =>
-      hasFullEngineStats ? `${count}/${total}` : `${count} ${count === 1 ? "vendor" : "vendors"}`;
-
-    if (malicious === 0 && suspicious === 0) {
-      return `${firstCountLabel(clean)} flagged this ${artifactKind} as clean.`;
-    }
-
-    const clauses: string[] = [];
-    if (malicious > 0) {
-      clauses.push(`${firstCountLabel(malicious)} flagged this ${artifactKind} as malicious`);
-    }
-    if (suspicious > 0) {
-      clauses.push(
-        clauses.length === 0
-          ? `${firstCountLabel(suspicious)} flagged this ${artifactKind} as suspicious`
-          : `${followupCountLabel(suspicious)} flagged it as suspicious`,
-      );
-    }
-    if (clean > 0) {
-      clauses.push(`${followupCountLabel(clean)} flagged it as clean`);
-    }
-    return `${joinReadableClauses(clauses)}.`;
-  }
-
-  if (hasNonEngineVirusTotalSource(analysis)) {
-    return getVirusTotalNoFindingsCopy(entity);
-  }
-
-  const status = analysis?.status?.trim().toLowerCase();
-  if (
-    status === "clean" ||
-    status === "benign" ||
-    analysis?.verdict === "undetected-only-fallback"
-  ) {
-    return getVirusTotalNoFindingsCopy(entity);
-  }
-  if (status && !["loading", "not_found", "pending"].includes(status)) {
-    return `VirusTotal engine telemetry is currently ${status} for this artifact.`;
-  }
-
-  return null;
-}
-
-function getVirusTotalOverviewCopy(analysis: VtAnalysis | null | undefined, entity: EntityRef) {
-  return getVirusTotalEngineOverview(analysis, entity) ?? getVirusTotalPendingCopy(entity);
-}
-
 function SecurityAuditOverview(props: SecurityAuditPageProps) {
   const overviewCopy = getSecurityAuditOverviewCopy({ llmAnalysis: props.llmAnalysis });
   return (
@@ -567,25 +523,141 @@ function StaticScanSection(props: SecurityAuditPageProps) {
   return <StaticScanDetails staticScan={staticScan} />;
 }
 
-function VirusTotalSection(props: SecurityAuditPageProps) {
-  const vtUrl = props.sha256hash ? `https://www.virustotal.com/gui/file/${props.sha256hash}` : null;
+function AigSection(props: SecurityAuditPageProps) {
+  const analysis = props.aigAnalysis;
+  if (!analysis) return null;
+  const issueCount = Math.max(analysis.issueCount, analysis.findings.length);
+  const hasFindings = issueCount > 0;
+  const hasHiddenFindings = issueCount > analysis.findings.length;
+  const findingsTitle = hasFindings ? `Findings (${issueCount})` : "Findings";
+  const status = analysis.status.trim().toLowerCase();
+  const showChecks = !["error", "failed", "loading", "not_found", "pending"].includes(status);
   return (
-    <div className="security-report-panel-body">
-      <div className="security-report-overview-body">
-        <p>{getVirusTotalOverviewCopy(props.vtAnalysis, props.entity)}</p>
-      </div>
-      {vtUrl ? (
-        <a
-          href={vtUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="security-audit-external-link"
-        >
-          View on VirusTotal
-          <ExternalLink className="h-3 w-3" aria-hidden="true" />
-        </a>
+    <div className="security-report-panel-body security-report-panel-body-findings">
+      {!showChecks ? (
+        <div className="security-report-overview-body">
+          <p>
+            {analysis.error?.trim() ||
+              analysis.summary?.trim() ||
+              "A.I.G findings are pending for this release."}
+          </p>
+        </div>
+      ) : null}
+      {showChecks ? <AigChecks analysis={analysis} hasHiddenFindings={hasHiddenFindings} /> : null}
+      {hasFindings ? (
+        <div className="skillspector-findings-block">
+          <div className="skillspector-subsection-title">{findingsTitle}</div>
+          <div className="static-analysis-findings">
+            {analysis.findings.map((finding, index) => (
+              <AigFindingCard
+                finding={finding}
+                key={`${finding.ruleId}-${finding.file ?? "artifact"}-${finding.startLine ?? 0}-${index}`}
+              />
+            ))}
+          </div>
+        </div>
       ) : null}
     </div>
+  );
+}
+
+function AigChecks({
+  analysis,
+  hasHiddenFindings,
+}: {
+  analysis: AigAnalysis;
+  hasHiddenFindings: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const flaggedRules = new Set(analysis.findings.map((finding) => finding.ruleId.toUpperCase()));
+  const sortedRules = [...AIG_RULES].sort((left, right) => {
+    const leftFlagged = flaggedRules.has(left.id);
+    const rightFlagged = flaggedRules.has(right.id);
+    if (leftFlagged === rightFlagged) return 0;
+    return leftFlagged ? -1 : 1;
+  });
+  const visibleRules = isExpanded ? sortedRules : sortedRules.slice(0, AIG_VISIBLE_RULE_LIMIT);
+  const remainingCount = sortedRules.length - AIG_VISIBLE_RULE_LIMIT;
+
+  return (
+    <div className="skillspector-checks" aria-label="A.I.G checks">
+      <div className="skillspector-subsection-title">Vulnerability Patterns</div>
+      <ul className="skillspector-checks-list">
+        {visibleRules.map((rule) => {
+          const isFlagged = flaggedRules.has(rule.id);
+          const isUnknown = hasHiddenFindings && !isFlagged;
+          const Icon = isFlagged ? TriangleAlert : isUnknown ? Info : Check;
+          return (
+            <li
+              className={`skillspector-check-row${isFlagged ? " skillspector-check-row-flagged" : ""}${isUnknown ? " skillspector-check-row-unknown" : ""}`}
+              key={rule.id}
+            >
+              <Icon
+                className={`skillspector-check-icon${isFlagged ? " skillspector-check-icon-flagged" : ""}${isUnknown ? " skillspector-check-icon-unknown" : ""}`}
+                aria-hidden="true"
+              />
+              <span className="skillspector-check-category">{rule.name}</span>
+              <span className="skillspector-check-patterns">{rule.description}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {remainingCount > 0 ? (
+        <button
+          type="button"
+          className="skillspector-checks-toggle"
+          onClick={() => setIsExpanded((value) => !value)}
+        >
+          {isExpanded ? "Show less" : `Show ${remainingCount} more`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] }) {
+  const rule = AIG_RULE_BY_ID.get(finding.ruleId.toUpperCase() as (typeof AIG_RULES)[number]["id"]);
+  const findingTitle = finding.title?.trim();
+  const description = finding.description?.trim();
+  const fallbackDescription = finding.message.trim();
+  const findingDescription = description || fallbackDescription;
+  const location = finding.file
+    ? `${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}`
+    : null;
+
+  return (
+    <article className="static-analysis-finding">
+      <div className="static-analysis-finding-header">
+        <h3 className="agentic-risk-finding-title">
+          {finding.ruleId}
+          {rule ? ` · ${rule.name}` : ""}
+        </h3>
+        <div className="agentic-risk-finding-badges">
+          <ScanResultBadge status={finding.level} label={formatStaticScanSeverity(finding.level)} />
+        </div>
+      </div>
+      <dl className="static-analysis-finding-details">
+        {location ? (
+          <div>
+            <dt>Location</dt>
+            <dd>{location}</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Finding</dt>
+          <dd className="aig-finding-copy">
+            {findingTitle ? <strong>{findingTitle}</strong> : null}
+            {findingDescription !== findingTitle ? <span>{findingDescription}</span> : null}
+          </dd>
+        </div>
+        {finding.remediation?.trim() ? (
+          <div>
+            <dt>Remediation</dt>
+            <dd>{finding.remediation}</dd>
+          </div>
+        ) : null}
+      </dl>
+    </article>
   );
 }
 
@@ -698,15 +770,23 @@ function SkillSpectorChecks({
 
 function SkillSpectorAttribution() {
   return (
-    <div className="skillspector-attribution" aria-label="By NVIDIA">
-      <img
-        className="skillspector-nvidia-mark"
-        src="https://www.nvidia.com/favicon.ico"
-        alt=""
-        aria-hidden="true"
-      />
-      <span>By NVIDIA</span>
-    </div>
+    <ScannerInfoTooltip
+      name="SkillSpector"
+      company="NVIDIA"
+      description="Scans agent skills for vulnerabilities, malicious code, and unsafe behavior."
+      href="https://github.com/NVIDIA/SkillSpector"
+    />
+  );
+}
+
+function AigAttribution() {
+  return (
+    <ScannerInfoTooltip
+      name="A.I.G"
+      company="Tencent"
+      description="Uses AI to audit agent skill code for vulnerabilities and malicious behavior."
+      href="https://github.com/Tencent/AI-Infra-Guard"
+    />
   );
 }
 
@@ -830,6 +910,7 @@ function SecurityAuditScannerSection({
   props: SecurityAuditPageProps;
 }) {
   const label = AUDIT_SCANNER_LABELS[kind];
+  const scannerLink = AUDIT_SCANNER_LINKS[kind];
   return (
     <section
       className="security-report-panel security-report-panel-compact"
@@ -838,13 +919,25 @@ function SecurityAuditScannerSection({
       <div className="security-report-panel-header">
         <div className="security-report-panel-title-row">
           <h2 id={`${kind}-heading`} className="skill-install-panel-title">
-            {label}
+            {scannerLink ? (
+              <a
+                href={scannerLink.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={scannerLink.title}
+              >
+                {label}
+              </a>
+            ) : (
+              label
+            )}
           </h2>
           {kind === "skillspector" ? <SkillSpectorAttribution /> : null}
+          {kind === "aig" ? <AigAttribution /> : null}
         </div>
       </div>
       {kind === "static" ? <StaticScanSection {...props} /> : null}
-      {kind === "virustotal" ? <VirusTotalSection {...props} /> : null}
+      {kind === "aig" ? <AigSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
     </section>
   );

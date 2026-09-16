@@ -43,6 +43,10 @@ type PluginBrowseTab = VisiblePluginSort | "official";
 const PLUGINS_PAGE_SIZE = 25;
 const PLUGIN_CATALOG_REQUEST_TIMEOUT_MS = 5_000;
 
+// One navigation's input intent, never URL/history state. Reloads and preloads
+// cannot recreate it; the loader consumes it before dispatch so retries are unmarked.
+const manualSearchNavigation: { pending: { query: string } | null } = { pending: null };
+
 type PluginSearchState = {
   q?: string;
   category?: string;
@@ -87,6 +91,7 @@ type PluginsLoaderData = {
 
 type PluginsPageDataRequest = {
   q?: string;
+  searchSource?: "clawhub-web";
   category?: string;
   topic?: string;
   cursor?: string;
@@ -190,6 +195,7 @@ export async function loadPluginsPageData(
   try {
     const data = await fetchPluginCatalog({
       q: args.q,
+      ...(args.searchSource ? { searchSource: args.searchSource } : {}),
       category: args.category,
       topic: args.topic,
       officialFirst: Boolean(args.category && !args.q),
@@ -324,11 +330,24 @@ export const Route = createFileRoute("/plugins/")({
       sort: hasQuery ? undefined : normalizeActivePluginSort(search.sort),
     };
   },
-  loader: async ({ deps, abortController }): Promise<PluginsLoaderData> =>
-    await loadPluginsPageData({
+  shouldReload: ({ deps, preload }) =>
+    !preload && manualSearchNavigation.pending && manualSearchNavigation.pending.query === deps.q
+      ? true
+      : undefined,
+  loader: async ({ deps, abortController, preload }): Promise<PluginsLoaderData> => {
+    const isManual = Boolean(
+      !preload &&
+      !abortController.signal.aborted &&
+      manualSearchNavigation.pending &&
+      manualSearchNavigation.pending.query === deps.q,
+    );
+    if (isManual) manualSearchNavigation.pending = null;
+    return await loadPluginsPageData({
       ...deps,
+      ...(isManual ? { searchSource: "clawhub-web" as const } : {}),
       signal: abortController.signal,
-    }),
+    });
+  },
   component: PluginsIndex,
 });
 
@@ -367,7 +386,7 @@ function PluginsIndexPending() {
           disabled
         />
         <div className="browse-results">
-          <BrowseResultsSkeleton label="Plugin" />
+          <BrowseResultsSkeleton label="Plugin" showCategoryColumn={false} />
         </div>
       </div>
     </main>
@@ -406,6 +425,7 @@ function PluginsIndex() {
   const loadMoreInFlightRef = useRef(false);
   const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
   const searchNavigateTimer = useRef<number>(0);
+  const lastManualQueryRef = useRef<string | null>(null);
 
   useEffect(() => {
     setQuery(search.q ?? "");
@@ -542,6 +562,9 @@ function PluginsIndex() {
   const navigateToPluginSearch = useCallback(
     (next: string, replace: boolean) => {
       const trimmed = next.trim();
+      const intent = trimmed && lastManualQueryRef.current !== trimmed ? { query: trimmed } : null;
+      manualSearchNavigation.pending = intent;
+      lastManualQueryRef.current = trimmed || null;
       void navigate({
         search: (prev: PluginSearchState) => ({
           ...prev,
@@ -552,6 +575,8 @@ function PluginsIndex() {
           sort: undefined,
         }),
         replace,
+      }).finally(() => {
+        if (manualSearchNavigation.pending === intent) manualSearchNavigation.pending = null;
       });
     },
     [navigate],
@@ -575,6 +600,8 @@ function PluginsIndex() {
 
   const handleClearSearch = () => {
     window.clearTimeout(searchNavigateTimer.current);
+    lastManualQueryRef.current = null;
+    manualSearchNavigation.pending = null;
     setQuery("");
     searchInputRef.current?.focus();
     void navigate({
@@ -738,7 +765,11 @@ function PluginsIndex() {
         />
         <div className="browse-results">
           {isLoading ? (
-            <BrowseResultsSkeleton label="Plugin" variant={effectiveView} />
+            <BrowseResultsSkeleton
+              label="Plugin"
+              variant={effectiveView}
+              showCategoryColumn={false}
+            />
           ) : apiError ? (
             <div className="empty-state">
               <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
@@ -775,11 +806,10 @@ function PluginsIndex() {
             </div>
           ) : (
             <div className="browse-list-stack">
-              <div className="browse-list-head" aria-hidden="true">
+              <div className="browse-list-head browse-list-head-simple" aria-hidden="true">
                 <span className="browse-list-head-icon-spacer" />
                 <span className="browse-list-head-label">Plugin</span>
-                <span className="browse-list-head-label">Category</span>
-                <span className="browse-list-head-label browse-list-head-stat">Popularity</span>
+                <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
               </div>
               <div className="results-list">
                 {visibleItems.map((item) => (

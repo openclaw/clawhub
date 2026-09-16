@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => {
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
-  const publisherAbuseSignalNotificationsRef = Symbol("publisher-abuse-signal-notifications");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
   const publisherTemporalAbuseScanPruneRef = Symbol("publisher-temporal-abuse-scan-prune");
@@ -14,6 +13,7 @@ const mocks = vi.hoisted(() => {
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
   const skillHourlyStatsPruneRef = Symbol("skill-hourly-stats-prune");
   const packageStatEventPruneRef = Symbol("package-stat-event-prune");
+  const pluginSearchObservationPruneRef = Symbol("plugin-search-observation-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
@@ -27,10 +27,12 @@ const mocks = vi.hoisted(() => {
   const skillEvaluationDispatchWatchdogRef = Symbol("skill-evaluation-dispatch-watchdog");
   return {
     interval,
+    cron: vi.fn(),
+    searchWeeklyTick: Symbol("search-weekly-tick"),
+    searchWeeklyPrune: Symbol("search-weekly-prune"),
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
-    publisherAbuseSignalNotificationsRef,
     publisherAbuseScoreRefreshRef,
     publisherTemporalAbuseScanRef,
     publisherTemporalAbuseScanPruneRef,
@@ -38,6 +40,7 @@ const mocks = vi.hoisted(() => {
     skillStatEventPruneRef,
     skillHourlyStatsPruneRef,
     packageStatEventPruneRef,
+    pluginSearchObservationPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
@@ -55,11 +58,20 @@ const mocks = vi.hoisted(() => {
 vi.mock("convex/server", () => ({
   cronJobs: () => ({
     interval: mocks.interval,
+    cron: mocks.cron,
   }),
 }));
 
 vi.mock("./_generated/api", () => ({
   internal: {
+    searchWeeklyDigest: {
+      tickInternal: mocks.searchWeeklyTick,
+      pruneExpiredInternal: mocks.searchWeeklyPrune,
+    },
+    searchInsights: {
+      aggregateInternal: Symbol("search-insights-aggregate"),
+      pruneExpiredInternal: Symbol("search-insights-retention"),
+    },
     canonicalTrending: {
       materializeInternal: mocks.canonicalTrendingMaterializeRef,
       pruneExpiredActionInternal: mocks.canonicalTrendingPruneRef,
@@ -87,9 +99,11 @@ vi.mock("./_generated/api", () => ({
       pruneProcessedPackageStatEventsInternal: mocks.packageStatEventPruneRef,
       backfillPackageReleaseScansInternal: Symbol("package-scan-backfill"),
     },
+    pluginSearchObservations: {
+      pruneExpiredInternal: mocks.pluginSearchObservationPruneRef,
+    },
     publisherAbuse: {
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
-      notifyPublisherAbuseSignalChangesInternal: mocks.publisherAbuseSignalNotificationsRef,
       processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
     },
     publisherAbuseTemporalScan: {
@@ -140,6 +154,7 @@ describe("crons", () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.interval.mockReset();
+    mocks.cron.mockReset();
     delete process.env.CLAWHUB_DISABLE_CRONS;
     delete process.env.CLAWHUB_PREVIEW;
   });
@@ -155,6 +170,7 @@ describe("crons", () => {
     await import("./crons");
 
     expect(mocks.interval).not.toHaveBeenCalled();
+    expect(mocks.cron).not.toHaveBeenCalled();
   });
 
   it("does not register side-effecting cron work in disposable previews", async () => {
@@ -163,6 +179,23 @@ describe("crons", () => {
     await import("./crons");
 
     expect(mocks.interval).not.toHaveBeenCalled();
+    expect(mocks.cron).not.toHaveBeenCalled();
+  });
+
+  it("checks the Pacific weekly release at the top of each hour and retains bounded delivery history", async () => {
+    await import("./crons");
+    expect(mocks.cron).toHaveBeenCalledWith(
+      "search-weekly-digest",
+      "0 * * * *",
+      mocks.searchWeeklyTick,
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "search-weekly-digest-retention",
+      { hours: 24 },
+      mocks.searchWeeklyPrune,
+      {},
+    );
   });
 
   it("runs GitHub skill source sync every 15 minutes", async () => {
@@ -331,12 +364,6 @@ describe("crons", () => {
         maxPages: 50,
       },
     );
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "publisher-abuse-signal-notifications",
-      { hours: 1 },
-      mocks.publisherAbuseSignalNotificationsRef,
-      {},
-    );
   });
 
   it("prunes stale component HTTP rate limit keys hourly", async () => {
@@ -374,6 +401,17 @@ describe("crons", () => {
       "publisher-invite-retention-prune",
       { hours: 6 },
       mocks.publisherInvitesPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes plugin search observations daily with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "plugin-search-observations-prune",
+      { hours: 24 },
+      mocks.pluginSearchObservationPruneRef,
       { batchSize: 500 },
     );
   });

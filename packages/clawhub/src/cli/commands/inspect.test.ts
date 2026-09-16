@@ -588,11 +588,12 @@ describe("cmdVerifySkill", () => {
         rawStatus: "clean",
         verdict: "clean",
         summary: "ClawScan clean.",
-        signals: {
-          staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
-          virusTotal: { status: "clean", rawStatus: "clean", source: "engines" },
-          skillSpector: { status: "clean", rawStatus: "clean", issueCount: 0 },
-          dependencyRegistry: null,
+        scannerReports: {
+          aig: { $schema: "sarif", runs: [], vendorExtension: { preserved: true } },
+          skillspector: {
+            risk_assessment: { score: 0, recommendation: "CAUTION" },
+            analysis_completeness: { coverage_percent: 99.1, is_complete: false },
+          },
         },
       },
       signature: { status: "unsigned" },

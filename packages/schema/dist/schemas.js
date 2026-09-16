@@ -606,6 +606,8 @@ export const ApiV1SkillBulkRescanBatchRequestSchema = type({
     cursor: "string|null?",
     batchSize: "number?",
     dryRun: "boolean?",
+    requestId: "string?",
+    expectedVersionIds: "string[]?",
 });
 export const ApiV1SkillBulkRescanBatchResponseSchema = type({
     ok: "true",
@@ -638,6 +640,8 @@ export const ApiV1SkillScanBatchRequestSchema = type({
     cursor: "string|null?",
     batchSize: "number?",
     dryRun: "boolean?",
+    requestId: "string?",
+    expectedVersionIds: "string[]?",
 });
 export const ApiV1SkillScanBatchResponseSchema = type({
     ok: "true",
@@ -650,10 +654,62 @@ export const ApiV1SkillScanBatchResponseSchema = type({
     done: "boolean",
     sampleSlugs: "string[]",
 });
+export const ApiV1SkillScanJobHistoryRequestSchema = type({
+    versionId: "string",
+    cursor: "string|null?",
+});
+export const ApiV1SkillScanJobHistoryResponseSchema = type({
+    ok: "true",
+    jobs: type({
+        jobId: "string",
+        versionId: "string",
+        source: "string",
+        status: "string",
+        createdAt: "number",
+        updatedAt: "number",
+        completedAt: "number|null",
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
 export const ApiV1SkillScanBatchStatusRequestSchema = type({
     jobIds: "string[]",
 });
 export const ApiV1SkillScanBatchStatusResponseSchema = type({
+    ok: "true",
+    total: "number",
+    queued: "number",
+    running: "number",
+    succeeded: "number",
+    failed: "number",
+    missing: "number",
+    terminal: "number",
+    done: "boolean",
+    failedJobIds: "string[]",
+    // Optional for clients talking to servers that predate local worker assignments.
+    queuedJobIds: "string[]?",
+});
+export const ApiV1PackageScanBatchRequestSchema = type({
+    mode: '"all-active-latest"?',
+    cursor: "string|null?",
+    batchSize: "number?",
+    dryRun: "boolean?",
+});
+export const ApiV1PackageScanBatchResponseSchema = type({
+    ok: "true",
+    mode: '"all-active-latest"',
+    queued: "number",
+    alreadyQueued: "number",
+    skipped: "number",
+    jobIds: "string[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    sampleNames: "string[]",
+});
+export const ApiV1PackageScanBatchStatusRequestSchema = type({
+    jobIds: "string[]",
+});
+export const ApiV1PackageScanBatchStatusResponseSchema = type({
     ok: "true",
     total: "number",
     queued: "number",

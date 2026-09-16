@@ -432,9 +432,51 @@ Authenticated stored report archive endpoint for submitted versions.
 - `kind` defaults to `skill`; use `kind=plugin` for plugin/package scans.
 - Returns the same ZIP shape as scan-request downloads.
 
+### `POST /api/v1/packages/-/scan/batch`
+
+Admin-only bulk ClawScan rescan for active code/bundle plugins' latest releases.
+Accepts `{ "mode": "all-active-latest", "cursor": null, "batchSize": 10, "dryRun": true }`.
+The backend caps pages at 10 package rows. Deleted/non-plugin packages and
+missing/deleted/revoked latest releases are skipped. Existing active jobs are
+preserved; other eligible releases receive a lowest-priority `bulk-rescan` job.
+
+Returns `ok`, `mode`, `queued`, `alreadyQueued`, `skipped`, `jobIds`, `nextCursor`,
+`done`, and `sampleNames`. Dry runs return would-queue counts with empty `jobIds`
+and create no jobs or batch audit entries. Resume with `nextCursor`; catalog
+pagination uses stable creation order. Wait for the batch before submitting the
+next page. Existing successful scans are eligible, regardless of AIG coverage.
+
+### `POST /api/v1/packages/-/scan/batch/status`
+
+Admin-only job status aggregate. Accepts `{ "jobIds": ["..."] }` (at most 200).
+Returns `ok`, `total`, `queued`, `running`, `succeeded`, `failed`, `missing`,
+`terminal`, `done`, and `failedJobIds`. `done` means no jobs remain queued/running;
+check `failed` and `missing` before reporting success. Duplicate IDs count once.
+
 ### `POST /api/v1/skills/-/scan/batch`
 
 Admin-only canonical batch rescan route. It accepts the same payload shape as legacy `POST /api/v1/skills/-/rescan-batch`.
+
+For recoverable campaigns, save a unique `requestId` before sending each batch.
+It accepts 1–128 letters, digits, dots, underscores, colons or hyphens and is
+scoped to the authenticated administrator. Repeating the same request returns
+the original receipt and job IDs, including after those jobs become terminal.
+Reusing the ID with a different cursor, normalized batch size, mode or expected
+version list fails. Dry runs do not reserve request IDs.
+
+Optional `expectedVersionIds` (at most 100) is the ordered list of eligible
+version IDs in the captured page. If the current page differs, the whole enqueue
+rolls back. A saved receipt is replayed before checking current page contents.
+Keep the original request parameters when recovering a lost response.
+
+### `POST /api/v1/skills/-/scan/batch/jobs`
+
+Admin-only, read-only job history for an exact skill version. Accepts
+`{ "versionId": "...", "cursor": null }`. Returns `ok`, `jobs`, `nextCursor`
+and `done`. Each job has `jobId`, `versionId`, `source`, `status`, `createdAt`,
+`updatedAt` and nullable `completedAt`. Follow `nextCursor` until `done` before
+concluding that a legacy enqueue created no jobs. This endpoint does not retry
+or replace jobs and does not expose worker lease credentials.
 
 ### `POST /api/v1/skills/-/scan/batch/status`
 
@@ -442,7 +484,10 @@ Admin-only canonical batch status route. It accepts `{ "jobIds": ["..."] }` and 
 
 ### `GET /api/v1/skills/{slug}/verify`
 
-Returns the Skill Card verification envelope used by `clawhub skill verify`.
+Returns the Skill Card verification envelope used by `clawhub skill verify` and
+`openclaw skills verify`.
+
+If card regeneration fails, the previously attached card remains available. Existing bundle fingerprints continue to resolve after successful regeneration.
 
 Query params:
 
@@ -456,8 +501,10 @@ Notes:
 - `ok` is `true` only when the selected version has a generated Skill Card, is not malware-blocked by moderation, and ClawScan verification is clean.
 - Skill identity, publisher identity, and selected version metadata are top-level envelope fields (`slug`, `displayName`, `publisherHandle`, `version`, `resolvedFrom`, `tag`, `createdAt`) so shell automation can read them without unpacking nested wrappers.
 - `security` is the top-level ClawScan/security verdict. Automation should key off `ok`, `decision`, `reasons`, and `security.status`.
-- `security.signals` contains supporting scanner evidence such as `staticScan`, `virusTotal`, and `skillSpector`.
-- `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
+- `security.scannerReports.aig` contains the complete upstream A.I.G SARIF JSON, and `security.scannerReports.skillspector` contains the complete upstream SkillSpector JSON, including completeness, limitations, findings, and scanner-specific metadata. These reports are supporting evidence; they do not override the ClawScan verdict or verification exit codes.
+- Verification returns scanner details only under `security.scannerReports`; it does not include duplicate `security.signals` summaries or a top-level `scannerReports` field.
+- Each raw report is `null` when it was not retained for the selected scan. Older scans require a rescan to populate it. While a rescan is committing, reports are withheld if they no longer match the stored scanner summaries. No findings or strings are truncated in these raw reports.
+- Raw reports are included by default and can make verification output substantially larger. CI can select only the existing verdict fields when needed (for example, `jq '{ok, decision, reasons}'`).
 - `provenance` is `server-resolved-github-import` only when ClawHub resolved and stored a GitHub repo/ref/commit/path during publish or import; otherwise it is `unavailable`.
 
 ### `POST /api/v1/skills/-/security-verdicts`
@@ -487,7 +534,6 @@ Notes:
 - The response is security-only. It does not include Skill Card data, generated card status, artifact file lists, or detailed scanner payloads.
 - Successful items include top-level `overview`, the canonical audit-page text composed from the ClawScan summary and guidance. Install clients may present this text without reconstructing it from scanner fields.
 - `security.signals` contains status-level supporting evidence only; use `/scan` or the ClawHub security-audit page for full scanner details.
-- `security.signals.dependencyRegistry` is retained for v1 response compatibility, but the dependency registry existence scanner is retired and this key is always `null`.
 - Skill Card absence does not affect this endpoint's `ok`, `decision`, or `reasons`; clients should read installed `skill-card.md` locally when they need card content.
 - Use `/verify` when you need the single-skill Skill Card verification envelope, `/card` when you need generated card markdown, and `/scan` when you need detailed scanner data.
 
@@ -588,8 +634,12 @@ Notes:
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
 - Anonymous callers only see public package channels.
-- Authenticated callers can see private packages for publishers they belong to in list/search results.
-- `channel=private` only returns packages the authenticated caller can read.
+- List/search defaults to public, published plugin packages, including for authenticated callers.
+- Explicit `channel=private` returns published private packages the authenticated caller can read.
+- Reservations, unpublished, deleted, and blocked plugin packages are excluded from list/search.
+- Plugin catalog items expose `ownerOfficial` for the current publisher badge, separately
+  from package `isOfficial` and `channel`. Publisher badges do not change official-only
+  filtering or package endorsement.
 
 ### `GET /api/v1/packages/search`
 
@@ -611,8 +661,9 @@ Notes:
 - Invalid values for `family`, `channel`, `isOfficial`, `featured`, or
   `highlightedOnly` return `400`. Unknown query parameters are ignored.
 - Anonymous callers only see public package channels.
-- Authenticated callers can search private packages for publishers they belong to.
-- `channel=private` only returns packages the authenticated caller can read.
+- Search defaults to public, published plugin packages, including for authenticated callers.
+- Explicit `channel=private` returns published private packages the authenticated caller can read.
+- Reservations, unpublished, deleted, and blocked plugin packages are excluded from search.
 
 ### `GET /api/v1/plugins`
 
@@ -624,9 +675,11 @@ Query params:
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
 - `sort` (optional): `recommended` (default), `trending`, `downloads`, `updated`, legacy alias `installs`
-- `category` (optional): plugin category filter. Current values:
-  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
-  `tools`, `runtime`, `gateway`, `security`, `other`.
+- `category` (optional): plugin category filter. The active browse values are
+  returned by `GET /api/v1/plugins/categories`, including their descriptions and
+  icons. The 22 categories cover core configuration surfaces and product uses.
+  Retired values `tools`, `runtime`, and `gateway` remain readable for existing
+  metadata and links, but do not appear in the active browse list.
 
 Legacy v1 filter aliases remain accepted on read endpoints:
 
@@ -639,6 +692,39 @@ On the unified `/api/v1/packages` endpoint it is plugin-only; use
 `/api/v1/skills?sort=trending` for the skill catalog.
 
 Legacy aliases are not accepted as stored or author-declared category values.
+
+### `GET /api/v1/plugins/overview`
+
+Returns the bounded data needed to render the plugin marketplace home page in
+one cacheable request: the canonical category metadata plus the union of the
+top eight Featured, Trending, and official-first/download-sorted plugins for
+each category. Items may include `featured` and `trending` markers.
+Marked items also include their zero-based `featuredRank` or `trendingRank`, so
+clients preserve each shelf's independent order after deduplicating metadata.
+
+The response is public and carries shared-cache headers. Use the paginated
+`GET /api/v1/plugins` endpoint for searches, category expansion, and complete
+catalog traversal.
+
+### `GET /api/v1/plugins/categories`
+
+Returns the canonical plugin discovery taxonomy in display order. Each category
+contains `slug`, `label`, `description`, a bare Lucide `icon` key, and numeric
+`order`.
+
+Use each category's description to choose the main reason someone installs the
+plugin. New plugin releases may declare exactly one category in
+`openclaw.plugin.json`, for example `"categories": ["developer-tools"]`. When the
+declaration is absent, ClawHub generates one category from bounded manifest,
+package, and documentation evidence using `gpt-5.6-luna` by default. Operators can
+override this with `OPENAI_PLUGIN_CATEGORY_MODEL`; the skill-summary model setting
+does not affect plugin classification.
+
+Historical declarations remain readable. The reviewed metadata refresh reclassifies
+retired or multiple categories from source evidence, preserving current single-purpose
+declarations and archived artifact bytes. New generated assignments and bundled
+manifests use one active category. A failed model request falls back to `other` during publication and is
+not accepted by the reviewed backfill.
 
 ### `GET /api/v1/skills/export`
 
@@ -730,9 +816,9 @@ Query params:
 - `q` (required): query string
 - `limit` (optional): integer (1-100)
 - `isOfficial` (optional): `true` or `false`
-- `category` (optional): plugin category filter. Current values:
-  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
-  `tools`, `runtime`, `gateway`, `security`, `other`.
+- `category` (optional): plugin category filter. Use the 22 active values from
+  `GET /api/v1/plugins/categories`. Retired `tools`, `runtime`, and `gateway`
+  values remain readable for existing metadata and links.
 
 Notes:
 
@@ -746,12 +832,29 @@ Notes:
 
 ### `GET /api/v1/packages/{name}`
 
-Returns package detail metadata.
+Returns package detail metadata. The `owner.official` flag is the current publisher
+badge, independent of the package’s `isOfficial` flag. Response readers allow this
+field to be absent when querying registries that predate it.
 
 Notes:
 
 - Skills can also resolve through this route in the unified catalog.
 - Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/detail`
+
+Returns a plugin detail snapshot in one request: `package`, `owner`, `versions`
+(the first 10 published versions and `nextCursor`), the selected `version`,
+`readme`, and `security`. Existing package, version, and security field shapes are
+preserved. Code plugins and bundle plugins support this route.
+
+- `version` (optional query parameter) selects an exact release; otherwise the
+  current latest release is selected. A missing exact release returns `404`.
+- Package visibility and publisher permissions match the package metadata route.
+- Missing, moderation-blocked, or non-text README previews return `readme: null`.
+  The existing 200 KiB preview limit applies; oversized previews return `413`.
+- Security describes the selected release. Downloads still enforce their own
+  current moderation checks. Responses are not cached.
 
 ### `DELETE /api/v1/packages/{name}`
 
@@ -782,6 +885,12 @@ verification, artifact metadata, and scan data.
 
 Notes:
 
+- `version.pluginManifestSummary` exposes optional declared `contracts` (capability
+  family to name arrays), `providers`, and `channels`. For example, `contracts.tools`
+  names plugin tools; `contracts.videoGenerationProviders` names providers, not tools.
+  These declarations describe the published artifact, not current Gateway registrations.
+  Older summaries may omit these fields. A loose `SKILL.md` is not a bundled skill
+  unless the plugin manifest declares its skill root.
 - `version.artifact.kind` is `legacy-zip` for old-world package archives or
   `npm-pack` for ClawPack-backed releases.
 - ClawPack releases include npm-compatible `npmIntegrity`, `npmShasum`, and
@@ -811,6 +920,7 @@ Response:
 {
   "overview": "ClawScan found no material security concerns.\n\nUse least-privileged credentials when configuring this plugin.",
   "securityAuditUrl": "https://clawhub.ai/openclaw/plugins/example-plugin/security-audit?version=1.2.3",
+  "verdict": "malicious",
   "package": {
     "name": "@openclaw/example-plugin",
     "displayName": "Example Plugin",
@@ -842,6 +952,7 @@ Response fields:
 - `overview` is the canonical summary-and-guidance text shown by the package
   security-audit page. Install clients may present it without reconstructing
   audit text from scanner fields.
+- `verdict` is the combined display verdict used by the package security-audit page, including static analysis and visible agentic-risk findings. It can differ from the download-policy `trust.scanStatus`. Older registries may omit it; clients should treat that as unavailable display metadata.
 - `securityAuditUrl` links to the exact release's package security-audit page.
 - `package.name`, `package.displayName`, and `package.family` identify the
   resolved registry package.
@@ -1378,9 +1489,11 @@ Publishes a code-plugin or bundle-plugin release.
 - Use either `files` or `clawpack`, never both in the same request.
 - JSON bodies and caller-supplied `payload.files` / `payload.artifact`
   metadata are rejected.
-- Direct multipart publish requests are capped at 18MB. ClawPack tarballs may
-  use the upload-url flow up to the 120MB tarball cap.
-- Optional payload field: `ownerHandle`. When present, only admins may publish on behalf of that owner.
+- Direct multipart publish requests are capped at 4MB because the public API is
+  served through Vercel functions, which reject larger request bodies with
+  `413` before ClawHub sees them. Larger ClawPack tarballs must use the
+  upload-url flow, up to the 120MB tarball cap.
+- Optional payload field: `ownerHandle`. The actor must have publish access to the selected publisher.
 
 Validation highlights:
 
@@ -1394,6 +1507,26 @@ Validation highlights:
 - Only the `openclaw` org publisher and current `openclaw` org members'
   personal publishers may publish to the `official` channel.
 - On-behalf publishes still validate official-channel eligibility against the target owner account.
+
+### `POST /api/v1/publish/attempts/{id}/recover`
+
+Recover a failed staged OpenClaw plugin release with a normal user Bearer token
+and current package publish access. The only accepted JSON field is:
+
+```json
+{ "manualOverrideReason": "Retry the retained artifacts after workflow failure" }
+```
+
+The reason must contain 1–500 characters after trimming. A new successor returns
+`202`; an exact authorized replay returns `200` and its existing outcome.
+Responses contain `ok`, `attemptId`, `recoveredFromAttemptId`, `packageId`,
+`releaseId`, `name`, `version`, `status`, `publicationStatus`, and `reused`.
+Follow the successor with `GET /api/v1/publish/attempts/{id}` using the same user
+token. Pending is not published; fresh security checks and current authorization
+must pass before the retained release becomes public.
+
+Invalid bodies return `400`, invalid credentials `401`, undisclosed or missing
+attempts `404`, and conflicting or ineligible recovery state `409`.
 
 ### `DELETE /api/v1/skills/{slug}` / `POST /api/v1/skills/{slug}/undelete`
 
@@ -1648,7 +1781,7 @@ Still supported for older CLI versions:
 - `GET /api/cli/whoami`
 - `POST /api/cli/upload-url`
 - `POST /api/cli/publish`
-- `POST /api/cli/telemetry/install`
+- `POST /api/cli/telemetry/install` — also used by the current CLI for install events.
 - `POST /api/cli/skill/delete`
 - `POST /api/cli/skill/undelete`
 
@@ -1660,6 +1793,10 @@ publishes that stage a ClawPack tarball must send the resulting storage id as
 publishes use separate upload- and publish-scoped credentials; the server
 accepts the ticket only when both credentials belong to the same authorization
 transaction.
+
+## Agent Skills discovery
+
+`GET` and `HEAD /{owner}/skills/{slug}/.well-known/agent-skills/index.json` proxy the skill's Agent Skills index. Each upstream request has a ten-second deadline covering both response headers and the complete GET body. An upstream timeout fails discovery instead of returning a partial index. Completed responses preserve the upstream status, content type, and cache policy; HEAD returns no body.
 
 ## Registry discovery (`/.well-known/clawhub.json`)
 

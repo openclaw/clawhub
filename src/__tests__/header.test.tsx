@@ -593,6 +593,27 @@ describe("Header", () => {
     });
   });
 
+  it.each([true, false])(
+    "uses publisher status for community plugin badges (%s)",
+    (ownerOfficial) => {
+      useUnifiedSearchMock.mockReturnValue({
+        ...defaultUnifiedSearchResult,
+        pluginResults: [
+          {
+            ...defaultUnifiedSearchResult.pluginResults[0],
+            plugin: { ...defaultUnifiedSearchResult.pluginResults[0].plugin, ownerOfficial },
+          },
+        ],
+      });
+      render(<Header />);
+      const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "weather" } });
+      const group = screen.getByRole("group", { name: "Plugins" });
+      expect(within(group).queryByLabelText("Official") !== null).toBe(ownerOfficial);
+    },
+  );
+
   it("omits scoped package prefixes from plugin typeahead metadata", () => {
     useUnifiedSearchMock.mockReturnValue({
       ...defaultUnifiedSearchResult,

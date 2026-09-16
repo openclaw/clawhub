@@ -709,6 +709,8 @@ export const ApiV1SkillBulkRescanBatchRequestSchema = type({
   cursor: "string|null?",
   batchSize: "number?",
   dryRun: "boolean?",
+  requestId: "string?",
+  expectedVersionIds: "string[]?",
 });
 export type ApiV1SkillBulkRescanBatchRequest =
   (typeof ApiV1SkillBulkRescanBatchRequestSchema)[inferred];
@@ -753,6 +755,8 @@ export const ApiV1SkillScanBatchRequestSchema = type({
   cursor: "string|null?",
   batchSize: "number?",
   dryRun: "boolean?",
+  requestId: "string?",
+  expectedVersionIds: "string[]?",
 });
 export type ApiV1SkillScanBatchRequest = (typeof ApiV1SkillScanBatchRequestSchema)[inferred];
 
@@ -768,6 +772,29 @@ export const ApiV1SkillScanBatchResponseSchema = type({
   sampleSlugs: "string[]",
 });
 export type ApiV1SkillScanBatchResponse = (typeof ApiV1SkillScanBatchResponseSchema)[inferred];
+
+export const ApiV1SkillScanJobHistoryRequestSchema = type({
+  versionId: "string",
+  cursor: "string|null?",
+});
+export type ApiV1SkillScanJobHistoryRequest =
+  (typeof ApiV1SkillScanJobHistoryRequestSchema)[inferred];
+export const ApiV1SkillScanJobHistoryResponseSchema = type({
+  ok: "true",
+  jobs: type({
+    jobId: "string",
+    versionId: "string",
+    source: "string",
+    status: "string",
+    createdAt: "number",
+    updatedAt: "number",
+    completedAt: "number|null",
+  }).array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1SkillScanJobHistoryResponse =
+  (typeof ApiV1SkillScanJobHistoryResponseSchema)[inferred];
 
 export const ApiV1SkillScanBatchStatusRequestSchema = type({
   jobIds: "string[]",
@@ -786,9 +813,53 @@ export const ApiV1SkillScanBatchStatusResponseSchema = type({
   terminal: "number",
   done: "boolean",
   failedJobIds: "string[]",
+  // Optional for clients talking to servers that predate local worker assignments.
+  queuedJobIds: "string[]?",
 });
 export type ApiV1SkillScanBatchStatusResponse =
   (typeof ApiV1SkillScanBatchStatusResponseSchema)[inferred];
+
+export const ApiV1PackageScanBatchRequestSchema = type({
+  mode: '"all-active-latest"?',
+  cursor: "string|null?",
+  batchSize: "number?",
+  dryRun: "boolean?",
+});
+export type ApiV1PackageScanBatchRequest = (typeof ApiV1PackageScanBatchRequestSchema)[inferred];
+
+export const ApiV1PackageScanBatchResponseSchema = type({
+  ok: "true",
+  mode: '"all-active-latest"',
+  queued: "number",
+  alreadyQueued: "number",
+  skipped: "number",
+  jobIds: "string[]",
+  nextCursor: "string|null",
+  done: "boolean",
+  sampleNames: "string[]",
+});
+export type ApiV1PackageScanBatchResponse = (typeof ApiV1PackageScanBatchResponseSchema)[inferred];
+
+export const ApiV1PackageScanBatchStatusRequestSchema = type({
+  jobIds: "string[]",
+});
+export type ApiV1PackageScanBatchStatusRequest =
+  (typeof ApiV1PackageScanBatchStatusRequestSchema)[inferred];
+
+export const ApiV1PackageScanBatchStatusResponseSchema = type({
+  ok: "true",
+  total: "number",
+  queued: "number",
+  running: "number",
+  succeeded: "number",
+  failed: "number",
+  missing: "number",
+  terminal: "number",
+  done: "boolean",
+  failedJobIds: "string[]",
+});
+export type ApiV1PackageScanBatchStatusResponse =
+  (typeof ApiV1PackageScanBatchStatusResponseSchema)[inferred];
 
 export const ApiV1SkillRepairVtPendingRequestSchema = type({
   cursor: "string|null?",

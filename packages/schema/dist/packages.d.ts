@@ -1,5 +1,6 @@
 import { type inferred } from "arktype";
 export declare const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
+export declare const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
 export declare function normalizePackageOwnerHandle(handle: string | null | undefined): string | undefined;
 export declare function inferPackageNameScope(name: string): string | undefined;
 export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined): {
@@ -27,6 +28,12 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
 export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     schemaVersion: number;
+    contracts?: {
+        [x: string]: string[];
+    } | undefined;
+    providers?: string[] | undefined;
+    channels?: string[] | undefined;
+    categories?: string[] | undefined;
     icon?: string | undefined;
     compatibility?: {
         pluginApiRange?: string | undefined;
@@ -59,6 +66,21 @@ export declare const PluginManifestSummarySchema: import("arktype/internal/varia
     }[];
 }, {}>;
 export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
+export declare const ApiV1PackageCategoriesBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packages: {
+        name: string;
+        version: string;
+    }[];
+}, {}>;
+export type ApiV1PackageCategoriesBatchRequest = (typeof ApiV1PackageCategoriesBatchRequestSchema)[inferred];
+export declare const ApiV1PackageCategoriesBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packages: {
+        name: string;
+        version: string;
+        categories: string[] | null;
+    }[];
+}, {}>;
+export type ApiV1PackageCategoriesBatchResponse = (typeof ApiV1PackageCategoriesBatchResponseSchema)[inferred];
 export declare const PackageVerificationSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
     scope: "artifact-only" | "dependency-graph-aware";
@@ -178,6 +200,38 @@ export declare const PackageSkillSpectorAnalysisSchema: import("arktype/internal
     checkedAt: number;
 }, {}>;
 export type PackageSkillSpectorAnalysis = (typeof PackageSkillSpectorAnalysisSchema)[inferred];
+export declare const PackageAigFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ruleId: string;
+    level: string;
+    message: string;
+    title?: string | undefined;
+    description?: string | undefined;
+    file?: string | undefined;
+    startLine?: number | undefined;
+    endLine?: number | undefined;
+    remediation?: string | undefined;
+}, {}>;
+export type PackageAigFinding = (typeof PackageAigFindingSchema)[inferred];
+export declare const PackageAigAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    issueCount: number;
+    findings: {
+        ruleId: string;
+        level: string;
+        message: string;
+        title?: string | undefined;
+        description?: string | undefined;
+        file?: string | undefined;
+        startLine?: number | undefined;
+        endLine?: number | undefined;
+        remediation?: string | undefined;
+    }[];
+    scannerVersion?: string | undefined;
+    summary?: string | undefined;
+    error?: string | undefined;
+    checkedAt: number;
+}, {}>;
+export type PackageAigAnalysis = (typeof PackageAigAnalysisSchema)[inferred];
 export declare const PackageLlmAnalysisDimensionSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     label: string;
@@ -349,6 +403,8 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     summary?: string | null | undefined;
     icon?: string | null | undefined;
     ownerHandle?: string | null | undefined;
+    ownerImage?: string | null | undefined;
+    ownerOfficial?: boolean | undefined;
     createdAt: number;
     updatedAt: number;
     latestVersion?: string | null | undefined;
@@ -364,6 +420,77 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     } | undefined;
 }, {}>;
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
+export declare const PluginOverviewItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    displayName: string;
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    runtimeId?: string | null | undefined;
+    channel: "community" | "official" | "private";
+    isOfficial: boolean;
+    summary?: string | null | undefined;
+    icon?: string | null | undefined;
+    ownerHandle?: string | null | undefined;
+    ownerImage?: string | null | undefined;
+    ownerOfficial?: boolean | undefined;
+    createdAt: number;
+    updatedAt: number;
+    latestVersion?: string | null | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
+    featuredAt?: number | undefined;
+    verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+    stats?: {
+        downloads: number;
+        installs: number;
+        stars: number;
+        versions: number;
+    } | undefined;
+    featured?: boolean | undefined;
+    featuredRank?: number | undefined;
+    trending?: boolean | undefined;
+    trendingRank?: number | undefined;
+}, {}>;
+export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
+export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    categories: {
+        slug: string;
+        label: string;
+        description: string;
+        icon: string;
+        order: number;
+    }[];
+    items: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        ownerImage?: string | null | undefined;
+        ownerOfficial?: boolean | undefined;
+        createdAt: number;
+        updatedAt: number;
+        latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        featuredAt?: number | undefined;
+        verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
+        featured?: boolean | undefined;
+        featuredRank?: number | undefined;
+        trending?: boolean | undefined;
+        trendingRank?: number | undefined;
+    }[];
+}, {}>;
+export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];
 export declare const ApiV1PackageListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         name: string;
@@ -375,6 +502,8 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         summary?: string | null | undefined;
         icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
+        ownerImage?: string | null | undefined;
+        ownerOfficial?: boolean | undefined;
         createdAt: number;
         updatedAt: number;
         latestVersion?: string | null | undefined;
@@ -477,6 +606,8 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             summary?: string | null | undefined;
             icon?: string | null | undefined;
             ownerHandle?: string | null | undefined;
+            ownerImage?: string | null | undefined;
+            ownerOfficial?: boolean | undefined;
             createdAt: number;
             updatedAt: number;
             latestVersion?: string | null | undefined;
@@ -519,6 +650,12 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {
                 pluginApiRange?: string | undefined;
@@ -591,6 +728,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+        official?: boolean | undefined;
     } | null;
 }, {}>;
 export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];
@@ -624,6 +762,12 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
         } | null | undefined;
         pluginManifestSummary?: {
             schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
             icon?: string | undefined;
             compatibility?: {
                 pluginApiRange?: string | undefined;
@@ -717,6 +861,25 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             error?: string | undefined;
             checkedAt: number;
         } | null | undefined;
+        aigAnalysis?: {
+            status: string;
+            issueCount: number;
+            findings: {
+                ruleId: string;
+                level: string;
+                message: string;
+                title?: string | undefined;
+                description?: string | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                remediation?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
         llmAnalysis?: {
             status: string;
             verdict?: string | undefined;
@@ -783,6 +946,7 @@ export declare const ApiV1PackageArtifactResponseSchema: import("arktype/interna
 export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
 export declare const ApiV1PackageSecurityResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     overview: string;
+    verdict?: string | undefined;
     securityAuditUrl: string;
     package: {
         name: string;
@@ -809,6 +973,317 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
     };
 }, {}>;
 export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
+export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        createdAt: number;
+        updatedAt: number;
+        latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        tags: unknown;
+        compatibility?: {
+            pluginApiRange?: string | undefined;
+            builtWithOpenClawVersion?: string | undefined;
+            pluginSdkVersion?: string | undefined;
+            minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
+        } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
+        verification?: {
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
+            scope: "artifact-only" | "dependency-graph-aware";
+            summary?: string | undefined;
+            sourceRepo?: string | undefined;
+            sourceCommit?: string | undefined;
+            sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
+            hasProvenance?: boolean | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
+    } | null;
+    owner: {
+        handle: string | null;
+        displayName?: string | null | undefined;
+        image?: string | null | undefined;
+        official?: boolean | undefined;
+    } | null;
+    versions: {
+        items: {
+            version: string;
+            createdAt: number;
+            changelog: string;
+            distTags?: string[] | undefined;
+        }[];
+        nextCursor: string | null;
+    };
+    version: {
+        version: string;
+        createdAt: number;
+        changelog: string;
+        distTags?: string[] | undefined;
+        files: unknown;
+        compatibility?: {
+            pluginApiRange?: string | undefined;
+            builtWithOpenClawVersion?: string | undefined;
+            pluginSdkVersion?: string | undefined;
+            minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
+        } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
+        verification?: {
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
+            scope: "artifact-only" | "dependency-graph-aware";
+            summary?: string | undefined;
+            sourceRepo?: string | undefined;
+            sourceCommit?: string | undefined;
+            sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
+            hasProvenance?: boolean | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        sha256hash?: string | null | undefined;
+        vtAnalysis?: {
+            status: string;
+            verdict?: string | undefined;
+            analysis?: string | undefined;
+            source?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        skillSpectorAnalysis?: {
+            status: string;
+            score?: number | undefined;
+            severity?: string | undefined;
+            recommendation?: string | undefined;
+            issueCount: number;
+            issues: {
+                issueId: string;
+                category?: string | undefined;
+                pattern?: string | undefined;
+                severity: string;
+                confidence?: number | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                explanation: string;
+                remediation?: string | undefined;
+                finding?: string | undefined;
+                codeSnippet?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        aigAnalysis?: {
+            status: string;
+            issueCount: number;
+            findings: {
+                ruleId: string;
+                level: string;
+                message: string;
+                title?: string | undefined;
+                description?: string | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                remediation?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        llmAnalysis?: {
+            status: string;
+            verdict?: string | undefined;
+            confidence?: string | undefined;
+            summary?: string | undefined;
+            dimensions?: {
+                name: string;
+                label: string;
+                rating: string;
+                detail: string;
+            }[] | undefined;
+            guidance?: string | undefined;
+            findings?: string | undefined;
+            agenticRiskFindings?: unknown[] | undefined;
+            riskSummary?: unknown;
+            model?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        staticScan?: {
+            status: string;
+            reasonCodes: string[];
+            findings: {
+                code: string;
+                severity: string;
+                file: string;
+                line: number;
+                message: string;
+                evidence: string;
+            }[];
+            summary: string;
+            engineVersion: string;
+            checkedAt: number;
+        } | null | undefined;
+    } | null;
+    readme: string | null;
+    security: {
+        overview: string;
+        verdict?: string | undefined;
+        securityAuditUrl: string;
+        package: {
+            name: string;
+            displayName: string;
+            family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        };
+        release: {
+            releaseId: string;
+            version: string;
+            artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+            artifactSha256?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            createdAt: number;
+        };
+        trust: {
+            scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";
+            moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+            blockedFromDownload: boolean;
+            reasons: string[];
+            pending: boolean;
+            stale: boolean;
+        };
+    } | null;
+}, {}>;
+export type ApiV1PluginDetailResponse = (typeof ApiV1PluginDetailResponseSchema)[inferred];
 export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     state: "approved" | "quarantined" | "revoked";
     reason: string;
@@ -1244,6 +1719,23 @@ export declare const PackagePublishAttemptStatusSchema: import("arktype/internal
 export type PackagePublishAttemptStatus = (typeof PackagePublishAttemptStatusSchema)[inferred];
 export declare const PackagePublicationStatusSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "expired" | "failed" | "pending" | "published", {}>;
 export type PackagePublicationStatus = (typeof PackagePublicationStatusSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    manualOverrideReason: string;
+}, {}>;
+export type ApiV1PackagePublishRecoveryRequest = (typeof ApiV1PackagePublishRecoveryRequestSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    attemptId: string;
+    recoveredFromAttemptId: string;
+    packageId: string;
+    releaseId: string;
+    name: string;
+    version: string;
+    status: "blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize";
+    publicationStatus: "blocked" | "expired" | "failed" | "pending" | "published";
+    reused: boolean;
+}, {}>;
+export type ApiV1PackagePublishRecoveryResponse = (typeof ApiV1PackagePublishRecoveryResponseSchema)[inferred];
 export declare const PackagePublishAttemptCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: "blocked" | "clean" | "failed" | "pending";
     summary?: string | undefined;

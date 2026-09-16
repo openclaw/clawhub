@@ -1,4 +1,9 @@
-import { resolvePluginCategories, type PluginCategorySlug } from "./catalogMetadata.js";
+import {
+  isPluginCategorySlug,
+  PLUGIN_CATEGORY_DEFINITIONS,
+  resolvePluginCategories,
+  type PluginCategorySlug,
+} from "./catalogMetadata.js";
 
 export {
   isPluginCategorySlug,
@@ -8,6 +13,22 @@ export {
 } from "./catalogMetadata.js";
 
 type JsonRecord = Record<string, unknown>;
+
+export function isCurrentPluginCategoryAssignment(categories: readonly string[] | undefined) {
+  return (
+    categories?.length === 1 &&
+    PLUGIN_CATEGORY_DEFINITIONS.some(({ slug }) => slug === categories[0])
+  );
+}
+
+/** Discovery follows the primary install purpose, not secondary capabilities or publisher. */
+export function getPluginDiscoveryExclusion(categories: readonly string[] | undefined) {
+  // Historical capability lists have no primary purpose until the reviewed refresh.
+  const primary = categories?.length === 1 ? categories[0] : undefined;
+  return primary === "channels" || primary === "models" || primary === "agent-runtimes"
+    ? primary
+    : null;
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -19,6 +40,34 @@ function hasValues(value: unknown): boolean {
 
 function hasProperties(value: unknown): boolean {
   return isRecord(value) && Object.keys(value).length > 0;
+}
+
+export function getDeclaredPluginCategoriesFromManifest(
+  manifest: unknown,
+): PluginCategorySlug[] | undefined {
+  if (!isRecord(manifest) || !Object.hasOwn(manifest, "categories")) return undefined;
+  const value = manifest.categories;
+  if (!Array.isArray(value)) {
+    throw new Error("Plugin manifest categories must be an array");
+  }
+  if (value.length === 0) {
+    throw new Error("Plugin manifest categories must contain at least one category");
+  }
+  if (value.length > 3) {
+    throw new Error("Plugin manifest categories are limited to 3");
+  }
+
+  const categories: PluginCategorySlug[] = [];
+  for (const category of value) {
+    if (typeof category !== "string" || !isPluginCategorySlug(category)) {
+      throw new Error(`Unknown plugin category slug "${String(category)}"`);
+    }
+    if (categories.includes(category)) {
+      throw new Error(`Duplicate plugin category slug "${category}"`);
+    }
+    categories.push(category);
+  }
+  return categories;
 }
 
 export function inferPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[] {
@@ -87,6 +136,8 @@ export function derivePluginCategoryTags(input: {
   inferredFromReleaseId?: string | null;
 }): PluginCategorySlug[] {
   if (input.family === "skill") return [];
+  const manifestCategories = getDeclaredPluginCategoriesFromManifest(input.pluginManifest);
+  if (manifestCategories) return manifestCategories;
   return resolvePluginCategories({
     declared: input.categories,
     inferred: input.inferredCategories ?? inferPluginCategoriesFromManifest(input.pluginManifest),
@@ -98,6 +149,17 @@ export function resolveStoredPluginCategories(
 ): PluginCategorySlug[] {
   if (input.family === "skill") return [];
   try {
+    const declared = input.categories;
+    if (
+      declared &&
+      declared.length > 0 &&
+      declared.length <= 3 &&
+      new Set(declared).size === declared.length &&
+      declared.every(isPluginCategorySlug)
+    ) {
+      // Published declarations preserve order, including Other alongside specific categories.
+      return [...declared];
+    }
     const inferenceCurrent =
       Boolean(input.latestReleaseId) && input.latestReleaseId === input.inferredFromReleaseId;
     return resolvePluginCategories({

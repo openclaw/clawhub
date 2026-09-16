@@ -1,7 +1,9 @@
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { isPublicSkillDoc } from "./globalStats";
 import { readCanonicalStat } from "./skillStats";
+
+const MAX_BOUNDED_SKILL_METRICS_SCAN = 500;
 
 export type PublisherStatsContribution = {
   publishedSkills: number;
@@ -12,6 +14,13 @@ export type PublisherStatsContribution = {
   skillTotalInstalls: number;
   skillTotalDownloads: number;
   skillTotalStars: number;
+};
+
+export type PublisherSkillMetrics = {
+  publishedSkills: number;
+  totalInstalls: number;
+  totalDownloads: number;
+  totalStars: number;
 };
 
 export function emptyPublisherStatsContribution(): PublisherStatsContribution {
@@ -42,6 +51,29 @@ export function getSkillPublisherContribution(skill: Doc<"skills">): PublisherSt
     skillTotalDownloads: totalDownloads,
     skillTotalStars: totalStars,
   };
+}
+
+export async function computeBoundedPublisherSkillMetrics(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  publisherId: Id<"publishers">,
+): Promise<PublisherSkillMetrics | null> {
+  const skills = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+    )
+    .take(MAX_BOUNDED_SKILL_METRICS_SCAN + 1);
+  if (skills.length > MAX_BOUNDED_SKILL_METRICS_SCAN) return null;
+
+  return skills.map(getSkillPublisherContribution).reduce(
+    (total, contribution) => ({
+      publishedSkills: total.publishedSkills + contribution.publishedSkills,
+      totalInstalls: total.totalInstalls + contribution.skillTotalInstalls,
+      totalDownloads: total.totalDownloads + contribution.skillTotalDownloads,
+      totalStars: total.totalStars + contribution.skillTotalStars,
+    }),
+    { publishedSkills: 0, totalInstalls: 0, totalDownloads: 0, totalStars: 0 },
+  );
 }
 
 export function getPackagePublisherContribution(pkg: Doc<"packages">): PublisherStatsContribution {

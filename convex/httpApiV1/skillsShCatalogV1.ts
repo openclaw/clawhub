@@ -620,7 +620,12 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
   if (!runtime.skillsSh.runtimeEnabled) {
     return text("Not found", 404);
   }
-  const rate = await applyRateLimit(ctx, request, request.method === "GET" ? "read" : "write");
+  // Production sync uses its exact GitHub Actions identity below. Anonymous
+  // ingress would redirect across origins and strip that workflow credential.
+  const rate =
+    runtime.environment === "production"
+      ? { ok: true as const, headers: {} }
+      : await applyRateLimit(ctx, request, request.method === "GET" ? "read" : "write");
   if (!rate.ok) return rate.response;
   let actor: string;
   let actorUserId: string | null = null;

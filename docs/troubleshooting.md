@@ -7,16 +7,17 @@ read_when:
 
 # Troubleshooting
 
-## `clawhub login` opens a browser but never completes
+## `clawhub login` waits for authorization
 
-The CLI starts a short-lived local callback server during browser login.
+Open the verification URL printed by the CLI, sign in with GitHub if needed,
+and select **Authorize** for the displayed code. You can use a browser on
+another device; no localhost callback is required.
 
-- Make sure your browser can reach `http://127.0.0.1:<port>/callback`.
-- Check local firewall, VPN, and proxy rules if the callback never arrives.
-- In headless environments, create an API token in the ClawHub web UI and run:
+If the code expires, run `clawhub login` again. For unattended login, create an
+API token in ClawHub Settings → API tokens and run:
 
 ```bash
-clawhub login --token clh_...
+clawhub login --token <token>
 ```
 
 ## `whoami` or `publish` returns `Unauthorized` (401)

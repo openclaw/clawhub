@@ -7,6 +7,7 @@ import {
   ApiV1SkillRepairVtPendingRequestSchema,
   ApiV1SkillScanBatchRequestSchema,
   ApiV1SkillScanBatchStatusRequestSchema,
+  ApiV1SkillScanJobHistoryRequestSchema,
   ApiV1SkillScanSubmitRequestSchema,
   SkillAppealRequestSchema,
   SkillAppealResolveRequestSchema,
@@ -30,6 +31,7 @@ import {
   type SkillExportArchiveManifest,
 } from "../lib/archiveManifest";
 import { serializeCanonicalSkillSearchResults } from "../lib/canonicalSkillSearchResponse";
+import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import {
   ARCHIVE_REQUEST_IDENTITY_HEADER,
   expectedVercelEnvironmentForConvexSite,
@@ -55,6 +57,7 @@ import {
 import { normalizePublisherHandle } from "../lib/publishers";
 import { MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { getRuntimeRolloutCapabilities } from "../lib/rolloutCapabilities";
+import { readVersionScannerReports } from "../lib/scannerReports";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
@@ -385,6 +388,7 @@ const internalRefs = internal as unknown as {
   securityScan: {
     createPublishedSkillScanRequestInternal: unknown;
     enqueueBulkSkillRescanBatchForAdminInternal: unknown;
+    getSkillScanJobHistoryForAdminInternal: unknown;
     getStoredScanReportForUserInternal: unknown;
     getSkillScanRequestForUserInternal: unknown;
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
@@ -527,6 +531,8 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
       cursor?: string | null;
       batchSize?: number;
       dryRun?: boolean;
+      requestId?: string;
+      expectedVersionIds?: string[];
     };
     const result = await runMutationRef(
       ctx,
@@ -534,6 +540,10 @@ async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, head
       {
         actorUserId: auth.userId,
         ...(body.mode ? { mode: body.mode } : {}),
+        ...(body.requestId !== undefined ? { requestId: body.requestId } : {}),
+        ...(body.expectedVersionIds !== undefined
+          ? { expectedVersionIds: body.expectedVersionIds }
+          : {}),
         cursor: body.cursor ?? null,
         ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
         ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
@@ -739,10 +749,7 @@ type VerifySecurityVersion = {
   vtAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["vtAnalysis"]>,
     "status" | "verdict" | "source" | "checkedAt"
-  > &
-    Partial<
-      Pick<NonNullable<Doc<"skillVersions">["vtAnalysis"]>, "analysis" | "scanner" | "engineStats">
-    >;
+  >;
   skillSpectorAnalysis?: Pick<
     NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>,
     | "status"
@@ -752,8 +759,7 @@ type VerifySecurityVersion = {
     | "issueCount"
     | "scannerVersion"
     | "checkedAt"
-  > &
-    Partial<Pick<NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>, "summary" | "error">>;
+  >;
 };
 
 type SecurityVerdictTargetResult = {
@@ -793,26 +799,31 @@ function normalizeVerificationStatus(value: string | null | undefined): Normaliz
 }
 
 function buildVerifySecurity(version: VerifySecurityVersion) {
+  const rawStatus = version.llmAnalysis?.status ?? null;
+  const status = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? rawStatus);
+  return {
+    status,
+    passed: status === "clean",
+    rawStatus,
+    verdict: version.llmAnalysis?.verdict ?? null,
+    confidence: version.llmAnalysis?.confidence ?? null,
+    summary: version.llmAnalysis?.summary ?? null,
+    model: version.llmAnalysis?.model ?? null,
+    checkedAt: version.llmAnalysis?.checkedAt ?? null,
+  };
+}
+
+function buildSecurityVerdictSummary(version: VerifySecurityVersion) {
   const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
-  const clawRawStatus = version.llmAnalysis?.status ?? null;
-  const clawStatus = normalizeVerificationStatus(version.llmAnalysis?.verdict ?? clawRawStatus);
   const vtStatus = version.vtAnalysis
     ? normalizeVerificationStatus(version.vtAnalysis.verdict ?? version.vtAnalysis.status)
     : null;
   const skillSpectorStatus = version.skillSpectorAnalysis
     ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
     : null;
-  const status = clawStatus;
 
   return {
-    status,
-    passed: status === "clean",
-    rawStatus: clawRawStatus,
-    verdict: version.llmAnalysis?.verdict ?? null,
-    confidence: version.llmAnalysis?.confidence ?? null,
-    summary: version.llmAnalysis?.summary ?? null,
-    model: version.llmAnalysis?.model ?? null,
-    checkedAt: version.llmAnalysis?.checkedAt ?? null,
+    ...buildVerifySecurity(version),
     signals: {
       staticScan: version.staticScan
         ? {
@@ -836,10 +847,7 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
             status: vtStatus ?? "pending",
             rawStatus: version.vtAnalysis.status,
             verdict: version.vtAnalysis.verdict ?? null,
-            analysis: version.vtAnalysis.analysis ?? null,
             source: version.vtAnalysis.source ?? null,
-            scanner: version.vtAnalysis.scanner ?? null,
-            engineStats: version.vtAnalysis.engineStats ?? null,
             checkedAt: version.vtAnalysis.checkedAt ?? null,
           }
         : null,
@@ -852,8 +860,6 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
             recommendation: version.skillSpectorAnalysis.recommendation ?? null,
             issueCount: version.skillSpectorAnalysis.issueCount ?? 0,
             scannerVersion: version.skillSpectorAnalysis.scannerVersion ?? null,
-            summary: version.skillSpectorAnalysis.summary ?? null,
-            error: version.skillSpectorAnalysis.error ?? null,
             checkedAt: version.skillSpectorAnalysis.checkedAt ?? null,
           }
         : null,
@@ -920,7 +926,7 @@ function buildSecurityVerdictReasons(args: {
   return [...new Set(reasons)];
 }
 
-function getVerifySecurityCheckedAt(security: ReturnType<typeof buildVerifySecurity>) {
+function getVerifySecurityCheckedAt(security: ReturnType<typeof buildSecurityVerdictSummary>) {
   const candidates = [
     security.checkedAt,
     security.signals.staticScan?.checkedAt,
@@ -928,53 +934,6 @@ function getVerifySecurityCheckedAt(security: ReturnType<typeof buildVerifySecur
     security.signals.skillSpector?.checkedAt,
   ].filter((value): value is number => typeof value === "number");
   return candidates.length > 0 ? Math.max(...candidates) : null;
-}
-
-function buildSecurityVerdictSummary(security: ReturnType<typeof buildVerifySecurity>) {
-  return {
-    status: security.status,
-    passed: security.passed,
-    rawStatus: security.rawStatus,
-    verdict: security.verdict,
-    confidence: security.confidence,
-    summary: security.summary,
-    model: security.model,
-    checkedAt: security.checkedAt,
-    signals: {
-      staticScan: security.signals.staticScan
-        ? {
-            status: security.signals.staticScan.status,
-            rawStatus: security.signals.staticScan.rawStatus,
-            reasonCodes: security.signals.staticScan.reasonCodes,
-            summary: security.signals.staticScan.summary,
-            engineVersion: security.signals.staticScan.engineVersion,
-            checkedAt: security.signals.staticScan.checkedAt,
-          }
-        : null,
-      virusTotal: security.signals.virusTotal
-        ? {
-            status: security.signals.virusTotal.status,
-            rawStatus: security.signals.virusTotal.rawStatus,
-            verdict: security.signals.virusTotal.verdict,
-            source: security.signals.virusTotal.source,
-            checkedAt: security.signals.virusTotal.checkedAt,
-          }
-        : null,
-      skillSpector: security.signals.skillSpector
-        ? {
-            status: security.signals.skillSpector.status,
-            rawStatus: security.signals.skillSpector.rawStatus,
-            score: security.signals.skillSpector.score,
-            severity: security.signals.skillSpector.severity,
-            recommendation: security.signals.skillSpector.recommendation,
-            issueCount: security.signals.skillSpector.issueCount,
-            scannerVersion: security.signals.skillSpector.scannerVersion,
-            checkedAt: security.signals.skillSpector.checkedAt,
-          }
-        : null,
-      dependencyRegistry: null,
-    },
-  };
 }
 
 function isValidRequestedVersion(version: string) {
@@ -1188,7 +1147,7 @@ async function buildSecurityVerdictItem(
     );
   }
 
-  const security = buildVerifySecurity(version);
+  const security = buildSecurityVerdictSummary(version);
   const reasons = buildSecurityVerdictReasons({
     isMalwareBlocked: result.moderationInfo?.isMalwareBlocked ?? false,
     securityPassed: security.passed,
@@ -1217,7 +1176,7 @@ async function buildSecurityVerdictItem(
       version.version,
     ),
     overview: formatSecurityAuditOverview({ llmAnalysis: version.llmAnalysis }),
-    security: buildSecurityVerdictSummary(security),
+    security,
   };
 }
 
@@ -1363,6 +1322,39 @@ export async function skillScanBatchSubmitV1Handler(ctx: ActionCtx, request: Req
   return handleSkillScanBatchSubmit(ctx, request, rate.headers);
 }
 
+export async function skillScanJobHistoryV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+  const admin = requireAdminOrResponse(auth.user, rate.headers);
+  if (!admin.ok) return admin.response;
+  try {
+    const body = parseArk(
+      ApiV1SkillScanJobHistoryRequestSchema,
+      await request.json(),
+      "Skill scan job history payload",
+    );
+    const result = await runQueryRef(
+      ctx,
+      internalRefs.securityScan.getSkillScanJobHistoryForAdminInternal,
+      {
+        actorUserId: auth.userId,
+        versionId: body.versionId,
+        cursor: body.cursor ?? null,
+      },
+    );
+    return json(result, 200, rate.headers);
+  } catch (error) {
+    if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+    return text(
+      error instanceof Error ? error.message : "Skill scan job history failed",
+      400,
+      rate.headers,
+    );
+  }
+}
+
 export async function skillScanBatchStatusV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -1376,6 +1368,8 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url);
   const query = url.searchParams.get("q")?.trim() ?? "";
   const limit = toOptionalNumber(url.searchParams.get("limit"));
+  const category = url.searchParams.get("category")?.trim() || undefined;
+  const topic = url.searchParams.get("topic")?.trim() || undefined;
   const rawMode = url.searchParams.get("mode")?.trim().toLowerCase();
   const highlightedOnly = parseBooleanQueryParam(url.searchParams.get("highlightedOnly"));
   const nonSuspiciousOnly = resolveBooleanQueryParam(
@@ -1394,11 +1388,24 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
     ...(rawMode ? { mode: "exact" as const } : {}),
     highlightedOnly: highlightedOnly || undefined,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
+    ...(category ? { categorySlug: category } : {}),
+    ...(topic ? { topic } : {}),
   })) as unknown[];
 
   // The action owns the canonical shape and ordering for every consumer.
   // This HTTP surface must serialize it without projecting or re-sorting.
-  return json({ results: serializeCanonicalSkillSearchResults(results) }, 200, rate.headers);
+  const publicResults = serializeCanonicalSkillSearchResults(results);
+  await recordCatalogSearchObservation(ctx, request, {
+    artifactKind: "skill",
+    query,
+    category,
+    topic,
+    filtered: Boolean(category || topic || highlightedOnly),
+    officialResults: publicResults.map(
+      (result) => "official" in result && result.official === true,
+    ),
+  });
+  return json({ results: publicResults }, 200, rate.headers);
 }
 
 export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Request) {
@@ -2450,7 +2457,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
               source: "unavailable",
               reason: "No server-resolved GitHub import provenance is stored for this version.",
             },
-        security,
+        security: {
+          ...security,
+          scannerReports: await readVersionScannerReports(ctx, version),
+        },
         signature: {
           status: "unsigned",
         },
@@ -3182,6 +3192,8 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         cursor?: string | null;
         batchSize?: number;
         dryRun?: boolean;
+        requestId?: string;
+        expectedVersionIds?: string[];
       };
       const result = await runMutationRef(
         ctx,
@@ -3189,6 +3201,10 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         {
           actorUserId: auth.userId,
           ...(body.mode ? { mode: body.mode } : {}),
+          ...(body.requestId !== undefined ? { requestId: body.requestId } : {}),
+          ...(body.expectedVersionIds !== undefined
+            ? { expectedVersionIds: body.expectedVersionIds }
+            : {}),
           cursor: body.cursor ?? null,
           ...(body.batchSize !== undefined ? { batchSize: body.batchSize } : {}),
           ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),

@@ -656,6 +656,58 @@ describe("publishAttempts", () => {
     });
   });
 
+  it("omits invalid retained A.I.G evidence so the worker rescans", async () => {
+    const attempt = {
+      _id: "publishAttempts:invalid-aig",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      skillVersionId: "skillVersions:invalid-aig",
+      slug: "invalid-aig-skill",
+      displayName: "Invalid A.I.G Skill",
+      version: "1.0.0",
+      artifactFingerprint: "exact-fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:skill", size: 10, sha256: "sha" }],
+      skillInsertArgs: { staticScan: { status: "clean" } },
+      createdAt: Date.now(),
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "skillVersions:invalid-aig"
+            ? {
+                fingerprint: "exact-fingerprint",
+                aigAnalysis: {
+                  status: "error",
+                  issueCount: 0,
+                  findings: [],
+                  checkedAt: Date.now(),
+                },
+              }
+            : null,
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [attempt]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    const claim = await claimPendingChecksHandler(ctx, { claimId: "checks:claim" });
+
+    expect(claim).toMatchObject({ attemptId: "publishAttempts:invalid-aig" });
+    expect(claim).not.toHaveProperty("existingAigAnalysis");
+  });
+
   it("hydrates staged package attempts with ClawPack URL and review context", async () => {
     const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
     process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";
@@ -1507,50 +1559,62 @@ describe("publishAttempts", () => {
     expect(transientCtx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
   });
 
-  it("terminalizes a staged release when its exact OpenClaw parent is cancelled", async () => {
-    const ctx = {
-      db: {
-        delete: vi.fn(),
-        get: vi.fn(async (id: string) =>
-          id === "publishAttempts:cancelled"
-            ? {
-                _id: id,
-                kind: "package",
-                status: "finalizing",
-                packageReleaseId: "packageReleases:pending",
-                packageFollowup: {},
-                finalizationClaimId: "finalize:claim",
-              }
-            : {
-                _id: "packageReleases:pending",
-                publicationStatus: "pending",
-              },
-        ),
-        insert: vi.fn(),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        query: vi.fn(),
-        replace: vi.fn(),
-        system: {},
-      },
-    };
-    const error =
-      "OpenClaw release parent terminal state completed/cancelled is not authorized by automated-awaited";
+  it.each(["cancelled", "failure"])(
+    "terminalizes a staged release when its exact OpenClaw parent concludes %s",
+    async (conclusion) => {
+      const ctx = {
+        db: {
+          delete: vi.fn(),
+          get: vi.fn(async (id: string) =>
+            id === "publishAttempts:terminal-parent"
+              ? {
+                  _id: id,
+                  kind: "package",
+                  status: "finalizing",
+                  packageReleaseId: "packageReleases:pending",
+                  packageFollowup: {},
+                  finalizationClaimId: "finalize:claim",
+                }
+              : {
+                  _id: "packageReleases:pending",
+                  publicationStatus: "pending",
+                },
+          ),
+          insert: vi.fn(),
+          normalizeId: vi.fn(),
+          patch: vi.fn(),
+          query: vi.fn(),
+          replace: vi.fn(),
+          system: {},
+        },
+      };
+      const error = `OpenClaw release parent terminal state completed/${conclusion} is not authorized by automated-awaited`;
 
-    await expect(
-      releasePackageFinalizationHandler(ctx, {
-        attemptId: "publishAttempts:cancelled",
-        claimId: "finalize:claim",
-        error,
-      }),
-    ).resolves.toEqual({ attemptId: "publishAttempts:cancelled", status: "failed" });
+      await expect(
+        releasePackageFinalizationHandler(ctx, {
+          attemptId: "publishAttempts:terminal-parent",
+          claimId: "finalize:claim",
+          error,
+        }),
+      ).resolves.toEqual({ attemptId: "publishAttempts:terminal-parent", status: "failed" });
 
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "publishAttempts:cancelled",
-      expect.objectContaining({ status: "failed", finalizationLastError: error }),
-    );
-    expect(ctx.db.patch).toHaveBeenCalledOnce();
-  });
+      expect(ctx.db.patch).toHaveBeenCalledWith("publishAttempts:terminal-parent", {
+        status: "failed",
+        checkClaimId: undefined,
+        checkClaimedAt: undefined,
+        checkClaimExpiresAt: undefined,
+        checkClaimLastError: undefined,
+        checkFailureCount: undefined,
+        finalizationClaimId: undefined,
+        finalizationClaimedAt: undefined,
+        finalizationClaimExpiresAt: undefined,
+        finalizationLastError: error,
+        failedAt: expect.any(Number),
+        updatedAt: expect.any(Number),
+      });
+      expect(ctx.db.patch).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each([
     "Staged OpenClaw publish authorization token is missing",
@@ -1705,6 +1769,12 @@ describe("publishAttempts", () => {
       summary: "Review before installing.",
       checkedAt: now,
     };
+    const aigAnalysis = {
+      status: "clean",
+      issueCount: 0,
+      findings: [],
+      checkedAt: now,
+    };
     const ctx = {
       db: {
         get: vi.fn(async () => ({
@@ -1743,6 +1813,7 @@ describe("publishAttempts", () => {
           redactedFindings: ["status=completed; verdict=suspicious"],
         },
         clawscanAnalysis: llmAnalysis,
+        aigAnalysis,
       }),
     ).resolves.toEqual({
       attemptId: "publishAttempts:demo",
@@ -1758,7 +1829,216 @@ describe("publishAttempts", () => {
           slug: "demo-skill",
           version: "1.0.0",
           llmAnalysis,
+          aigAnalysis,
         },
+      }),
+    );
+  });
+
+  it("preserves staged AIG evidence when an older worker omits AIG analysis", async () => {
+    const now = Date.now();
+    const existingAigAnalysis = {
+      status: "suspicious",
+      issueCount: 1,
+      findings: [
+        {
+          ruleId: "T04",
+          level: "error",
+          message: "Embedded payload",
+        },
+      ],
+      checkedAt: now - 1_000,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:demo"
+            ? {
+                _id: "publishAttempts:demo",
+                kind: "skill",
+                status: "pending_checks",
+                skillVersionId: "skillVersions:demo",
+                artifactFingerprint: "fingerprint",
+                checkClaimId: "checks:claim",
+                checkClaimExpiresAt: now + 60_000,
+                skillInsertArgs: {
+                  slug: "demo-skill",
+                  version: "1.0.0",
+                  aigAnalysis: existingAigAnalysis,
+                },
+              }
+            : {
+                _id: "skillVersions:demo",
+                fingerprint: "fingerprint",
+                aigAnalysis: existingAigAnalysis,
+              },
+        ),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+        clawscanAnalysis: {
+          status: "completed",
+          verdict: "benign",
+          checkedAt: now,
+        },
+      }),
+    ).resolves.toMatchObject({ status: "ready_to_finalize" });
+
+    const versionPatch = ctx.db.patch.mock.calls.find(
+      ([id]) => id === "skillVersions:demo",
+    )?.[1] as Record<string, unknown> | undefined;
+    expect(versionPatch).toBeDefined();
+    expect(versionPatch).not.toHaveProperty("aigAnalysis");
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        skillInsertArgs: expect.objectContaining({ aigAnalysis: existingAigAnalysis }),
+      }),
+    );
+  });
+
+  it("persists fresh AIG evidence when ClawScan analysis is omitted", async () => {
+    const now = Date.now();
+    const aigAnalysis = {
+      status: "clean",
+      issueCount: 0,
+      findings: [],
+      checkedAt: now,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:demo"
+            ? {
+                _id: "publishAttempts:demo",
+                kind: "skill",
+                status: "pending_checks",
+                skillVersionId: "skillVersions:demo",
+                artifactFingerprint: "fingerprint",
+                checkClaimId: "checks:claim",
+                checkClaimExpiresAt: now + 60_000,
+              }
+            : {
+                _id: "skillVersions:demo",
+                fingerprint: "fingerprint",
+              },
+        ),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+        aigAnalysis,
+      }),
+    ).resolves.toMatchObject({ status: "ready_to_finalize" });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith("skillVersions:demo", {
+      aigAnalysis,
+      publishAttemptId: "publishAttempts:demo",
+    });
+  });
+
+  it("retries a clean skill completion when AIG evidence is omitted and retained evidence is invalid", async () => {
+    const now = Date.now();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:demo"
+            ? {
+                _id: "publishAttempts:demo",
+                kind: "skill",
+                status: "pending_checks",
+                skillVersionId: "skillVersions:demo",
+                artifactFingerprint: "fingerprint",
+                checkClaimId: "checks:claim",
+                checkClaimExpiresAt: now + 60_000,
+                checks: {
+                  trufflehog: { status: "pending" },
+                  clawscan: { status: "pending" },
+                },
+              }
+            : {
+                _id: "skillVersions:demo",
+                fingerprint: "fingerprint",
+                aigAnalysis: {
+                  status: " CLEAN ",
+                  issueCount: 0,
+                  findings: [],
+                  checkedAt: now - 1_000,
+                },
+              },
+        ),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+        clawscanAnalysis: {
+          status: "completed",
+          verdict: "benign",
+          checkedAt: now,
+        },
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:demo",
+      kind: "skill",
+      status: "pending_checks",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        status: "pending_checks",
+        checkClaimId: undefined,
+        checkClaimLastError: "A.I.G evidence is required before a skill can be published.",
+        checkFailureCount: 1,
       }),
     );
   });

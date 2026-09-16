@@ -66,13 +66,6 @@ export async function dispatchSecurityScanWorkflow(
 export async function requestSecurityScanDispatch(ctx: MutationCtx, notBefore = 0) {
   if (!isSecurityScanEventDispatchEnabled()) return { scheduled: false as const };
 
-  const earliestQueued = await ctx.db
-    .query("securityScanJobs")
-    .withIndex("by_status_and_next_run_at", (q) => q.eq("status", "queued"))
-    .order("asc")
-    .first();
-  if (!earliestQueued) return { scheduled: false as const };
-
   const now = Date.now();
   const state = await ctx.db
     .query("securityScanDispatchState")
@@ -80,7 +73,26 @@ export async function requestSecurityScanDispatch(ctx: MutationCtx, notBefore = 
     .unique();
   const activeUntil =
     state?.leaseExpiresAt !== undefined && state.leaseExpiresAt > now ? state.leaseExpiresAt : now;
-  const scheduledAt = Math.max(now, earliestQueued.nextRunAt, activeUntil, notBefore);
+  // A fresh dispatch no later than this lower bound already covers any queued
+  // job. Avoid reading the queue head: claims would otherwise conflict with
+  // every enqueue transaction even when no new dispatch is needed.
+  const earliestDispatchAt = Math.max(now, activeUntil, notBefore);
+  if (
+    state?.scheduledAt !== undefined &&
+    state.scheduledAt >= now - SCHEDULE_STALE_MS &&
+    state.scheduledAt <= earliestDispatchAt
+  ) {
+    return { scheduled: false as const, scheduledAt: state.scheduledAt };
+  }
+
+  const earliestQueued = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_status_and_next_run_at", (q) => q.eq("status", "queued"))
+    .order("asc")
+    .first();
+  if (!earliestQueued) return { scheduled: false as const };
+
+  const scheduledAt = Math.max(earliestDispatchAt, earliestQueued.nextRunAt);
 
   if (
     state?.scheduledAt !== undefined &&

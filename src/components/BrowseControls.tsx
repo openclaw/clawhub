@@ -485,7 +485,12 @@ export function BrowseCategorySelect({
             size={16}
             className="browse-category-icon"
           />
-          <span className="browse-category-label">{selected?.label ?? "All categories"}</span>
+          <span className="browse-category-label">
+            {selected?.label ??
+              (value
+                ? value[0].toUpperCase() + value.slice(1).replaceAll("-", " ")
+                : "All categories")}
+          </span>
         </span>
         <ChevronDown
           size={16}

@@ -4,6 +4,7 @@ import type { ActionCtx } from "../_generated/server";
 import { extractResponseText } from "./openaiResponse";
 
 const CHANGELOG_MODEL = process.env.OPENAI_CHANGELOG_MODEL ?? "gpt-4.1";
+const CHANGELOG_TIMEOUT_MS = 10_000;
 const MAX_README_CHARS = 8_000;
 const MAX_PATHS_IN_PROMPT = 30;
 
@@ -108,6 +109,7 @@ async function generateWithOpenAI(args: {
       input,
       max_output_tokens: 220,
     }),
+    signal: AbortSignal.timeout(CHANGELOG_TIMEOUT_MS),
   });
 
   if (!response.ok) return null;
@@ -273,18 +275,12 @@ export async function generateChangelogPreview(
     version: string;
     readmeText: string;
     filePaths?: string[];
+    previous: Doc<"skillVersions"> | null;
   },
 ): Promise<string> {
   try {
-    const skill = (await ctx.runQuery(internal.skills.getSkillBySlugInternal, {
-      slug: args.slug,
-    })) as Doc<"skills"> | null;
-    const previous: Doc<"skillVersions"> | null =
-      skill?.latestVersionId && !skill.softDeletedAt
-        ? ((await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-            versionId: skill.latestVersionId,
-          })) as Doc<"skillVersions"> | null)
-        : null;
+    // The caller supplies only a version it has already authorized for file access.
+    const previous = args.previous;
 
     const oldReadmeText: string | null = previous
       ? await readReadmeFromVersion(ctx, previous)
@@ -343,10 +339,12 @@ async function readReadmeFromPackageRelease(ctx: ActionCtx, release: Doc<"packag
 }
 
 export const __test = {
+  CHANGELOG_TIMEOUT_MS,
   clampText,
   extractResponseText,
   formatDiffSummary,
   generatePackageFallback,
+  generateWithOpenAI,
   summarizeFileDiff,
   generateFallback,
 };

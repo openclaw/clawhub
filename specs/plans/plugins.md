@@ -61,6 +61,43 @@ Additional product decision:
 
 ## Constraints
 
+### Portable plugin icons
+
+Plugin publication resolves only the fixed `assets/icon.png` path used by OpenClaw.
+Manifest `icon` URLs and paths are ignored. Validate the PNG bytes,
+upload hash, size, and raster decoding; archive entries may be labeled
+`application/octet-stream`. Reuse the content-addressed presentation asset store
+and `/api/v1/skill-icons/<sha256>` endpoint for these catalog images. Persist the
+same URL on the release, manifest summary, current package, and catalog digests.
+
+Some official OpenClaw npm archives omit the icon even though it exists at their
+recorded source commit. Only packages owned by the active `openclaw` publisher in
+the `@openclaw/` scope may recover it from `openclaw/openclaw`, using a full commit
+SHA and an `extensions/<plugin>` path. Never fetch a moving branch, arbitrary
+manifest URL, or caller-selected host for this recovery. Missing/invalid images
+use the category glyph; transient fetch failures remain retryable. Plugin UI
+accepts only hosted presentation assets as bundled icons, including when old
+records contain manifest URLs. Homepage and search listings without a bundled
+icon use the current publisher profile image when available, then the category
+glyph. Profile images remain separate from package icons and are resolved from
+the publisher already read for catalog identity, so profile updates need no
+package digest backfill. Images that fail to load fall back to the category glyph.
+
+`maintenance:repairPluginIconsInternal` repairs existing latest releases in
+bounded pages (default 10, maximum 25). It defaults to `dryRun: true`; repeat with
+the returned `cursor` until `isDone` for each of `code-plugin` and `bundle-plugin`.
+Apply with `dryRun: false` from the initial cursor, then rerun the dry run to
+verify no remaining matches. A dry run validates images without storing assets
+or patching records. The repair uses an action because storage reads, source
+fetches, and raster decoding cannot run inside a migration mutation. Replays are
+idempotent; failed pages can be retried from their input cursor. Concurrent
+publishes, ownership changes, hosted icons, and deleted releases are preserved.
+Legacy URL metadata is replaced when a bundled asset is available; a concurrent
+icon change invalidates the prepared repair.
+It changes presentation metadata only, without changing release artifacts,
+versions, moderation, or download statistics. Keep it as maintenance tooling for
+imports created before portable icon support.
+
 ### ClawHub today
 
 ClawHub is currently a text-bundle registry for skills.
@@ -770,6 +807,24 @@ code-plugin packages only.
 API shape rule:
 
 - shared `/packages` endpoints are for discovery and shared metadata
+- Normal plugin/package search and browse return only public, non-deleted,
+  non-blocked packages with a published latest version. The package's
+  `latestVersionSummary.version` and its search digest's `latestVersion` are
+  the publication markers used on these read paths; reservations and pending
+  first publications have neither. These filters apply before result limits
+  and pagination, including featured, category, topic, and sorted discovery.
+- Authentication, package ownership, and publisher membership must not widen
+  normal catalog visibility. A private reservation such as `whatsapp` must
+  never accompany the published `@openclaw/whatsapp` in normal discovery.
+  Owner management/detail access and explicitly staff-only moderation APIs
+  retain their separate authorization rules and may inspect withheld records.
+- Explicit `channel=private` list/search requests may return published private
+  packages the authenticated caller is authorized to read; reservations,
+  unpublished, deleted, and blocked packages remain excluded.
+- Public plugin counts and topic suggestions use the same public publication
+  criteria. After deploying this eligibility change, the existing
+  `statsMaintenance:updateGlobalStatsAction` recount repairs historical totals;
+  the daily global-stats cron also performs this reconciliation.
 - family-specific endpoints are allowed for install and publish semantics
 - code-plugin download/install endpoints must not be overloaded for bundle
   plugins

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Command } from "commander";
 import { resolveClawdbotDefaultWorkspace } from "../../clawhub/src/cli/clawdbotConfig.js";
@@ -36,6 +36,7 @@ import {
   cmdRepairVtPendingSkills,
   cmdRevokeSkillVersion,
   cmdRescanAllSkills,
+  cmdRescanAllPackages,
   cmdRescanSkill,
   cmdSetRole,
   cmdUnbanUser,
@@ -72,7 +73,9 @@ import {
   cmdSetPromotionStatus,
   cmdUpdatePromotion,
 } from "./commands/promotions.js";
+import { cmdSearchInsights } from "./commands/searchInsights.js";
 import { cmdHardDeleteSkill } from "./commands/skills.js";
+import { planScanWorkers } from "./scanAssignments.js";
 
 const program = new Command()
   .name("clawhub-admin")
@@ -84,7 +87,7 @@ const program = new Command()
   .version(getAdminCliVersion(), "-V, --cli-version", "Show CLI version")
   .option("--workdir <dir>", "Working directory (default: cwd)")
   .option("--dir <dir>", "Skills directory (relative to workdir, default: skills)")
-  .option("--site <url>", "Site base URL (for browser login)")
+  .option("--site <url>", "Site base URL for registry discovery and device verification")
   .option("--registry <url>", "Registry API base URL")
   .option("--no-input", "Disable prompts")
   .showHelpAfterError()
@@ -161,10 +164,10 @@ async function pathExists(path: string) {
 
 program
   .command("login")
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "Admin CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--label <label>", "Token label (device flow only)", "Admin CLI token")
+  .option("--no-browser", "Device flow prints a verification URL without opening a browser")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -194,10 +197,10 @@ const auth = program
 
 auth
   .command("login")
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "Admin CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
+  .option("--label <label>", "Token label (device flow only)", "Admin CLI token")
+  .option("--no-browser", "Device flow prints a verification URL without opening a browser")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -357,6 +360,15 @@ const skills = program
   .description("Skill artifact moderation")
   .showHelpAfterError()
   .showSuggestionAfterError();
+
+skills
+  .command("plan-scan-workers <job-ids-file>")
+  .description("Prepare local workflow inputs for disjoint, already-admitted bulk skill jobs")
+  .requiredOption("--batch-limit <number>", "Scans in parallel per shared worker")
+  .action(async (file: string, options: { batchLimit: string }) => {
+    const ids: unknown = JSON.parse(await readFile(resolve(file), "utf8"));
+    console.log(JSON.stringify(planScanWorkers(ids, Number(options.batchLimit)), null, 2));
+  });
 
 const promotions = program
   .command("promotions")
@@ -785,6 +797,28 @@ function registerPluginModerationCommands(command: Command) {
 
 function registerPluginOperations(command: Command) {
   command
+    .command("rescan-all")
+    .description("Queue admin ClawScan rescans for active latest plugins in paced batches")
+    .option("--batch-size <n>", "Batch size; backend caps at 10", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--poll-interval <sec>", "Seconds between batch status polls", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--cursor <cursor>", "Resume from a backend pagination cursor")
+    .option("--max-packages <n>", "Stop after this many scanned/queued/skipped packages", (value) =>
+      Number.parseInt(value, 10),
+    )
+    .option("--dry-run", "Page eligible plugins without queueing jobs")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON progress events")
+    .option("--fail-fast", "Stop after the first drained batch with failed jobs")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRescanAllPackages(opts, options, isInputAllowed());
+    });
+
+  command
     .command("validation-report")
     .description("Export current plugin validation results as JSON")
     .requiredOption("--json", "Output one JSON report document")
@@ -993,6 +1027,23 @@ function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
       });
   }
 }
+
+program
+  .command("search-insights")
+  .description("Read staff-only plugin and skill search demand and advisory opportunities")
+  .option("--view <view>", "demand|recommendations (default: demand)")
+  .option("--artifact-kind <kind>", "plugin|skill (default: plugin)")
+  .option("--scope <scope>", "catalog|shelf|legacy (default: all scopes)")
+  .option("--source <source>", "clawhub-web|openclaw-control-ui (default: both)")
+  .option("--window <days>", "Rank by 7 or 30 completed UTC days")
+  .option("--official-gap", "Only queries with zero-official-result searches")
+  .option("--intent-kind <kind>", "company_product|generic_capability|ambiguous")
+  .option("--end-day <date>", "Exclusive UTC window end, YYYY-MM-DD")
+  .option("--limit <count>", "Maximum query rows, 1–100")
+  .option("--json", "Output canonical aggregate JSON")
+  .action(async (options) => {
+    await cmdSearchInsights(await resolveGlobalOpts(), options);
+  });
 
 program.action(() => {
   program.outputHelp();

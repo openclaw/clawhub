@@ -29,9 +29,7 @@ describe("DetailSecuritySummary", () => {
     ).toBeNull();
     expect(screen.queryByText("Install from publishers you trust.")).toBeNull();
     expect(screen.queryByRole("link", { name: /VirusTotal/i })).toBeNull();
-    expect(
-      screen.queryByText("Security checks across malware telemetry and agentic risk"),
-    ).toBeNull();
+    expect(screen.queryByText("Security checks for vulnerabilities and agentic risk")).toBeNull();
     expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("3");
     expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(3);
   });

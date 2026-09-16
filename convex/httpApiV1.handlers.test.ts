@@ -2,6 +2,11 @@
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./lib/verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -339,6 +344,83 @@ beforeEach(() => {
 });
 
 describe("httpApiV1 handlers", () => {
+  it("returns exact-version categories in request order", async () => {
+    const requested = [
+      { name: "@openclaw/whatsapp", version: "1.2.3" },
+      { name: "@openclaw/missing", version: "9.9.9" },
+      { name: "@openclaw/whatsapp", version: "1.2.3" },
+    ];
+    const runQuery = vi.fn(async () => [
+      { ...requested[0], categories: ["channels"] },
+      { ...requested[1], categories: null },
+      { ...requested[2], categories: ["channels"] },
+    ]);
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify({ packages: requested }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      packages: [
+        { ...requested[0], categories: ["channels"] },
+        { ...requested[1], categories: null },
+        { ...requested[2], categories: ["channels"] },
+      ],
+    });
+    expect(runQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["rejects malformed batch bodies", { packages: "not-an-array" }, "payload"],
+    [
+      "rejects blank exact-version identities",
+      { packages: [{ name: " ", version: "1.2.3" }] },
+      "non-empty",
+    ],
+    [
+      "caps exact-version category batches at 200 packages",
+      {
+        packages: Array.from({ length: 201 }, (_, index) => ({
+          name: `@openclaw/plugin-${index}`,
+          version: "1.0.0",
+        })),
+      },
+      "200",
+    ],
+  ])("%s", async (_name, body, expectedMessage) => {
+    const runQuery = vi.fn();
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain(expectedMessage);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("returns 500 when exact-version category lookup fails internally", async () => {
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn().mockRejectedValue(new Error("database unavailable")) }),
+      new Request("https://example.com/api/v1/packages/categories:batch", {
+        method: "POST",
+        body: JSON.stringify({
+          packages: [{ name: "@openclaw/whatsapp", version: "1.2.3" }],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+  });
+
   it("rejects local scan upload submissions with scan-download guidance", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:owner",
@@ -2543,6 +2625,47 @@ describe("httpApiV1 handlers", () => {
     expect(await response.json()).toMatchObject({
       results: [{ slug: "a", ownerHandle: "openclaw" }],
     });
+  });
+
+  it.each([
+    ["", "catalog"],
+    ["&category=tools&topic=automation", "shelf"],
+    ["&highlightedOnly=true", "shelf"],
+  ])("records final canonical skill counts with scope %s", async (filters, scope) => {
+    const observationWrites: Record<string, unknown>[] = [];
+    const runAction = vi.fn().mockResolvedValue([
+      { source: "clawhub", id: "native:first", official: true },
+      { source: "clawhub", id: "native:second", official: false, publisher: { official: true } },
+      { source: "skills-sh", id: "external:third", official: false },
+    ]);
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({
+        runAction,
+        runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+          if (isRateLimitArgs(args)) return okRate();
+          observationWrites.push(args);
+          return null;
+        },
+      }),
+      new Request(
+        `https://example.com/api/v1/search?q=%20Weather%20%20API%20&searchSource=clawhub-web${filters}`,
+      ),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.results).toHaveLength(3);
+    expect(observationWrites).toEqual([
+      {
+        source: "clawhub-web",
+        artifactKind: "skill",
+        scope,
+        normalizedQuery: "weather api",
+        category: filters.includes("category=") ? "tools" : undefined,
+        topic: filters.includes("topic=") ? "automation" : undefined,
+        resultCount: 3,
+        officialResultCount: 1,
+      },
+    ]);
   });
 
   it("search includes public owner metadata without publisher bio", async () => {
@@ -7242,6 +7365,14 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns a skill verification envelope with card and security metadata", async () => {
+    const scannerReports = {
+      aig: { version: "2.1.0", runs: [], vendorExtension: { preserved: true } },
+      skillspector: {
+        risk_assessment: { score: 0, recommendation: "CAUTION" },
+        analysis_completeness: { is_complete: false, coverage_percent: 99.1 },
+        vendorExtension: { text: "full scanner evidence ".repeat(30_000) },
+      },
+    };
     const internalVersion = {
       _id: "skillVersions:1",
       skillId: "skills:1",
@@ -7249,6 +7380,7 @@ describe("httpApiV1 handlers", () => {
       createdAt: 1,
       changelog: "c",
       fingerprint: "source-fingerprint",
+      scannerReportsStorageId: "storage:scanner-reports",
       files: [
         {
           path: "SKILL.md",
@@ -7307,6 +7439,7 @@ describe("httpApiV1 handlers", () => {
         checkedAt: 9,
       },
       depRegistryScanStatus: "suspicious",
+      aigAnalysis: { status: "clean", issueCount: 0, findings: [], checkedAt: 3 },
       skillSpectorAnalysis: {
         status: "clean",
         score: 0,
@@ -7316,7 +7449,7 @@ describe("httpApiV1 handlers", () => {
         issues: [],
         scannerVersion: "skillspector-test",
         summary: "SkillSpector clean.",
-        checkedAt: 5,
+        checkedAt: 3,
       },
       capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
@@ -7351,7 +7484,13 @@ describe("httpApiV1 handlers", () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn(async () => new Blob([JSON.stringify({ checkedAt: 3, ...scannerReports })])),
+        },
+      }),
       new Request("https://example.com/api/v1/skills/demo/verify?ownerHandle=acme&tag=stable"),
     );
 
@@ -7403,28 +7542,14 @@ describe("httpApiV1 handlers", () => {
         summary: "ClawScan clean.",
         model: "gpt-test",
         checkedAt: 3,
-        signals: {
-          staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
-          virusTotal: {
-            status: "clean",
-            rawStatus: "clean",
-            verdict: "clean",
-            source: "engines",
-          },
-          skillSpector: {
-            status: "clean",
-            rawStatus: "clean",
-            score: 0,
-            recommendation: "INSTALL",
-            issueCount: 0,
-          },
-          dependencyRegistry: null,
-        },
       },
       signature: { status: "unsigned" },
     });
     expect(json.skill).toBeUndefined();
     expect(json.publisher).toBeUndefined();
+    expect(json.security).not.toHaveProperty("signals");
+    expect(json).not.toHaveProperty("scannerReports");
+    expect(json.security.scannerReports).toEqual(scannerReports);
   });
 
   it("does not let publisher-supplied skill-card.md satisfy verification", async () => {
@@ -7651,10 +7776,7 @@ describe("httpApiV1 handlers", () => {
       passed: true,
       rawStatus: "clean",
       verdict: "benign",
-      signals: {
-        staticScan: { status: "malicious", rawStatus: "malicious" },
-        dependencyRegistry: null,
-      },
+      scannerReports: { aig: null, skillspector: null },
     });
   });
 
@@ -9431,6 +9553,71 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it.each(["canonical", "legacy"])(
+    "forwards recovery identity and exact baselines through %s batch submit",
+    async (route) => {
+      vi.mocked(requireApiTokenUser).mockResolvedValue({
+        userId: "users:admin",
+        user: { _id: "users:admin", role: "admin" },
+      } as never);
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+        isRateLimitArgs(args) ? okRate() : { ok: true },
+      );
+      const handler =
+        route === "canonical"
+          ? __handlers.skillScanBatchSubmitV1Handler
+          : __handlers.skillsPostRouterV1Handler;
+      const response = await handler(
+        makeCtx({ runMutation }),
+        new Request(
+          `https://example.com/api/v1/skills/-/${route === "canonical" ? "scan/batch" : "rescan-batch"}`,
+          {
+            method: "POST",
+            headers: { Authorization: "Bearer clh_test" },
+            body: JSON.stringify({
+              requestId: "campaign-305",
+              expectedVersionIds: ["skillVersions:1"],
+            }),
+          },
+        ),
+      );
+      expect(response.status).toBe(200);
+      expect(runMutation).toHaveBeenLastCalledWith(expect.anything(), {
+        actorUserId: "users:admin",
+        cursor: null,
+        requestId: "campaign-305",
+        expectedVersionIds: ["skillVersions:1"],
+      });
+    },
+  );
+
+  it.each(["admin", "moderator", "user"])(
+    "gates job history for %s and uses authenticated actor identity",
+    async (role) => {
+      vi.mocked(requireApiTokenUser).mockResolvedValue({
+        userId: "users:actor",
+        user: { _id: "users:actor", role },
+      } as never);
+      const runQuery = vi.fn(async () => ({ ok: true, jobs: [], done: true, nextCursor: null }));
+      const response = await __handlers.skillScanJobHistoryV1Handler(
+        makeCtx({ runQuery }),
+        new Request("https://example.com/api/v1/skills/-/scan/batch/jobs", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ versionId: "skillVersions:1", actorUserId: "users:spoofed" }),
+        }),
+      );
+      expect(response.status).toBe(role === "admin" ? 200 : 403);
+      if (role === "admin")
+        expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+          actorUserId: "users:actor",
+          versionId: "skillVersions:1",
+          cursor: null,
+        });
+      else expect(runQuery).not.toHaveBeenCalled();
+    },
+  );
+
   it("bulk skill rescan status aggregates via admin API", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
@@ -9471,6 +9658,125 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledWith(
       (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
         .getBulkSkillRescanBatchStatusForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
+      },
+    );
+  });
+
+  it("bulk package rescan batch requires admin role", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not enqueue");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/scan/batch", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25 }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Admin role required.");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("bulk package rescan batch enqueues via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        mode: "all-active-latest",
+        queued: 2,
+        alreadyQueued: 1,
+        skipped: 0,
+        jobIds: ["securityScanJobs:1", "securityScanJobs:2", "securityScanJobs:3"],
+        nextCursor: "cursor-2",
+        done: false,
+        sampleNames: ["demo"],
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/-/scan/batch", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ batchSize: 25, cursor: null, dryRun: false }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      queued: 2,
+      alreadyQueued: 1,
+      nextCursor: "cursor-2",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .enqueueBulkPackageRescanBatchForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        cursor: null,
+        batchSize: 25,
+        dryRun: false,
+      },
+    );
+  });
+
+  it("bulk package rescan status aggregates via admin API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        total: 2,
+        queued: 0,
+        running: 1,
+        succeeded: 1,
+        failed: 0,
+        missing: 0,
+        terminal: 1,
+        done: false,
+        failedJobIds: [],
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/-/scan/batch/status", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ jobIds: ["securityScanJobs:1", "securityScanJobs:2"] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      total: 2,
+      running: 1,
+      done: false,
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      (internal as unknown as { securityScan: Record<string, unknown> }).securityScan
+        .getBulkPackageRescanBatchStatusForAdminInternal,
       {
         actorUserId: "users:admin",
         jobIds: ["securityScanJobs:1", "securityScanJobs:2"],
@@ -10759,6 +11065,131 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("plugin overview returns one cacheable bounded home-page payload", async () => {
+    const featured = {
+      ...makeCatalogItem("featured-plugin", {
+        family: "code-plugin",
+        updatedAt: 300,
+      }),
+      categories: ["channels"],
+    };
+    const trending = {
+      ...makeCatalogItem("trending-plugin", {
+        family: "bundle-plugin",
+        updatedAt: 200,
+      }),
+      categories: ["models"],
+    };
+    const category = {
+      ...makeCatalogItem("category-plugin", {
+        family: "code-plugin",
+        updatedAt: 100,
+      }),
+      categories: [],
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) {
+        return args.category === "channels" ? [category] : [];
+      }
+      const page = args.highlightedOnly
+        ? [featured]
+        : args.sort === "trending"
+          ? [trending]
+          : args.category === "channels"
+            ? [category]
+            : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toContain("s-maxage=300");
+    const payload = await response.json();
+    expect(payload.categories).toEqual(
+      expect.arrayContaining([expect.objectContaining({ slug: "channels", order: 0 })]),
+    );
+    expect(payload.items).toEqual([
+      expect.objectContaining({ name: "featured-plugin", featured: true }),
+      expect.objectContaining({ name: "trending-plugin", trending: true }),
+      expect.objectContaining({ name: "category-plugin", categories: ["channels"] }),
+    ]);
+    expect(runQuery).toHaveBeenCalledTimes(payload.categories.length + 2);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        highlightedOnly: true,
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        families: ["code-plugin", "bundle-plugin"],
+        sort: "trending",
+        paginationOpts: { cursor: null, numItems: 8 },
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        category: "channels",
+        numItems: 8,
+      }),
+    );
+    const categoryCall = runQuery.mock.calls.find(
+      ([, args]) => (args as { category?: string }).category === "channels",
+    );
+    expect(categoryCall?.[1]).not.toHaveProperty("families");
+    expect(categoryCall?.[1]).not.toHaveProperty("paginationOpts");
+  });
+
+  it("plugin overview preserves independent ranks for overlapping shelves", async () => {
+    const shared = makeCatalogItem("shared-plugin", {
+      family: "code-plugin",
+      updatedAt: 300,
+    });
+    const trendingFirst = makeCatalogItem("trending-first", {
+      family: "code-plugin",
+      updatedAt: 200,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (args.category) return [];
+      const page = args.highlightedOnly
+        ? [shared]
+        : args.sort === "trending"
+          ? [trendingFirst, shared]
+          : [];
+      return { page, isDone: true, continueCursor: "" };
+    });
+
+    const response = await __handlers.listPluginOverviewV1Handler(
+      makeCtx({ runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      new Request("https://example.com/api/v1/plugins/overview"),
+    );
+
+    const payload = await response.json();
+    expect(payload.items).toEqual([
+      expect.objectContaining({
+        name: "shared-plugin",
+        featured: true,
+        featuredRank: 0,
+        trending: true,
+        trendingRank: 1,
+      }),
+      expect.objectContaining({
+        name: "trending-first",
+        trending: true,
+        trendingRank: 0,
+      }),
+    ]);
+  });
+
   it("packages list forwards topics to both unified catalog sources", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -11989,6 +12420,55 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("returns plugin categories in canonical order with bare icon keys", async () => {
+    const response = await __handlers.listPluginCategoriesV1Handler(
+      makeCtx({}),
+      new Request("https://example.com/api/v1/plugins/categories"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.categories.map((category: { slug: string }) => category.slug)).toEqual([
+      "channels",
+      "models",
+      "agent-runtimes",
+      "memory",
+      "context",
+      "voice",
+      "web",
+      "media",
+      "security",
+      "integrations",
+      "developer-tools",
+      "infrastructure",
+      "documents-files",
+      "inbox-collaboration",
+      "productivity",
+      "scheduling",
+      "finance-payments",
+      "sales-marketing",
+      "data-analytics",
+      "agent-orchestration",
+      "research",
+      "other",
+    ]);
+    expect(json.categories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "channels",
+          label: "Channels",
+          description: expect.any(String),
+          icon: "message-circle",
+          order: 0,
+        }),
+      ]),
+    );
+    for (const category of json.categories as Array<{ icon: string }>) {
+      expect(category.icon).toMatch(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+      expect(category.icon).not.toContain(":");
+    }
+  });
+
   it("plugins list paginates with separate plugin family cursors", async () => {
     const codeNewest = makeCatalogItem("code-newest", {
       family: "code-plugin",
@@ -12239,6 +12719,195 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it.each(["clawhub-web", "openclaw-control-ui"] as const)(
+    "records one marked %s plugin search from the exact combined visible response",
+    async (source) => {
+      const observationWrites: Record<string, unknown>[] = [];
+      const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+        if (args.family === "code-plugin") {
+          return [
+            {
+              score: 10,
+              package: {
+                ...makeCatalogItem("weather-code", { family: "code-plugin", updatedAt: 100 }),
+                isOfficial: true,
+              },
+            },
+          ];
+        }
+        if (args.family === "bundle-plugin") {
+          return [
+            {
+              score: 8,
+              package: makeCatalogItem("weather-bundle", {
+                family: "bundle-plugin",
+                updatedAt: 80,
+              }),
+            },
+          ];
+        }
+        throw new Error(`unexpected family ${String(args.family)}`);
+      });
+      const ctx = makeCtx({
+        runQuery,
+        runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+          if (isRateLimitArgs(args)) return okRate();
+          observationWrites.push(args);
+          return null;
+        },
+      });
+
+      const response = await __handlers.pluginsGetRouterV1Handler(
+        ctx,
+        new Request(
+          `https://example.com/api/v1/plugins/search?q=%20Weather%20%20API%20&category=tools&topic=automation&searchSource=${source}`,
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      expect(observationWrites).toEqual([
+        {
+          source,
+          artifactKind: "plugin",
+          scope: "shelf",
+          normalizedQuery: "weather api",
+          category: "tools",
+          topic: "automation",
+          resultCount: 2,
+          officialResultCount: 1,
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    [
+      "oversized marked query",
+      `https://example.com/api/v1/plugins/search?q=${"x".repeat(257)}&searchSource=clawhub-web`,
+      200,
+    ],
+    [
+      "oversized marked topic",
+      `https://example.com/api/v1/plugins/search?q=weather&topic=${"x".repeat(121)}&searchSource=clawhub-web`,
+      200,
+    ],
+    [
+      "marked skill family",
+      "https://example.com/api/v1/plugins/search?q=weather&family=skill&searchSource=clawhub-web",
+      200,
+    ],
+    [
+      "marked claw family",
+      "https://example.com/api/v1/plugins/search?q=weather&family=claw&searchSource=clawhub-web",
+      200,
+    ],
+    ["unmarked plugin request", "https://example.com/api/v1/plugins/search?q=weather", 200],
+    [
+      "unknown plugin source",
+      "https://example.com/api/v1/plugins/search?q=weather&searchSource=crawler",
+      200,
+    ],
+    [
+      "marked generic package request",
+      "https://example.com/api/v1/packages/search?q=weather&searchSource=clawhub-web",
+      200,
+    ],
+    [
+      "marked empty plugin query",
+      "https://example.com/api/v1/plugins/search?q=%20%20&searchSource=clawhub-web",
+      400,
+    ],
+  ])("does not record %s", async (_case, requestUrl, expectedStatus) => {
+    if (_case === "marked claw family") vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const observationWrites: Record<string, unknown>[] = [];
+    const ctx = makeCtx({
+      runQuery: vi.fn().mockResolvedValue([]),
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        observationWrites.push(args);
+        return null;
+      },
+    });
+    const handler = requestUrl.includes("/plugins/")
+      ? __handlers.pluginsGetRouterV1Handler
+      : __handlers.packagesGetRouterV1Handler;
+
+    const response = await handler(ctx, new Request(requestUrl));
+
+    expect(response.status).toBe(expectedStatus);
+    expect(observationWrites).toEqual([]);
+  });
+
+  it("does not record a marked plugin search when result assembly fails", async () => {
+    const observationWrites: Record<string, unknown>[] = [];
+    const ctx = makeCtx({
+      runQuery: vi.fn().mockRejectedValue(new Error("search unavailable")),
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        observationWrites.push(args);
+        return null;
+      },
+    });
+
+    await expect(
+      __handlers.pluginsGetRouterV1Handler(
+        ctx,
+        new Request(
+          "https://example.com/api/v1/plugins/search?q=weather&searchSource=openclaw-control-ui",
+        ),
+      ),
+    ).rejects.toThrow("search unavailable");
+    expect(observationWrites).toEqual([]);
+  });
+
+  it("excludes a request aborted before the completed result is recorded", async () => {
+    const controller = new AbortController();
+    const observationWrites: unknown[] = [];
+    const ctx = makeCtx({
+      runQuery: async () => {
+        controller.abort();
+        return [];
+      },
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        observationWrites.push(args);
+        return null;
+      },
+    });
+    await __handlers.pluginsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/plugins/search?q=weather&searchSource=clawhub-web", {
+        signal: controller.signal,
+      }),
+    );
+    expect(observationWrites).toEqual([]);
+  });
+
+  it("keeps search available and logs no query when observation storage fails", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const ctx = makeCtx({
+      runQuery: vi.fn().mockResolvedValue([]),
+      runMutation: (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        throw new Error("storage failed for sensitive query text");
+      },
+    });
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      ctx,
+      new Request(
+        "https://example.com/api/v1/plugins/search?q=private-query&searchSource=openclaw-control-ui",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(log).toHaveBeenCalledWith(
+      "[catalog-search-observations] failed to record marked search",
+      { source: "openclaw-control-ui" },
+    );
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private-query");
+  });
+
   it("plugins search forwards New eligibility to both plugin families", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -12391,23 +13060,41 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("plugins search sorts by rank tier before score without exposing rank metadata", async () => {
+  it("plugins search keeps matching official and featured results first across families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (args.family === "code-plugin") {
         return [
           {
+            score: 10,
+            rankTier: 1,
+            package: makeCatalogItem("name-plugin", { family: "code-plugin", updatedAt: 100 }),
+          },
+          {
             score: 20,
             rankTier: 3,
-            package: makeCatalogItem("summary-plugin", { family: "code-plugin", updatedAt: 100 }),
+            package: {
+              ...makeCatalogItem("featured-summary-plugin", {
+                family: "code-plugin",
+                updatedAt: 75,
+              }),
+              featuredAt: 75,
+            },
           },
         ];
       }
       if (args.family === "bundle-plugin") {
         return [
           {
-            score: 10,
-            rankTier: 1,
-            package: makeCatalogItem("name-plugin", { family: "bundle-plugin", updatedAt: 50 }),
+            score: 15,
+            rankTier: 2,
+            package: {
+              ...makeCatalogItem("official-topic-plugin", {
+                family: "bundle-plugin",
+                updatedAt: 50,
+              }),
+              channel: "official",
+              isOfficial: true,
+            },
           },
         ];
       }
@@ -12417,14 +13104,15 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=2"),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&limit=3"),
     );
 
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.results.map((entry: { package: { name: string } }) => entry.package.name)).toEqual([
+      "official-topic-plugin",
+      "featured-summary-plugin",
       "name-plugin",
-      "summary-plugin",
     ]);
     expect(body.results[0]).not.toHaveProperty("rankTier");
     expect(body.results[0]).not.toHaveProperty("matchReason");
@@ -13479,6 +14167,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.trust).not.toHaveProperty("moderationReason");
     expect(json).toEqual({
       overview: "No security analysis has been recorded yet.",
+      verdict: "pending",
       securityAuditUrl: "https://example.com/plugins/demo-plugin/security-audit?version=1.0.0",
       package: {
         name: "demo-plugin",
@@ -16337,6 +17026,83 @@ describe("httpApiV1 handlers", () => {
     expect(payload?.files?.map((file) => file.path)).toContain("dist/index.js");
   });
 
+  it("multipart ClawPack publish stores extracted files in bounded concurrent batches", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const storageStore = vi.fn(async (_blob: Blob) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return `storage:${storageStore.mock.calls.length}`;
+    });
+    const fileCount = 40;
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo-plugin", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "demo.plugin" }),
+      ...Object.fromEntries(
+        Array.from({ length: fileCount }, (_, index) => [
+          `package/dist/chunk-${String(index).padStart(3, "0")}.js`,
+          `export const chunk = ${index};\n`,
+        ]),
+      ),
+    });
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        name: "demo-plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+      }),
+    );
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-plugin-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    // One tarball store plus every extracted file; batches overlap but stay bounded.
+    expect(storageStore).toHaveBeenCalledTimes(fileCount + 3);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(16);
+    const actionCall = runAction.mock.calls[0] as [
+      unknown,
+      { payload?: { files?: Array<{ path: string }> } },
+    ];
+    const chunkPaths = actionCall[1].payload?.files
+      ?.map((file) => file.path)
+      .filter((path) => path.startsWith("dist/"));
+    expect(chunkPaths).toEqual(
+      Array.from(
+        { length: fileCount },
+        (_, index) => `dist/chunk-${String(index).padStart(3, "0")}.js`,
+      ),
+    );
+  });
+
   it("multipart Claw publish accepts an npm pack without a plugin manifest", async () => {
     vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
@@ -17034,7 +17800,7 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        key: "ip:unknown:trustedPublish",
+        key: "ip:203.0.113.1:trustedPublish",
         name: "trustedPublishIp",
         config: expect.objectContaining({ rate: RATE_LIMITS.trustedPublish.ip }),
       }),

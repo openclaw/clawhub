@@ -84,6 +84,11 @@ function createDb(seedTables: Record<string, TestDoc[]>) {
         const index = rows.findIndex((doc) => doc._id === id);
         if (index !== -1) rows.splice(index, 1);
       },
+      patch: async (id: string, patch: Record<string, unknown>) => {
+        const table = id.split(":")[0] ?? "";
+        const doc = list(table).find((candidate) => candidate._id === id);
+        if (doc) Object.assign(doc, patch);
+      },
       query: (table: string) => ({
         withIndex: (indexName: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
           const constraints: Record<string, unknown> = {};
@@ -239,6 +244,42 @@ describe("publisherAbuseDevSeed.clearSeed", () => {
       constraints: { handle: "demo-abuse-pub-01" },
     });
   });
+
+  it("preserves the shared local abuse persona and personal publisher", async () => {
+    process.env.CONVEX_DEPLOYMENT = "dev:admired-dodo-615";
+    const { db, tables } = createDb({
+      users: [{ _id: "users:local-abuse", handle: "local-abuse" }],
+      publishers: [
+        {
+          _id: "publishers:local-abuse",
+          kind: "user",
+          handle: "local-abuse",
+          linkedUserId: "users:local-abuse",
+          publishedSkills: 3,
+          publishedPackages: 1,
+          totalInstalls: 10,
+          totalDownloads: 20,
+          totalStars: 2,
+          skillTotalInstalls: 10,
+          skillTotalDownloads: 20,
+          skillTotalStars: 2,
+        },
+      ],
+    });
+
+    await clearSeedHandler({ db }, {});
+
+    expect(tables.users).toEqual([
+      expect.objectContaining({ _id: "users:local-abuse", handle: "local-abuse" }),
+    ]);
+    expect(tables.publishers).toEqual([
+      expect.objectContaining({
+        _id: "publishers:local-abuse",
+        handle: "local-abuse",
+        linkedUserId: "users:local-abuse",
+      }),
+    ]);
+  });
 });
 
 describe("publisherAbuseDevSeed.seed", () => {
@@ -291,14 +332,80 @@ describe("publisherAbuseDevSeed.seed", () => {
     expect(ratioRecentStats.reduce((sum, doc) => sum + Number(doc.installs), 0)).toBe(288);
     expect(tables.publisherAbuseSignals).toEqual([
       expect.objectContaining({
-        signalType: "sustained_downloads_flat_installs",
+        signalType: "sustained_abnormal_download_days",
         skillSlug: "demo-temporal-download-burst",
+        temporalBenchmark: expect.objectContaining({
+          scope: "all_active_skills",
+          sampleSize: 1000,
+        }),
+        sustainedDaysAboveThreshold: 14,
+        sustainedWindowDays: 14,
+        sustainedDailyDownloadThreshold: 61.142857142857146,
+        sustainedExpectedDailyDownloads: 4,
+        sustainedWindowDownloads: 14_269,
+        sustainedWindowInstalls: 8,
       }),
       expect.objectContaining({
         signalType: "high_install_download_ratio",
         skillSlug: "demo-temporal-install-ratio",
       }),
     ]);
+    expect(tables.publisherAbuseScoreRuns?.find((doc) => doc.temporalBenchmark)?.modelVersion).toBe(
+      "publisher-abuse-temporal.v1",
+    );
+    expect(
+      tables.publisherAbuseScores?.find((doc) => doc.ownerKey === "user:demo-temporal-cohort")
+        ?.modelVersion,
+    ).toBe("publisher-abuse-temporal.v1");
+    expect(
+      tables.publisherAbuseReviewNominations?.find((doc) => doc.handleSnapshot === "local-abuse")
+        ?.modelVersion,
+    ).toBe("publisher-abuse-temporal.v1");
+    expect(tables.users?.some((doc) => doc.handle === "local-abuse")).toBe(true);
+  });
+
+  it("reuses the shared local abuse persona and personal publisher", async () => {
+    process.env.CONVEX_DEPLOYMENT = "";
+    process.env.DEV_AUTH_CONVEX_DEPLOYMENT = "dev:admired-dodo-615";
+    const { db, tables } = createDb({
+      users: [{ _id: "users:local-abuse", handle: "local-abuse", role: "user" }],
+      publishers: [
+        {
+          _id: "publishers:local-abuse",
+          kind: "user",
+          handle: "local-abuse",
+          linkedUserId: "users:local-abuse",
+          publishedSkills: 3,
+          publishedPackages: 1,
+          totalInstalls: 10,
+          totalDownloads: 20,
+          totalStars: 2,
+          skillTotalInstalls: 10,
+          skillTotalDownloads: 20,
+          skillTotalStars: 2,
+        },
+      ],
+    });
+
+    await seedHandler({ db }, {});
+
+    expect(tables.users.filter((doc) => doc.handle === "local-abuse")).toHaveLength(1);
+    expect(tables.publishers.filter((doc) => doc.handle === "local-abuse")).toHaveLength(1);
+    expect(tables.publishers.find((doc) => doc.handle === "local-abuse")).toMatchObject({
+      publishedSkills: 5,
+      publishedPackages: 1,
+      totalInstalls: 306,
+      totalDownloads: 18_620,
+      totalStars: 2,
+      skillTotalInstalls: 306,
+      skillTotalDownloads: 18_620,
+      skillTotalStars: 2,
+    });
+    expect(
+      tables.skills
+        ?.filter((doc) => doc.slug?.toString().startsWith("demo-temporal-"))
+        .every((doc) => doc.ownerPublisherId === "publishers:local-abuse"),
+    ).toBe(true);
   });
 
   it("clears existing demo rows before inserting repeatable seed data", async () => {
@@ -333,6 +440,17 @@ describe("publisherAbuseDevSeed.seed", () => {
         {
           _id: "skills:old-temporal",
           slug: "demo-temporal-download-burst",
+          moderationStatus: "active",
+          statsDownloads: 0,
+          statsStars: 0,
+          statsInstallsCurrent: 0,
+          statsInstallsAllTime: 0,
+          stats: {
+            downloads: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            stars: 0,
+          },
         },
       ],
       skillDailyStats: [

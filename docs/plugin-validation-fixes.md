@@ -66,7 +66,7 @@ npm package, version, entrypoints, or OpenClaw metadata.
 - Add `package.json` with `name`, `version`, and `type`.
 - Add an `openclaw` block when the package ships an OpenClaw plugin.
 - Use [Building plugins](/plugins/building-plugins) for a minimal package
-  example and [Plugin manifest](/plugins/manifest#manifest-versus-packagejson)
+  example and [Plugin manifest](/plugins/manifest#manifest-versus-package.json)
   for the package versus manifest split.
 - Rerun `clawhub package validate <path-to-plugin>`.
 
@@ -80,7 +80,7 @@ metadata.
   `openclaw.runtimeExtensions`.
 - Add compatibility and install metadata when the package will be published or
   installed through ClawHub.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](/plugins/manifest#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-openclaw-entry-missing
@@ -93,7 +93,7 @@ entrypoint.
   JavaScript.
 - Keep all entrypoint paths inside the package directory.
 - See [Plugin entry points](/plugins/sdk-entrypoints) and
-  [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+  [package.json fields that affect discovery](/plugins/manifest#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-entrypoint-missing
@@ -117,7 +117,7 @@ ClawHub cannot tell how the package should be installed or updated.
 - Set `openclaw.install.defaultChoice` when more than one install source is
   available.
 - Use `openclaw.install.minHostVersion` for the minimum OpenClaw host version.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](/plugins/manifest#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-plugin-api-compat-missing
@@ -129,7 +129,7 @@ The package does not declare the OpenClaw plugin API range it supports.
   against.
 - Keep this separate from the package version. The package version describes the
   plugin release; `openclaw.compat.pluginApi` describes the host API contract.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](/plugins/manifest#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-min-host-version-drift
@@ -142,7 +142,7 @@ the package was built against.
   used during release.
 - Align the minimum host version with the host version range the package
   actually supports.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](/plugins/manifest#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-manifest-version-drift
@@ -165,7 +165,7 @@ OpenClaw package metadata.
 - Keep native plugin metadata in `openclaw.plugin.json`.
 - Keep package entrypoints, compatibility, install, setup, and catalog metadata
   in supported `package.json#openclaw` fields.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](/plugins/manifest#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ## Published artifact
@@ -278,7 +278,7 @@ The plugin still uses the deprecated whole-session-store helper
 - Avoid loading, mutating, and saving the whole session store object.
 - Keep `loadSessionStore(...)` only while your declared compatibility range
   still supports older OpenClaw versions that require it.
-- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+- See [Runtime API](/plugins/sdk-runtime#runtime-namespaces) and
   [Plugin SDK subpaths](/plugins/sdk-subpaths).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
@@ -293,7 +293,7 @@ The plugin still uses a deprecated whole-session-store write helper such as
 - Avoid loading, mutating, and saving the whole session store object.
 - Keep whole-store write helpers only while your declared compatibility range
   still supports older OpenClaw versions that require them.
-- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+- See [Runtime API](/plugins/sdk-runtime#runtime-namespaces) and
   [Plugin SDK subpaths](/plugins/sdk-subpaths).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
@@ -309,7 +309,7 @@ The plugin still uses deprecated session file-path helpers such as
 - Use transcript identity or target helpers when the code is preparing a
   transcript operation.
 - Do not persist or depend on legacy transcript file paths.
-- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+- See [Runtime API](/plugins/sdk-runtime#runtime-namespaces) and
   [Plugin SDK subpaths](/plugins/sdk-subpaths).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
@@ -325,7 +325,7 @@ The plugin still uses the deprecated transcript file target helper
 - Avoid reading or constructing legacy transcript file targets directly.
 - Keep the legacy helper only while your declared compatibility range still
   supports older OpenClaw versions that require it.
-- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+- See [Runtime API](/plugins/sdk-runtime#runtime-namespaces) and
   [Plugin SDK subpaths](/plugins/sdk-subpaths).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
@@ -341,7 +341,7 @@ The plugin still uses deprecated low-level transcript helpers such as
   correct transaction boundaries and identity handling.
 - Keep low-level transcript helpers only while your declared compatibility range
   still supports older OpenClaw versions that require them.
-- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+- See [Runtime API](/plugins/sdk-runtime#runtime-namespaces) and
   [Plugin SDK subpaths](/plugins/sdk-subpaths).
 - Rerun `clawhub package validate <path-to-plugin>`.
 

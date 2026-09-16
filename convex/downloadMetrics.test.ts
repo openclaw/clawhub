@@ -97,7 +97,7 @@ describe("download metric helpers", () => {
     expect(__test.getDayStart(86_400_000)).toBe(86_400_000);
   });
 
-  it("prefers user identity and falls back to IP identity", () => {
+  it("prefers user identity and rejects unverified IP identity", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const request = new Request("https://example.com", {
       headers: { "cf-connecting-ip": "203.0.113.10" },
@@ -107,10 +107,7 @@ describe("download metric helpers", () => {
       identityKind: "user",
       identityValue: "users:one",
     });
-    expect(__test.getDownloadIdentity(request, null)).toEqual({
-      identityKind: "ip",
-      identityValue: "203.0.113.10",
-    });
+    expect(__test.getDownloadIdentity(request, null)).toBeNull();
   });
 
   it("does not create a metering identity when user and IP are missing", () => {

@@ -10,7 +10,52 @@ read_when:
 
 See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace policy on prohibited skill categories.
 
+## Anonymous API ingress
+
+- Hosted anonymous HTTP requests must enter through the ClawHub Vercel edge.
+  The proxy replaces caller-supplied identity headers with its Vercel OIDC
+  service token and the platform-controlled visitor address. Convex verifies
+  the token's issuer, audience, project, owner and deployment environment
+  before using that address for quotas or download metrics.
+- Unverified direct requests consume no shared quota: redirect them to the
+  configured public HTTPS API origin, or reject if no safe origin is configured.
+  Invalid edge assertions are rejected without redirecting, to avoid loops
+  through a misconfigured proxy.
+  The legacy `TRUST_FORWARDED_IPS` flag must never authorize raw IP headers.
+- API tokens retain per-user quotas. A server-owned loopback Convex deployment
+  may use a local development bucket when no hosted environment is configured.
+- The production skills.sh mirror operator, inspector worker routes, signed
+  archive metric receipts, and Convex Auth's OAuth sign-in/callback routes
+  retain their handler-owned credential checks at
+  the Convex origin. They do not use anonymous IP quotas or redirect credentials
+  to another origin. Worker credentials never exempt ordinary public API routes
+  from verified ingress.
+- The skills.sh operator accepts only the verified GitHub Actions identity for
+  this repository's sync workflow on `main` in the `Production` environment.
+  Its Test operator continues to require an admin API token and API quotas.
+- Rollout requires the identity-forwarding edge before the backend starts
+  enforcing verified anonymous ingress.
+
 ## Roles + permissions
+
+- Skill transfer, delete, and restore authorization follows the resource's current
+  publisher ownership. For organization skills, the historical `ownerUserId` is
+  not an authorization grant: current organization admin/owner membership is
+  required, subject to the operation's existing platform staff permissions.
+- Transfer acceptance rechecks the requester's current authority, including when
+  they originally published the skill. Removing or downgrading their membership
+  invalidates pending requests. Personal and legacy skills retain personal-owner
+  authorization through the shared publisher ownership check.
+- Changelog previews must authorize previous-version file access before reading
+  stored content or invoking an AI provider. They use the same ownership, staff,
+  moderation, deletion, and publication checks as direct skill file reads.
+  The changelog formatter receives an already-authorized version; it must not
+  resolve and load a different previous version from an untrusted slug.
+- Server-side OG image requests validate all resolved IPv4/IPv6 destinations at
+  the socket lookup boundary. Private, local, special-purpose, or mixed results
+  are rejected. The socket receives only those checked addresses, avoiding a
+  second DNS lookup; HTTPS still verifies the original hostname. Every redirect
+  repeats URL and destination checks. Timeout and byte limits remain enforced.
 
 - user: upload skills (subject to GitHub age gate), report skills/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
@@ -63,23 +108,34 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 - Publisher abuse scoring classifies bulk-publishing abuse for staff review and
   warning-first automatic enforcement. Scheduled pressure scoring runs daily.
-  Plain temporal dry runs are read-only. The scheduled temporal scan explicitly
-  opts into archived dry-run signal rows for the staff Signals tab. It persists
-  bounded source pages, exact percentile samples, and review candidates, then
+  Temporal traffic detection has two entrypoints: a read-only bounded preview
+  and one resumable scheduled pipeline that is the sole writer of signal rows.
+  The scheduled pipeline persists bounded source pages, exact percentile
+  samples, and candidate observations, then
   resumes through percentile and classification phases. Temporary scan rows
   expire after seven days. A failed step retries from the last persisted cursor
   with bounded backoff; any successfully persisted page resets the consecutive
   failure count. A watchdog treats fifteen minutes without persisted progress as
   a failed attempt. After five consecutive failed attempts, the run becomes
   terminal, retains the last error for the staff UI, emits the structured
-  `publisher_temporal_abuse_scan_failed` operator event, and sends a Hermit
-  alert to the configured ClawHub review channel.
+  `publisher_temporal_abuse_scan_failed` operator event.
   Moderators can start this same full signal pipeline from the staff Signals tab.
   New manual starts record the actor; requests made while a temporal scan is
   already active return that run without starting a competing worker. Stale
   recovery continues the same durable run instead of replacing it, and
   cursor-guarded writes prevent overlapping late workers from duplicating work.
-  Explicitly bounded manual scans remain diagnostic-only.
+  Explicitly bounded previews remain diagnostic-only. Moderators can cancel the
+  displayed running signal scan without deleting recorded evidence. Cancellation
+  uses the shared terminal state so scheduled work stops, records the actor, and
+  is a no-op if that exact run has already finished or been replaced. A signal run
+  from an older model must not lock the control that starts its replacement.
+  New scan indexes must ship in a staging-only release before any function
+  queries them. Keep the indexes marked `staged: true`, deploy that schema,
+  and wait until Convex reports every index ready. Only a later release may
+  activate and query them. This applies to
+  `by_run_id_and_excess7_downloads`,
+  `by_run_id_and_synchrony_eligible_and_owner_key`, and
+  `by_owner_key_and_signal_type`.
   The `review` label remains a calibration/manual-review signal. The
   `potential_ban_candidate` label is an
   enforcement signal only for pressure-score nominations: the first eligible
@@ -93,11 +149,69 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   exclusions apply only to review candidates, not to the platform benchmark.
   Partial scans must not archive signals or present their top-download slice as
   a platform percentile.
-- Flat-install temporal review signals are deliberately high-confidence:
-  sustained volume must exceed six times the platform 30-day download P99 and
-  have at most 5 installs; a spike must exceed the platform P99, reach at least
-  2,000 downloads in 7 days, and have at most 2 installs. These signals indicate
-  anomalous traffic for manual review, not publisher attribution.
+- Temporal download signals compare each skill with both its own frozen history
+  and the full active-skill population. A 7-day surge requires both its growth
+  multiple and its absolute downloads above the frozen baseline to exceed the
+  platform P99, regardless of install count. A standalone skill signal must also
+  reach at least 6,400 downloads in seven days or 7/30 of ten times the platform
+  30-day download P99, whichever is higher. The lower proportional floor of
+  7/30 of the sustained-traffic threshold is only enough to participate in a
+  publisher-wide synchronization check; it never creates a standalone skill
+  signal. These requirements prevent a tiny baseline or a low platform
+  percentile from turning modest isolated traffic into a signal. The stored
+  `download_spike_flat_installs` identifier is retained only so existing signal
+  rows keep their identity. Sustained traffic uses the 30 days before the current
+  30-day observation period as a frozen baseline, so a month-long rise cannot
+  raise its own comparison point. Each of the latest 14 days is compared with a
+  threshold derived from the platform P95 growth multiple and P95 absolute
+  excess; at least 10 days must exceed that threshold. The same skill must also
+  reach a distributed download total within those same 14 days of at least
+  6,400 or ten times the platform 30-day download P99, whichever is higher.
+  Each day's contribution to this decision is capped at one tenth of that
+  required total; reported download counts remain uncapped. Older downloads
+  cannot satisfy this gate, and one recent burst cannot turn otherwise modest
+  traffic into a sustained signal. Uneven daily traffic may still qualify;
+  there is no additional minimum volume required on each abnormal day.
+  At most 5 installs are allowed in the 14-day window. The standalone surge
+  detector is independent and uses uncapped counts, so one extreme day can
+  still trigger a surge signal without qualifying as sustained. These
+  volume requirements prevent broad crawler traffic from being presented
+  as a publisher-specific anomaly. This
+  catches traffic that arrives at a steady, exceptionally high rate after a
+  cold start instead of only detecting a spike on the day it begins. These
+  signals record anomalous traffic for staff visibility, not publisher
+  attribution or an enforcement decision.
+- The Signals tab is read-only telemetry. New signal rows do not have snooze,
+  dismissal, notification, ownership, or reply state. Legacy temporal
+  nominations remain readable and remain ineligible for autoban so existing
+  production records survive this rollout; the shared review tables continue
+  to serve aggregate pressure scoring. Removing legacy temporal records requires
+  a separate, explicitly approved production migration.
+- The completed temporal pipeline also checks for publisher-wide synchronization
+  among scan candidates that either have a sustained anomaly or clear the lower
+  proportional 7-day spike floor plus both platform P99 comparisons.
+  The synchronized group must cover at least 15% of the publisher's currently
+  published skills and more than half of its eligible scan candidates. Each
+  member's normalized trailing 60-day curve must have Pearson correlation of at
+  least 0.98 with the portfolio's median normalized curve, and the largest
+  seven-day rolling peak must be no more than 1.25 times the smallest. At least
+  two skills are required only because a trend comparison needs a group; there
+  is no fixed catalogue-size threshold. The full 60-day curve is captured during
+  the existing catalogue read and carried in the temporary scan candidate. Synchrony then
+  reads those candidates in bounded pages instead of querying each skill again.
+  A publisher above 8,000 synchrony candidates is skipped with the structured
+  `publisher_temporal_abuse_synchrony_owner_skipped` operator event, and the
+  scan continues with later publishers. This bounds one action without turning
+  a single oversized portfolio into a terminal full-scan failure.
+  Page size never
+  becomes an eligibility ceiling, and each publisher is evaluated once per run
+  even when its candidates span several source pages. Candidate reads use the
+  publisher-and-run index, so retained observations from older runs do not add
+  work to the current scan. Median-reference comparison keeps detector work near
+  linear as a portfolio grows. This produces one
+  `owner_synchronized_download_trends` signal for the publisher, not one extra
+  signal per skill. The majority and similar-peak requirements avoid treating a
+  small coincidental subset or shared direction alone as evidence.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score
@@ -110,31 +224,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse automatic bans must still use the account ban flow, including
   token revocation, owned listing hiding, audit logging, and the normal
   suspension/appeal email.
-- Publisher abuse Signals are manual-review telemetry only. They must not feed
-  automatic ban pressure. Staff can keep a signal `open`, `snoozed`, or
-  `dismissed`; there is no separate escalation state. Active snoozed and
-  dismissed signals stay out of the default Signals queue. Snoozing acknowledges
-  the current all-time download/install counters and starts a minimum quiet
-  period. The same rolling-window evidence must not reopen the signal after the
-  deadline. A snoozed signal reopens only when fresh post-snooze activity crosses
-  the lower repeat threshold: at least 1,500 downloads with at most 5 installs
-  for flat-install volume, or at least 500 downloads and 50 installs at a 10%
-  install/download ratio. Reopened repeat signals are elevated to high severity.
-  Staff may snooze or dismiss up to 50 selected open signals in one atomic
-  action. Bulk review must apply the same evidence checkpoint and write the same
-  per-signal review event as the corresponding single-signal action. The signal
-  inspector must show the selected skill's daily downloads and installs across
-  the same trailing 30-day window, loaded on demand from the bounded daily-stat
-  index so staff can judge whether the evidence is sustained or spiky.
-- Hermit owns Discord notification delivery for publisher abuse Signals.
-  ClawHub queues Hermit digests only for changed open signals: newly archived
-  signals, manual reopens, expired snoozes with qualifying fresh evidence, and
-  open signals whose evidence has materially increased since the previous
-  notification. A higher seen count alone is not a change. Material increases
-  use the same lower repeat thresholds as post-snooze recurrence, and the
-  notification checkpoint advances only when a notification is queued so
-  smaller changes accumulate across scans. Active snoozed or dismissed signals
-  must update their metric snapshot without notifying Hermit.
+- Publisher abuse Signals are read-only staff telemetry. They must not feed
+  automatic ban pressure, create a review queue, notify staff or publishers, or
+  expose workflow actions. The Signals view lists every stored observation and
+  shows bounded evidence in a detail drawer. For skill-level signals, the drawer
+  loads daily downloads and installs for the trailing 30 days from the bounded
+  daily-stat index. When a model version renames an equivalent signal type, it
+  must reuse the existing row so one observation keeps a stable identity across
+  detector versions.
+- Every `publisher-abuse-temporal.*` model version, including legacy rows,
+  remains ineligible for warning-first automatic enforcement. A future decision
+  to enforce temporal traffic signals requires an explicit policy and code
+  change; increasing a temporal score cannot silently cross the existing
+  pressure-model autoban boundary.
 - Aggregate publisher spam-abuse labels start at the 200-skill pivot. Below
   that pivot, publishers can contribute to the population baseline, but they
   cannot receive aggregate spam reason codes or be nominated by this score path.
@@ -154,7 +256,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   abuse list from the filtered backend dashboard state instead of applying a
   separate client-side official-org filter.
 
-## Reporting + auto-hide
+## Reporting + moderation review
 
 - Reports are unique per user + target (skill/package).
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
@@ -163,13 +265,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     and the owner is not banned.
   - Active package report = package exists, not soft-deleted, and the owner is
     not banned/deactivated.
-- Auto-hide: when unique reports exceed 3 (4th report):
-  - skill report flow:
-    - soft-delete skill (`softDeletedAt`)
-    - set `moderationStatus = hidden`
-    - set `moderationReason = auto.reports`
-    - set embeddings visibility `deleted`
-    - audit log entry: `skill.auto_hide`
+- Reports never change skill visibility or installability automatically, regardless
+  of the number of distinct reporters or whether the skill is official. Report
+  submission records moderator intake and updates report counts only. Hiding a
+  skill requires an authorized moderator's explicit decision; this prevents a
+  small group of ordinary accounts from removing arbitrary catalog entries.
+- Existing report, scanner, and moderator hides retain their provenance; this
+  change does not automatically restore previously hidden skills.
 - Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.
@@ -299,6 +401,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   storage-id path must include the matching `clawpackUploadTicket`, and the
   server must reject tickets from a different auth context, expired or used
   tickets, and storage blobs created before the ticket.
+- The inline multipart budget (`MAX_PACKAGE_MULTIPART_BYTES`) must stay below
+  the 4.5 MB request body cap of the Vercel functions that front `clawhub.ai`.
+  Anything larger goes through the upload-url flow, which uploads straight to
+  Convex storage; the CLI picks the route from the same shared constant.
 - Direct package publish multipart bytes are capped at 18MB so callers get a
   clear ClawHub validation error before hitting Convex's 20MB HTTP action body
   cap. ClawPack tarballs keep the 120MB package tarball cap through staged
@@ -349,13 +455,40 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Static findings are internal evidence for Codex-backed ClawScan only. They do
   not hide, block, set public security status, affect installability, or trigger
   user autobans.
-- Public artifact pages present SkillSpector findings, VirusTotal malware telemetry,
+- Public artifact pages present SkillSpector findings, A.I.G findings for skills,
   and ClawScan-powered risk review as one consolidated Security audit page.
   This is a product-facing model only; scanner storage, moderation decisions,
   and worker behavior remain separate internally.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
-  SkillSpector and static scan evidence as context.
+  SkillSpector, A.I.G, and static scan evidence as context.
+- ClawScan is the sole authority for the stored risk-analysis verdict and its
+  moderation consequences. A.I.G is required supporting evidence for skill
+  scans: missing, failed, or malformed A.I.G output fails the worker through
+  the normal retry lifecycle, but an A.I.G finding never independently blocks,
+  hides, or changes installability. Package releases skip the skill-only A.I.G
+  scanner.
+- Published skill verification retains complete upstream A.I.G and SkillSpector
+  JSON in a version-owned storage blob, separate from capped database summaries.
+  `/verify` returns these reports under `security.scannerReports`, alongside the
+  overall verdict and without duplicate signal summaries, only when their scan timestamp matches all
+  stored summaries and the ClawScan verdict. Legacy scans expose null reports
+  until rescanned; raw evidence never changes moderation or verification policy.
+  Replacing a scan deletes its previous report blob, and version hard deletion
+  or pending-publication discard deletes the associated blob. Workers send raw
+  reports only when the hydrated job provides a signed upload URL, so merging
+  the worker before a separate Convex deployment does not break scan completion.
+  Raw JSON uploads directly to storage; completion receives only a storage ID,
+  avoiding Convex function-argument size and value-encoding limits.
+- Production workers install A.I.G and its complete Python dependency set from
+  the reviewed, hash-locked worker requirements file. Updating the scanner or a
+  dependency requires an explicit lock update; a mutable package-index artifact
+  must not enter a credentialed scan worker.
+- A.I.G 0.2.1 is affected by CVE-2026-84809 and cannot inspect packaged Python
+  bytecode. While that version remains pinned, both worker paths must reject
+  skill targets containing `.pyc`, `.pyo`, or `.pyd` files before invoking
+  A.I.G. ClawScan's static scanner independently flags packaged Python bytecode,
+  but that defense does not remove the worker-boundary rejection requirement.
 - In the external Codex security worker, package-release SkillSpector runs scan
   only normalized bundled-skill roots declared by the stored plugin manifest
   summary. The plugin package root is never a fallback SkillSpector target;
@@ -363,12 +496,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   result. This is not a prepublication-worker contract.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
-- VirusTotal telemetry remains a separate Security audit signal and is not an
-  input to the production ClawScan profile or judge.
+- VirusTotal is not displayed in the UI: audit pages, the audit directory, version
+  scan badges, and pending-scan notices omit its results, links, and placeholders.
+  Stored telemetry and machine-readable audit exports remain available; it is
+  not an input to the production ClawScan profile or judge.
 - The worker's explicit artifact-only OSS ClawScan route accepts every claimed
   target kind and source through the same completion/failure contract. Skill
   versions and scan requests use the isolated `artifact` root; extracted
   ClawPack releases use `artifact/package`.
+- Both workers disambiguate directories containing `SKILL.md` and
+  `openclaw.plugin.json` by selecting the manifest matching the claimed target
+  kind. ClawScan still scans the full directory. Single-manifest directory
+  scans and the separate bundled-SkillSpector directory base remain unchanged.
 - OSS ClawScan is the only security-scan implementation. Every claimed target
   kind and source runs through the same ClawScan profile and completion/failure
   contract. ClawScan failures use the existing failure/retry lifecycle; there
@@ -408,15 +547,38 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   claimable immediately, but it must not demote that job from publish priority.
 - Bulk rescans stay lowest priority and use the bounded operator campaign flow,
   which enqueues one page at a time and waits for that page before continuing.
+- The plugin bulk rescan command scans only the latest active release of code/bundle
+  plugins, preserving existing active jobs and manual moderation decisions. It
+  skips deleted/revoked releases, uses stable creation-order catalog pagination,
+  and caps each transaction at 10 package rows to bound release hydration. Admin
+  identity comes from the authenticated API token, and applied batches are audited.
+  Dry runs create neither jobs nor batch audit entries. Existing scanner results
+  do not exclude a release; this supports scanner-version and AIG backfills.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
   dispatch count, worker batch limit, provider quotas, and cost monitoring.
+- Local bulk campaigns may assign disjoint lists of existing job IDs to shared
+  worker shards. Assigned claims read only those IDs, accept only queued, due,
+  ungated `bulk-rescan` skill-version jobs, and use the normal lease, hydration,
+  scan and result paths. They must not fall back to the general queue when an
+  assignment is empty or stale, claim package jobs, or retry terminal failures.
+  The dedicated priority shard remains unassigned and retains its normal queue.
+  Assignment plans, admission baselines, receipts, cursor and capacity control
+  remain local; no server-side campaign coordinator or assignment table is added.
+  Admin batch status exposes queued identities from the same bounded point reads
+  as its counts, so completed jobs in partial batches cannot fill the local
+  assignment payload. This is an observation; claims still recheck eligibility.
+- Normal scan claims read only enough ready queue rows to fill the worker's
+  remaining capacity. Broader pagination is reserved for skipping blocked legacy
+  GitHub jobs or the catalog lane's bounded admission window; disabling a rollout
+  must not make every native one-job claim read hundreds of unrelated jobs.
 - The Skill Card verification envelope exposes ClawScan as the top-level
   `security` verdict for install automation, with deterministic and third-party
   scanner evidence grouped under `security.signals`. Clients should key install
   decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
   re-deriving trust from individual signal payloads.
+- Skill Card completion owns a newly stored card until its attachment mutation succeeds. If attachment rejects a stale lease or unavailable version, delete only that new blob and preserve the original error if cleanup fails. Successful replacement retains prior card blobs and generated bundle fingerprints so existing installs remain resolvable.
 - Exact-version security verdict reads preserve the complete skill identity.
   Batch callers may qualify a request with the publisher handle; owner, slug,
   and version form the dedupe identity, and qualified success or failure results
@@ -466,6 +628,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   skill/package rescans for a chosen artifact, or paged all-active-latest skill
   rescan batches. The old suspicious LLM bucket tools (`all`, `llm-only`,
   `vt-only`, `both`) are retired.
+- Security workers back off and retry a transient claim API failure up to three
+  times before draining their existing leases. Every failed call remains in
+  claim-health counters, and the claim window/max-jobs limits still apply.
+  This does not retry terminal scan failures or change their job identities.
+  Authentication/validation failures do not enter this transient retry path.
+- Recoverable bulk skill requests use administrator-scoped request IDs. Their
+  job identities, cursor boundary and counters commit atomically in the permanent
+  batch audit entry. An identical replay returns that receipt before traversing
+  current skills, even after completion or permanent failure; it must not create
+  replacement jobs. Conflicting reuse fails. Optional ordered version baselines
+  reject page drift atomically. Legacy batches without receipt IDs require
+  read-only, fully paginated exact-version job reconciliation before admission.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
 - ClawPack package releases materialize parsed npm-pack artifact entries into the release file

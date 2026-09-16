@@ -24,6 +24,7 @@ import {
   validateFilePath,
   validateSlug,
 } from "../convex/lib/skillZip";
+import { VERIFIED_CLIENT_IP_HEADER } from "../convex/lib/verifiedClientIp";
 import { convexDeploymentName, resolveConvexSiteUrl } from "../src/lib/convexDeploymentUrl";
 
 const ARCHIVE_MANIFEST_REQUEST_HEADER = "x-clawhub-archive-manifest";
@@ -141,27 +142,32 @@ export async function proxyConvexRequest(
   const target = buildConvexProxyTarget(`${requestUrl.pathname}${requestUrl.search}`, env);
   const isArchiveRequest = isArchivePath(new URL(target).pathname);
   let archiveRequestToken: string | undefined;
-  if (isArchiveRequest) {
+  const isVercelRuntime = env.VERCEL_ENV === "production" || env.VERCEL_ENV === "preview";
+  if (isArchiveRequest || isVercelRuntime) {
     try {
       archiveRequestToken = await dependencies.getArchiveRequestToken();
     } catch {
-      return new Response("Archive streaming identity unavailable", {
+      return new Response("ClawHub edge identity unavailable", {
         status: 503,
         headers: { "Cache-Control": "no-store" },
       });
     }
   }
+  // Vercel overwrites this header at ingress. Never forward a visitor's chosen
+  // ClawHub IP/identity headers, including when running outside Vercel.
+  const clientIp = isVercelRuntime
+    ? (
+        event.req.headers.get("x-vercel-forwarded-for") ?? event.req.headers.get("x-forwarded-for")
+      )?.trim()
+    : undefined;
   const proxied = await proxyRequest(event, target, {
-    ...(isArchiveRequest
-      ? {
-          fetchOptions: {
-            headers: {
-              [ARCHIVE_MANIFEST_REQUEST_HEADER]: "v1",
-              [ARCHIVE_REQUEST_IDENTITY_HEADER]: archiveRequestToken!,
-            },
-          },
-        }
-      : {}),
+    fetchOptions: {
+      headers: {
+        [ARCHIVE_REQUEST_IDENTITY_HEADER]: archiveRequestToken ?? "",
+        [VERIFIED_CLIENT_IP_HEADER]: clientIp ?? "",
+        ...(isArchiveRequest ? { [ARCHIVE_MANIFEST_REQUEST_HEADER]: "v1" } : {}),
+      },
+    },
   });
   // H3's HTTPResponse is not guaranteed to share Nitro's bundled class identity.
   // Normalize it before crossing that boundary or Nitro can stringify the wrapper.

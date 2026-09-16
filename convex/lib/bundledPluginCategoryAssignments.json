@@ -1,0 +1,899 @@
+{
+  "sourceCommit": "3bf34b0570d3e55ad16f7c4cb25249797a59042b",
+  "assignments": [
+    {
+      "packageName": "@openclaw/a2a",
+      "pluginId": "a2a",
+      "categories": ["agent-orchestration"],
+      "manifestSha256": "29cc913accb465a52585eb904c91abd81f8808dc2bdc236cfac472eafe6f3b5e"
+    },
+    {
+      "packageName": "@openclaw/acpx",
+      "pluginId": "acpx",
+      "categories": ["agent-runtimes"],
+      "manifestSha256": "cf7bd62a5f2a15bff6eb5b95790786dfa70fd5bb58e4ded998ade5bb85fe2c97"
+    },
+    {
+      "packageName": "@openclaw/admin-http-rpc",
+      "pluginId": "admin-http-rpc",
+      "categories": ["infrastructure"],
+      "manifestSha256": "f9cdcff4c27b89d773e3c867f444854e83a2bf93810a15b5f565bac02a5c8a45"
+    },
+    {
+      "packageName": "@openclaw/alibaba-provider",
+      "pluginId": "alibaba",
+      "categories": ["media"],
+      "manifestSha256": "2febb205a91ec4e96c9af3f90a5dbf56d3c7cb7ed43d161973b4c12d2cc77e77"
+    },
+    {
+      "packageName": "@openclaw/amazon-bedrock-provider",
+      "pluginId": "amazon-bedrock",
+      "categories": ["models"],
+      "manifestSha256": "c471043bca5390dc488f8ead388a8b05f2c9cc697dd852917cfe9aa3034a17d3"
+    },
+    {
+      "packageName": "@openclaw/amazon-bedrock-mantle-provider",
+      "pluginId": "amazon-bedrock-mantle",
+      "categories": ["models"],
+      "manifestSha256": "620cd5aab3c7994993c3d451ce62481178fff9afc2a0f9dedf19d71ad6c0eae3"
+    },
+    {
+      "packageName": "@openclaw/anthropic-provider",
+      "pluginId": "anthropic",
+      "categories": ["models"],
+      "manifestSha256": "9a7c691779d171709d37306804249eac784a2984200f40371c31bf64ae03dad9"
+    },
+    {
+      "packageName": "@openclaw/anthropic-vertex-provider",
+      "pluginId": "anthropic-vertex",
+      "categories": ["models"],
+      "manifestSha256": "88607cbcbe07e61ccde2a6d1417f30814e6177090fbecdf4a035e75c678e5288"
+    },
+    {
+      "packageName": "@openclaw/arcee-provider",
+      "pluginId": "arcee",
+      "categories": ["models"],
+      "manifestSha256": "809e46150dcfd3b1496efac32198d34c73b2310a637049839b381a4a890cbfe2"
+    },
+    {
+      "packageName": "@openclaw/azure-speech",
+      "pluginId": "azure-speech",
+      "categories": ["voice"],
+      "manifestSha256": "9bb91992906424ce243e769539f2bdc9ac151511a12e1740c1c87158a4e4aa15"
+    },
+    {
+      "packageName": "@openclaw/baseten-provider",
+      "pluginId": "baseten",
+      "categories": ["models"],
+      "manifestSha256": "64dc1effc69d6c4fbbfb919681161e365767ebe737136adead8567846ae5175f"
+    },
+    {
+      "packageName": "@openclaw/beam",
+      "pluginId": "beam",
+      "categories": ["developer-tools"],
+      "manifestSha256": "d7cba99365d768de3df29dac8170ca2ff1d4edef567eb716c7b1ecd0670bfeb4"
+    },
+    {
+      "packageName": "@openclaw/bonjour",
+      "pluginId": "bonjour",
+      "categories": ["infrastructure"],
+      "manifestSha256": "a8d1b015e222b6fbae85ea45aadba98428e0243d5a0ee18a1d4f7e805d0cf51c"
+    },
+    {
+      "packageName": "@openclaw/brave-plugin",
+      "pluginId": "brave",
+      "categories": ["web"],
+      "manifestSha256": "19774365b8a6a74da45b9b1e6ae0c807f17350e81f47150ac72d22ccc9fc5e84"
+    },
+    {
+      "packageName": "@openclaw/browser-plugin",
+      "pluginId": "browser",
+      "categories": ["web"],
+      "manifestSha256": "0031db06c0c0f39001b245c6c99bea49675fb2db4de7c169092ab4012714ef06"
+    },
+    {
+      "packageName": "@openclaw/buzz",
+      "pluginId": "buzz",
+      "categories": ["channels"],
+      "manifestSha256": "18374f39fae3dc90b05075fd51909b96c95ea296772e14ac2001a0dc6bb3a4c1"
+    },
+    {
+      "packageName": "@openclaw/byteplus-provider",
+      "pluginId": "byteplus",
+      "categories": ["models"],
+      "manifestSha256": "adedb35ea636ed6aaec56b3fe5c496b84ea4c9b434a7407d4deec1d491dd1542"
+    },
+    {
+      "packageName": "@openclaw/canvas-plugin",
+      "pluginId": "canvas",
+      "categories": ["documents-files"],
+      "manifestSha256": "3bc9f0185643c3aaf75c3b4fd55860c7a3765030656157cdbc1312fbab018996"
+    },
+    {
+      "packageName": "@openclaw/cerebras-provider",
+      "pluginId": "cerebras",
+      "categories": ["models"],
+      "manifestSha256": "08cc18485c56b999f346bde6aae5de7d52bdcd98834e4cc6b2cd9b1ef981013f"
+    },
+    {
+      "packageName": "@openclaw/chutes-provider",
+      "pluginId": "chutes",
+      "categories": ["models"],
+      "manifestSha256": "94d74c82b815deaca939263f9d460b767a4ae04132ce77a08c6a754243713685"
+    },
+    {
+      "packageName": "@openclaw/clawrouter",
+      "pluginId": "clawrouter",
+      "categories": ["models"],
+      "manifestSha256": "6f9ed9a18cd672e1bdceb05d4e3af46cd210cedb1639b30132ca806139bc0bdb"
+    },
+    {
+      "packageName": "@openclaw/clickclack",
+      "pluginId": "clickclack",
+      "categories": ["channels"],
+      "manifestSha256": "0670fc932efcdd920dbbe78f8aae646c7189deeaa4f351b8a10fc7fa8d8e47f2"
+    },
+    {
+      "packageName": "@openclaw/cloudflare-ai-gateway-provider",
+      "pluginId": "cloudflare-ai-gateway",
+      "categories": ["models"],
+      "manifestSha256": "b7bba51c813e3d938d8f78a5d5dccf85d826e08b284e125e466587c5cca86e2e"
+    },
+    {
+      "packageName": "@openclaw/codex",
+      "pluginId": "codex",
+      "categories": ["agent-runtimes"],
+      "manifestSha256": "0e98d133ee9abfdff746d60cdccdc1d4182cbc29a39c4ca72de8c6a439b2228d"
+    },
+    {
+      "packageName": "@openclaw/cohere-provider",
+      "pluginId": "cohere",
+      "categories": ["models"],
+      "manifestSha256": "cf32b9d0648878e560b27c682a44dcb2467efc48a4bceba6f08b2800b10a9267"
+    },
+    {
+      "packageName": "@openclaw/comfy-provider",
+      "pluginId": "comfy",
+      "categories": ["media"],
+      "manifestSha256": "5dc6d4bb195f544c3c0291591c0bc8b25c3e88b58609b239e92d8472c9663cd7"
+    },
+    {
+      "packageName": "@openclaw/copilot",
+      "pluginId": "copilot",
+      "categories": ["agent-runtimes"],
+      "manifestSha256": "97b0d1b7a60b660ec7ab302a61ddffd668c5ec1010b6bfb5e2e684e938c9a035"
+    },
+    {
+      "packageName": "@openclaw/copilot-proxy",
+      "pluginId": "copilot-proxy",
+      "categories": ["models"],
+      "manifestSha256": "aaf0301557ddff790240996a6f257619ba1344140c9428b70c2729fef73eb180"
+    },
+    {
+      "packageName": "@openclaw/crabbox-provider",
+      "pluginId": "crabbox",
+      "categories": ["infrastructure"],
+      "manifestSha256": "1cd7b0a9c9e41601ce53578180fc766ba45e045258b3ae43a43bdbadc83ecd23"
+    },
+    {
+      "packageName": "@openclaw/cua-computer",
+      "pluginId": "cua-computer",
+      "categories": ["infrastructure"],
+      "manifestSha256": "7ed2f7efd9ce062d2db510a4bbbda22174ff107c96249d586084a4f1a6e3deae"
+    },
+    {
+      "packageName": "@openclaw/deepgram-provider",
+      "pluginId": "deepgram",
+      "categories": ["voice"],
+      "manifestSha256": "5eeab47454ba65c4188355eea0fef8516e54ebdb07fd24416a0203cf5ce9d711"
+    },
+    {
+      "packageName": "@openclaw/deepinfra-provider",
+      "pluginId": "deepinfra",
+      "categories": ["models"],
+      "manifestSha256": "ff65f2e52e75cb52723b6826570bae243bd220d3cddb77a999a0ef413cfa8b2e"
+    },
+    {
+      "packageName": "@openclaw/deepseek-provider",
+      "pluginId": "deepseek",
+      "categories": ["models"],
+      "manifestSha256": "e9052ccd2db1c64ebeef481e6affad66a778be042e4e61581dc521df355b06a6"
+    },
+    {
+      "packageName": "@openclaw/diagnostics-otel",
+      "pluginId": "diagnostics-otel",
+      "categories": ["infrastructure"],
+      "manifestSha256": "37ed0750906056cf7891084b27f467b4988f6fccfd40f27fa8b35a97b073b679"
+    },
+    {
+      "packageName": "@openclaw/diagnostics-prometheus",
+      "pluginId": "diagnostics-prometheus",
+      "categories": ["infrastructure"],
+      "manifestSha256": "3bfb002fe212fb85924b550510c2ff3ffb80220952f3afde08486cbce8fdf0f8"
+    },
+    {
+      "packageName": "@openclaw/diffs",
+      "pluginId": "diffs",
+      "categories": ["developer-tools"],
+      "manifestSha256": "6069074397240c697224697c5c4fa96e4b46c4b0877121f8afc653945d0981c5"
+    },
+    {
+      "packageName": "@openclaw/diffs-language-pack",
+      "pluginId": "diffs-language-pack",
+      "categories": ["developer-tools"],
+      "manifestSha256": "1cbabd3c7510f0df1cf2910933ed9edf01eb6d44394b4bf77b2e536ddd45f34d"
+    },
+    {
+      "packageName": "@openclaw/discord",
+      "pluginId": "discord",
+      "categories": ["channels"],
+      "manifestSha256": "7f57c2f0f94a9a29aa5cceeabe185603ed8d604005428b9263c7fcdbd76c7faf"
+    },
+    {
+      "packageName": "@openclaw/document-extract-plugin",
+      "pluginId": "document-extract",
+      "categories": ["documents-files"],
+      "manifestSha256": "274d128d59cc3a758a391cb2ec388fb4cb4ea7385ffa9813a54adb411546a33a"
+    },
+    {
+      "packageName": "@openclaw/duckduckgo-plugin",
+      "pluginId": "duckduckgo",
+      "categories": ["web"],
+      "manifestSha256": "505b0b912a17ba30cdbdad46c4108f3d14028db9fda400a92ae414f5ad533512"
+    },
+    {
+      "packageName": "@openclaw/elevenlabs-speech",
+      "pluginId": "elevenlabs",
+      "categories": ["voice"],
+      "manifestSha256": "61e8bc572f083f88a856924028694883b3198fe541fc83c0cb91149f600410cb"
+    },
+    {
+      "packageName": "@openclaw/exa-plugin",
+      "pluginId": "exa",
+      "categories": ["web"],
+      "manifestSha256": "eece1e71b216b83c763a04ac969175b401e881fac2b0e8b530b4565a72b4933c"
+    },
+    {
+      "packageName": "@openclaw/fal-provider",
+      "pluginId": "fal",
+      "categories": ["media"],
+      "manifestSha256": "9b9332089b2c115f85a3e880294a420b676e43d63a940f58c03ec91ccf50e608"
+    },
+    {
+      "packageName": "@openclaw/featherless-provider",
+      "pluginId": "featherless",
+      "categories": ["models"],
+      "manifestSha256": "d3623ef796f170caa465551dcf103740a5a62eea2d064fd8afa0a018c5d76dd6"
+    },
+    {
+      "packageName": "@openclaw/feishu",
+      "pluginId": "feishu",
+      "categories": ["channels"],
+      "manifestSha256": "2f97dc3cda60716356e736235cdc0016861a1392dd99635c6658f3afc3462bad"
+    },
+    {
+      "packageName": "@openclaw/file-transfer",
+      "pluginId": "file-transfer",
+      "categories": ["documents-files"],
+      "manifestSha256": "6ada6f322e968076f4ad7d88e4b6c157304c7f735110b96aa4e133a15617f42a"
+    },
+    {
+      "packageName": "@openclaw/firecrawl-plugin",
+      "pluginId": "firecrawl",
+      "categories": ["web"],
+      "manifestSha256": "81fdfb5963cbe5968046f9a956250d7a7692851325bca568afb1232f703cbe23"
+    },
+    {
+      "packageName": "@openclaw/fireworks-provider",
+      "pluginId": "fireworks",
+      "categories": ["models"],
+      "manifestSha256": "44a8ca7721729c73ac5073408e548d5e65dbc0b21e9e0d7109f2bb49482ce850"
+    },
+    {
+      "packageName": "@openclaw/fish-audio-speech",
+      "pluginId": "fish-audio-speech",
+      "categories": ["voice"],
+      "manifestSha256": "6537e131fa1b3c0a46e2412f1920adbf99935a430b91f824d10c1f250eb95d36"
+    },
+    {
+      "packageName": "@openclaw/geolocation-plugin",
+      "pluginId": "geolocation",
+      "categories": ["infrastructure"],
+      "manifestSha256": "f5eb5e45918367fad9c32d494100efb36c79ebde99570a128f2acee55eae7c2e"
+    },
+    {
+      "packageName": "@openclaw/github-copilot-provider",
+      "pluginId": "github-copilot",
+      "categories": ["models"],
+      "manifestSha256": "4370fd0dc3e5bb98006cb6f182e56034ed194b9631fd596706c4536345ea9011"
+    },
+    {
+      "packageName": "@openclaw/gmi-provider",
+      "pluginId": "gmi",
+      "categories": ["models"],
+      "manifestSha256": "c114997009212dad1d9be8acc114c663710908b7ef4aba217336ff7625c1a39d"
+    },
+    {
+      "packageName": "@openclaw/google-plugin",
+      "pluginId": "google",
+      "categories": ["models"],
+      "manifestSha256": "7ca4039bb41c1b06282d1698c92e969526f45b899bace6221d8b0cc45bdf3ad5"
+    },
+    {
+      "packageName": "@openclaw/google-meet",
+      "pluginId": "google-meet",
+      "categories": ["voice"],
+      "manifestSha256": "5e7f33b31d59466ef8ab7b8da71972875983e12bfc537f6d6e339dd30244f467"
+    },
+    {
+      "packageName": "@openclaw/googlechat",
+      "pluginId": "googlechat",
+      "categories": ["channels"],
+      "manifestSha256": "9f0f9bfe6c339cf04592442a424baeb4ac2a8ad7cbd4320681bd8408d749eb33"
+    },
+    {
+      "packageName": "@openclaw/gradium-speech",
+      "pluginId": "gradium",
+      "categories": ["voice"],
+      "manifestSha256": "048d498b9377fd1d5ca13ba01a86b842f14ea566bc629d1fb2db7d986ec38e0a"
+    },
+    {
+      "packageName": "@openclaw/groq-provider",
+      "pluginId": "groq",
+      "categories": ["models"],
+      "manifestSha256": "ba05dde8884d10d526229a089fc31eed46f83f4fadedf1bbeb35a066cfc7de46"
+    },
+    {
+      "packageName": "@openclaw/huggingface-provider",
+      "pluginId": "huggingface",
+      "categories": ["models"],
+      "manifestSha256": "55a9d07ca8720640c38ad7dce6615134760d482ca728dbb20084ca24b0c90c3a"
+    },
+    {
+      "packageName": "@openclaw/imap",
+      "pluginId": "imap",
+      "categories": ["inbox-collaboration"],
+      "manifestSha256": "b7520f4b0b8111e536c6bc99b310ae27e127a1075ff7e6b1792ba1785d6c5ad3"
+    },
+    {
+      "packageName": "@openclaw/imessage",
+      "pluginId": "imessage",
+      "categories": ["channels"],
+      "manifestSha256": "496b56acc98bd88dbd7b4bcce0a0fbf32c6cbddfe9a9c0f32f4b26bd5efec77a"
+    },
+    {
+      "packageName": "@openclaw/inworld-speech",
+      "pluginId": "inworld",
+      "categories": ["voice"],
+      "manifestSha256": "796a738d508606780768fceae0c826e36ca8f2294f8ed5a41c36a633937c0c92"
+    },
+    {
+      "packageName": "@openclaw/irc",
+      "pluginId": "irc",
+      "categories": ["channels"],
+      "manifestSha256": "019c7a8a6a0255d4d582623cda3b357130b648553c762c74f4bc8a8c26c563fa"
+    },
+    {
+      "packageName": "@openclaw/kilocode-provider",
+      "pluginId": "kilocode",
+      "categories": ["models"],
+      "manifestSha256": "38fbb6adda87eb81b459d8cd5050f30a84a1834733a9d8d4bf206143669a3eab"
+    },
+    {
+      "packageName": "@openclaw/kimi-provider",
+      "pluginId": "kimi",
+      "categories": ["models"],
+      "manifestSha256": "4b7eeb99ec7cc7817271118befdd85378ee352797a8f0bdda3b50d4ab7a99bed"
+    },
+    {
+      "packageName": "@openclaw/line",
+      "pluginId": "line",
+      "categories": ["channels"],
+      "manifestSha256": "c28a049cbda9b55655661846e6256cb1b0c5512cc6db882238ed1d16147fc32a"
+    },
+    {
+      "packageName": "@openclaw/linux-node",
+      "pluginId": "linux-node",
+      "categories": ["infrastructure"],
+      "manifestSha256": "7f47465e88aa82cf90860409cba448369ab74dcbcd65ef7f74047502947d5db9"
+    },
+    {
+      "packageName": "@openclaw/litellm-provider",
+      "pluginId": "litellm",
+      "categories": ["models"],
+      "manifestSha256": "2b9831b0cd2da311ec5a97d6fa1a85bb1b628ca48fa5049fc6cd4bc947d23819"
+    },
+    {
+      "packageName": "@openclaw/llama-cpp-provider",
+      "pluginId": "llama-cpp",
+      "categories": ["models"],
+      "manifestSha256": "ed5bea253b0b7da14bcb3aea591d11f153dff2215cf05485868c0535baaaeaee"
+    },
+    {
+      "packageName": "@openclaw/llm-task",
+      "pluginId": "llm-task",
+      "categories": ["agent-orchestration"],
+      "manifestSha256": "03b8b8cf09bec9906e2f36e3ad7fdbc8d34ed8bc54860ecc175440e827aa33b4"
+    },
+    {
+      "packageName": "@openclaw/lmstudio-provider",
+      "pluginId": "lmstudio",
+      "categories": ["models"],
+      "manifestSha256": "c0e01a3bc6c56c86a9136ca004c6c04ca1e5c005426fa1732cd560b49e43db3d"
+    },
+    {
+      "packageName": "@openclaw/lobster",
+      "pluginId": "lobster",
+      "categories": ["agent-orchestration"],
+      "manifestSha256": "db6d75689ad73f4ca05f8ce66512931f53da6cb355673a636f7afdbe3aa5c5ff"
+    },
+    {
+      "packageName": "@openclaw/logbook",
+      "pluginId": "logbook",
+      "categories": ["productivity"],
+      "manifestSha256": "8411616d64d369cccb5ab8aae062e14fd7e779c5da8c016afde56d81264cdbec"
+    },
+    {
+      "packageName": "@openclaw/longcat-provider",
+      "pluginId": "longcat",
+      "categories": ["models"],
+      "manifestSha256": "9ce18989041ae3fe55749fb5bcf965bc46a1bcb62a6df8ce1ec66f7642db7ba7"
+    },
+    {
+      "packageName": "@openclaw/matrix",
+      "pluginId": "matrix",
+      "categories": ["channels"],
+      "manifestSha256": "91d834aa2c1659fe1de32fbfd061d1cf724ca52cef7b36c8da1f8a0781ebd42d"
+    },
+    {
+      "packageName": "@openclaw/mattermost",
+      "pluginId": "mattermost",
+      "categories": ["channels"],
+      "manifestSha256": "160afc85c6d4bc0690ff7996a9b10ab1957bb947586b67bc6d2f83ac78593dc5"
+    },
+    {
+      "packageName": "@openclaw/memory-core",
+      "pluginId": "memory-core",
+      "categories": ["memory"],
+      "manifestSha256": "40e93e8774e2d805bc4f9af93a7a100f9f35f38f38f1f62f81659ebad92f16d3"
+    },
+    {
+      "packageName": "@openclaw/memory-lancedb",
+      "pluginId": "memory-lancedb",
+      "categories": ["memory"],
+      "manifestSha256": "a8aa132675fcb9a65698056ba06ff1003b45e7cc0e8facb87b7fa77ef6c971c1"
+    },
+    {
+      "packageName": "@openclaw/memory-wiki",
+      "pluginId": "memory-wiki",
+      "categories": ["memory"],
+      "manifestSha256": "a8c4b5036c8c5a976752300f3bfb0c424882926b60d325f4ee1da06d77d249a6"
+    },
+    {
+      "packageName": "@openclaw/meta-provider",
+      "pluginId": "meta",
+      "categories": ["models"],
+      "manifestSha256": "b2b747ad67c7b47585bd9d16bac92c223dfb171a5b0bef137843946b98d4d6cf"
+    },
+    {
+      "packageName": "@openclaw/microsoft-speech",
+      "pluginId": "microsoft",
+      "categories": ["voice"],
+      "manifestSha256": "fe608a041e9c44f8b8db76c5b0a9c2ccc5f1c4a3ef268b4682107d177519c9c0"
+    },
+    {
+      "packageName": "@openclaw/microsoft-foundry",
+      "pluginId": "microsoft-foundry",
+      "categories": ["models"],
+      "manifestSha256": "63cd5a425ed493213fd0cb02bb46af963c9927da5addf56e328c6261678f6aa7"
+    },
+    {
+      "packageName": "@openclaw/migrate-claude",
+      "pluginId": "migrate-claude",
+      "categories": ["integrations"],
+      "manifestSha256": "ff6a188bed180944f5141a4cff9e437747b8bc3f5bd4367e7d61b2ea8aeef714"
+    },
+    {
+      "packageName": "@openclaw/migrate-hermes",
+      "pluginId": "migrate-hermes",
+      "categories": ["integrations"],
+      "manifestSha256": "5991b60742a7739078091917085a170c419a903b854805767e7fc3cabac75368"
+    },
+    {
+      "packageName": "@openclaw/minimax-provider",
+      "pluginId": "minimax",
+      "categories": ["models"],
+      "manifestSha256": "cd7601c1bb9eb6807f60a1c463e3e3a0c063e63e3fe0803e794dd92f1aeef904"
+    },
+    {
+      "packageName": "@openclaw/mistral-provider",
+      "pluginId": "mistral",
+      "categories": ["models"],
+      "manifestSha256": "96d4cb8e74569d32f13b3db868f02457adbeeedd107f2b6917b7b81865959fc2"
+    },
+    {
+      "packageName": "@openclaw/moonshot-provider",
+      "pluginId": "moonshot",
+      "categories": ["models"],
+      "manifestSha256": "63da80c029bb19be6cb4f4b1237eb32e289066c5a4a569f12b3f7bddb19ae1c0"
+    },
+    {
+      "packageName": "@openclaw/msteams",
+      "pluginId": "msteams",
+      "categories": ["channels"],
+      "manifestSha256": "b6fbce82aabe81b52c4f402555e2fbc93f727e5f41db50b623e16794301d5cd4"
+    },
+    {
+      "packageName": "@openclaw/mxc-sandbox",
+      "pluginId": "mxc",
+      "categories": ["security"],
+      "manifestSha256": "1070cc4a3586994ca1f6489d4fb644119b3c9a9cde9cf4d808ef66df23629b48"
+    },
+    {
+      "packageName": "@openclaw/nextcloud-talk",
+      "pluginId": "nextcloud-talk",
+      "categories": ["channels"],
+      "manifestSha256": "b3c1092cfbad585b1fa658d83c00dcac748e93fdfd13c84d8e6a1ac87b07b66d"
+    },
+    {
+      "packageName": "@openclaw/nostr",
+      "pluginId": "nostr",
+      "categories": ["channels"],
+      "manifestSha256": "539b5d6372a70675b494dde453a06f446eb1f2e3f9afffabb5a4d5557d15d628"
+    },
+    {
+      "packageName": "@openclaw/novita-provider",
+      "pluginId": "novita",
+      "categories": ["models"],
+      "manifestSha256": "5c6d51f99a59974af9e5323bdbeb1b4f937b3b50e35de1f4ab6619bd7ece6675"
+    },
+    {
+      "packageName": "@openclaw/nvidia-provider",
+      "pluginId": "nvidia",
+      "categories": ["models"],
+      "manifestSha256": "6058b02a84c3dd268f9b33201ef488c56ecc9ded3a631916a9d3d2647f8b3c62"
+    },
+    {
+      "packageName": "@openclaw/oc-path",
+      "pluginId": "oc-path",
+      "categories": ["documents-files"],
+      "manifestSha256": "80d3dc2d785708c7428e9fdb6540bc128f70b8628aa765823132a4fa63b4ef38"
+    },
+    {
+      "packageName": "@openclaw/ollama-provider",
+      "pluginId": "ollama",
+      "categories": ["models"],
+      "manifestSha256": "43c4a06719c100502acdb547ae1a9479b874b5d2088d8884c3fc653a7c90617c"
+    },
+    {
+      "packageName": "@openclaw/onepassword",
+      "pluginId": "onepassword",
+      "categories": ["security"],
+      "manifestSha256": "42e0443259dbe0c75a5bc578bfb9c165cd165e7650f9900a97faaac7309c3758"
+    },
+    {
+      "packageName": "@openclaw/openai-provider",
+      "pluginId": "openai",
+      "categories": ["models"],
+      "manifestSha256": "e04ec932057fee215c479241c96dd3584f0c092a97cce30198f40f57115c849c"
+    },
+    {
+      "packageName": "@openclaw/opencode-provider",
+      "pluginId": "opencode",
+      "categories": ["models"],
+      "manifestSha256": "08cc7ad66198bea95049e3b30f988efcb70d14683d021018b6ea9d3c6ae9613a"
+    },
+    {
+      "packageName": "@openclaw/opencode-go-provider",
+      "pluginId": "opencode-go",
+      "categories": ["models"],
+      "manifestSha256": "d80902deb665ebe54623e87ebb38fb2a1a14813f63a127655454f64526b588d7"
+    },
+    {
+      "packageName": "@openclaw/openrouter-provider",
+      "pluginId": "openrouter",
+      "categories": ["models"],
+      "manifestSha256": "087fd1a45372dcc890d69a851d34938b433182803562efc419dcb7e60a21487a"
+    },
+    {
+      "packageName": "@openclaw/openshell-sandbox",
+      "pluginId": "openshell",
+      "categories": ["security"],
+      "manifestSha256": "5ca93a1c368d961eb4c018281aadcd0e09d138d06dde5030867b190fb9f73183"
+    },
+    {
+      "packageName": "@openclaw/parallel-plugin",
+      "pluginId": "parallel",
+      "categories": ["web"],
+      "manifestSha256": "9f40539bf969f02a3fbc22ecc1ed4c474474c1cfb95fcf9105c43dc861cfc8be"
+    },
+    {
+      "packageName": "@openclaw/perplexity-plugin",
+      "pluginId": "perplexity",
+      "categories": ["web"],
+      "manifestSha256": "1c1d692dcb4d0175c667530d381f6eb13489fc7e34e424714bece2cee4d1b55c"
+    },
+    {
+      "packageName": "@openclaw/pixverse-provider",
+      "pluginId": "pixverse",
+      "categories": ["media"],
+      "manifestSha256": "b9e822661259b64bc3710345ee5f3be60ba350df7a35f64d1e4924e0e1e2faa1"
+    },
+    {
+      "packageName": "@openclaw/policy",
+      "pluginId": "policy",
+      "categories": ["security"],
+      "manifestSha256": "aa7071860785f5675914bbb3d41492f64af72f5e93789a73a3e301b5528356dd"
+    },
+    {
+      "packageName": "@openclaw/qa-channel",
+      "pluginId": "qa-channel",
+      "categories": ["developer-tools"],
+      "manifestSha256": "173b2d8c307e5b7f8f2d674566896152a3d10f1f7af90ed2f77ab5928a428b9c"
+    },
+    {
+      "packageName": "@openclaw/qa-lab",
+      "pluginId": "qa-lab",
+      "categories": ["developer-tools"],
+      "manifestSha256": "80f0c9cc919520d18268a1cfd5cbca4c2e69111ad2bfcbd6aeaa28ea12205814"
+    },
+    {
+      "packageName": "@openclaw/qianfan-provider",
+      "pluginId": "qianfan",
+      "categories": ["models"],
+      "manifestSha256": "61a68198ebc910e83652a2f6f02beab2592dc390cb67a0b15c1b22547bb22649"
+    },
+    {
+      "packageName": "@openclaw/qwen-provider",
+      "pluginId": "qwen",
+      "categories": ["models"],
+      "manifestSha256": "335baa3b26dec1c9dd05d96718664ad2b4d7698a7a8ca5a8a5659432a05d23ec"
+    },
+    {
+      "packageName": "@openclaw/raft",
+      "pluginId": "raft",
+      "categories": ["channels"],
+      "manifestSha256": "8ddfab9b854e8977a8125789a0bcebe22c97d817a9bbbe1b0fff5eb750efb496"
+    },
+    {
+      "packageName": "@openclaw/reef",
+      "pluginId": "reef",
+      "categories": ["agent-orchestration"],
+      "manifestSha256": "07c9e579d2e6d7bd76f5f0e8b28d9e29b6e4d1e337b79d4b72fe904209863ddc"
+    },
+    {
+      "packageName": "@openclaw/runway-provider",
+      "pluginId": "runway",
+      "categories": ["media"],
+      "manifestSha256": "26aa29421013b83155d80bee2979e98c297b152af7e5b23c4fc367637796a936"
+    },
+    {
+      "packageName": "@openclaw/searxng-plugin",
+      "pluginId": "searxng",
+      "categories": ["web"],
+      "manifestSha256": "db4068e6944613a8a1bd27a4ca5bb705e5fe7eb72cf0ee0ae6139558f0af7113"
+    },
+    {
+      "packageName": "@openclaw/senseaudio-provider",
+      "pluginId": "senseaudio",
+      "categories": ["voice"],
+      "manifestSha256": "b8b66145b7f01377a415ab5fcedcb4a978dc03e93fab2aae94ee2dfa66dbcabf"
+    },
+    {
+      "packageName": "@openclaw/sglang-provider",
+      "pluginId": "sglang",
+      "categories": ["models"],
+      "manifestSha256": "de8a57e8b65ab5705c8cb5a8d87c4f205f9a64f34539a960036cb4aaa156b345"
+    },
+    {
+      "packageName": "@openclaw/signal",
+      "pluginId": "signal",
+      "categories": ["channels"],
+      "manifestSha256": "277fc34df0626f2aaeba842204c673bd416d3159b04b774899405cd6fd5ddc0c"
+    },
+    {
+      "packageName": "@openclaw/slack",
+      "pluginId": "slack",
+      "categories": ["channels"],
+      "manifestSha256": "2095efb95be4798722b56f84f75a3d0bc1dff4e7c0581a594d9cf85e355dda39"
+    },
+    {
+      "packageName": "@openclaw/sms",
+      "pluginId": "sms",
+      "categories": ["channels"],
+      "manifestSha256": "cdb5f66b0e97950b5d9a882e8332a6b1035def3befc684c639ae7ebd7b492bab"
+    },
+    {
+      "packageName": "@openclaw/stepfun-provider",
+      "pluginId": "stepfun",
+      "categories": ["models"],
+      "manifestSha256": "02b4fa639c33d60805914fb5f446b62fd8230c281726a65663dcf45dbd54ebb3"
+    },
+    {
+      "packageName": "@openclaw/synology-chat",
+      "pluginId": "synology-chat",
+      "categories": ["channels"],
+      "manifestSha256": "eea251aaed539c11e69cb61596589706816ee4cc8c8d7401f440122deea0222d"
+    },
+    {
+      "packageName": "@openclaw/synthetic-provider",
+      "pluginId": "synthetic",
+      "categories": ["models"],
+      "manifestSha256": "744f3d41c759cdb05e912865937390b96306db1a4f6aab6347647a0b7abf2f43"
+    },
+    {
+      "packageName": "@openclaw/tavily-plugin",
+      "pluginId": "tavily",
+      "categories": ["web"],
+      "manifestSha256": "434eff68099e48fb543efc02e36f9bf8db7996668f9bcf5604ab85a40947a4a2"
+    },
+    {
+      "packageName": "@openclaw/team-reports",
+      "pluginId": "team-reports",
+      "categories": ["data-analytics"],
+      "manifestSha256": "7adb7713c7f7c40a661c1f44bf1d32073fb8fd0f7804710f645269fc2a4cd1b9"
+    },
+    {
+      "packageName": "@openclaw/teams-meetings",
+      "pluginId": "teams-meetings",
+      "categories": ["voice"],
+      "manifestSha256": "72feb2a19a182ca868ef76b1e1ce9d34f615c38ca4aff08ed6244c3f8aa96472"
+    },
+    {
+      "packageName": "@openclaw/telegram",
+      "pluginId": "telegram",
+      "categories": ["channels"],
+      "manifestSha256": "128c3daa545753d81fdd7d5123a5d9cbea37adb19b933d97ab590a09fd313bfd"
+    },
+    {
+      "packageName": "@openclaw/tencent-provider",
+      "pluginId": "tencent",
+      "categories": ["models"],
+      "manifestSha256": "4491844586cfaeeb6e63a6c5c49b5538bc2b0893d16eef06e873a88245dcc4bf"
+    },
+    {
+      "packageName": "@openclaw/tlon",
+      "pluginId": "tlon",
+      "categories": ["channels"],
+      "manifestSha256": "47bb45f143b66ca68c547bbfd9979924e46f879e25ebe7652e38f5e53672a2cd"
+    },
+    {
+      "packageName": "@openclaw/together-provider",
+      "pluginId": "together",
+      "categories": ["models"],
+      "manifestSha256": "b6344bcd3ac743c55b4a297aabd1411fe541a976f08d46e98ba955fdad856379"
+    },
+    {
+      "packageName": "@openclaw/tokenjuice",
+      "pluginId": "tokenjuice",
+      "categories": ["context"],
+      "manifestSha256": "27b1b551f74fe61c80887e420e332386d2ee72b5cdb7b1eac0622621e123cf70"
+    },
+    {
+      "packageName": "@openclaw/tts-local-cli",
+      "pluginId": "tts-local-cli",
+      "categories": ["voice"],
+      "manifestSha256": "427fe5778e1424858e6e9e4e128fff6384bf6a5125fda71126aacc4fd6beeac6"
+    },
+    {
+      "packageName": "@openclaw/twitch",
+      "pluginId": "twitch",
+      "categories": ["channels"],
+      "manifestSha256": "51416a2c54df762a09f6c9b6df2e119719afd6b16663a12746f6009879b2f913"
+    },
+    {
+      "packageName": "@openclaw/vault",
+      "pluginId": "vault",
+      "categories": ["security"],
+      "manifestSha256": "2c64e41394ec6bd5a12a336cf8016a9aff851fe2959e03f7a8bd8f519214235b"
+    },
+    {
+      "packageName": "@openclaw/venice-provider",
+      "pluginId": "venice",
+      "categories": ["models"],
+      "manifestSha256": "e06cbbd155a37b6f084df6df14743d2dd28669dde229d8609aa81e8ea4d482e5"
+    },
+    {
+      "packageName": "@openclaw/vercel-ai-gateway-provider",
+      "pluginId": "vercel-ai-gateway",
+      "categories": ["models"],
+      "manifestSha256": "7e8085f96bcc8a35c3650aa5a20a02664a84713d12780e9c43756b5d8778cdf7"
+    },
+    {
+      "packageName": "@openclaw/visitor-access",
+      "pluginId": "visitor-access",
+      "categories": ["security"],
+      "manifestSha256": "b1756736f633951e461a425b5dedfecd5c97d18f742e660aa9f0a090ebcaad00"
+    },
+    {
+      "packageName": "@openclaw/vllm-provider",
+      "pluginId": "vllm",
+      "categories": ["models"],
+      "manifestSha256": "9cc6ff8125e8dd5c9f20a9425cf1cdc1cca80fd0ae977b6a9ae109fab60bf310"
+    },
+    {
+      "packageName": "@openclaw/voice-call",
+      "pluginId": "voice-call",
+      "categories": ["voice"],
+      "manifestSha256": "b12b450538ac155f1fc6e33da51bd7b8ac414a36d20de08bf9c932d156a2ca2c"
+    },
+    {
+      "packageName": "@openclaw/volcengine-provider",
+      "pluginId": "volcengine",
+      "categories": ["models"],
+      "manifestSha256": "e8fc7fa0038b679f950a97ad47b4873f8450949d2fe1525a8c41553fba923ef6"
+    },
+    {
+      "packageName": "@openclaw/voyage-provider",
+      "pluginId": "voyage",
+      "categories": ["memory"],
+      "manifestSha256": "919db41f5857805937631ff7b2a5ab88f6d11f8db49b3d33af657ae0a6ae4f12"
+    },
+    {
+      "packageName": "@openclaw/vydra-provider",
+      "pluginId": "vydra",
+      "categories": ["media"],
+      "manifestSha256": "335e171511bef635f0112055e756a1715aef05795ee9d130e8e926e235ab678f"
+    },
+    {
+      "packageName": "@openclaw/web-readability-plugin",
+      "pluginId": "web-readability",
+      "categories": ["web"],
+      "manifestSha256": "b938ea43b1b74fdf90fa5b1395c136935757f108f2a428d86449a3c6a2fb1fdc"
+    },
+    {
+      "packageName": "@openclaw/webhooks",
+      "pluginId": "webhooks",
+      "categories": ["integrations"],
+      "manifestSha256": "78c9f8fcf2746f2b7871d0d7d08ca1613040c390cd5448045ac99466f9eebf2a"
+    },
+    {
+      "packageName": "@openclaw/whatsapp",
+      "pluginId": "whatsapp",
+      "categories": ["channels"],
+      "manifestSha256": "b4a0d9c1f427ddbdf0f8f04447cb58791777763706acbb2c2966e61830b86de9"
+    },
+    {
+      "packageName": "@openclaw/workboard",
+      "pluginId": "workboard",
+      "categories": ["productivity"],
+      "manifestSha256": "82a31d40ae6f7184b223fd8a1b3ab23d5a78f4677985f4e7ed5a39d75c7b0420"
+    },
+    {
+      "packageName": "@openclaw/xai-plugin",
+      "pluginId": "xai",
+      "categories": ["models"],
+      "manifestSha256": "31a55129bccb99bacdc2d1e567ca7a892961b32b020a5995bed12ad6108da06e"
+    },
+    {
+      "packageName": "@openclaw/xiaomi-provider",
+      "pluginId": "xiaomi",
+      "categories": ["models"],
+      "manifestSha256": "fd6ed6280c2a2b2be745b7a3857daa1b27e11a8de554c55ec68d65908586ba37"
+    },
+    {
+      "packageName": "@openclaw/zai-provider",
+      "pluginId": "zai",
+      "categories": ["models"],
+      "manifestSha256": "95bc8124d5761b0a39442e5272593b391f6880544cd2ba47e35214709cf4177a"
+    },
+    {
+      "packageName": "@openclaw/zalo",
+      "pluginId": "zalo",
+      "categories": ["channels"],
+      "manifestSha256": "d0be95541312f73b549c9eadebd334353b06de6cf3be640eedc067c8aa900972"
+    },
+    {
+      "packageName": "@openclaw/zalouser",
+      "pluginId": "zalouser",
+      "categories": ["channels"],
+      "manifestSha256": "18ad6093afcea17e8779e76ea08c8af648b9aea39224a9ea9b7f4e42865fdab9"
+    },
+    {
+      "packageName": "@openclaw/zoom-meetings",
+      "pluginId": "zoom-meetings",
+      "categories": ["voice"],
+      "manifestSha256": "8f6c09eaae578c92ad47a4c4fb2de898dc4fb83f64135ae8d5efebbc243aabf2"
+    }
+  ]
+}

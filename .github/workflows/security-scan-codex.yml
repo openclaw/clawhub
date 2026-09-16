@@ -13,6 +13,10 @@ on:
         description: "Maximum Codex scans to run in parallel per worker shard"
         required: true
         default: "4"
+      assigned-jobs:
+        description: "Optional JSON of nine disjoint bulk skill job ID arrays from the local coordinator"
+        required: false
+        default: ""
       max-jobs:
         description: "Optional total jobs cap per worker shard"
         required: false
@@ -63,8 +67,11 @@ jobs:
       CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
+      CODEX_SECURITY_SCAN_ASSIGNED_JOBS: ${{ inputs['assigned-jobs'] || '' }}
       CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
       CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}
+      # The runner is disposable and installs the reviewed, hash-locked host scanners above.
+      CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX: "off"
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
       CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}
@@ -90,8 +97,19 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.6
+          npm install -g @openclaw/clawscan@0.1.8
           clawscan --version
+
+      - name: Install A.I.G scanner
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
+          # Backport Tencent/AI-Infra-Guard@f18ae642d62be142192d6bd4c21c4ea7e098bbc8 until its next PyPI release.
+          AIG_SITE_PACKAGES="$(python -c 'import site; print(site.getsitepackages()[0])')"
+          patch --batch --fuzz=0 --strip=1 --directory="$AIG_SITE_PACKAGES" < scripts/security/aig-skill-scan-0.2.1-gpt5.patch
+          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.1"'
+          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
+          aig-skill-scan --help >/dev/null
 
       - name: Install SkillSpector
         run: |
@@ -99,7 +117,7 @@ jobs:
           python -m venv "$RUNNER_TEMP/skillspector-venv"
           source "$RUNNER_TEMP/skillspector-venv/bin/activate"
           python -m pip install --upgrade pip
-          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@8f37cfa'
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
           echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
           skillspector --help >/dev/null
 
@@ -111,6 +129,9 @@ jobs:
       - name: Run Codex security worker
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.6
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
         run: |

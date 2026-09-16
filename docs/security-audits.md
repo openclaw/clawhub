@@ -111,46 +111,28 @@ Artifact pages link to the full audit at:
 The audit page combines:
 
 1. SkillSpector
-2. VirusTotal
+2. A.I.G
 3. Risk analysis
 
-## VirusTotal
+## A.I.G
 
-ClawHub uses VirusTotal as malware telemetry in the audit stack. VirusTotal is a
-trusted industry standard for file reputation and malware scanning, and our
-partnership lets ClawHub add broader security intelligence to skill and plugin
-review.
+Skill audits include findings from Tencent Zhuque Lab's A.I.G scanner. A.I.G
+checks agent instructions for vulnerability patterns and supplies supporting
+evidence to ClawScan's artifact-wide review. It does not issue ClawHub's final
+verdict or independently block installation.
 
-VirusTotal is especially useful for known malicious artifacts, engine hits, and
-reputation signals that complement ClawHub's agent-aware review. When vendor
-engine counts are available, the audit summarizes them in plain language, such
-as:
-
-```text
-62/62 vendors flagged this skill as clean.
-```
-
-or:
-
-```text
-2/64 vendors flagged this skill as malicious, 1/64 flagged it as suspicious, and 61/64 flagged it as clean.
-```
-
-When ClawHub has no vendor-count telemetry to summarize, the audit says:
-
-```text
-No VirusTotal findings
-```
-
-VirusTotal remains telemetry. It does not replace ClawHub's own artifact-aware
-risk analysis.
+A.I.G 0.2.1 cannot inspect packaged Python bytecode. Until Tencent ships its
+[CVE-2026-84809](https://nvd.nist.gov/vuln/detail/CVE-2026-84809) fix, ClawHub
+rejects skills containing `.pyc`, `.pyo`, or `.pyd` files before A.I.G runs.
+ClawScan also detects packaged Python bytecode independently.
 
 ## Risk analysis
 
 Risk analysis is powered internally by ClawScan, ClawHub's own security audit
 system. It reviews each release as an agent-facing artifact: instructions,
 metadata, declared permissions, files, capability signals, static scan signals,
-SkillSpector findings, VirusTotal telemetry, and publisher-provided context.
+SkillSpector findings, A.I.G findings for skills, and
+publisher-provided context.
 Static scan signals are internal context for this review; they are not a
 standalone public audit section or install-blocking verdict.
 

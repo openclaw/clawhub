@@ -442,7 +442,7 @@ describe("SkillsIndex", () => {
 
     expect(screen.getByText("Japanese Conversation Scorer")).toBeTruthy();
     expect(screen.queryByText("24h installs")).toBeNull();
-    expect(screen.getByText("Popularity")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(action).not.toHaveBeenCalled();
   });
 

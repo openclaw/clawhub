@@ -1090,6 +1090,8 @@ describe("clawhub e2e", () => {
     expect(result.stdout).toMatch(/<source>/);
     expect(result.stdout).toMatch(/--dry-run/);
     expect(result.stdout).toMatch(/--json/);
+    expect(result.stdout).toMatch(/--categories/);
+    expect(result.stdout).toMatch(/Deprecated for plugins/);
   });
 
   it("skill verify help omits the redundant json flag", async () => {

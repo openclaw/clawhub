@@ -146,6 +146,7 @@ export function SkillSecurityAuditRoutePage({
       }}
       sha256hash={latestVersion?.sha256hash ?? null}
       vtAnalysis={latestVersion?.vtAnalysis ?? null}
+      aigAnalysis={audit.aigAnalysis ?? null}
       llmAnalysis={audit.llmAnalysis ?? null}
       skillSpectorAnalysis={audit.skillSpectorAnalysis ?? null}
       staticScan={audit.staticScan ?? null}

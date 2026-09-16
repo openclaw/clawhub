@@ -631,11 +631,9 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("radio", { name: "Development" }).getAttribute("aria-checked")).toBe(
       "false",
     );
-    expect(actionFn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        query: "test",
-      }),
-    );
+    // The settled route loader owns search; typing only hands the query to navigation.
+    expect(getLastNavigateCall().search({})).toMatchObject({ q: "test" });
+    expect(actionFn).not.toHaveBeenCalled();
   });
 
   it("switches implicit recommended sorting back to relevance when entering search", async () => {

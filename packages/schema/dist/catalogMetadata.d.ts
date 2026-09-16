@@ -7,62 +7,125 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "channels";
     readonly label: "Channels";
     readonly icon: "message-circle";
-    readonly description: "Messaging and collaboration channel integrations.";
+    readonly description: "Human-agent messaging transports and channel adapters. Choose this when the main purpose is letting people talk to the agent through a messaging service, even if the adapter also exposes workspace tools.";
 }, {
     readonly slug: "models";
     readonly label: "Models";
     readonly icon: "brain";
-    readonly description: "Model providers, inference backends, and model routing.";
+    readonly description: "General model providers, inference backends, and model routing. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media when that is their main purpose.";
+}, {
+    readonly slug: "agent-runtimes";
+    readonly label: "Agent runtimes";
+    readonly icon: "bot";
+    readonly description: "Agent execution engines and backends that run model/tool loops and manage native sessions, including Codex, ACP, and Copilot runtimes. Context assembly belongs in Context; coordinating work across agents belongs in Agent orchestration.";
 }, {
     readonly slug: "memory";
     readonly label: "Memory";
     readonly icon: "database";
-    readonly description: "Memory providers, embeddings, and retrieval.";
+    readonly description: "Durable agent memory, embeddings, and retrieval across conversations. Building or compacting the active conversation context belongs in Context.";
 }, {
     readonly slug: "context";
     readonly label: "Context";
     readonly icon: "book-open";
-    readonly description: "Context engines and context management.";
+    readonly description: "Building, selecting, compacting, or managing the active conversation context. Durable memory belongs in Memory; an engine that runs the agent and owns its native sessions belongs in Agent runtimes.";
 }, {
     readonly slug: "voice";
     readonly label: "Voice";
     readonly icon: "message-square";
-    readonly description: "Speech synthesis, transcription, voice calls, and audio interaction.";
-}, {
-    readonly slug: "media";
-    readonly label: "Media";
-    readonly icon: "palette";
-    readonly description: "Image, video, audio, and other media understanding or generation.";
+    readonly description: "Speech synthesis, transcription, voice calls, and spoken interaction. Music and general media creation or analysis belong in Media.";
 }, {
     readonly slug: "web";
     readonly label: "Web";
     readonly icon: "globe";
-    readonly description: "Web search, browsing, fetching, research, and information retrieval.";
+    readonly description: "General web search, browser control, and fetching web pages. A tool whose main purpose is a specific research or business workflow belongs in that workflow's category.";
 }, {
-    readonly slug: "tools";
-    readonly label: "Tools";
-    readonly icon: "wrench";
-    readonly description: "Agent tools, workflows, scheduled work, and service automation.";
-}, {
-    readonly slug: "runtime";
-    readonly label: "Runtime";
-    readonly icon: "git-branch";
-    readonly description: "Developer tooling, agent runtimes, coding, testing, and execution backends.";
-}, {
-    readonly slug: "gateway";
-    readonly label: "Gateway";
-    readonly icon: "activity";
-    readonly description: "Gateway extensions, deployment, observability, and operational tooling.";
+    readonly slug: "media";
+    readonly label: "Media";
+    readonly icon: "palette";
+    readonly description: "Creating, transforming, or understanding images, video, music, and other media. Spoken interaction and transcription belong in Voice.";
 }, {
     readonly slug: "security";
     readonly label: "Security";
     readonly icon: "shield";
-    readonly description: "Authentication, authorization, security controls, and policy enforcement.";
+    readonly description: "Protecting access and enforcing trust through authentication, authorization, credential controls, security auditing, or policy. Authentication incidental to another purpose does not belong here.";
+}, {
+    readonly slug: "integrations";
+    readonly label: "Integrations";
+    readonly icon: "plug";
+    readonly description: "General connectors, API bridges, and service integration platforms without a more specific user purpose. A connector to a particular workflow belongs in that workflow's category; exposing tools or MCP is not enough.";
+}, {
+    readonly slug: "developer-tools";
+    readonly label: "Developer tools";
+    readonly icon: "code-xml";
+    readonly description: "Writing, reviewing, testing, and debugging software, development environments, and coding workflows. Plugins whose main purpose is providing the agent execution engine belong in Agent runtimes.";
+}, {
+    readonly slug: "infrastructure";
+    readonly label: "Infrastructure";
+    readonly icon: "server";
+    readonly description: "Deploying, hosting, monitoring, and operating systems, networks, services, and execution environments. Engines that run the agent loop belong in Agent runtimes; coordinating agents belongs in Agent orchestration.";
+}, {
+    readonly slug: "documents-files";
+    readonly label: "Documents & files";
+    readonly icon: "files";
+    readonly description: "Reading, creating, extracting, transferring, and managing documents and files. Software code review belongs in Developer tools; task and project management belongs in Productivity.";
+}, {
+    readonly slug: "inbox-collaboration";
+    readonly label: "Inbox & collaboration";
+    readonly icon: "inbox";
+    readonly description: "Managing email, inboxes, team communication, and collaborative workspaces. Providing a transport for people to talk to the agent belongs in Channels.";
+}, {
+    readonly slug: "productivity";
+    readonly label: "Productivity";
+    readonly icon: "list-todo";
+    readonly description: "Managing tasks, notes, projects, plans, and personal or team work. Appointments and availability belong in Scheduling; document processing belongs in Documents & files.";
+}, {
+    readonly slug: "scheduling";
+    readonly label: "Scheduling";
+    readonly icon: "calendar-days";
+    readonly description: "Calendars, appointments, availability, and booking. Technical job scheduling belongs with the workflow it supports, or Infrastructure for general system scheduling.";
+}, {
+    readonly slug: "finance-payments";
+    readonly label: "Finance & payments";
+    readonly icon: "wallet-cards";
+    readonly description: "Payments, billing, accounting, banking, trading, and financial workflows. General business reporting belongs in Data & analytics.";
+}, {
+    readonly slug: "sales-marketing";
+    readonly label: "Sales & marketing";
+    readonly icon: "megaphone";
+    readonly description: "Customer relationships, sales, customer support, outreach, campaigns, and marketing operations. General email or chat management belongs in Inbox & collaboration.";
+}, {
+    readonly slug: "data-analytics";
+    readonly label: "Data & analytics";
+    readonly icon: "chart-no-axes-combined";
+    readonly description: "Querying databases, processing datasets, analysis, reporting, and business intelligence. Agent memory storage belongs in Memory; operational telemetry belongs in Infrastructure.";
+}, {
+    readonly slug: "agent-orchestration";
+    readonly label: "Agent orchestration";
+    readonly icon: "workflow";
+    readonly description: "Coordinating agents, delegating work, and running multi-step agent workflows. Engines and backends that execute the agent loop and manage its native sessions belong in Agent runtimes.";
+}, {
+    readonly slug: "research";
+    readonly label: "Research";
+    readonly icon: "search";
+    readonly description: "Investigating topics, evaluating sources, working with scientific literature, and synthesizing evidence. General web search, browsing, and page fetching belong in Web.";
 }, {
     readonly slug: "other";
     readonly label: "Other";
     readonly icon: "package";
-    readonly description: "Plugins that do not yet fit another browse category.";
+    readonly description: "Use only when the plugin's main purpose does not fit another category or the available evidence is insufficient. Do not use this just because a plugin has several capabilities.";
+}];
+export declare const LEGACY_PLUGIN_CATEGORY_DEFINITIONS: readonly [{
+    readonly slug: "tools";
+    readonly label: "Tools";
+    readonly icon: "wrench";
+}, {
+    readonly slug: "runtime";
+    readonly label: "Runtime";
+    readonly icon: "git-branch";
+}, {
+    readonly slug: "gateway";
+    readonly label: "Gateway";
+    readonly icon: "activity";
 }];
 export declare const SKILL_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "integrations";
@@ -149,9 +212,9 @@ export declare const SKILL_CATEGORY_DEFINITIONS: readonly [{
     readonly description: "Skills that do not yet fit another browse category.";
     readonly keywords: readonly [];
 }];
-export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
+export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"] | (typeof LEGACY_PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
 export type SkillCategorySlug = (typeof SKILL_CATEGORY_DEFINITIONS)[number]["slug"];
-export declare const PLUGIN_CATEGORY_SLUGS: ("channels" | "context" | "gateway" | "media" | "memory" | "models" | "other" | "runtime" | "security" | "tools" | "voice" | "web")[];
+export declare const PLUGIN_CATEGORY_SLUGS: ("agent-orchestration" | "agent-runtimes" | "channels" | "context" | "data-analytics" | "developer-tools" | "documents-files" | "finance-payments" | "inbox-collaboration" | "infrastructure" | "integrations" | "media" | "memory" | "models" | "other" | "productivity" | "research" | "sales-marketing" | "scheduling" | "security" | "voice" | "web")[];
 export declare const SKILL_CATEGORY_SLUGS: ("agents" | "automation" | "communication" | "creative" | "development" | "finance" | "integrations" | "knowledge" | "lifestyle" | "operations" | "other" | "productivity" | "research" | "security")[];
 export declare function isPluginCategorySlug(value: string | null | undefined): value is PluginCategorySlug;
 export declare function isSkillCategorySlug(value: string | null | undefined): value is SkillCategorySlug;

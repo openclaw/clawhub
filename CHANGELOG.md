@@ -9,6 +9,19 @@
 
 ### Fixes
 
+- Workers: delete a newly generated Skill Card blob when attachment fails, while preserving successfully attached cards and historical bundle fingerprints (thanks @SebTardif).
+- Publishing: fall back to local changelog notes when the provider stalls for ten seconds, including while reading the response body (thanks @SebTardif).
+- Web: bound Agent Skills discovery proxy requests to ten seconds, including stalled response bodies, so installers can recover from an unresponsive upstream (thanks @SebTardif).
+- CLI: preserve literal multipart text when publishing with Bun, including semicolons in JSON metadata and values beginning with `@` or `<`, without changing uploaded file bytes.
+- Workers: scan plugin packages containing both skill and plugin manifests without ambiguous-target failures, preserving full-package scanning and bundled-skill paths.
+- CLI/API: recover failed staged plugin publications from their retained artifacts with `clawhub package recover`, fresh security checks, current publisher authorization, and preserved attempt history.
+- Tests: keep the Vitest localStorage shim working on Node 26, whose native `Storage` global has a non-configurable `length`, so `bun run ci:unit` passes on Node 24 and 26.
+- API/GitHub Actions: authorize human release recovery through v2 approval and the original child-bound parent receipt, fail automated attempts when their exact parent fails, and let admins preview or discard orphaned package publish attempts with a publisher-visible reason.
+- CI: warm and cache the npm packages for local Convex "use node" dependencies and raise the isolated backend's push transport timeout so local-auth browser lanes no longer race a 408-retried external-deps build into a deleted build directory.
+- CI: make the UI proof process-tree reaping test exercise KILL escalation deterministically and assert the reaper's signal sequence, so a TERM that lands before the grandchild ignores it can no longer mask a missing KILL.
+- CI: run the pinned Agent Skills CLI from the Bun lockfile without runtime npm access, retain subprocess failure output, and run first-party CLI coverage before third-party compatibility checks.
+- Docs: repair plugin validation remediation links to the published manifest metadata and runtime session helper sections while preserving valid CLI workflow anchors.
+- Dependencies: pin fast-uri to 3.1.6 to fix host confusion and server-side request forgery advisories in URI normalization.
 - GitHub Actions: accept complete release inventories in parent authorization receipts up to the backend's 64 KiB limit while retaining 8 KiB identity and recovery limits.
 - API: preserve inspector findings when workspace cleanup fails, report the failing stage, and keep cleanup failures publication-blocking.
 - API: bound runtime-identity checks to the owning publisher, reject collisions during personal-principal recovery, and prevent malicious-release quarantine from restoring a historical runtime identity that was administratively replaced.

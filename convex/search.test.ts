@@ -96,6 +96,49 @@ const hydrateResultsHandler = (
 )._handler;
 
 describe("search helpers", () => {
+  it.each([{ highlightedOnly: true }, { officialOnly: true }, { createdAfter: 0 }])(
+    "records completed native shelf results once with authoritative counts (%j)",
+    async (filter) => {
+      const rows = [false, true, true].map((official, index) => ({
+        skill: makePublicSkill({
+          id: `skills:${index}`,
+          slug: "local-proof",
+          displayName: `Skill ${index}`,
+          official,
+          featured: true,
+        }),
+        version: null,
+        ownerHandle: "author",
+        owner: { official: index === 0 },
+      }));
+      const runMutation = vi.fn().mockResolvedValue(null);
+      const ctx = { runQuery: vi.fn().mockResolvedValue(rows), runMutation };
+      const args = { query: "local-proof", mode: "exact", limit: 2, ...filter };
+      const before = await searchSkillsHandler(ctx, args);
+      expect(runMutation).not.toHaveBeenCalled();
+      const after = await searchSkillsHandler(ctx, { ...args, searchSource: "clawhub-web" });
+      expect(after).toEqual(before);
+      expect(runMutation).toHaveBeenCalledOnce();
+      expect(runMutation.mock.calls[0][1]).toEqual({
+        source: "clawhub-web",
+        artifactKind: "skill",
+        scope: "shelf",
+        normalizedQuery: "local-proof",
+        category: undefined,
+        topic: undefined,
+        resultCount: 2,
+        officialResultCount: 2,
+      });
+      runMutation.mockClear();
+      await searchSkillsHandler(ctx, {
+        query: "local-proof",
+        mode: "exact",
+        searchSource: "clawhub-web",
+      });
+      expect(runMutation).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns fallback results when vector candidates are empty", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const fallback = [
@@ -325,6 +368,34 @@ describe("search helpers", () => {
         "by_active_normalized_display_name_first_token",
       ]),
     );
+  });
+
+  it("recalls matching curated skills before the display limit is applied", async () => {
+    const community = makeSkillDoc({
+      id: "skills:email",
+      slug: "email",
+      displayName: "Email",
+      summary: "Mailbox tools.",
+    });
+    const official = makeSkillDoc({
+      id: "skills:agentmail",
+      slug: "agentmail",
+      displayName: "AgentMail",
+      summary: "Official email inboxes for agents.",
+      official: true,
+    });
+    const unrelatedOfficial = makeSkillDoc({
+      id: "skills:nostr",
+      slug: "nostr",
+      displayName: "Nostr",
+      summary: "Protocol integration.",
+      official: true,
+    });
+    const ctx = makeDirectPrefixCtx([community, official, unrelatedOfficial]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, { query: "email" });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["agentmail", "email"]);
   });
 
   it("exact mode bypasses vector and fallback recall", async () => {
@@ -3159,11 +3230,13 @@ function makePublicSkill(params: {
   categories?: string[];
   topics?: string[];
   official?: boolean;
+  featured?: boolean;
   createdAt?: number;
   githubScanStatus?: "pending" | "clean" | "suspicious" | "malicious" | "not-run";
 }) {
   const badges: Record<string, { byUserId: string; at: number }> = {};
   if (params.official) badges.official = { byUserId: "users:curator", at: 1 };
+  if (params.featured) badges.highlighted = { byUserId: "users:curator", at: 1 };
   return {
     _id: params.id,
     _creationTime: 1,
@@ -3207,6 +3280,8 @@ function makeSkillDoc(params: {
   stars?: number;
   categories?: string[];
   topics?: string[];
+  official?: boolean;
+  featured?: boolean;
   inferredCategories?: string[];
   inferredFromVersionId?: string;
   latestVersionId?: string;
@@ -3448,6 +3523,18 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
     },
     db: {
       query: vi.fn((table: string) => {
+        if (table === "curatedSkillSearchDigest") {
+          const curated = digestRows.filter(
+            (digest) => digest.badges.official || digest.badges.highlighted,
+          );
+          return {
+            withIndex: () => ({
+              order: () => ({
+                take: vi.fn(async (limit: number) => curated.slice(0, limit)),
+              }),
+            }),
+          };
+        }
         if (table === "skillTopicSearchDigest") {
           return {
             withIndex: (

@@ -951,7 +951,7 @@ describe("maintenance badge denormalization", () => {
   it("upserts table badge and keeps skill.badges in sync", async () => {
     const unique = vi.fn().mockResolvedValue(null);
     const query = vi.fn().mockReturnValue({
-      withIndex: () => ({ unique }),
+      withIndex: () => ({ unique, take: vi.fn().mockResolvedValue([]) }),
     });
     const insert = vi.fn().mockResolvedValue("skillBadges:1");
     const get = vi.fn().mockResolvedValue({ _id: "skills:1", badges: undefined });

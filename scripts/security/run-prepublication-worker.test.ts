@@ -176,6 +176,14 @@ describe("pre-publication worker", () => {
       summary: "TruffleHog found no verified secrets.",
     });
     const runClawScan = vi.fn().mockResolvedValue({
+      aigAnalysis: {
+        checkedAt: 123,
+        findings: [],
+        issueCount: 0,
+        scannerVersion: "0.2.1",
+        status: "clean",
+        summary: "A.I.G reported 0 findings.",
+      },
       analysis: {
         checkedAt: 123,
         confidence: "high",
@@ -208,6 +216,7 @@ describe("pre-publication worker", () => {
         token: "worker-token",
         trufflehog: { status: "clean", summary: "TruffleHog found no verified secrets." },
         clawscan: expect.objectContaining({ status: "clean" }),
+        aigAnalysis: expect.objectContaining({ status: "clean", issueCount: 0 }),
       }),
     );
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
@@ -230,12 +239,20 @@ describe("pre-publication worker", () => {
       summary: "Exact-artifact ClawScan review.",
       verdict: "suspicious",
     };
+    const existingAigAnalysis = {
+      checkedAt: 123,
+      findings: [],
+      issueCount: 0,
+      scannerVersion: "0.2.1",
+      status: "clean",
+      summary: "A.I.G reported 0 findings.",
+    };
 
     await expect(
       processPrePublicationAttempt(
         client,
         "worker-token",
-        { ...attempt, existingClawscanAnalysis },
+        { ...attempt, existingAigAnalysis, existingClawscanAnalysis },
         {
           runClawScan,
           runTruffleHog,
@@ -250,7 +267,130 @@ describe("pre-publication worker", () => {
       expect.anything(),
       expect.objectContaining({
         clawscan: expect.objectContaining({ status: "clean" }),
+        aigAnalysis: existingAigAnalysis,
         clawscanAnalysis: existingClawscanAnalysis,
+      }),
+    );
+  });
+
+  it("rescans exact artifacts when cached A.I.G and ClawScan runs differ", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "finalized" }),
+    };
+    const runClawScan = vi.fn().mockResolvedValue({
+      aigAnalysis: {
+        checkedAt: 456,
+        findings: [],
+        issueCount: 0,
+        scannerVersion: "0.2.1",
+        status: "clean",
+        summary: "A.I.G reported 0 findings.",
+      },
+      analysis: {
+        checkedAt: 456,
+        confidence: "high",
+        status: "clean",
+        summary: "Fresh ClawScan review.",
+        verdict: "benign",
+      },
+      check: { status: "clean", summary: "Fresh ClawScan review." },
+    });
+
+    await expect(
+      processPrePublicationAttempt(
+        client,
+        "worker-token",
+        {
+          ...attempt,
+          existingAigAnalysis: {
+            checkedAt: 122,
+            findings: [],
+            issueCount: 0,
+            scannerVersion: "0.2.1",
+            status: "clean",
+            summary: "A.I.G reported 0 findings.",
+          },
+          existingClawscanAnalysis: {
+            checkedAt: 123,
+            confidence: "high",
+            status: "clean",
+            summary: "Legacy exact-artifact review.",
+            verdict: "benign",
+          },
+        },
+        {
+          runClawScan,
+          runTruffleHog: vi.fn().mockResolvedValue({
+            status: "clean",
+            summary: "TruffleHog found no verified secrets.",
+          }),
+          writeWorkspace: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toMatchObject({ completed: true });
+
+    expect(runClawScan).toHaveBeenCalledTimes(1);
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        aigAnalysis: expect.objectContaining({ checkedAt: 456, status: "clean" }),
+        clawscanAnalysis: expect.objectContaining({ checkedAt: 456 }),
+      }),
+    );
+  });
+
+  it("rescans legacy skill artifacts that have no cached A.I.G evidence", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "finalized" }),
+    };
+    const runClawScan = vi.fn().mockResolvedValue({
+      aigAnalysis: {
+        checkedAt: 456,
+        findings: [],
+        issueCount: 0,
+        scannerVersion: "0.2.1",
+        status: "clean",
+        summary: "A.I.G reported 0 findings.",
+      },
+      analysis: {
+        checkedAt: 456,
+        confidence: "high",
+        status: "clean",
+        summary: "Fresh ClawScan review.",
+        verdict: "benign",
+      },
+      check: { status: "clean", summary: "Fresh ClawScan review." },
+    });
+
+    await processPrePublicationAttempt(
+      client,
+      "worker-token",
+      {
+        ...attempt,
+        existingClawscanAnalysis: {
+          checkedAt: 123,
+          confidence: "high",
+          status: "clean",
+          summary: "Legacy exact-artifact review.",
+          verdict: "benign",
+        },
+      },
+      {
+        runClawScan,
+        runTruffleHog: vi.fn().mockResolvedValue({
+          status: "clean",
+          summary: "TruffleHog found no verified secrets.",
+        }),
+        writeWorkspace: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    expect(runClawScan).toHaveBeenCalledTimes(1);
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        aigAnalysis: expect.objectContaining({ checkedAt: 456, status: "clean" }),
+        clawscanAnalysis: expect.objectContaining({ checkedAt: 456 }),
       }),
     );
   });
@@ -611,16 +751,57 @@ describe("pre-publication worker", () => {
     );
   });
 
-  it("runs native ClawScan as the required non-shadow security gate", async () => {
+  it("records deterministic check failures for unsupported Python bytecode", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "failed" }),
+    };
+    const runClawScan = vi.fn();
+    const runTruffleHog = vi.fn();
+
+    const result = await processPrePublicationAttempt(
+      client,
+      "worker-token",
+      {
+        ...attempt,
+        files: [{ ...attempt.files[0], path: "payload.pyc" }],
+      },
+      {
+        runClawScan,
+        runTruffleHog,
+        writeWorkspace: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    expect(result.completed).toBe(false);
+    expect(result.result).toEqual({ status: "failed" });
+
+    expect(runTruffleHog).not.toHaveBeenCalled();
+    expect(runClawScan).not.toHaveBeenCalled();
+    const payload = client.action.mock.calls[0]?.[1] as {
+      clawscan: { status: string; summary?: string };
+      trufflehog: { status: string; summary?: string };
+    };
+    expect(payload.trufflehog.status).toBe("failed");
+    expect(payload.trufflehog.summary).toContain("Python bytecode");
+    expect(payload.clawscan.status).toBe("failed");
+    expect(payload.clawscan.summary).toContain("Python bytecode");
+  });
+
+  it("runs the required skill scan with an explicit manifest for a dual-layout artifact", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    await writeFile(join(workspace, "artifact", "openclaw.plugin.json"), '{"id":"demo"}\n');
     const fakeClawScan = join(workspace, "fake-clawscan");
     await writeFile(
       fakeClawScan,
       `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "${workspace}/clawscan-args.txt"
+printf '%s\n' "\${SECURITY_SCAN_WORKER_TOKEN-}" > "${workspace}/clawscan-worker-token.txt"
+printf '%s\n' "\${DEFAULT_BASE_URL-}" > "${workspace}/clawscan-default-base-url.txt"
+printf '%s\n' "\${OPENAI_BASE_URL-}" > "${workspace}/clawscan-openai-base-url.txt"
+printf '%s\n' "\${OPENAI_API_KEY-}" > "${workspace}/clawscan-provider-key.txt"
 output=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output" ]; then
@@ -630,15 +811,23 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
 JSON
 `,
     );
     await chmod(fakeClawScan, 0o755);
     const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
     const previousSandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+    const previousWorkerToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+    const previousDefaultBaseUrl = process.env.DEFAULT_BASE_URL;
+    const previousOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+    const previousOpenAiApiKey = process.env.OPENAI_API_KEY;
     process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
-    delete process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+    process.env.PREPUBLICATION_CLAWSCAN_SANDBOX = "off";
+    process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-completion-token";
+    process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
+    process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
+    process.env.OPENAI_API_KEY = "mock-provider-key";
 
     try {
       await expect(
@@ -663,6 +852,11 @@ JSON
             status: "clean",
             verdict: "benign",
           }),
+          aigAnalysis: expect.objectContaining({
+            issueCount: 0,
+            scannerVersion: "0.2.1",
+            status: "clean",
+          }),
           check: {
             status: "clean",
             summary: "Native ClawScan passed.",
@@ -671,15 +865,267 @@ JSON
       );
 
       const args = await readFile(join(workspace, "clawscan-args.txt"), "utf8");
-      expect(args).toContain("./artifact");
+      expect(args.split("\n")[0]).toBe("./artifact/SKILL.md");
       expect(args).toContain("--profile\nclawhub");
       expect(args).toContain("--output\n");
-      expect(args).not.toContain("--sandbox");
+      expect(args).toContain("--sandbox\noff");
+      expect(await readFile(join(workspace, "clawscan-worker-token.txt"), "utf8")).toBe("\n");
+      expect(await readFile(join(workspace, "clawscan-default-base-url.txt"), "utf8")).toBe(
+        "https://api.openai.com/v1\n",
+      );
+      expect(await readFile(join(workspace, "clawscan-openai-base-url.txt"), "utf8")).toBe("\n");
+      expect(await readFile(join(workspace, "clawscan-provider-key.txt"), "utf8")).toBe(
+        "mock-provider-key\n",
+      );
+      expect(process.env.SECURITY_SCAN_WORKER_TOKEN).toBe("mock-completion-token");
     } finally {
       if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
       else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
       if (previousSandbox === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
       else process.env.PREPUBLICATION_CLAWSCAN_SANDBOX = previousSandbox;
+      if (previousWorkerToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousWorkerToken;
+      if (previousDefaultBaseUrl === undefined) delete process.env.DEFAULT_BASE_URL;
+      else process.env.DEFAULT_BASE_URL = previousDefaultBaseUrl;
+      if (previousOpenAiBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = previousOpenAiBaseUrl;
+      if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+    }
+  });
+
+  it.each(["./artifact", "./artifact/package"])(
+    "scans the plugin manifest in dual-layout package %s",
+    async (packageRoot) => {
+      const workspace = await tempDir();
+      await mkdir(join(workspace, packageRoot), { recursive: true });
+      await writeFile(join(workspace, packageRoot, "package.json"), '{"name":"demo-plugin"}\n');
+      await writeFile(
+        join(workspace, packageRoot, "openclaw.plugin.json"),
+        '{"id":"demo-plugin"}\n',
+      );
+      await writeFile(join(workspace, packageRoot, "SKILL.md"), "# Bundled skill\n");
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      await writeFile(
+        fakeClawScan,
+        `#!/usr/bin/env bash
+set -euo pipefail
+test "$1" = "${packageRoot}/openclaw.plugin.json"
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"skipped"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+JSON
+`,
+      );
+      await chmod(fakeClawScan, 0o755);
+      const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+
+      try {
+        await expect(
+          runNativeClawScan(
+            {
+              job: {
+                _id: String(attempt.attemptId),
+                attempts: 1,
+                hasMaliciousSignal: false,
+                leaseToken: attempt.claimId,
+                source: "pre-publication",
+                targetKind: "packageRelease",
+                waitForVtUntil: 0,
+              },
+              target: {},
+            },
+            workspace,
+          ),
+        ).resolves.toEqual({
+          analysis: expect.objectContaining({
+            status: "clean",
+            verdict: "benign",
+          }),
+          aigAnalysis: undefined,
+          check: {
+            status: "clean",
+            summary: "Native ClawScan passed.",
+          },
+        });
+      } finally {
+        if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+        else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+      }
+    },
+  );
+
+  it("fails closed when a completed skill scan omits a required scanner", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"aig-skill-scan","version":"0.2.1"}},"results":[]}]}},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              _id: String(attempt.attemptId),
+              attempts: 1,
+              hasMaliciousSignal: false,
+              leaseToken: attempt.claimId,
+              source: "pre-publication",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {},
+          },
+          workspace,
+        ),
+      ).resolves.toEqual({
+        check: {
+          status: "failed",
+          summary: "ClawScan scanner did not complete: skillspector=missing",
+        },
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it("preserves a redacted scanner error when a required scanner fails", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"failed","error":"provider rejected request with api_key=secret-value"},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed"}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              _id: String(attempt.attemptId),
+              attempts: 1,
+              hasMaliciousSignal: false,
+              leaseToken: attempt.claimId,
+              source: "pre-publication",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {},
+          },
+          workspace,
+        ),
+      ).resolves.toEqual({
+        check: {
+          status: "failed",
+          summary:
+            "ClawScan scanner did not complete: aig=failed (provider rejected request with api_key=[redacted-secret])",
+        },
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it("fails closed when completed A.I.G output has no SARIF run", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"aig":{"status":"completed","raw":{"version":"2.1.0","runs":[]}},"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              _id: String(attempt.attemptId),
+              attempts: 1,
+              hasMaliciousSignal: false,
+              leaseToken: attempt.claimId,
+              source: "pre-publication",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {},
+          },
+          workspace,
+        ),
+      ).resolves.toEqual({
+        check: {
+          status: "failed",
+          summary: "A.I.G SARIF output did not contain a run.",
+        },
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
     }
   });
 

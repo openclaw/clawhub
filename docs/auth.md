@@ -23,7 +23,7 @@ mistake.
 
 ## CLI login
 
-The default CLI login flow opens your browser:
+The default CLI login uses device-code approval:
 
 ```bash
 clawhub login
@@ -32,33 +32,35 @@ clawhub whoami
 
 What happens:
 
-1. The CLI starts a temporary callback server on `127.0.0.1`.
-2. Your browser opens the ClawHub sign-in page.
-3. After GitHub sign-in, ClawHub creates an API token.
-4. The browser redirects back to the local callback.
-5. The CLI stores the token in your ClawHub config file.
+1. The CLI prints a one-time code and verification URL.
+2. Open the printed URL on this or another device and sign in with GitHub if needed.
+3. Confirm the code matches your terminal, then select **Authorize**.
+4. The CLI polls for approval, receives an API token, verifies it via `whoami`,
+   and stores it in your ClawHub config file.
 
-If your browser cannot reach the local callback because of firewall, VPN, or
-proxy rules, use the headless token flow.
+The CLI does not open a browser or start a local callback server. Codes expire
+after 15 minutes; run `clawhub login` again if yours expires.
 
 ## Headless login
 
-Create a token in the ClawHub web UI, then pass it to the CLI:
+Create a token in ClawHub Settings → API tokens, then pass it to the CLI:
 
 ```bash
 clawhub login --token clh_...
 ```
 
-Use this flow for servers, CI jobs, or terminal-only environments.
+Use this flow for unattended login on servers or in CI jobs. `--no-input` alone
+still waits for device approval.
 
-For remote shells where you can open a browser elsewhere, run:
+The default device flow also works from remote shells. `--device` explicitly
+selects the same flow:
 
 ```bash
 clawhub login --device
 ```
 
-The CLI prints a one-time code and waits while you authorize it at
-`https://clawhub.ai/cli/device`.
+Open the printed verification URL in a browser on another device and authorize
+the code while the CLI waits.
 
 ## Token storage
 

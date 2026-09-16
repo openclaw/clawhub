@@ -74,6 +74,29 @@ describe("CatalogMetadataEditor", () => {
     );
   });
 
+  it("hides package-owned plugin categories and saves topics only", async () => {
+    const onSave = vi.fn(async () => {});
+    render(
+      <CatalogMetadataEditor
+        kind="plugin"
+        showCategories={false}
+        categories={["models"]}
+        topics={["local-models"]}
+        onSave={onSave}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Categories" })).toBeNull();
+    expect(screen.queryByText("1 category")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        topics: ["local-models"],
+      }),
+    );
+  });
+
   it("applies generated categories only after an explicit button click", async () => {
     const onSave = vi.fn(async () => {});
     render(

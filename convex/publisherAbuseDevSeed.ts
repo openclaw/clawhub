@@ -4,28 +4,31 @@ import type { MutationCtx } from "./_generated/server";
 // inserting/deleting demo rows does NOT fire table triggers. The users digest-sync
 // trigger runs a paginated query, and Convex allows only one paginated query per
 // mutation, so deleting several linked demo users through the wrapped builder fails.
-// Demo rows have no real packages/skills, so skipping digest sync is correct here.
+// Demo rows have no real packages, and publisher stats are maintained explicitly.
 import { internalMutation } from "./_generated/server";
 import { assertLocalDevSeedAllowed } from "./lib/devSeed";
 import {
   computePublisherAbuseRawScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   PUBLISHER_ABUSE_MODEL_VERSION,
-  PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   type PublisherAbuseLabel,
 } from "./lib/publisherAbuseScoring";
+import { adjustPublisherStatsForSkillChange } from "./lib/publisherStats";
 
 // DEV-ONLY seed for the publisher-abuse review dashboard. It inserts one
 // completed score run plus a spread of synthetic scores/nominations so every
-// dashboard tab renders with realistic rows. All synthetic rows use the
-// "demo-" prefix on handle/ownerKey so `clearSeed` can remove them precisely.
+// dashboard tab renders with realistic rows. Synthetic rows use the "demo-"
+// owner-key prefix; handles use the demo prefix except for the sign-in-capable
+// local abuse persona. `clearSeed` removes only rows owned by this fixture and
+// preserves that shared persona and its personal publisher.
 
 const DEMO_HANDLE_PREFIX = "demo-abuse-pub-";
 const DEMO_OWNER_KEY_PREFIX = "user:demo-";
-const TEMPORAL_DEMO_HANDLE = `${DEMO_HANDLE_PREFIX}temporal-cohort`;
+const TEMPORAL_DEMO_HANDLE = "local-abuse";
 const TEMPORAL_DEMO_OWNER_KEY = `${DEMO_OWNER_KEY_PREFIX}temporal-cohort`;
 const TEMPORAL_DEMO_SKILL_SLUG = "demo-temporal-download-burst";
 const TEMPORAL_DEMO_RATIO_SKILL_SLUG = "demo-temporal-install-ratio";
+const LEGACY_TEMPORAL_DEMO_MODEL_VERSION = "publisher-abuse-temporal.v1";
 const CLEAR_SEED_BATCH_SIZE = 100;
 
 // A realistic quiet-baseline → sharp-burst → uneven-tail shape keeps the
@@ -229,7 +232,7 @@ function paddedIndex(index: number): string {
 }
 
 function isDemoHandle(handle: string): boolean {
-  return handle.startsWith(DEMO_HANDLE_PREFIX);
+  return handle === TEMPORAL_DEMO_HANDLE || handle.startsWith(DEMO_HANDLE_PREFIX);
 }
 
 function isDemoOwnerKey(ownerKey: string): boolean {
@@ -244,10 +247,7 @@ function demoOwnerKey(index: number): string {
   return `${DEMO_OWNER_KEY_PREFIX}${paddedIndex(index)}`;
 }
 
-const DEMO_HANDLES = [
-  ...SEED_PUBLISHERS.map((publisher) => demoHandle(publisher.index)),
-  TEMPORAL_DEMO_HANDLE,
-];
+const DEMO_HANDLES = SEED_PUBLISHERS.map((publisher) => demoHandle(publisher.index));
 const DEMO_OWNER_KEYS = [
   ...SEED_PUBLISHERS.map((publisher) => demoOwnerKey(publisher.index)),
   TEMPORAL_DEMO_OWNER_KEY,
@@ -421,6 +421,25 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
   const temporalInstalls30d = temporalInstalls.reduce((sum, value) => sum + value, 0);
   const temporalDownloads7d = temporalDownloads.slice(-7).reduce((sum, value) => sum + value, 0);
   const temporalInstalls7d = temporalInstalls.slice(-7).reduce((sum, value) => sum + value, 0);
+  const temporalPrevious30Downloads =
+    7 * 4 + temporalDownloads.slice(0, 23).reduce((sum, value) => sum + value, 0);
+  const temporalExpected7Downloads = (temporalPrevious30Downloads / 30) * 7;
+  const temporalSustainedExpectedDailyDownloads = 4;
+  const temporalSustainedDailyDownloadThreshold = Math.max(
+    Math.max(100 / 7, temporalSustainedExpectedDailyDownloads) * 4,
+    temporalSustainedExpectedDailyDownloads + 400 / 7,
+  );
+  const temporalSustainedDailyDownloads = temporalDownloads.slice(-14);
+  const temporalSustainedDaysAboveThreshold = temporalSustainedDailyDownloads.filter(
+    (downloads) => downloads > temporalSustainedDailyDownloadThreshold,
+  ).length;
+  const temporalSustainedWindowDownloads = temporalSustainedDailyDownloads.reduce(
+    (sum, downloads) => sum + downloads,
+    0,
+  );
+  const temporalSustainedWindowInstalls = temporalInstalls
+    .slice(-14)
+    .reduce((sum, value) => sum + value, 0);
   const ratioDownloads = scaleDailySeries(TEMPORAL_DEMO_ACTIVITY_SHAPE, 2_400);
   const ratioInstalls = scaleDailySeries(TEMPORAL_DEMO_ACTIVITY_SHAPE, 288);
   const ratioDownloads7d = ratioDownloads.slice(-7).reduce((sum, value) => sum + value, 0);
@@ -434,30 +453,45 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     downloads30dP99: 3000,
     spikeMultiplier7dP95: 4,
     spikeMultiplier7dP99: 12,
+    excess7DownloadsP95: 400,
+    excess7DownloadsP99: 1_200,
   };
-  const temporalUserId = await ctx.db.insert("users", {
-    handle: TEMPORAL_DEMO_HANDLE,
-    name: "Demo Temporal Abuse Publisher",
-    role: "user",
-    createdAt: now - DAY_MS,
-    updatedAt: now - DAY_MS,
-  });
-  const temporalPublisherId = await ctx.db.insert("publishers", {
-    kind: "user",
-    handle: TEMPORAL_DEMO_HANDLE,
-    displayName: "Demo Temporal Abuse Publisher",
-    linkedUserId: temporalUserId,
-    publishedSkills: 1,
-    publishedPackages: 0,
-    totalInstalls: temporalInstalls30d,
-    totalDownloads: temporalDownloads30d,
-    totalStars: 0,
-    skillTotalInstalls: temporalInstalls30d,
-    skillTotalDownloads: temporalDownloads30d,
-    skillTotalStars: 0,
-    createdAt: now - DAY_MS,
-    updatedAt: now - HOUR_MS,
-  });
+  const [existingTemporalUser] = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", TEMPORAL_DEMO_HANDLE))
+    .take(1);
+  const temporalUserId =
+    existingTemporalUser?._id ??
+    (await ctx.db.insert("users", {
+      handle: TEMPORAL_DEMO_HANDLE,
+      name: "Demo Temporal Abuse Publisher",
+      email: "local-abuse@example.test",
+      role: "user",
+      createdAt: now - DAY_MS,
+      updatedAt: now - DAY_MS,
+    }));
+  const [existingTemporalPublisher] = await ctx.db
+    .query("publishers")
+    .withIndex("by_handle", (q) => q.eq("handle", TEMPORAL_DEMO_HANDLE))
+    .take(1);
+  const temporalPublisherId =
+    existingTemporalPublisher?._id ??
+    (await ctx.db.insert("publishers", {
+      kind: "user",
+      handle: TEMPORAL_DEMO_HANDLE,
+      displayName: "Demo Temporal Abuse Publisher",
+      linkedUserId: temporalUserId,
+      publishedSkills: 0,
+      publishedPackages: 0,
+      totalInstalls: 0,
+      totalDownloads: 0,
+      totalStars: 0,
+      skillTotalInstalls: 0,
+      skillTotalDownloads: 0,
+      skillTotalStars: 0,
+      createdAt: now - DAY_MS,
+      updatedAt: now - HOUR_MS,
+    }));
   const temporalSkillId = await ctx.db.insert("skills", {
     slug: TEMPORAL_DEMO_SKILL_SLUG,
     displayName: "Demo Temporal Download Burst",
@@ -506,6 +540,13 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     createdAt: now - DAY_MS,
     updatedAt: now - HOUR_MS,
   });
+  const [temporalSkill, ratioSkill] = await Promise.all([
+    ctx.db.get(temporalSkillId),
+    ctx.db.get(ratioSkillId),
+  ]);
+  if (!temporalSkill || !ratioSkill) throw new Error("Temporal demo skills were not created");
+  await adjustPublisherStatsForSkillChange(ctx, null, temporalSkill);
+  await adjustPublisherStatsForSkillChange(ctx, null, ratioSkill);
   for (let offset = 59; offset >= 30; offset -= 1) {
     await ctx.db.insert("skillDailyStats", {
       skillId: temporalSkillId,
@@ -536,7 +577,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
   const temporalStartedAt = now - 35 * 60_000;
   const temporalCompletedAt = now - 30 * 60_000;
   const temporalRunId = await ctx.db.insert("publisherAbuseScoreRuns", {
-    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    modelVersion: LEGACY_TEMPORAL_DEMO_MODEL_VERSION,
     modelConfig: DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
     trigger: "manual",
     status: "completed",
@@ -563,7 +604,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     ownerPublisherId: temporalPublisherId,
     ownerUserId: temporalUserId,
     handleSnapshot: TEMPORAL_DEMO_HANDLE,
-    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    modelVersion: LEGACY_TEMPORAL_DEMO_MODEL_VERSION,
     label: "review",
     rank: 1,
     pressure: 18,
@@ -576,7 +617,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     installsPerSkill: temporalInstalls30d,
     starsPerSkill: 0,
     downloadsPerSkill: temporalDownloads30d,
-    reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+    reasonCodes: ["temporal_sustained_abnormal_download_days"],
     temporalHighSkillCount: 1,
     temporalSpikeSkillCount: 0,
     temporalSustainedSkillCount: 1,
@@ -592,19 +633,27 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
         pressure: 18,
         recent7Downloads: temporalDownloads7d,
         recent7Installs: temporalInstalls7d,
-        previous30Downloads: 120,
-        baseline7Downloads: 100,
-        spikeMultiplier: 8,
+        previous30Downloads: temporalPrevious30Downloads,
+        baseline7Downloads: temporalExpected7Downloads,
+        spikeMultiplier: temporalDownloads7d / temporalExpected7Downloads,
+        expected7Downloads: temporalExpected7Downloads,
+        excess7Downloads: temporalDownloads7d - temporalExpected7Downloads,
         recent30Downloads: temporalDownloads30d,
         recent30Installs: temporalInstalls30d,
         downloadInstallRatio30: temporalDownloads30d / Math.max(1, temporalInstalls30d),
-        downloads30dCohortBand: "p99",
-        spikeMultiplierCohortBand: "p95",
+        excess7DownloadsCohortBand: "p99",
         downloads30dVsPeerP95: 18,
-        spikeMultiplierVsPeerP95: 2,
-        sustainedWindowStartDay: todayDay - 29,
+        spikeMultiplierVsPeerP95: temporalDownloads7d / temporalExpected7Downloads / 4,
+        excess7DownloadsVsPeerP95: (temporalDownloads7d - temporalExpected7Downloads) / 400,
+        sustainedDaysAboveThreshold: temporalSustainedDaysAboveThreshold,
+        sustainedWindowDays: 14,
+        sustainedDailyDownloadThreshold: temporalSustainedDailyDownloadThreshold,
+        sustainedExpectedDailyDownloads: temporalSustainedExpectedDailyDownloads,
+        sustainedWindowDownloads: temporalSustainedWindowDownloads,
+        sustainedWindowInstalls: temporalSustainedWindowInstalls,
+        sustainedWindowStartDay: todayDay - 13,
         sustainedWindowEndDay: todayDay,
-        reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+        reasonCodes: ["temporal_sustained_abnormal_download_days"],
       },
     ],
     createdAt: temporalCompletedAt,
@@ -615,7 +664,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     ownerUserId: temporalUserId,
     handleSnapshot: TEMPORAL_DEMO_HANDLE,
     latestScoreId: temporalScoreId,
-    modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+    modelVersion: LEGACY_TEMPORAL_DEMO_MODEL_VERSION,
     label: "review",
     status: "pending",
     openedAt: temporalCompletedAt,
@@ -624,7 +673,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     updatedAt: temporalCompletedAt,
   });
   await ctx.db.insert("publisherAbuseSignals", {
-    signalType: "sustained_downloads_flat_installs",
+    signalType: "sustained_abnormal_download_days",
     ownerKey: TEMPORAL_DEMO_OWNER_KEY,
     ownerPublisherId: temporalPublisherId,
     ownerUserId: temporalUserId,
@@ -646,7 +695,13 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     allTimeDownloads: temporalDownloads30d,
     allTimeInstalls: temporalInstalls30d,
     allTimeInstallDownloadRatio: temporalInstalls30d / temporalDownloads30d,
-    reviewStatus: "open",
+    temporalBenchmark,
+    sustainedDaysAboveThreshold: temporalSustainedDaysAboveThreshold,
+    sustainedWindowDays: 14,
+    sustainedDailyDownloadThreshold: temporalSustainedDailyDownloadThreshold,
+    sustainedExpectedDailyDownloads: temporalSustainedExpectedDailyDownloads,
+    sustainedWindowDownloads: temporalSustainedWindowDownloads,
+    sustainedWindowInstalls: temporalSustainedWindowInstalls,
   });
   await ctx.db.insert("publisherAbuseSignals", {
     signalType: "high_install_download_ratio",
@@ -671,7 +726,6 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     allTimeDownloads: 2_400,
     allTimeInstalls: 288,
     allTimeInstallDownloadRatio: 0.12,
-    reviewStatus: "open",
   });
 }
 
@@ -720,7 +774,6 @@ async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
   }
 
   signals += await clearTemporalDemoSkillRows(ctx);
-  await clearTemporalDemoPublisherRows(ctx);
 
   for (const runId of demoRunIds) {
     const run = await ctx.db.get(runId);
@@ -758,6 +811,7 @@ async function clearTemporalDemoSkillRows(ctx: ClearSeedCtx) {
       for (const stat of dailyStats) {
         await ctx.db.delete(stat._id);
       }
+      await adjustPublisherStatsForSkillChange(ctx, skill, null);
       await ctx.db.delete(skill._id);
     }
   }
@@ -772,6 +826,8 @@ async function clearTemporalDemoSignalsForSkill(
   for (const signalType of [
     "high_install_download_ratio",
     "sustained_downloads_flat_installs",
+    "download_spike_flat_installs",
+    "sustained_abnormal_download_days",
   ] as const) {
     const rows = await ctx.db
       .query("publisherAbuseSignals")
@@ -785,16 +841,6 @@ async function clearTemporalDemoSignalsForSkill(
     }
   }
   return deleted;
-}
-
-async function clearTemporalDemoPublisherRows(ctx: ClearSeedCtx) {
-  const rows = await ctx.db
-    .query("publishers")
-    .withIndex("by_handle", (q) => q.eq("handle", TEMPORAL_DEMO_HANDLE))
-    .take(CLEAR_SEED_BATCH_SIZE);
-  for (const publisher of rows) {
-    await ctx.db.delete(publisher._id);
-  }
 }
 
 async function queryDemoScoresPage(

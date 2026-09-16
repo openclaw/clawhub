@@ -1,14 +1,20 @@
 import {
   ApiRoutes,
+  ApiV1PackageScanBatchRequestSchema,
+  ApiV1PackageScanBatchStatusRequestSchema,
+  ApiV1PackageCategoriesBatchRequestSchema,
+  ApiV1PackageCategoriesBatchResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageValidationReportPageSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageSecurityResponseSchema,
+  ApiV1PluginDetailResponseSchema,
   PackageHardDeleteRequestSchema,
   PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
+  PACKAGE_CATEGORY_BATCH_LIMIT,
   PackageRepairNameRequestSchema,
   PackageRepairRuntimeIdRequestSchema,
   PackageReportRequestSchema,
@@ -19,9 +25,15 @@ import {
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
   formatSecurityAuditOverview,
+  aggregateAuditVerdict,
   normalizeContentType,
   isPluginCategorySlug,
+  PLUGIN_CATEGORY_DEFINITIONS,
   parseArk,
+  type ApiV1PackageCategoriesBatchRequest,
+  type ApiV1PackageSecurityResponse,
+  type ApiV1PluginOverviewResponse,
+  type PackageListItem,
   type PackagePublishMetadata,
   type PackageAppealListStatus,
   type PackageModerationQueueStatus,
@@ -36,6 +48,7 @@ import type { ActionCtx } from "../_generated/server";
 import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics";
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
 import { experimentalClawsEnabled } from "../lib/experimentalClaws";
 import {
@@ -53,6 +66,7 @@ import {
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
+import type { PublicPublisher } from "../lib/public";
 import {
   getClawPackSizeError,
   getPackageMultipartSizeError,
@@ -64,6 +78,7 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
 import { compareRecommendationStats } from "../lib/recommendationScore";
+import { isCuratedSearchResult } from "../lib/searchRanking";
 import {
   getPublicSkillVersionAccessBlock,
   getPublicSkillVersionDownloadBlock,
@@ -118,6 +133,7 @@ const internalRefs = internal as unknown as {
     getByNameForViewerInternal: unknown;
     hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
+    listPluginOverviewCategoryInternal: unknown;
     listPluginValidationReportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -126,6 +142,7 @@ const internalRefs = internal as unknown as {
     hardDeleteForAdminInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
+    resolveVersionCategoriesBatchInternal: unknown;
     getVersionSecurityByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
     publishPackageForTrustedPublisherInternal: unknown;
@@ -178,6 +195,8 @@ const internalRefs = internal as unknown as {
   };
   securityScan: {
     requestPackageRescanForUserInternal: unknown;
+    enqueueBulkPackageRescanBatchForAdminInternal: unknown;
+    getBulkPackageRescanBatchStatusForAdminInternal: unknown;
   };
   publishAttempts: {
     getPackagePublishAttemptStatusInternal: unknown;
@@ -678,6 +697,33 @@ function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
   };
 }
 
+function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
+  const scanStatus = resolvePackageReleaseScanStatus(release);
+  const verification = release.verification ? { ...release.verification, scanStatus } : null;
+  return {
+    version: release.version,
+    createdAt: release.createdAt,
+    changelog: release.changelog,
+    distTags: release.distTags ?? [],
+    files: release.files.map((file) => ({
+      path: file.path,
+      size: file.size,
+      sha256: file.sha256,
+      contentType: file.contentType,
+    })),
+    compatibility: release.compatibility ?? null,
+    pluginManifestSummary: release.pluginManifestSummary ?? null,
+    clawManifestSummary: release.clawManifestSummary ?? null,
+    verification,
+    artifact: toReleaseArtifact(release, packageName),
+    sha256hash: release.sha256hash ?? null,
+    vtAnalysis: release.vtAnalysis ?? null,
+    skillSpectorAnalysis: release.skillSpectorAnalysis ?? null,
+    llmAnalysis: release.llmAnalysis ?? null,
+    staticScan: release.staticScan ?? null,
+  };
+}
+
 function toPackageReleaseSecurityResponse(params: {
   request: Request;
   pkg: PublicPackageDocLike;
@@ -690,6 +736,7 @@ function toPackageReleaseSecurityResponse(params: {
   if (packageBlockedFromDownload) reasons.push("package:malicious");
   return {
     overview: formatSecurityAuditOverview({ llmAnalysis: params.release.llmAnalysis }),
+    verdict: aggregateAuditVerdict(params.release),
     securityAuditUrl: buildPackageSecurityAuditUrl(
       params.request,
       params.pkg.name,
@@ -861,20 +908,15 @@ async function resolvePackageTags(
   );
 }
 
-type CatalogListItem = {
-  name: string;
-  displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
-  runtimeId?: string | null;
-  channel: "official" | "community" | "private";
-  isOfficial: boolean;
-  summary?: string | null;
-  ownerHandle?: string | null;
-  createdAt: number;
-  updatedAt: number;
-  latestVersion?: string | null;
-  verificationTier?: string | null;
-  stats?: { downloads: number; installs: number; stars: number; versions: number };
+type CatalogListItem = PackageListItem & {
+  ownerOfficial?: boolean;
+};
+
+type PluginOverviewItem = CatalogListItem & {
+  featured?: boolean;
+  featuredRank?: number;
+  trending?: boolean;
+  trendingRank?: number;
 };
 
 type CatalogSearchEntry = {
@@ -1176,8 +1218,20 @@ function compareCatalogItemsForSort(
   return compareCatalogItems(a, b);
 }
 
-function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
+export function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
   return (
+    Number(
+      isCuratedSearchResult({
+        isOfficial: b.package.isOfficial,
+        featured: typeof b.package.featuredAt === "number",
+      }),
+    ) -
+      Number(
+        isCuratedSearchResult({
+          isOfficial: a.package.isOfficial,
+          featured: typeof a.package.featuredAt === "number",
+        }),
+      ) ||
     (a.rankTier ?? Number.POSITIVE_INFINITY) - (b.rankTier ?? Number.POSITIVE_INFINITY) ||
     b.score - a.score ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
@@ -1275,6 +1329,24 @@ function toSkillPackageDetail(
   };
 }
 
+function toPackageMetadataResponse(
+  pkg: PublicPackageDocLike,
+  owner: PublicPublisher | null,
+  tags: Record<string, string>,
+) {
+  return {
+    package: { ...toPackageDetailResponsePackage(pkg), tags },
+    owner: owner
+      ? {
+          handle: owner.handle ?? null,
+          displayName: owner.displayName ?? null,
+          image: owner.image ?? null,
+          official: owner.official === true,
+        }
+      : null,
+  };
+}
+
 function toPackageDetailResponsePackage(pkg: PublicPackageDocLike) {
   const {
     capabilityTags: _capabilityTags,
@@ -1336,15 +1408,33 @@ async function storeClawPackFile(
   };
 }
 
+// Convex actions have a tight memory ceiling, so bound in-flight Blob copies by
+// bytes as well as count. Storing thousands of small files one at a time
+// otherwise pushes large ClawPacks past clients' publish request timeouts.
+const CLAWPACK_STORE_BATCH_BYTES = 8 * 1024 * 1024;
+const CLAWPACK_STORE_BATCH_FILES = 16;
+
 async function storeClawPackFiles(
   ctx: ActionCtx,
   entries: Array<{ path: string; bytes: Uint8Array }>,
 ) {
   const files: StoredPackagePublishFile[] = [];
-  // Convex HTTP actions have a tight memory ceiling; avoid concurrent Blob work.
+  let batch: Array<{ path: string; bytes: Uint8Array }> = [];
+  let batchBytes = 0;
+  const flush = async () => {
+    files.push(...(await Promise.all(batch.map((entry) => storeClawPackFile(ctx, entry)))));
+    batch = [];
+    batchBytes = 0;
+  };
   for (const entry of entries) {
-    files.push(await storeClawPackFile(ctx, entry));
+    const overflows =
+      batch.length >= CLAWPACK_STORE_BATCH_FILES ||
+      batchBytes + entry.bytes.byteLength > CLAWPACK_STORE_BATCH_BYTES;
+    if (batch.length > 0 && overflows) await flush();
+    batch.push(entry);
+    batchBytes += entry.bytes.byteLength;
   }
+  if (batch.length > 0) await flush();
   return files;
 }
 
@@ -2461,6 +2551,109 @@ export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
   });
 }
 
+const PLUGIN_OVERVIEW_SECTION_SIZE = 8;
+const PLUGIN_OVERVIEW_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+
+function mergePluginOverviewItem(
+  items: Map<string, PluginOverviewItem>,
+  item: CatalogListItem,
+  options: {
+    category?: string;
+    featuredRank?: number;
+    trendingRank?: number;
+  },
+) {
+  const existing = items.get(item.name);
+  const categories = [
+    ...new Set([...(existing?.categories ?? []), ...(item.categories ?? []), options.category]),
+  ].filter((category): category is string => Boolean(category));
+  const featuredRank = existing?.featuredRank ?? options.featuredRank;
+  const trendingRank = existing?.trendingRank ?? options.trendingRank;
+  items.set(item.name, {
+    ...(existing ?? item),
+    ...(categories.length > 0 ? { categories } : {}),
+    ...(featuredRank === undefined ? {} : { featured: true, featuredRank }),
+    ...(trendingRank === undefined ? {} : { trending: true, trendingRank }),
+  });
+}
+
+export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "read");
+  if (!rate.ok) return rate.response;
+
+  const page = async (args: { highlightedOnly?: boolean; sort?: "trending" }) =>
+    await runQueryRef<{
+      page: CatalogListItem[];
+      isDone: boolean;
+      continueCursor: string;
+    }>(ctx, internalRefs.packages.listPageForViewerInternal, {
+      ...(args.highlightedOnly || args.sort === "trending"
+        ? { families: [...PLUGIN_OVERVIEW_FAMILIES] }
+        : {}),
+      ...args,
+      paginationOpts: { cursor: null, numItems: PLUGIN_OVERVIEW_SECTION_SIZE },
+    });
+
+  // One bounded fanout replaces one public HTTP request per home-page shelf.
+  const [featured, trending, ...categoryPages] = await Promise.all([
+    page({ highlightedOnly: true }),
+    page({ sort: "trending" }),
+    ...PLUGIN_CATEGORY_DEFINITIONS.map((category) =>
+      runQueryRef<CatalogListItem[]>(
+        ctx,
+        internalRefs.packages.listPluginOverviewCategoryInternal,
+        {
+          category: category.slug,
+          numItems: PLUGIN_OVERVIEW_SECTION_SIZE,
+        },
+      ),
+    ),
+  ]);
+  const items = new Map<string, PluginOverviewItem>();
+  for (const [featuredRank, item] of featured.page.entries()) {
+    mergePluginOverviewItem(items, item, { featuredRank });
+  }
+  for (const [trendingRank, item] of trending.page.entries()) {
+    mergePluginOverviewItem(items, item, { trendingRank });
+  }
+  for (const [index, result] of categoryPages.entries()) {
+    const category = PLUGIN_CATEGORY_DEFINITIONS[index];
+    for (const item of result) {
+      mergePluginOverviewItem(items, item, { category: category.slug });
+    }
+  }
+
+  const response: ApiV1PluginOverviewResponse = {
+    categories: PLUGIN_CATEGORY_DEFINITIONS.map((category, order) => ({
+      slug: category.slug,
+      label: category.label,
+      description: category.description,
+      icon: category.icon,
+      order,
+    })),
+    items: [...items.values()],
+  };
+  return json(
+    response,
+    200,
+    mergeHeaders(rate.headers, {
+      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+    }),
+  );
+}
+
+export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
+  return json({
+    categories: PLUGIN_CATEGORY_DEFINITIONS.map((category, order) => ({
+      slug: category.slug,
+      label: category.label,
+      description: category.description,
+      icon: category.icon,
+      order,
+    })),
+  });
+}
+
 export async function listCodePluginsV1Handler(ctx: ActionCtx, request: Request) {
   return await listPackages(ctx, request, "code-plugin");
 }
@@ -2796,6 +2989,103 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (
+    segments[0] === "-" &&
+    segments[1] === "scan" &&
+    segments[2] === "batch" &&
+    (segments.length === 3 || (segments.length === 4 && segments[3] === "status"))
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      if (segments[3] === "status") {
+        const body = parseArk(
+          ApiV1PackageScanBatchStatusRequestSchema,
+          await request.json(),
+          "Package scan batch status payload",
+        );
+        const result = await runQueryRef(
+          ctx,
+          internalRefs.securityScan.getBulkPackageRescanBatchStatusForAdminInternal,
+          {
+            actorUserId: auth.userId,
+            jobIds: body.jobIds,
+          },
+        );
+        return json(result, 200, rate.headers);
+      }
+      const body = parseArk(
+        ApiV1PackageScanBatchRequestSchema,
+        await request.json(),
+        "Package scan batch payload",
+      );
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.securityScan.enqueueBulkPackageRescanBatchForAdminInternal,
+        {
+          ...body,
+          actorUserId: auth.userId,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package bulk rescan failed");
+    }
+  }
+
+  if (segments[0] === "categories:batch" && segments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+
+    let body: ApiV1PackageCategoriesBatchRequest;
+    try {
+      body = parseArk(
+        ApiV1PackageCategoriesBatchRequestSchema,
+        await request.json(),
+        "Package category batch payload",
+      );
+      if (body.packages.length > PACKAGE_CATEGORY_BATCH_LIMIT) {
+        throw new Error(
+          `Package category batches are limited to ${PACKAGE_CATEGORY_BATCH_LIMIT} packages`,
+        );
+      }
+      if (
+        body.packages.some(
+          ({ name, version }) =>
+            !name.trim() || !version.trim() || tryNormalizePackageName(name) === null,
+        )
+      ) {
+        throw new Error("Package names and versions must be non-empty valid package identities");
+      }
+    } catch (error) {
+      return text(
+        error instanceof Error ? error.message : "Invalid package category batch payload",
+        400,
+        rate.headers,
+      );
+    }
+
+    try {
+      const packages = await runQueryRef<
+        Array<{ name: string; version: string; categories: string[] | null }>
+      >(ctx, internalRefs.packages.resolveVersionCategoriesBatchInternal, {
+        packages: body.packages,
+      });
+      const response = parseArk(
+        ApiV1PackageCategoriesBatchResponseSchema,
+        { packages },
+        "Package category batch response",
+      );
+      return json(response, 200, rate.headers);
+    } catch {
+      return text("Internal Server Error", 500, rate.headers);
+    }
+  }
   if (segments[0] === "migrations" && segments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -3573,6 +3863,34 @@ async function getReleaseForRequest(
   );
 }
 
+async function packageFileResponse(
+  ctx: ActionCtx,
+  release: ReleaseLike,
+  path: string,
+  preview: boolean,
+  headers: HeadersInit,
+) {
+  const securityBlock = getReleaseSecurityBlock(release);
+  if (securityBlock) return text(securityBlock.message, securityBlock.status, headers);
+  const file = resolvePackageFilePath(release, path);
+  if (!file) return text("File not found", 404, headers);
+  const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+  if (file.size > maxBytes) return text("File too large", 413, headers);
+  const blob = await ctx.storage.get(file.storageId);
+  if (!blob) return text("File not found", 404, headers);
+  const responseParams = {
+    blob,
+    path: file.path,
+    contentType: file.contentType,
+    sha256: file.sha256,
+    size: file.size,
+    headers: headers,
+  };
+  return preview
+    ? await safeStoredFilePreviewResponse(responseParams)
+    : await safeStoredFileResponse(responseParams);
+}
+
 function isReadmeVariantPath(path: string) {
   const normalized = path.trim().toLowerCase();
   return (
@@ -3743,7 +4061,11 @@ async function getSkillVersionForRequest(
 async function searchPackages(
   ctx: ActionCtx,
   request: Request,
-  options?: { includeSkills?: boolean; pluginFamilies?: Array<"code-plugin" | "bundle-plugin"> },
+  options?: {
+    includeSkills?: boolean;
+    pluginFamilies?: Array<"code-plugin" | "bundle-plugin">;
+    recordPluginSearch?: boolean;
+  },
 ) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -3895,7 +4217,28 @@ async function searchPackages(
       .sort(compareCatalogSearchEntries)
       .slice(0, limit);
   }
-  return json({ results: results.map(toPublicCatalogSearchEntry) }, 200, rate.headers);
+  const publicResults = results.map(toPublicCatalogSearchEntry);
+  if (
+    options?.recordPluginSearch &&
+    !request.signal.aborted &&
+    (!family || family === "code-plugin" || family === "bundle-plugin")
+  ) {
+    await recordCatalogSearchObservation(ctx, request, {
+      artifactKind: "plugin",
+      query: queryText,
+      category,
+      topic,
+      filtered: Boolean(
+        category ||
+        topic ||
+        highlightedOnly ||
+        isOfficial.value !== undefined ||
+        createdAfter !== undefined,
+      ),
+      officialResults: publicResults.map((entry) => entry.package.isOfficial === true),
+    });
+  }
+  return json({ results: publicResults }, 200, rate.headers);
 }
 
 export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {
@@ -4075,6 +4418,50 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   if (!normalizedPackageName) return text("Package not found", 404, rate.headers);
 
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
+  if (packageSegments[0] === "detail" && packageSegments.length === 1) {
+    const version = new URL(request.url).searchParams.get("version")?.trim() || undefined;
+    const snapshot = await ctx.runQuery(internal.packages.getPluginDetailForViewerInternal, {
+      name: normalizedPackageName,
+      viewerUserId: viewerUserId ?? undefined,
+      version,
+    });
+    if (!snapshot) return text("Package not found", 404, rate.headers);
+    const release = snapshot.release;
+    if (version && !release) return text("Version not found", 404, rate.headers);
+    let readme: string | null = null;
+    let security: ApiV1PackageSecurityResponse | null = null;
+    if (release) {
+      const preview = await packageFileResponse(ctx, release, "README.md", true, rate.headers);
+      if (preview.ok) readme = await preview.text();
+      else if (![403, 404, 415, 423].includes(preview.status)) return preview;
+      try {
+        security = parseArk(
+          ApiV1PackageSecurityResponseSchema,
+          toPackageReleaseSecurityResponse({ request, pkg: snapshot.package, release }),
+          "Package security response",
+        );
+      } catch {
+        // Security is optional in the detail view; malformed historical scan
+        // metadata must not hide an otherwise readable package and README.
+      }
+    }
+    const { publicDownloadBlocked: _publicDownloadBlocked, ...pkg } = snapshot.package;
+    return json(
+      parseArk(
+        ApiV1PluginDetailResponseSchema,
+        {
+          ...toPackageMetadataResponse(pkg, snapshot.owner, snapshot.tags),
+          versions: snapshot.versions,
+          version: release ? toPackageVersionResponse(release, pkg.name) : null,
+          readme,
+          security,
+        },
+        "Plugin detail response",
+      ),
+      200,
+      rate.headers,
+    );
+  }
   if (
     packageSegments[0] === "versions" &&
     packageSegments[1] &&
@@ -4112,7 +4499,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
-    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    owner: PublicPublisher | null;
   } | null;
   const skillDetail = detail?.package
     ? null
@@ -4163,23 +4550,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const tags = await resolvePackageTags(ctx, publicPackage!.tags);
 
-    return json(
-      {
-        package: {
-          ...toPackageDetailResponsePackage(publicPackage!),
-          tags,
-        },
-        owner: packageOwner
-          ? {
-              handle: packageOwner.handle ?? null,
-              displayName: packageOwner.displayName ?? null,
-              image: packageOwner.image ?? null,
-            }
-          : null,
-      },
-      200,
-      rate.headers,
-    );
+    return json(toPackageMetadataResponse(publicPackage!, packageOwner, tags), 200, rate.headers);
   }
 
   if (packageSegments[0] === "trusted-publisher" && packageSegments.length === 1) {
@@ -4369,10 +4740,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       },
     )) as { package: PublicPackageDocLike; version: ReleaseLike } | null;
     if (!result) return text("Version not found", 404, rate.headers);
-    const scanStatus = resolvePackageReleaseScanStatus(result.version);
-    const verification = result.version.verification
-      ? { ...result.version.verification, scanStatus }
-      : null;
     return json(
       {
         package: {
@@ -4380,28 +4747,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           displayName: result.package.displayName,
           family: result.package.family,
         },
-        version: {
-          version: result.version.version,
-          createdAt: result.version.createdAt,
-          changelog: result.version.changelog,
-          distTags: result.version.distTags ?? [],
-          files: result.version.files.map((file) => ({
-            path: file.path,
-            size: file.size,
-            sha256: file.sha256,
-            contentType: file.contentType,
-          })),
-          compatibility: result.version.compatibility ?? null,
-          pluginManifestSummary: result.version.pluginManifestSummary ?? null,
-          clawManifestSummary: result.version.clawManifestSummary ?? null,
-          verification,
-          artifact: toReleaseArtifact(result.version, result.package.name),
-          sha256hash: result.version.sha256hash ?? null,
-          vtAnalysis: result.version.vtAnalysis ?? null,
-          skillSpectorAnalysis: result.version.skillSpectorAnalysis ?? null,
-          llmAnalysis: result.version.llmAnalysis ?? null,
-          staticScan: result.version.staticScan ?? null,
-        },
+        version: toPackageVersionResponse(result.version, result.package.name),
       },
       200,
       rate.headers,
@@ -4454,25 +4800,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     }
     const release = await getReleaseForRequest(ctx, publicPackage!, request);
     if (!release) return text("Version not found", 404, rate.headers);
-    const securityBlock = getReleaseSecurityBlock(release);
-    if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
-    const file = resolvePackageFilePath(release, path);
-    if (!file) return text("File not found", 404, rate.headers);
-    const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
-    if (file.size > maxBytes) return text("File too large", 413, rate.headers);
-    const blob = await ctx.storage.get(file.storageId);
-    if (!blob) return text("File not found", 404, rate.headers);
-    const responseParams = {
-      blob,
-      path: file.path,
-      contentType: file.contentType,
-      sha256: file.sha256,
-      size: file.size,
-      headers: rate.headers,
-    };
-    return preview
-      ? await safeStoredFilePreviewResponse(responseParams)
-      : await safeStoredFileResponse(responseParams);
+    return packageFileResponse(ctx, release, path, preview, rate.headers);
   }
 
   if (packageSegments[0] === "download") {
@@ -4635,7 +4963,7 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
   })) as {
     package: PublicPackageDocLike | null;
     latestRelease: ReleaseLike | null;
-    owner: { _id: Id<"users">; handle?: string; displayName?: string; image?: string } | null;
+    owner: PublicPublisher | null;
   } | null;
   if (!detail?.package) return text("Package not found", 404, rate.headers);
 
@@ -4696,6 +5024,7 @@ export async function pluginsGetRouterV1Handler(ctx: ActionCtx, request: Request
     return await searchPackages(ctx, request, {
       includeSkills: false,
       pluginFamilies: ["code-plugin", "bundle-plugin"],
+      recordPluginSearch: true,
     });
   }
   return text("Not found", 404);

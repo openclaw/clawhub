@@ -550,5 +550,21 @@ describe("node http client", () => {
       }),
     ).rejects.toThrow(/timed out after 120s/i);
     expect(setTimeoutImpl.mock.calls[0]?.[1]).toBe(120_000);
+
+    const longTimeouts = createImmediateTimeouts();
+    const longTimeoutClient = createNodeClient({
+      fetchImpl: createAbortingFetchMock() as unknown as typeof fetch,
+      setTimeoutImpl: longTimeouts.setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl: longTimeouts.clearTimeoutImpl,
+    });
+    await expect(
+      longTimeoutClient.apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
+        form: new FormData(),
+        timeoutMs: 300_000,
+      }),
+    ).rejects.toThrow(/timed out after 300s/i);
+    expect(longTimeouts.setTimeoutImpl.mock.calls[0]?.[1]).toBe(300_000);
   });
 });

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { DocsLinks, getPackageScopeOwnerMismatch, isPluginCategorySlug } from "clawhub-schema";
+import { DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
 import { type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
@@ -269,10 +269,7 @@ export function PublishPluginRoute() {
   const changelogTouchedRef = useRef(false);
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [suggestedCategories, setSuggestedCategories] = useState<string[]>();
   const [topics, setTopics] = useState("");
-  const categoriesTouchedRef = useRef(false);
   const topicsTouchedRef = useRef(false);
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
@@ -459,7 +456,6 @@ export function PublishPluginRoute() {
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
     setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
-    setSuggestedCategories(prefill.suggestedCategories);
     if (prefill.family === "code-plugin") setFamily(prefill.family);
     if (prefill.name) setName(prefill.name);
     if (prefill.displayName) setDisplayName(prefill.displayName);
@@ -475,7 +471,6 @@ export function PublishPluginRoute() {
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
-    setSuggestedCategories(undefined);
     changelogRequestRef.current += 1;
     changelogKeyRef.current = null;
     if (!changelogTouchedRef.current) setChangelog("");
@@ -502,15 +497,6 @@ export function PublishPluginRoute() {
 
   useEffect(() => {
     if (!existing?.package) return;
-    if (!categoriesTouchedRef.current) {
-      const nextCategories = (existing.package.categories ?? []).filter(isPluginCategorySlug);
-      setCategories((current) =>
-        current.length === nextCategories.length &&
-        current.every((category, index) => category === nextCategories[index])
-          ? current
-          : nextCategories,
-      );
-    }
     if (!topicsTouchedRef.current) {
       const nextTopics = formatCatalogTopicsInput(existing.package.topics ?? []);
       setTopics((current) => (current === nextTopics ? current : nextTopics));
@@ -732,14 +718,10 @@ export function PublishPluginRoute() {
                   <CatalogMetadataFields
                     kind="plugin"
                     presentation="publish"
-                    categories={categories}
-                    suggestedCategories={suggestedCategories}
+                    showCategories={false}
+                    categories={[]}
                     topics={topics}
                     disabled={metadataDisabled}
-                    onCategoriesChange={(nextCategories) => {
-                      categoriesTouchedRef.current = true;
-                      setCategories(nextCategories);
-                    }}
                     onTopicsChange={(nextTopics) => {
                       topicsTouchedRef.current = true;
                       setTopics(nextTopics);
@@ -1021,9 +1003,6 @@ export function PublishPluginRoute() {
                             family,
                             version: version.trim(),
                             changelog: changelog.trim(),
-                            ...(categories.length || categoriesTouchedRef.current
-                              ? { categories }
-                              : {}),
                             ...(topics.trim() || topicsTouchedRef.current
                               ? { topics: parseCatalogTopicsInput(topics) }
                               : {}),

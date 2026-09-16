@@ -1,5 +1,7 @@
 /* @vitest-environment node */
 
+import { once } from "node:events";
+import { Worker } from "node:worker_threads";
 import { describe, expect, it, vi } from "vitest";
 import { createHttpClient } from "./http.js";
 
@@ -55,6 +57,49 @@ function createBunClient(options?: {
 }
 
 describe("bun http client", () => {
+  it("preserves literal multipart fields and file bytes through real curl", async ({ signal }) => {
+    // curl blocks this thread; the loopback receiver must run independently.
+    const receiver = new Worker(
+      `const { createServer } = require('node:http');
+       const { parentPort } = require('node:worker_threads');
+       const server = createServer(async (req, res) => {
+         const chunks = [];
+         for await (const chunk of req) chunks.push(chunk);
+         const form = await new Request('http://localhost/', {
+           method: 'POST', headers: req.headers, body: Buffer.concat(chunks)
+         }).formData();
+         const file = form.get('file');
+         res.setHeader('content-type', 'application/json');
+         res.end(JSON.stringify({ payload: form.get('payload'), file: await file.text() }));
+       });
+       server.listen(0, '127.0.0.1', () => parentPort.postMessage(server.address().port));`,
+      { eval: true },
+    );
+    try {
+      const [port] = await once(receiver, "message", { signal });
+      const client = createHttpClient({ runtime: "bun", configureDispatcher: false });
+      for (const payload of [
+        JSON.stringify({ manualOverrideReason: "Retry publication; retain original artifacts" }),
+        "@literal-not-a-file",
+        "<literal-not-a-file",
+      ]) {
+        const form = new FormData();
+        form.append("payload", payload);
+        form.append("file", new Blob(["unchanged file bytes"]), "fixture.txt");
+        await expect(
+          client.apiRequestForm(`http://127.0.0.1:${port}`, {
+            method: "POST",
+            path: "/upload",
+            form,
+            retryCount: 0,
+          }),
+        ).resolves.toEqual({ payload, file: "unchanged file bytes" });
+      }
+    } finally {
+      await receiver.terminate();
+    }
+  });
+
   it("uses curl for apiRequest GET and POST", async () => {
     const { client, spawnImpl } = createBunClient({
       spawnImpl: () => ({ status: 0, stdout: '{"ok":true}\n200', stderr: "" }),
@@ -209,6 +254,21 @@ describe("bun http client", () => {
     expect(args.some((arg) => arg.includes("file=@/tmp/clawhub-upload-abc/dist/demo.txt"))).toBe(
       true,
     );
+    expect(args.slice(args.indexOf("--max-time"), args.indexOf("--max-time") + 2)).toEqual([
+      "--max-time",
+      "120",
+    ]);
+
+    await client.apiRequestForm<{ ok: boolean }>("https://registry.example", {
+      method: "POST",
+      path: "/upload",
+      form: new FormData(),
+      timeoutMs: 300_000,
+    });
+    const [, longArgs] = spawnImpl.mock.calls[1] as [string, string[]];
+    expect(
+      longArgs.slice(longArgs.indexOf("--max-time"), longArgs.indexOf("--max-time") + 2),
+    ).toEqual(["--max-time", "300"]);
   });
 
   it("keeps binary upload bearer tokens out of curl arguments", async () => {

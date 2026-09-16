@@ -25,6 +25,7 @@ import {
   cmdPackageReadiness,
   cmdPackPackage,
   cmdPublishPackage,
+  cmdRecoverPackage,
   cmdReportPackage,
   cmdSetPackageTrustedPublisher,
   cmdTransferPackage,
@@ -70,7 +71,7 @@ const program = new Command()
   .helpOption("-h, --help", HELP_DESCRIPTION)
   .option("--workdir <dir>", "Working directory (default: cwd)")
   .option("--dir <dir>", "Skills directory (relative to workdir, default: skills)")
-  .option("--site <url>", "Site base URL (for browser login)")
+  .option("--site <url>", "Site base URL for registry discovery and device verification")
   .option("--registry <url>", "Registry API base URL")
   .option("--no-input", "Disable prompts")
   .showHelpAfterError()
@@ -752,7 +753,10 @@ registerCommand(packageCmd, ["package", "publish"])
     "Required for manual publish when trusted publisher config exists",
   )
   .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--categories <slugs>", "Comma-separated category slugs")
+  .option(
+    "--categories <slugs>",
+    "Deprecated for plugins (ignored); declare one category in openclaw.plugin.json. Claws: comma-separated categories",
+  )
   .option("--topics <topics>", "Comma-separated topics")
   .option("--bundle-format <format>", "Bundle format")
   .option("--host-targets <targets>", "Comma-separated bundle host targets")
@@ -771,6 +775,21 @@ registerCommand(packageCmd, ["package", "publish"])
   .action(async (source, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublishPackage(opts, source, options);
+  });
+
+registerCommand(packageCmd, ["package", "recover"])
+  .description("Recover a failed staged OpenClaw release publication with fresh security checks")
+  .argument("<attempt-id>", "Failed publish attempt ID")
+  .requiredOption(
+    "--manual-override-reason <reason>",
+    "Audit reason for authorized publisher recovery",
+  )
+  .option("--wait", "Wait for security checks and definitive publication")
+  .option("--wait-timeout <seconds>", "Maximum seconds to wait for publication", Number)
+  .option("--json", "Output JSON")
+  .action(async (attemptId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdRecoverPackage(opts, attemptId, options);
   });
 
 const trustedPublisherCmd = registerCommandGroup(packageCmd, [
@@ -977,6 +996,7 @@ applyCommandHelpGroups(packageCmd, {
   pack: "Publishing:",
   publish: "Publishing:",
   "trusted-publisher": "Publishing:",
+  recover: "Publishing:",
   delete: "Moderation:",
   undelete: "Moderation:",
   transfer: "Moderation:",

@@ -111,6 +111,7 @@ function makeCtx(
         firstByIndex?: Record<string, unknown>;
         indexNames?: string[];
         missingRecommendedScores?: boolean;
+        curatedDigests?: Array<Record<string, unknown>>;
       }
     | string[] = {},
 ) {
@@ -124,7 +125,7 @@ function makeCtx(
     string | null,
     { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
   >();
-  const allDigests = pages.flatMap((page) => page.page);
+  const allDigests = [...pages.flatMap((page) => page.page), ...(options.curatedDigests ?? [])];
   let cursor: string | null = null;
   for (const page of pages) {
     pageByCursor.set(cursor, page);
@@ -180,7 +181,10 @@ function makeCtx(
               order: () => ({
                 paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
                   pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
-                take: async () => [],
+                take: async (limit: number) =>
+                  table === "curatedSkillSearchDigest"
+                    ? (options.curatedDigests ?? []).slice(0, limit)
+                    : [],
               }),
               first: async () =>
                 options.firstByIndex?.[indexName] ??
@@ -1023,7 +1027,7 @@ describe("skills package catalog queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["calendar-demo"]);
     expect(indexNames).toContain("by_active_topic_updated");
-    expect(indexNames).not.toContain("by_active_updated");
+    expect(indexNames).toContain("by_active_updated");
   });
 
   it("uses author topics as skill package search evidence", async () => {
@@ -1078,7 +1082,7 @@ describe("skills package catalog queries", () => {
     expect(result).toEqual([]);
   });
 
-  it("does not let official status make unrelated skills eligible for package search", async () => {
+  it("does not let official or featured status make unrelated skills eligible for package search", async () => {
     const result = await searchPackageCatalogPublicHandler(
       makeCtx([
         {
@@ -1086,6 +1090,11 @@ describe("skills package catalog queries", () => {
             makeDigest("official-skill", {
               badges: { official: { byUserId: "users:admin", at: 1 } },
               displayName: "Official Skill",
+              summary: "General integration.",
+            }),
+            makeDigest("featured-skill", {
+              badges: { highlighted: { byUserId: "users:admin", at: 1 } },
+              displayName: "Featured Skill",
               summary: "General integration.",
             }),
           ],
@@ -1102,34 +1111,47 @@ describe("skills package catalog queries", () => {
     expect(result).toEqual([]);
   });
 
-  it("returns skill package match metadata and orders name matches before summary matches", async () => {
+  it("returns skill package match metadata and orders matching curated skills first", async () => {
+    const official = makeDigest("official-helper", {
+      badges: { official: { byUserId: "users:admin", at: 1 } },
+      displayName: "Official Helper",
+      summary: "Ghost CMS integration.",
+      updatedAt: 100,
+    });
+    const featured = makeDigest("featured-helper", {
+      badges: { highlighted: { byUserId: "users:admin", at: 1 } },
+      displayName: "Featured Helper",
+      summary: "Ghost CMS integration.",
+      updatedAt: 50,
+    });
     const result = await searchPackageCatalogPublicHandler(
-      makeCtx([
-        {
-          page: [
-            makeDigest("official-helper", {
-              badges: { official: { byUserId: "users:admin", at: 1 } },
-              displayName: "Official Helper",
-              summary: "Ghost CMS integration.",
-              updatedAt: 100,
-            }),
-            makeDigest("ghost-tools", {
-              displayName: "Ghost Tools",
-              summary: "CMS helper.",
-              updatedAt: 1,
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ]),
+      makeCtx(
+        [
+          {
+            page: [
+              makeDigest("ghost-tools", {
+                displayName: "Ghost Tools",
+                summary: "CMS helper.",
+                updatedAt: 1,
+              }),
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        { curatedDigests: [official, featured] },
+      ),
       {
         query: "ghost",
         limit: 5,
       },
     );
 
-    expect(result.map((entry) => entry.package.name)).toEqual(["ghost-tools", "official-helper"]);
+    expect(result.map((entry) => entry.package.name)).toEqual([
+      "official-helper",
+      "featured-helper",
+      "ghost-tools",
+    ]);
     expect(result[0]).not.toHaveProperty("rankTier");
     expect(result[0]).not.toHaveProperty("matchReason");
   });

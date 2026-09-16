@@ -3,7 +3,9 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
+import { ARCHIVE_REQUEST_IDENTITY_HEADER } from "./clawhubVercelOidc";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
+import { getVerifiedClientIp, VERIFIED_CLIENT_IP_HEADER } from "./verifiedClientIp";
 
 export const RATE_LIMITS = {
   read: { ip: 3000, key: 12000, adminKey: 120000 },
@@ -38,6 +40,7 @@ type HttpRateLimitName = `${RateLimitKind}${Capitalize<RateLimitSubject>}`;
 type FixedWindowRateLimitConfig = Extract<RateLimitConfig, { kind: "fixed window" }>;
 
 const preappliedRateLimitHeaders = new WeakMap<Request, HeadersInit>();
+const verifiedClientIps = new WeakMap<Request, string>();
 
 function fixedWindowRateLimit(rate: number): FixedWindowRateLimitConfig {
   const shards = Math.max(
@@ -84,8 +87,10 @@ export async function applyRateLimit(
   if (preappliedHeaders) return { ok: true, headers: preappliedHeaders };
 
   const auth = await getOptionalApiTokenUser(ctx, request);
-  const ip = getClientIp(request) ?? "unknown";
-  const ipSource = getClientIpSource(request);
+  const verifiedIp = await getVerifiedClientIp(request);
+  if (verifiedIp) verifiedClientIps.set(request, verifiedIp);
+  const ip = verifiedIp ?? "unknown";
+  const ipSource = verifiedIp ? "verified-edge" : "none";
   const hasClientIp = ip !== "unknown";
 
   // Authenticated requests are enforced and consumed by user bucket only to
@@ -128,7 +133,10 @@ export async function applyRateLimit(
     return { ok: true, headers };
   }
 
-  // Anonymous requests remain IP-enforced.
+  // Unknown direct callers must not consume a bucket shared by all visitors.
+  if (!verifiedIp) return anonymousEdgeResponse(request);
+
+  // Anonymous requests are enforced using the authenticated edge identity.
   const ipResult = await checkRateLimit(
     ctx,
     getAnonymousRateLimitKey(kind, ip),
@@ -167,8 +175,7 @@ export async function applyRateLimit(
 }
 
 function getAnonymousRateLimitKey(kind: RateLimitKind, ip: string) {
-  if (ip !== "unknown") return `ip:${ip}:${kind}`;
-  return `ip:unknown:${kind}`;
+  return `ip:${ip}:${kind}`;
 }
 
 function getAuthenticatedRateLimitKey(userId: string, kind: RateLimitKind) {
@@ -184,26 +191,67 @@ function getAuthenticatedRateLimit(kind: RateLimitKind, user: Pick<Doc<"users">,
 }
 
 export function getClientIp(request: Request): string | null {
-  if (!shouldTrustClientIpHeaders()) return null;
-
-  const cfHeader = request.headers.get("cf-connecting-ip");
-  if (cfHeader) return splitFirstIp(cfHeader);
-
-  const forwarded =
-    request.headers.get("x-forwarded-for") ??
-    request.headers.get("x-real-ip") ??
-    request.headers.get("fly-client-ip");
-
-  return splitFirstIp(forwarded);
+  return verifiedClientIps.get(request) ?? null;
 }
 
-function getClientIpSource(request: Request) {
-  if (!shouldTrustClientIpHeaders()) return "none";
-  if (request.headers.get("cf-connecting-ip")) return "cf-connecting-ip";
-  if (request.headers.get("x-forwarded-for")) return "x-forwarded-for";
-  if (request.headers.get("x-real-ip")) return "x-real-ip";
-  if (request.headers.get("fly-client-ip")) return "fly-client-ip";
-  return "none";
+function anonymousEdgeResponse(request: Request): ApplyRateLimitResult {
+  // An asserted but invalid edge identity must fail here: redirecting it back
+  // to the same misconfigured edge would produce an endless redirect loop.
+  if (
+    request.headers.has(ARCHIVE_REQUEST_IDENTITY_HEADER) ||
+    request.headers.has(VERIFIED_CLIENT_IP_HEADER)
+  ) {
+    return {
+      ok: false,
+      response: new Response("ClawHub edge identity could not be verified.", {
+        status: 401,
+        headers: mergeHeaders(
+          { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+          corsHeaders(),
+        ),
+      }),
+    };
+  }
+  const source = new URL(request.url);
+  const configured = (process.env.SITE_URL ?? process.env.VITE_SITE_URL)?.trim();
+  const publicOrigin =
+    configured || (process.env.CLAWHUB_ENV === "production" ? "https://clawhub.ai" : null);
+  if (publicOrigin) {
+    try {
+      const target = new URL(publicOrigin);
+      target.pathname = source.pathname;
+      target.search = source.search;
+      target.hash = "";
+      if (
+        target.protocol === "https:" &&
+        target.origin !== source.origin &&
+        !target.hostname.endsWith(".convex.site")
+      ) {
+        return {
+          ok: false,
+          response: new Response(null, {
+            status: 307,
+            headers: mergeHeaders(
+              { Location: target.href, "Cache-Control": "no-store" },
+              corsHeaders(),
+            ),
+          }),
+        };
+      }
+    } catch {
+      /* Invalid deployment configuration fails closed below. */
+    }
+  }
+  return {
+    ok: false,
+    response: new Response("Use the ClawHub public API origin or an API token.", {
+      status: 401,
+      headers: mergeHeaders(
+        { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+        corsHeaders(),
+      ),
+    }),
+  };
 }
 
 async function checkRateLimit(
@@ -321,22 +369,6 @@ export function parseBearerToken(request: Request) {
   if (!trimmed.toLowerCase().startsWith("bearer ")) return null;
   const token = trimmed.slice(7).trim();
   return token || null;
-}
-
-function splitFirstIp(header: string | null) {
-  if (!header) return null;
-  if (header.includes(",")) return header.split(",")[0]?.trim() || null;
-  const trimmed = header.trim();
-  return trimmed || null;
-}
-
-function shouldTrustClientIpHeaders() {
-  const value = (process.env.TRUST_FORWARDED_IPS ?? "").trim().toLowerCase();
-  // Direct Convex HTTP endpoints can be reached without ClawHub's edge. Trust
-  // client IP headers only when the deployment is explicitly behind that edge.
-  if (!value) return false;
-  if (value === "1" || value === "true" || value === "yes") return true;
-  return false;
 }
 
 function isRateLimitCounterWriteConflict(error: unknown) {

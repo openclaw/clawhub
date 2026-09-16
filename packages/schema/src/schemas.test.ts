@@ -203,6 +203,38 @@ describe("clawhub-schema", () => {
     );
   });
 
+  it.each([
+    {},
+    {
+      contracts: { tools: ["apify"], videoGenerationProviders: ["heygen"] },
+      providers: ["model-provider"],
+      channels: ["chat"],
+    },
+  ])("reads old and capability-enriched version summaries: %j", (capabilities) => {
+    const summary = {
+      schemaVersion: 1,
+      configFields: [],
+      mcpServers: [],
+      bundledSkills: [],
+      ...capabilities,
+    };
+    const response = parseArk(
+      ApiV1PackageVersionResponseSchema,
+      {
+        package: { name: "demo", displayName: "Demo", family: "code-plugin" },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "",
+          files: [],
+          pluginManifestSummary: summary,
+        },
+      },
+      "Package version response",
+    );
+    expect(response.version?.pluginManifestSummary).toEqual(summary);
+  });
+
   it("accepts publish payload with github source", () => {
     const payload = parseArk(
       CliPublishRequestSchema,
@@ -528,7 +560,20 @@ describe("clawhub-schema", () => {
     expect(parsed.results[0]?.downloads).toBe(2_190);
   });
 
-  it("parses flattened skill verification envelopes", () => {
+  it.each([
+    { aig: null, skillspector: null },
+    {
+      aig: {
+        $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+        runs: [],
+        futureField: true,
+      },
+      skillspector: {
+        analysis_completeness: { coverage_percent: 99.1 },
+        evidence: "full".repeat(150_000),
+      },
+    },
+  ])("parses skill verification with full scanner reports under security", (scannerReports) => {
     const parsed = parseArk(
       ApiV1SkillVerifyResponseSchema,
       {
@@ -549,7 +594,7 @@ describe("clawhub-schema", () => {
         card: { available: true },
         artifact: { sourceFingerprint: "source", bundleFingerprints: [], files: [] },
         provenance: { source: "unavailable" },
-        security: { status: "clean", passed: true },
+        security: { status: "clean", passed: true, scannerReports },
         signature: { status: "unsigned" },
       },
       "Verify",
@@ -557,6 +602,7 @@ describe("clawhub-schema", () => {
 
     expect(parsed.slug).toBe("demo");
     expect(parsed.version).toBe("1.0.0");
+    expect(parsed.security).toEqual({ status: "clean", passed: true, scannerReports });
   });
 
   it("parses delete request payload", () => {

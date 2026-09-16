@@ -23,11 +23,12 @@ type CatalogMetadataFieldsProps = {
   kind: "skill" | "plugin";
   idPrefix?: string;
   presentation?: "default" | "publish";
+  showCategories?: boolean;
   categories: string[];
   suggestedCategories?: string[];
   topics: string;
   disabled?: boolean;
-  onCategoriesChange: (value: string[]) => void;
+  onCategoriesChange?: (value: string[]) => void;
   onTopicsChange: (value: string) => void;
 };
 
@@ -35,11 +36,12 @@ export function CatalogMetadataFields({
   kind,
   idPrefix,
   presentation = "default",
+  showCategories = true,
   categories: selectedCategories,
   suggestedCategories,
   topics,
   disabled,
-  onCategoriesChange,
+  onCategoriesChange = () => undefined,
   onTopicsChange,
 }: CatalogMetadataFieldsProps) {
   const isPublishPresentation = presentation === "publish";
@@ -110,64 +112,66 @@ export function CatalogMetadataFields({
       className="catalog-metadata-fields col-span-full"
       data-presentation={isPublishPresentation ? "publish" : undefined}
     >
-      <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
-        <div className="catalog-metadata-field-header">
-          <Label htmlFor={`${fieldIdPrefix}Categories`}>Categories</Label>
-          {categoryToolbar}
-        </div>
-        {/* modal={false}: a modal dropdown disables pointer events on the rest
+      {showCategories ? (
+        <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
+          <div className="catalog-metadata-field-header">
+            <Label htmlFor={`${fieldIdPrefix}Categories`}>Categories</Label>
+            {categoryToolbar}
+          </div>
+          {/* modal={false}: a modal dropdown disables pointer events on the rest
             of the page, so the click that dismisses it targets <body> — which a
             parent Dialog counts as an outside interaction and closes too,
             losing unsaved selections. Non-modal keeps the dialog interactive so
             only the dropdown dismisses. */}
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <button
-              id={`${fieldIdPrefix}Categories`}
-              type="button"
-              disabled={disabled}
-              aria-label="Categories"
-              className="flex min-h-[44px] w-full min-w-0 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--input-focus-ring)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span
-                className={selectedLabels.length ? "truncate" : "truncate text-input-placeholder"}
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button
+                id={`${fieldIdPrefix}Categories`}
+                type="button"
+                disabled={disabled}
+                aria-label="Categories"
+                className="flex min-h-[44px] w-full min-w-0 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--input-focus-ring)] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {selectedLabels.length ? selectedLabels.join(", ") : "Choose categories"}
-              </span>
-              <ChevronDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="z-[90] w-[var(--radix-dropdown-menu-trigger-width)]"
-          >
-            {categories.map((category) => {
-              const checked = selected.has(category.slug);
-              const Icon = getCategoryIconComponent(category.icon);
-              return (
-                <DropdownMenuCheckboxItem
-                  key={category.slug}
-                  checked={checked}
-                  disabled={
-                    disabled ||
-                    (!checked &&
-                      limitReached &&
-                      category.slug !== INTERNAL_UNCATEGORIZED_CATEGORY &&
-                      !selected.has(INTERNAL_UNCATEGORIZED_CATEGORY))
-                  }
-                  onCheckedChange={() => toggleCategory(category.slug)}
-                  onSelect={(event) => event.preventDefault()}
+                <span
+                  className={selectedLabels.length ? "truncate" : "truncate text-input-placeholder"}
                 >
-                  <span className="flex min-w-0 items-center gap-2">
-                    {Icon ? <Icon className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
-                    <span className="truncate">{category.label}</span>
-                  </span>
-                </DropdownMenuCheckboxItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+                  {selectedLabels.length ? selectedLabels.join(", ") : "Choose categories"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="z-[90] w-[var(--radix-dropdown-menu-trigger-width)]"
+            >
+              {categories.map((category) => {
+                const checked = selected.has(category.slug);
+                const Icon = getCategoryIconComponent(category.icon);
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={category.slug}
+                    checked={checked}
+                    disabled={
+                      disabled ||
+                      (!checked &&
+                        limitReached &&
+                        category.slug !== INTERNAL_UNCATEGORIZED_CATEGORY &&
+                        !selected.has(INTERNAL_UNCATEGORIZED_CATEGORY))
+                    }
+                    onCheckedChange={() => toggleCategory(category.slug)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      {Icon ? <Icon className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
+                      <span className="truncate">{category.label}</span>
+                    </span>
+                  </DropdownMenuCheckboxItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ) : null}
       <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
         <div className="catalog-metadata-field-header">
           <Label htmlFor={`${fieldIdPrefix}Topics`}>

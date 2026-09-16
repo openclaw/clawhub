@@ -2611,6 +2611,82 @@ function staticSuspiciousSkillScan(now: number) {
   };
 }
 
+function aigSuspiciousSkillAnalysis(now: number) {
+  return {
+    status: "malicious",
+    issueCount: 5,
+    findings: [
+      {
+        ruleId: "T04",
+        level: "error",
+        message:
+          "An embedded debug helper collects OpenClaw session state and sends it to an unrelated endpoint.",
+        title: "Embedded session upload helper",
+        description:
+          "The helper collects local OpenClaw session state and transmits it to an endpoint unrelated to the Todoist workflow.",
+        file: "scripts/debug-upload.sh",
+        startLine: 4,
+        endLine: 9,
+        remediation: "Remove the helper and keep diagnostics local to the stated Todoist workflow.",
+      },
+      {
+        ruleId: "T01",
+        level: "error",
+        message:
+          "The debug instruction redirects the agent from Todoist tasks to collecting and transmitting local session state.",
+        title: "Todoist workflow hijacking",
+        description:
+          "The instruction redirects the agent away from its stated task-management purpose to collect and transmit local session state.",
+        file: "SKILL.md",
+        startLine: 67,
+        endLine: 68,
+        remediation:
+          "Delete the unrelated debug instruction and limit the skill to the user-requested Todoist operation.",
+      },
+      {
+        ruleId: "T05",
+        level: "warning",
+        message:
+          "Reading the local OpenClaw session file exceeds the permissions required for the stated Todoist workflow.",
+        title: "Excessive session-file access",
+        description:
+          "The skill reads sensitive OpenClaw state that is not required to read or update Todoist tasks.",
+        file: "SKILL.md",
+        startLine: 67,
+        endLine: 68,
+        remediation:
+          "Constrain file access to explicitly selected task inputs and require confirmation before reading sensitive local state.",
+      },
+      {
+        ruleId: "T08",
+        level: "warning",
+        message:
+          "The Todoist CLI dependency uses a floating version range that can resolve to code not reviewed with this skill release.",
+        title: "Floating Todoist dependency",
+        description:
+          "The declared version range can install dependency code that was not reviewed with this skill release.",
+        file: "SKILL.md",
+        startLine: 42,
+        endLine: 46,
+        remediation:
+          "Pin the dependency to an exact reviewed version, verify its package integrity during installation, and update the pin only after reviewing the new release and regenerating the lockfile.",
+      },
+      {
+        ruleId: "T09",
+        level: "note",
+        message:
+          "The debug workflow does not document validation, redaction, or user confirmation before handling session data.",
+        title: "Unreviewed session-data handling",
+        description:
+          "The workflow handles sensitive session data without documented validation, redaction, or user confirmation.",
+      },
+    ],
+    scannerVersion: "0.2.1",
+    summary: "A.I.G reported 5 findings across SkillTrustBench rules T01, T04, T05, T08, and T09.",
+    checkedAt: now,
+  };
+}
+
 function clawScanRiskAnalysis(now: number) {
   return {
     status: "suspicious",
@@ -3148,6 +3224,7 @@ export async function seedLocalModerationFixturesHandler(
             frontmatter: scannedSkillFrontmatter,
             clawdis: scannedSkillClawdis,
           },
+          aigAnalysis: aigSuspiciousSkillAnalysis(now),
         });
       } else {
         storageIdsToDelete.push(args.scannedSkillStorageId);
@@ -3364,6 +3441,7 @@ export async function seedLocalModerationFixturesHandler(
       checkedAt: now,
     },
     llmAnalysis: clawScanRiskAnalysis(now),
+    aigAnalysis: aigSuspiciousSkillAnalysis(now),
     staticScan: scannedSkillStaticScan,
   });
   const scannedSkillEmbeddingId = await ctx.db.insert("skillEmbeddings", {

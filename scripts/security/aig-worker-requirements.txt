@@ -1,0 +1,44 @@
+# Hash-locked A.I.G worker environment for GitHub's Ubuntu CPython 3.12 runner.
+# Regenerate deliberately when upgrading aig-skill-scan or one of its dependencies.
+--only-binary=:all:
+
+aig-skill-scan==0.2.1 \
+  --hash=sha256:1a55f99199b0d0c2e2270a00ef8a1913b15eab69752bdd662630205ae453a62c
+annotated-types==0.8.0 \
+  --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
+anyio==4.15.0 \
+  --hash=sha256:7ecd9937369ffce8bba0b5ccb9b3a9507b101b0ed50256aecfbab27e6c2acb99
+certifi==2026.7.22 \
+  --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+chardet==5.2.0 \
+  --hash=sha256:e1cf59446890a00105fe7b7912492ea04b6e6f06d4b742b2c788469e34c82970
+distro==1.9.0 \
+  --hash=sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2
+h11==0.16.0 \
+  --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
+httpcore==1.0.9 \
+  --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55
+httpx==0.28.1 \
+  --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
+idna==3.19 \
+  --hash=sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4
+jiter==0.16.0 \
+  --hash=sha256:46add52f4ad47a08bfb1219f3e673da972191489a33016edefdb5ea55bfa8c48
+loguru==0.7.3 \
+  --hash=sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c
+openai==2.8.1 \
+  --hash=sha256:c6c3b5a04994734386e8dad3c00a393f56d3b68a27cd2e8acae91a59e4122463
+pydantic==2.12.4 \
+  --hash=sha256:92d3d202a745d46f9be6df459ac5a064fdaa3c1c4cd8adcfa332ccf3c05f871e
+pydantic-core==2.41.5 \
+  --hash=sha256:eceb81a8d74f9267ef4081e246ffd6d129da5d87e37a77c9bde550cb04870c1c
+python-dotenv==1.0.0 \
+  --hash=sha256:f5971a9226b701070a4bf2c38c89e5a3f0d64de8debda981d1db98583009122a
+sniffio==1.3.1 \
+  --hash=sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2
+tqdm==4.70.0 \
+  --hash=sha256:7f585706bfddbdebf89daac705b2dfcc16890130727d3197ca62c732b4310953
+typing-extensions==4.16.0 \
+  --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+typing-inspection==0.4.4 \
+  --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147

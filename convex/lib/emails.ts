@@ -22,7 +22,7 @@ const PUBLISHER_ABUSE_WARNING_REASON_MESSAGES: Record<string, string> = {
   low_downloads_per_skill: "Very low downloads per listing.",
   low_stars_per_skill: "Very low stars per listing.",
   temporal_download_spike_flat_installs:
-    "Download spikes with little corresponding install activity.",
+    "Download spikes with unusually high growth and excess traffic.",
   temporal_sustained_downloads_flat_installs:
     "Sustained download activity with little corresponding install activity.",
   temporal_installs_track_downloads:

@@ -1,5 +1,9 @@
 import { type PluginCategorySlug } from "./catalogMetadata.js";
 export { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS, PLUGIN_CATEGORY_SLUGS, type PluginCategorySlug, } from "./catalogMetadata.js";
+export declare function isCurrentPluginCategoryAssignment(categories: readonly string[] | undefined): boolean;
+/** Discovery follows the primary install purpose, not secondary capabilities or publisher. */
+export declare function getPluginDiscoveryExclusion(categories: readonly string[] | undefined): "agent-runtimes" | "channels" | "models" | null;
+export declare function getDeclaredPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[] | undefined;
 export declare function inferPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[];
 export declare function derivePluginCategoryTags(input: {
     family?: string;

@@ -117,10 +117,14 @@ describe("Convex HTTP proxy", () => {
     vi.stubGlobal("fetch", fetchMock);
     const event = mockEvent("https://preview.example/api/v1/skills/demo?include=latest");
 
-    const response = await proxyConvexRequest(event, {
-      VERCEL_ENV: "preview",
-      VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
-    });
+    const response = await proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "preview",
+        VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
 
     expect(response).toBeInstanceOf(Response);
     await expect(response.json()).resolves.toEqual({ ok: true });
@@ -129,6 +133,56 @@ describe("Convex HTTP proxy", () => {
       expect.objectContaining({ method: "GET" }),
     );
     expect(response.headers.get("X-ClawHub-Preview-Backend")).toBe("preview-branch-123");
+  });
+
+  it.each(["production", "preview"])(
+    "replaces forged identity headers on %s API requests",
+    async (environment) => {
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("ok"),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const event = mockEvent("https://clawhub.ai/api/v1/search?q=test", {
+        headers: {
+          "x-vercel-forwarded-for": "203.0.113.7",
+          "x-forwarded-for": "198.51.100.8",
+          "x-clawhub-client-ip": "198.51.100.9",
+          "x-clawhub-vercel-oidc-token": "forged",
+        },
+      });
+      const response = await proxyConvexRequest(
+        event,
+        { VERCEL_ENV: environment, VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud" },
+        TEST_ARCHIVE_DEPENDENCIES,
+      );
+      expect(response.status).toBe(200);
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+      const headers = new Headers(init?.headers);
+      expect(headers.get("x-clawhub-client-ip")).toBe("203.0.113.7");
+      expect(headers.get("x-clawhub-vercel-oidc-token")).toBe("verified-vercel-oidc");
+    },
+  );
+
+  it("strips caller identity headers outside the Vercel runtime", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("ok"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const event = mockEvent("http://localhost:3000/api/v1/search", {
+      headers: {
+        "x-clawhub-client-ip": "198.51.100.9",
+        "x-clawhub-vercel-oidc-token": "forged",
+      },
+    });
+    await proxyConvexRequest(
+      event,
+      { VITE_CONVEX_URL: "http://127.0.0.1:3210" },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.get("x-clawhub-client-ip")).toBe("");
+    expect(headers.get("x-clawhub-vercel-oidc-token")).toBe("");
   });
 
   it("streams hosted downloads from a Convex manifest with the final attachment filename", async () => {

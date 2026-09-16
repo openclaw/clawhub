@@ -4,7 +4,7 @@ import {
   normalizePluginCategories,
   normalizeSkillCategories,
 } from "clawhub-schema";
-import { ConvexError, v } from "convex/values";
+import { convexToJson, ConvexError, v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -36,7 +36,7 @@ import {
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
-import schema from "./schema";
+import schema, { pluginManifestSummaryValidator } from "./schema";
 import { buildScannerModerationPatchFromVersion, setSkillEmbeddingsSoftDeleted } from "./skills";
 
 const CANONICALIZE_CATALOG_METADATA_CONFIRM = "canonicalize-catalog-metadata";
@@ -90,6 +90,16 @@ const nvidiaGitHubDownloadBackfillPreviewValidator = v.object({
 export const migrations = new Migrations(components.migrations, {
   schema,
   defaultBatchSize: 25,
+});
+
+// Only explicitly reviewed rows can change package metadata. Component cursors make apply resumable.
+export const applyAcceptedPluginCategoryRefreshes = migrations.define({
+  table: "pluginCategoryRefreshes",
+  batchSize: 10,
+  customRange: (query) => query.withIndex("by_status", (q) => q.eq("status", "accepted")),
+  migrateOne: async (ctx, row) => {
+    await ctx.runMutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+  },
 });
 
 export function shouldPreserveSkillModerationLock(skill: Doc<"skills">) {
@@ -1198,12 +1208,26 @@ async function withSkillMarkdownTextsForPluginManifestSummaryBackfill(
   return { files: nextFiles, readErrors };
 }
 
+function retainPluginSummaryPresentation(
+  summary: NonNullable<Doc<"packageReleases">["pluginManifestSummary"]>,
+  previous: Doc<"packageReleases">["pluginManifestSummary"],
+) {
+  // Icon repair and category classification own these fields, not manifest derivation.
+  const { icon: _icon, categories: _categories, ...derived } = summary;
+  return {
+    ...derived,
+    ...(previous?.icon !== undefined ? { icon: previous.icon } : {}),
+    ...(previous?.categories !== undefined ? { categories: previous.categories } : {}),
+  };
+}
+
 function hasSamePluginManifestSummary(
   release: Doc<"packageReleases">,
-  pluginManifestSummary: unknown,
+  pluginManifestSummary: NonNullable<Doc<"packageReleases">["pluginManifestSummary"]>,
 ) {
   return (
-    JSON.stringify(release.pluginManifestSummary ?? null) === JSON.stringify(pluginManifestSummary)
+    JSON.stringify(convexToJson(release.pluginManifestSummary ?? null)) ===
+    JSON.stringify(convexToJson(pluginManifestSummary))
   );
 }
 
@@ -1250,14 +1274,17 @@ export const listLatestPluginManifestSummaryBackfillCandidates = internalQuery({
 export const applyPluginManifestSummaryBackfillPatch = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
-    pluginManifestSummary: v.any(),
+    pluginManifestSummary: pluginManifestSummaryValidator,
   },
   returns: v.boolean(),
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!release || release.softDeletedAt !== undefined) return false;
     await ctx.db.patch(args.releaseId, {
-      pluginManifestSummary: args.pluginManifestSummary,
+      pluginManifestSummary: retainPluginSummaryPresentation(
+        args.pluginManifestSummary,
+        release.pluginManifestSummary,
+      ),
     });
     return true;
   },
@@ -1314,14 +1341,17 @@ async function backfillLatestPluginManifestSummariesForFamily(
         skippedSkillMarkdownReadErrorReleases += 1;
         continue;
       }
-      const summary = derivePluginManifestSummary({
-        pluginManifest,
-        ...(isJsonRecord(candidate.release.normalizedBundleManifest)
-          ? { skillManifest: candidate.release.normalizedBundleManifest }
-          : {}),
-        compatibility: candidate.release.compatibility,
-        files: filesResult.files,
-      });
+      const summary = retainPluginSummaryPresentation(
+        derivePluginManifestSummary({
+          pluginManifest,
+          ...(isJsonRecord(candidate.release.normalizedBundleManifest)
+            ? { skillManifest: candidate.release.normalizedBundleManifest }
+            : {}),
+          compatibility: candidate.release.compatibility,
+          files: filesResult.files,
+        }),
+        candidate.release.pluginManifestSummary,
+      );
       if (hasSamePluginManifestSummary(candidate.release, summary)) {
         unchangedReleases += 1;
         continue;
@@ -1548,14 +1578,17 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
         continue;
       }
 
-      const summary = derivePluginManifestSummary({
-        pluginManifest,
-        ...(isJsonRecord(candidate.release.normalizedBundleManifest)
-          ? { skillManifest: candidate.release.normalizedBundleManifest }
-          : {}),
-        compatibility: candidate.release.compatibility,
-        files: filesResult.files,
-      });
+      const summary = retainPluginSummaryPresentation(
+        derivePluginManifestSummary({
+          pluginManifest,
+          ...(isJsonRecord(candidate.release.normalizedBundleManifest)
+            ? { skillManifest: candidate.release.normalizedBundleManifest }
+            : {}),
+          compatibility: candidate.release.compatibility,
+          files: filesResult.files,
+        }),
+        candidate.release.pluginManifestSummary,
+      );
       if (hasSamePluginManifestSummary(candidate.release, summary)) {
         unchangedReleases += 1;
         continue;

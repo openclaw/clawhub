@@ -18,6 +18,7 @@ type CatalogMetadataEditorProps = {
   categories?: string[] | null;
   suggestedCategories?: string[];
   topics?: string[] | null;
+  showCategories?: boolean;
   onSave: (value: { categories?: string[]; topics: string[] }) => Promise<void>;
 };
 
@@ -47,6 +48,7 @@ export function CatalogMetadataEditor({
   categories: initialCategories,
   suggestedCategories,
   topics: initialTopics,
+  showCategories = true,
   onSave,
 }: CatalogMetadataEditorProps) {
   const sanitizedInitialCategories = sanitizeInitialCategories(kind, initialCategories);
@@ -70,7 +72,11 @@ export function CatalogMetadataEditor({
     setError(null);
     try {
       await onSave({
-        categories: categories.length ? categories : [INTERNAL_UNCATEGORIZED_CATEGORY],
+        ...(showCategories
+          ? {
+              categories: categories.length ? categories : [INTERNAL_UNCATEGORIZED_CATEGORY],
+            }
+          : {}),
         topics: parseCatalogTopicsInput(topics),
       });
     } catch (saveError) {
@@ -84,6 +90,7 @@ export function CatalogMetadataEditor({
     <div className="catalog-metadata-settings-editor">
       <CatalogMetadataFields
         kind={kind}
+        showCategories={showCategories}
         categories={categories}
         suggestedCategories={suggestedCategories}
         topics={topics}
@@ -93,8 +100,12 @@ export function CatalogMetadataEditor({
       />
       <div className="summary-settings-footer">
         <div className="summary-settings-meta flex items-center gap-2 whitespace-nowrap">
-          <span>{formatCount(categories.length, "category", "categories")}</span>
-          <span aria-hidden="true">{"\u00b7"}</span>
+          {showCategories ? (
+            <>
+              <span>{formatCount(categories.length, "category", "categories")}</span>
+              <span aria-hidden="true">{"\u00b7"}</span>
+            </>
+          ) : null}
           <span>{formatCount(topicCount, "topic")}</span>
         </div>
         <Button

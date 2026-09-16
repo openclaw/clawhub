@@ -120,17 +120,20 @@ describe("security-scan-codex workflow", () => {
     expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS).toBe(
       "${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}",
     );
+    expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX).toBe("off");
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_MODE");
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_TIMEOUT_MS");
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
     expect(jobEnv).not.toHaveProperty("CODEX_API_KEY");
+    expect(jobEnv).not.toHaveProperty("LLM_API_KEY");
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expectSecretStepAllowlist(steps, "CODEX_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "OPENAI_API_KEY", [
       "Authenticate Codex CLI",
       "Run Codex security worker",
     ]);
+    expectSecretStepAllowlist(steps, "LLM_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "VT_API_KEY", []);
     expect(scanStep?.env ?? {}).not.toHaveProperty("CODEX_API_KEY");
@@ -141,15 +144,30 @@ describe("security-scan-codex workflow", () => {
     expect(steps.find((step) => step.name === "Check configuration")).toBeUndefined();
     const codexInstall = steps.find((step) => step.name === "Install Codex CLI")?.run;
     const clawScanInstall = steps.find((step) => step.name === "Install ClawScan CLI")?.run;
+    const aigInstall = steps.find((step) => step.name === "Install A.I.G scanner")?.run;
     const skillspectorInstall = steps.find((step) => step.name === "Install SkillSpector")?.run;
     expect(codexInstall).toContain("npm install -g @openai/codex@0.142.3");
     expect(codexInstall).not.toContain("@latest");
-    expect(clawScanInstall).toContain("npm install -g @openclaw/clawscan@0.1.6");
+    expect(clawScanInstall).toContain("npm install -g @openclaw/clawscan@0.1.8");
     expect(clawScanInstall).not.toContain("@latest");
-    expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");
+    expect(aigInstall).toContain(
+      "python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt",
+    );
+    expect(aigInstall).not.toContain("pip install 'aig-skill-scan==0.2.1'");
+    expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.1"');
+    expect(aigInstall).toContain("aig-skill-scan-0.2.1-gpt5.patch");
+    expect(aigInstall).toContain("f18ae642d62be142192d6bd4c21c4ea7e098bbc8");
+    expect(aigInstall).toContain('assert "temperature=" not in inspect.getsource(LLM.chat_stream)');
+    expect(aigInstall).toContain("aig-skill-scan --help");
+    expect(skillspectorInstall).toContain(
+      "git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc",
+    );
     expect(skillspectorInstall).not.toContain("git+https://github.com/NVIDIA/skillspector.git'");
     expect(steps.find((step) => step.name === "Run Codex security worker")?.env).toEqual({
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
+      DEFAULT_BASE_URL: "https://api.openai.com/v1",
+      DEFAULT_MODEL: "gpt-5.6",
+      LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
     });

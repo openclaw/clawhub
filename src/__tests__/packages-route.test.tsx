@@ -106,6 +106,7 @@ describe("plugins route", () => {
     resetConvexReactMocks();
     setupDefaultConvexReactMocks();
     navigateMock.mockReset();
+    navigateMock.mockResolvedValue(undefined);
     redirectMock.mockClear();
     searchMock = {};
     loaderDataMock = undefined;
@@ -625,8 +626,9 @@ describe("plugins route", () => {
     render(<Component />);
 
     const categorySidebar = screen.getByLabelText("Plugin categories");
-    expect(categorySidebar.querySelectorAll("button")).toHaveLength(13);
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(23);
     expect(categorySidebar.textContent).toContain("Channels");
+    expect(categorySidebar.textContent).toContain("Agent runtimes");
     expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
   });
 
@@ -913,6 +915,8 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("main").className).toContain("plugins-browse-page");
     expect(screen.getByText("1.2k")).toBeTruthy();
+    expect(document.querySelector(".browse-list-head")?.textContent).toBe("PluginDownloads");
+    expect(document.querySelector(".skill-list-item-taxonomy")).toBeNull();
   });
 
   it("renders the browse shell while the route loader is pending", async () => {
@@ -925,6 +929,8 @@ describe("plugins route", () => {
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
     expect(screen.queryByText("Loading results")).toBeNull();
+    expect(document.querySelector(".browse-list-head")?.textContent).toBe("PluginDownloads");
+    expect(document.querySelector(".skill-list-item-taxonomy")).toBeNull();
   });
 
   it("keeps plugin count copy hidden on non-first browse pages", async () => {

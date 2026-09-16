@@ -70,8 +70,7 @@ import {
   buildPluginCategoryBrowseHref,
   buildPluginTopicBrowseHref,
   formatCatalogTopicLabel,
-  PLUGIN_CATEGORIES,
-  resolvePluginBrowseCategorySlug,
+  getPluginCategoryBySlug,
 } from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import { buildPluginMeta } from "../../lib/og";
@@ -1176,8 +1175,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const pkg = detail.package;
   const headerCategories = (pkg.categories ?? [])
     .flatMap((value) => {
-      const slug = resolvePluginBrowseCategorySlug(value);
-      const category = PLUGIN_CATEGORIES.find((item) => item.slug === slug);
+      const category = getPluginCategoryBySlug(value);
       return category ? [category] : [];
     })
     .slice(0, 3);
@@ -1629,7 +1627,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                         <Sparkles size={14} />
                       </div>
                       <span className="plugin-catalog-empty-alert-title">
-                        Categorize your plugin
+                        Add topics to your plugin
                       </span>
                       <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
                       <Button
@@ -1637,11 +1635,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                         variant="link"
                         size="xs"
                         className="plugin-catalog-empty-alert-cta"
-                        aria-label="Add categories and topics"
+                        aria-label="Add topics"
                         onClick={() => setIsCatalogMetadataDialogOpen(true)}
                       >
                         <Plus size={13} aria-hidden="true" />
-                        Add categories & topics
+                        Add topics
                       </Button>
                     </div>
                   </div>
@@ -1692,7 +1690,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                           variant="link"
                           size="xs"
                           className="plugin-catalog-empty-alert-cta"
-                          aria-label="Edit categories and topics"
+                          aria-label="Edit topics"
                           onClick={() => setIsCatalogMetadataDialogOpen(true)}
                         >
                           <Pencil size={13} aria-hidden="true" />
@@ -1852,20 +1850,18 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         <Dialog open={isCatalogMetadataDialogOpen} onOpenChange={setIsCatalogMetadataDialogOpen}>
           <DialogContent className="plugin-catalog-metadata-dialog">
             <DialogHeader>
-              <DialogTitle>Categorize this plugin</DialogTitle>
-              <DialogDescription>
-                Select up to 3 categories and add topics to organize this plugin.
-              </DialogDescription>
+              <DialogTitle>Edit plugin topics</DialogTitle>
+              <DialogDescription>Add topics to make this plugin easier to find.</DialogDescription>
             </DialogHeader>
             <CatalogMetadataEditor
               kind="plugin"
+              showCategories={false}
               categories={manageContext.package.categories}
               suggestedCategories={manageContext.suggestedCategories}
               topics={manageContext.package.topics}
               onSave={async (value) => {
                 await setCatalogMetadata({
                   packageId: manageContext.package._id,
-                  categories: value.categories,
                   topics: value.topics,
                 });
                 toast.success("Catalog metadata updated.");

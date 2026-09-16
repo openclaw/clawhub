@@ -7,6 +7,14 @@ import {
   canonicalTrendingSourceRefValidator,
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
+import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassification";
+import { searchDigestValidator } from "./lib/searchDigestContract";
+import {
+  searchArtifactKind,
+  searchClassification,
+  searchInsightSource,
+  searchScope,
+} from "./lib/searchInsights";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -57,6 +65,28 @@ const skillSpectorAnalysisValidator = v.object({
   issueCount: v.number(),
   // Scanner/action boundaries cap this array before storage; Convex validators cannot express max length.
   issues: v.array(skillSpectorIssueValidator),
+  scannerVersion: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  error: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
+const aigAnalysisValidator = v.object({
+  status: v.string(),
+  issueCount: v.number(),
+  findings: v.array(
+    v.object({
+      ruleId: v.string(),
+      level: v.string(),
+      message: v.string(),
+      title: v.optional(v.string()),
+      description: v.optional(v.string()),
+      file: v.optional(v.string()),
+      startLine: v.optional(v.number()),
+      endLine: v.optional(v.number()),
+      remediation: v.optional(v.string()),
+    }),
+  ),
   scannerVersion: v.optional(v.string()),
   summary: v.optional(v.string()),
   error: v.optional(v.string()),
@@ -582,6 +612,7 @@ const githubSkillScans = defineTable({
   status: githubSkillScanStatusValidator,
   skillScanRequestId: v.optional(v.id("skillScanRequests")),
   staticScan: v.optional(staticScanValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
   lastError: v.optional(v.string()),
@@ -682,8 +713,12 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
-const pluginManifestSummaryValidator = v.object({
+export const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
+  contracts: v.optional(v.record(v.string(), v.array(v.string()))),
+  providers: v.optional(v.array(v.string())),
+  channels: v.optional(v.array(v.string())),
+  categories: v.optional(v.array(v.string())),
   icon: v.optional(v.string()),
   compatibility: v.optional(
     v.object({
@@ -1194,7 +1229,9 @@ const skillVersions = defineTable({
     }),
   ),
   sha256hash: v.optional(v.string()),
+  scannerReportsStorageId: v.optional(v.id("_storage")),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
@@ -1859,6 +1896,7 @@ const packageReleases = defineTable({
   normalizedBundleManifest: v.optional(v.any()),
   manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
+  categoryClassification: v.optional(pluginCategoryClassificationValidator),
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
@@ -1867,6 +1905,7 @@ const packageReleases = defineTable({
   // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(
     v.object({
@@ -1932,6 +1971,39 @@ const packageReleases = defineTable({
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
+
+// Retained as review/apply history: regenerating a preview never erases an accepted decision.
+const pluginCategoryRefreshes = defineTable({
+  runId: v.string(),
+  packageId: v.id("packages"),
+  releaseId: v.id("packageReleases"),
+  packageName: v.string(),
+  version: v.string(),
+  beforeHash: v.string(),
+  beforeCategories: v.optional(v.array(v.string())),
+  beforeReleaseCategories: v.optional(v.array(v.string())),
+  beforeHadSummary: v.boolean(),
+  newReleaseSummary: v.optional(pluginManifestSummaryValidator),
+  beforeClassification: v.optional(pluginCategoryClassificationValidator),
+  categories: v.array(v.string()),
+  classification: pluginCategoryClassificationValidator,
+  status: v.union(
+    v.literal("preview"),
+    v.literal("accepted"),
+    v.literal("applied"),
+    v.literal("stale"),
+    v.literal("rolled-back"),
+  ),
+  createdAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  appliedAt: v.optional(v.number()),
+  afterHash: v.optional(v.string()),
+  rolledBackAt: v.optional(v.number()),
+  reason: v.optional(v.string()),
+})
+  .index("by_run_package", ["runId", "packageId"])
+  .index("by_run", ["runId"])
+  .index("by_status", ["status"]);
 
 const catalogClassificationResults = defineTable({
   targetKind: v.union(v.literal("skill"), v.literal("plugin")),
@@ -2206,6 +2278,7 @@ const skillScanRequests = defineTable({
   ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
+  aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
   staticScan: v.optional(staticScanValidator),
@@ -2259,6 +2332,18 @@ const packageStatEvents = defineTable({
 })
   .index("by_unprocessed", ["processedAt"])
   .index("by_package", ["packageId"]);
+
+const pluginSearchObservations = defineTable({
+  normalizedQuery: v.string(),
+  observedAt: v.number(),
+  source: v.union(v.literal("clawhub-web"), v.literal("openclaw-control-ui")),
+  artifactKind: v.union(v.literal("plugin"), v.literal("skill")),
+  scope: v.optional(v.union(v.literal("catalog"), v.literal("shelf"))),
+  category: v.optional(v.string()),
+  topic: v.optional(v.string()),
+  resultCount: v.number(),
+  officialResultCount: v.number(),
+}).index("by_observed_at", ["observedAt"]);
 
 const packageDailyStats = defineTable({
   packageId: v.id("packages"),
@@ -3784,7 +3869,9 @@ const publisherAbuseScoreRuns = defineTable({
       v.literal("collecting"),
       v.literal("downloads_percentiles"),
       v.literal("spike_percentiles"),
+      v.literal("excess_percentiles"),
       v.literal("classifying"),
+      v.literal("synchronizing"),
       v.literal("completed"),
     ),
   ),
@@ -3792,16 +3879,21 @@ const publisherAbuseScoreRuns = defineTable({
   temporalSourceCursor: v.optional(v.string()),
   temporalDownloadsCursor: v.optional(v.string()),
   temporalSpikeCursor: v.optional(v.string()),
+  temporalExcessCursor: v.optional(v.string()),
   temporalCandidateCursor: v.optional(v.string()),
+  temporalSynchronyCursor: v.optional(v.string()),
   temporalSampleSize: v.optional(v.number()),
   temporalDownloadsSum: v.optional(v.number()),
   temporalDownloadsProcessed: v.optional(v.number()),
   temporalSpikeProcessed: v.optional(v.number()),
+  temporalExcessProcessed: v.optional(v.number()),
   temporalDownloadsMedian: v.optional(v.number()),
   temporalDownloadsP95: v.optional(v.number()),
   temporalDownloadsP99: v.optional(v.number()),
   temporalSpikeP95: v.optional(v.number()),
   temporalSpikeP99: v.optional(v.number()),
+  temporalExcessP95: v.optional(v.number()),
+  temporalExcessP99: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
       scope: v.optional(v.literal("all_active_skills")),
@@ -3812,9 +3904,13 @@ const publisherAbuseScoreRuns = defineTable({
       downloads30dP99: v.number(),
       spikeMultiplier7dP95: v.number(),
       spikeMultiplier7dP99: v.number(),
+      excess7DownloadsP95: v.optional(v.number()),
+      excess7DownloadsP99: v.optional(v.number()),
     }),
   ),
   errorMessage: v.optional(v.string()),
+  // Distinguishes an intentional stop from a scan failure in the staff UI.
+  canceledAt: v.optional(v.number()),
   transientErrorCount: v.optional(v.number()),
   lastTransientError: v.optional(v.string()),
   lastTransientErrorAt: v.optional(v.number()),
@@ -3855,10 +3951,12 @@ const publisherAbuseTemporalScanSamples = defineTable({
   runId: v.id("publisherAbuseScoreRuns"),
   recent30Downloads: v.number(),
   spikeMultiplier: v.number(),
+  excess7Downloads: v.optional(v.number()),
   expirationTime: v.number(),
 })
   .index("by_run_id_and_recent30_downloads", ["runId", "recent30Downloads"])
   .index("by_run_id_and_spike_multiplier", ["runId", "spikeMultiplier"])
+  .index("by_run_id_and_excess7_downloads", ["runId", "excess7Downloads"])
   .index("by_expiration_time", ["expirationTime"]);
 
 const publisherAbuseTemporalScanScoreValidator = v.object({
@@ -3871,13 +3969,24 @@ const publisherAbuseTemporalScanScoreValidator = v.object({
   previous30Downloads: v.number(),
   baseline7Downloads: v.number(),
   spikeMultiplier: v.number(),
+  expected7Downloads: v.optional(v.number()),
+  excess7Downloads: v.optional(v.number()),
   recent30Downloads: v.number(),
   recent30Installs: v.number(),
   downloadInstallRatio30: v.number(),
   downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
   spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+  excess7DownloadsCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
   downloads30dVsPeerP95: v.optional(v.number()),
   spikeMultiplierVsPeerP95: v.optional(v.number()),
+  excess7DownloadsVsPeerP95: v.optional(v.number()),
+  sustainedDaysAboveThreshold: v.optional(v.number()),
+  sustainedWindowDays: v.optional(v.number()),
+  sustainedDailyDownloadThreshold: v.optional(v.number()),
+  sustainedExpectedDailyDownloads: v.optional(v.number()),
+  sustainedWindowDownloads: v.optional(v.number()),
+  sustainedWindowInstalls: v.optional(v.number()),
+  sustainedDailyDownloads: v.optional(v.array(v.number())),
   installDownloadRatio7: v.number(),
   installDownloadRatio30: v.number(),
   installDownloadExcessZScore7: v.number(),
@@ -3893,6 +4002,7 @@ const publisherAbuseTemporalScanScoreValidator = v.object({
 
 const publisherAbuseTemporalScanCandidates = defineTable({
   runId: v.id("publisherAbuseScoreRuns"),
+  synchronyEligible: v.optional(v.boolean()),
   ownerKey: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
   ownerUserId: v.optional(v.id("users")),
@@ -3902,10 +4012,16 @@ const publisherAbuseTemporalScanCandidates = defineTable({
   displayName: v.string(),
   totalDownloads: v.number(),
   totalInstalls: v.number(),
+  synchronyDailyDownloads: v.optional(v.array(v.number())),
   temporalScore: publisherAbuseTemporalScanScoreValidator,
   expirationTime: v.number(),
 })
   .index("by_run_id", ["runId"])
+  .index("by_run_id_and_synchrony_eligible_and_owner_key", [
+    "runId",
+    "synchronyEligible",
+    "ownerKey",
+  ])
   .index("by_expiration_time", ["expirationTime"]);
 
 const publisherAbuseScores = defineTable({
@@ -3943,6 +4059,8 @@ const publisherAbuseScores = defineTable({
       downloads30dP99: v.number(),
       spikeMultiplier7dP95: v.number(),
       spikeMultiplier7dP99: v.number(),
+      excess7DownloadsP95: v.optional(v.number()),
+      excess7DownloadsP99: v.optional(v.number()),
     }),
   ),
   temporalEvidence: v.optional(
@@ -3960,13 +4078,23 @@ const publisherAbuseScores = defineTable({
         previous30Downloads: v.number(),
         baseline7Downloads: v.number(),
         spikeMultiplier: v.number(),
+        expected7Downloads: v.optional(v.number()),
+        excess7Downloads: v.optional(v.number()),
         recent30Downloads: v.number(),
         recent30Installs: v.number(),
         downloadInstallRatio30: v.number(),
         downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
         spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+        excess7DownloadsCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
         downloads30dVsPeerP95: v.optional(v.number()),
         spikeMultiplierVsPeerP95: v.optional(v.number()),
+        excess7DownloadsVsPeerP95: v.optional(v.number()),
+        sustainedDaysAboveThreshold: v.optional(v.number()),
+        sustainedWindowDays: v.optional(v.number()),
+        sustainedDailyDownloadThreshold: v.optional(v.number()),
+        sustainedExpectedDailyDownloads: v.optional(v.number()),
+        sustainedWindowDownloads: v.optional(v.number()),
+        sustainedWindowInstalls: v.optional(v.number()),
         installDownloadRatio7: v.optional(v.number()),
         installDownloadRatio30: v.optional(v.number()),
         installDownloadExcessZScore7: v.optional(v.number()),
@@ -4055,6 +4183,9 @@ const publisherAbuseReviewEvents = defineTable({
 const publisherAbuseSignalTypeValidator = v.union(
   v.literal("high_install_download_ratio"),
   v.literal("sustained_downloads_flat_installs"),
+  v.literal("download_spike_flat_installs"),
+  v.literal("sustained_abnormal_download_days"),
+  v.literal("owner_synchronized_download_trends"),
 );
 
 const publisherAbuseSignalReviewStatusValidator = v.union(
@@ -4096,9 +4227,37 @@ const publisherAbuseSignals = defineTable({
       downloads30dP99: v.number(),
       spikeMultiplier7dP95: v.number(),
       spikeMultiplier7dP99: v.number(),
+      excess7DownloadsP95: v.optional(v.number()),
+      excess7DownloadsP99: v.optional(v.number()),
     }),
   ),
-  reviewStatus: publisherAbuseSignalReviewStatusValidator,
+  expected7Downloads: v.optional(v.number()),
+  excess7Downloads: v.optional(v.number()),
+  spikeMultiplier: v.optional(v.number()),
+  sustainedDaysAboveThreshold: v.optional(v.number()),
+  sustainedWindowDays: v.optional(v.number()),
+  sustainedDailyDownloadThreshold: v.optional(v.number()),
+  sustainedExpectedDailyDownloads: v.optional(v.number()),
+  sustainedWindowDownloads: v.optional(v.number()),
+  sustainedWindowInstalls: v.optional(v.number()),
+  reasonCodes: v.optional(v.array(v.string())),
+  portfolioEvidence: v.optional(
+    v.object({
+      skillCount: v.number(),
+      publisherSkillCount: v.number(),
+      allPublisherSkills: v.boolean(),
+      correlationFloor: v.number(),
+      correlationMedian: v.number(),
+      peak7DownloadsMin: v.number(),
+      peak7DownloadsMax: v.number(),
+      catalogCoverage: v.number(),
+      windowStartDay: v.number(),
+      windowEndDay: v.number(),
+    }),
+  ),
+  // The workflow is retired, but production rows keep this data until a
+  // separately approved migration exports or removes it.
+  reviewStatus: v.optional(publisherAbuseSignalReviewStatusValidator),
   snoozedUntil: v.optional(v.number()),
   evidenceAcknowledgedAt: v.optional(v.number()),
   evidenceBaselineDownloads: v.optional(v.number()),
@@ -4121,14 +4280,9 @@ const publisherAbuseSignals = defineTable({
   .index("by_last_seen_at", ["lastSeenAt"])
   .index("by_signal_type_and_last_seen_at", ["signalType", "lastSeenAt"])
   .index("by_owner_key_and_last_seen_at", ["ownerKey", "lastSeenAt"])
+  .index("by_owner_key_and_signal_type", ["ownerKey", "signalType"])
   .index("by_skill_and_signal_type", ["skillId", "signalType"])
-  .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"])
-  .index("by_review_status_and_last_seen_at", ["reviewStatus", "lastSeenAt"])
-  .index("by_needs_notification_and_last_changed_at", ["needsNotification", "lastChangedAt"])
-  .index("by_needs_notification_and_notification_claimed_at", [
-    "needsNotification",
-    "notificationClaimedAt",
-  ]);
+  .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"]);
 
 const publisherAbuseSignalReviewEventTypeValidator = v.union(
   v.literal("snoozed"),
@@ -4136,6 +4290,8 @@ const publisherAbuseSignalReviewEventTypeValidator = v.union(
   v.literal("reopened"),
 );
 
+// Kept only so existing audit rows remain valid. No active function reads or
+// writes this table after the workflow retirement.
 const publisherAbuseSignalReviewEvents = defineTable({
   signalId: v.id("publisherAbuseSignals"),
   ownerKey: v.string(),
@@ -4146,10 +4302,7 @@ const publisherAbuseSignalReviewEvents = defineTable({
   note: v.optional(v.string()),
   snoozedUntil: v.optional(v.number()),
   createdAt: v.number(),
-})
-  .index("by_signal_and_created_at", ["signalId", "createdAt"])
-  .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
-  .index("by_actor_and_created_at", ["actorUserId", "createdAt"]);
+});
 
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),
@@ -4379,7 +4532,96 @@ const skillOwnershipTransfers = defineTable({
   .index("by_from_user_status", ["fromUserId", "status"])
   .index("by_skill_status", ["skillId", "status"]);
 
+const searchAggregateStates = defineTable({
+  key: v.literal("plugin"),
+  cursor: v.union(v.string(), v.null()),
+  processedThrough: v.number(),
+  revision: v.number(),
+  coverageStart: v.number(),
+  skillCoverageStart: v.optional(v.number()),
+  coverageGapStart: v.optional(v.number()),
+  coverageGapEnd: v.optional(v.number()),
+}).index("by_key", ["key"]);
+const searchDailyAggregates = defineTable({
+  dayStart: v.number(),
+  query: v.string(),
+  source: searchInsightSource,
+  artifactKind: searchArtifactKind,
+  scope: v.optional(searchScope),
+  category: v.string(),
+  intent: v.string(),
+  searches: v.number(),
+  officialGaps: v.number(),
+  zeroResults: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_dayStart_and_source_and_query_and_category_and_intent", [
+    "dayStart",
+    "source",
+    "query",
+    "category",
+    "intent",
+  ])
+  .index("by_artifact_day", ["artifactKind", "dayStart"])
+  .index("by_artifact_source_day", ["artifactKind", "source", "dayStart"])
+  .index("by_bucket", [
+    "artifactKind",
+    "scope",
+    "dayStart",
+    "source",
+    "query",
+    "category",
+    "intent",
+  ])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchClassificationRuns = defineTable({
+  artifactKind: v.optional(searchArtifactKind),
+  weekStart: v.number(),
+  weekEnd: v.number(),
+  processedAt: v.number(),
+  status: v.union(v.literal("available"), v.literal("unavailable")),
+  expectedQualified: v.number(),
+  classifiedCount: v.number(),
+  truncated: v.optional(v.boolean()),
+  model: v.string(),
+  modelVersion: v.string(),
+  failureCode: v.optional(v.string()),
+  expirationTime: v.number(),
+})
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchWeeklyClassifications = defineTable(
+  searchClassification.extend({ expirationTime: v.number() }),
+)
+  .index("by_query_and_weekEnd", ["query", "weekEnd"])
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchWeeklyDigests = defineTable({
+  weekEnd: v.number(),
+  status: v.union(
+    v.literal("claimed"),
+    v.literal("sent"),
+    v.literal("failed"),
+    v.literal("exhausted"),
+  ),
+  attempts: v.number(),
+  claimedUntil: v.number(),
+  nextAttemptAt: v.number(),
+  sentAt: v.optional(v.number()),
+  failureCode: v.optional(v.string()),
+  expirationTime: v.number(),
+  payload: v.optional(searchDigestValidator),
+})
+  .index("by_weekEnd", ["weekEnd"])
+  .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
+  .index("by_expiration_time", ["expirationTime"]);
+
 export default defineSchema({
+  searchAggregateStates,
+  searchDailyAggregates,
+  searchWeeklyClassifications,
+  searchClassificationRuns,
+  searchWeeklyDigests,
   ...authTables,
   authSessions,
   authRefreshTokens,
@@ -4400,6 +4642,7 @@ export default defineSchema({
   packages,
   packageReleases,
   catalogClassificationResults,
+  pluginCategoryRefreshes,
   packageInspectorWarnings,
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
@@ -4411,6 +4654,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  pluginSearchObservations,
   packageDailyStats,
   packageLeaderboards,
   packageTrustedPublishers,

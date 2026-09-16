@@ -107,10 +107,7 @@ type PublisherCatalogItem = {
   inferredCategories?: string[];
   latestVersionId?: Id<"skillVersions">;
   inferredFromVersionId?: Id<"skillVersions">;
-  /**
-   * Legacy skill icon field or public plugin manifest HTTPS icon URL retained
-   * while older frontend bundles are cached.
-   */
+  /** Hosted bundled icon path; older records may retain legacy icon values. */
   icon: string | null;
   href: string;
   installs: number;

@@ -73,7 +73,9 @@ then escalates to KILL. An exited leader must get a bounded close/reaping wait
 before its group is probed: macOS can report EPERM between exit and close.
 Closed pipes do not prove descendants are gone; after ESRCH never signal that
 numeric group again. Permission denial fails that record without alternate
-signals, while all other groups are still attempted.
+signals, while all other groups are still attempted. KILL is accepted before the
+group disappears: a killed descendant stays in the group as a zombie until init
+reaps it, so proofs of group teardown must poll with a bound, never probe once.
 
 Preserve primary failures alongside cleanup errors. Write redacted diagnostics
 and attempt private-state removal even when shutdown/logging fails. Write

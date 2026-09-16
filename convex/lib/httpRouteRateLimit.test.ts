@@ -1,6 +1,11 @@
 /* @vitest-environment node */
 import { httpRouter } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
+
+// Route behavior assumes verified ingress; trust validation is covered by httpRateLimit.edge.test.ts.
+vi.mock("./verifiedClientIp", () => ({
+  getVerifiedClientIp: async () => "203.0.113.1",
+}));
 import type { ActionCtx } from "../_generated/server";
 import { httpAction } from "../functions";
 import { applyRateLimit, RATE_LIMITS } from "./httpRateLimit";

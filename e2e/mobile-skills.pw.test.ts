@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
+
+function seedApiUrl(path: string) {
+  const convexSiteUrl = process.env.VITE_CONVEX_SITE_URL?.trim();
+  return convexSiteUrl ? new URL(path, convexSiteUrl).toString() : path;
+}
 
 // Only run in mobile projects — skip on desktop
 test.beforeEach(({}, testInfo) => {
@@ -71,22 +77,15 @@ test("card grid fits within viewport on mobile", async ({ page }) => {
 test("skill detail page has no horizontal overflow on mobile", async ({ page, request }) => {
   const errors = trackRuntimeErrors(page);
 
-  const response = await request.get("/api/v1/skills/gifgrep");
-  test.skip(!response.ok(), "gifgrep fixture missing");
-
-  const payload = (await response.json()) as {
-    owner?: { handle?: string | null };
-    skill?: { slug?: string | null; displayName?: string | null };
-  };
-  const ownerHandle = payload.owner?.handle?.trim();
-  const slug = payload.skill?.slug?.trim();
-  test.skip(
-    !ownerHandle || !slug || !payload.skill?.displayName,
-    "fixture missing owner handle, slug, or displayName",
-  );
+  const payload = await loadSmokeSkillFixture(async (path) => {
+    const response = await request.get(seedApiUrl(path));
+    return { status: response.status(), json: () => response.json() };
+  });
+  const ownerHandle = payload.owner.handle;
+  const slug = payload.skill.slug;
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1.skill-page-title")).toHaveText(payload.skill!.displayName!);
+  await expect(page.locator("h1.skill-page-title")).toHaveText(payload.skill.displayName);
 
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -98,22 +97,20 @@ test("skill detail page has no horizontal overflow on mobile", async ({ page, re
 test("detail tabs are scrollable and touch-friendly on mobile", async ({ page, request }) => {
   const errors = trackRuntimeErrors(page);
 
-  const response = await request.get("/api/v1/skills/gifgrep");
-  test.skip(!response.ok(), "gifgrep fixture missing");
-
-  const payload = (await response.json()) as {
-    owner?: { handle?: string | null };
-    skill?: { slug?: string | null };
-  };
-  const ownerHandle = payload.owner?.handle?.trim();
-  const slug = payload.skill?.slug?.trim();
-  test.skip(!ownerHandle || !slug, "fixture missing");
+  const payload = await loadSmokeSkillFixture(async (path) => {
+    const response = await request.get(seedApiUrl(path));
+    return { status: response.status(), json: () => response.json() };
+  });
+  const ownerHandle = payload.owner.handle;
+  const slug = payload.skill.slug;
 
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
 
   // All standard tabs should be accessible (even if scrolled)
   for (const tabName of ["SKILL.md", "Files", "Versions"]) {
-    const tab = page.getByRole("tab", { name: tabName });
+    const tab = page
+      .getByRole("tablist", { name: "Skill detail tabs" })
+      .getByRole("tab", { name: tabName });
     await tab.scrollIntoViewIfNeeded();
     await expect(tab).toBeVisible();
 

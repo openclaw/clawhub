@@ -172,6 +172,17 @@ describe("restored UI design contract", () => {
     );
   });
 
+  it("keeps metric headers visible when responsive category columns collapse", () => {
+    const css = styles();
+
+    for (const query of ["(max-width: 960px)", "(max-width: 760px)"]) {
+      const responsive = cssMediaContaining(css, query, [
+        ".browse-page .browse-list-head-category",
+      ]);
+      expect(responsive).not.toContain(".browse-page .browse-list-head-label:nth-of-type(3)");
+    }
+  });
+
   it("keeps dashboard package names inside their rows and attention cards", () => {
     const css = styles();
 

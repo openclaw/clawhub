@@ -137,10 +137,19 @@ Ensure Convex env is set (auth + embeddings):
 - Optional fallback: `GITHUB_TOKEN` (used when GitHub App auth is unavailable,
   and for arbitrary public repository lookups such as trusted-publisher setup)
 
-Do not set `TRUST_FORWARDED_IPS=true` while the Convex `*.convex.site` HTTP
-origin remains publicly reachable. That flag makes rate limits and download
-metrics trust forwarded client IP headers, so it is only safe behind a
-header-sanitizing edge that prevents direct origin requests.
+Hosted anonymous API requests require the ClawHub Vercel proxy. It attaches
+its OIDC service identity and replaces the visitor IP header with the Vercel
+controlled address. Convex verifies the project and environment before using
+that address for rate limits or download metrics. `TRUST_FORWARDED_IPS` no
+longer enables raw forwarded headers.
+
+Deploy the updated proxy before enabling backend enforcement. Set `SITE_URL`
+to the public HTTPS frontend origin so direct anonymous Convex requests can
+redirect there without consuming a shared quota. Invalid edge assertions return
+401 without redirecting, so a broken edge identity cannot cause a loop. Verify
+both anonymous API reads and downloads through that origin, as well as authenticated direct API
+requests. The existing ClawHub Vercel OIDC identity must be available in both
+Test and Production; this introduces no additional shared secret.
 
 ## 2) Deploy web app (Vercel)
 

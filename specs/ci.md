@@ -64,11 +64,30 @@ To run one authenticated local browser spec through the same infra:
 bun run test:pw:local-auth -- --project=chromium e2e/local-auth/<spec>.pw.test.ts
 ```
 
-The local-auth runner uses dev auth and a local Convex deployment; it does not
+The local-auth runner supports Linux and macOS and uses dev auth and a local Convex deployment; it does not
 need production credentials or a ClawHub auth token. It starts its own isolated
 local Convex process and temporarily moves aside `.env.local` plus
 `.convex/local/default`, then restores them afterward. Stop any already-running
 local Convex process before running it.
+
+The runner starts the backend without publishing functions, configures the
+backend environment, and then publishes once. Cron definitions read deployment
+environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
+set before the first push. Application readiness checks never republish code,
+and no development watcher can push again while the app builds. A persistent
+launcher retains ownership of the backend process group through cleanup.
+
+The first push builds the external dependencies for Convex `"use node"` functions
+from their installed package versions. A slow cold npm install can exceed the
+backend's default 300-second HTTP timeout: its 408 response prompts a CLI retry
+while the executor keeps building, and overlapping builds corrupt the shared
+`build_deps` directory. The isolated runner sets `HTTP_SERVER_TIMEOUT_SECONDS=900`,
+above the executor's unchanged 605-second dependency-build cap, so that cap fails
+the build before a transport retry can overlap it. Before starting the backend,
+it warms npm's cache with a bounded, best-effort install; warmup and backend both
+use `npm_config_prefer_offline=true`, `npm_config_fetch_timeout=60000`, and
+`npm_config_fetch_retries=5`. CI restores and saves `~/.npm` keyed by `bun.lock`
+and `convex.json`. Action execution limits are not raised.
 
 The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
 local or secret-backed validation; PR CI should not require a developer auth

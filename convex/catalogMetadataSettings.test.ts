@@ -172,7 +172,7 @@ describe("catalog metadata settings", () => {
     );
   });
 
-  it("persists exact plugin category slugs and author topics", async () => {
+  it("persists plugin topics without changing package-owned categories", async () => {
     const pkg = {
       _id: "packages:demo",
       name: "demo-plugin",
@@ -182,6 +182,7 @@ describe("catalog metadata settings", () => {
       channel: "community",
       isOfficial: false,
       ownerUserId: user._id,
+      categories: ["tools"],
       inferredCategories: ["tools"],
       inferredTopics: ["Old inference"],
       inferredFromReleaseId: "packageReleases:demo",
@@ -201,31 +202,21 @@ describe("catalog metadata settings", () => {
 
     await setPackageCatalogMetadataHandler(ctx, {
       packageId: pkg._id,
-      categories: ["models"],
       topics: ["Local models"],
     });
 
-    expect(patch).toHaveBeenCalledWith(
-      pkg._id,
-      expect.objectContaining({
-        categories: ["models"],
-        topics: ["Local models"],
-        inferredCategories: undefined,
-        inferredTopics: undefined,
-        inferredFromReleaseId: undefined,
-        inferredCategoryConfidence: undefined,
-        inferredTopicConfidence: undefined,
-        inferredClassifierVersion: undefined,
-        inferredTopicClassifierVersion: undefined,
-        inferredInputHash: undefined,
-        inferredTopicInputHash: undefined,
-        inferredAt: undefined,
-      }),
-    );
+    expect(patch).toHaveBeenCalledWith(pkg._id, {
+      topics: ["Local models"],
+      inferredTopics: undefined,
+      inferredTopicConfidence: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredTopicInputHash: undefined,
+      updatedAt: expect.any(Number),
+    });
     expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        categories: ["models"],
+        categories: ["tools"],
         topics: ["Local models"],
       }),
     );
@@ -316,7 +307,7 @@ describe("catalog metadata settings", () => {
     );
   });
 
-  it("uses Other when stored plugin categories are cleared", async () => {
+  it("allows stale clients to echo the current package categories", async () => {
     const release = {
       _id: "packageReleases:demo",
       extractedPluginManifest: { contracts: { tools: ["demo"] } },
@@ -341,26 +332,26 @@ describe("catalog metadata settings", () => {
 
     await setPackageCatalogMetadataHandler(ctx, {
       packageId: pkg._id,
+      categories: ["models"],
       topics: ["Local models"],
     });
 
     expect(patch).toHaveBeenCalledWith(
       pkg._id,
       expect.objectContaining({
-        categories: ["other"],
         topics: ["Local models"],
       }),
     );
     expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        categories: ["other"],
-        pluginCategoryTags: ["other"],
+        categories: ["models"],
+        pluginCategoryTags: ["models"],
       }),
     );
   });
 
-  it("persists Other when plugin categories are explicitly cleared", async () => {
+  it("rejects publisher edits to package-owned plugin categories", async () => {
     const pkg = {
       _id: "packages:legacy-bundle",
       name: "legacy-bundle",
@@ -380,31 +371,20 @@ describe("catalog metadata settings", () => {
     };
     const { ctx, patch } = makeCtx(pkg._id, pkg);
 
-    await setPackageCatalogMetadataHandler(ctx, {
-      packageId: pkg._id,
-      categories: [],
-      topics: [],
-    });
-
-    expect(patch).toHaveBeenCalledWith(
-      pkg._id,
-      expect.objectContaining({
-        categories: ["other"],
-        topics: undefined,
-        inferredTopics: undefined,
-        inferredTopicConfidence: undefined,
+    await expect(
+      setPackageCatalogMetadataHandler(ctx, {
+        packageId: pkg._id,
+        categories: [],
+        topics: [],
       }),
+    ).rejects.toThrow(
+      "Plugin categories come from openclaw.plugin.json; publish a new version to change them",
     );
-    expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        categories: ["other"],
-        pluginCategoryTags: ["other"],
-      }),
-    );
+    expect(patch).not.toHaveBeenCalled();
+    expect(upsertPackageSearchDigestMock).not.toHaveBeenCalled();
   });
 
-  it("uses Other when legacy plugin categories are cleared", async () => {
+  it("preserves legacy package categories when saving topics", async () => {
     const pkg = {
       _id: "packages:legacy-bundle",
       name: "legacy-bundle",
@@ -429,9 +409,11 @@ describe("catalog metadata settings", () => {
 
     expect(patch).toHaveBeenCalledWith(
       pkg._id,
-      expect.objectContaining({
-        categories: ["other"],
-      }),
+      expect.not.objectContaining({ categories: expect.anything() }),
+    );
+    expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ categories: ["tools"], pluginCategoryTags: ["tools"] }),
     );
   });
 });

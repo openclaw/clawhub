@@ -9,6 +9,10 @@ import {
   getSkillCategoryBySlug,
   getSkillCategoriesForSkill,
 } from "../../lib/categories";
+import {
+  navigateWithManualCatalogSearch,
+  type ManualCatalogSearch,
+} from "../../lib/manualCatalogSearch";
 import { fetchCanonicalTrendingPage, type TrendingFeedState } from "../../lib/trendingApi";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import {
@@ -123,6 +127,7 @@ export function useSkillsBrowseModel({
   const loadMoreInFlightRef = useRef(false);
   const retryInFlightRef = useRef(false);
   const navigateTimer = useRef<number>(0);
+  const manualSearch = useRef<ManualCatalogSearch | null>(null);
 
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
@@ -173,6 +178,7 @@ export function useSkillsBrowseModel({
   const [searchLimit, setSearchLimit] = useState(() =>
     matchedInitialSearch ? matchedInitialSearch.limit : SKILLS_PAGE_SIZE,
   );
+  const [searchError, setSearchError] = useState(false);
   const [isSearching, setIsSearching] = useState(() => hasQuery && !initialSearchMatches);
   const appliedInitialSearchKey = useRef(matchedInitialSearch ? matchedInitialSearch.key : null);
 
@@ -370,6 +376,7 @@ export function useSkillsBrowseModel({
   }, [navigate, search.focus, searchInputRef]);
 
   useEffect(() => {
+    setSearchError(false);
     if (!searchKey) {
       setSearchResults([]);
       setIsSearching(false);
@@ -390,7 +397,8 @@ export function useSkillsBrowseModel({
   }, [matchedInitialSearch, searchKey]);
 
   useEffect(() => {
-    if (!hasQuery) return () => {};
+    searchRequest.current += 1;
+    if (!hasQuery || trimmedQuery !== search.q?.trim()) return () => {};
     if (matchedInitialSearch && searchLimit === matchedInitialSearch.limit) {
       searchRequest.current += 1;
       setIsSearching(false);
@@ -400,6 +408,7 @@ export function useSkillsBrowseModel({
     searchRequest.current += 1;
     const requestId = searchRequest.current;
     setIsSearching(true);
+    setSearchError(false);
     void (async () => {
       try {
         const data = (await searchSkills({
@@ -412,13 +421,17 @@ export function useSkillsBrowseModel({
         if (requestId === searchRequest.current) {
           setSearchResults(data);
         }
+      } catch {
+        if (requestId === searchRequest.current) setSearchError(true);
       } finally {
         if (requestId === searchRequest.current) {
           setIsSearching(false);
         }
       }
     })();
-    return () => {};
+    return () => {
+      searchRequest.current += 1;
+    };
   }, [
     activeCategory?.slug,
     activeTopic,
@@ -427,6 +440,7 @@ export function useSkillsBrowseModel({
     matchedInitialSearch,
     searchLimit,
     searchSkills,
+    search.q,
     trimmedQuery,
   ]);
 
@@ -563,25 +577,29 @@ export function useSkillsBrowseModel({
       setQuery(next);
       window.clearTimeout(navigateTimer.current);
       const trimmed = next.trim();
+      if (trimmed !== query.trim())
+        manualSearch.current = { query: trimmed, consumed: {}, kinds: ["skill"] };
       navigateTimer.current = window.setTimeout(() => {
-        void navigate({
-          search: (prev) => {
-            const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
-            const enteringSearch = Boolean(trimmed) && !hadQuery;
-            return {
-              ...prev,
-              q: trimmed ? next : undefined,
-              ...(enteringSearch ? { category: undefined, topic: undefined } : null),
-              ...(enteringSearch && parseSort(prev.sort) === "recommended"
-                ? { sort: undefined, dir: undefined }
-                : null),
-            };
-          },
-          replace: true,
-        });
+        void navigateWithManualCatalogSearch(manualSearch.current, () =>
+          navigate({
+            search: (prev) => {
+              const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
+              const enteringSearch = Boolean(trimmed) && !hadQuery;
+              return {
+                ...prev,
+                q: trimmed ? next : undefined,
+                ...(enteringSearch ? { category: undefined, topic: undefined } : null),
+                ...(enteringSearch && parseSort(prev.sort) === "recommended"
+                  ? { sort: undefined, dir: undefined }
+                  : null),
+              };
+            },
+            replace: true,
+          }),
+        );
       }, 250);
     },
-    [navigate],
+    [navigate, query],
   );
 
   const onToggleFeatured = useCallback(() => {
@@ -692,6 +710,7 @@ export function useSkillsBrowseModel({
     isLoadingMore,
     isLoadingSkills,
     listFailed,
+    searchError,
     loadMore,
     loadMoreRef,
     onClearFilters,

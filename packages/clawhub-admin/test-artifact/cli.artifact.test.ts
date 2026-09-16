@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -58,7 +58,49 @@ describe("packed admin CLI", () => {
       },
     );
     expect(result.status).toBe(0);
+    const jobIdsFile = join(tempDir, "job-ids.json");
+    const jobIds = ["v5700000000000000000000000000000", "v5710000000000000000000000000000"];
+    await writeFile(jobIdsFile, JSON.stringify(jobIds));
+    const plan = spawnSync(
+      process.execPath,
+      [
+        join(installDir, "package", "bin", "clawhub-admin.js"),
+        "skills",
+        "plan-scan-workers",
+        jobIdsFile,
+        "--batch-limit",
+        "32",
+      ],
+      { cwd: tempDir, encoding: "utf8" },
+    );
+    expect(plan.status).toBe(0);
+    const { inputs, deferredJobIds } = JSON.parse(plan.stdout);
+    expect(deferredJobIds).toEqual([]);
+    expect(inputs["batch-limit"]).toBe("32");
+    expect(JSON.parse(inputs["assigned-jobs"]).flat()).toEqual(jobIds);
+
     expect(result.stdout).toContain("Usage: clawhub-admin");
+    expect(result.stdout.replace(/\s+/g, " ")).toContain(
+      "registry discovery and device verification",
+    );
+    for (const command of [["login"], ["auth", "login"]]) {
+      const loginHelp = spawnSync(
+        process.execPath,
+        [join(installDir, "package", "bin", "clawhub-admin.js"), ...command, "--help"],
+        {
+          cwd: repoRoot,
+          encoding: "utf8",
+          env: { ...process.env, FORCE_COLOR: "0" },
+        },
+      );
+      const help = loginHelp.stdout.replace(/\s+/g, " ");
+      expect(loginHelp.status).toBe(0);
+      expect(help).toContain("Log in with device flow or store a token");
+      expect(help).toContain("Token label (device flow only)");
+      expect(help).toContain("Admin CLI token");
+      expect(help).toContain("verification URL without opening a browser");
+      expect(help).not.toMatch(/opens browser|requires --token|--device/);
+    }
     const packagesHelp = spawnSync(
       process.execPath,
       [join(installDir, "package", "bin", "clawhub-admin.js"), "packages", "--help"],
