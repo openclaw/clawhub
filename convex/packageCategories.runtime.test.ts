@@ -5,6 +5,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { repointPackageLatestRelease } from "./functions";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -151,7 +152,7 @@ describe("exact-version plugin categories", () => {
     await publish(t, userId, publisherId, "@catalog/versioned", "1.0.0", {
       categories: ["channels"],
     });
-    await publish(t, userId, publisherId, "@catalog/versioned", "2.0.0", {
+    const latest = await publish(t, userId, publisherId, "@catalog/versioned", "2.0.0", {
       categories: ["models", "tools"],
     });
     await publish(t, userId, publisherId, "@catalog/legacy", "1.0.0");
@@ -200,5 +201,26 @@ describe("exact-version plugin categories", () => {
       { name: "@catalog/missing", version: "9.9.9", categories: null },
       { name: "@catalog/versioned", version: "9.9.9", categories: null },
     ]);
+
+    // Administrative release cleanup invokes this owner after removing the latest version.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(latest.releaseId, { softDeletedAt: Date.now() });
+      await repointPackageLatestRelease(ctx, latest.packageId, latest.releaseId);
+    });
+    expect(await t.query(api.packages.getByName, { name: "@catalog/versioned" })).toMatchObject({
+      package: { latestVersion: "1.0.0", categories: ["channels"] },
+    });
+    const survivingCategory = await t.query(api.packages.listPublicPage, {
+      family: "code-plugin",
+      category: "channels",
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+    expect(survivingCategory.page.map((pkg) => pkg.name)).toContain("@catalog/versioned");
+    const removedCategory = await t.query(api.packages.listPublicPage, {
+      family: "code-plugin",
+      category: "models",
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+    expect(removedCategory.page.map((pkg) => pkg.name)).not.toContain("@catalog/versioned");
   });
 });

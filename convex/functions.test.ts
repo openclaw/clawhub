@@ -183,6 +183,7 @@ describe("package digest sync", () => {
       isOfficial: false,
       ownerUserId: "users:owner",
       summary: "latest summary",
+      categories: ["models"],
       tags: {
         latest: "packageReleases:demo-2",
         stable: "packageReleases:demo-2",
@@ -294,12 +295,14 @@ describe("package digest sync", () => {
         tags: { latest: "packageReleases:demo-1" },
         latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
         summary: "stable summary",
+        categories: undefined,
       }),
     );
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "packageSearchDigest",
       expect.objectContaining({
         latestVersion: "1.0.0",
+        categories: ["other"],
         ownerHandle: "owner",
       }),
     );
@@ -317,6 +320,7 @@ describe("package digest sync", () => {
       isOfficial: false,
       ownerUserId: "users:owner",
       summary: "latest summary",
+      categories: ["models"],
       tags: {
         latest: "packageReleases:bundle-latest",
       },
@@ -349,6 +353,7 @@ describe("package digest sync", () => {
       version: "2024-12",
       changelog: "newest bundle build",
       summary: "newest bundle summary",
+      pluginManifestSummary: { categories: ["productivity"] },
       compatibility: { hosts: ["openclaw"] },
       verification: { tier: "verified" },
       distTags: ["release-2024-12"],
@@ -427,12 +432,14 @@ describe("package digest sync", () => {
         tags: { latest: "packageReleases:bundle-newest" },
         latestVersionSummary: expect.objectContaining({ version: "2024-12" }),
         summary: "newest bundle summary",
+        categories: ["productivity"],
       }),
     );
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "packageSearchDigest",
       expect.objectContaining({
         latestVersion: "2024-12",
+        categories: ["productivity"],
         ownerHandle: "owner",
       }),
     );

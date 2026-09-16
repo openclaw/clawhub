@@ -54,6 +54,7 @@ type LatestPackageRelease = Pick<
   | "compatibility"
   | "verification"
   | "distTags"
+  | "pluginManifestSummary"
 > & {
   scanStatus?: Doc<"packages">["scanStatus"];
 };
@@ -117,6 +118,7 @@ async function getPreferredFallbackPackageRelease(
         verification: release.verification,
         scanStatus: release.verification?.scanStatus,
         distTags: release.distTags,
+        pluginManifestSummary: release.pluginManifestSummary,
       };
       if (!best || compareFallbackReleases(family, candidate, best) > 0) best = candidate;
     }
@@ -404,6 +406,10 @@ export async function repointPackageLatestRelease(
     patch.latestReleaseId = nextLatest?._id;
     patch.latestVersionSummary = toPackageLatestVersionSummary(nextLatest);
     patch.summary = nextLatest?.summary;
+    if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin") {
+      // Discovery must follow the surviving release, including unknown historical categories.
+      patch.categories = nextLatest?.pluginManifestSummary?.categories;
+    }
     patch.icon = nextLatest?.icon;
     patch.compatibility = nextLatest?.compatibility;
     patch.verification = nextLatest?.verification;
