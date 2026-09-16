@@ -7,12 +7,12 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "channels";
     readonly label: "Channels";
     readonly icon: "message-circle";
-    readonly description: "Human-agent messaging transports and channel adapters. Choose this when the main purpose is letting people talk to the agent through a messaging service, even if the adapter also exposes workspace tools.";
+    readonly description: "Providing a messaging transport or channel adapter that connects people to the agent through a messaging service, even if it also exposes workspace tools. Enhancing an existing channel with reply notifications, inbox triage, or a communication persona belongs in Inbox & collaboration; using a channel does not make a plugin a transport.";
 }, {
     readonly slug: "models";
     readonly label: "Models";
     readonly icon: "brain";
-    readonly description: "General model providers, inference backends, and model routing. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media when that is their main purpose.";
+    readonly description: "Providing general model inference backends or selecting which model/provider handles inference. Selecting, condensing, or formatting tools for an already selected model belongs in Context. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media.";
 }, {
     readonly slug: "agent-runtimes";
     readonly label: "Agent runtimes";
@@ -27,7 +27,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "context";
     readonly label: "Context";
     readonly icon: "book-open";
-    readonly description: "Building, selecting, compacting, or managing the active conversation context. Durable memory belongs in Memory; an engine that runs the agent and owns its native sessions belongs in Agent runtimes.";
+    readonly description: "Building, selecting, compacting, or managing the active conversation context, including selecting and formatting the tools presented to the model. Durable memory belongs in Memory; an engine that runs the agent and owns its native sessions belongs in Agent runtimes.";
 }, {
     readonly slug: "voice";
     readonly label: "Voice";
@@ -52,7 +52,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "integrations";
     readonly label: "Integrations";
     readonly icon: "plug";
-    readonly description: "General connectors, API bridges, and service integration platforms without a more specific user purpose. A connector to a particular workflow belongs in that workflow's category; exposing tools or MCP is not enough.";
+    readonly description: "General-purpose platforms for connecting services or orchestrating APIs. A connector dedicated to a particular workflow belongs in that workflow's category, even if it only exposes the service's data or tools. MCP/client wiring alone is insufficient; use Other when the connected service's user purpose is unspecified.";
 }, {
     readonly slug: "developer-tools";
     readonly label: "Developer tools";
@@ -72,12 +72,12 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "inbox-collaboration";
     readonly label: "Inbox & collaboration";
     readonly icon: "inbox";
-    readonly description: "Managing email, inboxes, team communication, and collaborative workspaces. Providing a transport for people to talk to the agent belongs in Channels.";
+    readonly description: "Managing email, inboxes, team communication, and collaborative workspaces, including reply notifications, message triage, and communication personas over existing channels. Providing the messaging transport itself belongs in Channels.";
 }, {
     readonly slug: "productivity";
     readonly label: "Productivity";
     readonly icon: "list-todo";
-    readonly description: "Managing tasks, notes, projects, plans, and personal or team work. Appointments and availability belong in Scheduling; document processing belongs in Documents & files.";
+    readonly description: "Managing tasks, notes, projects, plans, and personal or team work, including reviewing work activity and history. Appointments and availability belong in Scheduling; document processing belongs in Documents & files.";
 }, {
     readonly slug: "scheduling";
     readonly label: "Scheduling";

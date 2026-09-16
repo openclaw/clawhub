@@ -26,13 +26,13 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
         slug: "channels",
         label: "Channels",
         icon: "message-circle",
-        description: "Human-agent messaging transports and channel adapters. Choose this when the main purpose is letting people talk to the agent through a messaging service, even if the adapter also exposes workspace tools.",
+        description: "Providing a messaging transport or channel adapter that connects people to the agent through a messaging service, even if it also exposes workspace tools. Enhancing an existing channel with reply notifications, inbox triage, or a communication persona belongs in Inbox & collaboration; using a channel does not make a plugin a transport.",
     },
     {
         slug: "models",
         label: "Models",
         icon: "brain",
-        description: "General model providers, inference backends, and model routing. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media when that is their main purpose.",
+        description: "Providing general model inference backends or selecting which model/provider handles inference. Selecting, condensing, or formatting tools for an already selected model belongs in Context. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media.",
     },
     {
         slug: "agent-runtimes",
@@ -50,7 +50,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
         slug: "context",
         label: "Context",
         icon: "book-open",
-        description: "Building, selecting, compacting, or managing the active conversation context. Durable memory belongs in Memory; an engine that runs the agent and owns its native sessions belongs in Agent runtimes.",
+        description: "Building, selecting, compacting, or managing the active conversation context, including selecting and formatting the tools presented to the model. Durable memory belongs in Memory; an engine that runs the agent and owns its native sessions belongs in Agent runtimes.",
     },
     {
         slug: "voice",
@@ -80,7 +80,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
         slug: "integrations",
         label: "Integrations",
         icon: "plug",
-        description: "General connectors, API bridges, and service integration platforms without a more specific user purpose. A connector to a particular workflow belongs in that workflow's category; exposing tools or MCP is not enough.",
+        description: "General-purpose platforms for connecting services or orchestrating APIs. A connector dedicated to a particular workflow belongs in that workflow's category, even if it only exposes the service's data or tools. MCP/client wiring alone is insufficient; use Other when the connected service's user purpose is unspecified.",
     },
     {
         slug: "developer-tools",
@@ -104,13 +104,13 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
         slug: "inbox-collaboration",
         label: "Inbox & collaboration",
         icon: "inbox",
-        description: "Managing email, inboxes, team communication, and collaborative workspaces. Providing a transport for people to talk to the agent belongs in Channels.",
+        description: "Managing email, inboxes, team communication, and collaborative workspaces, including reply notifications, message triage, and communication personas over existing channels. Providing the messaging transport itself belongs in Channels.",
     },
     {
         slug: "productivity",
         label: "Productivity",
         icon: "list-todo",
-        description: "Managing tasks, notes, projects, plans, and personal or team work. Appointments and availability belong in Scheduling; document processing belongs in Documents & files.",
+        description: "Managing tasks, notes, projects, plans, and personal or team work, including reviewing work activity and history. Appointments and availability belong in Scheduling; document processing belongs in Documents & files.",
     },
     {
         slug: "scheduling",

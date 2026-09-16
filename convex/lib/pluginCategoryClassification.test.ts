@@ -102,7 +102,7 @@ describe("single-purpose plugin classification", () => {
     expect(body.instructions).toContain("agent-runtimes: Agent execution engines");
     expect(result).toMatchObject({
       categories: ["agent-runtimes"],
-      classification: { source: "generated", classifierVersion: "plugin-single-category-v4" },
+      classification: { source: "generated", classifierVersion: "plugin-single-category-v5" },
     });
   });
 

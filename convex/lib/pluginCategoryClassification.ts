@@ -8,7 +8,7 @@ import { v } from "convex/values";
 import { sha256Hex } from "./clawpack";
 import { extractResponseText } from "./openaiResponse";
 
-export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v4";
+export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v5";
 export const pluginCategoryClassificationValidator = v.object({
   source: v.union(
     v.literal("manifest"),
@@ -119,6 +119,7 @@ export async function classifyPluginCategories(
           "Choose exactly one category for the main reason someone installs this plugin. Reassess its purpose from the evidence; do not copy a previous label or enumerate secondary capabilities.",
           "Use the category definitions to resolve overlap. Prefer a specific user job over Integrations; exposing tools or MCP alone does not imply Integrations. A human-agent messaging transport belongs in Channels; an engine that runs the agent loop and manages native sessions belongs in Agent runtimes; active-context assembly belongs in Context; general agent delegation belongs in Agent orchestration.",
           "Core categories describe the plugin's main configuration purpose, not incidental capabilities or words. When several categories seem plausible, select the narrowest definition matching the main purpose. Use Other only when no category fits or evidence is insufficient, not merely because several capabilities exist.",
+          "Distinguish capabilities the plugin provides from those it merely uses or enhances. Require evidence of supplying a messaging transport, selecting/providing an inference backend, or executing the agent loop before choosing Channels, Models, or Agent runtimes. A connector's wiring does not establish its end-user job; when that job is unspecified, use Other and explain the missing evidence. Do not infer Research or another workflow from words such as search, export, or analyze without evidence of what the user works on.",
           "Provide a short factual explanation grounded in the input, at most 500 characters.",
           ...PLUGIN_CATEGORY_DEFINITIONS.map(({ slug, description }) => `${slug}: ${description}`),
         ].join("\n"),

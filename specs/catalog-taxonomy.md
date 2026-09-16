@@ -22,6 +22,12 @@
   covers active-context assembly and compaction; Agent orchestration covers coordination and
   delegation. Session mirroring or locks alone do not make a plugin an execution engine.
   Legacy `runtime` remains readable and is not automatically mapped to Agent runtimes.
+- Channels requires supplying a messaging transport; reply notifications, message triage, and
+  communication personas over an existing channel belong in Inbox & collaboration. Models
+  requires providing inference or choosing its model/provider; adapting tool selection and
+  presentation for an already selected model belongs in Context. Classification distinguishes
+  capabilities supplied from capabilities merely consumed. Sparse connector metadata uses Other
+  with a missing-evidence explanation rather than inventing the connected service's user purpose.
 - Plugin category precedence is package declaration, then ClawHub model classification,
   then `other`. Omission is accepted. Invalid declarations reject publication instead of falling
   through to inference.
@@ -126,7 +132,7 @@ completion. The retained journal is the audit/rollback record.
 
 Operator entry points (run only against the deliberately selected deployment):
 
-- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v4-prod","batchSize":10}` returns
+- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v5-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
 - `pluginCategoryRefresh:accept` accepts at most 100 inspected row IDs with
@@ -142,7 +148,7 @@ Operator entry points (run only against the deliberately selected deployment):
 
 Classification uses `OPENAI_API_KEY` and defaults to `gpt-5.6-luna`, with a dedicated
 `OPENAI_PLUGIN_CATEGORY_MODEL` override independent of skill-summary configuration. The current
-classifier revision is `plugin-single-category-v4`; superseded generated previews cannot be
+classifier revision is `plugin-single-category-v5`; superseded generated previews cannot be
 accepted or applied. The model receives all 22 purpose definitions and must return exactly one
 category. Missing credentials, timeouts, and
 invalid output are recorded as failed fallback classifications. They cannot be accepted by the
