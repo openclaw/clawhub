@@ -13097,6 +13097,12 @@ export const completeReleaseSecurityScanInternal = internalMutation({
 export const updateReleaseLlmAnalysisInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
+    securityScanJob: v.optional(
+      v.object({
+        jobId: v.id("securityScanJobs"),
+        leaseToken: v.string(),
+      }),
+    ),
     llmAnalysis: v.object({
       status: v.string(),
       verdict: v.optional(v.string()),
@@ -13127,6 +13133,18 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
+    if (args.securityScanJob) {
+      const job = await ctx.db.get(args.securityScanJob.jobId);
+      if (
+        !job ||
+        job.status !== "running" ||
+        job.targetKind !== "packageRelease" ||
+        job.packageReleaseId !== args.releaseId ||
+        job.leaseToken !== args.securityScanJob.leaseToken
+      ) {
+        return;
+      }
+    }
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
     await applyReleaseLlmAnalysis(ctx, release, args.llmAnalysis);

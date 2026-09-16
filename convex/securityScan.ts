@@ -4409,10 +4409,28 @@ export const failCodexScanJob = action({
     jobId: v.id("securityScanJobs"),
     leaseToken: v.string(),
     error: v.string(),
+    llmAnalysis: v.optional(llmAnalysisValidator),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
     const error = sanitizeWorkerErrorDetail(args.error, 2000);
+    if (args.llmAnalysis) {
+      const target = await runQueryRef<JobTarget | null>(
+        ctx,
+        internalRefs.securityScan.getJobTargetInternal,
+        { jobId: args.jobId },
+      );
+      if (target?.job.targetKind === "packageRelease" && target.release) {
+        await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
+          releaseId: target.release._id,
+          llmAnalysis: args.llmAnalysis,
+          securityScanJob: {
+            jobId: args.jobId,
+            leaseToken: args.leaseToken,
+          },
+        });
+      }
+    }
     const result = await runMutationRef<{ ok: true; retry: boolean }>(
       ctx,
       internalRefs.securityScan.failJobInternal,

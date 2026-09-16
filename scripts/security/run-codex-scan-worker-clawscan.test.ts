@@ -1049,7 +1049,7 @@ JSON
 fi
 sleep 0.1
 cat > "$output" <<'JSON'
-${clawScanArtifactJson({ verdict: "benign" })}
+${clawScanArtifactJson({ verdict: "malicious" })}
 JSON
 touch ${JSON.stringify(primaryCompleted)}`,
     );
@@ -1112,6 +1112,10 @@ touch ${JSON.stringify(primaryCompleted)}`,
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
         error:
           "Endor ClawScan scanner status was failed: Dependency resolution failed with ENDOR_TOKEN=[redacted-secret]",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+        },
       });
       const jobDir = join(diagnosticsRoot, "securityScanJobs_endor-retry");
       const artifact = await readFile(
@@ -1125,6 +1129,10 @@ touch ${JSON.stringify(primaryCompleted)}`,
         exitCode: 0,
         rawArtifactPath: "endor-clawscan-artifact.redacted.json",
         scannerError: "Dependency resolution failed with ENDOR_TOKEN=[redacted-secret]",
+      });
+      expect(diagnostic.llmAnalysis).toMatchObject({
+        status: "malicious",
+        verdict: "malicious",
       });
     } finally {
       if (previousEnv.command === undefined)

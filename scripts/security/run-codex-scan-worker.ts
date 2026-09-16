@@ -2084,14 +2084,14 @@ export async function processJob(
         : Promise.resolve<EndorPluginScanResult | undefined>(undefined),
     ] as const);
     if (clawScanResult.status === "rejected") throw clawScanResult.reason;
-    if (endorScanResult.status === "rejected") throw endorScanResult.reason;
     const mapped = clawScanResult.value;
-    const endorResult = endorScanResult.value;
-    endorAnalysis = endorResult?.analysis;
     llmAnalysis = mapped.llmAnalysis;
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
+    if (endorScanResult.status === "rejected") throw endorScanResult.reason;
+    const endorResult = endorScanResult.value;
+    endorAnalysis = endorResult?.analysis;
     let scannerReportsJson = mapped.scannerReportsJson;
     if (endorResult) {
       const scannerReports = asRecord(JSON.parse(scannerReportsJson) as unknown);
@@ -2164,6 +2164,7 @@ export async function processJob(
       jobId: job.job._id as Id<"securityScanJobs">,
       leaseToken: job.job.leaseToken,
       error: errorMessage,
+      ...(job.job.targetKind === "packageRelease" && llmAnalysis ? { llmAnalysis } : {}),
     })) as { retry?: boolean } | undefined;
     logger.error(
       {

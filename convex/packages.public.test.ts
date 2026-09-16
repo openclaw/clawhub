@@ -1056,6 +1056,10 @@ const updateReleaseLlmAnalysisInternalHandler = (
   updateReleaseLlmAnalysisInternal as unknown as WrappedHandler<
     {
       releaseId: string;
+      securityScanJob?: {
+        jobId: string;
+        leaseToken: string;
+      };
       llmAnalysis: {
         status: string;
         verdict?: string;

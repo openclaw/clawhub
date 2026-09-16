@@ -321,3 +321,98 @@ it("keeps submitted scanner storage when its job target no longer exists", async
   expect(result).toEqual({ deleted: false, reason: "target-missing" });
   expect(await t.run(async (ctx) => Boolean(await ctx.storage.get(storageId)))).toBe(true);
 });
+
+it.each([
+  { attempts: 1, expectedRetry: true, expectedStatus: "queued" as const },
+  { attempts: 3, expectedRetry: false, expectedStatus: "failed" as const },
+])(
+  "preserves and enforces a malicious primary verdict when Endor fails at attempt $attempts",
+  async ({ attempts, expectedRetry, expectedStatus }) => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-fixture");
+    const { t, packageId, releaseId, jobId } = await createPackageScanFixture();
+    await t.run((ctx) => ctx.db.patch(jobId, { attempts }));
+    const downloadPath = "/api/v1/packages/endor-plugin/download?version=1.0.0";
+    const downloadBeforeFailure = await t.fetch(downloadPath);
+    expect(downloadBeforeFailure.status).toBe(200);
+    expect(downloadBeforeFailure.headers.get("content-type")).toBe("application/zip");
+    expect((await downloadBeforeFailure.arrayBuffer()).byteLength).toBeGreaterThan(0);
+
+    await expect(
+      t.action(api.securityScan.failCodexScanJob, {
+        token: "worker-fixture",
+        jobId,
+        leaseToken: "lease-one",
+        error: "Endor dependency resolution failed",
+        llmAnalysis: {
+          status: "malicious",
+          verdict: "malicious",
+          confidence: "high",
+          summary: "Primary ClawScan found malicious behavior.",
+          checkedAt: 10,
+        },
+      }),
+    ).resolves.toEqual({ ok: true, retry: expectedRetry });
+
+    expect(await t.run((ctx) => ctx.db.get(releaseId))).toMatchObject({
+      llmAnalysis: {
+        status: "malicious",
+        verdict: "malicious",
+      },
+      verification: { scanStatus: "malicious" },
+      softDeletedAt: expect.any(Number),
+    });
+    expect(await t.run((ctx) => ctx.db.get(packageId))).toMatchObject({
+      scanStatus: "malicious",
+    });
+    expect(await t.run((ctx) => ctx.db.get(jobId))).toMatchObject({
+      status: expectedStatus,
+      lastError: "Endor dependency resolution failed",
+    });
+    const downloadAfterFailure = await t.fetch(downloadPath);
+    expect(downloadAfterFailure.status).toBe(404);
+    expect(await downloadAfterFailure.text()).toBe("Package not found");
+  },
+);
+
+it("rejects stale, mismatched, and deleted release guards without storing primary analysis", async () => {
+  const maliciousAnalysis = {
+    status: "malicious",
+    verdict: "malicious",
+    checkedAt: 10,
+  };
+
+  const stale = await createPackageScanFixture();
+  await stale.t.mutation(internal.packages.updateReleaseLlmAnalysisInternal, {
+    releaseId: stale.releaseId,
+    securityScanJob: { jobId: stale.jobId, leaseToken: "stale-lease" },
+    llmAnalysis: maliciousAnalysis,
+  });
+  expect(await stale.t.run((ctx) => ctx.db.get(stale.releaseId))).not.toHaveProperty("llmAnalysis");
+
+  const mismatched = await createPackageScanFixture();
+  const otherReleaseId = await mismatched.t.run(async (ctx) => {
+    const release = await ctx.db.get(mismatched.releaseId);
+    if (!release) throw new Error("Fixture release missing");
+    const { _id: _releaseId, _creationTime: _createdAt, ...fields } = release;
+    return await ctx.db.insert("packageReleases", { ...fields, version: "2.0.0" });
+  });
+  await mismatched.t.mutation(internal.packages.updateReleaseLlmAnalysisInternal, {
+    releaseId: otherReleaseId,
+    securityScanJob: { jobId: mismatched.jobId, leaseToken: "lease-one" },
+    llmAnalysis: maliciousAnalysis,
+  });
+  expect(await mismatched.t.run((ctx) => ctx.db.get(otherReleaseId))).not.toHaveProperty(
+    "llmAnalysis",
+  );
+
+  const deleted = await createPackageScanFixture();
+  await deleted.t.run((ctx) => ctx.db.patch(deleted.releaseId, { softDeletedAt: 9 }));
+  await deleted.t.mutation(internal.packages.updateReleaseLlmAnalysisInternal, {
+    releaseId: deleted.releaseId,
+    securityScanJob: { jobId: deleted.jobId, leaseToken: "lease-one" },
+    llmAnalysis: maliciousAnalysis,
+  });
+  expect(await deleted.t.run((ctx) => ctx.db.get(deleted.releaseId))).not.toHaveProperty(
+    "llmAnalysis",
+  );
+});
