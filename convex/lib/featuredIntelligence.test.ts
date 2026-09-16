@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { recommendFeatured, type RecommendationArtifact } from "./featuredIntelligence";
 
 const artifact = (id: string): RecommendationArtifact => ({
@@ -19,169 +19,181 @@ const demand = (query: string, searches7d: number, results: RecommendationArtifa
   searches30d: searches7d + 2,
   currentResults: results,
 });
-const adoption = (rank: number) => ({
-  source: "package-trending" as const,
-  rank,
-  snapshotId: "plugin-snapshot",
-  rankingVersion: "existing-package-trending",
-  periodStart: 1_000,
-  periodEnd: 2_000,
-  generatedAt: 2_000,
-  sourceObservedAt: null,
-  downloads: 40,
-  installs: 3,
-  bookmarks: null,
-  lifetimeInstalls: null,
+const adoption = (installs30d: number, installs7d = 0) => ({
+  source: "package-daily-installs" as const,
+  rank: 1,
+  snapshotId: "fixture",
+  rankingVersion: "featured-installs-30d-v1",
+  periodStart: 500,
+  periodStart7d: 1000,
+  periodEnd: 2000,
+  generatedAt: 2000,
+  installs30d,
+  installs7d,
+  importedRows: 0,
+  importDatasetVersions: [],
 });
 const window = { start7d: 1_000, start30d: 500, endDay: 2_000, days: 7 as const };
 const coverage = { dataThrough: 2_000, collectionStartedAt: 1_000 };
 
-describe("Featured recommendation evidence", () => {
-  it("unites distinct signal cohorts without creating a blended score or duplicate candidate", () => {
-    const both = artifact("plugin:both");
-    const searched = artifact("plugin:searched");
-    const chosen = artifact("plugin:chosen");
-    const report = recommendFeatured({
-      rows: [demand("calendar", 8, [both, searched, both]), demand("schedule", 4, [both])],
-      adoption: [
-        { artifact: chosen, evidence: adoption(1) },
-        { artifact: both, evidence: adoption(2) },
-      ],
-      window,
-      coverage,
-      limit: 20,
-    });
-    expect(report.candidates.map((row) => [row.id, row.support])).toEqual([
-      [both.id, "both"],
-      [searched.id, "search-only"],
-      [chosen.id, "adoption-only"],
-    ]);
-    expect(report.candidates[0].search).toMatchObject({ matchedSearches7d: 12, searches30d: 16 });
-    expect(report.candidates[0].adoption).toEqual(adoption(2));
-    expect(report.candidates[2].search).toBeNull();
-    expect(report.candidates.every((row) => !("score" in row))).toBe(true);
-  });
+const base = {
+  artifactKind: "plugin" as const,
+  rows: [],
+  adoption: [],
+  editorial: { revision: 0, items: [] },
+  editorialArtifacts: [],
+  currentEditorialRevision: 0,
+  window,
+  coverage,
+  limit: 20,
+};
 
-  it("retains observed adoption when the newly deployed search window is empty", () => {
-    const native = { ...artifact("clawhub:skill-id"), artifactKind: "skill" as const };
-    const report = recommendFeatured({
-      rows: [],
-      adoption: [{ artifact: native, evidence: { ...adoption(3), source: "clawhub-trending" } }],
-      window,
-      coverage,
-      limit: 20,
-    });
-    expect(report.candidates).toMatchObject([
-      { id: native.id, support: "adoption-only", search: null },
-    ]);
-    expect(report.candidates[0].adoption?.installs).toBe(3);
+it("ranks telemetry by monthly installs, final-week installs, then identity without search or incumbent bonuses", () => {
+  const entries = ["plugin:monthly", "plugin:weekly", "plugin:stable-a", "plugin:stable-b"].map(
+    artifact,
+  );
+  const report = recommendFeatured({
+    ...base,
+    rows: [demand("familiar", 10000, [entries[3], artifact("plugin:search-only")])],
+    adoption: entries.map((entry, index) => ({
+      artifact: entry,
+      evidence: adoption([20, 10, 10, 10][index], [0, 8, 3, 3][index]),
+    })),
+    currentFeatured: [{ ...entries[3], featuredAt: 1 }],
   });
-
-  it("keeps ineligible entries as explicit exclusions instead of promoting popularity", () => {
-    const blocked = {
-      ...artifact("plugin:blocked"),
-      eligibleForFeatured: false,
-      eligibilityReasons: ["security_not_clean"],
-    };
-    const report = recommendFeatured({
-      rows: [demand("popular", 900, [blocked])],
-      adoption: [{ artifact: blocked, evidence: adoption(1) }],
-      window,
-      coverage,
-      limit: 20,
-    });
-    expect(report.candidates).toEqual([]);
-    expect(report.excluded).toEqual([
-      {
-        id: blocked.id,
-        displayName: blocked.displayName,
-        url: blocked.url,
-        reasons: ["security_not_clean"],
-      },
-    ]);
+  expect(report.lineup.proposed.map((entry) => entry.id)).toEqual(entries.map((entry) => entry.id));
+  expect(report.lineup).toMatchObject({
+    targetSize: 16,
+    reservedSlots: 8,
+    telemetryTarget: 8,
+    pendingCount: 8,
+    telemetryShortfall: 4,
+    shortfall: 12,
   });
-
-  it("keeps filtered demand scope and reports bounded omissions", () => {
-    const candidate = artifact("plugin:calendar");
-    const rows = Array.from({ length: 12 }, (_, index) => ({
-      ...demand(`query ${index}`, index + 1, [candidate]),
-      scope: "shelf" as const,
-    }));
-    const report = recommendFeatured({ rows, adoption: [], window, coverage, limit: 20 });
-    expect(report.candidates[0].search).toMatchObject({ matchedSearches7d: 78, omittedQueries: 4 });
-    expect(report.candidates[0].search?.queries).toHaveLength(8);
-    expect(report.candidates[0].search?.queries.every((row) => row.scope === "shelf")).toBe(true);
+  expect(report.lineup.proposed[3]).toMatchObject({
+    change: "retain",
+    support: "both",
+    selectionBasis: "telemetry",
+    slot: 11,
   });
 });
 
-it("reassesses a complete eight-member lineup, retains observed members and explains removals without padding", () => {
-  const existing = { ...artifact("plugin:existing"), version: "1.0.0", featuredAt: 10 };
-  const unknown = { ...artifact("plugin:unknown"), version: "1.0.0", featuredAt: 11 };
+it("reserves missing editorial slots, deduplicates their telemetry and exposes stale revisions without substituting choices", () => {
+  const chosen = artifact("plugin:chosen");
+  const missing = {
+    ...artifact("plugin:missing"),
+    eligibleForFeatured: false,
+    eligibilityReasons: ["no-public-version"],
+  };
+  const report = recommendFeatured({
+    ...base,
+    editorial: {
+      revision: 4,
+      items: [
+        {
+          id: chosen.id,
+          name: chosen.name,
+          displayName: chosen.displayName,
+          reason: "Useful review tool",
+        },
+        {
+          id: missing.id,
+          name: missing.name,
+          displayName: missing.displayName,
+          reason: "Awaiting publication",
+        },
+      ],
+    },
+    editorialArtifacts: [chosen, missing],
+    currentEditorialRevision: 5,
+    adoption: [
+      chosen,
+      ...Array.from({ length: 12 }, (_, index) => artifact(`plugin:item-${index}`)),
+    ].map((entry, index) => ({ artifact: entry, evidence: adoption(100 - index) })),
+  });
+  expect(report.lineup.proposed).toHaveLength(9);
+  expect(report.lineup.proposed[0]).toMatchObject({
+    id: chosen.id,
+    slot: 0,
+    selectionBasis: "editorial",
+    reason: "Useful review tool",
+  });
+  expect(report.lineup.proposed[1]).toMatchObject({
+    id: "plugin:item-0",
+    slot: 8,
+    selectionBasis: "telemetry",
+  });
+  expect(report.lineup.reservations[1]).toMatchObject({
+    id: missing.id,
+    status: "pending",
+    artifact: null,
+    pendingReasons: ["no-public-version"],
+  });
+  expect(report.lineup).toMatchObject({
+    editorialRevision: 4,
+    currentEditorialRevision: 5,
+    staleEditorial: true,
+    pendingCount: 7,
+    telemetryShortfall: 0,
+    shortfall: 7,
+  });
+});
+
+it("fills sixteen skill telemetry slots, excludes unsafe entries and never pads with current-only or search-only cards", () => {
+  const entries = Array.from({ length: 20 }, (_, index) => ({
+    ...artifact(`clawhub:${index.toString().padStart(2, "0")}`),
+    artifactKind: "skill" as const,
+  }));
   const unsafe = {
-    ...artifact("plugin:unsafe"),
-    featuredAt: 12,
+    ...entries[0],
     eligibleForFeatured: false,
     eligibilityReasons: ["security-not-clean"],
   };
-  const newcomers = Array.from({ length: 9 }, (_, index) => artifact(`plugin:new-${index}`));
-  const result = recommendFeatured({
-    rows: [],
-    adoption: [
-      { artifact: existing, evidence: adoption(2) },
-      ...newcomers.map((entry, index) => ({ artifact: entry, evidence: adoption(index + 3) })),
-    ],
-    currentFeatured: [existing, unknown, unsafe],
-    window,
-    coverage,
+  const report = recommendFeatured({
+    ...base,
+    artifactKind: "skill",
     limit: 1,
+    adoption: [unsafe, ...entries.slice(1)].map((entry, index) => ({
+      artifact: entry,
+      evidence: adoption(100 - index),
+    })),
   });
-  expect(result.lineup.proposed).toHaveLength(8);
-  expect(result.lineup.proposed[0]).toMatchObject({ id: existing.id, change: "retain" });
-  expect(result.lineup.proposed.slice(1).every((entry) => entry.change === "add")).toBe(true);
-  expect(result.lineup.removals).toMatchObject([
-    { id: unknown.id, reasons: ["outside-proposed-set"] },
-    { id: unsafe.id, reasons: ["security-not-clean"] },
-  ]);
-  expect(result.lineup.baseline).toHaveLength(3);
-  expect(result.lineup.shortfall).toBe(0);
-  const sparse = recommendFeatured({
-    rows: [],
-    adoption: [],
-    currentFeatured: [unknown, unsafe],
-    window,
-    coverage,
-    limit: 20,
+  expect(report.lineup.proposed).toHaveLength(16);
+  expect(report.lineup.proposed[0]).toMatchObject({ id: "clawhub:01", slot: 0 });
+  expect(report.lineup.proposed.at(-1)?.id).toBe("clawhub:16");
+  expect(report.lineup.reservations).toEqual([]);
+  expect(report.excluded).toMatchObject([{ id: unsafe.id, reasons: ["security-not-clean"] }]);
+  const empty = recommendFeatured({
+    ...base,
+    artifactKind: "skill",
+    currentFeatured: [{ ...entries[1], featuredAt: 1 }],
+    rows: [demand("popular", 99, entries)],
   });
-  expect(sparse.lineup.proposed).toMatchObject([
-    { id: unknown.id, change: "retain", support: "current-only", search: null, adoption: null },
+  expect(empty.lineup.proposed).toEqual([]);
+  expect(empty.lineup.removals).toMatchObject([
+    { id: entries[1].id, reasons: ["outside-proposed-set"] },
   ]);
-  expect(sparse.lineup.shortfall).toBe(7);
+  expect(empty.lineup.shortfall).toBe(16);
 });
 
-it("labels recent publication with observed adoption and existing Rising evidence without inventing growth", () => {
-  const recent = { ...artifact("plugin:recent"), createdAt: 1_500 };
-  const old = { ...artifact("plugin:old"), createdAt: 0 };
-  const snapshot = { ...adoption(1), generatedAt: 20 * 86_400_000 };
-  const rows = [recent, old].map((entry, index) => ({
-    artifact: { ...entry, createdAt: index ? 0 : snapshot.generatedAt - 86_400_000 },
-    evidence: snapshot,
-  }));
-  const result = recommendFeatured({
-    rows: [],
-    adoption: rows,
-    currentFeatured: [],
-    window,
-    coverage,
-    limit: 20,
+it("retains bounded query context without changing install selection or mistaking absent evidence for zero", () => {
+  const candidate = artifact("plugin:calendar");
+  const report = recommendFeatured({
+    ...base,
+    rows: Array.from({ length: 12 }, (_, index) => ({
+      ...demand(`query ${index}`, index + 1, [candidate, candidate]),
+      scope: "shelf" as const,
+    })),
+    adoption: [{ artifact: candidate, evidence: adoption(3) }],
   });
-  expect(result.lineup.proposed.find((entry) => entry.id === recent.id)?.emerging).toBe(true);
-  expect(result.lineup.proposed.find((entry) => entry.id === old.id)?.emerging).toBe(false);
-  const noUsage = recommendFeatured({
-    rows: [],
-    adoption: [{ artifact: recent, evidence: { ...adoption(1), downloads: 0, installs: 0 } }],
-    window,
-    coverage,
-    limit: 20,
-  });
-  expect(noUsage.lineup.proposed[0].emerging).toBe(false);
+  expect(report.candidates[0].search).toMatchObject({ matchedSearches7d: 78, omittedQueries: 4 });
+  expect(report.candidates[0].search?.queries).toHaveLength(8);
+  expect(
+    recommendFeatured({ ...base, adoption: [{ artifact: candidate, evidence: adoption(3) }] })
+      .candidates[0].search,
+  ).toBeNull();
+  expect(
+    recommendFeatured({ ...base, adoption: [{ artifact: candidate, evidence: adoption(0) }] })
+      .lineup.proposed,
+  ).toEqual([]);
 });

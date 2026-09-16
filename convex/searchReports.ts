@@ -58,7 +58,14 @@ async function sourceRevision(ctx: QueryCtx, request: ReportRequest): Promise<st
     endDay: request.endDay!,
     artifactKind: request.artifactKind,
   });
+  const editorial =
+    request.view === "recommendations" && request.artifactKind === "plugin"
+      ? await ctx.runQuery(internal.featuredSelections.readEditorialInternal, {
+          artifactKind: "plugin",
+        })
+      : null;
   return JSON.stringify([
+    editorial?.revision ?? null,
     state?.revision ?? null,
     classification?._id ?? null,
     classification?.processedAt ?? null,
@@ -73,16 +80,19 @@ async function envelope(
     ? await pool.status(ctx, row.workId as WorkId)
     : { state: "finished" as const };
   const expired = row.expirationTime <= now;
+  const unsupported = row.reportVersion !== REPORT_VERSION;
   return {
     reportId: row._id,
     view: row.request.view,
     status: expired
       ? "expired"
-      : row.state !== "pending"
-        ? row.state
-        : work.state === "finished"
-          ? "incomplete"
-          : work.state,
+      : unsupported
+        ? "incomplete"
+        : row.state !== "pending"
+          ? row.state
+          : work.state === "finished"
+            ? "incomplete"
+            : work.state,
     requestedAt: row.requestedAt,
     completedAt: row.completedAt ?? null,
     expirationTime: row.expirationTime,
@@ -90,8 +100,10 @@ async function envelope(
       work.state === "finished" ? (row.previousAttempts ?? 0) : work.previousAttempts,
     failureCode: expired
       ? "report_expired"
-      : (row.failureCode ??
-        (row.state === "pending" && work.state === "finished" ? "report_incomplete" : null)),
+      : unsupported
+        ? "report_version_unsupported"
+        : (row.failureCode ??
+          (row.state === "pending" && work.state === "finished" ? "report_incomplete" : null)),
     reportVersion: row.reportVersion,
   };
 }
@@ -112,7 +124,10 @@ async function startReport(ctx: MutationCtx, input: ReportRequest): Promise<Sear
   let refreshOf: Id<"searchReportRuns"> | undefined;
   if (input.refreshOf) {
     const parent = await readRun(ctx, input.refreshOf);
-    if (parent.requestKey !== requestKey) throw new ConvexError("refresh_request_mismatch");
+    const parentRequestKey = await hashToken(
+      JSON.stringify([REPORT_VERSION, normalizeReportRequest(parent.request, Date.now())]),
+    );
+    if (parentRequestKey !== requestKey) throw new ConvexError("refresh_request_mismatch");
     refreshOf = parent._id;
     previous = await ctx.db
       .query("searchReportRuns")
@@ -129,6 +144,7 @@ async function startReport(ctx: MutationCtx, input: ReportRequest): Promise<Sear
   if (
     previous &&
     previous.expirationTime > Date.now() &&
+    previous.reportVersion === REPORT_VERSION &&
     (input.refreshOf || previous.sourceRevision === revision)
   )
     return envelope(ctx, previous, Date.now());
@@ -194,6 +210,8 @@ export const generateInternal = internalAction({
         now: Date.now(),
       });
       if (state.status === "ready") return { reportId };
+      if (row.reportVersion !== REPORT_VERSION)
+        throw new NonRetryableError("report_version_unsupported");
       if (state.status === "expired" || state.status === "failed")
         throw new NonRetryableError("report_expired");
       phase = "report_collection_failed";

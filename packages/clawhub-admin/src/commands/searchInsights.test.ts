@@ -69,6 +69,11 @@ const intelligence = {
   metadataCheckedAt: fixture.generatedAt,
   adoption: {
     status: "available",
+    collectionStartedAt: fixture.generatedAt,
+    periodStart7d: fixture.window.start7d,
+    scannedRows: 1,
+    importedRows: 0,
+    importDatasetVersions: [],
     generatedAt: fixture.generatedAt,
     periodStart: fixture.window.start7d,
     periodEnd: fixture.window.endDay,
@@ -80,10 +85,18 @@ const intelligence = {
   },
   recommendations: {
     lineup: {
-      targetSize: 8,
+      targetSize: 16,
+      reservedSlots: 0,
+      telemetryTarget: 16,
+      pendingCount: 0,
+      telemetryShortfall: 15,
+      editorialRevision: 0,
+      currentEditorialRevision: 0,
+      staleEditorial: false,
+      reservations: [],
       baseline: [],
       removals: [],
-      shortfall: 7,
+      shortfall: 15,
       proposed: [] as unknown[],
     },
     totalCandidates: 1,
@@ -104,25 +117,32 @@ const intelligence = {
         support: "adoption-only",
         search: null,
         adoption: {
-          source: "clawhub-trending",
+          source: "skill-daily-installs",
           rank: 1,
           snapshotId: "observed",
           rankingVersion: "skills-trending-v4",
           periodStart: fixture.window.start7d,
           periodEnd: fixture.window.endDay,
           generatedAt: fixture.generatedAt,
-          sourceObservedAt: null,
-          downloads: 40,
-          installs: 3,
-          bookmarks: 2,
-          lifetimeInstalls: null,
+          periodStart7d: fixture.window.start7d,
+          installs30d: 40,
+          installs7d: 3,
+          importedRows: 0,
+          importDatasetVersions: [],
         },
       },
     ],
   },
 };
 intelligence.recommendations.lineup.proposed = intelligence.recommendations.candidates.map(
-  (candidate) => ({ ...candidate, change: "add", emerging: false }),
+  (candidate) => ({
+    ...candidate,
+    change: "add",
+    emerging: false,
+    slot: 0,
+    selectionBasis: "telemetry",
+    reason: "Recorded monthly installs",
+  }),
 );
 
 type Request = { method: string; path: string; body: unknown; authorization: string | undefined };
@@ -136,7 +156,7 @@ function envelope(status: string, view = "demand", extra: Record<string, unknown
     expirationTime: Date.now() + 86_400_000,
     previousAttempts: 0,
     failureCode: null,
-    reportVersion: "search-report-v1",
+    reportVersion: "search-report-v2",
     ...(status === "ready" ? { report: view === "recommendations" ? intelligence : fixture } : {}),
     ...extra,
   };
@@ -283,8 +303,8 @@ it("renders demand and recommendation facts from completed reports", async () =>
       expect(JSON.parse(recommendations.stdout)).toEqual(intelligence);
       const text = await cli(["--view", "recommendations"]);
       for (const fact of [
-        "Calendar · adoption-only",
-        "40 downloads, 3 installs, 2 bookmarks",
+        "Calendar · telemetry",
+        "40 installs in 30 completed UTC days, 3 in the final 7 days",
         "No search evidence in the inspected queries.",
         "advisory, requires approval",
       ])

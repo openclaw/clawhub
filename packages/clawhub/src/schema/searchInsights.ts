@@ -90,18 +90,18 @@ export const SearchInsightsReportSchema = type({
 });
 
 const adoptionEvidence = type({
-  source: '"package-trending" | "clawhub-trending" | "clawhub-rising" | "skills-sh-trending"',
+  source: '"package-daily-installs" | "skill-daily-installs"',
   rank: "number",
   snapshotId: "string",
   rankingVersion: "string",
-  periodStart: "number | null",
-  periodEnd: "number | null",
+  periodStart: "number",
+  periodStart7d: "number",
+  periodEnd: "number",
   generatedAt: "number",
-  sourceObservedAt: "number | null",
-  downloads: "number | null",
-  installs: "number | null",
-  bookmarks: "number | null",
-  lifetimeInstalls: "number | null",
+  installs30d: "number",
+  installs7d: "number",
+  importedRows: "number",
+  importDatasetVersions: "string[]",
 });
 
 const featuredCandidate = type({
@@ -143,12 +143,17 @@ export const FeaturedIntelligenceReportSchema = type({
   adoption: {
     status: '"available" | "unavailable"',
     generatedAt: "number | null",
-    periodStart: "number | null",
-    periodEnd: "number | null",
+    collectionStartedAt: "number",
+    periodStart: "number",
+    periodStart7d: "number",
+    periodEnd: "number",
     snapshotId: "string | null",
-    rankingVersion: "string | null",
+    rankingVersion: "string",
     totalItems: "number",
     inspectedItems: "number",
+    scannedRows: "number",
+    importedRows: "number",
+    importDatasetVersions: "string[]",
     truncated: "boolean",
   },
   recommendations: {
@@ -162,9 +167,34 @@ export const FeaturedIntelligenceReportSchema = type({
     }).array(),
     candidates: featuredCandidate.array(),
     lineup: {
-      targetSize: "8",
+      targetSize: "16",
+      reservedSlots: "number",
+      telemetryTarget: "number",
+      editorialRevision: "number",
+      currentEditorialRevision: "number",
+      staleEditorial: "boolean",
+      pendingCount: "number",
+      telemetryShortfall: "number",
+      reservations: type({
+        slot: "number",
+        id: "string | null",
+        name: "string | null",
+        displayName: "string | null",
+        reason: "string | null",
+        status: '"ready" | "pending"',
+        pendingReasons: "string[]",
+        artifact: featuredCandidate.or("null"),
+      }).array(),
       baseline: type({ id: "string", version: "string | null", featuredAt: "number" }).array(),
-      proposed: featuredCandidate.and({ change: '"retain" | "add"', emerging: "boolean" }).array(),
+      proposed: featuredCandidate
+        .and({
+          change: '"retain" | "add"',
+          emerging: "boolean",
+          slot: "number",
+          selectionBasis: '"editorial" | "telemetry"',
+          reason: "string",
+        })
+        .array(),
       removals: type({
         id: "string",
         displayName: "string",

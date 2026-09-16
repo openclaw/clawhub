@@ -1,4 +1,4 @@
-import type { LineupSearchDigest, LineupSearchRecommendation } from "./searchDigestContract";
+import type { MonthlySearchDigest, MonthlySearchRecommendation } from "./searchDigestContract";
 import { SEARCH_DIGEST_MAX_BYTES } from "./searchDigestContract";
 
 type Scope = "catalog" | "shelf" | "legacy";
@@ -11,7 +11,7 @@ type EvidenceRow = {
   searchUrl: string;
   classification: { intentKind: string; confidence: number; companyProductName?: string } | null;
 };
-type Catalog = LineupSearchDigest["catalogs"]["plugins"];
+type Catalog = MonthlySearchDigest["catalogs"]["plugins"];
 export type DigestCatalogInput = {
   totalSearches7d: number;
   sources7d: { "clawhub-web": number; "openclaw-control-ui": number };
@@ -24,10 +24,13 @@ export type DigestCatalogInput = {
   rows: EvidenceRow[];
   moverRows: EvidenceRow[];
   recommendations: {
-    candidates: Omit<LineupSearchRecommendation, "metadataCheckedAt">[];
+    candidates: Omit<
+      MonthlySearchRecommendation,
+      "metadataCheckedAt" | "slot" | "selectionBasis" | "reason"
+    >[];
     lineup: Omit<Catalog["lineup"], "changes"> & {
       proposed: Array<
-        Omit<LineupSearchRecommendation, "metadataCheckedAt"> & {
+        Omit<MonthlySearchRecommendation, "metadataCheckedAt"> & {
           change: "retain" | "add";
           emerging: boolean;
         }
@@ -42,7 +45,7 @@ export function buildSearchEvidenceDigest(input: {
   weekEnd: number;
   siteUrl: string;
   catalogs: { plugins: DigestCatalogInput; skills: DigestCatalogInput };
-}): LineupSearchDigest {
+}): MonthlySearchDigest {
   const site = new URL(input.siteUrl);
   const absolute = (path: string) => {
     const url = new URL(path, site);
@@ -143,6 +146,11 @@ export function buildSearchEvidenceDigest(input: {
       adoption: {
         status: source.adoption.status,
         generatedAt: source.adoption.generatedAt,
+        collectionStartedAt: source.adoption.collectionStartedAt,
+        periodStart7d: source.adoption.periodStart7d,
+        scannedRows: source.adoption.scannedRows,
+        importedRows: source.adoption.importedRows,
+        importDatasetVersions: source.adoption.importDatasetVersions,
         periodStart: source.adoption.periodStart,
         periodEnd: source.adoption.periodEnd,
         snapshotId: source.adoption.snapshotId,
@@ -161,7 +169,23 @@ export function buildSearchEvidenceDigest(input: {
       officialGaps: gaps.slice(0, 5).map(row),
       movers: moving.slice(0, 5).map(row),
       lineup: {
-        targetSize: 8,
+        targetSize: 16,
+        reservedSlots: source.recommendations.lineup.reservedSlots,
+        telemetryTarget: source.recommendations.lineup.telemetryTarget,
+        pendingCount: source.recommendations.lineup.pendingCount,
+        telemetryShortfall: source.recommendations.lineup.telemetryShortfall,
+        editorialRevision: source.recommendations.lineup.editorialRevision,
+        currentEditorialRevision: source.recommendations.lineup.currentEditorialRevision,
+        staleEditorial: source.recommendations.lineup.staleEditorial,
+        reservations: source.recommendations.lineup.reservations.map((entry) => ({
+          slot: entry.slot,
+          id: entry.id,
+          name: entry.name,
+          displayName: entry.displayName,
+          reason: entry.reason,
+          status: entry.status,
+          pendingReasons: entry.pendingReasons,
+        })),
         baseline: source.recommendations.lineup.baseline.map(({ id, version, featuredAt }) => ({
           id,
           version,
@@ -174,7 +198,7 @@ export function buildSearchEvidenceDigest(input: {
           url: absolute(entry.url),
           reasons: entry.reasons,
         })),
-        shortfall: 8 - qualified.length,
+        shortfall: 16 - qualified.length,
       },
       recommendations: qualified.map((candidate) => {
         const search = candidate.search;
@@ -187,6 +211,9 @@ export function buildSearchEvidenceDigest(input: {
         const adoption = candidate.adoption;
         return {
           artifactKind: candidate.artifactKind,
+          slot: candidate.slot,
+          selectionBasis: candidate.selectionBasis,
+          reason: candidate.reason,
           version: candidate.version,
           id: candidate.id,
           displayName: descriptor(candidate.displayName) || descriptor(candidate.id),
@@ -217,16 +244,10 @@ export function buildSearchEvidenceDigest(input: {
             ? {
                 source: adoption.source,
                 rank: adoption.rank,
-                snapshotId: adoption.snapshotId,
-                rankingVersion: adoption.rankingVersion,
-                periodStart: adoption.periodStart,
-                periodEnd: adoption.periodEnd,
-                generatedAt: adoption.generatedAt,
-                sourceObservedAt: adoption.sourceObservedAt,
-                downloads: adoption.downloads,
-                installs: adoption.installs,
-                bookmarks: adoption.bookmarks,
-                lifetimeInstalls: adoption.lifetimeInstalls,
+                installs30d: adoption.installs30d,
+                installs7d: adoption.installs7d,
+                importedRows: adoption.importedRows,
+                importDatasetVersions: adoption.importDatasetVersions,
               }
             : null,
         };
@@ -237,8 +258,8 @@ export function buildSearchEvidenceDigest(input: {
     plugins: project(input.catalogs.plugins, "plugin"),
     skills: project(input.catalogs.skills, "skill"),
   };
-  const digest: LineupSearchDigest = {
-    kind: "search_intelligence_weekly_v3",
+  const digest: MonthlySearchDigest = {
+    kind: "search_intelligence_weekly_v4",
     weekStart: input.weekEnd - 604_800_000,
     weekEnd: input.weekEnd,
     minimumSearches: 3,

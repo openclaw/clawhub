@@ -15,6 +15,11 @@ const catalog = (): DigestCatalogInput => ({
   },
   adoption: {
     status: "available",
+    collectionStartedAt: weekEnd + 86_400_000,
+    periodStart7d: weekEnd - 7 * 86_400_000,
+    scannedRows: 1,
+    importedRows: 0,
+    importDatasetVersions: [],
     generatedAt: weekEnd + 86_400_000,
     periodStart: weekEnd,
     periodEnd: weekEnd + 86_400_000,
@@ -48,7 +53,21 @@ const catalog = (): DigestCatalogInput => ({
     },
   ],
   recommendations: {
-    lineup: { targetSize: 8, baseline: [], proposed: [], removals: [], shortfall: 8 },
+    lineup: {
+      targetSize: 16,
+      baseline: [],
+      proposed: [],
+      removals: [],
+      shortfall: 16,
+      reservedSlots: 0,
+      telemetryTarget: 16,
+      pendingCount: 0,
+      telemetryShortfall: 16,
+      editorialRevision: 0,
+      currentEditorialRevision: 0,
+      staleEditorial: false,
+      reservations: [],
+    },
     omittedCandidates: 0,
     candidates: [
       {
@@ -81,18 +100,12 @@ const catalog = (): DigestCatalogInput => ({
           collectionStartedAt: weekEnd - 604_800_000,
         },
         adoption: {
-          source: "package-trending",
+          source: "package-daily-installs",
           rank: 2,
-          snapshotId: "latest",
-          rankingVersion: "v1",
-          periodStart: weekEnd,
-          periodEnd: weekEnd + 86_400_000,
-          generatedAt: weekEnd + 86_400_000,
-          sourceObservedAt: null,
-          downloads: 341,
-          installs: 1,
-          bookmarks: null,
-          lifetimeInstalls: null,
+          installs30d: 341,
+          installs7d: 1,
+          importedRows: 0,
+          importDatasetVersions: [],
         },
       },
     ],
@@ -105,17 +118,36 @@ const build = (
     recommendations: {
       candidates: [],
       omittedCandidates: 0,
-      lineup: { targetSize: 8, baseline: [], proposed: [], removals: [], shortfall: 8 },
+      lineup: {
+        targetSize: 16,
+        baseline: [],
+        proposed: [],
+        removals: [],
+        shortfall: 16,
+        reservedSlots: 0,
+        telemetryTarget: 16,
+        pendingCount: 0,
+        telemetryShortfall: 16,
+        editorialRevision: 0,
+        currentEditorialRevision: 0,
+        staleEditorial: false,
+        reservations: [],
+      },
     },
   },
 ) => {
   for (const input of [plugins, skills]) {
-    input.recommendations.lineup.proposed = input.recommendations.candidates.map((candidate) => ({
-      ...candidate,
-      change: "add",
-      emerging: false,
-    }));
-    input.recommendations.lineup.shortfall = 8 - input.recommendations.lineup.proposed.length;
+    input.recommendations.lineup.proposed = input.recommendations.candidates.map(
+      (candidate, index) => ({
+        ...candidate,
+        slot: index,
+        selectionBasis: "telemetry",
+        reason: "Recorded monthly installs",
+        change: "add",
+        emerging: false,
+      }),
+    );
+    input.recommendations.lineup.shortfall = 16 - input.recommendations.lineup.proposed.length;
   }
   return buildSearchEvidenceDigest({
     weekEnd,
@@ -138,10 +170,7 @@ it("projects both catalogs, separate periods and scoped demand without leaking i
       search: null,
       adoption: {
         ...plugins.recommendations.candidates[0].adoption!,
-        source: "skills-sh-trending",
-        periodStart: null,
-        periodEnd: null,
-        sourceObservedAt: weekEnd - 86_400_000,
+        source: "skill-daily-installs",
       },
     },
   ];
@@ -153,7 +182,7 @@ it("projects both catalogs, separate periods and scoped demand without leaking i
   });
   expect(digest.catalogs.skills.recommendations[0]).toMatchObject({
     search: null,
-    adoption: { sourceObservedAt: weekEnd - 86_400_000, periodStart: null, periodEnd: null },
+    adoption: { source: "skill-daily-installs", installs30d: 341, installs7d: 1 },
   });
   expect(digest.catalogs.skills.companyOpportunities).toHaveLength(1);
   expect(digest.catalogs.skills.officialGaps).toHaveLength(2);
@@ -217,24 +246,24 @@ it("bounds sections and UTF-8 while preserving leading rows from each catalog an
     searchUrl: `/plugins?q=${encodeURIComponent("界".repeat(190) + index)}`,
   }));
   input.moverRows = input.rows;
-  input.recommendations.candidates = Array.from({ length: 8 }, (_, index) => ({
+  input.recommendations.candidates = Array.from({ length: 16 }, (_, index) => ({
     ...input.recommendations.candidates[0],
     id: `plugin:item-${index}`,
-    url: `/plugins/item-${index}?q=${"x".repeat(600)}`,
+    url: `/plugins/item-${index}?q=${"x".repeat(50)}`,
   }));
   const skills = structuredClone(input);
   skills.recommendations.candidates = skills.recommendations.candidates.map((row) => ({
     ...row,
     artifactKind: "skill",
     id: row.id.replace("plugin:", "clawhub:"),
-    adoption: { ...row.adoption!, source: "clawhub-trending" },
+    adoption: { ...row.adoption!, source: "skill-daily-installs" },
   }));
   const result = build(input, skills);
   expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThanOrEqual(30_000);
   expect(result.truncated).toBe(true);
   for (const value of Object.values(result.catalogs)) {
-    expect(value.recommendations).toHaveLength(8);
-    expect(value.lineup.changes).toHaveLength(8);
+    expect(value.recommendations).toHaveLength(16);
+    expect(value.lineup.changes).toHaveLength(16);
     expect(value.lineup.shortfall).toBe(0);
     expect(value.recommendations[0].id).toContain("item-0");
   }

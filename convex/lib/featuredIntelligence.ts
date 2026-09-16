@@ -1,5 +1,9 @@
 import { DISCOVERY_RECENT_WINDOW_MS } from "./discoveryWindows";
 import { FEATURED_CATALOG_SIZE } from "./featuredPolicy";
+import {
+  FEATURED_EDITORIAL_SLOTS,
+  type EditorialSelection as EditorialItem,
+} from "./featuredSelections";
 export type RecommendationArtifact = {
   id: string;
   artifactKind: "plugin" | "skill";
@@ -15,18 +19,23 @@ export type RecommendationArtifact = {
 };
 
 export type AdoptionEvidence = {
-  source: "package-trending" | "clawhub-trending" | "clawhub-rising" | "skills-sh-trending";
+  source: "package-daily-installs" | "skill-daily-installs";
   rank: number;
   snapshotId: string;
   rankingVersion: string;
-  periodStart: number | null;
-  periodEnd: number | null;
+  periodStart: number;
+  periodStart7d: number;
+  periodEnd: number;
   generatedAt: number;
-  sourceObservedAt: number | null;
-  downloads: number | null;
-  installs: number | null;
-  bookmarks: number | null;
-  lifetimeInstalls: number | null;
+  installs30d: number;
+  installs7d: number;
+  importedRows: number;
+  importDatasetVersions: string[];
+};
+
+export type EditorialSelection = {
+  revision: number;
+  items: EditorialItem[];
 };
 
 export type RecommendationQuery = {
@@ -71,18 +80,27 @@ export type AdoptionArtifact = { artifact: RecommendationArtifact; evidence: Ado
 export type AdoptionSummary = {
   status: "available" | "unavailable";
   generatedAt: number | null;
-  periodStart: number | null;
-  periodEnd: number | null;
+  collectionStartedAt: number;
+  periodStart: number;
+  periodStart7d: number;
+  periodEnd: number;
   snapshotId: string | null;
-  rankingVersion: string | null;
+  rankingVersion: string;
   totalItems: number;
   inspectedItems: number;
   truncated: boolean;
+  scannedRows: number;
+  importedRows: number;
+  importDatasetVersions: string[];
 };
 
-// Each call ranks one catalog. The existing adoption rank and observed search
-// counts remain separate; cohort order is not a new combined popularity score.
+// Search associations explain context only. Selection uses completed-month
+// installs, the final week's installs, and stable identity in that order.
 export function recommendFeatured(params: {
+  artifactKind: "plugin" | "skill";
+  editorial: EditorialSelection;
+  editorialArtifacts: RecommendationArtifact[];
+  currentEditorialRevision: number;
   rows: DemandRow[];
   adoption: AdoptionArtifact[];
   window: { start7d: number; start30d: number; endDay: number; days: 7 | 30 };
@@ -129,6 +147,7 @@ export function recommendFeatured(params: {
   // Trending result mentions the item. Missing evidence is not zero demand.
   const currentFeatured = params.currentFeatured ?? [];
   for (const artifact of currentFeatured) entryFor(artifact).artifact = artifact;
+  for (const artifact of params.editorialArtifacts) entryFor(artifact).artifact = artifact;
   const excluded: Array<{ id: string; displayName: string; url: string; reasons: string[] }> = [];
   const recommendations: FeaturedRecommendation[] = [];
   for (const { artifact, queries: byQuery, adoption } of candidates.values()) {
@@ -173,40 +192,87 @@ export function recommendFeatured(params: {
       adoption,
     });
   }
-  const cohort = { both: 0, "search-only": 1, "adoption-only": 2, "current-only": 3 };
-  recommendations.sort(
+  const byId = new Map(recommendations.map((entry) => [entry.id, entry]));
+  const telemetry = recommendations.filter((entry) => (entry.adoption?.installs30d ?? 0) > 0);
+  telemetry.sort(
     (a, b) =>
-      cohort[a.support] - cohort[b.support] ||
-      (params.window.days === 7
-        ? (b.search?.matchedSearches7d ?? 0) - (a.search?.matchedSearches7d ?? 0)
-        : (b.search?.searches30d ?? 0) - (a.search?.searches30d ?? 0)) ||
-      (a.adoption?.rank ?? Number.MAX_SAFE_INTEGER) -
-        (b.adoption?.rank ?? Number.MAX_SAFE_INTEGER) ||
-      a.id.localeCompare(b.id),
+      b.adoption!.installs30d - a.adoption!.installs30d ||
+      b.adoption!.installs7d - a.adoption!.installs7d ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   );
-  const previous = new Set(currentFeatured.map((artifact) => artifact.id));
-  const proposed = recommendations.slice(0, FEATURED_CATALOG_SIZE).map((candidate) => {
-    const adoption = candidate.adoption;
-    const observed =
-      adoption &&
-      [adoption.downloads, adoption.installs, adoption.bookmarks].some(
-        (count) => count !== null && count > 0,
-      );
-    const recentlyPublished =
-      candidate.createdAt !== undefined &&
-      adoption &&
-      candidate.createdAt <= adoption.generatedAt &&
-      candidate.createdAt >= adoption.generatedAt - DISCOVERY_RECENT_WINDOW_MS;
+  const reservedSlots = params.artifactKind === "plugin" ? FEATURED_EDITORIAL_SLOTS : 0;
+  const telemetryTarget = FEATURED_CATALOG_SIZE - reservedSlots;
+  const reservations = Array.from({ length: reservedSlots }, (_, slot) => {
+    const item = params.editorial.items[slot];
+    const artifact = item ? (byId.get(item.id) ?? null) : null;
+    const rejected = item ? candidates.get(item.id)?.artifact : null;
     return {
-      ...candidate,
-      change: previous.has(candidate.id) ? ("retain" as const) : ("add" as const),
-      emerging: Boolean(observed && (adoption?.source === "clawhub-rising" || recentlyPublished)),
+      slot,
+      id: item?.id ?? null,
+      name: item?.name ?? null,
+      displayName: item?.displayName ?? null,
+      reason: item?.reason ?? null,
+      status: artifact ? ("ready" as const) : ("pending" as const),
+      pendingReasons: artifact
+        ? []
+        : item
+          ? (rejected?.eligibilityReasons ?? ["no-public-version"])
+          : ["unassigned-editorial-slot"],
+      artifact,
     };
   });
+  const previous = new Set(currentFeatured.map((artifact) => artifact.id));
+  const selectedEditorial = new Set(
+    params.artifactKind === "plugin" ? params.editorial.items.map((item) => item.id) : [],
+  );
+  const selection = [
+    ...reservations.flatMap((entry) =>
+      entry.artifact
+        ? [
+            {
+              candidate: entry.artifact,
+              slot: entry.slot,
+              selectionBasis: "editorial" as const,
+              reason: entry.reason!,
+            },
+          ]
+        : [],
+    ),
+    ...telemetry
+      .filter((entry) => !selectedEditorial.has(entry.id))
+      .slice(0, telemetryTarget)
+      .map((candidate, index) => ({
+        candidate,
+        slot: reservedSlots + index,
+        selectionBasis: "telemetry" as const,
+        reason: `${candidate.adoption!.installs30d} installs in 30 completed UTC days; ${candidate.adoption!.installs7d} in the final 7 days.`,
+      })),
+  ];
+  const proposed = selection.map(({ candidate, ...choice }) => ({
+    ...candidate,
+    ...choice,
+    change: previous.has(candidate.id) ? ("retain" as const) : ("add" as const),
+    emerging: Boolean(
+      candidate.adoption &&
+      candidate.createdAt !== undefined &&
+      candidate.createdAt <= candidate.adoption.generatedAt &&
+      candidate.createdAt >= candidate.adoption.generatedAt - DISCOVERY_RECENT_WINDOW_MS,
+    ),
+  }));
+  const pendingCount = reservations.filter((entry) => entry.status === "pending").length;
   const selected = new Set(proposed.map((candidate) => candidate.id));
   return {
     lineup: {
-      targetSize: FEATURED_CATALOG_SIZE as 8,
+      targetSize: FEATURED_CATALOG_SIZE as 16,
+      reservedSlots,
+      telemetryTarget,
+      reservations,
+      pendingCount,
+      telemetryShortfall:
+        telemetryTarget - proposed.filter((entry) => entry.selectionBasis === "telemetry").length,
+      editorialRevision: params.editorial.revision,
+      currentEditorialRevision: params.currentEditorialRevision,
+      staleEditorial: params.editorial.revision !== params.currentEditorialRevision,
       baseline: currentFeatured.map((artifact) => ({
         id: artifact.id,
         version: artifact.version ?? null,
@@ -225,9 +291,9 @@ export function recommendFeatured(params: {
         })),
       shortfall: FEATURED_CATALOG_SIZE - proposed.length,
     },
-    candidates: recommendations.slice(0, params.limit),
-    totalCandidates: recommendations.length,
-    omittedCandidates: Math.max(0, recommendations.length - params.limit),
+    candidates: telemetry.slice(0, params.limit),
+    totalCandidates: telemetry.length,
+    omittedCandidates: Math.max(0, telemetry.length - params.limit),
     excluded,
   };
 }

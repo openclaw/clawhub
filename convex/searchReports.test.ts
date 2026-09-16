@@ -85,9 +85,9 @@ it("completes the real component job, keeps final GET compatibility, and reuses 
   if (ready.status !== "ready" || ready.view !== "recommendations")
     throw new Error("Expected ready plugin report");
   expect(ready.report.recommendations.lineup).toMatchObject({
-    targetSize: 8,
+    targetSize: 16,
     proposed: [],
-    shortfall: 8,
+    shortfall: 16,
   });
   const compatible = await t.fetch("/api/v1/search-insights?view=recommendations", {
     headers: authHeaders,
@@ -399,18 +399,14 @@ it("rechecks the entire saved adoption cohort beyond displayed cards and current
       await ctx.db.patch(packageId, { latestReleaseId: release, tags: { latest: release } });
       result.push({ packageId, release });
     }
-    await ctx.db.insert("packageLeaderboards", {
-      kind: "package_trending",
-      generatedAt: Date.now(),
-      rangeStartDay: Math.floor(Date.now() / REPORT_TTL_MS) - 6,
-      rangeEndDay: Math.floor(Date.now() / REPORT_TTL_MS),
-      items: result.map(({ packageId }, index) => ({
+    for (const [index, { packageId }] of result.entries())
+      await ctx.db.insert("packageDailyStats", {
         packageId,
-        score: 40 - index,
-        installs: 3,
+        day: Math.floor(Date.now() / REPORT_TTL_MS) - 1,
+        installs: 4 - index,
         downloads: 40 - index,
-      })),
-    });
+        updatedAt: Date.now(),
+      });
     return result;
   });
   const queued = await signed.mutation(api.searchReports.start, {
@@ -523,4 +519,27 @@ it("retries failed nonempty catalog associations instead of permanently caching 
     previousAttempts: 3,
   });
   expect(await t.run((ctx) => ctx.db.query("searchReportChunks").collect())).toEqual([]);
+});
+
+it("does not reinterpret retained v1 evidence and refreshes it explicitly under the current report version", async () => {
+  const { t, signed } = await setup();
+  const queued = await signed.mutation(api.searchReports.start, { view: "demand" });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  await t.run((ctx) =>
+    ctx.db.patch(queued.reportId as import("./_generated/dataModel").Id<"searchReportRuns">, {
+      reportVersion: "search-report-v1",
+      requestKey: "old-v1-hash",
+    }),
+  );
+  expect(await signed.action(api.searchReports.get, { reportId: queued.reportId })).toMatchObject({
+    status: "incomplete",
+    reportVersion: "search-report-v1",
+    failureCode: "report_version_unsupported",
+  });
+  const fresh = await signed.mutation(api.searchReports.start, {
+    view: "demand",
+    refreshOf: queued.reportId,
+  });
+  expect(fresh).toMatchObject({ status: "pending", reportVersion: "search-report-v2" });
+  expect(fresh.reportId).not.toBe(queued.reportId);
 });

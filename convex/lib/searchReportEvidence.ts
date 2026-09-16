@@ -4,7 +4,6 @@ import type { ActionCtx } from "../_generated/server";
 import {
   collectFeaturedEvidence,
   renderFeaturedEvidence,
-  unavailableAdoption,
   type FeaturedEvidence,
 } from "../featuredIntelligence";
 import { readReport } from "../searchInsights";
@@ -46,7 +45,10 @@ export async function renderReportEvidence(ctx: ActionCtx, saved: ReportEvidence
     ...new Set([
       ...searchReport.rows.flatMap((row) => row.currentResults.map((entry) => entry.id)),
       ...(saved.view === "recommendations"
-        ? saved.evidence.adoption.artifacts.map((entry) => entry.artifact.id)
+        ? [
+            ...saved.evidence.adoption.artifacts.map((entry) => entry.artifact.id),
+            ...saved.evidence.editorial.items.map((entry) => entry.id),
+          ]
         : []),
     ]),
   ];
@@ -71,19 +73,17 @@ export async function renderReportEvidence(ctx: ActionCtx, saved: ReportEvidence
     }),
   };
   if (saved.view === "demand") return { view: saved.view, report: refreshed } as const;
-  let adoption = saved.evidence.adoption;
-  if (adoption.snapshotCursor) {
-    const current = await ctx.runQuery(internal.canonicalTrending.getPageInternal, {
-      cursor: adoption.snapshotCursor,
-      limit: 1,
-      now: Date.now(),
-    });
-    if (current.status !== "ok") adoption = unavailableAdoption;
-  }
+  const adoption = saved.evidence.adoption;
   const currentFeatured = await ctx.runQuery(
     internal.featuredArtifacts.readCurrentFeaturedInternal,
     { artifactKind: searchReport.artifactKind },
   );
+  const editorial =
+    searchReport.artifactKind === "plugin"
+      ? await ctx.runQuery(internal.featuredSelections.readEditorialInternal, {
+          artifactKind: "plugin",
+        })
+      : { revision: 0, items: [] };
   return {
     view: saved.view,
     report: renderFeaturedEvidence(
@@ -91,6 +91,10 @@ export async function renderReportEvidence(ctx: ActionCtx, saved: ReportEvidence
         ...saved.evidence,
         searchReport: refreshed,
         currentFeatured,
+        currentEditorialRevision: editorial.revision,
+        editorialArtifacts: saved.evidence.editorial.items.flatMap(
+          (entry) => byId.get(entry.id) ?? [],
+        ),
         metadataCheckedAt: Date.now(),
         adoption: {
           ...adoption,

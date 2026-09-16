@@ -130,7 +130,7 @@ export async function cmdSearchInsights(
         `Search collection started ${time(report.searchReport.coverage.collectionStartedAt)}; aggregated through ${time(report.searchReport.coverage.dataThrough)}.`,
       );
       console.log(
-        `Adoption ${report.adoption.status}: ${time(report.adoption.periodStart)} to ${time(report.adoption.periodEnd)}, generated ${time(report.adoption.generatedAt)}; ${report.adoption.inspectedItems}/${report.adoption.totalItems} snapshot entries inspected.`,
+        `Adoption ${report.adoption.status}: ${time(report.adoption.periodStart)} to ${time(report.adoption.periodEnd)}, generated ${time(report.adoption.generatedAt)}; ${report.adoption.inspectedItems}/${report.adoption.totalItems} install-bearing identities inspected for current eligibility.`,
       );
       console.log(
         `Current eligibility checked ${time(report.metadataCheckedAt)}. Search metadata ${report.searchReport.currentMetadataStatus}.`,
@@ -139,6 +139,15 @@ export async function cmdSearchInsights(
       console.log(
         `Complete proposed set: ${lineup.proposed.length}/${lineup.targetSize}; ${lineup.shortfall} open places. No automatic publication.`,
       );
+      console.log(
+        `${lineup.pendingCount} pending editorial reservations; ${lineup.telemetryShortfall} open telemetry places.`,
+      );
+      if (lineup.staleEditorial)
+        console.log("Editorial choices changed. Regenerate and review before publication.");
+      for (const entry of lineup.reservations.filter((item) => item.status === "pending"))
+        console.log(
+          `Pending slot ${entry.slot + 1}: ${entry.displayName ?? "Unassigned"}; ${entry.pendingReasons.join(", ")}.`,
+        );
       for (const entry of lineup.baseline)
         console.log(
           `Current ${entry.id}: ${entry.version ?? "unavailable"}; Featured ${time(entry.featuredAt)}.`,
@@ -151,8 +160,9 @@ export async function cmdSearchInsights(
         console.log("No eligible Featured candidates in available evidence.");
       for (const candidate of lineup.proposed) {
         console.log(
-          `${candidate.change === "retain" ? "Retain" : "Add"} ${candidate.displayName}${candidate.emerging ? " · Emerging (recent publication or Rising feed with observed adoption)" : ""} · ${candidate.support} · category ${candidate.category ?? "uncategorized"}`,
+          `${candidate.change === "retain" ? "Retain" : "Add"} ${candidate.displayName}${candidate.emerging ? " · Recently published with observed installs" : ""} · ${candidate.selectionBasis} · category ${candidate.category ?? "uncategorized"}`,
         );
+        console.log(`  ${candidate.reason}`);
         if (candidate.summary) console.log(`  ${candidate.summary}`);
         if (candidate.search) {
           console.log(
@@ -168,7 +178,7 @@ export async function cmdSearchInsights(
         if (candidate.adoption) {
           const evidence = candidate.adoption;
           console.log(
-            `  ${evidence.source} #${evidence.rank}: ${evidence.downloads ?? "unknown"} downloads, ${evidence.installs ?? "unknown"} installs, ${evidence.bookmarks ?? "unknown"} bookmarks; ${time(evidence.periodStart)} to ${time(evidence.periodEnd)}.`,
+            `  ${evidence.source} #${evidence.rank}: ${evidence.installs30d} installs in 30 completed UTC days, ${evidence.installs7d} in the final 7 days; ${time(evidence.periodStart)} to ${time(evidence.periodEnd)}.`,
           );
           console.log(
             `  Snapshot ${evidence.snapshotId}, generated ${time(evidence.generatedAt)}, ranking ${evidence.rankingVersion}.`,
@@ -179,7 +189,7 @@ export async function cmdSearchInsights(
       for (const excluded of report.recommendations.excluded)
         console.log(`Excluded ${excluded.displayName}: ${excluded.reasons.join(", ")}`);
       console.log(
-        `Showing ${report.recommendations.candidates.length}/${report.recommendations.totalCandidates} candidates; search coverage ${report.searchReport.rows.length}/${report.searchReport.totalQueries} queries. Review usefulness, quality, security and category coverage before publishing.`,
+        `Showing ${report.recommendations.candidates.length}/${report.recommendations.totalCandidates} candidates; search coverage ${report.searchReport.rows.length}/${report.searchReport.totalQueries} queries. Review current eligibility and the complete selection before publishing.`,
       );
     }
     return report;

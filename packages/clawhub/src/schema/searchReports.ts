@@ -20,7 +20,7 @@ const common = {
   expirationTime: "number",
   previousAttempts: "number",
   failureCode: "string | null",
-  reportVersion: '"search-report-v1"',
+  reportVersion: '"search-report-v1" | "search-report-v2"',
 } as const;
 export const SearchReportStatusSchema = type({
   ...common,

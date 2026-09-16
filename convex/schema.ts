@@ -4636,7 +4636,7 @@ const searchReportRuns = defineTable({
   request: reportRequest,
   requestKey: v.string(),
   sourceRevision: v.string(),
-  reportVersion: v.literal("search-report-v1"),
+  reportVersion: v.union(v.literal("search-report-v1"), v.literal("search-report-v2")),
   refreshOf: v.optional(v.id("searchReportRuns")),
   workId: v.optional(v.string()),
   requestedAt: v.number(),
