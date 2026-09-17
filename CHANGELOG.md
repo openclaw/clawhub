@@ -9,6 +9,8 @@
 
 ### Fixes
 
+- Deploy: coalesce pending skills.sh syncs per ref before they enter the production deployment queue, while preserving active sync cleanup and queued manual deploys.
+
 - Workers: reserve Skill Card capacity by lease slot to avoid global queue contention, continue after partial batches, and release undelivered leases when input hydration fails.
 
 - Workers: redact quoted credentials completely in serialized JSON diagnostics while preserving adjacent non-secret context.

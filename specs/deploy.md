@@ -49,12 +49,20 @@ Production deploy notes:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
   - `frontend`: wait for the Vercel production deploy for the selected `main` SHA, then run smoke tests
-- Production deploys and hourly skills.sh synchronization share the `deploy-production` concurrency
-  group. `queue: max` retains up to 100 pending runs without cancelling the active run, so an hourly
-  sync cannot replace a queued manual deploy. The group covers synchronization cleanup and deployment
-  rollout restoration. Neither workflow dispatches or waits for the other while holding the group.
-  The existing job timeouts remain 180 minutes for synchronization and 45 minutes for deployment;
-  either workflow can wait behind the other, including frontend deployment readiness checks.
+- skills.sh synchronization first takes the workflow-level `skills-sh-sync-${{ github.ref }}`
+  concurrency group with `queue: single` and `cancel-in-progress: false`. Each ref keeps one active
+  sync workflow and only the latest pending request. Scheduled and same-ref manual requests both
+  coalesce: a newer request replaces an older pending request without cancelling the active sync.
+- The entire sync job then takes the `deploy-production` group shared with production deployments.
+  Its `queue: max` retains up to 100 pending jobs or workflows without cancelling the active holder,
+  so a sync cannot replace a queued manual deploy. A sync waiting for this group still holds its
+  outer group; each ref contributes at most one sync job waiting for or holding the production lock,
+  plus one pending sync workflow outside it. Lock order is sync group then production group;
+  deployment takes only the production group. Both groups remain held through sync cleanup and proof
+  upload, and the production group covers deployment rollout restoration. Neither workflow
+  dispatches or waits for the other while holding the group. Existing queued runs retain the workflow
+  definition they started with. Job timeouts remain 180 minutes for synchronization and 45 minutes for
+  deployment; either can wait behind the other, including frontend deployment readiness checks.
 - The sync CLI writes `skills-sh-sync-proof.json` before exiting nonzero on failure. Failure receipts
   contain `ok: false`, a redacted primary `error`, and separately redacted `rollbackErrors`, with each
   message capped at 2,000 characters plus a truncation marker. `rollbackErrors: null` means execution
