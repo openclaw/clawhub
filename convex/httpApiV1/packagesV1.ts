@@ -2374,13 +2374,6 @@ export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
         });
         continue;
       }
-      if (release.softDeletedAt) {
-        exportErrors.push({
-          package: digest.name,
-          error: "release not available",
-        });
-        continue;
-      }
       const securityBlock = getReleaseSecurityBlock(release);
       if (securityBlock) {
         exportErrors.push({

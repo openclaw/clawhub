@@ -242,6 +242,17 @@ describe("catalog feed projection", () => {
     ]);
   });
 
+  it("omits official plugins whose latest release is still unpublished", async () => {
+    const result = await listOfficialEntriesHandler(
+      makeCtx([makePackage()], {
+        "packageReleases:1": makeRelease({ publicationStatus: "pending" }),
+      }),
+      { family: "code-plugin" },
+    );
+
+    expect(result).toEqual([]);
+  });
+
   it("projects highlighted official packages as featured install candidates", async () => {
     const result = await listOfficialEntriesHandler(
       makeCtx(

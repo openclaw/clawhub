@@ -6349,12 +6349,12 @@ function comparePackageRestoreLatestCandidates(
   return a._id.localeCompare(b._id);
 }
 
-function getPreferredRestoredPackageRelease(
+export function getPreferredRestoredPackageRelease(
   family: Doc<"packages">["family"],
   releases: Doc<"packageReleases">[],
 ) {
   return releases.reduce<Doc<"packageReleases"> | null>((best, release) => {
-    if (release.softDeletedAt) return best;
+    if (!isPublishedPackageRelease(release)) return best;
     if (!best || comparePackageRestoreLatestCandidates(family, best, release) < 0) return release;
     return best;
   }, null);
@@ -6365,7 +6365,9 @@ function getPreservedRestoredPackageRelease(
   releases: Doc<"packageReleases">[],
 ) {
   const byId = new Map(
-    releases.filter((release) => !release.softDeletedAt).map((release) => [release._id, release]),
+    releases
+      .filter((release) => isPublishedPackageRelease(release))
+      .map((release) => [release._id, release]),
   );
   return (
     byId.get(pkg.tags.latest) ??
@@ -6374,10 +6376,11 @@ function getPreservedRestoredPackageRelease(
   );
 }
 
-function rebuildPackageTagsFromActiveReleases(releases: Doc<"packageReleases">[]) {
+export function rebuildPackageTagsFromActiveReleases(releases: Doc<"packageReleases">[]) {
   const tags: Doc<"packages">["tags"] = {};
   for (const release of releases) {
     if (release.softDeletedAt) continue;
+    if (!isPublishedPackageRelease(release)) continue;
     for (const tag of release.distTags ?? []) {
       tags[tag] = release._id;
     }
@@ -6480,6 +6483,8 @@ async function restorePackageDoc(
         distTags: [...(nextLatest.distTags ?? []), "latest"],
       });
     }
+  } else {
+    delete nextTags.latest;
   }
 
   const packagePatch: Partial<Doc<"packages">> = {
@@ -12535,6 +12540,8 @@ async function quarantineMaliciousLatestPackageRelease(
         distTags: [...(nextLatest.distTags ?? []), "latest"],
       });
     }
+  } else {
+    delete nextTags.latest;
   }
 
   const restoredRuntimeId = packageRuntimeIdFromRelease(nextLatest);
