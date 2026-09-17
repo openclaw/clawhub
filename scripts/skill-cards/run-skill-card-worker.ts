@@ -545,7 +545,6 @@ async function main() {
     );
     totalCompleted += results.filter(Boolean).length;
     totalFailed += results.filter((ok) => !ok).length;
-    if (jobs.length < claimLimit) break;
   }
 
   logger.info(

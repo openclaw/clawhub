@@ -2325,6 +2325,7 @@ const skillCardGenerationJobs = defineTable({
   priority: v.number(),
   nextRunAt: v.number(),
   attempts: v.number(),
+  claimSlot: v.optional(v.number()),
   leaseToken: v.optional(v.string()),
   leaseExpiresAt: v.optional(v.number()),
   workerId: v.optional(v.string()),
@@ -2334,6 +2335,7 @@ const skillCardGenerationJobs = defineTable({
   createdAt: v.number(),
   updatedAt: v.number(),
 })
+  .index("by_status_and_claim_slot", ["status", "claimSlot"])
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_skill", ["skillId"])

@@ -9,6 +9,8 @@
 
 ### Fixes
 
+- Workers: reserve Skill Card capacity by lease slot to avoid global queue contention, continue after partial batches, and release undelivered leases when input hydration fails.
+
 - Workers: redact quoted credentials completely in serialized JSON diagnostics while preserving adjacent non-secret context.
 - Deploy: queue production deployments and hourly skills.sh synchronization together so rollout pauses cannot interrupt synchronization or rollback; retain bounded, redacted failure receipts when synchronization fails.
 - Tests: shorten local Convex scratch paths when a deeply nested `TMPDIR` shares the workspace filesystem, while retaining short overrides and avoiding Unix socket path failures.

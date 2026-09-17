@@ -71,6 +71,44 @@ Production deploy notes:
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
 - Optional `Production` environment secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage.
 
+### Skill Card lease capacity
+
+Skill Card jobs own one of 64 capacity slots while running. Discovery runs in a
+separate query; admission rereads the selected jobs, version leases, and slots
+transactionally. Expiry, failure, completion, and aborted hydration release or
+fence the same lease. Workers keep the existing array response and stop on
+ambiguous transport errors; a partial batch does not imply an empty queue.
+
+One action makes at most 64 discovery/admission pairs (128 internal query/mutation calls).
+Only explicit zero-lease contention can replan; the first committed batch is
+final. Exhaustion raises `SKILL_CARD_CLAIM_CONTENDED` instead of reporting an
+empty queue. Competing claimers can still produce OCC retries; the slot index
+removes unrelated numeric-slot completions from the capacity read set.
+
+The optional `claimSlot` field needs no data backfill. Existing unslotted leases
+remain counted during forward deployment. Keep this compatibility until all
+pre-deployment writers and their unslotted leases are gone. An old action already
+in progress can fail its next internal call when the admission arguments change;
+it must not retry an ambiguous claim. Verify a fresh scheduled worker after
+deployment.
+
+Deploy the field, `by_status_and_claim_slot` index, and functions together with
+the ordinary backend workflow. [Convex completes index backfill before activating
+the new functions](https://docs.convex.dev/database/reading-data/indexes), so an
+unknown historical table size affects deployment duration, not index readiness.
+The deployment job has a 45-minute limit. If an operator chooses staged
+backfilling for a large table, deploy only the optional field and staged index
+first; wait for completion before enabling the index and these functions.
+
+Runtime rollback must retain slot-aware admission and every slot-release path,
+plus the optional field and index. Old writers can preserve a stale slot on a
+queued row and later admit it into an occupied slot, breaking the global cap.
+Restoring the old runtime requires a separately qualified pause of all writers,
+lease settlement, removal and verification of every slot field, then the old
+functions and schema. Draining active jobs alone is insufficient.
+After backend deployment, verify the exact deployed SHA and a fresh Skill Card
+worker run. Compare terminal claim failures separately from successful job counts.
+
 ## CLI npm release
 
 The `clawhub` CLI package is released separately from the app deploy.
