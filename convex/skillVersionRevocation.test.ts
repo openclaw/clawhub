@@ -1,7 +1,11 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import { buildSkillVersionRevocationPlan, revokeSkillVersionForUser } from "./skills";
+import {
+  buildSkillVersionRevocationPlan,
+  findReplacementLatestSkillVersion,
+  revokeSkillVersionForUser,
+} from "./skills";
 
 function makeVersion(id: string, version: string, createdAt: number) {
   return {
@@ -205,5 +209,45 @@ describe("revokeSkillVersionForUser", () => {
         reason: "confirmed unsafe artifact",
       }),
     ).rejects.toThrow("Skill version not found");
+  });
+});
+
+describe("findReplacementLatestSkillVersion", () => {
+  it("does not promote an unpublished sibling after the published latest is revoked", async () => {
+    const versions = [
+      {
+        _id: "skillVersions:pending",
+        skillId: "skills:demo",
+        version: "2.0.0",
+        createdAt: 20,
+        publicationStatus: "pending",
+        softDeletedAt: undefined,
+      },
+      {
+        _id: "skillVersions:published",
+        skillId: "skills:demo",
+        version: "1.0.0",
+        createdAt: 10,
+        publicationStatus: "published",
+        softDeletedAt: undefined,
+      },
+    ];
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            collect: vi.fn().mockResolvedValue(versions),
+          })),
+        })),
+      },
+    };
+
+    const replacement = await findReplacementLatestSkillVersion(
+      ctx as never,
+      "skills:demo" as never,
+      "skillVersions:current" as never,
+    );
+
+    expect(replacement?._id).toBe("skillVersions:published");
   });
 });

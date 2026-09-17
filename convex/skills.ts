@@ -635,7 +635,7 @@ function compareSkillVersionsForRestore(
   return right.createdAt - left.createdAt;
 }
 
-async function findReplacementLatestSkillVersion(
+export async function findReplacementLatestSkillVersion(
   ctx: MutationCtx,
   skillId: Id<"skills">,
   quarantinedVersionId: Id<"skillVersions">,
@@ -649,9 +649,7 @@ async function findReplacementLatestSkillVersion(
       .filter(
         (candidate) =>
           candidate._id !== quarantinedVersionId &&
-          !candidate.softDeletedAt &&
-          !candidate.manualRevocation &&
-          !isKnownMaliciousSkillVersion(candidate),
+          isSkillVersionAvailableForOwnerDeleteSafety(candidate, skillId),
       )
       .sort(compareSkillVersionsForRestore)[0] ?? null
   );
