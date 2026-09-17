@@ -3700,6 +3700,63 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toContain("clawhub undelete demo");
   });
 
+  it("get skill hides owner hints from a former organization publisher", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("publisherId" in args) return false;
+      if ("slug" in args) {
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          ownerUserId: "users:1",
+          ownerPublisherId: "publishers:org",
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo"),
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).toMatch(/not found/i);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        publisherId: "publishers:org",
+        userId: "users:1",
+      }),
+    );
+  });
+
+  it("get skill keeps owner hints for a current organization publisher", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("publisherId" in args) return true;
+      if ("slug" in args) {
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          ownerUserId: "users:1",
+          ownerPublisherId: "publishers:org",
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo"),
+    );
+    expect(response.status).toBe(423);
+    expect(await response.text()).toContain("security scan is pending");
+  });
+
   it("get skill returns payload", async () => {
     const selectedSkill0 = {
       _id: "skills:1",
@@ -4797,6 +4854,92 @@ describe("httpApiV1 handlers", () => {
         }
 
         return null;
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/moderation"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.moderation.legacyReason).toBe("quality.low");
+    expect(json.moderation.evidence[0].evidence).toBe("eval(payload)");
+  });
+
+  it("get moderation hides full evidence from a former organization publisher", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("userId" in args && !("publisherId" in args)) {
+        return { _id: "users:owner", role: "user" };
+      }
+      if ("publisherId" in args) return false;
+      if ("slug" in args) {
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+          moderationStatus: "hidden",
+          moderationReason: "quality.low",
+          moderationFlags: ["flagged.suspicious"],
+          moderationVerdict: "suspicious",
+          moderationEvidence: [
+            {
+              code: "suspicious.dynamic_code_execution",
+              severity: "critical",
+              file: "index.ts",
+              line: 3,
+              message: "Dynamic code execution detected.",
+              evidence: "eval(payload)",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/moderation"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Moderation details unavailable");
+  });
+
+  it("get moderation returns full evidence for a current organization publisher", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:owner" as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("userId" in args && !("publisherId" in args)) {
+        return { _id: "users:owner", role: "user" };
+      }
+      if ("publisherId" in args) return true;
+      if ("slug" in args) {
+        return {
+          _id: "skills:1",
+          slug: "demo",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+          moderationStatus: "hidden",
+          moderationReason: "quality.low",
+          moderationFlags: ["flagged.suspicious"],
+          moderationVerdict: "suspicious",
+          moderationEvidence: [
+            {
+              code: "suspicious.dynamic_code_execution",
+              severity: "critical",
+              file: "index.ts",
+              line: 3,
+              message: "Dynamic code execution detected.",
+              evidence: "eval(payload)",
+            },
+          ],
+        };
       }
       return null;
     });
