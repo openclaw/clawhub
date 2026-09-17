@@ -13092,6 +13092,8 @@ export const backfillPackageReleaseScans = action({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertAdmin(user);
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });
