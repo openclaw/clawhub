@@ -175,7 +175,6 @@ export const getDownloadMetrics = query({
     const canAccess = await canAccessPublisherOwnerScope(ctx, {
       publisher,
       userId,
-      legacyOwnerUserId: userId,
     });
     if (!publisher || !canAccess) throw new ConvexError("Forbidden");
 
