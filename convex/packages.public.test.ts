@@ -1515,6 +1515,12 @@ function makeDigestCtx(options: {
       pagesByFamily.set(family, pagesByCursor);
     }
     familyPagesByTable.set("packageTopicSearchDigest", pagesByFamily);
+    rowsByTable.set(
+      "packageTopicSearchDigest",
+      Object.values(options.topicPagesByFamily).flatMap((pages) =>
+        (pages ?? []).flatMap((page) => page.page),
+      ),
+    );
   }
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
   if (options.categoryRows) {
@@ -6416,8 +6422,8 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
   });
 
-  it("scans topic digest pages until a combined category search match is found", async () => {
-    const { ctx, paginate } = makeDigestCtx({
+  it("recalls a deep combined category match without native pagination", async () => {
+    const { ctx, paginate, take } = makeDigestCtx({
       topicPages: [
         {
           page: Array.from({ length: 50 }, (_, index) =>
@@ -6452,7 +6458,8 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["calendar-api"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledWith(300);
   });
 
   it("ranks bounded candidates from every stable family before applying the search limit", async () => {
@@ -6499,7 +6506,7 @@ describe("packages public queries", () => {
           pluginCategoryTags: ["channels"],
         }),
       );
-    const { ctx } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       topicPagesByFamily: {
         skill: [
           { page: noisePage("skill", 1), isDone: false, continueCursor: "skill:2" },
@@ -6554,6 +6561,9 @@ describe("packages public queries", () => {
         limit: 1,
       });
       expect(result.map((entry) => entry.package.name)).toEqual(["calendar-bundle-api"]);
+      expect(paginate).not.toHaveBeenCalled();
+      expect(take).toHaveBeenCalledWith(167);
+      expect(take).toHaveBeenCalledWith(166);
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
@@ -6563,7 +6573,7 @@ describe("packages public queries", () => {
   it("scans each stable family past the first combined-filter window while Claws are disabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       topicPages: [
         {
           page: Array.from({ length: 50 }, (_, index) =>
@@ -6601,7 +6611,8 @@ describe("packages public queries", () => {
       });
 
       expect(result.map((entry) => entry.package.name)).toEqual(["calendar-skill-api"]);
-      expect(paginate).toHaveBeenCalled();
+      expect(paginate).not.toHaveBeenCalled();
+      expect(take).toHaveBeenCalledWith(167);
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
@@ -6630,10 +6641,10 @@ describe("packages public queries", () => {
     });
 
     expect(result).toEqual([]);
-    expect(paginate).toHaveBeenCalledTimes(6);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(paginate).not.toHaveBeenCalled();
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(200);
+    expect(take).toHaveBeenCalledWith(300);
   });
 
   it("recalls exact author topics without an explicit topic filter", async () => {
@@ -21322,7 +21333,7 @@ describe("restorePackageInternal", () => {
         createdAt: 10,
       }),
     );
-    const { ctx, paginate } = makeDigestCtx({
+    const { ctx, paginate, take } = makeDigestCtx({
       pages: [
         {
           page: olderMatches,
@@ -21351,6 +21362,7 @@ describe("restorePackageInternal", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["matching-new"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(paginate).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledWith(300);
   });
 });

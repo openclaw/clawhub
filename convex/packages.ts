@@ -5461,45 +5461,26 @@ async function searchPackagesImpl(
     };
 
     if ((topic && category) || args.createdAfter !== undefined) {
-      const scanStates = searchFamilies.map((family) => ({
-        family,
-        cursor: null as string | null,
-        isDone: false,
-        pagesScanned: 0,
-      }));
-      let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
-      while (
-        authoritativeMatchCount() < targetCount &&
-        scanStates.some(
-          (state) => !state.isDone && state.pagesScanned < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES,
-        ) &&
-        remainingScanBudget > 0
-      ) {
-        // Finish each round before checking the match quota so the fixed family
-        // order cannot decide global relevance or consume another family's cap.
-        for (const state of scanStates) {
-          if (
-            state.isDone ||
-            state.pagesScanned >= MAX_PUBLIC_LIST_FILTER_SCAN_PAGES ||
-            remainingScanBudget <= 0
-          ) {
-            continue;
-          }
-          const pageSize = Math.min(scanLimit, remainingScanBudget);
-          const page: {
-            page: PackageDigestLike[];
-            isDone: boolean;
-            continueCursor: string;
-          } = await buildSearchDigestQuery(state.family)
+      // This helper returns a ranked array, not a paginated result. Convex permits
+      // only one native paginate() call per function, so scan bounded contiguous
+      // prefixes with take() and split the existing budget fairly across families.
+      const baseFamilyBudget = Math.floor(
+        MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS / searchFamilies.length,
+      );
+      const extraFamilyBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS % searchFamilies.length;
+      const digestGroups = await Promise.all(
+        searchFamilies.map(async (family, index) => {
+          const fairFamilyBudget = baseFamilyBudget + (index < extraFamilyBudget ? 1 : 0);
+          const familyScanLimit = Math.min(
+            fairFamilyBudget,
+            scanLimit * MAX_PUBLIC_LIST_FILTER_SCAN_PAGES,
+          );
+          return (await buildSearchDigestQuery(family)
             .order("desc")
-            .paginate({ cursor: state.cursor, numItems: pageSize });
-          state.pagesScanned += 1;
-          remainingScanBudget -= pageSize;
-          await collectDigestMatches(page.page);
-          state.cursor = page.continueCursor;
-          state.isDone = page.isDone;
-        }
-      }
+            .take(familyScanLimit)) as PackageDigestLike[];
+        }),
+      );
+      await collectDigestMatches(digestGroups.flat());
     } else {
       const fallback =
         batchReads?.fallback ??
