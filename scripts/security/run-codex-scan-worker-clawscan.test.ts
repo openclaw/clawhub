@@ -138,6 +138,23 @@ async function writeFakeClawScanCommand(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
+async function pathWithFakeDocker(workspace: string, currentPath: string | undefined) {
+  const binDirectory = join(workspace, "fake-docker-bin");
+  const path = join(binDirectory, "docker");
+  await mkdir(binDirectory, { recursive: true });
+  await writeFile(
+    path,
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "container" && "$2" == "ls" ]]; then exit 0; fi
+echo "unexpected docker command: $*" >&2
+exit 99
+`,
+  );
+  await chmod(path, 0o755);
+  return currentPath ? `${binDirectory}:${currentPath}` : binDirectory;
+}
+
 type ClawScanVerdict = "benign" | "suspicious" | "malicious";
 
 function completeJudgeDimensions() {
@@ -1081,6 +1098,7 @@ touch ${JSON.stringify(primaryCompleted)}`,
       enabled: process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED,
       image: process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
       namespace: process.env.ENDOR_NAMESPACE,
+      path: process.env.PATH,
       token: process.env.ENDOR_TOKEN,
     };
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -1088,6 +1106,7 @@ touch ${JSON.stringify(primaryCompleted)}`,
     process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
     process.env.ENDOR_NAMESPACE = "fixture-namespace";
     process.env.ENDOR_TOKEN = "fixture-token";
+    process.env.PATH = await pathWithFakeDocker(workspace, previousEnv.path);
     let primaryHadSettledAtFailure = false;
 
     try {
@@ -1144,6 +1163,8 @@ touch ${JSON.stringify(primaryCompleted)}`,
       else process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = previousEnv.image;
       if (previousEnv.namespace === undefined) delete process.env.ENDOR_NAMESPACE;
       else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
+      if (previousEnv.path === undefined) delete process.env.PATH;
+      else process.env.PATH = previousEnv.path;
       if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
       else process.env.ENDOR_TOKEN = previousEnv.token;
     }
@@ -1188,6 +1209,7 @@ exit 18`,
       enabled: process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED,
       image: process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
       namespace: process.env.ENDOR_NAMESPACE,
+      path: process.env.PATH,
       token: process.env.ENDOR_TOKEN,
     };
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -1195,6 +1217,7 @@ exit 18`,
     process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
     process.env.ENDOR_NAMESPACE = "fixture-namespace";
     process.env.ENDOR_TOKEN = "fixture-token";
+    process.env.PATH = await pathWithFakeDocker(workspace, previousEnv.path);
 
     try {
       const client = {
@@ -1232,6 +1255,8 @@ exit 18`,
       else process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = previousEnv.image;
       if (previousEnv.namespace === undefined) delete process.env.ENDOR_NAMESPACE;
       else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
+      if (previousEnv.path === undefined) delete process.env.PATH;
+      else process.env.PATH = previousEnv.path;
       if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
       else process.env.ENDOR_TOKEN = previousEnv.token;
     }
@@ -1293,6 +1318,7 @@ fi`,
       enabled: process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED,
       image: process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
       namespace: process.env.ENDOR_NAMESPACE,
+      path: process.env.PATH,
       token: process.env.ENDOR_TOKEN,
     };
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
@@ -1300,6 +1326,7 @@ fi`,
     process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
     process.env.ENDOR_NAMESPACE = "fixture-namespace";
     process.env.ENDOR_TOKEN = "fixture-token";
+    process.env.PATH = await pathWithFakeDocker(workspace, previousEnv.path);
     const fetchOriginal = globalThis.fetch;
     let uploadedReport: unknown;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
@@ -1343,6 +1370,8 @@ fi`,
       else process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = previousEnv.image;
       if (previousEnv.namespace === undefined) delete process.env.ENDOR_NAMESPACE;
       else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
+      if (previousEnv.path === undefined) delete process.env.PATH;
+      else process.env.PATH = previousEnv.path;
       if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
       else process.env.ENDOR_TOKEN = previousEnv.token;
     }
