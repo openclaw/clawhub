@@ -1,8 +1,5 @@
-import {
-  getCatalogTopicSlugs,
-  resolveCatalogTopics,
-  resolveStoredPluginCategories,
-} from "clawhub-schema";
+import { getCatalogTopicSlugs, resolveCatalogTopics } from "clawhub-schema/catalogMetadata";
+import { resolveStoredPluginCategories } from "clawhub-schema/pluginCategories";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { adjustGlobalPublicPluginsCount, getPublicPluginVisibilityDelta } from "./globalStats";

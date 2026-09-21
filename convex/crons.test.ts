@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
     cron: vi.fn(),
     searchWeeklyTick: Symbol("search-weekly-tick"),
     searchWeeklyPrune: Symbol("search-weekly-prune"),
+    searchReportsPrune: Symbol("search-reports-prune"),
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
@@ -67,6 +68,9 @@ vi.mock("./_generated/api", () => ({
     searchWeeklyDigest: {
       tickInternal: mocks.searchWeeklyTick,
       pruneExpiredInternal: mocks.searchWeeklyPrune,
+    },
+    searchReports: {
+      pruneExpiredInternal: mocks.searchReportsPrune,
     },
     searchInsights: {
       aggregateInternal: Symbol("search-insights-aggregate"),
@@ -188,6 +192,12 @@ describe("crons", () => {
       "search-weekly-digest",
       "0 * * * *",
       mocks.searchWeeklyTick,
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "search-report-retention-prune",
+      { hours: 1 },
+      mocks.searchReportsPrune,
       {},
     );
     expect(mocks.interval).toHaveBeenCalledWith(

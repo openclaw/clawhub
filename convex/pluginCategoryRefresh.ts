@@ -3,10 +3,10 @@ import {
   isCurrentPluginCategoryAssignment,
 } from "clawhub-schema";
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v } from "convex/values";
+import { convexToJson, ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalAction, internalQuery, type ActionCtx } from "./_generated/server";
+import { internalAction, internalQuery, type ActionCtx, type QueryCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
 import bundledInventory from "./lib/bundledPluginCategoryAssignments.json";
 import { sha256Hex } from "./lib/clawpack";
@@ -21,7 +21,12 @@ import {
   readPluginCategoryDocumentation,
   PLUGIN_CATEGORY_CLASSIFIER_VERSION,
 } from "./lib/pluginCategoryClassification";
-import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassificationContract";
+import {
+  pluginCategoryClassificationValidator,
+  pluginCategoryCorrectionValidator,
+  pluginCategoryReviewProvenanceValidator,
+} from "./lib/pluginCategoryClassificationContract";
+import { categoryReviewPayload, validateCategoryCorrections } from "./lib/pluginCategoryReview";
 import { pluginManifestSummaryValidator } from "./schema";
 
 const bundledAssignments = new Map(
@@ -30,8 +35,9 @@ const bundledAssignments = new Map(
 
 function generatedAssignmentIsCurrent(row: Doc<"pluginCategoryRefreshes">) {
   return (
-    isCurrentPluginCategoryAssignment(row.categories) &&
-    (row.classification.source !== "generated" ||
+    isCurrentPluginCategoryAssignment(row.review ? [row.review.category] : row.categories) &&
+    (row.review !== undefined ||
+      row.classification.source !== "generated" ||
       row.classification.classifierVersion === PLUGIN_CATEGORY_CLASSIFIER_VERSION)
   );
 }
@@ -68,29 +74,97 @@ function eligible(pkg: Doc<"packages"> | null, release: Doc<"packageReleases"> |
 }
 
 // Include the actual declaration and effective category state, not unrelated download counters.
-async function snapshotHash(pkg: Doc<"packages">, release: Doc<"packageReleases">) {
-  return sha256Hex(
-    new TextEncoder().encode(
-      JSON.stringify({
-        releaseId: release._id,
-        latestReleaseId: pkg.latestReleaseId,
-        categories: pkg.categories,
-        releaseCategories: release.pluginManifestSummary?.categories,
-        inferredCategories: pkg.inferredCategories,
-        inferredFromReleaseId: pkg.inferredFromReleaseId,
-        hadSummary: Boolean(release.pluginManifestSummary),
-        classification: release.categoryClassification,
-        integrity: release.integritySha256,
-        manifest: release.extractedPluginManifest,
-        ownerPublisherId: pkg.ownerPublisherId,
-        source: release.source,
-        sourceRepo: release.sourceRepo,
-        package: release.extractedPackageJson,
-        bundle: release.normalizedBundleManifest,
-        files: release.files.map(({ path, sha256 }) => ({ path, sha256 })),
-      }),
-    ),
-  );
+function snapshotFields(pkg: Doc<"packages">, release: Doc<"packageReleases">) {
+  return {
+    releaseId: release._id,
+    latestReleaseId: pkg.latestReleaseId,
+    categories: pkg.categories,
+    releaseCategories: release.pluginManifestSummary?.categories,
+    inferredCategories: pkg.inferredCategories,
+    inferredFromReleaseId: pkg.inferredFromReleaseId,
+    hadSummary: Boolean(release.pluginManifestSummary),
+    // Prepared review metadata must hash like its persisted Convex representation.
+    classification: release.categoryClassification
+      ? convexToJson(release.categoryClassification)
+      : undefined,
+    integrity: release.integritySha256,
+    manifest: release.extractedPluginManifest,
+    ownerPublisherId: pkg.ownerPublisherId,
+    source: release.source,
+    sourceRepo: release.sourceRepo,
+    package: release.extractedPackageJson,
+    bundle: release.normalizedBundleManifest,
+    files: release.files.map(({ path, sha256 }) => ({ path, sha256 })),
+  };
+}
+const hash = (value: unknown) => sha256Hex(new TextEncoder().encode(JSON.stringify(value)));
+const snapshotHash = (pkg: Doc<"packages">, release: Doc<"packageReleases">) =>
+  hash(snapshotFields(pkg, release));
+
+async function sourceHash(pkg: Doc<"packages">, release: Doc<"packageReleases">) {
+  // A reviewed release may become latest again. Bind its artifact/owner identity,
+  // not the mutable projection or inference fields that publication replaces.
+  const {
+    latestReleaseId: _latestReleaseId,
+    categories: _categories,
+    releaseCategories: _releaseCategories,
+    inferredCategories: _inferredCategories,
+    inferredFromReleaseId: _inferredFromReleaseId,
+    hadSummary: _hadSummary,
+    classification: _classification,
+    ...source
+  } = snapshotFields(pkg, release);
+  return hash({
+    ...source,
+    packageId: pkg._id,
+    packageName: pkg.name,
+    family: pkg.family,
+    ownerUserId: pkg.ownerUserId,
+  });
+}
+
+function acceptedAssignment(row: Doc<"pluginCategoryRefreshes">) {
+  return row.review
+    ? {
+        categories: [row.review.category],
+        classification: {
+          source: "reviewed" as const,
+          reviewId: row._id,
+          classifierVersion: "plugin-category-staff-review-v1",
+          inputHash: row.classification.inputHash,
+          evidence: row.review.evidence,
+        },
+      }
+    : { categories: row.categories, classification: row.classification };
+}
+
+async function retainedReview(
+  ctx: Pick<QueryCtx, "db">,
+  pkg: Doc<"packages">,
+  release: Doc<"packageReleases">,
+) {
+  if (release.categoryClassification?.source !== "reviewed") return undefined;
+  const row = await ctx.db.get(release.categoryClassification.reviewId);
+  if (
+    !row?.review ||
+    row.status !== "applied" ||
+    row.packageId !== pkg._id ||
+    row.releaseId !== release._id ||
+    !isCurrentPluginCategoryAssignment([row.review.category]) ||
+    row.review.sourceHash !== (await sourceHash(pkg, release))
+  )
+    return undefined;
+  const assignment = acceptedAssignment(row);
+  const current = release.categoryClassification;
+  if (
+    current.inputHash !== assignment.classification.inputHash ||
+    current.classifierVersion !== assignment.classification.classifierVersion ||
+    current.evidence !== assignment.classification.evidence ||
+    JSON.stringify(release.pluginManifestSummary?.categories) !==
+      JSON.stringify(assignment.categories)
+  )
+    return undefined;
+  return assignment;
 }
 
 export const getEvidence = internalQuery({
@@ -110,6 +184,7 @@ export const getEvidence = internalQuery({
       release,
       beforeHash: await snapshotHash(pkg, release),
       bundled: bundledAssignment(pkg, release, publisher),
+      reviewed: await retainedReview(ctx, pkg, release),
     };
   },
 });
@@ -267,8 +342,14 @@ export const preview = internalAction({
         });
         // Current single-purpose declarations remain authoritative; older capability
         // categories are refreshed from reviewed source without rewriting the artifact.
+        if (current.release.categoryClassification?.source === "reviewed" && !current.reviewed)
+          diagnostics.push({
+            packageId,
+            reason: "Prior staff decision no longer matches this source. Fresh review required.",
+          });
         const assignment =
-          current.bundled &&
+          current.reviewed ??
+          (current.bundled &&
           !isCurrentPluginCategoryAssignment(
             getDeclaredPluginCategoriesFromManifest(pluginManifest),
           )
@@ -291,7 +372,7 @@ export const preview = internalAction({
                 },
                 // Legacy declarations remain readable but no longer choose discovery purpose.
                 { allowLegacyDeclarations: true },
-              );
+              ));
         const id = await ctx.runMutation(internal.pluginCategoryRefresh.storePreview, {
           runId: args.runId,
           packageId,
@@ -347,20 +428,85 @@ export const list = internalQuery({
 });
 
 export const accept = internalMutation({
-  args: { ids: v.array(v.id("pluginCategoryRefreshes")), confirm: v.string() },
+  args: {
+    ids: v.array(v.id("pluginCategoryRefreshes")),
+    confirm: v.string(),
+    corrections: v.optional(v.array(pluginCategoryCorrectionValidator)),
+    reviewHash: v.optional(v.string()),
+    provenance: v.optional(pluginCategoryReviewProvenanceValidator),
+  },
   handler: async (ctx, args) => {
     if (args.confirm !== "apply-plugin-category-refresh")
       throw new ConvexError("Category refresh confirmation required.");
-    if (args.ids.length > 100) throw new ConvexError("Accept at most 100 reviewed rows at a time.");
+    if (args.ids.length > 100 || new Set(args.ids).size !== args.ids.length)
+      throw new ConvexError("Accept at most 100 distinct reviewed rows at a time.");
+    const corrections = args.corrections ?? [];
+    validateCategoryCorrections(corrections, args.ids);
+    const rows = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
+    if (rows.some((row) => !row)) throw new ConvexError("A reviewed row is missing.");
+    const reviewedRows = rows.filter((row): row is Doc<"pluginCategoryRefreshes"> => row !== null);
+    if (args.reviewHash !== undefined || corrections.length) {
+      const expected = await sha256Hex(
+        new TextEncoder().encode(categoryReviewPayload(reviewedRows, corrections)),
+      );
+      if (args.reviewHash !== expected)
+        throw new ConvexError("Review hash changed; report and review again.");
+    }
+    const provenance = args.provenance;
+    if (
+      corrections.length &&
+      (!provenance ||
+        !/^[a-zA-Z0-9_[\]-]{1,64}$/.test(provenance.actor) ||
+        !/^\d{1,20}$/.test(provenance.runId) ||
+        !/^\d{1,6}$/.test(provenance.runAttempt) ||
+        !/^[a-f0-9]{40}$/.test(provenance.sha))
+    )
+      throw new ConvexError("Category corrections require workflow actor and run provenance.");
     let accepted = 0;
-    for (const id of args.ids) {
-      const row = await ctx.db.get(id);
-      if (!row || row.status !== "preview") continue;
-      if (row.classification.source === "fallback")
-        throw new ConvexError("Refresh failed classifications before accepting them.");
+    for (const row of reviewedRows) {
+      if (row.status !== "preview") continue;
+      const correction = corrections.find((item) => item.id === row._id);
+      if (
+        correction &&
+        (row.review ||
+          !["generated", "fallback"].includes(row.classification.source) ||
+          row.classification.classifierVersion !== PLUGIN_CATEGORY_CLASSIFIER_VERSION)
+      )
+        throw new ConvexError(
+          "Correct only current generated or fallback proposals; authored and bundled categories remain authoritative.",
+        );
+      if (!correction && row.classification.source === "fallback")
+        throw new ConvexError(
+          "Refresh failed classifications or provide an explicit reviewed correction.",
+        );
       if (!generatedAssignmentIsCurrent(row))
         throw new ConvexError("Classifier changed. Generate a new preview before accepting it.");
-      await ctx.db.patch(id, { status: "accepted", acceptedAt: Date.now() });
+      const pkg = await ctx.db.get(row.packageId);
+      const release = await ctx.db.get(row.releaseId);
+      if (
+        !pkg ||
+        !release ||
+        !eligible(pkg, release) ||
+        pkg.name !== row.packageName ||
+        (await snapshotHash(pkg, release)) !== row.beforeHash
+      )
+        throw new ConvexError(
+          "Latest release, source evidence, or category metadata changed. Generate a new preview.",
+        );
+      await ctx.db.patch(row._id, {
+        status: "accepted",
+        acceptedAt: Date.now(),
+        ...(correction && provenance
+          ? {
+              review: {
+                category: correction.category,
+                evidence: correction.evidence,
+                sourceHash: await sourceHash(pkg, release),
+                provenance,
+              },
+            }
+          : {}),
+      });
       accepted++;
     }
     return { accepted };
@@ -385,7 +531,9 @@ export const applyAccepted = internalMutation({
       !pkg ||
       !release ||
       !eligible(pkg, release) ||
-      (await snapshotHash(pkg, release)) !== row.beforeHash
+      pkg.name !== row.packageName ||
+      (await snapshotHash(pkg, release)) !== row.beforeHash ||
+      (row.review !== undefined && row.review.sourceHash !== (await sourceHash(pkg, release)))
     ) {
       await ctx.db.patch(id, {
         status: "stale",
@@ -409,6 +557,14 @@ export const applyAccepted = internalMutation({
         return { applied: false };
       }
     }
+    if (row.classification.source === "reviewed" && !(await retainedReview(ctx, pkg, release))) {
+      await ctx.db.patch(id, {
+        status: "stale",
+        reason: "Reviewed source changed. Generate a new preview.",
+      });
+      return { applied: false };
+    }
+    const assignment = acceptedAssignment(row);
     const summary = release.pluginManifestSummary ?? row.newReleaseSummary;
     if (!summary) {
       await ctx.db.patch(id, {
@@ -419,16 +575,16 @@ export const applyAccepted = internalMutation({
     }
     const nextRelease = {
       ...release,
-      pluginManifestSummary: { ...summary, categories: row.categories },
-      categoryClassification: row.classification,
+      pluginManifestSummary: { ...summary, categories: assignment.categories },
+      categoryClassification: assignment.classification,
     };
-    const nextPackage = { ...pkg, categories: row.categories };
+    const nextPackage = { ...pkg, categories: assignment.categories };
     await ctx.db.patch(release._id, {
       pluginManifestSummary: nextRelease.pluginManifestSummary,
-      categoryClassification: row.classification,
+      categoryClassification: assignment.classification,
     });
     // The trigger wrapper updates the category/search digests in this transaction.
-    await ctx.db.patch(pkg._id, { categories: row.categories });
+    await ctx.db.patch(pkg._id, { categories: assignment.categories });
     await ctx.db.patch(id, {
       status: "applied",
       appliedAt: Date.now(),

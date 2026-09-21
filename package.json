@@ -97,6 +97,7 @@
     "@convex-dev/auth": "0.0.95",
     "@convex-dev/migrations": "0.3.6",
     "@convex-dev/rate-limiter": "0.3.2",
+    "@convex-dev/workpool": "0.4.12",
     "@fontsource/bricolage-grotesque": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/noto-sans-sc": "5.3.0",
@@ -206,5 +207,8 @@
     "socket.io-parser": "4.2.7",
     "undici": "7.29.0",
     "ws": "8.21.0"
+  },
+  "patchedDependencies": {
+    "@convex-dev/workpool@0.4.12": "patches/@convex-dev%2Fworkpool@0.4.12.patch"
   }
 }

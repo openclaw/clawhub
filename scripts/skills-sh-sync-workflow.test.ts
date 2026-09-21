@@ -5,12 +5,13 @@ import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 describe("skills.sh production synchronization workflow", () => {
-  it("runs hourly without overlap from main using Production OIDC", async () => {
+  it("coalesces pending syncs before taking the production deployment lock", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/skills-sh-sync.yml", "utf8")) as {
-      concurrency?: { group?: string; "cancel-in-progress"?: boolean };
+      concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };
       jobs: Record<
         string,
         {
+          concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };
           environment?: { name?: string } | string;
           permissions?: Record<string, string>;
           steps?: Array<{
@@ -30,13 +31,23 @@ describe("skills.sh production synchronization workflow", () => {
 
     expect(workflow.on?.schedule).toEqual([{ cron: "17 * * * *" }]);
     expect(workflow.on?.workflow_dispatch).toBeDefined();
+    const deploy = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
+      concurrency?: { group?: string; queue?: string; "cancel-in-progress"?: boolean };
+    };
     expect(workflow.concurrency).toEqual({
-      group: "skills-sh-production-sync",
+      group: "skills-sh-sync-${{ github.ref }}",
+      queue: "single",
       "cancel-in-progress": false,
     });
     expect(workflow.permissions).toEqual({ contents: "read", "id-token": "write" });
 
     const job = workflow.jobs.sync;
+    expect(job?.concurrency).toEqual({
+      group: "deploy-production",
+      queue: "max",
+      "cancel-in-progress": false,
+    });
+    expect(deploy.concurrency).toEqual(job?.concurrency);
     expect(job?.environment).toEqual({ name: "Production" });
     expect(job?.permissions).toEqual({ contents: "read", "id-token": "write" });
     const run = job?.steps?.map((step) => step.run ?? "").join("\n") ?? "";

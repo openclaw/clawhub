@@ -24,10 +24,9 @@ staff report used by Management, HTTP, the admin CLI, and the weekly digest.
   releases, clean public native skill versions, and an existing local Featured owner.
   External skill mirrors are explicit ineligible leads. Stable identities are
   `plugin:<package-name>`, `clawhub:<skill-id>`, and `skills-sh:<external-id>`.
-  The separate advisory recommendation owner combines search evidence with existing
-  catalog-specific Trending/adoption evidence; it preserves each evidence period and
-  freshness instead of changing historical counts or public ranking. Nothing is
-  automatically featured.
+  The advisory recommendation owner ranks native daily install aggregates. Search
+  associations remain separate context and never change install selection. Public
+  Trending keeps its own ranking contract. Nothing is automatically featured.
 
 Management, HTTP, and CLI select `artifactKind: plugin | skill` (default plugin)
 and optional `scope: catalog | shelf | legacy` (omitted means all scopes, kept
@@ -36,15 +35,30 @@ remain legacy/unknown; no migration guesses that they searched the whole catalog
 
 ## Featured selection
 
-Each catalog has an eight-member target. Every recommendation iteration proposes the
-complete set, including keeps, additions, removals, exact existing membership and its
-version/timestamp baseline. Fewer eligible candidates yield an explicit shortfall;
-the system never fills slots with ineligible items. Current members are rechecked.
-Evidence ordering stays within each catalog: combined search/adoption, search-only,
-adoption-only, then eligible current members without inspected evidence. Supporting
-counts, periods and freshness remain visible; no cross-catalog weighted score is added.
-Emerging means an existing New/Rising signal plus positive observed adoption, not an
-invented growth estimate. Quality, usefulness and category coverage still need review.
+Each catalog has sixteen slots. Plugins reserve eight slots for editable editorial
+choices and use eight distinct telemetry choices; skills use sixteen telemetry choices.
+Editorial identities and reasons live in staff-managed data, never a source allowlist.
+Unavailable or ineligible editorial entries stay pending with explicit reasons. Their
+slots are never filled from telemetry and cannot publish broken cards.
+
+Telemetry ranks the complete native positive-install population by installs over the
+last thirty completed UTC days, then installs in the final seven days, then stable
+source-qualified identity. Search, downloads, official status and current Featured
+membership contribute no bonus. The raw daily aggregate scan finishes before ranking;
+only the subsequent current-metadata inspection is bounded, continuing through
+ineligible leading entries until at least one hundred eligible review candidates are
+found or the population ends. Reports disclose both scan and inspection coverage.
+
+Every iteration proposes the complete set with keeps, additions, removals and the
+independent membership/version/timestamp baseline. Current metadata and public
+installability/security gates remain authoritative. Recent publication with observed
+installs may be labeled emerging, without inventing a growth estimate. Missing
+search evidence is unknown rather than zero demand.
+
+Daily install facts retain their producer semantics and import provenance; they are
+not proof of unique people or successful running installations. The scan exposes its
+actual collection start/end and imported dataset tags. It spans multiple query
+snapshots, not one atomic database snapshot; no new metric revision store is implied.
 
 Plugins with a canonical single category of channels, models or agent-runtimes are
 excluded from Featured/Trending discovery and Featured recommendations. Official and
@@ -52,9 +66,9 @@ community tools remain eligible; other adapters are not broadly excluded. All, s
 direct access and full search-demand/company-gap reports retain those plugins. Legacy
 multi-category assignments require reviewed source repair before final recommendations.
 
-New publications enforce the eight-member cap transactionally per catalog. Keeping a
+New publications enforce the sixteen-member cap transactionally per catalog. Keeping a
 member preserves timestamps, audit history and notifications. Badge-table backfill
-restores already persisted legacy membership, even above eight, without applying new
+restores already persisted legacy membership, even above sixteen, without applying new
 admission rules. Existing over-cap membership stays visible for curator review; no
 automatic removal occurs, and new additions wait until there is capacity. Publishing
 the proposed set requires Patrick's approval. The homepage default changes only after
@@ -81,8 +95,11 @@ There is no historical-log backfill.
 `searchInsights.get` authenticates an active admin/moderator. The internal equivalent
 is for trusted HTTP/digest callers only. `GET /api/v1/search-insights` authenticates
 an API token and verifies the same staff role, returning private/no-store responses.
-No client-supplied user ID is accepted. Management uses an explicit-refresh action,
-not a subscription to raw or high-churn data.
+No client-supplied user ID is accepted. The existing GET keeps its final-report
+response contract and delegates to the same evidence owner as background reports.
+Management and the admin CLI use the asynchronous report flow below. Management
+subscribes only to the small requested generation's status, not raw observations
+or high-churn aggregates.
 
 Report bounds are complete UTC days ending at exclusive `endDay` (default today's
 UTC midnight): [endDay-7d,endDay), [endDay-14d,endDay-7d), and [endDay-30d,endDay).
@@ -106,6 +123,75 @@ ending no later than the report window and within seven days owns classification
 failed or stale runs never fall back to older successful advice. The report still
 serves deterministic counts when classification or current catalog enrichment fails.
 
+## Background report generation
+
+The first full production skill report took 31.6 seconds, exceeding the admin CLI's
+15-second request deadline. Report generation therefore runs through the maintained
+Convex Workpool component, with one whole report executing at a time. The canonical
+search workers and ranking remain shared; report generation does not implement a
+second search algorithm, reduce the 100-query recommendation cohort, or extend the
+generic HTTP deadline.
+
+- Staff `POST /api/v1/search-insights/reports` returns a small status envelope and
+  generation handle promptly, including when it reuses an already ready generation.
+  `GET /api/v1/search-insights/reports/:reportId` returns its lifecycle status and,
+  once ready, the existing final report shape. Every request checks current staff
+  authorization and uses private/no-store responses.
+- Normalized inputs identify matching requests. Concurrent starts and a retried
+  start reuse their generation. Explicit refresh names `refreshOf`; retrying that
+  refresh resolves to the same successor. Filter changes cannot replace the current
+  view with an older request's result. Leaving a view stops waiting, not shared work.
+- The CLI emits progress on stderr and one final report on stdout in JSON mode.
+  `--report-id` resumes waiting, and `--refresh` creates a new generation with the
+  saved filters. Each request retains the normal 15-second deadline; after five
+  minutes the CLI stops waiting with a resume command, leaving shared work running.
+  Pending, running, failed, expired and incomplete outcomes remain distinguishable.
+  A completed Workpool item without a committed report never implies success.
+- Workpool owns execution concurrency, retry and recovery. The report owner commits
+  immutable evidence before returning a small completion reference. Workpool arguments,
+  results and errors contain no report body, search query text, credentials or user identity.
+- Private report chunks retain the full evidence ingredients, including all inspected
+  search associations and adoption artifacts, rather than only the displayed candidate
+  cards. Editorial choices and their revision are frozen in the same generation.
+  Encoded evidence is capped at 2 MiB per report in at most eight 256 KiB chunks;
+  oversize or incomplete content fails explicitly without truncating the cohort.
+- On result retrieval, canonical hydration rechecks visibility, category/security
+  eligibility and independent live Featured membership. The existing recommendation
+  function recomputes the proposed set from those facts and the saved evidence. This
+  does not rerun searches or silently add replacement search results. Saved editorial
+  choices do not change on retrieval: a different current revision marks the report
+  stale and requires regeneration and review before publication.
+- Search association timestamps and adoption snapshot/source/ranking timestamps remain
+  the original observed times. Current eligibility has its own check time. Monthly
+  counts remain frozen for the report lifetime; expiration of a public Trending
+  snapshot cannot invalidate independent daily install evidence. Report-v1 generations
+  are explicitly unsupported after this shape upgrade and can be refreshed into v2;
+  their old evidence is never reinterpreted as monthly counts.
+- Report working state and chunks expire after 24 hours through indexed bounded cleanup.
+  This is a deletion bound, not a freshness promise. Expired or removed generations
+  cannot be revived by late result writes or callbacks.
+  An open dashboard rechecks expiry and offers a fresh generation if cleanup has
+  already removed its report.
+
+Generating a report writes derived analysis working state only. It never records new
+search observations, drains aggregation, changes catalog metadata or Featured badges,
+stores weekly classifications, claims a digest, or contacts Hermit. The weekly producer
+continues to use the shared evidence builder inside its own delivery lifecycle. Its
+separate recommendation and official-gap cohorts keep their original independent bounds;
+an interactive report is not a digest delivery attempt.
+
+## Monthly digest contract
+
+New weekly digests use v4 and preserve the entire sixteen-slot selection per catalog,
+including pending plugin reservations, selection basis, reasons, baseline and removals.
+Monthly period, scan and ranking metadata appear once per catalog; each card retains
+its own install counts, rank and import provenance. This avoids repeating shared
+metadata on all32 cards while retaining the existing30KB wire bound. Rare query text
+remains suppressed and secondary query detail may be compacted; selected members are
+never dropped to fit. The receiving Hermit contract must support v4 before delivery.
+Already frozen v1/v2/v3 weeks retain their original payload shape and receipt hash.
+Dry-run report generation never sends a digest.
+
 ## Verification and local fixtures
 
 `convex/searchInsights.test.ts` exercises staff/public denial, HTTP parity, daily
@@ -118,3 +204,9 @@ against a local HTTP fixture in human and JSON modes.
 It seeds empty, typical, or dense synthetic datasets, a local staff persona, and an
 optional hashed API-token fixture for real local browser/API/CLI proof. It never
 runs from production crons. These fixtures are not historical demand.
+
+`searchInsightsFixtures.seedFeaturedLineup` creates a guarded local monthly fixture:
+twenty plugins and twenty native skills, eighteen eligible entries per catalog,
+category/security exclusion controls, daily install facts, and five ready plus three
+pending editable editorial reservations. It returns exact generated identities and
+uses the canonical editorial save owner. These are local test facts only.

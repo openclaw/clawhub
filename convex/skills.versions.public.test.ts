@@ -148,6 +148,26 @@ function makeVersion() {
   };
 }
 
+function publicVersionFixtureDoc(id: string, version: unknown = null) {
+  if (id === "skills:1")
+    return {
+      _id: id,
+      ownerUserId: "users:owner",
+      moderationStatus: "active",
+    };
+  if (id === "users:owner")
+    return { _id: id, handle: "owner", personalPublisherId: "publishers:owner" };
+  if (id === "publishers:owner")
+    return {
+      _id: id,
+      kind: "user",
+      handle: "owner",
+      displayName: "Owner",
+      linkedUserId: "users:owner",
+    };
+  return version;
+}
+
 function makePaginatedSkillVersionQuery(versions: Array<Record<string, unknown>>) {
   const filters = new Map<string, unknown>();
   const indexNames: string[] = [];
@@ -280,7 +300,7 @@ describe("public skill version queries", () => {
     const paginated = makePaginatedSkillVersionQuery([version]);
     const ctx = {
       db: {
-        get: vi.fn().mockResolvedValue(version),
+        get: vi.fn(async (id: string) => publicVersionFixtureDoc(id, version)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
@@ -392,7 +412,7 @@ describe("public skill version queries", () => {
     const legacyVersion = makeVersion();
     const legacyCtx = {
       db: {
-        get: vi.fn().mockResolvedValue(legacyVersion),
+        get: vi.fn(async (id: string) => publicVersionFixtureDoc(id, legacyVersion)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
@@ -420,7 +440,7 @@ describe("public skill version queries", () => {
     const paginated = makePaginatedSkillVersionQuery([pendingVersion, version]);
     const ctx = {
       db: {
-        get: vi.fn().mockResolvedValue(null),
+        get: vi.fn(async (id: string) => publicVersionFixtureDoc(id)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return { withIndex: paginated.withIndex };
@@ -460,6 +480,7 @@ describe("public skill version queries", () => {
     const paginated = makePaginatedSkillVersionQuery([...pendingVersions, publishedVersion]);
     const ctx = {
       db: {
+        get: vi.fn(async (id: string) => publicVersionFixtureDoc(id)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return { withIndex: paginated.withIndex };
@@ -688,7 +709,7 @@ describe("public skill version queries", () => {
     const ctx = {
       db: {
         get: vi.fn(async (id: string) =>
-          id === "users:viewer" ? { _id: id, role: "user" } : null,
+          id === "users:viewer" ? { _id: id, role: "user" } : publicVersionFixtureDoc(id),
         ),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
@@ -736,6 +757,7 @@ describe("public skill version queries", () => {
     }));
     const ctx = {
       db: {
+        get: vi.fn(async (id: string) => publicVersionFixtureDoc(id)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
@@ -787,6 +809,7 @@ describe("public skill version queries", () => {
     });
     const ctx = {
       db: {
+        get: vi.fn(async (id: string) => publicVersionFixtureDoc(id)),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
@@ -957,7 +980,7 @@ describe("public skill version queries", () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
-          if (table === "officialPublishers") {
+          if (table === "officialPublishers" || table === "featuredSelections") {
             return {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),

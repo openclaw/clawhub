@@ -105,6 +105,13 @@ export function getPublicSkillVersionDownloadBlock(
   version: SkillVersionSecuritySource,
   fallbackModeratedVersionId?: Id<"skillVersions"> | string | null,
 ): SkillFileAccessBlock | null {
+  if (!isPublishedSkillVersion(version)) {
+    return {
+      status: 404,
+      message: "Version not found",
+    };
+  }
+
   const moderationBlock = getPublicSkillVersionAccessBlock(
     moderationInfo,
     version._id,
@@ -152,6 +159,7 @@ export function isPublicSkillVersionAvailableForSkill(
     | {
         skillId?: Id<"skills"> | string | null;
         softDeletedAt?: number | null;
+        ownerDeletedAt?: number | null;
         publicationStatus?: string | null;
       }
     | null
@@ -161,6 +169,7 @@ export function isPublicSkillVersionAvailableForSkill(
   return Boolean(
     version &&
     !version.softDeletedAt &&
+    version.ownerDeletedAt === undefined &&
     isPublishedSkillVersion(version) &&
     isSkillVersionForSkill(version, skillId),
   );

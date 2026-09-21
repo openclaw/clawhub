@@ -71,6 +71,33 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Restore pages only clear the exact `softDeletedAt` timestamp from the ban
   being lifted and only for skills hidden with `moderationReason = "user.banned"`.
 
+## Publication visibility at public reads
+
+- A public skill version or plugin release must belong to the selected parent,
+  be published (or be a legacy row without `publicationStatus`), and have neither
+  `softDeletedAt` nor `ownerDeletedAt`. Pending and blocked submissions remain
+  unavailable even when a caller knows their version, tag, identifier, or hash.
+- Resolve the current parent and selected version together in the domain query.
+  HTTP adapters compose that checked result with the existing parent visibility,
+  viewer authorization, and download policy before returning metadata or reading
+  storage. Cached summaries, tags, export digests, and fingerprint indexes are
+  selection hints; none independently authorize a public read.
+- Apply the same publication boundary to files, cards, verification, skill aliases
+  under the packages API, direct and hosted ZIPs, tag labels, description fallback,
+  and exports. Batch export selection checks in small bounded groups before loading
+  blobs. A missing requested tag must not silently select the latest version.
+- Hash resolution checks every candidate against its current parent and version.
+  A withheld newer match must not hide an older published match. Maintain the
+  existing public parent policy and bounded indexed/fallback search.
+- Publication and scan state are separate: published metadata remains inspectable
+  where existing policy allows it, while malicious/failed skill downloads and
+  quarantined/revoked package downloads remain blocked. A pending package scan is
+  not an unpublished release. Authorized owner/staff submission previews retain
+  their separate access path.
+- Changes to version publication or owner-deletion state invalidate public browse
+  projections. A pending replacement must preserve an older approved version where
+  the existing latest-version policy selects it.
+
 ## Exact-version revocation
 
 - Staff can permanently revoke one hosted skill version without deleting the
@@ -563,12 +590,23 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   ungated `bulk-rescan` skill-version jobs, and use the normal lease, hydration,
   scan and result paths. They must not fall back to the general queue when an
   assignment is empty or stale, claim package jobs, or retry terminal failures.
-  The dedicated priority shard remains unassigned and retains its normal queue.
+  Assigned shared workers use separate GitHub concurrency groups from ordinary
+  queue workers, so a slow general-queue wave cannot block local bulk assignments.
+  Each assigned shard still permits only one running and one pending worker.
+  The dedicated priority shard remains unassigned, retains its normal queue, and
+  uses the same reserved concurrency group for every dispatch mode. Drain assigned
+  workers and pending assigned dispatches before changing their group naming.
   Assignment plans, admission baselines, receipts, cursor and capacity control
   remain local; no server-side campaign coordinator or assignment table is added.
   Admin batch status exposes queued identities from the same bounded point reads
   as its counts, so completed jobs in partial batches cannot fill the local
   assignment payload. This is an observation; claims still recheck eligibility.
+  The local planner may select nine or eighteen shared worker machines separately
+  from per-worker scan concurrency. Default queue dispatches retain nine shared
+  workers and one reserved priority worker. Changing pool size requires draining
+  the previous shared pool because stable hashing depends on pool size. A worker
+  must reject an assignment count that differs from its dispatched pool size
+  before claiming any shared job; priority work remains independent of that check.
 - Normal scan claims read only enough ready queue rows to fill the worker's
   remaining capacity. Broader pagination is reserved for skipping blocked legacy
   GitHub jobs or the catalog lane's bounded admission window; disabling a rollout

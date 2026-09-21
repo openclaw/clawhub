@@ -31,6 +31,24 @@ const browseFields = {
 };
 
 describe("publicBrowse", () => {
+  it.each(["pending", "blocked"] as const)(
+    "excludes a benign %s publication",
+    (publicationStatus) => {
+      expect(
+        isPubliclyListableSkillVersion({
+          _id: "skillVersions:withheld" as never,
+          skillId: "skills:1" as never,
+          publicationStatus,
+          version: "2.0.0",
+          createdAt: 1,
+          changelog: "withheld",
+          parsed: { frontmatter: {} },
+          llmAnalysis: { status: "clean", checkedAt: 1 },
+        }),
+      ).toBe(false);
+    },
+  );
+
   it("keeps review-only guidance publicly browsable", () => {
     expect(
       isSkillPendingPublicReview({

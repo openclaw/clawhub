@@ -2,6 +2,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { redactWorkerPublicText } from "../lib/workerRedaction";
 import {
   findRecoverableMirrorRun,
   mirrorRateLimitRetryDelayMs,
@@ -29,6 +30,20 @@ type SyncAuthorization = string | ((forceRefresh?: boolean) => Promise<string>);
 const OIDC_REFRESH_SKEW_MS = 2 * 60_000;
 
 class UnsafeSkillsShCorpusError extends Error {}
+
+// Keep rollback evidence separate so a large primary error cannot hide cleanup failures.
+class SkillsShSyncError extends Error {
+  constructor(
+    readonly primaryMessage: string,
+    readonly rollbackErrors: string[],
+  ) {
+    super(
+      rollbackErrors.length > 0
+        ? `${primaryMessage}; rollback errors: ${rollbackErrors.join("; ")}`
+        : primaryMessage,
+    );
+  }
+}
 
 function isTransportTimeout(error: unknown) {
   return (
@@ -565,28 +580,42 @@ export async function runSkillsShSync(options: {
       }
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      rollbackErrors.length > 0
-        ? `${message}; rollback errors: ${rollbackErrors.join("; ")}`
-        : message,
-    );
+    throw new SkillsShSyncError(message, rollbackErrors);
   }
 }
 
 if (import.meta.main) {
-  const targetUrl = requireEnv("CLAWHUB_SKILLS_SH_SYNC_URL");
-  const staticAuthorization = process.env.CLAWHUB_SKILLS_SH_SYNC_TOKEN?.trim();
-  const authorization =
-    staticAuthorization ||
-    createGitHubActionsOidcAuthorization({
-      requestUrl: requireEnv("ACTIONS_ID_TOKEN_REQUEST_URL"),
-      requestToken: requireEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"),
-    });
-  const reason = process.env.CLAWHUB_SKILLS_SH_SYNC_REASON?.trim() || "hourly skills.sh sync";
   const outputPath = resolve(
     process.env.CLAWHUB_SKILLS_SH_SYNC_OUTPUT?.trim() || "skills-sh-sync-proof.json",
   );
-  const proof = await runSkillsShSync({ targetUrl, authorization, reason });
+  let proof: Record<string, unknown>;
+  try {
+    const targetUrl = requireEnv("CLAWHUB_SKILLS_SH_SYNC_URL");
+    const staticAuthorization = process.env.CLAWHUB_SKILLS_SH_SYNC_TOKEN?.trim();
+    const authorization =
+      staticAuthorization ||
+      createGitHubActionsOidcAuthorization({
+        requestUrl: requireEnv("ACTIONS_ID_TOKEN_REQUEST_URL"),
+        requestToken: requireEnv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"),
+      });
+    const reason = process.env.CLAWHUB_SKILLS_SH_SYNC_REASON?.trim() || "hourly skills.sh sync";
+    proof = await runSkillsShSync({ targetUrl, authorization, reason });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    proof = {
+      ok: false,
+      error: redactWorkerPublicText(
+        error instanceof SkillsShSyncError ? error.primaryMessage : message,
+        2_000,
+      ),
+      // null means failure happened before the rollback scope, not successful cleanup.
+      rollbackErrors:
+        error instanceof SkillsShSyncError
+          ? error.rollbackErrors.map((message) => redactWorkerPublicText(message, 2_000))
+          : null,
+    };
+    process.exitCode = 1;
+  }
   await writeFile(outputPath, `${JSON.stringify(proof, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify(proof)}\n`);
 }

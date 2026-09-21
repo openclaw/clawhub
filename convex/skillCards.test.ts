@@ -1,13 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashSkillFiles } from "./lib/skills";
 import {
+  abandonClaimsInternal,
   attachCardAndSucceedJobInternal,
-  claimQueuedJobsInternal,
   claimSkillCardJobs,
   completeSkillCardJob,
   enqueueForVersionInternal,
   failJobInternal,
 } from "./skillCards";
+
+afterEach(() => vi.unstubAllEnvs());
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -17,6 +19,13 @@ const enqueueHandler = (
   enqueueForVersionInternal as unknown as WrappedHandler<
     { versionId: string; source: "scan"; priority?: number; requireMissingCard?: boolean },
     { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
+  >
+)._handler;
+
+const abandonHandler = (
+  abandonClaimsInternal as unknown as WrappedHandler<
+    { jobs: Array<{ jobId: string; leaseToken: string }>; error: string },
+    { released: number }
   >
 )._handler;
 
@@ -62,13 +71,6 @@ const claimHandler = (
   claimSkillCardJobs as unknown as WrappedHandler<
     { token: string; workerId: string; limit?: number; leaseMs?: number },
     Array<{ target: { evidence: Record<string, unknown> } }>
-  >
-)._handler;
-
-const claimQueuedHandler = (
-  claimQueuedJobsInternal as unknown as WrappedHandler<
-    { workerId: string; limit: number; leaseMs?: number },
-    Array<{ _id: string; skillVersionId: string; status: "running"; leaseToken: string }>
   >
 )._handler;
 
@@ -206,8 +208,9 @@ describe("skillCards queue", () => {
       },
     });
     const ctx = {
-      runMutation: vi.fn(async () => [job]),
+      runMutation: vi.fn(async () => ({ jobs: [job], contended: false })),
       runQuery: vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if ("limit" in args) return { jobIds: [job._id], slots: [0], expiredJobIds: [] };
         if ("jobId" in args) {
           return {
             job,
@@ -271,6 +274,222 @@ describe("skillCards queue", () => {
       if (previousToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
       else process.env.SECURITY_SCAN_WORKER_TOKEN = previousToken;
     }
+  });
+
+  it("replans only explicitly uncommitted stale admissions", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "test-worker-token");
+    const plan = { jobIds: ["skillCardGenerationJobs:1"], slots: [0], expiredJobIds: [] };
+    const ctx = {
+      runQuery: vi.fn(async () => plan),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ jobs: [], contended: true })
+        .mockResolvedValueOnce({ jobs: [], contended: false }),
+    };
+    await expect(
+      claimHandler(ctx, { token: "test-worker-token", workerId: "worker" }),
+    ).resolves.toEqual([]);
+    expect(ctx.runQuery).toHaveBeenCalledTimes(2);
+    expect(ctx.runMutation).toHaveBeenCalledTimes(2);
+  });
+
+  it("never replans after a committed lease even when hydration fails", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "test-worker-token");
+    const job = { _id: "skillCardGenerationJobs:1", leaseToken: "committed" };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({ jobIds: [job._id], slots: [0], expiredJobIds: [] })
+        .mockRejectedValueOnce(new Error("hydration failed")),
+      runMutation: vi.fn(async () => ({ jobs: [job], contended: false })),
+    };
+    await expect(
+      claimHandler(ctx, { token: "test-worker-token", workerId: "worker" }),
+    ).rejects.toThrow("hydration failed");
+    expect(ctx.runMutation).toHaveBeenCalledTimes(2);
+    expect(ctx.runMutation).toHaveBeenLastCalledWith(expect.anything(), {
+      jobs: [{ jobId: job._id, leaseToken: job.leaseToken }],
+      error: "Skill Card input hydration failed",
+    });
+    expect(ctx.runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports bounded contention instead of a false empty queue", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "test-worker-token");
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        jobIds: ["skillCardGenerationJobs:1"],
+        slots: [0],
+        expiredJobIds: [],
+      })),
+      runMutation: vi.fn(async () => ({ jobs: [], contended: true })),
+    };
+    await expect(
+      claimHandler(ctx, { token: "test-worker-token", workerId: "worker" }),
+    ).rejects.toMatchObject({
+      data: { code: "SKILL_CARD_CLAIM_CONTENDED" },
+    });
+    expect(ctx.runMutation).toHaveBeenCalledTimes(64);
+  });
+
+  it("does not retry an ambiguous mutation error", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "test-worker-token");
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        jobIds: ["skillCardGenerationJobs:1"],
+        slots: [0],
+        expiredJobIds: [],
+      })),
+      runMutation: vi.fn(async () => {
+        throw new Error("request failed");
+      }),
+    };
+    await expect(
+      claimHandler(ctx, { token: "test-worker-token", workerId: "worker" }),
+    ).rejects.toThrow("request failed");
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, 1, 2])(
+    "abandons every undelivered lease when lookup %i fails",
+    async (failureIndex) => {
+      vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "test-worker-token");
+      const jobs = [0, 1, 2].map((index) => ({
+        _id: `skillCardGenerationJobs:${index}`,
+        leaseToken: `lease-${index}`,
+        skillVersionId: `skillVersions:${index}`,
+      }));
+      const failure = new Error("lookup failed");
+      const ctx = {
+        runMutation: vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+          "jobs" in args ? { released: 3 } : { jobs, contended: false },
+        ),
+        runQuery: vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+          if ("limit" in args)
+            return { jobIds: jobs.map((job) => job._id), slots: [0, 1, 2], expiredJobIds: [] };
+          if ("skillVersionId" in args) return [];
+          const job = jobs.find((entry) => entry._id === args.jobId)!;
+          if (job === jobs[failureIndex]) throw failure;
+          return {
+            job,
+            skill: { slug: "demo", displayName: "Demo" },
+            version: makeSettledVersion(),
+            owner: null,
+            publisher: null,
+          };
+        }),
+        storage: { getUrl: vi.fn(async () => "https://storage.example/SKILL.md") },
+      };
+      await expect(
+        claimHandler(ctx, { token: "test-worker-token", workerId: "worker" }),
+      ).rejects.toBe(failure);
+      expect(ctx.runMutation).toHaveBeenLastCalledWith(expect.anything(), {
+        jobs: jobs.map((job) => ({ jobId: job._id, leaseToken: job.leaseToken })),
+        error: "Skill Card input hydration failed",
+      });
+    },
+  );
+
+  it("preserves the hydration failure and reports ambiguous cleanup without its secrets", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "test-worker-token");
+    const primary = new Error("primary lookup failure");
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          jobIds: ["skillCardGenerationJobs:1"],
+          slots: [0],
+          expiredJobIds: [],
+        })
+        .mockRejectedValueOnce(primary),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({
+          jobs: [{ _id: "skillCardGenerationJobs:1", leaseToken: "private-lease" }],
+          contended: false,
+        })
+        .mockRejectedValueOnce(new Error("https://private.example/?token=cleanup-secret")),
+    };
+    try {
+      await expect(
+        claimHandler(ctx, { token: "test-worker-token", workerId: "worker" }),
+      ).rejects.toBe(primary);
+      expect(log).toHaveBeenCalledWith("skill_card_claim_cleanup_failed", {
+        jobIds: ["skillCardGenerationJobs:1"],
+        outcome: "cleanup settlement unknown; leases recover through expiry",
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-lease|cleanup-secret|https:/);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("batch cleanup skips settled, missing, and newer owners and preserves retry policy", async () => {
+    const rows = new Map<string, Record<string, unknown>>([
+      [
+        "owned",
+        {
+          _id: "owned",
+          status: "running",
+          leaseToken: "lease",
+          claimSlot: 1,
+          attempts: 1,
+          nextRunAt: 0,
+        },
+      ],
+      [
+        "exhausted",
+        {
+          _id: "exhausted",
+          status: "running",
+          leaseToken: "lease",
+          claimSlot: 2,
+          attempts: 3,
+          nextRunAt: 0,
+        },
+      ],
+      ["settled", { _id: "settled", status: "queued", attempts: 1, nextRunAt: 123 }],
+      [
+        "new-owner",
+        { _id: "new-owner", status: "running", leaseToken: "new", claimSlot: 3, attempts: 2 },
+      ],
+    ]);
+    const patch = vi.fn(async (id: string, fields: Record<string, unknown>) => {
+      Object.assign(rows.get(id)!, fields);
+    });
+    const ctx = {
+      db: completeDb({ get: vi.fn(async (id: string) => rows.get(id) ?? null), patch }),
+    };
+    const before = Date.now();
+    const result = await abandonHandler(ctx, {
+      jobs: ["owned", "exhausted", "settled", "new-owner", "missing"].map((jobId) => ({
+        jobId,
+        leaseToken: "lease",
+      })),
+      error: "Skill Card input hydration failed",
+    });
+    expect(result).toEqual({ released: 2 });
+    expect(rows.get("owned")).toMatchObject({
+      status: "queued",
+      attempts: 1,
+      claimSlot: undefined,
+      leaseToken: undefined,
+    });
+    expect(rows.get("owned")?.nextRunAt).toBeGreaterThanOrEqual(before + 120_000);
+    expect(rows.get("exhausted")).toMatchObject({
+      status: "failed",
+      attempts: 3,
+      claimSlot: undefined,
+    });
+    expect(rows.get("settled")).toMatchObject({ status: "queued", attempts: 1, nextRunAt: 123 });
+    expect(rows.get("new-owner")).toMatchObject({
+      status: "running",
+      leaseToken: "new",
+      claimSlot: 3,
+      attempts: 2,
+    });
+    expect(patch).toHaveBeenCalledTimes(2);
   });
 
   it("does not enqueue before static and ClawScan inputs settle", async () => {
@@ -416,223 +635,6 @@ describe("skillCards queue", () => {
       alreadyQueued: false,
     });
     expect(insert).toHaveBeenCalled();
-  });
-
-  it("does not claim a queued follow-up while the same version has an active job", async () => {
-    const now = Date.now();
-    const runningJob = {
-      _id: "skillCardGenerationJobs:running",
-      skillId: "skills:1",
-      skillVersionId: "skillVersions:1",
-      status: "running",
-      source: "scan",
-      priority: 0,
-      nextRunAt: now - 100,
-      attempts: 1,
-      leaseToken: "old-lease",
-      leaseExpiresAt: now + 60_000,
-      createdAt: now - 200,
-      updatedAt: now - 100,
-    };
-    const queuedSameVersion = {
-      _id: "skillCardGenerationJobs:queued-same",
-      skillId: "skills:1",
-      skillVersionId: "skillVersions:1",
-      status: "queued",
-      source: "scan",
-      priority: 10,
-      nextRunAt: now - 10,
-      attempts: 0,
-      createdAt: now - 10,
-      updatedAt: now - 10,
-    };
-    const queuedOtherVersion = {
-      ...queuedSameVersion,
-      _id: "skillCardGenerationJobs:queued-other",
-      skillVersionId: "skillVersions:2",
-      priority: 1,
-    };
-    const patch = vi.fn(async () => undefined);
-    const ctx = {
-      db: completeDb({
-        patch,
-        query: vi.fn(() => ({
-          withIndex: vi.fn(
-            (
-              name: string,
-              build: (q: {
-                eq: (...args: unknown[]) => unknown;
-                lte: (...args: unknown[]) => unknown;
-              }) => unknown,
-            ) => {
-              const q = {
-                eq: vi.fn(function (this: unknown) {
-                  return this;
-                }),
-                lte: vi.fn(function (this: unknown) {
-                  return this;
-                }),
-              };
-              build(q);
-              if (name === "by_status_and_lease_expires_at") {
-                return { take: vi.fn(async () => [runningJob]) };
-              }
-              return {
-                order: vi.fn(() => ({
-                  take: vi.fn(async () => [queuedSameVersion, queuedOtherVersion]),
-                })),
-              };
-            },
-          ),
-        })),
-      }),
-    };
-
-    const claimed = await claimQueuedHandler(ctx, {
-      workerId: "worker",
-      limit: 10,
-      leaseMs: 60_000,
-    });
-
-    expect(claimed.map((job) => job._id)).toEqual(["skillCardGenerationJobs:queued-other"]);
-    expect(patch).toHaveBeenCalledTimes(1);
-    expect(patch).toHaveBeenCalledWith(
-      "skillCardGenerationJobs:queued-other",
-      expect.objectContaining({ status: "running", workerId: "worker" }),
-    );
-    expect(patch).not.toHaveBeenCalledWith(
-      "skillCardGenerationJobs:queued-same",
-      expect.anything(),
-    );
-  });
-
-  it("caps global running Skill Card claims at security-worker parity", async () => {
-    const now = Date.now();
-    const queuedJobs = Array.from({ length: 80 }, (_, index) => ({
-      _id: `skillCardGenerationJobs:${index}`,
-      skillId: `skills:${index}`,
-      skillVersionId: `skillVersions:${index}`,
-      status: "queued",
-      source: "scan",
-      priority: 0,
-      nextRunAt: now - index - 1,
-      attempts: 0,
-      createdAt: now - index - 1,
-      updatedAt: now - index - 1,
-    }));
-    const patch = vi.fn(async () => undefined);
-    const ctx = {
-      db: completeDb({
-        patch,
-        query: vi.fn(() => ({
-          withIndex: vi.fn(
-            (
-              name: string,
-              build: (q: {
-                eq: (...args: unknown[]) => unknown;
-                lte: (...args: unknown[]) => unknown;
-              }) => unknown,
-            ) => {
-              const q = {
-                eq: vi.fn(function (this: unknown) {
-                  return this;
-                }),
-                lte: vi.fn(function (this: unknown) {
-                  return this;
-                }),
-              };
-              build(q);
-              if (name === "by_status_and_lease_expires_at") {
-                return { take: vi.fn(async () => []) };
-              }
-              return {
-                order: vi.fn(() => ({
-                  take: vi.fn(async () => queuedJobs),
-                })),
-              };
-            },
-          ),
-        })),
-      }),
-    };
-
-    const claimed = await claimQueuedHandler(ctx, {
-      workerId: "worker",
-      limit: 80,
-      leaseMs: 60_000,
-    });
-
-    expect(claimed).toHaveLength(64);
-    expect(patch).toHaveBeenCalledTimes(64);
-  });
-
-  it("uses the same default queued job lease as the security worker", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-05-27T12:00:00.000Z"));
-    const now = Date.now();
-    const queuedJob = {
-      _id: "skillCardGenerationJobs:queued",
-      skillId: "skills:1",
-      skillVersionId: "skillVersions:1",
-      status: "queued",
-      source: "scan",
-      priority: 0,
-      nextRunAt: now - 1,
-      attempts: 0,
-      createdAt: now - 1,
-      updatedAt: now - 1,
-    };
-    const patch = vi.fn(async () => undefined);
-    const ctx = {
-      db: completeDb({
-        patch,
-        query: vi.fn(() => ({
-          withIndex: vi.fn(
-            (
-              name: string,
-              build: (q: {
-                eq: (...args: unknown[]) => unknown;
-                lte: (...args: unknown[]) => unknown;
-              }) => unknown,
-            ) => {
-              const q = {
-                eq: vi.fn(function (this: unknown) {
-                  return this;
-                }),
-                lte: vi.fn(function (this: unknown) {
-                  return this;
-                }),
-              };
-              build(q);
-              if (name === "by_status_and_lease_expires_at") {
-                return { take: vi.fn(async () => []) };
-              }
-              return {
-                order: vi.fn(() => ({
-                  take: vi.fn(async () => [queuedJob]),
-                })),
-              };
-            },
-          ),
-        })),
-      }),
-    };
-
-    try {
-      await claimQueuedHandler(ctx, {
-        workerId: "worker",
-        limit: 1,
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-
-    expect(patch).toHaveBeenCalledWith(
-      "skillCardGenerationJobs:queued",
-      expect.objectContaining({
-        leaseExpiresAt: now + 60 * 60 * 1000,
-      }),
-    );
   });
 
   it("generation failure is non-blocking and retryable", async () => {

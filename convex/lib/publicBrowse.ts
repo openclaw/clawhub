@@ -5,6 +5,7 @@ import {
   isSecurityScanStatusBlockedFromPublic,
   normalizeSecurityScanStatus,
 } from "./securityScanPolicy";
+import { isPublicSkillVersionAvailableForSkill } from "./skillFileAccess";
 import { isSkillSuspicious } from "./skillSafety";
 
 type SkillPublicBrowseFields = Pick<
@@ -26,6 +27,8 @@ type SkillVersionPublicBrowseFields = Pick<
   | "_id"
   | "skillId"
   | "softDeletedAt"
+  | "ownerDeletedAt"
+  | "publicationStatus"
   | "version"
   | "createdAt"
   | "changelog"
@@ -90,7 +93,7 @@ export function shouldExcludeSkillFromPublicBrowse(skill: SkillPublicBrowseField
 export function isPubliclyListableSkillVersion(
   version: SkillVersionPublicBrowseFields | null | undefined,
 ) {
-  if (!version || version.softDeletedAt) return false;
+  if (!version || !isPublicSkillVersionAvailableForSkill(version, version.skillId)) return false;
   const statuses = [
     normalizeSecurityScanStatus(version.vtAnalysis?.status),
     normalizeSecurityScanStatus(version.llmAnalysis?.verdict ?? version.llmAnalysis?.status),

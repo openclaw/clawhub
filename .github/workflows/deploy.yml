@@ -23,8 +23,11 @@ on:
         default: ""
         type: string
 
+# Keep the production lifecycle group aligned with skills-sh-sync.yml so rollout
+# pauses cannot interrupt a catalog sync or its rollback.
 concurrency:
   group: deploy-production
+  queue: max
   cancel-in-progress: false
 
 permissions: {}

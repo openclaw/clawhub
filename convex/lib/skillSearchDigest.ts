@@ -2,7 +2,7 @@ import {
   getCatalogTopicSlugs,
   resolveCatalogTopics,
   resolveStoredSkillCategories,
-} from "clawhub-schema";
+} from "clawhub-schema/catalogMetadata";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";

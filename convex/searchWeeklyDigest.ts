@@ -9,7 +9,10 @@ import {
   searchDigestValidator,
   SEARCH_DIGEST_MAX_BYTES,
   type WeeklySearchDigest,
+  type LineupSearchDigest,
+  type MonthlySearchDigest,
   type LineupSearchRecommendation,
+  type MonthlySearchRecommendation,
 } from "./lib/searchDigestContract";
 import { deliverSearchDigest } from "./lib/searchDigestDelivery";
 import { buildSearchEvidenceDigest, type DigestCatalogInput } from "./lib/searchEvidenceDigest";
@@ -130,10 +133,19 @@ export const savePayloadInternal = internalMutation({
         : Object.values(payload.catalogs).some(
             (catalog) =>
               catalog.recommendations.length >
-                (payload.kind === "search_intelligence_weekly_v3" ? 8 : 5) ||
+                (payload.kind === "search_intelligence_weekly_v4"
+                  ? 16
+                  : payload.kind === "search_intelligence_weekly_v3"
+                    ? 8
+                    : 5) ||
               catalog.recommendations.some(
-                (candidate: Omit<LineupSearchRecommendation, "version">) =>
+                (
+                  candidate:
+                    | Omit<LineupSearchRecommendation, "version">
+                    | MonthlySearchRecommendation,
+                ) =>
                   (payload.kind !== "search_intelligence_weekly_v3" &&
+                    payload.kind !== "search_intelligence_weekly_v4" &&
                     candidate.support === "search-only" &&
                     (candidate.search?.matchedSearches7d ?? 0) < 3) ||
                   (candidate.search &&
@@ -141,37 +153,46 @@ export const savePayloadInternal = internalMutation({
                       candidate.search.queries.some((query) => query.searches7d < 3))),
               ),
           )) ||
-      (payload.kind === "search_intelligence_weekly_v3" &&
-        Object.values(payload.catalogs).some((catalog) => {
-          const { lineup, recommendations } = catalog;
-          const selected = new Set(recommendations.map((candidate) => candidate.id));
-          const baseline = new Set(lineup.baseline.map((entry) => entry.id));
-          const removed = new Set(lineup.removals.map((entry) => entry.id));
-          return (
-            selected.size !== recommendations.length ||
-            baseline.size !== lineup.baseline.length ||
-            removed.size !== lineup.removals.length ||
-            lineup.baseline.length > 100 ||
-            lineup.shortfall !== 8 - recommendations.length ||
-            lineup.changes.length !== recommendations.length ||
-            lineup.changes.some(
-              (entry, index) =>
-                entry.id !== recommendations[index].id ||
-                entry.change !== (baseline.has(entry.id) ? "retain" : "add"),
-            ) ||
-            lineup.removals.some(
-              (entry) => !baseline.has(entry.id) || selected.has(entry.id) || !entry.reasons.length,
-            ) ||
-            lineup.baseline.some((entry) => !selected.has(entry.id) && !removed.has(entry.id)) ||
-            recommendations.some(
-              (candidate) =>
-                candidate.support === "current-only" &&
-                (candidate.search !== null ||
-                  candidate.adoption !== null ||
-                  !baseline.has(candidate.id)),
-            )
-          );
-        })) ||
+      ((payload.kind === "search_intelligence_weekly_v3" ||
+        payload.kind === "search_intelligence_weekly_v4") &&
+        Object.values(payload.catalogs).some(
+          (
+            catalog:
+              | LineupSearchDigest["catalogs"]["plugins"]
+              | MonthlySearchDigest["catalogs"]["plugins"],
+          ) => {
+            const { lineup, recommendations } = catalog;
+            const selected = new Set(recommendations.map((candidate) => candidate.id));
+            const baseline = new Set(lineup.baseline.map((entry) => entry.id));
+            const removed = new Set(lineup.removals.map((entry) => entry.id));
+            return (
+              selected.size !== recommendations.length ||
+              baseline.size !== lineup.baseline.length ||
+              removed.size !== lineup.removals.length ||
+              lineup.baseline.length > 100 ||
+              lineup.shortfall !== lineup.targetSize - recommendations.length ||
+              lineup.changes.length !== recommendations.length ||
+              lineup.changes.some(
+                (entry, index) =>
+                  entry.id !== recommendations[index].id ||
+                  entry.change !== (baseline.has(entry.id) ? "retain" : "add"),
+              ) ||
+              lineup.removals.some(
+                (entry) =>
+                  !baseline.has(entry.id) || selected.has(entry.id) || !entry.reasons.length,
+              ) ||
+              lineup.baseline.some((entry) => !selected.has(entry.id) && !removed.has(entry.id)) ||
+              recommendations.some(
+                (candidate) =>
+                  payload.kind !== "search_intelligence_weekly_v4" &&
+                  candidate.support === "current-only" &&
+                  (candidate.search !== null ||
+                    candidate.adoption !== null ||
+                    !baseline.has(candidate.id)),
+              )
+            );
+          },
+        )) ||
       new TextEncoder().encode(JSON.stringify(payload)).byteLength > SEARCH_DIGEST_MAX_BYTES ||
       (args.catalogClassifications &&
         (args.classification ||

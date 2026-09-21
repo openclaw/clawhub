@@ -35,16 +35,18 @@ describe("production deploy workflow", () => {
     permissions?: Record<string, string>;
   };
 
-  it("queues active deploys instead of cancelling them", async () => {
+  it("queues production work without cancelling active or pending runs", async () => {
     const workflow = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
       concurrency?: {
         group?: string;
+        queue?: string;
         "cancel-in-progress"?: boolean;
       };
     };
 
     expect(workflow.concurrency).toEqual({
       group: "deploy-production",
+      queue: "max",
       "cancel-in-progress": false,
     });
   });

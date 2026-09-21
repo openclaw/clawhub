@@ -5,6 +5,14 @@ import { promisify } from "node:util";
 import { isCurrentPluginCategoryAssignment, PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
 import inventory from "../convex/lib/bundledPluginCategoryAssignments.json";
 import { PLUGIN_CATEGORY_CLASSIFIER_VERSION } from "../convex/lib/pluginCategoryClassification";
+import {
+  categoryReviewPayload,
+  reviewRow,
+  validateCategoryCorrections,
+  type CategoryCorrection,
+  type CategoryReviewRow,
+  type CategoryReviewProvenance,
+} from "../convex/lib/pluginCategoryReview";
 
 const TARGET = "wry-manatee-359";
 const SOURCE = "3bf34b0570d3e55ad16f7c4cb25249797a59042b";
@@ -12,25 +20,7 @@ const MIGRATION = "migrations:applyAcceptedPluginCategoryRefreshes";
 const MODES = ["preview", "report", "accept", "apply", "status", "rollback"] as const;
 type Mode = (typeof MODES)[number];
 type Json = Record<string, unknown>;
-type Row = {
-  _id: string;
-  runId: string;
-  packageId: string;
-  releaseId: string;
-  packageName: string;
-  version: string;
-  status: string;
-  reason?: string;
-  beforeHash: string;
-  beforeCategories?: string[];
-  categories: string[];
-  classification: {
-    source: string;
-    classifierVersion: string;
-    inputHash: string;
-    evidence: string;
-  };
-};
+type Row = CategoryReviewRow & { status: string; reason?: string };
 type Page = { cursor: string; isDone: boolean; ids: string[] };
 type Preview = Omit<Page, "ids"> & {
   previewed: number;
@@ -47,6 +37,8 @@ type Options = {
   workers: number;
   ids: string[];
   reviewHash: string;
+  corrections: CategoryCorrection[];
+  provenance?: CategoryReviewProvenance;
 };
 type Client = {
   run: <T>(name: string, args: Json, component?: boolean) => Promise<T>;
@@ -111,6 +103,53 @@ export function parseOptions(env: NodeJS.ProcessEnv): Options {
     "Use at most 100 valid journal IDs.",
   );
   requireValue(new Set(ids).size === ids.length, "Duplicate reviewed IDs.");
+  let corrections: unknown;
+  try {
+    corrections = JSON.parse(env.CATEGORY_CORRECTIONS || "[]");
+  } catch {
+    throw new OperatorError("Category corrections must be a JSON array.");
+  }
+  requireValue(
+    Array.isArray(corrections) &&
+      corrections.every(
+        (row) =>
+          row &&
+          typeof row === "object" &&
+          !Array.isArray(row) &&
+          Object.keys(row).length === 3 &&
+          typeof row.id === "string" &&
+          typeof row.category === "string" &&
+          typeof row.evidence === "string",
+      ),
+    "Use corrections with id, category and evidence only.",
+  );
+  const decisions = corrections as CategoryCorrection[];
+  try {
+    validateCategoryCorrections(decisions, ids);
+  } catch (error) {
+    throw new OperatorError((error as Error).message);
+  }
+  requireValue(
+    decisions.length === 0 || mode === "report" || mode === "accept",
+    "Corrections are only supported by report and accept; later operations use the sealed decision.",
+  );
+  let provenance: Options["provenance"];
+  if (decisions.length && mode === "accept") {
+    requireValue(
+      env.GITHUB_REPOSITORY === "openclaw/clawhub" &&
+        /^[a-zA-Z0-9_[\]-]{1,64}$/.test(env.GITHUB_ACTOR ?? "") &&
+        /^\d{1,20}$/.test(env.GITHUB_RUN_ID ?? "") &&
+        /^\d{1,6}$/.test(env.GITHUB_RUN_ATTEMPT ?? ""),
+      "Category corrections require workflow actor and run provenance.",
+    );
+    provenance = {
+      actor: env.GITHUB_ACTOR!,
+      repository: "openclaw/clawhub",
+      runId: env.GITHUB_RUN_ID!,
+      runAttempt: env.GITHUB_RUN_ATTEMPT!,
+      sha,
+    };
+  }
   const reviewHash = env.CATEGORY_REVIEW_HASH || "";
   if (["accept", "apply", "rollback"].includes(mode)) {
     requireValue(
@@ -125,38 +164,25 @@ export function parseOptions(env: NodeJS.ProcessEnv): Options {
       "Reviewed IDs are only supported by report and write modes.",
     );
   }
-  return { mode, sha, runId, cursor, maxPages, workers, ids, reviewHash };
-}
-
-// Only selected category evidence enters artifacts; never archive release bodies,
-// source files, CLI stderr, environment output, or arbitrary database documents.
-export function reviewRow(row: Row) {
   return {
-    id: row._id,
-    runId: row.runId,
-    packageId: row.packageId,
-    releaseId: row.releaseId,
-    packageName: row.packageName,
-    version: row.version,
-    beforeHash: row.beforeHash,
-    beforeCategories: row.beforeCategories ?? [],
-    categories: row.categories,
-    classification: {
-      source: row.classification.source,
-      classifierVersion: row.classification.classifierVersion,
-      inputHash: row.classification.inputHash,
-      evidence: row.classification.evidence.slice(0, 500),
-    },
+    mode,
+    sha,
+    runId,
+    cursor,
+    maxPages,
+    workers,
+    ids,
+    reviewHash,
+    corrections: decisions,
+    provenance,
   };
 }
 
-export function reviewHash(rows: Row[]) {
-  return createHash("sha256")
-    .update(JSON.stringify(rows.map(reviewRow).sort((a, b) => a.id.localeCompare(b.id))))
-    .digest("hex");
+export function reviewHash(rows: Row[], corrections: CategoryCorrection[] = []) {
+  return createHash("sha256").update(categoryReviewPayload(rows, corrections)).digest("hex");
 }
 
-function reportRows(rows: Row[]) {
+function reportRows(rows: Row[], corrections: CategoryCorrection[] = []) {
   const statuses: Record<string, number> = {};
   const sources: Record<string, number> = {};
   for (const row of rows) {
@@ -165,14 +191,20 @@ function reportRows(rows: Row[]) {
   }
   return {
     rows: rows.map((row) => ({
-      ...reviewRow(row),
+      ...reviewRow(
+        row,
+        corrections.find((item) => item.id === row._id),
+      ),
       status: row.status,
       reason: row.reason?.slice(0, 500),
+      ...(row.review?.sourceHash
+        ? { reviewSourceHash: row.review.sourceHash, reviewProvenance: row.review.provenance }
+        : {}),
     })),
     rowCount: rows.length,
     statuses,
     sources,
-    reviewHash: reviewHash(rows),
+    reviewHash: reviewHash(rows, corrections),
   };
 }
 
@@ -186,7 +218,7 @@ export function assertReviewed(rows: Row[], options: Options) {
     "Reviewed rows must belong to this run.",
   );
   requireValue(
-    reviewHash(rows) === options.reviewHash,
+    reviewHash(rows, options.corrections) === options.reviewHash,
     "Review hash changed; report and review again.",
   );
   const status = { accept: "preview", apply: "accepted", rollback: "applied" }[
@@ -201,13 +233,26 @@ export function assertReviewed(rows: Row[], options: Options) {
   if (options.mode === "rollback") return;
   for (const row of rows) {
     const c = row.classification;
+    const correction = options.corrections.find((item) => item.id === row._id);
+    const decision = correction ?? row.review;
+    if (correction)
+      requireValue(
+        (c.source === "generated" || c.source === "fallback") &&
+          c.classifierVersion === PLUGIN_CATEGORY_CLASSIFIER_VERSION &&
+          !row.review,
+        "Correct only current generated or fallback proposals; authored and bundled categories remain authoritative.",
+      );
     requireValue(
       /^[a-f0-9]{64}$/.test(row.beforeHash) && /^[a-f0-9]{64}$/.test(c.inputHash),
       "Missing source/evidence hash.",
     );
     requireValue(
-      c.source === "manifest" || c.source === "generated" || c.source === "bundled",
-      "Fallback classifications cannot be applied.",
+      c.source === "manifest" ||
+        c.source === "generated" ||
+        c.source === "bundled" ||
+        c.source === "reviewed" ||
+        (c.source === "fallback" && Boolean(decision)),
+      "Fallback classifications need an explicit reviewed correction.",
     );
     if (c.source === "bundled") {
       const assignment = inventory.assignments.find(
@@ -219,14 +264,14 @@ export function assertReviewed(rows: Row[], options: Options) {
           JSON.stringify(assignment.categories) === JSON.stringify(row.categories),
         "Bundled preview no longer matches the pinned inventory.",
       );
-    } else {
+    } else if (!row.review && c.source !== "reviewed") {
       requireValue(
         c.classifierVersion === PLUGIN_CATEGORY_CLASSIFIER_VERSION,
         `Generate a fresh ${PLUGIN_CATEGORY_CLASSIFIER_VERSION} preview.`,
       );
     }
     requireValue(
-      isCurrentPluginCategoryAssignment(row.categories),
+      isCurrentPluginCategoryAssignment(decision ? [decision.category] : row.categories),
       "Reviewed assignment must have exactly one current category.",
     );
   }
@@ -414,7 +459,7 @@ export async function operate(
         rows.every((row) => row && row.runId === options.runId),
         "Reviewed rows must belong to this run.",
       );
-      return reportRows(rows);
+      return reportRows(rows, options.corrections);
     }
     const rows: Row[] = [];
     let cursor = options.cursor;
@@ -432,7 +477,7 @@ export async function operate(
       cursor = result.continueCursor;
       isDone = result.isDone;
     }
-    return { ...reportRows(rows), resumeCursor: cursor, isDone };
+    return { ...reportRows(rows, options.corrections), resumeCursor: cursor, isDone };
   }
   const rows = await selectedRows(client, options.ids);
   assertReviewed(rows, options);
@@ -466,6 +511,10 @@ export async function operate(
     const result = await client.run<{ accepted: number }>("pluginCategoryRefresh:accept", {
       ids: options.ids,
       confirm: "apply-plugin-category-refresh",
+      reviewHash: options.reviewHash,
+      ...(options.corrections.length
+        ? { corrections: options.corrections, provenance: options.provenance }
+        : {}),
     });
     requireValue(
       result.accepted === rows.length,

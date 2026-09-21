@@ -34,7 +34,7 @@ import { applyRateLimit, getClientIp } from "./lib/httpRateLimit";
 import {
   getPublicSkillFileAccessBlock,
   getPublicSkillVersionDownloadBlock,
-  isSkillVersionForSkill,
+  getSkillFileModerationInfoFromSkill,
 } from "./lib/skillFileAccess";
 import { buildDeterministicZipStream } from "./lib/skillZip";
 
@@ -131,27 +131,19 @@ export async function downloadZipHandler(
     });
   }
 
-  const skill = skillResult.skill;
-  let version = skill.latestVersionId
-    ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-        versionId: skill.latestVersionId,
-      })
-    : null;
-
-  if (versionParam) {
-    version = await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
-      skillId: skill._id,
-      version: versionParam,
-    });
-  } else if (tagParam) {
-    const versionId = skill.tags[tagParam];
-    if (versionId) {
-      version = await ctx.runQuery(internal.skills.getVersionByIdInternal, { versionId });
-    }
-  }
-
-  if (!version || !isSkillVersionForSkill(version, skill._id)) {
-    if (!versionParam && !tagParam && skill.installKind === "github") {
+  const selection = await ctx.runQuery(internal.skills.getPublicVersionSelectionInternal, {
+    skillId: skillResult.skill._id,
+    ...(versionParam ? { version: versionParam } : tagParam ? { tag: tagParam } : {}),
+  });
+  if (selection.status !== "available") {
+    if (
+      selection.status === "not_found" &&
+      !versionParam &&
+      !tagParam &&
+      !skillResult.skill.latestVersionId &&
+      !skillResult.skill.tags.latest &&
+      skillResult.skill.installKind === "github"
+    ) {
       const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
       if (moderationBlock) {
         return new Response(moderationBlock.message, {
@@ -159,22 +151,19 @@ export async function downloadZipHandler(
           headers: mergeHeaders(rate.headers, corsHeaders()),
         });
       }
-      return githubDownloadHandoffResponse(ctx, request, skill._id, rate.headers);
+      return githubDownloadHandoffResponse(ctx, request, skillResult.skill._id, rate.headers);
     }
-    return new Response("Version not found", {
-      status: 404,
-      headers: mergeHeaders(rate.headers, corsHeaders()),
-    });
+    return new Response(
+      selection.status === "deleted" ? "Version not available" : "Version not found",
+      {
+        status: selection.status === "deleted" ? 410 : 404,
+        headers: mergeHeaders(rate.headers, corsHeaders()),
+      },
+    );
   }
-  if (version.softDeletedAt) {
-    return new Response("Version not available", {
-      status: 410,
-      headers: mergeHeaders(rate.headers, corsHeaders()),
-    });
-  }
-
+  const { skill, version } = selection;
   const moderationBlock = getPublicSkillVersionDownloadBlock(
-    skillResult.moderationInfo,
+    getSkillFileModerationInfoFromSkill(skill),
     version,
     skill.latestVersionId ?? skill.tags.latest,
   );

@@ -28,6 +28,7 @@ import {
 } from "./commands/contentRights.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
 import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
+import { cmdFeaturedSelection } from "./commands/featuredSelections.js";
 import {
   cmdBanUser,
   cmdLiftModerationHold,
@@ -365,9 +366,20 @@ skills
   .command("plan-scan-workers <job-ids-file>")
   .description("Prepare local workflow inputs for disjoint, already-admitted bulk skill jobs")
   .requiredOption("--batch-limit <number>", "Scans in parallel per shared worker")
-  .action(async (file: string, options: { batchLimit: string }) => {
+  .option(
+    "--shared-workers <number>",
+    "Shared worker machines (9 or 18); drain old workers before changing",
+    "9",
+  )
+  .action(async (file: string, options: { batchLimit: string; sharedWorkers: string }) => {
     const ids: unknown = JSON.parse(await readFile(resolve(file), "utf8"));
-    console.log(JSON.stringify(planScanWorkers(ids, Number(options.batchLimit)), null, 2));
+    console.log(
+      JSON.stringify(
+        planScanWorkers(ids, Number(options.batchLimit), Number(options.sharedWorkers)),
+        null,
+        2,
+      ),
+    );
   });
 
 const promotions = program
@@ -376,6 +388,27 @@ const promotions = program
   .description("Platform promotion records (admin only)")
   .showHelpAfterError()
   .showSuggestionAfterError();
+
+const featuredSelections = program
+  .command("featured")
+  .description("Review editorial reservations and publish approved complete catalog selections");
+featuredSelections
+  .command("get <catalog>")
+  .description("Read current plugin or skill editorial reservations and publication (JSON)")
+  .action(async (catalog) => cmdFeaturedSelection(await resolveGlobalOpts(), catalog, "get"));
+featuredSelections
+  .command("editorial <file>")
+  .description("Save plugin editorial reservations from revision-checked JSON; does not publish")
+  .action(async (file) =>
+    cmdFeaturedSelection(await resolveGlobalOpts(), "plugin", "editorial", file),
+  );
+featuredSelections
+  .command("publish <catalog> <file>")
+  .description("Validate a reviewed complete selection; publish only with --apply")
+  .option("--apply", "Apply this approved selection atomically (default is dry run)")
+  .action(async (catalog, file, options) =>
+    cmdFeaturedSelection(await resolveGlobalOpts(), catalog, "publish", file, !options.apply),
+  );
 
 registerPluginOperations(plugins);
 registerPluginModerationCommands(plugins);
@@ -1040,7 +1073,9 @@ program
   .option("--intent-kind <kind>", "company_product|generic_capability|ambiguous")
   .option("--end-day <date>", "Exclusive UTC window end, YYYY-MM-DD")
   .option("--limit <count>", "Maximum query rows, 1–100")
-  .option("--json", "Output canonical aggregate JSON")
+  .option("--report-id <id>", "Resume a saved report using its original filters")
+  .option("--refresh <id>", "Create a fresh report using a saved report’s original filters")
+  .option("--json", "Output only the completed aggregate JSON; progress goes to stderr")
   .action(async (options) => {
     await cmdSearchInsights(await resolveGlobalOpts(), options);
   });

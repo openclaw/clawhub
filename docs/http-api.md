@@ -1815,3 +1815,53 @@ Schema:
 ```
 
 If you self-host, serve this file (or set `CLAWHUB_REGISTRY` explicitly; legacy `CLAWDHUB_REGISTRY`).
+
+## Staff Featured curation
+
+These endpoints require an active moderator/admin API token and return private,
+uncached results. Recommendations never publish themselves.
+
+- `GET /api/v1/featured/{plugin|skill}` returns editorial revision, reservations
+  (including pending reasons), and the last approved publication in its explicit order.
+- `POST /api/v1/featured/plugin/editorial` accepts `expectedRevision` and up to
+  eight `{ id, name, displayName, reason }` entries. Identities use `plugin:<package>`.
+  Missing catalog entries remain reserved; saving does not change public badges.
+- `POST /api/v1/featured/{plugin|skill}/publish` accepts exactly sixteen distinct
+  `items`, the reviewed recommendation `reportId`, `expectedEditorialRevision`, `expectedPublicationAt` (null initially),
+  `periodStart`, `periodEnd`, and `dryRun`. Timestamps are Unix milliseconds;
+  the evidence period is thirty completed UTC days, end exclusive.
+
+Each publication item has `id`, `version`, `selectionBasis` (`editorial` or
+`telemetry`) and `reason`. Telemetry entries include positive `installs30d` and
+nonnegative `installs7d`, counted within that same window. Plugin order is all eight
+saved editorial reservations followed by eight telemetry selections. Skills use
+sixteen native `clawhub:<skill-id>` identities, all telemetry selections. Include
+editorial install counts too when the report provides them.
+
+Create the recommendation report through `POST /api/v1/search-insights/reports`
+with `view: "recommendations"`, the catalog and completed `endDay`, then read its
+ready result. Publication must match that saved report's exact identities, order,
+versions, reasons, counts and period. Expired reports or changed evidence require a
+new report and review. The publication retains its report ID and evidence hash
+after the private report expires.
+
+Publication revalidates current public versions, security and installability before
+changing any badges. Version/revision/publication conflicts return `409`; other
+invalid selections return `400`. With `dryRun: true`, no badges, audit records or
+notifications change. Applying the set atomically removes former members outside
+it, preserves retained badge timestamps, records selection provenance/order in the
+audit history, and sends no digest or Featured notification.
+
+The staff CLI reads the same API and emits JSON:
+
+```bash
+clawhub-admin featured get plugin
+clawhub-admin featured editorial editorial.json
+clawhub-admin featured publish plugin approved-plugins.json
+clawhub-admin featured publish plugin approved-plugins.json --apply
+clawhub-admin featured publish skill approved-skills.json --apply
+```
+
+`publish` defaults to a dry run regardless of the file's `dryRun` value. Use
+`--apply` only after the exact selection has been approved. Counts describe recorded
+install events, not unique users or proven successful runtime installations.

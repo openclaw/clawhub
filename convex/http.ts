@@ -17,7 +17,9 @@ import {
   searchSkillsHttp,
 } from "./httpApi";
 import {
+  featuredV1Http,
   searchInsightsV1Http,
+  searchReportsV1Http,
   exportSkillsV1Http,
   exportPluginsV1Http,
   listBundlePluginsV1Http,
@@ -85,6 +87,16 @@ import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
 const http = installRateLimitedRoutes(httpRouter());
 
 auth.addHttpRoutes(http);
+http.route({
+  path: "/api/v1/search-insights/reports",
+  method: "POST",
+  handler: searchReportsV1Http,
+});
+http.route({
+  pathPrefix: "/api/v1/search-insights/reports/",
+  method: "GET",
+  handler: searchReportsV1Http,
+});
 http.route({ path: "/api/v1/search-insights", method: "GET", handler: searchInsightsV1Http });
 
 http.route({
@@ -189,6 +201,9 @@ http.route({
   method: "GET",
   handler: listBundlePluginsV1Http,
 });
+
+http.route({ pathPrefix: `${ApiRoutes.featured}/`, method: "GET", handler: featuredV1Http });
+http.route({ pathPrefix: `${ApiRoutes.featured}/`, method: "POST", handler: featuredV1Http });
 
 http.route({
   path: ApiRoutes.promotions,

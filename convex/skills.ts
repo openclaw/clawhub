@@ -53,6 +53,7 @@ import {
 } from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { orderPublishedFeatured, readPublishedFeaturedOrder } from "./lib/featuredSelections";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
@@ -137,6 +138,11 @@ import {
   type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
+import {
+  getPublicSkillMetadataOwner,
+  readPublicSkillVersion,
+  readPublicSkillVersionSelections,
+} from "./lib/skills/publicVersions";
 import {
   getSkillBySlugForPublisher,
   getSkillSlugAliasBySlugForPublisher,
@@ -2366,8 +2372,13 @@ async function loadHighlightedSkills(ctx: QueryCtx, limit: number) {
     .order("desc")
     .take(MAX_LIST_TAKE);
 
+  const ordered = orderPublishedFeatured(
+    entries,
+    await readPublishedFeaturedOrder(ctx, "skill"),
+    (badge) => `clawhub:${badge.skillId}`,
+  );
   const skills: Doc<"skills">[] = [];
-  for (const badge of entries) {
+  for (const badge of ordered) {
     const skill = await ctx.db.get(badge.skillId);
     if (!skill || skill.softDeletedAt) continue;
     skills.push(skill);
@@ -2807,14 +2818,8 @@ export const getVerifyTargetBySlugInternal = internalQuery({
     const isMalwareBlocked =
       skill.moderationVerdict === "malicious" ||
       (skill.moderationFlags?.includes("blocked.malware") ?? false);
-    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
 
-    const owner = toPublicPublisher(
-      await getOwnerPublisher(ctx, {
-        ownerPublisherId: skill.ownerPublisherId,
-        ownerUserId: skill.ownerUserId,
-      }),
-    );
+    const owner = await getPublicSkillMetadataOwner(ctx, skill);
     if (!owner) return null;
 
     const isPendingScan =
@@ -3356,14 +3361,8 @@ export const getSecurityVerdictTargetInternal = internalQuery({
       (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
-    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
 
-    const owner = toPublicPublisher(
-      await getOwnerPublisher(ctx, {
-        ownerPublisherId: skill.ownerPublisherId,
-        ownerUserId: skill.ownerUserId,
-      }),
-    );
+    const owner = await getPublicSkillMetadataOwner(ctx, skill);
     if (!owner) return null;
 
     const version = await ctx.db
@@ -3938,13 +3937,7 @@ export const listWithLatest = query({
       entries.filter((skill) => !skill.softDeletedAt),
     );
     const withBadges = await attachBadgesToSkills(ctx, filtered);
-    const ordered =
-      args.batch === "highlighted"
-        ? [...withBadges].sort(
-            (a, b) => (b.badges?.highlighted?.at ?? 0) - (a.badges?.highlighted?.at ?? 0),
-          )
-        : withBadges;
-    const limited = ordered.slice(0, limit);
+    const limited = withBadges.slice(0, limit);
     const items = await Promise.all(
       limited.map(async (skill) => {
         const latestVersion = await loadPublicLatestVersionForSkill(ctx, skill);
@@ -6714,6 +6707,32 @@ export const listPackageCatalogPage = query({
     if (args.topic !== undefined && !topic) {
       return { page: [], isDone: true, continueCursor: "" };
     }
+    if (args.highlightedOnly) {
+      const skills = await loadHighlightedSkills(ctx, MAX_LIST_TAKE);
+      const page: PublicSkillCatalogItem[] = [];
+      for (const skill of skills) {
+        const digest = await ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+          .unique();
+        if (!digest || !skillCatalogMatchesFilters(digest, { ...args, topic })) continue;
+        const item = await toPublicSkillCatalogItem(ctx, digest);
+        if (item) page.push(item);
+      }
+      const { offset } = decodeSkillCatalogCursor(args.paginationOpts.cursor);
+      const end = offset + args.paginationOpts.numItems;
+      const isDone = end >= page.length;
+      return {
+        page: page.slice(offset, end),
+        isDone,
+        continueCursor: encodeSkillCatalogCursor({
+          cursor: null,
+          offset: isDone ? 0 : end,
+          pageSize: null,
+          done: isDone,
+        }),
+      };
+    }
     if (topic) {
       return await listSkillPackageCatalogTopicPage(ctx, {
         ...args,
@@ -7481,7 +7500,7 @@ async function listOfficialFirstSkillCategoryPage(
   };
 }
 
-/** Fetch highlighted skills newest-first via the skillBadges timestamp index. */
+/** Resolve current highlighted membership in its approved publication order. */
 async function fetchHighlightedPage(
   ctx: QueryCtx,
   opts: {
@@ -7524,7 +7543,11 @@ async function fetchHighlightedPage(
     digests.push(digest);
   }
 
-  const trimmed = digests.slice(0, opts.numItems);
+  const trimmed = orderPublishedFeatured(
+    digests,
+    await readPublishedFeaturedOrder(ctx, "skill"),
+    (digest) => `clawhub:${digest.skillId}`,
+  ).slice(0, opts.numItems);
 
   const items: PublicSkillEntry[] = [];
   for (const digest of trimmed) {
@@ -7594,6 +7617,9 @@ async function paginatePublicSkillVersions(
   initialCursor: string | null,
   limit: number,
 ) {
+  if (!(await getPublicSkillMetadataOwner(ctx, await ctx.db.get(skillId)))) {
+    return { items: [] as Doc<"skillVersions">[], nextCursor: null };
+  }
   const scanLimit = Math.max(
     limit,
     Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, limit * MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES),
@@ -7714,12 +7740,32 @@ export const getVersionById = query({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args) => {
     const version = await ctx.db.get(args.versionId);
-    return version &&
-      !version.softDeletedAt &&
-      version.ownerDeletedAt === undefined &&
-      isPublicSkillVersionAvailableForSkill(version, version.skillId)
-      ? toPublicSkillVersion(version)
-      : null;
+    if (!version || !isPublicSkillVersionAvailableForSkill(version, version.skillId)) return null;
+    const owner = await getPublicSkillMetadataOwner(ctx, await ctx.db.get(version.skillId));
+    return owner ? toPublicSkillVersion(version) : null;
+  },
+});
+
+// Publication selection is separate from each route's parent authorization and
+// scan policy. These internal snapshots must never be serialized wholesale.
+export const getPublicVersionSelectionInternal = internalQuery({
+  args: {
+    skillId: v.id("skills"),
+    versionId: v.optional(v.id("skillVersions")),
+    version: v.optional(v.string()),
+    tag: v.optional(v.string()),
+  },
+  handler: readPublicSkillVersion,
+});
+
+export const getPublicVersionSelectionsInternal = internalQuery({
+  args: {
+    selections: v.array(v.object({ skillId: v.id("skills"), versionId: v.id("skillVersions") })),
+  },
+  handler: async (ctx, args) => {
+    if (args.selections.length > 250)
+      throw new ConvexError("At most 250 version selections are allowed.");
+    return readPublicSkillVersionSelections(ctx, args.selections);
   },
 });
 
@@ -9659,12 +9705,9 @@ export const getVersionBySkillAndVersion = query({
         q.eq("skillId", args.skillId).eq("version", args.version),
       )
       .unique();
-    return version &&
-      !version.softDeletedAt &&
-      version.ownerDeletedAt === undefined &&
-      isPublicSkillVersionAvailableForSkill(version, args.skillId)
-      ? toPublicSkillVersion(version)
-      : null;
+    if (!version || !isPublicSkillVersionAvailableForSkill(version, args.skillId)) return null;
+    const owner = await getPublicSkillMetadataOwner(ctx, await ctx.db.get(args.skillId));
+    return owner ? toPublicSkillVersion(version) : null;
   },
 });
 
@@ -10468,7 +10511,7 @@ export const resolveVersionByHash = query({
       };
     }
     const skill = resolved.skill;
-    if (!skill) return null;
+    if (!skill || !(await getPublicSkillMetadataOwner(ctx, skill))) return null;
 
     const latestVersionDoc = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
     const latestVersion = isPublicSkillVersionAvailableForSkill(latestVersionDoc, skill._id)
@@ -10482,13 +10525,15 @@ export const resolveVersionByHash = query({
 
     let match: { version: string } | null = null;
     if (fingerprintMatches.length > 0) {
-      const newest = fingerprintMatches.reduce(
-        (best, entry) => (entry.createdAt > best.createdAt ? entry : best),
-        fingerprintMatches[0] as (typeof fingerprintMatches)[number],
-      );
-      const version = await ctx.db.get(newest.versionId);
-      if (version && !version.softDeletedAt) {
-        match = { version: version.version };
+      // Staged publishes already have fingerprint rows. A newer withheld match
+      // must not hide an older published version with the same content.
+      const newestFirst = [...fingerprintMatches].sort((a, b) => b.createdAt - a.createdAt);
+      for (const entry of newestFirst) {
+        const version = await ctx.db.get(entry.versionId);
+        if (version && isPublicSkillVersionAvailableForSkill(version, skill._id)) {
+          match = { version: version.version };
+          break;
+        }
       }
     }
 
@@ -10500,7 +10545,7 @@ export const resolveVersionByHash = query({
         .take(200);
 
       for (const version of versions) {
-        if (version.softDeletedAt) continue;
+        if (!isPublicSkillVersionAvailableForSkill(version, skill._id)) continue;
         if (typeof version.fingerprint === "string" && version.fingerprint === hash) {
           match = { version: version.version };
           break;
@@ -10873,11 +10918,12 @@ export const setBatch = mutation({
   },
 });
 
-async function setSkillFeaturedForActor(
+export async function setSkillFeaturedForActor(
   ctx: MutationCtx,
   actor: Doc<"users">,
   skill: Doc<"skills">,
   nextBatch: string | undefined,
+  notify = true,
 ) {
   const existingBadges = await getSkillBadgeMap(ctx, skill._id);
   const previousHighlighted = isSkillHighlighted({ badges: existingBadges });
@@ -10907,7 +10953,7 @@ async function setSkillFeaturedForActor(
     createdAt: now,
   });
 
-  if (featured && !previousHighlighted) {
+  if (featured && !previousHighlighted && notify) {
     await queueHighlightedWebhook(ctx, skill._id);
   }
 

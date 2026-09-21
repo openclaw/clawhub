@@ -60,18 +60,17 @@ describe("homeListingData", () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([], null));
   });
 
-  it("loads canonical Trending skills as the initial homepage catalog", async () => {
-    const item = makeTrending("first", "First", 12);
-    fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([item], "next-cursor"));
+  it("loads Featured skills as the initial homepage catalog", async () => {
+    const item = makeNative("first", 100, 12);
+    convexQueryMock.mockResolvedValue({ page: [item], hasMore: false, nextCursor: null });
 
     await expect(fetchInitialHomeListing()).resolves.toEqual({
       kind: "skills",
-      tab: "trending",
+      tab: "featured",
       categorySlugs: [],
       fetchLimit: HOME_LISTING_PAGE_SIZE,
-      items: [{ trending: item }],
-      hasMore: true,
-      trendingState: "available",
+      items: [item],
+      hasMore: false,
     });
   });
 
@@ -219,7 +218,7 @@ describe("homeListingData", () => {
     ]);
     expect(convexQueryMock).toHaveBeenCalledWith(
       "skills:listPublicPageV4",
-      expect.objectContaining({ highlightedOnly: true, numItems: 40 }),
+      expect.objectContaining({ highlightedOnly: true, numItems: 16 }),
     );
   });
 
@@ -260,11 +259,11 @@ describe("homeListingData", () => {
     );
     expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ featured: true, isOfficial: undefined }),
+      expect.objectContaining({ featured: true, limit: 16 }),
     );
     expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ featured: undefined, isOfficial: true }),
+      expect.objectContaining({ isOfficial: true }),
     );
   });
 

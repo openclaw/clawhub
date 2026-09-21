@@ -8,7 +8,11 @@ import {
 } from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 import { endorAnalysisValidator } from "./lib/endorAnalysis";
-import { pluginCategoryClassificationValidator } from "./lib/pluginCategoryClassificationContract";
+import { editorialSelection, featuredPublication } from "./lib/featuredSelections";
+import {
+  pluginCategoryClassificationValidator,
+  pluginCategoryReviewValidator,
+} from "./lib/pluginCategoryClassificationContract";
 import { searchDigestValidator } from "./lib/searchDigestContract";
 import {
   searchArtifactKind,
@@ -16,6 +20,7 @@ import {
   searchInsightSource,
   searchScope,
 } from "./lib/searchInsights";
+import { reportRequest } from "./lib/searchReportContract";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -1415,6 +1420,16 @@ const skillBadges = defineTable({
   .index("by_skill_kind", ["skillId", "kind"])
   .index("by_kind_at", ["kind", "at"]);
 
+// Two bounded catalog records; reservations are editable product data.
+const featuredSelections = defineTable({
+  artifactKind: searchArtifactKind,
+  revision: v.number(),
+  editorial: v.array(editorialSelection),
+  published: v.optional(featuredPublication),
+  updatedAt: v.number(),
+  updatedBy: v.id("users"),
+}).index("by_artifact_kind", ["artifactKind"]);
+
 const packageBadges = defineTable({
   packageId: v.id("packages"),
   kind: v.union(v.literal("highlighted")),
@@ -1988,6 +2003,7 @@ const pluginCategoryRefreshes = defineTable({
   beforeHadSummary: v.boolean(),
   newReleaseSummary: v.optional(pluginManifestSummaryValidator),
   beforeClassification: v.optional(pluginCategoryClassificationValidator),
+  review: v.optional(pluginCategoryReviewValidator),
   categories: v.array(v.string()),
   classification: pluginCategoryClassificationValidator,
   status: v.union(
@@ -2312,6 +2328,7 @@ const skillCardGenerationJobs = defineTable({
   priority: v.number(),
   nextRunAt: v.number(),
   attempts: v.number(),
+  claimSlot: v.optional(v.number()),
   leaseToken: v.optional(v.string()),
   leaseExpiresAt: v.optional(v.number()),
   workerId: v.optional(v.string()),
@@ -2321,6 +2338,7 @@ const skillCardGenerationJobs = defineTable({
   createdAt: v.number(),
   updatedAt: v.number(),
 })
+  .index("by_status_and_claim_slot", ["status", "claimSlot"])
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_skill", ["skillId"])
@@ -4619,7 +4637,38 @@ const searchWeeklyDigests = defineTable({
   .index("by_status_and_nextAttemptAt", ["status", "nextAttemptAt"])
   .index("by_expiration_time", ["expirationTime"]);
 
+const searchReportRuns = defineTable({
+  request: reportRequest,
+  requestKey: v.string(),
+  sourceRevision: v.string(),
+  reportVersion: v.union(v.literal("search-report-v1"), v.literal("search-report-v2")),
+  refreshOf: v.optional(v.id("searchReportRuns")),
+  workId: v.optional(v.string()),
+  requestedAt: v.number(),
+  expirationTime: v.number(),
+  completedAt: v.optional(v.number()),
+  previousAttempts: v.optional(v.number()),
+  state: v.union(v.literal("pending"), v.literal("ready"), v.literal("failed")),
+  failureCode: v.optional(v.string()),
+  chunkCount: v.optional(v.number()),
+  resultBytes: v.optional(v.number()),
+  resultHash: v.optional(v.string()),
+})
+  .index("by_requestKey", ["requestKey"])
+  .index("by_refreshOf", ["refreshOf"])
+  .index("by_expirationTime", ["expirationTime"]);
+const searchReportChunks = defineTable({
+  reportId: v.id("searchReportRuns"),
+  index: v.number(),
+  bytes: v.bytes(),
+  expirationTime: v.number(),
+})
+  .index("by_reportId_index", ["reportId", "index"])
+  .index("by_expirationTime", ["expirationTime"]);
+
 export default defineSchema({
+  searchReportRuns,
+  searchReportChunks,
   searchAggregateStates,
   searchDailyAggregates,
   searchWeeklyClassifications,
@@ -4664,6 +4713,7 @@ export default defineSchema({
   packagePublishTokens,
   packagePublishUploadTickets,
   packageBadges,
+  featuredSelections,
   packageSearchDigest,
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,

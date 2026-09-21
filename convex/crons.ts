@@ -8,6 +8,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   // Hour-aligned UTC ticks let the release gate honor Pacific DST at 09:00.
   crons.cron("search-weekly-digest", "0 * * * *", internal.searchWeeklyDigest.tickInternal, {});
   crons.interval(
+    "search-report-retention-prune",
+    { hours: 1 },
+    internal.searchReports.pruneExpiredInternal,
+    {},
+  );
+
+  crons.interval(
     "search-weekly-digest-retention",
     { hours: 24 },
     internal.searchWeeklyDigest.pruneExpiredInternal,

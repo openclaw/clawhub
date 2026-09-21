@@ -21,7 +21,7 @@ async function fixture() {
     });
     await ctx.db.patch(actorUserId, { personalPublisherId: publisherId });
     const items = [];
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 17; i++) {
       const name = `workflow-${i}`;
       const packageId = await ctx.db.insert("packages", {
         name,
@@ -79,9 +79,9 @@ describe("Featured publication", () => {
       });
     });
     const runBackfill = () => t.action(internal.maintenance.backfillSkillBadgeTableInternal, {});
-    expect((await runBackfill()).stats).toEqual({ skillsScanned: 10, recordsInserted: 10 });
+    expect((await runBackfill()).stats).toEqual({ skillsScanned: 18, recordsInserted: 18 });
     const before = await t.run((ctx) => ctx.db.query("skillBadges").collect());
-    expect(before.filter((badge) => badge.kind === "highlighted")).toHaveLength(9);
+    expect(before.filter((badge) => badge.kind === "highlighted")).toHaveLength(17);
     expect((await runBackfill()).stats.recordsInserted).toBe(0);
     expect(await t.run((ctx) => ctx.db.query("skillBadges").collect())).toEqual(before);
     await expect(
@@ -91,15 +91,15 @@ describe("Featured publication", () => {
         byUserId: actorUserId,
         at: 2,
       }),
-    ).rejects.toThrow(/eight|8/i);
+    ).rejects.toThrow(/sixteen|16/i);
     await expect(
       t
         .withIdentity({ subject: `${actorUserId}|test-session` })
         .mutation(api.skills.setBatch, { skillId: newSkillId, batch: "highlighted" }),
-    ).rejects.toThrow(/eight|8/i);
+    ).rejects.toThrow(/sixteen|16/i);
   });
 
-  it("limits each catalog to eight through both UI and admin entry points, and allows replacement", async () => {
+  it("limits each catalog to sixteen through both UI and admin entry points, and allows replacement", async () => {
     const { t, actorUserId, items } = await fixture();
     const staff = t.withIdentity({ subject: `${actorUserId}|test-session` });
     const clawId = await t.run(async (ctx) => {
@@ -114,40 +114,44 @@ describe("Featured publication", () => {
       });
     });
     await staff.mutation(api.packages.setBatch, { packageId: clawId, batch: "highlighted" });
-    for (const item of items.slice(0, 8)) {
+    for (const item of items.slice(0, 16)) {
       await staff.mutation(api.packages.setBatch, {
         packageId: item.packageId,
         batch: "highlighted",
       });
       await staff.mutation(api.skills.setBatch, { skillId: item.skillId, batch: "highlighted" });
     }
-    const ninth = items[8];
+    const seventeenth = items[16];
     for (const operation of [
       () =>
-        staff.mutation(api.packages.setBatch, { packageId: ninth.packageId, batch: "highlighted" }),
-      () => staff.mutation(api.skills.setBatch, { skillId: ninth.skillId, batch: "highlighted" }),
+        staff.mutation(api.packages.setBatch, {
+          packageId: seventeenth.packageId,
+          batch: "highlighted",
+        }),
+      () =>
+        staff.mutation(api.skills.setBatch, { skillId: seventeenth.skillId, batch: "highlighted" }),
       () =>
         t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
           actorUserId,
-          name: ninth.name,
+          name: seventeenth.name,
           featured: true,
         }),
       () =>
         t.mutation(internal.skills.setSkillFeaturedForUserInternal, {
           actorUserId,
-          slug: ninth.name,
+          slug: seventeenth.name,
           ownerHandle: "curator",
           featured: true,
         }),
       () =>
         t.mutation(internal.maintenance.upsertSkillBadgeRecordInternal, {
-          skillId: ninth.skillId,
+          skillId: seventeenth.skillId,
           kind: "highlighted",
           byUserId: actorUserId,
           at: 2,
         }),
     ])
-      await expect(operation()).rejects.toThrow(/eight|8/i);
+      await expect(operation()).rejects.toThrow(/sixteen|16/i);
 
     await t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
       actorUserId,
@@ -162,12 +166,12 @@ describe("Featured publication", () => {
     });
     await t.mutation(internal.packages.setPackageFeaturedForUserInternal, {
       actorUserId,
-      name: ninth.name,
+      name: seventeenth.name,
       featured: true,
     });
     await t.mutation(internal.skills.setSkillFeaturedForUserInternal, {
       actorUserId,
-      slug: ninth.name,
+      slug: seventeenth.name,
       ownerHandle: "curator",
       featured: true,
     });
@@ -176,7 +180,7 @@ describe("Featured publication", () => {
       skills: (await ctx.db.query("skillBadges").collect()).length,
     }));
     // Claws use the same badge table but are a separate catalog.
-    expect(counts).toEqual({ plugins: 9, skills: 8 });
+    expect(counts).toEqual({ plugins: 17, skills: 16 });
   });
 
   it("rejects excluded install purposes through UI and admin publication while allowing removal", async () => {

@@ -1,4 +1,7 @@
-import { getClawHubRolloutCapabilities, type ClawHubRolloutEnvironment } from "clawhub-schema";
+import {
+  getClawHubRolloutCapabilities,
+  type ClawHubRolloutEnvironment,
+} from "clawhub-schema/rolloutCapabilities";
 import type { QueryCtx } from "./_generated/server";
 import { internalQuery, query } from "./functions";
 

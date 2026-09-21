@@ -7,17 +7,17 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "channels";
     readonly label: "Channels";
     readonly icon: "message-circle";
-    readonly description: "Providing a messaging transport or channel adapter that connects people to the agent through a messaging service, even if it also exposes workspace tools. Enhancing an existing channel with reply notifications, inbox triage, or a communication persona belongs in Inbox & collaboration; using a channel does not make a plugin a transport.";
+    readonly description: "Providing the main conversational transport between people and the agent through a messaging service, even if it also exposes workspace tools. Reply notifications, approval interfaces, inbox triage, and communication enhancements belong in Inbox & collaboration. A secondary channel capability does not override a different main purpose.";
 }, {
     readonly slug: "models";
     readonly label: "Models";
     readonly icon: "brain";
-    readonly description: "Providing general model inference backends or selecting which model/provider handles inference. Selecting, condensing, or formatting tools for an already selected model belongs in Context. Agent execution engines belong in Agent runtimes; specialized speech or media generators belong in Voice or Media.";
+    readonly description: "Providing inference backends, or selecting and routing which model/provider handles inference as the main service. The selected backend may execute the request. Incidental budget guards, usage reports, or optional fallback advice belong to their own workflow. Selecting and formatting tools for an existing model belongs in Context; specialized speech or media generators belong in Voice or Media.";
 }, {
     readonly slug: "agent-runtimes";
     readonly label: "Agent runtimes";
     readonly icon: "bot";
-    readonly description: "Agent execution engines and backends that run model/tool loops and manage native sessions, including Codex, ACP, and Copilot runtimes. Context assembly belongs in Context; coordinating work across agents belongs in Agent orchestration.";
+    readonly description: "Agent execution engines and backends that provide the agent model/tool loop and native session lifecycle, including Codex, ACP, and Copilot runtimes. A tool that invokes a separately running coding agent for a development task belongs in Developer tools; coordinating agents belongs in Agent orchestration.";
 }, {
     readonly slug: "memory";
     readonly label: "Memory";
@@ -52,7 +52,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "integrations";
     readonly label: "Integrations";
     readonly icon: "plug";
-    readonly description: "General-purpose platforms for connecting services or orchestrating APIs. A connector dedicated to a particular workflow belongs in that workflow's category, even if it only exposes the service's data or tools. MCP/client wiring alone is insufficient; use Other when the connected service's user purpose is unspecified.";
+    readonly description: "General-purpose platforms or reusable clients that let users choose which services, APIs, or MCP servers to connect. A fixed-service adapter belongs with its service's known workflow, or Other if that purpose is not established. Configuring credentials or an executable path does not make a fixed-service adapter general-purpose.";
 }, {
     readonly slug: "developer-tools";
     readonly label: "Developer tools";
@@ -112,7 +112,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "other";
     readonly label: "Other";
     readonly icon: "package";
-    readonly description: "Use only when the plugin's main purpose does not fit another category or the available evidence is insufficient. Do not use this just because a plugin has several capabilities.";
+    readonly description: "Use only when the evidence does not establish a main purpose or that purpose does not reasonably fit any broader category. Category descriptions give examples, not exhaustive specialty lists; a missing exact specialty label or several capabilities is not a reason to use Other.";
 }];
 export declare const LEGACY_PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "tools";

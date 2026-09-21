@@ -1199,6 +1199,7 @@ export const getPageInternal = internalQuery({
   args: {
     cursor: v.union(v.string(), v.null()),
     limit: v.number(),
+    now: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     if (!Number.isSafeInteger(args.limit) || args.limit < 1 || args.limit > 100) {
@@ -1212,7 +1213,7 @@ export const getPageInternal = internalQuery({
         return { status: "invalid-cursor" as const };
       }
     }
-    const now = Date.now();
+    const now = args.now ?? Date.now();
     const snapshot = decoded
       ? await ctx.db
           .query("canonicalTrendingSnapshots")

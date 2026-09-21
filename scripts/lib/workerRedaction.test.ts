@@ -91,6 +91,55 @@ describe("worker transport redaction", () => {
     expect(redacted).toContain("[redacted-secret]");
   });
 
+  it.each(["raw", "serialized", "nested"])(
+    "redacts adjacent quoted secrets in %s diagnostics",
+    (mode) => {
+      const raw = [
+        "operation=sync code=502 count=7",
+        'API_KEY="first-key,tail-one"',
+        "detail=preserved",
+        String.raw`PRIVATE_KEY="quoted-\"part\"-tail-two"`,
+        String.raw`TOKEN="C:\\fixture\\secret-tail-three\\"`,
+        String.raw`password='third\'tail'`,
+        JSON.stringify({
+          token: [String.raw`array\one`, 'array "two"'],
+          authorization: "adjacent-auth",
+        }),
+        "cursor=9:100 status=failed",
+      ].join(" ");
+      const serialized = JSON.stringify({ error: raw });
+      const input =
+        mode === "raw"
+          ? raw
+          : mode === "serialized"
+            ? serialized
+            : JSON.stringify({ error: serialized });
+      const redacted = redactWorkerPublicText(input);
+
+      for (const secret of [
+        "first-key",
+        "tail-one",
+        "quoted-",
+        "tail-two",
+        "secret-tail-three",
+        "third",
+        "tail'",
+        "array",
+        "adjacent-auth",
+      ]) {
+        expect(redacted).not.toContain(secret);
+      }
+      expect(redacted).toContain("operation=sync code=502 count=7");
+      expect(redacted).toContain("detail=preserved");
+      expect(redacted).toContain("cursor=9:100 status=failed");
+    },
+  );
+
+  it("preserves bounded non-secret JSON diagnostics byte for byte", () => {
+    const diagnostic = String.raw`{"error":"cursor=9:100 retained-\u0061 slash-\\ quote-\" count=7"}`;
+    expect(redactWorkerPublicText(diagnostic, 2_000)).toBe(diagnostic);
+  });
+
   it("uses the public boundary for worker error messages that can persist", () => {
     const message = redactWorkerPublicErrorMessage(
       "fetch failed https://signed.example.invalid/file OPENAI_API_KEY=sk-runtime-secret",

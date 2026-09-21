@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
+import { getFunctionName } from "convex/server";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArk } from "../packages/schema/src/ark";
@@ -824,6 +825,35 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        expect(args.selections).toEqual([
+          { skillId: "skills:alice", versionId: "skillVersions:alice" },
+          { skillId: "skills:bob", versionId: "skillVersions:bob" },
+        ]);
+        return [
+          {
+            status: "available",
+            skill: { _id: "skills:alice", latestVersionId: "skillVersions:alice", tags: {} },
+            version: {
+              _id: "skillVersions:alice",
+              skillId: "skills:alice",
+              version: "1.0.0",
+              files: [{ storageId: "storage:alice", path: "SKILL.md" }],
+            },
+          },
+          {
+            status: "available",
+            skill: { _id: "skills:bob", latestVersionId: "skillVersions:bob", tags: {} },
+            version: {
+              _id: "skillVersions:bob",
+              skillId: "skills:bob",
+              version: "1.0.0",
+              files: [{ storageId: "storage:bob", path: "SKILL.md" }],
+            },
+          },
+        ];
+      }
+
       if ("startDate" in args) {
         return {
           page: [
@@ -856,20 +886,7 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.versionId === "skillVersions:alice") {
-        return {
-          skillId: "skills:alice",
-          version: "1.0.0",
-          files: [{ storageId: "storage:alice", path: "SKILL.md" }],
-        };
-      }
-      if (args.versionId === "skillVersions:bob") {
-        return {
-          skillId: "skills:bob",
-          version: "1.0.0",
-          files: [{ storageId: "storage:bob", path: "SKILL.md" }],
-        };
-      }
+
       return null;
     });
 
@@ -910,6 +927,31 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:actor", role: "user" },
     } as never);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        expect(args.selections).toEqual([
+          { skillId: "skills:demo", versionId: "skillVersions:demo" },
+        ]);
+        return [
+          {
+            status: "available",
+            skill: { _id: "skills:demo", latestVersionId: "skillVersions:demo", tags: {} },
+            version: {
+              _id: "skillVersions:demo",
+              skillId: "skills:demo",
+              version: "1.0.0",
+              files: [
+                {
+                  storageId: "storage:demo",
+                  path: "SKILL.md",
+                  size: 64 * 1024 * 1024,
+                  sha256: "a".repeat(64),
+                },
+              ],
+            },
+          },
+        ];
+      }
+
       if ("startDate" in args) {
         return {
           page: [
@@ -930,20 +972,7 @@ describe("httpApiV1 handlers", () => {
           hasMore: true,
         };
       }
-      if (args.versionId === "skillVersions:demo") {
-        return {
-          skillId: "skills:demo",
-          version: "1.0.0",
-          files: [
-            {
-              storageId: "storage:demo",
-              path: "SKILL.md",
-              size: 64 * 1024 * 1024,
-              sha256: "a".repeat(64),
-            },
-          ],
-        };
-      }
+
       return null;
     });
     const storageGet = vi.fn();
@@ -1023,6 +1052,31 @@ describe("httpApiV1 handlers", () => {
     } as never);
     const longUnicodePath = `${"界".repeat(490)}.md`;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        expect(args.selections).toEqual([
+          { skillId: "skills:demo", versionId: "skillVersions:demo" },
+        ]);
+        return [
+          {
+            status: "available",
+            skill: { _id: "skills:demo", latestVersionId: "skillVersions:demo", tags: {} },
+            version: {
+              _id: "skillVersions:demo",
+              skillId: "skills:demo",
+              version: "1.0.0",
+              files: [
+                {
+                  storageId: "storage:demo",
+                  path: longUnicodePath,
+                  size: 1,
+                  sha256: "a".repeat(64),
+                },
+              ],
+            },
+          },
+        ];
+      }
+
       if ("startDate" in args) {
         return {
           page: [
@@ -1042,20 +1096,7 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.versionId === "skillVersions:demo") {
-        return {
-          skillId: "skills:demo",
-          version: "1.0.0",
-          files: [
-            {
-              storageId: "storage:demo",
-              path: longUnicodePath,
-              size: 1,
-              sha256: "a".repeat(64),
-            },
-          ],
-        };
-      }
+
       return null;
     });
     const storageGetUrl = vi.fn(
@@ -1108,6 +1149,24 @@ describe("httpApiV1 handlers", () => {
     const commit = "2".repeat(40);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        expect(args.selections).toEqual([
+          { skillId: "skills:hosted", versionId: "skillVersions:hosted" },
+        ]);
+        return [
+          {
+            status: "available",
+            skill: { _id: "skills:hosted", latestVersionId: "skillVersions:hosted", tags: {} },
+            version: {
+              _id: "skillVersions:hosted",
+              skillId: "skills:hosted",
+              version: "1.0.0",
+              files: [{ storageId: "storage:hosted", path: "SKILL.md" }],
+            },
+          },
+        ];
+      }
+
       if ("startDate" in args) {
         return {
           page: [
@@ -1141,13 +1200,7 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.versionId === "skillVersions:hosted") {
-        return {
-          skillId: "skills:hosted",
-          version: "1.0.0",
-          files: [{ storageId: "storage:hosted", path: "SKILL.md" }],
-        };
-      }
+
       if (args.skillId === "skills:github") {
         return {
           installKind: "github",
@@ -1229,6 +1282,14 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        expect(args.selections).toEqual([
+          { skillId: "skills:demo", versionId: "skillVersions:other" },
+          { skillId: "skills:deleted", versionId: "skillVersions:deleted" },
+        ]);
+        return [{ status: "not_found" }, { status: "deleted" }];
+      }
+
       if ("startDate" in args) {
         return {
           page: [
@@ -1261,22 +1322,7 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.versionId === "skillVersions:other") {
-        return {
-          skillId: "skills:other",
-          version: "9.9.9",
-          files: [{ storageId: "storage:other", path: "SKILL.md" }],
-          softDeletedAt: undefined,
-        };
-      }
-      if (args.versionId === "skillVersions:deleted") {
-        return {
-          skillId: "skills:deleted",
-          version: "1.0.0",
-          files: [{ storageId: "storage:deleted", path: "SKILL.md" }],
-          softDeletedAt: 123,
-        };
-      }
+
       return null;
     });
     const storageGet = vi.fn();
@@ -1298,11 +1344,11 @@ describe("httpApiV1 handlers", () => {
     expect(errors).toEqual([
       {
         slug: "demo",
-        error: "version not found (latestVersionId: skillVersions:other)",
+        error: "version not found",
       },
       {
         slug: "deleted",
-        error: "version not available (latestVersionId: skillVersions:deleted)",
+        error: "version not available",
       },
     ]);
     expect(Object.keys(zipEntries).some((path) => path.endsWith("/SKILL.md"))).toBe(false);
@@ -1318,6 +1364,27 @@ describe("httpApiV1 handlers", () => {
       user: { _id: "users:actor", role: "user" },
     } as never);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        expect(args.selections).toEqual([
+          { skillId: "skills:demo", versionId: "skillVersions:demo" },
+        ]);
+        return [
+          {
+            status: "available",
+            skill: { _id: "skills:demo", latestVersionId: "skillVersions:demo", tags: {} },
+            version: {
+              _id: "skillVersions:demo",
+              skillId: "skills:demo",
+              version: "1.0.0",
+              files: [
+                { storageId: "storage:one", path: "skills/humanizer/_skillhub_meta.json" },
+                { storageId: "storage:two", path: "skills/humanizer/_skillhub_meta.json" },
+              ],
+            },
+          },
+        ];
+      }
+
       if ("startDate" in args) {
         return {
           page: [
@@ -1338,16 +1405,7 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.versionId === "skillVersions:demo") {
-        return {
-          skillId: "skills:demo",
-          version: "1.0.0",
-          files: [
-            { storageId: "storage:one", path: "skills/humanizer/_skillhub_meta.json" },
-            { storageId: "storage:two", path: "skills/humanizer/_skillhub_meta.json" },
-          ],
-        };
-      }
+
       return null;
     });
 
@@ -1388,6 +1446,35 @@ describe("httpApiV1 handlers", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        expect(args.selections).toEqual([
+          { skillId: "skills:first", versionId: "skillVersions:first" },
+          { skillId: "skills:second", versionId: "skillVersions:second" },
+        ]);
+        return [
+          {
+            status: "available",
+            skill: { _id: "skills:first", latestVersionId: "skillVersions:first", tags: {} },
+            version: {
+              _id: "skillVersions:first",
+              skillId: "skills:first",
+              version: "1.0.0",
+              files: [{ storageId: "storage:first", path: "SKILL.md" }],
+            },
+          },
+          {
+            status: "available",
+            skill: { _id: "skills:second", latestVersionId: "skillVersions:second", tags: {} },
+            version: {
+              _id: "skillVersions:second",
+              skillId: "skills:second",
+              version: "1.0.0",
+              files: [{ storageId: "storage:second", path: "SKILL.md" }],
+            },
+          },
+        ];
+      }
+
       if ("startDate" in args) {
         return {
           page: [
@@ -1420,20 +1507,7 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.versionId === "skillVersions:first") {
-        return {
-          skillId: "skills:first",
-          version: "1.0.0",
-          files: [{ storageId: "storage:first", path: "SKILL.md" }],
-        };
-      }
-      if (args.versionId === "skillVersions:second") {
-        return {
-          skillId: "skills:second",
-          version: "1.0.0",
-          files: [{ storageId: "storage:second", path: "SKILL.md" }],
-        };
-      }
+
       return null;
     });
 
@@ -1565,7 +1639,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1601,43 +1675,49 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:code") {
-        return {
-          packageId: "packages:code",
-          version: "1.0.0",
-          changelog: "Initial code plugin",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:package-json",
-              path: "package.json",
-              size: 2,
-              sha256: "sha-package-json",
-              contentType: "application/json",
-            },
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [
+            { packageId: "packages:code", releaseId: "packageReleases:code" },
+            { packageId: "packages:bundle", releaseId: "packageReleases:bundle" },
           ],
-          artifactKind: "npm-pack",
-          softDeletedAt: undefined,
-        };
-      }
-      if (args.releaseId === "packageReleases:bundle") {
-        return {
-          packageId: "packages:bundle",
-          version: "2.0.0",
-          changelog: "Initial bundle plugin",
-          createdAt: 3,
-          files: [
-            {
-              storageId: "storage:bundle",
-              path: "openclaw.bundle.json",
-              size: 2,
-              sha256: "sha-bundle",
-              contentType: "application/json",
-            },
-          ],
-          artifactKind: "legacy-zip",
-          softDeletedAt: undefined,
-        };
+        });
+        return [
+          {
+            packageId: "packages:code",
+            version: "1.0.0",
+            changelog: "Initial code plugin",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:package-json",
+                path: "package.json",
+                size: 2,
+                sha256: "sha-package-json",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "npm-pack",
+            softDeletedAt: undefined,
+          },
+          {
+            packageId: "packages:bundle",
+            version: "2.0.0",
+            changelog: "Initial bundle plugin",
+            createdAt: 3,
+            files: [
+              {
+                storageId: "storage:bundle",
+                path: "openclaw.bundle.json",
+                size: 2,
+                sha256: "sha-bundle",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "legacy-zip",
+            softDeletedAt: undefined,
+          },
+        ];
       }
       return null;
     });
@@ -1681,7 +1761,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1703,31 +1783,36 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:bundle") {
-        return {
-          packageId: "packages:bundle",
-          version: "1.0.0",
-          changelog: "Legacy bundle",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:first",
-              path: "plugins/humanizer/_skillhub_meta.json",
-              size: 13,
-              sha256: "sha-first",
-              contentType: "application/json",
-            },
-            {
-              storageId: "storage:second",
-              path: "plugins/humanizer/_skillhub_meta.json",
-              size: 14,
-              sha256: "sha-second",
-              contentType: "application/json",
-            },
-          ],
-          artifactKind: "legacy-zip",
-          softDeletedAt: undefined,
-        };
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [{ packageId: "packages:bundle", releaseId: "packageReleases:bundle" }],
+        });
+        return [
+          {
+            packageId: "packages:bundle",
+            version: "1.0.0",
+            changelog: "Legacy bundle",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:first",
+                path: "plugins/humanizer/_skillhub_meta.json",
+                size: 13,
+                sha256: "sha-first",
+                contentType: "application/json",
+              },
+              {
+                storageId: "storage:second",
+                path: "plugins/humanizer/_skillhub_meta.json",
+                size: 14,
+                sha256: "sha-second",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "legacy-zip",
+            softDeletedAt: undefined,
+          },
+        ];
       }
       return null;
     });
@@ -1775,7 +1860,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1797,30 +1882,35 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:blocked") {
-        return {
-          packageId: "packages:blocked",
-          version: "1.0.0",
-          changelog: "Blocked",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:blocked",
-              path: "package.json",
-              size: 2,
-              sha256: "sha-blocked",
-              contentType: "application/json",
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [{ packageId: "packages:blocked", releaseId: "packageReleases:blocked" }],
+        });
+        return [
+          {
+            packageId: "packages:blocked",
+            version: "1.0.0",
+            changelog: "Blocked",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:blocked",
+                path: "package.json",
+                size: 2,
+                sha256: "sha-blocked",
+                contentType: "application/json",
+              },
+            ],
+            manualModeration: {
+              state: "quarantined",
+              reason: "malware",
+              reviewerUserId: "users:mod",
+              updatedAt: 2,
             },
-          ],
-          manualModeration: {
-            state: "quarantined",
-            reason: "malware",
-            reviewerUserId: "users:mod",
-            updatedAt: 2,
+            artifactKind: "npm-pack",
+            softDeletedAt: undefined,
           },
-          artifactKind: "npm-pack",
-          softDeletedAt: undefined,
-        };
+        ];
       }
       return null;
     });
@@ -1852,7 +1942,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("startDate" in args) {
+      if (getFunctionName(_query as never) === "packages:listPluginExportPageInternal") {
         return {
           page: [
             {
@@ -1874,24 +1964,29 @@ describe("httpApiV1 handlers", () => {
           hasMore: false,
         };
       }
-      if (args.releaseId === "packageReleases:collision") {
-        return {
-          packageId: "packages:collision",
-          version: "1.0.0",
-          changelog: "Collision",
-          createdAt: 2,
-          files: [
-            {
-              storageId: "storage:plugin-meta-file",
-              path: "_export_plugin_meta.json",
-              size: 2,
-              sha256: "sha-plugin-meta-file",
-              contentType: "application/json",
-            },
-          ],
-          artifactKind: "npm-pack",
-          softDeletedAt: undefined,
-        };
+      if (getFunctionName(_query as never) === "packages:getPublicReleaseSelectionsInternal") {
+        expect(args).toEqual({
+          selections: [{ packageId: "packages:collision", releaseId: "packageReleases:collision" }],
+        });
+        return [
+          {
+            packageId: "packages:collision",
+            version: "1.0.0",
+            changelog: "Collision",
+            createdAt: 2,
+            files: [
+              {
+                storageId: "storage:plugin-meta-file",
+                path: "_export_plugin_meta.json",
+                size: 2,
+                sha256: "sha-plugin-meta-file",
+                contentType: "application/json",
+              },
+            ],
+            artifactKind: "npm-pack",
+            softDeletedAt: undefined,
+          },
+        ];
       }
       return null;
     });
@@ -3034,35 +3129,53 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("lists skills with resolved tags using batch query", async () => {
+    const selectedSkill0 = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      topics: ["Automation", "Email"],
+      tags: { latest: "versions:1" },
+      stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "versions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "c",
+    };
+    const checkedSelections = [
+      { status: "available", skill: selectedSkill0, version: selectedVersion0 },
+    ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
+          const index = [{ skillId: "skills:1", versionId: "versions:1" }].findIndex(
+            (expected) =>
+              expected.skillId === pair.skillId && expected.versionId === pair.versionId,
+          );
+          expect(index).toBeGreaterThanOrEqual(0);
+          return checkedSelections[index];
+        });
+      }
+
       if ("cursor" in args || "numItems" in args) {
         return {
           page: [
             {
               ownerHandle: "fixture-owner",
-              skill: {
-                _id: "skills:1",
-                slug: "demo",
-                displayName: "Demo",
-                summary: "s",
-                topics: ["Automation", "Email"],
-                tags: { latest: "versions:1" },
-                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-                createdAt: 1,
-                updatedAt: 2,
-              },
-              latestVersion: { version: "1.0.0", createdAt: 3, changelog: "c" },
+              skill: selectedSkill0,
+              latestVersion: selectedVersion0,
             },
           ],
           nextCursor: null,
         };
       }
       // Batch query: versionIds (plural)
-      if ("versionIds" in args) {
-        return [
-          { _id: "versions:1", skillId: "skills:1", version: "1.0.0", softDeletedAt: undefined },
-        ];
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3085,34 +3198,48 @@ describe("httpApiV1 handlers", () => {
       { ownerHandle: "fixture-owner-d", slug: "no-public-version", version: null },
     ] as const;
     let pageIndex = 0;
+    const rows = fixtures.map((fixture, index) => ({
+      ownerHandle: fixture.ownerHandle,
+      skill: {
+        _id: `skills:${index + 1}`,
+        slug: fixture.slug,
+        displayName: `Fixture ${index + 1}`,
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: fixture.version
+        ? {
+            _id: `skillVersions:${index + 1}`,
+            skillId: `skills:${index + 1}`,
+            version: fixture.version,
+            createdAt: 3,
+            changelog: "fixture",
+          }
+        : null,
+    }));
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
+          const row = rows.find(
+            (candidate) =>
+              candidate.skill._id === pair.skillId &&
+              candidate.latestVersion?._id === pair.versionId,
+          );
+          expect(row).toBeDefined();
+          return { status: "available", skill: row!.skill, version: row!.latestVersion };
+        });
+      }
       if ("cursor" in args || "numItems" in args) {
-        const fixture = fixtures[pageIndex];
-        if (!fixture) return { page: [], nextCursor: null };
-        pageIndex += 1;
+        const row = rows[pageIndex++];
         return {
-          page: [
-            {
-              ownerHandle: fixture.ownerHandle,
-              skill: {
-                _id: `skills:${pageIndex}`,
-                slug: fixture.slug,
-                displayName: `Fixture ${pageIndex}`,
-                summary: null,
-                tags: {},
-                stats: {},
-                createdAt: 1,
-                updatedAt: 2,
-              },
-              latestVersion: fixture.version
-                ? { version: fixture.version, createdAt: 3, changelog: "fixture" }
-                : null,
-            },
-          ],
-          nextCursor: pageIndex < fixtures.length ? `cursor-${pageIndex}` : null,
+          page: row ? [row] : [],
+          nextCursor: pageIndex < rows.length ? `cursor-${pageIndex}` : null,
         };
       }
-      return [];
+      throw new Error("Unexpected skill list query");
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const identities = new Set<string>();
@@ -3149,46 +3276,64 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("lists skills with long description metadata and setup requirements", async () => {
+    const selectedSkill0 = {
+      _id: "skills:1",
+      slug: "home-assistant",
+      displayName: "Home Assistant",
+      summary: "Control Home Assistant.",
+      tags: {},
+      stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:0",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "c",
+      parsed: {
+        description: "Long-form manifest description.",
+        clawdis: {
+          requires: { env: ["HA_TOKEN"], config: ["HA_URL"] },
+          envVars: [
+            {
+              name: "HA_TOKEN",
+              required: false,
+              description: "Long-lived access token.",
+            },
+            {
+              name: "HA_THEME",
+              required: false,
+              description: "Optional dashboard theme.",
+            },
+          ],
+          os: ["linux"],
+          nix: { systems: ["x86_64-linux"] },
+        },
+      },
+    };
+    const checkedSelections = [
+      { status: "available", skill: selectedSkill0, version: selectedVersion0 },
+    ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
+          const index = [{ skillId: "skills:1", versionId: "skillVersions:0" }].findIndex(
+            (expected) =>
+              expected.skillId === pair.skillId && expected.versionId === pair.versionId,
+          );
+          expect(index).toBeGreaterThanOrEqual(0);
+          return checkedSelections[index];
+        });
+      }
+
       if ("cursor" in args || "numItems" in args) {
         return {
           page: [
             {
-              skill: {
-                _id: "skills:1",
-                slug: "home-assistant",
-                displayName: "Home Assistant",
-                summary: "Control Home Assistant.",
-                tags: {},
-                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-                createdAt: 1,
-                updatedAt: 2,
-              },
-              latestVersion: {
-                version: "1.0.0",
-                createdAt: 3,
-                changelog: "c",
-                parsed: {
-                  description: "Long-form manifest description.",
-                  clawdis: {
-                    requires: { env: ["HA_TOKEN"], config: ["HA_URL"] },
-                    envVars: [
-                      {
-                        name: "HA_TOKEN",
-                        required: false,
-                        description: "Long-lived access token.",
-                      },
-                      {
-                        name: "HA_THEME",
-                        required: false,
-                        description: "Optional dashboard theme.",
-                      },
-                    ],
-                    os: ["linux"],
-                    nix: { systems: ["x86_64-linux"] },
-                  },
-                },
-              },
+              skill: selectedSkill0,
+              latestVersion: selectedVersion0,
             },
           ],
           nextCursor: null,
@@ -3238,54 +3383,88 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
   });
 
-  it("batches tag resolution across multiple skills into single query", async () => {
+  it("batches latest snapshots and tags across multiple skills", async () => {
+    const selectedSkill0 = {
+      _id: "skills:1",
+      slug: "skill-a",
+      displayName: "Skill A",
+      summary: "s",
+      tags: { latest: "versions:1", stable: "versions:2" },
+      stats: { downloads: 0, stars: 0, versions: 2, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "versions:1",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdAt: 3,
+      changelog: "c",
+    };
+    const selectedSkill1 = {
+      _id: "skills:2",
+      slug: "skill-b",
+      displayName: "Skill B",
+      summary: "s",
+      tags: { latest: "versions:3" },
+      stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion1 = {
+      _id: "versions:3",
+      skillId: "skills:2",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "c",
+    };
+    const checkedSelections = [
+      { status: "available", skill: selectedSkill0, version: selectedVersion0 },
+      { status: "available", skill: selectedSkill1, version: selectedVersion1 },
+      {
+        status: "available",
+        skill: selectedSkill0,
+        version: {
+          _id: "versions:2",
+          skillId: "skills:1",
+          version: "1.0.0",
+          softDeletedAt: undefined,
+        },
+      },
+    ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
+          const index = [
+            { skillId: "skills:1", versionId: "versions:1" },
+            { skillId: "skills:2", versionId: "versions:3" },
+            { skillId: "skills:1", versionId: "versions:2" },
+          ].findIndex(
+            (expected) =>
+              expected.skillId === pair.skillId && expected.versionId === pair.versionId,
+          );
+          expect(index).toBeGreaterThanOrEqual(0);
+          return checkedSelections[index];
+        });
+      }
+
       if ("cursor" in args || "numItems" in args) {
         return {
           page: [
             {
-              skill: {
-                _id: "skills:1",
-                slug: "skill-a",
-                displayName: "Skill A",
-                summary: "s",
-                tags: { latest: "versions:1", stable: "versions:2" },
-                stats: { downloads: 0, stars: 0, versions: 2, comments: 0 },
-                createdAt: 1,
-                updatedAt: 2,
-              },
-              latestVersion: { version: "2.0.0", createdAt: 3, changelog: "c" },
+              skill: selectedSkill0,
+              latestVersion: selectedVersion0,
             },
             {
-              skill: {
-                _id: "skills:2",
-                slug: "skill-b",
-                displayName: "Skill B",
-                summary: "s",
-                tags: { latest: "versions:3" },
-                stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-                createdAt: 1,
-                updatedAt: 2,
-              },
-              latestVersion: { version: "1.0.0", createdAt: 3, changelog: "c" },
+              skill: selectedSkill1,
+              latestVersion: selectedVersion1,
             },
           ],
           nextCursor: null,
         };
       }
       // Batch query should receive all version IDs from all skills
-      if ("versionIds" in args) {
-        const ids = args.versionIds as string[];
-        expect(ids).toHaveLength(3);
-        expect(ids).toContain("versions:1");
-        expect(ids).toContain("versions:2");
-        expect(ids).toContain("versions:3");
-        return [
-          { _id: "versions:1", skillId: "skills:1", version: "2.0.0", softDeletedAt: undefined },
-          { _id: "versions:2", skillId: "skills:1", version: "1.0.0", softDeletedAt: undefined },
-          { _id: "versions:3", skillId: "skills:2", version: "1.0.0", softDeletedAt: undefined },
-        ];
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3299,11 +3478,12 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].tags.latest).toBe("2.0.0");
     expect(json.items[0].tags.stable).toBe("1.0.0");
     expect(json.items[1].tags.latest).toBe("1.0.0");
-    // Verify batch query was called exactly once (not per-tag)
+    // Latest snapshots and tag snapshots are batched across skills, not queried per item.
     const batchCalls = runQuery.mock.calls.filter(
-      ([, args]) => args && "versionIds" in (args as Record<string, unknown>),
+      ([query]) => getFunctionName(query as never) === "skills:getPublicVersionSelectionsInternal",
     );
-    expect(batchCalls).toHaveLength(1);
+    expect(batchCalls).toHaveLength(2);
+    expect(batchCalls.map(([, args]) => (args.selections as unknown[]).length)).toEqual([2, 3]);
   });
 
   it("lists skills supports sort aliases", async () => {
@@ -3578,27 +3758,49 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("get skill returns payload", async () => {
+    const selectedSkill0 = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
+      topics: ["Automation", "Email"],
+      tags: { latest: "versions:1" },
+      stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "versions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "c",
+      files: [],
+    };
+    const checkedSelections = [
+      { status: "available", skill: selectedSkill0, version: selectedVersion0 },
+    ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill0, version: selectedVersion0 };
+      }
+
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
+          const index = [{ skillId: "skills:1", versionId: "versions:1" }].findIndex(
+            (expected) =>
+              expected.skillId === pair.skillId && expected.versionId === pair.versionId,
+          );
+          expect(index).toBeGreaterThanOrEqual(0);
+          return checkedSelections[index];
+        });
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
-            topics: ["Automation", "Email"],
-            tags: { latest: "versions:1" },
-            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            version: "1.0.0",
-            createdAt: 3,
-            changelog: "c",
-            files: [],
-          },
+          skill: selectedSkill0,
+          latestVersion: selectedVersion0,
           owner: { handle: "p", displayName: "Peter", image: null },
           moderationInfo: {
             isSuspicious: true,
@@ -3612,9 +3814,7 @@ describe("httpApiV1 handlers", () => {
         };
       }
       // Batch query for tag resolution
-      if ("versionIds" in args) {
-        return [{ _id: "versions:1", version: "1.0.0", softDeletedAt: undefined }];
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -3640,20 +3840,40 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("get skill includes readme markdown description and setup requirements", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "home-assistant",
+      displayName: "Home Assistant",
+      summary: "Control Home Assistant.",
+      latestVersionId: "skillVersions:1",
+      tags: {},
+      stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      files: [
+        {
+          path: "SKILL.md",
+          size: 21,
+          storageId: "_storage:skill-readme",
+          sha256: "abc123",
+          contentType: "text/markdown",
+        },
+      ],
+      softDeletedAt: undefined,
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "home-assistant",
-            displayName: "Home Assistant",
-            summary: "Control Home Assistant.",
-            latestVersionId: "skillVersions:1",
-            tags: {},
-            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: {
             _id: "skillVersions:1",
             skillId: "skills:1",
@@ -3673,24 +3893,7 @@ describe("httpApiV1 handlers", () => {
           moderationInfo: null,
         };
       }
-      if ("versionIds" in args) return [];
-      if ("versionId" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 21,
-              storageId: "_storage:skill-readme",
-              sha256: "abc123",
-              contentType: "text/markdown",
-            },
-          ],
-          softDeletedAt: undefined,
-        };
-      }
+
       return null;
     });
     const storageGet = vi.fn().mockResolvedValue({
@@ -3766,7 +3969,6 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("versionIds" in args) return [];
       if ("versionId" in args) throw new Error("unexpected raw version lookup");
       return null;
     });
@@ -3803,7 +4005,6 @@ describe("httpApiV1 handlers", () => {
           moderationInfo: null,
         };
       }
-      if ("versionIds" in args) return [];
       if (args.skillId === "skills:github" && args.kind === "readme") {
         return {
           path: "skills/aiq-deploy/SKILL.md",
@@ -4481,25 +4682,47 @@ describe("httpApiV1 handlers", () => {
   );
 
   it("get skill treats reports as a valid slug", async () => {
+    const selectedSkill0 = {
+      _id: "skills:1",
+      slug: "reports",
+      displayName: "Reports",
+      summary: "s",
+      tags: { latest: "versions:1" },
+      stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "versions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "c",
+      files: [],
+    };
+    const checkedSelections = [
+      { status: "available", skill: selectedSkill0, version: selectedVersion0 },
+    ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill0, version: selectedVersion0 };
+      }
+
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
+          const index = [{ skillId: "skills:1", versionId: "versions:1" }].findIndex(
+            (expected) =>
+              expected.skillId === pair.skillId && expected.versionId === pair.versionId,
+          );
+          expect(index).toBeGreaterThanOrEqual(0);
+          return checkedSelections[index];
+        });
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "reports",
-            displayName: "Reports",
-            summary: "s",
-            tags: { latest: "versions:1" },
-            stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            version: "1.0.0",
-            createdAt: 3,
-            changelog: "c",
-            files: [],
-          },
+          skill: selectedSkill0,
+          latestVersion: selectedVersion0,
           owner: null,
           moderationInfo: {
             isSuspicious: false,
@@ -4512,9 +4735,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("versionIds" in args) {
-        return [{ _id: "versions:1", version: "1.0.0", softDeletedAt: undefined }];
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5187,31 +5408,37 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns version detail", async () => {
+    const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      files: [
+        {
+          path: "SKILL.md",
+          size: 1,
+          storageId: "storage:1",
+          sha256: "abc",
+          contentType: "text/plain",
+        },
+      ],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "owner", displayName: "Owner", image: null },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 1,
-              storageId: "storage:1",
-              sha256: "abc",
-              contentType: "text/plain",
-            },
-          ],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5226,32 +5453,36 @@ describe("httpApiV1 handlers", () => {
 
   it("blocks version detail for moderated skills", async () => {
     let slugLookupCount = 0;
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      tags: { latest: "skillVersions:1" },
+      moderationStatus: "removed",
+      moderationReason: "policy.violation",
+      moderationFlags: [],
+      moderationSourceVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         slugLookupCount += 1;
         if (slugLookupCount === 1) return null;
-        return {
-          _id: "skills:1",
-          slug: "demo",
-          displayName: "Demo",
-          tags: { latest: "skillVersions:1" },
-          moderationStatus: "removed",
-          moderationReason: "policy.violation",
-          moderationFlags: [],
-          moderationSourceVersionId: "skillVersions:1",
-        };
+        return selectedSkill;
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5289,29 +5520,35 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns version detail security from vt analysis", async () => {
+    const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      sha256hash: "a".repeat(64),
+      vtAnalysis: {
+        status: "suspicious",
+        source: "legacy-ai",
+        checkedAt: 123,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "owner", displayName: "Owner", image: null },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          sha256hash: "a".repeat(64),
-          vtAnalysis: {
-            status: "suspicious",
-            source: "legacy-ai",
-            checkedAt: 123,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5327,41 +5564,47 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("keeps static-scan suspicious status out of version security snapshot verdicts", async () => {
+    const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      sha256hash: "a".repeat(64),
+      staticScan: {
+        status: "suspicious",
+        reasonCodes: ["suspicious.dangerous_exec"],
+        summary: "Detected: suspicious.dangerous_exec",
+        engineVersion: "v2.4.0",
+        checkedAt: 555,
+      },
+      vtAnalysis: {
+        status: "clean",
+        verdict: "benign",
+        checkedAt: 111,
+      },
+      llmAnalysis: {
+        status: "completed",
+        verdict: "benign",
+        checkedAt: 222,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "owner", displayName: "Owner", image: null },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          sha256hash: "a".repeat(64),
-          staticScan: {
-            status: "suspicious",
-            reasonCodes: ["suspicious.dangerous_exec"],
-            summary: "Detected: suspicious.dangerous_exec",
-            engineVersion: "v2.4.0",
-            checkedAt: 555,
-          },
-          vtAnalysis: {
-            status: "clean",
-            verdict: "benign",
-            checkedAt: 111,
-          },
-          llmAnalysis: {
-            status: "completed",
-            verdict: "benign",
-            checkedAt: 222,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5380,41 +5623,47 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("keeps static-scan malicious status advisory when ClawScan is benign", async () => {
+    const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      sha256hash: "a".repeat(64),
+      staticScan: {
+        status: "malicious",
+        reasonCodes: ["malicious.credential_harvest"],
+        summary: "Detected: malicious.credential_harvest",
+        engineVersion: "v2.4.0",
+        checkedAt: 555,
+      },
+      vtAnalysis: {
+        status: "clean",
+        verdict: "benign",
+        checkedAt: 111,
+      },
+      llmAnalysis: {
+        status: "completed",
+        verdict: "benign",
+        checkedAt: 222,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "owner", displayName: "Owner", image: null },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          sha256hash: "a".repeat(64),
-          staticScan: {
-            status: "malicious",
-            reasonCodes: ["malicious.credential_harvest"],
-            summary: "Detected: malicious.credential_harvest",
-            engineVersion: "v2.4.0",
-            checkedAt: 555,
-          },
-          vtAnalysis: {
-            status: "clean",
-            verdict: "benign",
-            checkedAt: 111,
-          },
-          llmAnalysis: {
-            status: "completed",
-            verdict: "benign",
-            checkedAt: 222,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5432,30 +5681,36 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("omits version security when only static scan evidence exists", async () => {
+    const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        summary: "No issues found",
+        engineVersion: "v2.4.0",
+        checkedAt: 555,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "owner", displayName: "Owner", image: null },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          staticScan: {
-            status: "clean",
-            reasonCodes: [],
-            summary: "No issues found",
-            engineVersion: "v2.4.0",
-            checkedAt: 555,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5469,37 +5724,43 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("keeps hasWarnings true when llm dimensions include non-ok ratings", async () => {
+    const selectedSkill = { _id: "skills:1", slug: "demo", displayName: "Demo" };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      sha256hash: "a".repeat(64),
+      llmAnalysis: {
+        status: "completed",
+        verdict: "benign",
+        checkedAt: 123,
+        dimensions: [
+          {
+            name: "scope_alignment",
+            rating: "warn",
+            rationale: "broad install footprint",
+            evidence: "",
+          },
+        ],
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "owner", displayName: "Owner", image: null },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          sha256hash: "a".repeat(64),
-          llmAnalysis: {
-            status: "completed",
-            verdict: "benign",
-            checkedAt: 123,
-            dimensions: [
-              {
-                name: "scope_alignment",
-                rating: "warn",
-                rationale: "broad install footprint",
-                evidence: "",
-              },
-            ],
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5514,41 +5775,47 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns scan payload for latest version", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { latest: "versions:1" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      sha256hash: "b".repeat(64),
+      capabilityTags: ["crypto", "requires-wallet", "can-make-purchases"],
+      vtAnalysis: {
+        status: "clean",
+        checkedAt: 111,
+      },
+      llmAnalysis: {
+        status: "completed",
+        verdict: "suspicious",
+        confidence: "high",
+        summary: "s",
+        checkedAt: 222,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "versions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:1",
-            skillId: "skills:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "c",
-            changelogSource: "auto",
-            sha256hash: "b".repeat(64),
-            capabilityTags: ["crypto", "requires-wallet", "can-make-purchases"],
-            vtAnalysis: {
-              status: "clean",
-              checkedAt: 111,
-            },
-            llmAnalysis: {
-              status: "completed",
-              verdict: "suspicious",
-              confidence: "high",
-              summary: "s",
-              checkedAt: 222,
-            },
-            files: [],
-          },
+          skill: selectedSkill,
+          latestVersion: selectedVersion0,
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -5582,34 +5849,40 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("treats completed llm analysis without verdict as error", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { latest: "versions:1" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      sha256hash: "c".repeat(64),
+      llmAnalysis: {
+        status: "completed",
+        summary: "missing verdict",
+        checkedAt: 222,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "versions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:1",
-            skillId: "skills:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "c",
-            changelogSource: "auto",
-            sha256hash: "c".repeat(64),
-            llmAnalysis: {
-              status: "completed",
-              summary: "missing verdict",
-              checkedAt: 222,
-            },
-            files: [],
-          },
+          skill: selectedSkill,
+          latestVersion: selectedVersion0,
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -5636,34 +5909,38 @@ describe("httpApiV1 handlers", () => {
 
   it("blocks latest scan status while security review is pending", async () => {
     let slugLookupCount = 0;
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      latestVersionId: "skillVersions:1",
+      tags: { latest: "skillVersions:1" },
+      moderationStatus: "hidden",
+      moderationReason: "pending.scan",
+      moderationFlags: [],
+      moderationSourceVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      capabilityTags: ["posts-externally", "requires-oauth-token"],
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         slugLookupCount += 1;
         if (slugLookupCount === 1) return null;
-        return {
-          _id: "skills:1",
-          slug: "demo",
-          displayName: "Demo",
-          latestVersionId: "skillVersions:1",
-          tags: { latest: "skillVersions:1" },
-          moderationStatus: "hidden",
-          moderationReason: "pending.scan",
-          moderationFlags: [],
-          moderationSourceVersionId: "skillVersions:1",
-        };
+        return selectedSkill;
       }
-      if ("versionId" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c",
-          changelogSource: "auto",
-          capabilityTags: ["posts-externally", "requires-oauth-token"],
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5678,31 +5955,36 @@ describe("httpApiV1 handlers", () => {
   for (const moderationReason of ["pending.scan.stale", "scanner.llm.pending"] as const) {
     it(`blocks latest scan status for ${moderationReason} when unavailable publicly`, async () => {
       let slugLookupCount = 0;
+      const selectedSkill = {
+        _id: "skills:1",
+        slug: "demo",
+        displayName: "Demo",
+        latestVersionId: "skillVersions:1",
+        tags: { latest: "skillVersions:1" },
+        moderationStatus: "hidden",
+        moderationReason,
+        moderationFlags: [],
+        moderationSourceVersionId: "skillVersions:1",
+      };
       const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
         if ("slug" in args) {
           slugLookupCount += 1;
           if (slugLookupCount === 1) return null;
-          return {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            latestVersionId: "skillVersions:1",
-            tags: { latest: "skillVersions:1" },
-            moderationStatus: "hidden",
-            moderationReason,
-            moderationFlags: [],
-            moderationSourceVersionId: "skillVersions:1",
-          };
+          return selectedSkill;
         }
-        if ("versionId" in args) {
+        if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
           return {
-            _id: "skillVersions:1",
-            skillId: "skills:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "c",
-            changelogSource: "auto",
-            files: [],
+            status: "available",
+            skill: selectedSkill,
+            version: {
+              _id: "skillVersions:1",
+              skillId: "skills:1",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "c",
+              changelogSource: "auto",
+              files: [],
+            },
           };
         }
         return null;
@@ -5718,29 +6000,35 @@ describe("httpApiV1 handlers", () => {
   }
 
   it("omits security when no scanner result exists yet", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { latest: "skillVersions:1" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      changelogSource: "auto",
+      capabilityTags: ["posts-externally", "requires-oauth-token"],
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "skillVersions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:1",
-            skillId: "skills:1",
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "c",
-            changelogSource: "auto",
-            capabilityTags: ["posts-externally", "requires-oauth-token"],
-            files: [],
-          },
+          skill: selectedSkill,
+          latestVersion: selectedVersion0,
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -5764,20 +6052,37 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks exact scan status for moderated skills", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      latestVersionId: "skillVersions:2",
+      tags: { latest: "skillVersions:2" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+      moderationSourceVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c1",
+      changelogSource: "auto",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            latestVersionId: "skillVersions:2",
-            tags: { latest: "skillVersions:2" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: {
             _id: "skillVersions:2",
             skillId: "skills:1",
@@ -5798,17 +6103,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c1",
-          changelogSource: "auto",
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5822,33 +6117,37 @@ describe("httpApiV1 handlers", () => {
 
   it("blocks exact scan status when the moderated skill is unavailable publicly", async () => {
     let slugLookupCount = 0;
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      latestVersionId: "skillVersions:1",
+      tags: { latest: "skillVersions:1" },
+      moderationStatus: "hidden",
+      moderationReason: "pending.scan",
+      moderationFlags: [],
+      moderationSourceVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c1",
+      changelogSource: "auto",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         slugLookupCount += 1;
         if (slugLookupCount === 1) return null;
-        return {
-          _id: "skills:1",
-          slug: "demo",
-          displayName: "Demo",
-          latestVersionId: "skillVersions:1",
-          tags: { latest: "skillVersions:1" },
-          moderationStatus: "hidden",
-          moderationReason: "pending.scan",
-          moderationFlags: [],
-          moderationSourceVersionId: "skillVersions:1",
-        };
+        return selectedSkill;
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c1",
-          changelogSource: "auto",
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5862,33 +6161,37 @@ describe("httpApiV1 handlers", () => {
 
   it("blocks tagged scan status when the moderated skill is unavailable publicly", async () => {
     let slugLookupCount = 0;
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      latestVersionId: "skillVersions:2",
+      tags: { latest: "skillVersions:2", old: "skillVersions:1" },
+      moderationStatus: "hidden",
+      moderationReason: "pending.scan",
+      moderationFlags: [],
+      moderationSourceVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c1",
+      changelogSource: "auto",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         slugLookupCount += 1;
         if (slugLookupCount === 1) return null;
-        return {
-          _id: "skills:1",
-          slug: "demo",
-          displayName: "Demo",
-          latestVersionId: "skillVersions:2",
-          tags: { latest: "skillVersions:2", old: "skillVersions:1" },
-          moderationStatus: "hidden",
-          moderationReason: "pending.scan",
-          moderationFlags: [],
-          moderationSourceVersionId: "skillVersions:1",
-        };
+        return selectedSkill;
       }
-      if ("versionId" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c1",
-          changelogSource: "auto",
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5901,29 +6204,59 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("keeps historical scan status available when latest-version moderation is blocked", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      latestVersionId: "skillVersions:2",
+      tags: { latest: "skillVersions:2" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c1",
+      changelogSource: "auto",
+      sha256hash: "f".repeat(64),
+      vtAnalysis: {
+        status: "clean",
+        checkedAt: 123,
+      },
+      llmAnalysis: {
+        status: "completed",
+        verdict: "benign",
+        checkedAt: 124,
+      },
+      files: [],
+    };
+    const moderationVersion = {
+      _id: "skillVersions:2",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdAt: 2,
+      changelog: "c2",
+      changelogSource: "auto",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        if (args.versionId === moderationVersion._id)
+          return { status: "available", skill: selectedSkill, version: moderationVersion };
+
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            latestVersionId: "skillVersions:2",
-            tags: { latest: "skillVersions:2" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:2",
-            skillId: "skills:1",
-            version: "2.0.0",
-            createdAt: 2,
-            changelog: "c2",
-            changelogSource: "auto",
-            files: [],
-          },
+          skill: selectedSkill,
+          latestVersion: moderationVersion,
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -5934,27 +6267,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c1",
-          changelogSource: "auto",
-          sha256hash: "f".repeat(64),
-          vtAnalysis: {
-            status: "clean",
-            checkedAt: 123,
-          },
-          llmAnalysis: {
-            status: "completed",
-            verdict: "benign",
-            checkedAt: 124,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -5970,20 +6283,41 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("reports the moderation source version for historical scan matches", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      latestVersionId: "skillVersions:2",
+      tags: { latest: "skillVersions:2" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      moderationSourceVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c1",
+      changelogSource: "auto",
+      sha256hash: "f".repeat(64),
+      llmAnalysis: {
+        status: "completed",
+        verdict: "suspicious",
+        checkedAt: 123,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            latestVersionId: "skillVersions:2",
-            tags: { latest: "skillVersions:2" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: {
             _id: "skillVersions:2",
             skillId: "skills:1",
@@ -6004,23 +6338,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c1",
-          changelogSource: "auto",
-          sha256hash: "f".repeat(64),
-          llmAnalysis: {
-            status: "completed",
-            verdict: "suspicious",
-            checkedAt: 123,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6035,38 +6353,44 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("keeps hasScanResult true when one scanner returns a definitive verdict", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { latest: "versions:2" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:2",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdAt: 2,
+      changelog: "c",
+      changelogSource: "auto",
+      sha256hash: "d".repeat(64),
+      vtAnalysis: {
+        status: "clean",
+        checkedAt: 111,
+      },
+      llmAnalysis: {
+        status: "error",
+        summary: "scanner failed",
+        checkedAt: 222,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "versions:2" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:2",
-            skillId: "skills:1",
-            version: "2.0.0",
-            createdAt: 2,
-            changelog: "c",
-            changelogSource: "auto",
-            sha256hash: "d".repeat(64),
-            vtAnalysis: {
-              status: "clean",
-              checkedAt: 111,
-            },
-            llmAnalysis: {
-              status: "error",
-              summary: "scanner failed",
-              checkedAt: 222,
-            },
-            files: [],
-          },
+          skill: selectedSkill,
+          latestVersion: selectedVersion0,
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -6093,33 +6417,57 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("marks moderation as a latest-version snapshot when querying a historical version", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { latest: "skillVersions:2", old: "skillVersions:1" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c1",
+      changelogSource: "auto",
+      sha256hash: "f".repeat(64),
+      llmAnalysis: {
+        status: "completed",
+        verdict: "suspicious",
+        checkedAt: 123,
+      },
+      files: [],
+    };
+    const moderationVersion = {
+      _id: "skillVersions:2",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdAt: 2,
+      changelog: "c2",
+      changelogSource: "auto",
+      sha256hash: "e".repeat(64),
+      vtAnalysis: {
+        status: "clean",
+        checkedAt: 222,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        if (args.versionId === moderationVersion._id)
+          return { status: "available", skill: selectedSkill, version: moderationVersion };
+
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "skillVersions:2", old: "skillVersions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:2",
-            skillId: "skills:1",
-            version: "2.0.0",
-            createdAt: 2,
-            changelog: "c2",
-            changelogSource: "auto",
-            sha256hash: "e".repeat(64),
-            vtAnalysis: {
-              status: "clean",
-              checkedAt: 222,
-            },
-            files: [],
-          },
+          skill: selectedSkill,
+          latestVersion: moderationVersion,
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -6130,23 +6478,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c1",
-          changelogSource: "auto",
-          sha256hash: "f".repeat(64),
-          llmAnalysis: {
-            status: "completed",
-            verdict: "suspicious",
-            checkedAt: 123,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6168,33 +6500,56 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("resolves scan by tag and reports moderation context against latest version", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { latest: "skillVersions:2", old: "skillVersions:1" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c1",
+      changelogSource: "auto",
+      sha256hash: "2".repeat(64),
+      vtAnalysis: {
+        status: "malicious",
+        checkedAt: 123,
+      },
+      files: [],
+    };
+    const moderationVersion = {
+      _id: "skillVersions:2",
+      skillId: "skills:1",
+      version: "2.0.0",
+      createdAt: 2,
+      changelog: "c2",
+      changelogSource: "auto",
+      sha256hash: "1".repeat(64),
+      vtAnalysis: {
+        status: "clean",
+        checkedAt: 222,
+      },
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        if (args.versionId === moderationVersion._id)
+          return { status: "available", skill: selectedSkill, version: moderationVersion };
+
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { latest: "skillVersions:2", old: "skillVersions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:2",
-            skillId: "skills:1",
-            version: "2.0.0",
-            createdAt: 2,
-            changelog: "c2",
-            changelogSource: "auto",
-            sha256hash: "1".repeat(64),
-            vtAnalysis: {
-              status: "clean",
-              checkedAt: 222,
-            },
-            files: [],
-          },
+          skill: selectedSkill,
+          latestVersion: moderationVersion,
           owner: { _id: "users:1", handle: "owner", displayName: "Owner" },
           moderationInfo: {
             isPendingScan: false,
@@ -6205,22 +6560,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("versionId" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "c1",
-          changelogSource: "auto",
-          sha256hash: "2".repeat(64),
-          vtAnalysis: {
-            status: "malicious",
-            checkedAt: 123,
-          },
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6240,34 +6580,30 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not resolve scan tags to another skill's version", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { old: "skillVersions:other" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "not_found" };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { old: "skillVersions:other" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: null,
           moderationInfo: null,
         };
       }
-      if ("versionId" in args) {
-        return {
-          _id: "skillVersions:other",
-          skillId: "skills:other",
-          version: "9.9.9",
-          createdAt: 9,
-          changelog: "other",
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6298,27 +6634,31 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
       }
-      if ("versionId" in args) {
-        return internalVersion;
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6392,25 +6732,31 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const storage = {
@@ -6487,25 +6833,31 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const response = await __handlers.skillsGetRouterV1Handler(
@@ -6530,36 +6882,40 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("looks up raw files in the requested owner namespace", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      tags: {},
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      files: [
+        {
+          path: "SKILL.md",
+          size: 5,
+          storageId: "storage:1",
+          sha256: "abcd",
+          contentType: "text/plain",
+        },
+      ],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            tags: {},
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: { handle: "clawkit" },
         };
       }
-      if ("versionId" in args) {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 5,
-              storageId: "storage:1",
-              sha256: "abcd",
-              contentType: "text/plain",
-            },
-          ],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6580,20 +6936,34 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks raw file reads for malware-blocked skills", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "abcd" }],
+      softDeletedAt: undefined,
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: null,
           moderationInfo: {
@@ -6604,15 +6974,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if (args.versionId === "skillVersions:1") {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "abcd" }],
-          softDeletedAt: undefined,
-        };
-      }
+
       throw new Error("unexpected version lookup");
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6629,37 +6991,41 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not serve raw files from another skill's tagged version", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { old: "skillVersions:other" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        if (args.versionId === "skillVersions:1" || args.version === "1.0.0")
+          return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+        if (args.versionId === "skillVersions:other" || args.version === "9.9.9")
+          return { status: "not_found" };
+        return { status: "not_found" };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { old: "skillVersions:other" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: null,
           moderationInfo: null,
         };
       }
-      if (args.versionId === "skillVersions:1") {
-        return { _id: "skillVersions:1", skillId: "skills:1", version: "1.0.0", files: [] };
-      }
-      if (args.versionId === "skillVersions:other") {
-        return {
-          _id: "skillVersions:other",
-          skillId: "skills:other",
-          version: "9.9.9",
-          files: [{ path: "SKILL.md", size: 5, storageId: "storage:other", sha256: "other" }],
-          softDeletedAt: undefined,
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6668,6 +7034,47 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&tag=old"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
+  it("does not serve raw files from an unpublished version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        expect(args.version).toBe("2.0.0");
+        return { status: "not_found" };
+      }
+
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: { latest: "skillVersions:1" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&version=2.0.0"),
     );
 
     expect(response.status).toBe(404);
@@ -6694,20 +7101,26 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { stable: "skillVersions:1" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { stable: "skillVersions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
@@ -6717,7 +7130,7 @@ describe("httpApiV1 handlers", () => {
           { fingerprint: generatedBundleFingerprint, kind: "generated-bundle", createdAt: 2 },
         ];
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6740,20 +7153,34 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("blocks Skill Card reads for malware-blocked skills", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:1",
+      skillId: "skills:1",
+      version: "1.0.0",
+      files: [{ path: "skill-card.md", size: 5, storageId: "storage:card", sha256: "card" }],
+      softDeletedAt: undefined,
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: null,
           moderationInfo: {
@@ -6764,15 +7191,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if (args.versionId === "skillVersions:1") {
-        return {
-          _id: "skillVersions:1",
-          skillId: "skills:1",
-          version: "1.0.0",
-          files: [{ path: "skill-card.md", size: 5, storageId: "storage:card", sha256: "card" }],
-          softDeletedAt: undefined,
-        };
-      }
+
       throw new Error("unexpected version lookup");
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6789,41 +7208,31 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("does not serve Skill Cards from another skill's tagged version", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { old: "skillVersions:other" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "not_found" };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { old: "skillVersions:other" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: null,
           moderationInfo: null,
         };
       }
-      if (args.versionId === "skillVersions:other") {
-        return {
-          _id: "skillVersions:other",
-          skillId: "skills:other",
-          version: "9.9.9",
-          files: [
-            {
-              path: "skill-card.md",
-              size: 12,
-              storageId: "storage:other",
-              sha256: "other",
-            },
-          ],
-          softDeletedAt: undefined,
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6839,8 +7248,13 @@ describe("httpApiV1 handlers", () => {
     expect(storage.get).not.toHaveBeenCalled();
   });
 
-  it("does not verify another skill's tagged version", async () => {
+  it("does not serve Skill Cards from an unpublished version", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        expect(args.version).toBe("2.0.0");
+        return { status: "not_found" };
+      }
+
       if ("slug" in args) {
         return {
           skill: {
@@ -6848,26 +7262,59 @@ describe("httpApiV1 handlers", () => {
             slug: "demo",
             displayName: "Demo",
             summary: "s",
-            tags: { old: "skillVersions:other" },
+            tags: {},
             stats: {},
             createdAt: 1,
             updatedAt: 2,
             latestVersionId: "skillVersions:1",
           },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+          moderationInfo: null,
+        };
+      }
+
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/card?version=2.0.0"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
+  it("does not verify another skill's tagged version", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { old: "skillVersions:other" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "not_found" };
+      }
+
+      if ("slug" in args) {
+        return {
+          skill: selectedSkill,
           latestVersion: null,
           owner: null,
           moderationInfo: null,
         };
       }
-      if (args.versionId === "skillVersions:other") {
-        return {
-          _id: "skillVersions:other",
-          skillId: "skills:other",
-          version: "9.9.9",
-          files: [],
-          softDeletedAt: undefined,
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6890,26 +7337,32 @@ describe("httpApiV1 handlers", () => {
       files: [{ path: "SKILL.md", size: 5, storageId: "storage:1", sha256: "abcd" }],
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
       }
       if ("skillVersionId" in args) return [];
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -6936,20 +7389,26 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
@@ -6957,7 +7416,7 @@ describe("httpApiV1 handlers", () => {
       if ("skillVersionId" in args) {
         return [{ fingerprint: "source-fingerprint", kind: "source", createdAt: 4 }];
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -7496,6 +7955,47 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
+  it("does not verify an unpublished skill version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        expect(args.version).toBe("2.0.0");
+        return { status: "not_found" };
+      }
+
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: { latest: "skillVersions:1" },
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
+          moderationInfo: null,
+        };
+      }
+
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/verify?version=2.0.0"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+    expect(storage.get).not.toHaveBeenCalled();
+  });
+
   it("returns a skill verification envelope with card and security metadata", async () => {
     const scannerReports = {
       aig: { version: "2.1.0", runs: [], vendorExtension: { preserved: true } },
@@ -7587,20 +8087,26 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: { stable: "skillVersions:1" },
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: { stable: "skillVersions:1" },
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
         };
@@ -7610,7 +8116,7 @@ describe("httpApiV1 handlers", () => {
           { fingerprint: generatedBundleFingerprint, kind: "generated-bundle", createdAt: 5 },
         ];
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -7712,20 +8218,26 @@ describe("httpApiV1 handlers", () => {
       },
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
@@ -7733,7 +8245,7 @@ describe("httpApiV1 handlers", () => {
       if ("skillVersionId" in args) {
         return [{ fingerprint: "source-fingerprint", kind: "source", createdAt: 4 }];
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -7786,20 +8298,28 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
           moderationInfo: {
@@ -7816,7 +8336,7 @@ describe("httpApiV1 handlers", () => {
           { fingerprint: generatedBundleFingerprint, kind: "generated-bundle", createdAt: 4 },
         ];
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -7865,20 +8385,26 @@ describe("httpApiV1 handlers", () => {
       softDeletedAt: undefined,
     };
     const generatedBundleFingerprint = await buildBundleFingerprint(internalVersion.files);
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
@@ -7888,7 +8414,7 @@ describe("httpApiV1 handlers", () => {
           { fingerprint: generatedBundleFingerprint, kind: "generated-bundle", createdAt: 4 },
         ];
       }
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -7938,26 +8464,32 @@ describe("httpApiV1 handlers", () => {
       },
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
       }
       if ("skillVersionId" in args) return [];
-      if ("versionId" in args) return internalVersion;
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -7977,25 +8509,30 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("returns 410 for soft-deleted Skill Card versions", async () => {
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "deleted" };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
       }
-      if ("versionId" in args) return { skillId: "skills:1", softDeletedAt: 123, files: [] };
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -8040,27 +8577,31 @@ describe("httpApiV1 handlers", () => {
       ],
       softDeletedAt: undefined,
     };
+    const selectedSkill = {
+      _id: "skills:1",
+      slug: "demo",
+      displayName: "Demo",
+      summary: "s",
+      tags: {},
+      stats: {},
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersionId: "skillVersions:1",
+    };
+    const selectedVersion0 = internalVersion;
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:1",
-            slug: "demo",
-            displayName: "Demo",
-            summary: "s",
-            tags: {},
-            stats: {},
-            createdAt: 1,
-            updatedAt: 2,
-            latestVersionId: "skillVersions:1",
-          },
+          skill: selectedSkill,
           latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
           owner: null,
         };
       }
-      if ("versionId" in args) {
-        return internalVersion;
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -13438,36 +13979,50 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages detail falls back to public skills", async () => {
+    const selectedSkill0 = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo Skill",
+      summary: "Skill summary",
+      topics: ["Automation", "Email"],
+      latestVersionId: "skillVersions:demo-1",
+      tags: { latest: "skillVersions:demo-1" },
+      badges: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:demo-1",
+      skillId: "skills:demo",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "init",
+      files: [],
+    };
+    const checkedSelections = [
+      { status: "available", skill: selectedSkill0, version: selectedVersion0 },
+    ];
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionsInternal") {
+        return (args.selections as Array<{ skillId: string; versionId: string }>).map((pair) => {
+          const index = [{ skillId: "skills:demo", versionId: "skillVersions:demo-1" }].findIndex(
+            (expected) =>
+              expected.skillId === pair.skillId && expected.versionId === pair.versionId,
+          );
+          expect(index).toBeGreaterThanOrEqual(0);
+          return checkedSelections[index];
+        });
+      }
+
       if ("name" in args) return null;
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            topics: ["Automation", "Email"],
-            latestVersionId: "skillVersions:demo-1",
-            tags: { latest: "skillVersions:demo-1" },
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
-          latestVersion: {
-            _id: "skillVersions:demo-1",
-            skillId: "skills:demo",
-            version: "1.0.0",
-            createdAt: 3,
-            changelog: "init",
-            files: [],
-          },
+          skill: selectedSkill0,
+          latestVersion: selectedVersion0,
           owner: { handle: "steipete", displayName: "Peter" },
         };
       }
-      if ("versionIds" in args) {
-        return [{ _id: "skillVersions:demo-1", version: "1.0.0" }];
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -13607,43 +14162,47 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages file serves SKILL.md for skill README requests", async () => {
+    const selectedSkill = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo Skill",
+      summary: "Skill summary",
+      latestVersionId: "skillVersions:demo-1",
+      tags: { latest: "skillVersions:demo-1" },
+      badges: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:demo-1",
+      skillId: "skills:demo",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "init",
+      files: [
+        {
+          path: "SKILL.md",
+          size: 11,
+          sha256: "abc",
+          storageId: "storage:skill",
+          contentType: "text/markdown",
+        },
+      ],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("name" in args) return null;
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            latestVersionId: "skillVersions:demo-1",
-            tags: { latest: "skillVersions:demo-1" },
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "steipete" },
         };
       }
-      if ("versionId" in args) {
-        return {
-          _id: "skillVersions:demo-1",
-          skillId: "skills:demo",
-          version: "1.0.0",
-          createdAt: 3,
-          changelog: "init",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 11,
-              sha256: "abc",
-              storageId: "storage:skill",
-              contentType: "text/markdown",
-            },
-          ],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -13662,21 +14221,35 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages file blocks skill compatibility files for malware-blocked skills", async () => {
+    const selectedSkill = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo Skill",
+      summary: "Skill summary",
+      latestVersionId: "skillVersions:demo-1",
+      tags: { latest: "skillVersions:demo-1" },
+      badges: {},
+      createdAt: 1,
+      updatedAt: 2,
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:demo-1",
+      skillId: "skills:demo",
+      version: "1.0.0",
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:skill", sha256: "skill" }],
+      softDeletedAt: undefined,
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("name" in args) return null;
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            latestVersionId: "skillVersions:demo-1",
-            tags: { latest: "skillVersions:demo-1" },
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "steipete" },
           moderationInfo: {
@@ -13687,15 +14260,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if (args.versionId === "skillVersions:demo-1") {
-        return {
-          _id: "skillVersions:demo-1",
-          skillId: "skills:demo",
-          version: "1.0.0",
-          files: [{ path: "SKILL.md", size: 5, storageId: "storage:skill", sha256: "skill" }],
-          softDeletedAt: undefined,
-        };
-      }
+
       throw new Error("unexpected version lookup");
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -13712,44 +14277,32 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages file does not serve skill tags pointing at another skill's version", async () => {
+    const selectedSkill = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo Skill",
+      summary: "Skill summary",
+      latestVersionId: "skillVersions:demo-1",
+      tags: { latest: "skillVersions:demo-1", old: "skillVersions:other" },
+      badges: {},
+      createdAt: 1,
+      updatedAt: 2,
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "not_found" };
+      }
+
       if ("name" in args) return null;
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            latestVersionId: "skillVersions:demo-1",
-            tags: { latest: "skillVersions:demo-1", old: "skillVersions:other" },
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "steipete" },
           moderationInfo: null,
         };
       }
-      if (args.versionId === "skillVersions:other") {
-        return {
-          _id: "skillVersions:other",
-          skillId: "skills:other",
-          version: "9.9.9",
-          createdAt: 9,
-          changelog: "other",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 11,
-              sha256: "abc",
-              storageId: "storage:other",
-              contentType: "text/markdown",
-            },
-          ],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -14023,21 +14576,37 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("packages version detail blocks skill compatibility metadata for malware-blocked skills", async () => {
+    const selectedSkill = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo Skill",
+      summary: "Skill summary",
+      latestVersionId: "skillVersions:demo-2",
+      tags: { latest: "skillVersions:demo-2" },
+      badges: {},
+      createdAt: 1,
+      updatedAt: 2,
+      moderationVerdict: "malicious",
+      moderationFlags: ["blocked.malware"],
+      moderationSourceVersionId: "skillVersions:demo-1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:demo-1",
+      skillId: "skills:demo",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "init",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("name" in args) return null;
       if ("slug" in args) {
         return {
-          skill: {
-            _id: "skills:demo",
-            slug: "demo",
-            displayName: "Demo Skill",
-            summary: "Skill summary",
-            latestVersionId: "skillVersions:demo-2",
-            tags: { latest: "skillVersions:demo-2" },
-            badges: {},
-            createdAt: 1,
-            updatedAt: 2,
-          },
+          skill: selectedSkill,
           latestVersion: null,
           owner: { handle: "steipete" },
           moderationInfo: {
@@ -14049,16 +14618,7 @@ describe("httpApiV1 handlers", () => {
           },
         };
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:demo-1",
-          skillId: "skills:demo",
-          version: "1.0.0",
-          createdAt: 3,
-          changelog: "init",
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -14072,35 +14632,79 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toContain("flagged as malicious");
   });
 
+  it("packages version detail hides unpublished skill versions", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        expect(args.version).toBe("2.0.0");
+        return { status: "not_found" };
+      }
+
+      if ("name" in args) return null;
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:demo",
+            slug: "demo",
+            displayName: "Demo Skill",
+            summary: "Skill summary",
+            latestVersionId: "skillVersions:demo-1",
+            tags: { latest: "skillVersions:demo-1" },
+            badges: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: { _id: "skillVersions:demo-1", version: "1.0.0" },
+          owner: { handle: "steipete" },
+          moderationInfo: null,
+        };
+      }
+
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo/versions/2.0.0"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Version not found");
+  });
+
   it("packages version detail blocks moderated skills that are unavailable publicly", async () => {
     let slugLookupCount = 0;
+    const selectedSkill = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo Skill",
+      latestVersionId: "skillVersions:demo-1",
+      tags: { latest: "skillVersions:demo-1" },
+      moderationStatus: "hidden",
+      moderationReason: "pending.scan",
+      moderationFlags: [],
+      moderationSourceVersionId: "skillVersions:demo-1",
+    };
+    const selectedVersion0 = {
+      _id: "skillVersions:demo-1",
+      skillId: "skills:demo",
+      version: "1.0.0",
+      createdAt: 3,
+      changelog: "init",
+      files: [],
+    };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (getFunctionName(_query as never) === "skills:getPublicVersionSelectionInternal") {
+        return { status: "available", skill: selectedSkill, version: selectedVersion0 };
+      }
+
       if ("name" in args) return null;
       if ("slug" in args) {
         slugLookupCount += 1;
         if (slugLookupCount === 1) return null;
-        return {
-          _id: "skills:demo",
-          slug: "demo",
-          displayName: "Demo Skill",
-          latestVersionId: "skillVersions:demo-1",
-          tags: { latest: "skillVersions:demo-1" },
-          moderationStatus: "hidden",
-          moderationReason: "pending.scan",
-          moderationFlags: [],
-          moderationSourceVersionId: "skillVersions:demo-1",
-        };
+        return selectedSkill;
       }
-      if ("skillId" in args && "version" in args) {
-        return {
-          _id: "skillVersions:demo-1",
-          skillId: "skills:demo",
-          version: "1.0.0",
-          createdAt: 3,
-          changelog: "init",
-          files: [],
-        };
-      }
+
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -15985,7 +16589,7 @@ describe("httpApiV1 handlers", () => {
   it("package download uses download rate limiting", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16003,21 +16607,26 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16046,7 +16655,7 @@ describe("httpApiV1 handlers", () => {
   it("package file uses read rate limiting", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16064,21 +16673,26 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "README.md",
-              size: 5,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "text/markdown",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "README.md",
+                size: 5,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "text/markdown",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16107,7 +16721,7 @@ describe("httpApiV1 handlers", () => {
   it("package file previews UTF-8 by bytes and downloads opaque artifacts", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16125,28 +16739,33 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "main.tf",
-              size: 37,
-              sha256: "b".repeat(64),
-              storageId: "storage:text",
-              contentType: "application/octet-stream",
-            },
-            {
-              path: "assets/payload.bin",
-              size: 4,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/octet-stream",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "main.tf",
+                size: 37,
+                sha256: "b".repeat(64),
+                storageId: "storage:text",
+                contentType: "application/octet-stream",
+              },
+              {
+                path: "assets/payload.bin",
+                size: 4,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/octet-stream",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16192,7 +16811,7 @@ describe("httpApiV1 handlers", () => {
   it("package file resolves lowercase readme variants from the canonical request path", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16210,21 +16829,26 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "readme.md",
-              size: 5,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "text/markdown",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "readme.md",
+                size: 5,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "text/markdown",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16249,7 +16873,7 @@ describe("httpApiV1 handlers", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16267,28 +16891,33 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-            {
-              path: "dist/index.js",
-              size: 17,
-              sha256: "b".repeat(64),
-              storageId: "storage:2",
-              contentType: "text/javascript",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+              {
+                path: "dist/index.js",
+                size: 17,
+                sha256: "b".repeat(64),
+                storageId: "storage:2",
+                contentType: "text/javascript",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16335,7 +16964,7 @@ describe("httpApiV1 handlers", () => {
 
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16353,21 +16982,26 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16404,7 +17038,7 @@ describe("httpApiV1 handlers", () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16422,21 +17056,26 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16465,7 +17104,7 @@ describe("httpApiV1 handlers", () => {
   it("package download fails when any stored file is missing", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16483,28 +17122,33 @@ describe("httpApiV1 handlers", () => {
           owner: { _id: "users:owner", handle: "owner" },
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-            {
-              path: "dist/index.js",
-              size: 2,
-              sha256: "b".repeat(64),
-              storageId: "storage:missing",
-              contentType: "text/javascript",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+              {
+                path: "dist/index.js",
+                size: 2,
+                sha256: "b".repeat(64),
+                storageId: "storage:missing",
+                contentType: "text/javascript",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16530,7 +17174,7 @@ describe("httpApiV1 handlers", () => {
   it("allows package downloads while VT scan is pending", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16548,22 +17192,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          sha256hash: "a".repeat(64),
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            sha256hash: "a".repeat(64),
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16584,7 +17233,7 @@ describe("httpApiV1 handlers", () => {
     const archive = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16602,22 +17251,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          artifactKind: "legacy-zip",
-          clawpackStorageId: "storage:archive",
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:file-that-must-not-be-read",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            artifactKind: "legacy-zip",
+            clawpackStorageId: "storage:archive",
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:file-that-must-not-be-read",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16642,7 +17296,7 @@ describe("httpApiV1 handlers", () => {
     const packageJson = new TextEncoder().encode('{"name":"demo-plugin"}');
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16660,22 +17314,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          artifactKind: "npm-pack",
-          clawpackStorageId: "storage:tarball",
-          files: [
-            {
-              path: "package.json",
-              size: packageJson.byteLength,
-              sha256: "a".repeat(64),
-              storageId: "storage:package-json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:tarball",
+            files: [
+              {
+                path: "package.json",
+                size: packageJson.byteLength,
+                sha256: "a".repeat(64),
+                storageId: "storage:package-json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16703,7 +17362,7 @@ describe("httpApiV1 handlers", () => {
   it("allows package downloads when verification is clean even without cached vtAnalysis", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16721,23 +17380,28 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          sha256hash: "a".repeat(64),
-          verification: { scanStatus: "clean" },
-          files: [
-            {
-              path: "package.json",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "application/json",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            sha256hash: "a".repeat(64),
+            verification: { scanStatus: "clean" },
+            files: [
+              {
+                path: "package.json",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "application/json",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16760,7 +17424,7 @@ describe("httpApiV1 handlers", () => {
   it("blocks package file access when release is malicious", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("name" in args) {
+      if (getFunctionName(_query as never) === "packages:getByNameForViewerInternal") {
         return {
           package: {
             _id: "packages:1",
@@ -16778,22 +17442,27 @@ describe("httpApiV1 handlers", () => {
           owner: null,
         };
       }
-      if ("releaseId" in args) {
+      if (getFunctionName(_query as never) === "packages:getReleaseForViewerInternal") {
+        expect(args).toMatchObject({ name: "demo-plugin", packageId: "packages:1" });
         return {
-          _id: "packageReleases:1",
-          version: "1.0.0",
-          createdAt: 1,
-          changelog: "init",
-          verification: { scanStatus: "malicious" },
-          files: [
-            {
-              path: "README.md",
-              size: 2,
-              sha256: "a".repeat(64),
-              storageId: "storage:1",
-              contentType: "text/markdown",
-            },
-          ],
+          package: { _id: "packages:1", name: "demo-plugin" },
+          release: {
+            packageId: "packages:1",
+            _id: "packageReleases:1",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "init",
+            verification: { scanStatus: "malicious" },
+            files: [
+              {
+                path: "README.md",
+                size: 2,
+                sha256: "a".repeat(64),
+                storageId: "storage:1",
+                contentType: "text/markdown",
+              },
+            ],
+          },
         };
       }
       return null;
@@ -16866,6 +17535,67 @@ describe("httpApiV1 handlers", () => {
     expect(await fileResponse.text()).toBe("Version not found");
     expect(downloadResponse.status).toBe(404);
     expect(await downloadResponse.text()).toBe("Version not found");
+  });
+
+  it("blocks file and download access to unpublished package releases", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: { latest: "packageReleases:published" },
+            latestReleaseId: "packageReleases:published",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("version" in args) {
+        return {
+          _id: "packageReleases:pending",
+          version: "2.0.0",
+          createdAt: 2,
+          changelog: "pending",
+          publicationStatus: "pending",
+          files: [
+            {
+              path: "README.md",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:pending",
+              contentType: "text/markdown",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storage = { get: vi.fn() };
+
+    const fileResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request(
+        "https://example.com/api/v1/packages/demo-plugin/file?version=2.0.0&path=README.md",
+      ),
+    );
+    const downloadResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download?version=2.0.0"),
+    );
+
+    expect(fileResponse.status).toBe(404);
+    expect(await fileResponse.text()).toBe("Version not found");
+    expect(downloadResponse.status).toBe(404);
+    expect(await downloadResponse.text()).toBe("Version not found");
+    expect(storage.get).not.toHaveBeenCalled();
   });
 
   it("package publish uses write rate limiting", async () => {

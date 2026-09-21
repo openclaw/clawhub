@@ -257,8 +257,8 @@ test("released CLI publishes skills and plugins only after both security checks 
         slug,
       )}/versions/1.0.0?ownerHandle=${encodeURIComponent(tokens.admin.handle)}`,
     );
-    expect(privateSkill.ok()).toBe(false);
-    expect(await privateSkill.text()).toContain("currently unavailable");
+    expect(privateSkill.status()).toBe(404);
+    expect(await privateSkill.text()).toBe("Skill not found");
 
     const skillClaim = await expectSingleMockPrePublicationCheckRejected({
       kind: "skill",
@@ -270,7 +270,8 @@ test("released CLI publishes skills and plugins only after both security checks 
         slug,
       )}/versions/1.0.0?ownerHandle=${encodeURIComponent(tokens.admin.handle)}`,
     );
-    expect(skillAfterOnlyTruffleHog.ok()).toBe(false);
+    expect(skillAfterOnlyTruffleHog.status()).toBe(404);
+    expect(await skillAfterOnlyTruffleHog.text()).toBe("Skill not found");
 
     await completeMockPrePublicationChecks({
       kind: "skill",

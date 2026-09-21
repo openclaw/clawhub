@@ -46,7 +46,11 @@ describe("security-scan-codex workflow", () => {
           steps: WorkflowStep[];
           strategy?: {
             "max-parallel"?: number;
-            matrix?: { include?: Array<{ lane?: string; shard?: string }> };
+            matrix?: {
+              lane?: string[];
+              shard?: string;
+              include?: Array<{ lane?: string; shard?: string }>;
+            };
           };
           "timeout-minutes"?: number;
         };
@@ -91,21 +95,26 @@ describe("security-scan-codex workflow", () => {
     expect(workflow.on?.schedule).toBeUndefined();
     expect(workflow.concurrency).toBeUndefined();
     expect(workflow.jobs["codex-security-scan"].concurrency).toEqual({
-      group: "clawhub-security-scan-${{ matrix.shard }}",
+      group:
+        "clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}",
       "cancel-in-progress": false,
     });
-    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(10);
+    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(19);
+    const matrix = workflow.jobs["codex-security-scan"].strategy?.matrix;
+    expect(matrix?.lane).toEqual(["shared"]);
+    expect(matrix?.shard).toContain("inputs['assigned-jobs'] && inputs['shared-workers'] == '18'");
+    const choices = [...(matrix?.shard ?? "").matchAll(/'(\[.*?\])'/g)].map((match) =>
+      JSON.parse(match[1]),
+    );
+    expect(choices).toEqual([
+      Array.from({ length: 18 }, (_, n) => `shared-${n}`),
+      Array.from({ length: 9 }, (_, n) => `shared-${n}`),
+    ]);
+    expect(jobEnv.CODEX_SECURITY_SCAN_SHARED_WORKERS).toBe(
+      "${{ inputs['shared-workers'] || '9' }}",
+    );
     expect(workflow.jobs["codex-security-scan"].strategy?.matrix?.include).toEqual([
       { lane: "priority", shard: "priority-0" },
-      { lane: "shared", shard: "shared-0" },
-      { lane: "shared", shard: "shared-1" },
-      { lane: "shared", shard: "shared-2" },
-      { lane: "shared", shard: "shared-3" },
-      { lane: "shared", shard: "shared-4" },
-      { lane: "shared", shard: "shared-5" },
-      { lane: "shared", shard: "shared-6" },
-      { lane: "shared", shard: "shared-7" },
-      { lane: "shared", shard: "shared-8" },
     ]);
     expect(jobEnv.CODEX_SECURITY_SCAN_LANE).toBe("${{ matrix.lane }}");
     expect(jobEnv.CODEX_SECURITY_SCAN_LIMIT).toBe(
@@ -168,9 +177,10 @@ describe("security-scan-codex workflow", () => {
       "python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt",
     );
     expect(aigInstall).not.toContain("pip install 'aig-skill-scan==0.2.1'");
-    expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.1"');
-    expect(aigInstall).toContain("aig-skill-scan-0.2.1-gpt5.patch");
-    expect(aigInstall).toContain("f18ae642d62be142192d6bd4c21c4ea7e098bbc8");
+    expect(aigInstall).not.toContain('version("aig-skill-scan") == "0.2.1"');
+    expect(aigInstall).toContain('version("aig-skill-scan") == "0.2.2"');
+    expect(aigInstall).not.toContain("aig-skill-scan-0.2.1-gpt5.patch");
+    expect(aigInstall).not.toContain("f18ae642d62be142192d6bd4c21c4ea7e098bbc8");
     expect(aigInstall).toContain('assert "temperature=" not in inspect.getsource(LLM.chat_stream)');
     expect(aigInstall).toContain("aig-skill-scan --help");
     expect(skillspectorInstall).toContain(

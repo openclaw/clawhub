@@ -87,8 +87,19 @@ function initialPluginListing({
 }
 
 function renderSkillsListing() {
-  const result = render(<HomeListingSection initialListing={initialPluginListing()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+  const result = render(
+    <HomeListingSection
+      initialListing={{
+        kind: "skills",
+        tab: "trending",
+        categorySlugs: [],
+        fetchLimit: 20,
+        items: [],
+        hasMore: false,
+        trendingState: "empty",
+      }}
+    />,
+  );
   fireEvent.click(screen.getByRole("tab", { name: "New" }));
   return result;
 }
@@ -196,10 +207,13 @@ describe("HomeListingSection", () => {
   });
 
   it("keeps the initial Skills skeleton iconless", () => {
-    fetchCatalogDiscoveryCapabilitiesMock.mockReturnValue(new Promise(() => {}));
+    convexQueryMock.mockReturnValue(new Promise(() => {}));
 
     render(<HomeListingSection />);
 
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     const loadingResults = screen.getByRole("status", { name: "Loading results" });
     expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
     expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();

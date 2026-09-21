@@ -40,4 +40,26 @@ describe("skill file moderation access", () => {
       expect(block).toBeNull();
     }
   });
+
+  it("hides pending skill versions from public download and file reads", () => {
+    expect(
+      getPublicSkillVersionDownloadBlock(null, {
+        _id: "skillVersions:pending",
+        publicationStatus: "pending",
+        llmAnalysis: { status: "clean" },
+      }),
+    ).toMatchObject({
+      status: 404,
+      message: "Version not found",
+    });
+  });
+
+  it("still allows versions without a publicationStatus field", () => {
+    expect(
+      getPublicSkillVersionDownloadBlock(null, {
+        _id: "skillVersions:legacy",
+        llmAnalysis: { status: "clean" },
+      }),
+    ).toBeNull();
+  });
 });

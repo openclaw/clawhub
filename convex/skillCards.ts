@@ -4,6 +4,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
 import {
+  admitSkillCardClaims,
+  MAX_PARALLEL_SKILL_CARD_JOBS,
+  planSkillCardClaims,
+  type SkillCardClaimPlan,
+  type SkillCardClaimResult,
+} from "./lib/skillCardClaims";
+import {
   hasSettledSkillCardInputs,
   MAX_SKILL_CARD_FILE_BYTES,
   normalizeSkillCardSecurityStatus,
@@ -13,9 +20,7 @@ import {
 } from "./lib/skillCards";
 import { redactWorkerPublicText } from "./lib/workerTextRedaction";
 
-const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const DEFAULT_SKILL_CARD_CLAIM_LIMIT = 6;
-const MAX_PARALLEL_SKILL_CARD_JOBS = 64;
 const MAX_ATTEMPTS = 3;
 
 const jobSourceValidator = v.union(v.literal("publish"), v.literal("scan"), v.literal("manual"));
@@ -38,9 +43,11 @@ type SkillCardTarget = {
 
 const internalRefs = internal as unknown as {
   skillCards: {
+    planQueuedJobsInternal: unknown;
     claimQueuedJobsInternal: unknown;
     getJobTargetInternal: unknown;
     failJobInternal: unknown;
+    abandonClaimsInternal: unknown;
     attachCardAndSucceedJobInternal: unknown;
     enqueueForVersionInternal: unknown;
   };
@@ -164,74 +171,22 @@ export const enqueueForVersionInternal = internalMutation({
   handler: async (ctx, args) => enqueueSkillCardJob(ctx, args),
 });
 
+export const planQueuedJobsInternal = internalQuery({
+  args: { limit: v.number(), now: v.number() },
+  handler: (ctx, args) =>
+    planSkillCardClaims(ctx, { limit: normalizeLimit(args.limit), now: args.now }),
+});
+
 export const claimQueuedJobsInternal = internalMutation({
   args: {
     workerId: v.string(),
     limit: v.number(),
     leaseMs: v.optional(v.number()),
+    jobIds: v.array(v.id("skillCardGenerationJobs")),
+    slots: v.array(v.number()),
+    expiredJobIds: v.array(v.id("skillCardGenerationJobs")),
   },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const limit = normalizeLimit(args.limit);
-    const leaseMs = Math.max(60_000, Math.min(args.leaseMs ?? DEFAULT_LEASE_MS, 60 * 60 * 1000));
-
-    const running = await ctx.db
-      .query("skillCardGenerationJobs")
-      .withIndex("by_status_and_lease_expires_at", (q) => q.eq("status", "running"))
-      .take(MAX_PARALLEL_SKILL_CARD_JOBS * 4);
-    for (const job of running) {
-      if ((job.leaseExpiresAt ?? 0) <= now) {
-        await ctx.db.patch(job._id, {
-          status: "queued",
-          leaseToken: undefined,
-          leaseExpiresAt: undefined,
-          workerId: undefined,
-          nextRunAt: now,
-          updatedAt: now,
-        });
-      }
-    }
-    const activeRunningJobs = running.filter((job) => (job.leaseExpiresAt ?? 0) > now);
-    const activeRunning = activeRunningJobs.length;
-    const activeVersionIds = new Set(activeRunningJobs.map((job) => job.skillVersionId));
-    const capacity = Math.max(0, Math.min(limit, MAX_PARALLEL_SKILL_CARD_JOBS - activeRunning));
-    if (capacity === 0) return [];
-
-    const queued = await ctx.db
-      .query("skillCardGenerationJobs")
-      .withIndex("by_status_and_next_run_at", (q) => q.eq("status", "queued").lte("nextRunAt", now))
-      .order("asc")
-      .take(capacity * 4);
-    const ready = queued
-      .filter((job) => job.nextRunAt <= now && !activeVersionIds.has(job.skillVersionId))
-      .sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt)
-      .slice(0, capacity);
-
-    const claimed = [];
-    for (const job of ready) {
-      if (activeVersionIds.has(job.skillVersionId)) continue;
-      const leaseToken = crypto.randomUUID();
-      await ctx.db.patch(job._id, {
-        status: "running",
-        attempts: job.attempts + 1,
-        leaseToken,
-        leaseExpiresAt: now + leaseMs,
-        workerId: args.workerId,
-        lastError: undefined,
-        updatedAt: now,
-      });
-      claimed.push({
-        ...job,
-        status: "running" as const,
-        attempts: job.attempts + 1,
-        leaseToken,
-        leaseExpiresAt: now + leaseMs,
-        workerId: args.workerId,
-      });
-      activeVersionIds.add(job.skillVersionId);
-    }
-    return claimed;
-  },
+  handler: (ctx, args) => admitSkillCardClaims(ctx, { ...args, limit: normalizeLimit(args.limit) }),
 });
 
 export const getJobTargetInternal = internalQuery({
@@ -334,87 +289,138 @@ export const claimSkillCardJobs = action({
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
-    const jobs = await runMutationRef<Array<SkillCardJob & { leaseToken: string }>>(
-      ctx,
-      internalRefs.skillCards.claimQueuedJobsInternal,
-      {
-        workerId: args.workerId,
-        limit: normalizeLimit(args.limit),
-        leaseMs: args.leaseMs,
-      },
-    );
+    const limit = normalizeLimit(args.limit);
+    let jobs: SkillCardClaimResult["jobs"] = [];
+    // Replan only an explicitly uncommitted admission. Once any lease commits,
+    // hydrate that receipt immediately; later discovery must never hide it.
+    for (let attempt = 0; attempt < MAX_PARALLEL_SKILL_CARD_JOBS; attempt += 1) {
+      const plan = await runQueryRef<SkillCardClaimPlan>(
+        ctx,
+        internalRefs.skillCards.planQueuedJobsInternal,
+        { limit, now: Date.now() },
+      );
+      if (plan.jobIds.length === 0 || plan.slots.length === 0) return [];
+      const result = await runMutationRef<SkillCardClaimResult>(
+        ctx,
+        internalRefs.skillCards.claimQueuedJobsInternal,
+        { ...plan, workerId: args.workerId, limit, leaseMs: args.leaseMs },
+      );
+      if (!result.contended) {
+        jobs = result.jobs;
+        break;
+      }
+      if (attempt === MAX_PARALLEL_SKILL_CARD_JOBS - 1) {
+        throw new ConvexError({
+          code: "SKILL_CARD_CLAIM_CONTENDED",
+          message: "Skill Card capacity changed during every admission attempt; no leases claimed.",
+        });
+      }
+    }
 
     const hydrated = [];
-    for (const job of jobs) {
-      const target = await runQueryRef<SkillCardTarget | null>(
-        ctx,
-        internalRefs.skillCards.getJobTargetInternal,
-        { jobId: job._id },
-      );
-      if (!target || target.missing || !target.skill || !target.version) {
-        await runMutationRef(ctx, internalRefs.skillCards.failJobInternal, {
-          jobId: job._id,
-          leaseToken: job.leaseToken,
-          error: "Skill version missing",
-        });
-        continue;
-      }
-
-      const fingerprintEntries = (await runQueryRef<
-        Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
-      >(ctx, internal.skills.listVersionFingerprintsInternal, {
-        skillVersionId: target.version._id,
-      })) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
-      const files = sourceSkillVersionFiles(target.version.files, {
-        generatedBundleFingerprints: generatedBundleFingerprints(fingerprintEntries),
-      });
-      const fileUrls = [];
-      let missingStoragePath: string | null = null;
-      for (const file of files) {
-        const url = await ctx.storage.getUrl(file.storageId);
-        if (!url) {
-          missingStoragePath = file.path;
-          break;
+    try {
+      for (const job of jobs) {
+        const target = await runQueryRef<SkillCardTarget | null>(
+          ctx,
+          internalRefs.skillCards.getJobTargetInternal,
+          { jobId: job._id },
+        );
+        if (!target || target.missing || !target.skill || !target.version) {
+          await runMutationRef(ctx, internalRefs.skillCards.failJobInternal, {
+            jobId: job._id,
+            leaseToken: job.leaseToken,
+            error: "Skill version missing",
+          });
+          continue;
         }
-        fileUrls.push({
-          path: file.path,
-          size: file.size,
-          sha256: file.sha256,
-          contentType: file.contentType,
-          url,
-        });
-      }
-      if (missingStoragePath) {
-        await runMutationRef(ctx, internalRefs.skillCards.failJobInternal, {
-          jobId: job._id,
-          leaseToken: job.leaseToken,
-          error: `Artifact file unavailable: ${missingStoragePath}`,
-        });
-        continue;
-      }
 
-      hydrated.push({
-        job,
-        target: {
-          skill: target.skill,
-          version: target.version,
-          evidence: buildEvidencePacket(
-            {
-              job,
-              skill: target.skill,
-              version: target.version,
-              owner: target.owner ?? null,
-              publisher: target.publisher ?? null,
-            },
-            files,
-          ),
-          files: fileUrls,
-        },
-      });
+        const fingerprintEntries = (await runQueryRef<
+          Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
+        >(ctx, internal.skills.listVersionFingerprintsInternal, {
+          skillVersionId: target.version._id,
+        })) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
+        const files = sourceSkillVersionFiles(target.version.files, {
+          generatedBundleFingerprints: generatedBundleFingerprints(fingerprintEntries),
+        });
+        const fileUrls = [];
+        let missingStoragePath: string | null = null;
+        for (const file of files) {
+          const url = await ctx.storage.getUrl(file.storageId);
+          if (!url) {
+            missingStoragePath = file.path;
+            break;
+          }
+          fileUrls.push({
+            path: file.path,
+            size: file.size,
+            sha256: file.sha256,
+            contentType: file.contentType,
+            url,
+          });
+        }
+        if (missingStoragePath) {
+          await runMutationRef(ctx, internalRefs.skillCards.failJobInternal, {
+            jobId: job._id,
+            leaseToken: job.leaseToken,
+            error: `Artifact file unavailable: ${missingStoragePath}`,
+          });
+          continue;
+        }
+
+        hydrated.push({
+          job,
+          target: {
+            skill: target.skill,
+            version: target.version,
+            evidence: buildEvidencePacket(
+              {
+                job,
+                skill: target.skill,
+                version: target.version,
+                owner: target.owner ?? null,
+                publisher: target.publisher ?? null,
+              },
+              files,
+            ),
+            files: fileUrls,
+          },
+        });
+      }
+    } catch (error) {
+      // No job in this batch has reached the worker yet. Fence every token still
+      // owned by this claim, including hydrated jobs whose receipt was not sent.
+      try {
+        await runMutationRef(ctx, internalRefs.skillCards.abandonClaimsInternal, {
+          jobs: jobs.map((job) => ({ jobId: job._id, leaseToken: job.leaseToken })),
+          error: "Skill Card input hydration failed",
+        });
+      } catch {
+        console.error("skill_card_claim_cleanup_failed", {
+          jobIds: jobs.map((job) => job._id),
+          outcome: "cleanup settlement unknown; leases recover through expiry",
+        });
+      }
+      throw error;
     }
     return hydrated;
   },
 });
+
+async function settleSkillCardFailure(ctx: MutationCtx, job: SkillCardJob, error: string) {
+  const now = Date.now();
+  const retry = job.attempts < MAX_ATTEMPTS;
+  await ctx.db.patch(job._id, {
+    status: retry ? "queued" : "failed",
+    lastError: sanitizeWorkerErrorDetail(error),
+    nextRunAt: retry ? now + Math.min(30 * 60 * 1000, 2 ** job.attempts * 60_000) : job.nextRunAt,
+    claimSlot: undefined,
+    leaseToken: undefined,
+    leaseExpiresAt: undefined,
+    workerId: undefined,
+    updatedAt: now,
+  });
+  return { ok: true as const, retry };
+}
 
 export const failJobInternal = internalMutation({
   args: {
@@ -425,19 +431,26 @@ export const failJobInternal = internalMutation({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
     if (!job || job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
-    const now = Date.now();
-    const retry = job.attempts < MAX_ATTEMPTS;
-    const error = sanitizeWorkerErrorDetail(args.error);
-    await ctx.db.patch(args.jobId, {
-      status: retry ? "queued" : "failed",
-      lastError: error,
-      nextRunAt: retry ? now + Math.min(30 * 60 * 1000, 2 ** job.attempts * 60_000) : job.nextRunAt,
-      leaseToken: undefined,
-      leaseExpiresAt: undefined,
-      workerId: undefined,
-      updatedAt: now,
-    });
-    return { ok: true as const, retry };
+    return settleSkillCardFailure(ctx, job, args.error);
+  },
+});
+
+export const abandonClaimsInternal = internalMutation({
+  args: {
+    jobs: v.array(v.object({ jobId: v.id("skillCardGenerationJobs"), leaseToken: v.string() })),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let released = 0;
+    for (const { jobId, leaseToken } of args.jobs) {
+      const job = await ctx.db.get(jobId);
+      // Missing targets may already be settled; expiry may have assigned a new
+      // owner. Batch cleanup must never consume that owner's lease or retry.
+      if (!job || job.status !== "running" || job.leaseToken !== leaseToken) continue;
+      await settleSkillCardFailure(ctx, job, args.error);
+      released += 1;
+    }
+    return { released };
   },
 });
 
@@ -493,6 +506,7 @@ export const attachCardAndSucceedJobInternal = internalMutation({
       status: "succeeded",
       runId: args.runId,
       completedAt: now,
+      claimSlot: undefined,
       leaseToken: undefined,
       leaseExpiresAt: undefined,
       workerId: undefined,

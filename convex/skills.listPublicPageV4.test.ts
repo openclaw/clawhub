@@ -105,7 +105,7 @@ describe("skills.listPublicPageV4", () => {
     });
   });
 
-  it("keeps highlighted results in newest-featured order", async () => {
+  it("keeps legacy highlighted results in newest-featured order without a published snapshot", async () => {
     const result = await listPublicPageV4Handler(
       makeHighlightedCtx([
         makeDigest({
@@ -220,6 +220,9 @@ function makeHighlightedCtx(digests: Array<ReturnType<typeof makeDigest>>) {
   return {
     db: {
       query: vi.fn((table: string) => {
+        if (table === "featuredSelections") {
+          return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
+        }
         if (table === "skillBadges") {
           return {
             withIndex: vi.fn((_indexName: string, build: (q: EqBuilder) => unknown) => {

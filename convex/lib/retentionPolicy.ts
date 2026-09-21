@@ -64,6 +64,21 @@ const ephemeral = (
 });
 
 export const RETENTION_POLICIES = {
+  searchReportRuns: ephemeral(
+    "Private derived report generation outcomes, never search observations.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expirationTime",
+      prune: "searchReports.pruneExpiredInternal",
+      retention: "24 hours after generation request.",
+    },
+  ),
+  searchReportChunks: ephemeral("Bounded private evidence chunks owned by a report generation.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expirationTime",
+    prune: "searchReports.pruneExpiredInternal",
+    retention: "24 hours after generation request; deleted before the parent.",
+  }),
   searchAggregateStates: permanent(
     "One ingestion cursor and query-free coverage bounds; no identities.",
   ),
@@ -339,6 +354,9 @@ export const RETENTION_POLICIES = {
   catalogFeedPublications: permanent("Current published hosted catalog feed snapshot."),
   stars: permanent("User star records."),
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
+  featuredSelections: permanent(
+    "Staff editorial reservations and the current approved publication order.",
+  ),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   skillsShCatalogControls: permanent("Durable skills.sh catalog operator controls."),

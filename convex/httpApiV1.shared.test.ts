@@ -23,7 +23,7 @@ describe("http API v1 shared helpers", () => {
     expect(
       formatUserFacingErrorMessage(
         new Error(
-          "[CONVEX A] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Bad publish payload",
+          "[CONVEX A] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Bad publish payload\n    at save (../convex/featuredSelections.ts:100:19)\n    at async handler (functions.js:2:7)",
         ),
         "Request failed",
       ),
@@ -84,60 +84,94 @@ describe("http API v1 shared helpers", () => {
     await expect(response.text()).resolves.toBe("Internal Server Error");
   });
 
-  it("resolves latest tags without reading version documents", async () => {
+  it("checks latest tags against current version documents", async () => {
     const ctx = makeCtx();
     const versionId = "skillVersions:latest" as Id<"skillVersions">;
     const skillId = "skills:demo" as Id<"skills">;
-
-    const result = await resolveTagsBatch(
-      ctx,
-      [{ latest: versionId }],
-      [{ _id: versionId, skillId, version: "2.0.0" }],
-      [skillId],
-    );
-
-    expect(result).toEqual([{ latest: "2.0.0" }]);
-    expect(ctx.runQuery).not.toHaveBeenCalled();
-  });
-
-  it("only fetches tag versions that cannot be resolved from latest", async () => {
-    const ctx = makeCtx();
-    const latestId = "skillVersions:latest" as Id<"skillVersions">;
-    const stableId = "skillVersions:stable" as Id<"skillVersions">;
-    const skillId = "skills:demo" as Id<"skills">;
-    ctx.runQuery.mockResolvedValueOnce([{ _id: stableId, skillId, version: "1.5.0" }]);
-
-    const result = await resolveTagsBatch(
-      ctx,
-      [{ latest: latestId, stable: stableId }],
-      [{ _id: latestId, skillId, version: "2.0.0" }],
-      [skillId],
-    );
-
-    expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getVersionsByIdsInternal, {
-      versionIds: [stableId],
+    ctx.runQuery.mockResolvedValueOnce([
+      {
+        status: "available",
+        skill: { _id: skillId, tags: { latest: versionId } },
+        version: { version: "2.0.0" },
+      },
+    ]);
+    expect(await resolveTagsBatch(ctx, [{ latest: versionId }], [skillId])).toEqual([
+      { latest: "2.0.0" },
+    ]);
+    expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
+      selections: [{ skillId, versionId }],
     });
-    expect(result).toEqual([{ latest: "2.0.0", stable: "1.5.0" }]);
   });
 
-  it("filters resolved skill tags by owning skill", async () => {
+  it("deduplicates tag targets in the checked batch", async () => {
+    const ctx = makeCtx();
+    const versionId = "skillVersions:latest" as Id<"skillVersions">;
+    const skillId = "skills:demo" as Id<"skills">;
+    ctx.runQuery.mockResolvedValueOnce([
+      {
+        status: "available",
+        skill: { _id: skillId, tags: { latest: versionId, stable: versionId } },
+        version: { version: "2.0.0" },
+      },
+    ]);
+    expect(
+      await resolveTagsBatch(ctx, [{ latest: versionId, stable: versionId }], [skillId]),
+    ).toEqual([{ latest: "2.0.0", stable: "2.0.0" }]);
+    expect(ctx.runQuery).toHaveBeenCalledWith(internal.skills.getPublicVersionSelectionsInternal, {
+      selections: [{ skillId, versionId }],
+    });
+  });
+
+  it.each(["removed", "repointed"] as const)(
+    "omits a %s tag even when its former version remains published",
+    async (change) => {
+      const ctx = makeCtx();
+      const skillId = "skills:demo" as Id<"skills">;
+      const versionId = "skillVersions:old" as Id<"skillVersions">;
+      const nextVersionId = "skillVersions:next" as Id<"skillVersions">;
+      ctx.runQuery.mockResolvedValueOnce([
+        {
+          status: "available",
+          skill: {
+            _id: skillId,
+            tags: {
+              latest: versionId,
+              ...(change === "repointed" ? { stable: nextVersionId } : {}),
+            },
+          },
+          version: { _id: versionId, skillId, version: "1.0.0", publicationStatus: "published" },
+        },
+      ]);
+
+      expect(
+        await resolveTagsBatch(ctx, [{ latest: versionId, stable: versionId }], [skillId]),
+      ).toEqual([{ latest: "1.0.0" }]);
+      expect(ctx.runQuery).toHaveBeenCalledTimes(1);
+      expect(ctx.runQuery).toHaveBeenCalledWith(
+        internal.skills.getPublicVersionSelectionsInternal,
+        {
+          selections: [{ skillId, versionId }],
+        },
+      );
+    },
+  );
+
+  it("omits unavailable tag targets", async () => {
     const ctx = makeCtx();
     const otherId = "skillVersions:other" as Id<"skillVersions">;
     const stableId = "skillVersions:stable" as Id<"skillVersions">;
     const skillId = "skills:1" as Id<"skills">;
     ctx.runQuery.mockResolvedValueOnce([
-      { _id: otherId, skillId: "skills:other", version: "9.9.9" },
-      { _id: stableId, skillId, version: "1.5.0" },
+      { status: "not_found" },
+      {
+        status: "available",
+        skill: { _id: skillId, tags: { stable: stableId } },
+        version: { version: "1.5.0" },
+      },
     ]);
-
-    const result = await resolveTagsBatch(
-      ctx,
-      [{ latest: otherId, stable: stableId }],
-      [{ _id: otherId, skillId: "skills:other" as Id<"skills">, version: "9.9.9" }],
-      [skillId],
+    expect(await resolveTagsBatch(ctx, [{ latest: otherId, stable: stableId }], [skillId])).toEqual(
+      [{ stable: "1.5.0" }],
     );
-
-    expect(result).toEqual([{ stable: "1.5.0" }]);
   });
 
   it("validates skill scan multipart payloads before storing uploaded files", async () => {

@@ -24,13 +24,19 @@
   Legacy `runtime` remains readable and is not automatically mapped to Agent runtimes.
 - Channels requires supplying a messaging transport; reply notifications, message triage, and
   communication personas over an existing channel belong in Inbox & collaboration. Models
-  requires providing inference or choosing its model/provider; adapting tool selection and
-  presentation for an already selected model belongs in Context. Classification distinguishes
-  capabilities supplied from capabilities merely consumed. Sparse connector metadata uses Other
-  with a missing-evidence explanation rather than inventing the connected service's user purpose.
-- Plugin category precedence is package declaration, then ClawHub model classification,
+  requires providing inference or selecting which model/provider handles it as the main service; incidental budget
+  guards or fallback suggestions are categorized by their own workflow. Adapting tool selection
+  and presentation for an existing model belongs in Context. Classification distinguishes
+  the primary supplied capability from capabilities merely consumed or offered secondarily.
+- Category definitions are illustrative, not exhaustive specialty lists. Choose the best-supported
+  broad workflow category before Other. Reusable clients for user-chosen service/API/MCP targets
+  belong in Integrations; a dedicated connector follows its known service workflow. Sparse metadata that
+  establishes neither purpose remains Other with a missing-evidence explanation.
+- Plugin publication precedence is package declaration, then ClawHub model classification,
   then `other`. Omission is accepted. Invalid declarations reject publication instead of falling
-  through to inference.
+  through to inference. Staff may correct a generated or failed latest-release assignment through
+  the reviewed refresh journal. Authored current single categories and pinned bundled assignments
+  remain authoritative; this is not a general category editor.
 - Each plugin release stores the effective categories for that exact package version. A promoted
   latest release also updates the package-level categories used by browse, search, and filters.
 - Plugin categories are package-owned and are not editable in ClawHub publish or settings UI.
@@ -38,6 +44,8 @@
 - Backports and non-latest plugin releases do not replace current categories. When administrative
   cleanup repoints latest to a surviving release, package categories follow that exact release’s
   stored summary; missing historical evidence does not retain the removed release’s category.
+  Restore and malicious-release quarantine follow the same rule. The package trigger owns both
+  search projections, so lifecycle callers must not overwrite them with an earlier package snapshot.
 - Capability tags are not taxonomy inputs.
 - A reviewed one-time refresh covers only each plugin's latest published release and package
   projection. Older releases are unchanged; exact-version lookup remains null for historical
@@ -124,8 +132,20 @@ Failed model requests produce an observable Other fallback and do not reject val
 
 `pluginCategoryRefreshes` retains separate review runs with before/after category state. The
 preview action handles one bounded page and returns a resume cursor. Repeating a run never
-replaces its rows. Accept only inspected row IDs; failed classifications must be refreshed before
-acceptance. The migrations component applies accepted rows, checking release identity, artifact
+replaces its original proposals. Accept only inspected row IDs. Failed classifications require a
+fresh successful preview or an explicit source-supported staff correction. Corrections record one
+current category, a bounded rationale, workflow actor/run provenance, and the exact source hash
+on that same journal row; the report keeps the original model proposal visible. A SHA-256 review
+hash binds the selected artifact snapshots and decisions before acceptance. Acceptance seals the
+decision; apply and rollback cannot replace it.
+
+Applied staff decisions survive subsequent previews for the same release only while package
+identity, publisher, manifests, file hashes, and reviewed classification still match. The release
+classification points directly to its applied journal row. A changed artifact needs fresh review;
+a new release does not inherit the decision. Repointing latest to the reviewed release restores
+that release's categories. Rollback restores its prior classification and category state.
+
+The migrations component applies accepted rows, checking release identity, artifact
 evidence, and both package/release category state again. Category indexes change in the same
 transaction. Guarded rollback refuses to overwrite state changed after apply.
 
@@ -142,11 +162,16 @@ completion. The retained journal is the audit/rollback record.
 
 Operator entry points (run only against the deliberately selected deployment):
 
-- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v5-prod","batchSize":10}` returns
+- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v6-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
 - `pluginCategoryRefresh:accept` accepts at most 100 inspected row IDs with
-  `confirm: "apply-plugin-category-refresh"`. Accept a small pilot first, then small waves;
+  `confirm: "apply-plugin-category-refresh"`. The stock workflow's report/accept modes optionally
+  take `corrections: [{"id":"<journal-id>","category":"<current-slug>","evidence":"<reviewed-source-reason>"}]`.
+  Report the exact selected IDs and corrections, inspect the unchanged source and resulting review
+  hash, then pass the same decisions and hash to accept. The workflow records execution provenance;
+  this identifies the privileged operator run, not a ClawHub user authentication claim.
+  Later modes omit corrections and consume the sealed decision. Accept a small pilot first, then small waves;
   verify browse results and pause between waves to limit reactive traffic.
 - `migrations:applyAcceptedPluginCategoryRefreshes {"dryRun":true}` rehearses one batch
   without persisting changes. `migrations:run` with
@@ -158,11 +183,13 @@ Operator entry points (run only against the deliberately selected deployment):
 
 Classification uses `OPENAI_API_KEY` and defaults to `gpt-5.6-luna`, with a dedicated
 `OPENAI_PLUGIN_CATEGORY_MODEL` override independent of skill-summary configuration. The current
-classifier revision is `plugin-single-category-v5`; superseded generated previews cannot be
+classifier revision is `plugin-single-category-v6`; superseded generated previews cannot be
 accepted or applied. The model receives all 22 purpose definitions and must return exactly one
 category. Missing credentials, timeouts, and
-invalid output are recorded as failed fallback classifications. They cannot be accepted by the
-backfill. Retry those packages under a new run ID after resolving the failure.
+invalid output are recorded as failed fallback classifications. They cannot be accepted unchanged.
+Retry those packages under a new run ID after resolving the failure, or review the exact published
+source and supply an explicit correction. Applied staff decisions are independent of model revision;
+superseded unreviewed generated proposals still require a fresh preview.
 
 Corpus classification was a one-time operator-run phase:
 

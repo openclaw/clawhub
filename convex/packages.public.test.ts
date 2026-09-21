@@ -1630,6 +1630,8 @@ function makeDigestCtx(options: {
           return null;
         }),
         query: vi.fn((table: string) => {
+          if (table === "featuredSelections")
+            return { withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })) };
           if (table === "packageBadges") {
             return {
               withIndex: vi.fn(() => ({
@@ -7622,9 +7624,6 @@ describe("packages public queries", () => {
         updatedAt: expect.any(Number),
       }),
     );
-    const digestPatch = patch.mock.calls.find(([id]) => id === "packageSearchDigest:demo")?.[1];
-    expect(digestPatch).not.toHaveProperty("softDeletedBy");
-    expect(digestPatch).not.toHaveProperty("softDeletedByRole");
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
@@ -7784,9 +7783,6 @@ describe("packages public queries", () => {
         updatedAt: expect.any(Number),
       }),
     );
-    const digestPatch = patch.mock.calls.find(([id]) => id === "packageSearchDigest:demo")?.[1];
-    expect(digestPatch).not.toHaveProperty("softDeletedBy");
-    expect(digestPatch).not.toHaveProperty("softDeletedByRole");
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
@@ -19581,7 +19577,7 @@ describe("package scan backfill", () => {
     );
   });
 
-  it("keeps a first malicious plugin release out of public package lists", async () => {
+  it("clears latest pointers when the first plugin release is malicious", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const patch = vi.fn().mockResolvedValue(undefined);
     const candidateRelease = makeReleaseDoc({
@@ -19668,13 +19664,6 @@ describe("package scan backfill", () => {
         latestVersionSummary: undefined,
         scanStatus: "malicious",
         tags: {},
-      }),
-    );
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({
-        latestVersion: undefined,
-        scanStatus: "malicious",
       }),
     );
   });
@@ -20855,7 +20844,7 @@ describe("softDeletePackageInternal", () => {
 });
 
 describe("restorePackageInternal", () => {
-  it("restores a soft-deleted package and writes ownerHandle to the search digest", async () => {
+  it("restores a soft-deleted package and records the audit event", async () => {
     const pkg = makePackageDoc({
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:owner-personal",
@@ -20895,12 +20884,6 @@ describe("restorePackageInternal", () => {
     expect(patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({ softDeletedAt: undefined }),
-    );
-
-    // The packageSearchDigest row must be updated with ownerHandle resolved.
-    expect(patch).toHaveBeenCalledWith(
-      "packageSearchDigest:demo",
-      expect.objectContaining({ ownerHandle: "tongfei11", softDeletedAt: undefined }),
     );
 
     expect(insert).not.toHaveBeenCalledWith("packageCapabilitySearchDigest", expect.anything());

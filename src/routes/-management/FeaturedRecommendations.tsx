@@ -1,195 +1,210 @@
-import type { FeaturedIntelligenceReport } from "../../../convex/featuredIntelligence";
+import type { FeaturedIntelligenceReportSchema } from "../../../packages/clawhub/src/schema/searchInsights";
 import { insightTime as date } from "./insightTime";
 
-const supportLabels = {
-  both: "Search demand + adoption",
-  "search-only": "Search demand",
-  "adoption-only": "Adoption",
-  "current-only": "Current Featured · no observed window evidence",
-};
+type Report = typeof FeaturedIntelligenceReportSchema.infer;
+type Candidate = Report["recommendations"]["lineup"]["proposed"][number];
 const reasonLabels: Record<string, string> = {
   "discovery-excluded:channels": "Channels belong in setup and direct browsing",
   "discovery-excluded:models": "Model providers belong in setup and direct browsing",
   "discovery-excluded:agent-runtimes": "Agent runtimes belong in setup and direct browsing",
-  "outside-proposed-set":
-    "Replaced by evidence-ranked selections; this is not a safety finding or evidence of zero demand",
-  "security-not-clean": "A completed clean security review is required",
-  "no-public-version": "No published version is available",
-  "not-installable": "No installable artifact is available",
+  "no-public-version": "No public version",
+  "security-not-clean": "Security review is not clean",
+  "not-installable": "Not installable",
+  "not-in-public-catalog": "Not in the public catalog",
   "external-no-feature-owner": "External skill; ClawHub cannot publish its Featured badge",
+  "outside-proposed-set": "Outside this proposed selection; this is not a safety finding",
 };
+function reasons(values: string[]) {
+  return values.map((value) => reasonLabels[value] ?? value).join("; ");
+}
 
-export function FeaturedRecommendations({ report }: { report: FeaturedIntelligenceReport }) {
-  const { adoption, recommendations, searchReport } = report;
-  const { lineup } = recommendations;
+function CandidateCard({ candidate }: { candidate: Candidate }) {
+  return (
+    <article className="featured-recommendation-card" data-slot={candidate.slot + 1}>
+      <div>
+        <small>
+          Slot {candidate.slot + 1} ·{" "}
+          {candidate.selectionBasis === "editorial" ? "Editorial" : "Recorded installs"}
+        </small>
+        <h3>
+          <a href={candidate.url}>{candidate.displayName}</a>
+        </h3>
+        <span>
+          {candidate.change === "retain" ? "Retain" : "Add"} ·{" "}
+          {candidate.version ?? "Version unavailable"}
+        </span>
+      </div>
+      <p>{candidate.summary ?? "Review the published artifact for its workflow and quality."}</p>
+      <p>{candidate.reason}</p>
+      <p>Category: {candidate.category ?? "Uncategorized — review coverage"}</p>
+      {candidate.adoption ? (
+        <div className="featured-install-evidence">
+          <strong>
+            {candidate.adoption.installs30d.toLocaleString()}{" "}
+            <span>recorded installs / 30 days</span>
+          </strong>
+          <p>
+            {candidate.adoption.installs7d.toLocaleString()} in the final 7 days · install rank #
+            {candidate.adoption.rank}
+          </p>
+          <details>
+            <summary>Counts, periods and source</summary>
+            <p>
+              30 days: {date(candidate.adoption.periodStart)} inclusive to{" "}
+              {date(candidate.adoption.periodEnd)} exclusive.
+            </p>
+            <p>
+              Final 7 days: {date(candidate.adoption.periodStart7d)} inclusive to{" "}
+              {date(candidate.adoption.periodEnd)} exclusive.
+            </p>
+            <small>
+              Read {date(candidate.adoption.generatedAt)} · {candidate.adoption.source} ·{" "}
+              {candidate.adoption.rankingVersion}
+            </small>
+            <small>Snapshot {candidate.adoption.snapshotId}</small>
+            {candidate.adoption.importedRows > 0 ? (
+              <p>
+                {candidate.adoption.importedRows} imported aggregate rows ·{" "}
+                {candidate.adoption.importDatasetVersions.join(", ")}
+              </p>
+            ) : null}
+          </details>
+        </div>
+      ) : (
+        <p>
+          No recorded install evidence in this report. Editorial membership does not imply adoption.
+        </p>
+      )}
+    </article>
+  );
+}
+
+export function FeaturedRecommendations({ report }: { report: Report }) {
+  const { recommendations, adoption } = report;
+  const lineup = recommendations.lineup;
+  const catalog = report.searchReport.artifactKind === "plugin" ? "plugins" : "skills";
+  const telemetry = lineup.proposed.filter((candidate) => candidate.selectionBasis === "telemetry");
+  const selectedBySlot = new Map(lineup.proposed.map((candidate) => [candidate.slot, candidate]));
   return (
     <section aria-labelledby="featured-recommendations-title">
       <h2 id="featured-recommendations-title">Featured recommendations</h2>
       <p>
-        Complete proposed Featured set: {lineup.proposed.length} of {lineup.targetSize}{" "}
-        {searchReport.artifactKind === "plugin" ? "plugins" : "skills"}. Review usefulness, quality,
-        security and category coverage before approving a selection. This report does not publish
-        Featured changes.
-      </p>
-      <p className="text-muted-foreground">
-        Evidence groups appear in this order: both signals, search demand, adoption. Within each
-        group, search counts and then the existing Trending rank determine order. No blended score
-        is used; plugins and skills are ranked separately.
-      </p>
-      <p className="text-muted-foreground">
-        Adoption: {adoption.status}. Snapshot generated {date(adoption.generatedAt)}; observed
-        period {date(adoption.periodStart)} to {date(adoption.periodEnd)}. Inspected{" "}
-        {adoption.inspectedItems} of {adoption.totalItems} entries in the existing Trending
-        snapshot.
-        {adoption.truncated ? " Additional adoption entries were not inspected." : ""}
-      </p>
-      <p className="text-muted-foreground">
-        Search evidence covers the top {searchReport.rows.length} of {searchReport.totalQueries}{" "}
-        matching queries. Current eligibility checked {date(report.metadataCheckedAt)}.
-        {searchReport.currentMetadataStatus === "unavailable"
-          ? " Current search-result metadata is unavailable; adoption candidates may still be available."
-          : ""}
+        {lineup.proposed.length} ready of {lineup.targetSize} {catalog} · {lineup.pendingCount}{" "}
+        pending reservations · {lineup.telemetryShortfall} open telemetry places.
       </p>
       <p>
-        {lineup.proposed.filter((entry) => entry.change === "retain").length} retained ·{" "}
-        {lineup.proposed.filter((entry) => entry.change === "add").length} additions ·{" "}
-        {lineup.removals.length} removals proposed.
+        Telemetry ranks eligible entries by recorded installs over 30 completed UTC days, then
+        final-seven-day installs, then stable identity. Downloads, search-result associations,
+        publisher status and current Featured membership add no ranking bonus.
       </p>
-      {lineup.shortfall > 0 ? (
-        <p role="status">
-          {lineup.shortfall} open Featured {lineup.shortfall === 1 ? "place" : "places"}. We do not
-          fill the set with entries that fail the quality checks.
+      <p>
+        Review usefulness, quality, security and category coverage before approving publication.
+        This report does not publish Featured changes. Recorded installs are events, not unique
+        users or proof of successful runtime installation.
+      </p>
+      {lineup.staleEditorial ? (
+        <p role="alert">
+          Editorial choices changed from revision {lineup.editorialRevision} to{" "}
+          {lineup.currentEditorialRevision}. Refresh this report before approving a selection.
         </p>
       ) : null}
       <p className="text-muted-foreground">
-        Emerging means recently published (within 14 days) with observed adoption, or an entry in
-        the existing Rising feed with adoption. It does not imply accelerating growth.
+        Adoption: {adoption.status}. {date(adoption.periodStart)} inclusive to{" "}
+        {date(adoption.periodEnd)} exclusive. Read {date(adoption.generatedAt)}. Inspected{" "}
+        {adoption.inspectedItems} of {adoption.totalItems} identities across {adoption.scannedRows}{" "}
+        daily rows
+        {adoption.truncated ? "; additional candidates remain outside the inspected metadata" : ""}.
+        Current eligibility checked {date(report.metadataCheckedAt)}.
       </p>
-      {lineup.proposed.length ? (
-        <div className="featured-recommendations-grid">
-          {lineup.proposed.map((candidate) => (
-            <article key={candidate.id} className="featured-recommendation-card">
-              <header>
-                <h3>
-                  <a href={candidate.url}>{candidate.displayName}</a>
-                </h3>
-                <span>
-                  {candidate.change === "retain" ? "Retain" : "Add"}
-                  {candidate.emerging ? " · Emerging" : ""} · {supportLabels[candidate.support]}
-                </span>
-              </header>
-              <p>
-                {candidate.summary ??
-                  "No catalog summary is available. Review the artifact details."}
-              </p>
-              <p>Category: {candidate.category ?? "Uncategorized — review coverage"}</p>
-              {candidate.search ? (
-                <details>
-                  <summary>
-                    {searchReport.window.days === 7
-                      ? candidate.search.matchedSearches7d
-                      : candidate.search.searches30d}{" "}
-                    searches matched current catalog results · {searchReport.window.days} days
-                  </summary>
-                  <p>
-                    {date(candidate.search.periodStart)} to {date(candidate.search.periodEnd)}.
-                    Aggregated through {date(candidate.search.dataThrough)}. These are matching
-                    query counts, not unique people or installs of this artifact.
-                  </p>
-                  <ul>
-                    {candidate.search.queries.map((query) => (
-                      <li key={`${query.scope}:${query.query}`}>
-                        “{query.query}” · {query.searches7d} in 7 days · {query.previous7d} previous
-                        7 days · {query.searches30d} in 30 days · {query.scope} scope
-                      </li>
-                    ))}
-                  </ul>
-                  {candidate.search.omittedQueries ? (
-                    <p>{candidate.search.omittedQueries} more matching queries omitted.</p>
-                  ) : null}
-                </details>
+      <p className="text-muted-foreground">
+        Aggregate scan started {date(adoption.collectionStartedAt)}. Search intelligence remains
+        separate demand and gap evidence; current search-result associations do not establish demand
+        for an individual artifact.
+      </p>
+      <p>
+        {lineup.proposed.filter((candidate) => candidate.change === "retain").length} retained ·{" "}
+        {lineup.proposed.filter((candidate) => candidate.change === "add").length} additions ·{" "}
+        {lineup.removals.length} removals proposed.
+      </p>
+      {lineup.reservedSlots > 0 ? (
+        <>
+          <h3>Editorial slots · {lineup.reservedSlots} reserved</h3>
+          <p>
+            Manual choices remain in order when recommendations are recomputed. Pending reservations
+            stay visible here and are omitted from public cards.
+          </p>
+          <div className="featured-recommendations-grid">
+            {lineup.reservations.map((reservation) => {
+              const candidate = selectedBySlot.get(reservation.slot);
+              return candidate ? (
+                <CandidateCard key={reservation.slot} candidate={candidate} />
               ) : (
-                <p>No search evidence in the inspected queries.</p>
-              )}
-              {candidate.adoption ? (
-                <details open>
-                  <summary>
-                    Trending #{candidate.adoption.rank} · {candidate.adoption.source}
-                  </summary>
+                <article
+                  className="featured-recommendation-card is-pending"
+                  key={reservation.slot}
+                  data-slot={reservation.slot + 1}
+                >
+                  <small>Slot {reservation.slot + 1} · Editorial · Pending</small>
+                  <h3>{reservation.displayName ?? "Unassigned editorial slot"}</h3>
+                  {reservation.name ? <span>{reservation.name}</span> : null}
+                  <p>{reservation.reason ?? "Reserved for an editorial choice."}</p>
                   <p>
-                    {candidate.adoption.downloads ?? "Unknown"} downloads ·{" "}
-                    {candidate.adoption.installs ?? "Unknown"} installs ·{" "}
-                    {candidate.adoption.bookmarks ?? "Unknown"} bookmarks
+                    {reasons(reservation.pendingReasons) || "No eligible public artifact selected"}
                   </p>
-                  <p>
-                    {date(candidate.adoption.periodStart)} to {date(candidate.adoption.periodEnd)}
-                  </p>
-                  <small>
-                    Snapshot {candidate.adoption.snapshotId} · generated{" "}
-                    {date(candidate.adoption.generatedAt)} · ranking{" "}
-                    {candidate.adoption.rankingVersion}
-                  </small>
-                  {candidate.adoption.sourceObservedAt !== null ? (
-                    <p>Source last observed {date(candidate.adoption.sourceObservedAt)}</p>
-                  ) : null}
-                  {candidate.adoption.lifetimeInstalls !== null ? (
-                    <p>
-                      {candidate.adoption.lifetimeInstalls} lifetime installs (separate from the
-                      observed period)
-                    </p>
-                  ) : null}
-                </details>
-              ) : (
-                <p>No adoption evidence in the inspected Trending snapshot.</p>
-              )}
-            </article>
-          ))}
-        </div>
-      ) : (
+                  <small>No public card. Telemetry will not replace this reservation.</small>
+                </article>
+              );
+            })}
+          </div>
+        </>
+      ) : null}
+      <h3>
+        Install-ranked selection · {telemetry.length} of {lineup.telemetryTarget}
+      </h3>
+      <div className="featured-recommendations-grid">
+        {telemetry.map((candidate) => (
+          <CandidateCard key={candidate.id} candidate={candidate} />
+        ))}
+      </div>
+      {lineup.telemetryShortfall > 0 ? (
         <p role="status">
-          No eligible Featured candidates in the available evidence. Review coverage and exclusions
-          below.
+          {lineup.telemetryShortfall} open telemetry places. We do not pad the selection with
+          ineligible entries or missing install evidence.
         </p>
-      )}
-      {lineup.removals.length ? (
-        <section aria-label="Proposed removals">
-          <h3>Proposed removals</h3>
+      ) : null}
+      {lineup.removals.length > 0 ? (
+        <details>
+          <summary>Proposed removals ({lineup.removals.length})</summary>
           <ul>
-            {lineup.removals.map((entry) => (
-              <li key={entry.id}>
-                <a href={entry.url}>{entry.displayName}</a>:{" "}
-                {entry.reasons.map((reason) => reasonLabels[reason] ?? reason).join("; ")}
+            {lineup.removals.map((item) => (
+              <li key={item.id}>
+                <a href={item.url}>{item.displayName}</a>: {reasons(item.reasons)}
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       ) : null}
       <details>
         <summary>Current Featured baseline ({lineup.baseline.length})</summary>
-        <ul>
-          {lineup.baseline.map((entry) => (
-            <li key={entry.id}>
-              {entry.id} · version {entry.version ?? "unavailable"} · Featured{" "}
-              {date(entry.featuredAt)}
+        <ol>
+          {lineup.baseline.map((item) => (
+            <li key={item.id}>
+              {item.id} · version {item.version ?? "unavailable"} · Featured {date(item.featuredAt)}
             </li>
           ))}
-        </ul>
+        </ol>
       </details>
-      {recommendations.totalCandidates > lineup.proposed.length ? (
-        <p>
-          Proposed {lineup.proposed.length} of {recommendations.totalCandidates} eligible
-          candidates. Evidence-ranked candidates are reassessed each iteration; current entries with
-          unknown evidence can fill remaining places.
-        </p>
-      ) : null}
-      {recommendations.excluded.length ? (
+      <p className="text-muted-foreground">
+        {recommendations.totalCandidates} eligible candidates; {recommendations.omittedCandidates}{" "}
+        outside the displayed candidate detail.
+      </p>
+      {recommendations.excluded.length > 0 ? (
         <details>
-          <summary>{recommendations.excluded.length} entries excluded from the shortlist</summary>
+          <summary>{recommendations.excluded.length} excluded from the shortlist</summary>
           <ul>
-            {recommendations.excluded.map((entry) => (
-              <li key={entry.id}>
-                <a href={entry.url}>{entry.displayName}</a>:{" "}
-                {entry.reasons.map((reason) => reasonLabels[reason] ?? reason).join("; ")}
+            {recommendations.excluded.map((item) => (
+              <li key={item.id}>
+                <a href={item.url}>{item.displayName}</a>: {reasons(item.reasons)}
               </li>
             ))}
           </ul>

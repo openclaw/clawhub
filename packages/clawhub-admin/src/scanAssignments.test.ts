@@ -4,6 +4,19 @@ import { planScanWorkers, readWorkerAssignment } from "./scanAssignments.js";
 const ids = Array.from({ length: 100 }, (_, n) => `v${n.toString().padStart(31, "0")}`);
 
 describe("local scan worker assignments", () => {
+  it("spreads supplied jobs across eighteen workers without increasing per-worker concurrency", () => {
+    const plan = planScanWorkers(ids, 32, 18);
+    expect(plan.inputs["shared-workers"]).toBe("18");
+    expect(plan.inputs["batch-limit"]).toBe("32");
+    const assigned = Array.from({ length: 18 }, (_, n) =>
+      readWorkerAssignment(plan.inputs["assigned-jobs"], "shared", `shared-${n}`, 18)!,
+    );
+    expect(assigned.every((part) => part.length > 0)).toBe(true);
+    expect(assigned.flat().sort()).toEqual([...ids].sort());
+    expect(
+      readWorkerAssignment(plan.inputs["assigned-jobs"], "priority", "priority-0", 18),
+    ).toBeUndefined();
+  });
   it("partitions every supplied identity once and preserves the reserved lane", () => {
     const plan = planScanWorkers(ids, 32);
     const assignments = JSON.parse(plan.inputs["assigned-jobs"]);
@@ -30,6 +43,7 @@ describe("local scan worker assignments", () => {
     expect(readWorkerAssignment(undefined, "shared", "shared-8")).toBeUndefined();
   });
   it("rejects duplicate IDs, malformed plans, invalid shard identities and oversized inputs", () => {
+    expect(() => planScanWorkers(ids, 32, 17)).toThrow("9 or 18");
     expect(() => planScanWorkers([ids[0], ids[0]], 32)).toThrow("duplicate");
     expect(() => planScanWorkers([], 32)).toThrow("1–10000");
     expect(() => planScanWorkers(["not an id"], 32)).toThrow("securityScanJobs IDs");
@@ -42,6 +56,15 @@ describe("local scan worker assignments", () => {
     expect(() => readWorkerAssignment("x".repeat(65001), "shared", "shared-0")).toThrow("budget");
   });
 
+  it("rejects a pool-size mismatch before assigning any shared job, while preserving priority", () => {
+    const expanded = planScanWorkers(ids, 32, 18).inputs["assigned-jobs"];
+    const normal = planScanWorkers(ids, 32).inputs["assigned-jobs"];
+    expect(() => readWorkerAssignment(expanded, "shared", "shared-0")).toThrow("nine");
+    expect(() => readWorkerAssignment(normal, "shared", "shared-0", 18)).toThrow("eighteen");
+    expect(() => readWorkerAssignment(expanded, "shared", "shared-18", 18)).toThrow("shared-17");
+    expect(readWorkerAssignment("invalid", "priority", "priority-0", 18)).toBeUndefined();
+  });
+
   it("fits a full dispatch in the workflow input budget", () => {
     const jobs = Array.from({ length: 1728 }, (_, n) => `v${n.toString().padStart(31, "0")}`);
     const plan = planScanWorkers(jobs, 32);
@@ -50,10 +73,14 @@ describe("local scan worker assignments", () => {
       readWorkerAssignment(plan.inputs["assigned-jobs"], "shared", "shared-8")!.length,
     ).toBeGreaterThan(100);
   });
-  it("keeps job ownership stable as completed jobs leave the next dispatch", () => {
-    const first = JSON.parse(planScanWorkers(ids, 32).inputs["assigned-jobs"]) as string[][];
+  it.each([9, 18])("keeps job ownership stable within a %i-worker pool", (sharedWorkers) => {
+    const first = JSON.parse(
+      planScanWorkers(ids, 32, sharedWorkers).inputs["assigned-jobs"],
+    ) as string[][];
     const next = JSON.parse(
-      planScanWorkers([...ids.slice(50), ...ids.slice(17, 50)], 32).inputs["assigned-jobs"],
+      planScanWorkers([...ids.slice(50), ...ids.slice(17, 50)], 32, sharedWorkers).inputs[
+        "assigned-jobs"
+      ],
     ) as string[][];
     for (const [shard, part] of next.entries()) {
       expect(part.every((id) => first[shard].includes(id))).toBe(true);

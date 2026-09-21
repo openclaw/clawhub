@@ -195,11 +195,70 @@ export const lineupSearchDigestValidator = evidenceSearchDigestValidator
     catalogs: v.object({ plugins: lineupCatalog, skills: lineupCatalog }),
   });
 
+// Period, capture and ranking identity are shared once per catalog. Repeating
+// them on all32 cards exhausts the wire budget without adding evidence.
+const monthlyAdoption = v.object({
+  source: v.union(v.literal("package-daily-installs"), v.literal("skill-daily-installs")),
+  rank: v.number(),
+  installs30d: v.number(),
+  installs7d: v.number(),
+  importedRows: v.number(),
+  importDatasetVersions: v.array(v.string()),
+});
+export const monthlyRecommendationValidator = lineupRecommendationValidator
+  .omit("adoption")
+  .extend({
+    adoption: v.union(monthlyAdoption, v.null()),
+    slot: v.number(),
+    selectionBasis: v.union(v.literal("editorial"), v.literal("telemetry")),
+    reason: v.string(),
+  });
+const monthlyCatalog = lineupCatalog.omit("adoption", "lineup", "recommendations").extend({
+  adoption: catalog.fields.adoption.extend({
+    collectionStartedAt: v.number(),
+    periodStart7d: v.number(),
+    scannedRows: v.number(),
+    importedRows: v.number(),
+    importDatasetVersions: v.array(v.string()),
+  }),
+  lineup: featuredLineupValidator.omit("targetSize").extend({
+    targetSize: v.literal(16),
+    reservedSlots: v.number(),
+    telemetryTarget: v.number(),
+    pendingCount: v.number(),
+    telemetryShortfall: v.number(),
+    editorialRevision: v.number(),
+    currentEditorialRevision: v.number(),
+    staleEditorial: v.boolean(),
+    reservations: v.array(
+      v.object({
+        slot: v.number(),
+        id: nullableString,
+        name: nullableString,
+        displayName: nullableString,
+        reason: nullableString,
+        status: v.union(v.literal("ready"), v.literal("pending")),
+        pendingReasons: v.array(v.string()),
+      }),
+    ),
+  }),
+  recommendations: v.array(monthlyRecommendationValidator),
+});
+export const monthlySearchDigestValidator = lineupSearchDigestValidator
+  .omit("kind", "catalogs")
+  .extend({
+    kind: v.literal("search_intelligence_weekly_v4"),
+    catalogs: v.object({ plugins: monthlyCatalog, skills: monthlyCatalog }),
+  });
+export type MonthlySearchDigest = Infer<typeof monthlySearchDigestValidator>;
+export type MonthlySearchRecommendation = Infer<typeof monthlyRecommendationValidator>;
+
 // Frozen weeks retain their original contract and receipt hash across upgrades.
 export const searchDigestValidator = v.union(
   legacySearchDigestValidator,
   evidenceSearchDigestValidator,
   lineupSearchDigestValidator,
+  monthlySearchDigestValidator,
 );
 
 export type WeeklySearchDigest = Infer<typeof searchDigestValidator>;
