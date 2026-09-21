@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { cp, lstat, readFile, readdir, readlink, rename, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
@@ -26,6 +27,12 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "PATHEXT",
 ] as const;
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
+const DOCKER_CLEANUP_TIMEOUT_MS = 10_000;
+const DOCKER_LATE_CREATE_POLL_MS = 100;
+const DOCKER_LATE_CREATE_WINDOW_MS = DOCKER_CLEANUP_TIMEOUT_MS - DOCKER_LATE_CREATE_POLL_MS;
+const SANDBOX_RUN_ID_ENV = "CLAWSCAN_SANDBOX_RUN_ID";
+const SANDBOX_RUN_ID_LABEL = "org.openclaw.clawscan.run-id";
+const SANDBOX_COMMAND_ID_LABEL = "org.openclaw.clawscan.command-id";
 const MAX_ENDOR_DIAGNOSTIC_CHARS = 20_000;
 const MAX_SUMMARY_FINDINGS = 50;
 const MAX_SUMMARY_TEXT_CHARS = 2_000;
@@ -68,7 +75,7 @@ const endorArtifactSchema = z
         endor: z
           .object({
             error: z.string().optional(),
-            raw: endorRawReportSchema.optional(),
+            raw: endorRawReportSchema.nullish(),
             status: z.string(),
           })
           .passthrough(),
@@ -111,6 +118,7 @@ export type EndorCommandDiagnostic = {
   exitCode?: number | null;
   rawArtifact?: string;
   scannerError?: string;
+  sandboxRunId?: string;
   stderr?: string;
   stdout?: string;
   timedOut?: boolean;
@@ -232,6 +240,112 @@ function endorCommandEnv(workspace: string, source: NodeJS.ProcessEnv) {
   return env;
 }
 
+function dockerCleanupEnv(workspace: string, source: NodeJS.ProcessEnv) {
+  const env: NodeJS.ProcessEnv = {
+    NO_COLOR: "1",
+    TEMP: workspace,
+    TMP: workspace,
+    TMPDIR: workspace,
+  };
+  for (const key of CHILD_RUNTIME_ENV_KEYS) {
+    const value = source[key];
+    if (value !== undefined) env[key] = value;
+  }
+  for (const key of ["HOME", "DOCKER_CONFIG"] as const) {
+    const value = source[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function dockerObjectMissing(error: unknown) {
+  if (!(error instanceof CommandFailure)) return false;
+  const output = `${error.stdout}\n${error.stderr}`.toLowerCase();
+  return output.includes("no such object") || output.includes("no such container");
+}
+
+async function cleanupEndorSandboxContainers(input: {
+  env: NodeJS.ProcessEnv;
+  runId: string;
+  waitForLateCreate: boolean;
+  workspace: string;
+}) {
+  const deadline = Date.now() + DOCKER_CLEANUP_TIMEOUT_MS;
+  const lateCreateDeadline = input.waitForLateCreate
+    ? Date.now() + DOCKER_LATE_CREATE_WINDOW_MS
+    : Date.now();
+  const cleanupEnv = dockerCleanupEnv(input.workspace, input.env);
+  const remainingMs = () => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error("Endor ClawScan Docker cleanup timed out");
+    return remaining;
+  };
+  const runDocker = async (args: string[]) =>
+    await runWorkerCommand("docker", args, {
+      commandLabel: "Endor ClawScan Docker cleanup",
+      cwd: input.workspace,
+      env: cleanupEnv,
+      timeoutMs: remainingMs(),
+    });
+  const sweep = async () => {
+    const listed = await runDocker([
+      "container",
+      "ls",
+      "--all",
+      "--quiet",
+      "--filter",
+      `label=${SANDBOX_RUN_ID_LABEL}=${input.runId}`,
+    ]);
+    const ids = listed.stdout.split(/\s+/).filter(Boolean);
+    for (const id of ids) {
+      if (!/^[a-f0-9]{12,64}$/.test(id)) {
+        throw new Error(`refusing invalid Docker container ID ${JSON.stringify(id)}`);
+      }
+      let inspected;
+      try {
+        inspected = await runDocker([
+          "container",
+          "inspect",
+          "--format",
+          `{{ index .Config.Labels ${JSON.stringify(SANDBOX_RUN_ID_LABEL)} }}\n{{ index .Config.Labels ${JSON.stringify(SANDBOX_COMMAND_ID_LABEL)} }}`,
+          id,
+        ]);
+      } catch (error) {
+        if (dockerObjectMissing(error)) continue;
+        throw error;
+      }
+      const [runId, commandId, ...extra] = inspected.stdout.trim().split("\n");
+      if (
+        runId !== input.runId ||
+        !commandId ||
+        extra.length > 0 ||
+        !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(commandId)
+      ) {
+        throw new Error(
+          `refusing to remove Docker container ${id}: ownership labels do not match (run=${JSON.stringify(runId)}, command=${JSON.stringify(commandId)})`,
+        );
+      }
+      try {
+        await runDocker(["container", "rm", "--force", "--volumes", id]);
+      } catch (error) {
+        if (dockerObjectMissing(error)) continue;
+        throw error;
+      }
+    }
+    return ids.length > 0;
+  };
+
+  if (await sweep()) return;
+  while (Date.now() < lateCreateDeadline) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, DOCKER_LATE_CREATE_POLL_MS));
+    if (await sweep()) return;
+  }
+}
+
 function redactEndorDiagnosticText(value: string, env: NodeJS.ProcessEnv) {
   let redacted = value;
   for (const key of [
@@ -337,7 +451,14 @@ export async function runEndorPluginScan(input: {
     "--output",
     outputPath,
   ];
-  input.onDiagnostic?.({ args: [command, ...args], artifactPath: outputPath });
+  const sandboxRunId = randomUUID().replaceAll("-", "");
+  input.onDiagnostic?.({
+    args: [command, ...args],
+    artifactPath: outputPath,
+    sandboxRunId,
+  });
+  const commandEnv = endorCommandEnv(input.workspace, env);
+  commandEnv[SANDBOX_RUN_ID_ENV] = sandboxRunId;
 
   const captureArtifact = async () => {
     const rawArtifact = await readFile(outputPath, "utf8").catch(() => undefined);
@@ -351,11 +472,12 @@ export async function runEndorPluginScan(input: {
     }
   };
 
+  let commandError: unknown;
   try {
     const output = await runWorkerCommand(command, args, {
       commandLabel: "Endor ClawScan",
       cwd: input.workspace,
-      env: endorCommandEnv(input.workspace, env),
+      env: commandEnv,
       timeoutMs: endorTimeoutMs(env),
     });
     input.onDiagnostic?.({
@@ -364,6 +486,7 @@ export async function runEndorPluginScan(input: {
       stdout: redactEndorDiagnosticText(output.stdout, env),
     });
   } catch (error) {
+    commandError = error;
     if (error instanceof CommandFailure) {
       input.onDiagnostic?.({
         exitCode: error.exitCode,
@@ -373,7 +496,30 @@ export async function runEndorPluginScan(input: {
       });
     }
     await captureArtifact();
-    throw error;
+  }
+
+  let cleanupError: unknown;
+  try {
+    await cleanupEndorSandboxContainers({
+      env,
+      runId: sandboxRunId,
+      waitForLateCreate: commandError instanceof CommandFailure && commandError.timedOut,
+      workspace: input.workspace,
+    });
+  } catch (error) {
+    cleanupError = error;
+  }
+  if (commandError !== undefined && cleanupError !== undefined) {
+    throw new AggregateError(
+      [commandError, cleanupError],
+      `Endor ClawScan failed: ${errorMessage(commandError)}; Docker cleanup failed: ${errorMessage(cleanupError)}`,
+    );
+  }
+  if (commandError !== undefined) throw commandError;
+  if (cleanupError !== undefined) {
+    throw new Error(`Endor ClawScan Docker cleanup failed: ${errorMessage(cleanupError)}`, {
+      cause: cleanupError,
+    });
   }
 
   const artifact = await captureArtifact();
