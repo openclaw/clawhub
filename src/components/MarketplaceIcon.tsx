@@ -22,6 +22,11 @@ type MarketplaceIconProps = {
   tone?: "default" | "muted";
 };
 
+// Match the artwork, not the publisher: bundled plugins can use their own logos.
+// Content addressing also prevents double-padding a future, already-inset replacement.
+const OPENCLAW_PLUGIN_ICON =
+  "/api/v1/skill-icons/79e24bf179e94e005912591a67ecdf30f04df50204ff5fa5fed06a8e8eb88532";
+
 const TONES = [
   { accent: "oklch(0.63 0.16 42)", wash: "oklch(0.95 0.04 42)" },
   { accent: "oklch(0.61 0.15 168)", wash: "oklch(0.95 0.04 168)" },
@@ -73,7 +78,11 @@ export function MarketplaceIcon({
     <span
       className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}${
         tone === "muted" ? " marketplace-icon-muted" : ""
-      }${visibleImageUrl ? " marketplace-icon-image-backed" : ""}`}
+      }${visibleImageUrl ? " marketplace-icon-image-backed" : ""}${
+        kind === "plugin" && visibleImageUrl === OPENCLAW_PLUGIN_ICON
+          ? " marketplace-icon-openclaw"
+          : ""
+      }`}
       style={
         {
           "--marketplace-icon-accent": hashedTone.accent,

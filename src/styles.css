@@ -4123,6 +4123,14 @@ code {
   display: block;
 }
 
+/* Keep the artwork inset on its own dark tile, even in muted catalog containers. */
+.marketplace-icon-openclaw .marketplace-icon-image {
+  box-sizing: border-box;
+  padding: 10%;
+  background: #0b0d12;
+  object-fit: contain;
+}
+
 .skill-card-summary {
   margin: 0;
   color: var(--ink-soft);
