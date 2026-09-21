@@ -1,0 +1,71 @@
+{
+  "baseline": "f0cbe329da4595c75d85da27cc281582957c8a15",
+  "candidate": "d378fdb3",
+  "generatedAt": "2026-09-21T23:45:55.058Z",
+  "lanes": [
+    {
+      "localOutputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/plugins-first-landing/.artifacts/plugins-first-proof/baseline",
+      "name": "baseline",
+      "ref": "origin/main",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "Landing default",
+          "screenshot": "landing-viewport.png",
+          "slug": "landing-default",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Skills Featured first",
+          "screenshot": "skills-viewport.png",
+          "slug": "skills-featured-first",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Mobile Skills ordering",
+          "screenshot": "mobile-viewport.png",
+          "slug": "mobile-skills-ordering",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/plugins-first-landing/.artifacts/plugins-first-proof/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Landing default",
+          "screenshot": "landing-viewport.png",
+          "slug": "landing-default",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Skills Featured first",
+          "screenshot": "skills-viewport.png",
+          "slug": "skills-featured-first",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Mobile Skills ordering",
+          "screenshot": "mobile-viewport.png",
+          "slug": "mobile-skills-ordering",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/plugins-first-landing/.artifacts/plugins-first-proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/plugins-first-landing/.artifacts/proof-scenarios/plugins-first.pw.ts",
+  "status": "pass"
+}
