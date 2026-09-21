@@ -303,16 +303,13 @@ JSON`,
     const cleanupEnvPath = join(workspace, "cleanup-env.log");
     await mkdir(packageRoot, { recursive: true });
     await writeFile(join(packageRoot, "package.json"), '{"name":"fixture"}\n');
-    await writeFakeClawScan(
-      command,
-      `printf '%s' "$CLAWSCAN_SANDBOX_RUN_ID" > ${JSON.stringify(runIdPath)}
-sleep 5`,
-    );
+    await writeFakeClawScan(command, "sleep 5");
     await writeFakeDocker(
       workspace,
       `printf '%s\\n' "\${ENDOR_NAMESPACE-}|\${ENDOR_TOKEN-}|\${ENDOR_API_CREDENTIALS_KEY-}|\${ENDOR_API_CREDENTIALS_SECRET-}|\${HOME-}|\${DOCKER_CONFIG-}" >> ${JSON.stringify(cleanupEnvPath)}
 case "$2" in
   ls)
+    printf '%s' "\${6##*=}" > ${JSON.stringify(runIdPath)}
     count=0
     if [[ -f ${JSON.stringify(listCountPath)} ]]; then count=$(cat ${JSON.stringify(listCountPath)}); fi
     count=$((count + 1))
