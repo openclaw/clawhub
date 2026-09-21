@@ -448,13 +448,13 @@ export async function fetchHomePluginListing(
 }
 
 export async function fetchInitialHomeListing(): Promise<HomeListingInitialData> {
-  const result = await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);
+  const result = await fetchHomePluginListing("featured", [], HOME_LISTING_PAGE_SIZE);
   return {
-    kind: "skills",
+    kind: "plugins",
     tab: "featured",
     categorySlugs: [],
     fetchLimit: HOME_LISTING_PAGE_SIZE,
-    items: result.page,
+    items: result.items,
     hasMore: result.hasMore,
   };
 }

@@ -167,8 +167,8 @@ describe("HomeListingSection", () => {
     const searchPanel = document.querySelector(".browse-search-panel");
     expect(toolbar?.nextElementSibling).toBe(searchPanel);
     expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
-      "Skills",
       "Plugins",
+      "Skills",
     ]);
     expect(screen.getByRole("button", { name: "Plugins" }).getAttribute("aria-pressed")).toBe(
       "true",
@@ -206,10 +206,38 @@ describe("HomeListingSection", () => {
     expect(screen.getByRole("button", { name: "Close search" })).toBeTruthy();
   });
 
-  it("keeps the initial Skills skeleton iconless", () => {
+  it("defaults to Plugins without loader data and selects Featured first when switching to Skills", async () => {
+    render(<HomeListingSection />);
+    expect(screen.getByRole("button", { name: "Plugins" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    await screen.findByText("Demo Plugin");
+    expect(convexQueryMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    expect(screen.getByRole("button", { name: "Skills" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Featured",
+      "Trending",
+      "Official",
+      "New",
+    ]);
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    await screen.findByText("Demo Skill");
+  });
+
+  it("keeps the Skills skeleton iconless after switching from Plugins", () => {
     convexQueryMock.mockReturnValue(new Promise(() => {}));
 
     render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
 
     expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
       "true",

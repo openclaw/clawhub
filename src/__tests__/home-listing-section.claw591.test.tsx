@@ -89,8 +89,8 @@ describe("HomeListingSection", () => {
       .getByRole("group", { name: "Content type" })
       .querySelectorAll("button");
     expect(Array.from(contentTypeButtons, (button) => button.textContent)).toEqual([
-      "Skills",
       "Plugins",
+      "Skills",
     ]);
     expect(screen.getByRole("button", { name: "Skills" }).getAttribute("aria-pressed")).toBe(
       "true",
@@ -99,8 +99,8 @@ describe("HomeListingSection", () => {
       "true",
     );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "Trending",
       "Featured",
+      "Trending",
       "Official",
       "New",
     ]);
@@ -289,6 +289,7 @@ describe("HomeListingSection", () => {
     });
 
     render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
     fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
 
     await waitFor(() => expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull());

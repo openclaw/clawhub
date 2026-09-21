@@ -41,8 +41,8 @@ import { Badge } from "./ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
-  { id: "trending", label: "Trending" },
   { id: "featured", label: "Featured" },
+  { id: "trending", label: "Trending" },
   { id: "official", label: "Official" },
   { id: "new", label: "New" },
 ];
@@ -299,7 +299,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   listingCacheRef.current ??= createInitialListingCache(initialListing);
   const listingCache = listingCacheRef.current;
 
-  const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "skills");
+  const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "plugins");
   const initialTab =
     initialListing?.kind === "skills" && initialListing.trendingState === "unavailable"
       ? "featured"
@@ -612,22 +612,22 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               <button
                 type="button"
                 className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
-                  kind === "skills" ? " is-active" : ""
-                }`}
-                aria-pressed={kind === "skills"}
-                onClick={() => handleKindChange("skills")}
-              >
-                Skills
-              </button>
-              <button
-                type="button"
-                className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
                   kind === "plugins" ? " is-active" : ""
                 }`}
                 aria-pressed={kind === "plugins"}
                 onClick={() => handleKindChange("plugins")}
               >
                 Plugins
+              </button>
+              <button
+                type="button"
+                className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
+                  kind === "skills" ? " is-active" : ""
+                }`}
+                aria-pressed={kind === "skills"}
+                onClick={() => handleKindChange("skills")}
+              >
+                Skills
               </button>
             </div>
 

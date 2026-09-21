@@ -60,12 +60,12 @@ describe("homeListingData", () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([], null));
   });
 
-  it("loads Featured skills as the initial homepage catalog", async () => {
-    const item = makeNative("first", 100, 12);
-    convexQueryMock.mockResolvedValue({ page: [item], hasMore: false, nextCursor: null });
+  it("loads Featured plugins as the initial homepage catalog", async () => {
+    const item = makePlugin("first", 100);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [item], nextCursor: null });
 
     await expect(fetchInitialHomeListing()).resolves.toEqual({
-      kind: "skills",
+      kind: "plugins",
       tab: "featured",
       categorySlugs: [],
       fetchLimit: HOME_LISTING_PAGE_SIZE,
