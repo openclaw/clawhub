@@ -2015,19 +2015,27 @@ export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) 
 
 export function scanHealthClassification(input: {
   clawscan: ClawScanCommandDiagnostic;
+  endor?: EndorCommandDiagnostic;
   errorMessage?: string;
   status: "completed" | "failed";
 }) {
-  const timedOut = Boolean(input.clawscan.timedOut);
+  const timedOut = Boolean(input.clawscan.timedOut || input.endor?.timedOut);
   const scannerStatuses = Object.values(input.clawscan.mapping?.scanners ?? {}).filter(
     (status): status is string => Boolean(status),
   );
   let scannerStageFailed = scannerStatuses.some(
     (status) => status !== "completed" && status !== "missing",
   );
+  scannerStageFailed ||= Boolean(
+    input.endor?.timedOut ||
+    input.endor?.scannerError ||
+    (input.endor?.exitCode !== undefined &&
+      input.endor.exitCode !== null &&
+      input.endor.exitCode !== 0),
+  );
   const judgeStatus = input.clawscan.mapping?.judge?.status;
   let judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
-  scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
+  scannerStageFailed ||= /ClawScan scanner|Endor ClawScan/i.test(input.errorMessage ?? "");
   judgeStageFailed ||= /ClawScan (artifact )?judge|output schema/i.test(input.errorMessage ?? "");
 
   const failureStage =
@@ -2143,6 +2151,7 @@ export async function processJob(
     );
     const health = scanHealthClassification({
       clawscan,
+      endor,
       status: "completed",
     });
     onHealth?.({
@@ -2178,6 +2187,7 @@ export async function processJob(
     const completedAt = Date.now();
     const health = scanHealthClassification({
       clawscan,
+      endor,
       errorMessage,
       status: "failed",
     });

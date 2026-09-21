@@ -14,6 +14,10 @@ import {
   resolveBundledSkillSpectorScanInputs,
   runClawScan,
 } from "./run-codex-scan-worker";
+import {
+  calculateSecurityScanWorkerHealthSummary,
+  renderSecurityScanWorkerSummaryMarkdown,
+} from "./security-scan-worker-summary";
 
 const tempDirs: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -137,7 +141,13 @@ async function writeFakeClawScanCommand(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
-async function pathWithFakeDocker(workspace: string, currentPath: string | undefined) {
+async function pathWithFakeDocker(
+  workspace: string,
+  currentPath: string | undefined,
+  body = `if [[ "$1" == "container" && "$2" == "ls" ]]; then exit 0; fi
+echo "unexpected docker command: $*" >&2
+exit 99`,
+) {
   const binDirectory = join(workspace, "fake-docker-bin");
   const path = join(binDirectory, "docker");
   await mkdir(binDirectory, { recursive: true });
@@ -145,9 +155,7 @@ async function pathWithFakeDocker(workspace: string, currentPath: string | undef
     path,
     `#!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "container" && "$2" == "ls" ]]; then exit 0; fi
-echo "unexpected docker command: $*" >&2
-exit 99
+${body}
 `,
   );
   await chmod(path, 0o755);
@@ -1244,6 +1252,148 @@ exit 18`,
       else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
       if (previousEnv.path === undefined) delete process.env.PATH;
       else process.env.PATH = previousEnv.path;
+      if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
+      else process.env.ENDOR_TOKEN = previousEnv.token;
+    }
+  });
+
+  it("classifies an Endor timeout as a timed-out scanner-stage failure", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const dockerRunId = join(workspace, "docker-run-id");
+    const dockerRemoved = join(workspace, "docker-removed");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `is_endor=false
+output=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --scanner)
+      if [[ "$2" == "endor" ]]; then is_endor=true; fi
+      shift 2
+      ;;
+    --output)
+      output="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ "$is_endor" == "true" ]]; then
+  sleep 2
+  exit 0
+fi
+cat > "$output" <<'JSON'
+${clawScanArtifactJson({ verdict: "benign" })}
+JSON`,
+    );
+    const packageJson = '{"name":"fixture-plugin","version":"1.0.0"}\n';
+    const job = claimedJob({
+      jobId: "securityScanJobs:endor-timeout-health",
+      source: "publish",
+      targetKind: "packageRelease",
+      target: {
+        files: [
+          {
+            path: "package/package.json",
+            sha256: sha256(packageJson),
+            size: Buffer.byteLength(packageJson),
+            url: `data:application/json,${encodeURIComponent(packageJson)}`,
+          },
+        ],
+      },
+    });
+    const previousEnv = {
+      command: process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND,
+      enabled: process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED,
+      image: process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
+      namespace: process.env.ENDOR_NAMESPACE,
+      path: process.env.PATH,
+      timeout: process.env.CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS,
+      token: process.env.ENDOR_TOKEN,
+    };
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = "1";
+    process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
+    process.env.CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS = "25";
+    process.env.ENDOR_NAMESPACE = "fixture-namespace";
+    process.env.ENDOR_TOKEN = "fixture-token";
+    process.env.PATH = await pathWithFakeDocker(
+      workspace,
+      previousEnv.path,
+      `case "$2" in
+  ls)
+    printf '%s' "\${6##*=}" > ${JSON.stringify(dockerRunId)}
+    if [[ ! -f ${JSON.stringify(dockerRemoved)} ]]; then printf '%s\\n' 0123456789ab; fi
+    ;;
+  inspect)
+    printf '%s\\n%s\\n' "$(cat ${JSON.stringify(dockerRunId)})" command123
+    ;;
+  rm)
+    [[ "$5" == "0123456789ab" ]]
+    touch ${JSON.stringify(dockerRemoved)}
+    ;;
+  *) exit 99 ;;
+esac`,
+    );
+
+    try {
+      const client = {
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: true } : {};
+        }),
+      };
+      const onHealth = vi.fn();
+
+      await expect(processJob(client, "worker-auth", job, undefined, onHealth)).resolves.toEqual({
+        completed: false,
+        hardFailed: false,
+        retryableFailed: true,
+      });
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        error: expect.stringContaining("Endor ClawScan timed out"),
+        llmAnalysis: { status: "clean", verdict: "benign" },
+      });
+      expect(onHealth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          completed: false,
+          failureStage: "scanner",
+          judgeStageFailed: false,
+          scannerStageFailed: true,
+          timedOut: true,
+        }),
+      );
+      const summary = calculateSecurityScanWorkerHealthSummary({
+        durationMs: 1_000,
+        outcomes: [onHealth.mock.calls[0]![0]],
+        pool: {
+          totalClaimed: 1,
+          totalClaimFailures: 0,
+          totalCompleted: 0,
+          totalFailed: 0,
+          totalRetryableFailed: 1,
+        },
+        workerId: "fixture-worker",
+      });
+      expect(renderSecurityScanWorkerSummaryMarkdown(summary)).toContain("| Timed out | 1 |");
+    } finally {
+      if (previousEnv.command === undefined)
+        delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousEnv.command;
+      if (previousEnv.enabled === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED;
+      else process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = previousEnv.enabled;
+      if (previousEnv.image === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE;
+      else process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = previousEnv.image;
+      if (previousEnv.namespace === undefined) delete process.env.ENDOR_NAMESPACE;
+      else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
+      if (previousEnv.path === undefined) delete process.env.PATH;
+      else process.env.PATH = previousEnv.path;
+      if (previousEnv.timeout === undefined)
+        delete process.env.CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS;
+      else process.env.CODEX_SECURITY_SCAN_ENDOR_TIMEOUT_MS = previousEnv.timeout;
       if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
       else process.env.ENDOR_TOKEN = previousEnv.token;
     }
