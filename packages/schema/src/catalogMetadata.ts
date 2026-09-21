@@ -61,7 +61,7 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
   {
     slug: "voice",
     label: "Voice",
-    icon: "message-square",
+    icon: "mic",
     description:
       "Speech synthesis, transcription, voice calls, and spoken interaction. Music and general media creation or analysis belong in Media.",
   },

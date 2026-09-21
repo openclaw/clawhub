@@ -6,6 +6,24 @@ import { PLUGIN_CATEGORIES } from "../lib/categories";
 import { BrowseCategorySelect, BrowseCategorySidebar, BrowseTopicChips } from "./BrowseControls";
 
 describe("BrowseControls", () => {
+  it("uses a microphone for Voice without changing the category selection", () => {
+    const onChange = vi.fn();
+    render(
+      <BrowseCategorySidebar
+        ariaLabel="Plugin categories"
+        categories={PLUGIN_CATEGORIES}
+        value="voice"
+        onChange={onChange}
+      />,
+    );
+
+    const voice = screen.getByRole("button", { name: "Voice" });
+    expect(voice.querySelector("svg.lucide-mic")).toBeTruthy();
+    expect(voice.querySelector("svg.lucide-message-square")).toBeNull();
+    fireEvent.click(voice);
+    expect(onChange).toHaveBeenCalledWith("voice");
+  });
+
   it("renders chip-shaped placeholders while topics load", () => {
     const { container } = render(<BrowseTopicChips topics={[]} loading onChange={() => {}} />);
 

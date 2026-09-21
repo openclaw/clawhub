@@ -31,7 +31,7 @@ export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
 }, {
     readonly slug: "voice";
     readonly label: "Voice";
-    readonly icon: "message-square";
+    readonly icon: "mic";
     readonly description: "Speech synthesis, transcription, voice calls, and spoken interaction. Music and general media creation or analysis belong in Media.";
 }, {
     readonly slug: "web";
