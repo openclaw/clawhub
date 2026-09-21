@@ -1,0 +1,127 @@
+{
+  "baseline": "origin/main",
+  "candidate": "worktree",
+  "generatedAt": "2026-09-21T21:14:51.255Z",
+  "lanes": [
+    {
+      "localOutputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/fix-openclaw-plugin-icon-padding/.artifacts/icon-padding-proof-v4/baseline",
+      "name": "baseline",
+      "ref": "origin/main",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "Lobster card detail (2x browser capture)",
+          "screenshot": "screenshots/lobster-card-detail.png",
+          "slug": "lobster-card-detail",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Lobster grid dark",
+          "screenshot": "screenshots/lobster-grid-dark.png",
+          "slug": "lobster-grid-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "ACPX shared logo dark",
+          "screenshot": "screenshots/acpx-shared-logo-dark.png",
+          "slug": "acpx-shared-logo-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Lobster list dark",
+          "screenshot": "screenshots/lobster-list-dark.png",
+          "slug": "lobster-list-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Unrelated WhatsApp logo unchanged",
+          "screenshot": "screenshots/unrelated-whatsapp-logo-unchanged.png",
+          "slug": "unrelated-whatsapp-logo-unchanged",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Lobster grid light",
+          "screenshot": "screenshots/lobster-grid-light.png",
+          "slug": "lobster-grid-light",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Lobster mobile light",
+          "screenshot": "screenshots/lobster-mobile-light.png",
+          "slug": "lobster-mobile-light",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/fix-openclaw-plugin-icon-padding/.artifacts/icon-padding-proof-v4/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Lobster card detail (2x browser capture)",
+          "screenshot": "screenshots/lobster-card-detail.png",
+          "slug": "lobster-card-detail",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Lobster grid dark",
+          "screenshot": "screenshots/lobster-grid-dark.png",
+          "slug": "lobster-grid-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "ACPX shared logo dark",
+          "screenshot": "screenshots/acpx-shared-logo-dark.png",
+          "slug": "acpx-shared-logo-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Lobster list dark",
+          "screenshot": "screenshots/lobster-list-dark.png",
+          "slug": "lobster-list-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Unrelated WhatsApp logo unchanged",
+          "screenshot": "screenshots/unrelated-whatsapp-logo-unchanged.png",
+          "slug": "unrelated-whatsapp-logo-unchanged",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Lobster grid light",
+          "screenshot": "screenshots/lobster-grid-light.png",
+          "slug": "lobster-grid-light",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Lobster mobile light",
+          "screenshot": "screenshots/lobster-mobile-light.png",
+          "slug": "lobster-mobile-light",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/fix-openclaw-plugin-icon-padding/.artifacts/icon-padding-proof-v4",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/fix-openclaw-plugin-icon-padding/.artifacts/proof-scenarios/icon-padding.mjs",
+  "status": "pass"
+}
