@@ -1,0 +1,43 @@
+{
+  "baseline": "ff6c118c132ae89b5351739cc45fe9227ff1574e",
+  "candidate": "e17c89a30f78fde903e185f793553370cc89d0e9",
+  "generatedAt": "2026-09-21T21:07:01.687Z",
+  "lanes": [
+    {
+      "localOutputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/voice-category-microphone-icon/.artifacts/voice-proof/baseline",
+      "name": "baseline",
+      "ref": "ff6c118c132ae89b5351739cc45fe9227ff1574e",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "Voice category in plugin browser",
+          "screenshot": "voice-context.png",
+          "slug": "voice-category-in-plugin-browser",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/voice-category-microphone-icon/.artifacts/voice-proof/candidate",
+      "name": "candidate",
+      "ref": "e17c89a30f78fde903e185f793553370cc89d0e9",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Voice category in plugin browser",
+          "screenshot": "voice-context.png",
+          "slug": "voice-category-in-plugin-browser",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/voice-category-microphone-icon/.artifacts/voice-proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/home/openclaw/.openclaw/worktrees/e68a56dd99b24988/voice-category-microphone-icon/.artifacts/proof-scenarios/voice.pw.ts",
+  "status": "pass"
+}
