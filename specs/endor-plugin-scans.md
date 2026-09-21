@@ -58,3 +58,26 @@ subprocess receives its own credentials, and the main scan does not inherit them
 
 This integration does not publish a ClawScan release, publish a Docker image, set
 hosted secrets, or deploy ClawHub. Those are separate rollout actions.
+
+### Deployment and rollback order
+
+1. Deploy the additive backend schema and result handlers first. Existing
+   releases without Endor fields remain readable, and workers that omit Endor
+   results can still complete jobs.
+2. Configure the released scanner version, image digest, and credentials while
+   Endor remains disabled. Enable it for a small plugin batch, then inspect the
+   stored summaries, raw reports, failures, and queue health before expanding.
+3. To stop Endor, disable the worker flag and allow active jobs to finish or stop
+   their workers. Keep the additive backend schema and result handlers deployed.
+   Stored results remain readable; a later completed scan replaces that release's
+   combined scanner report, so an Endor-disabled scan is not a history archive.
+
+Do not redeploy the old backend schema after an Endor result has been stored.
+Convex rejects those documents because the old schema does not accept
+`endorAnalysis` or `scannerReportsStorageId`. A complete backend rollback needs
+a revision that retains these optional fields and the compatible result
+handlers. Do not delete stored results just to make the old schema deployable.
+
+Endor runs with `--dry-run`; the plugin audit and its report download are the
+reporting surfaces. These scans do not create persistent projects in the Endor
+dashboard.
