@@ -325,7 +325,7 @@ const completeCodexScanJobHandler = (
             reachableFunctionCount: number;
             findings: Array<{ severity: string; summary: string }>;
           }
-        | { status: "skipped"; checkedAt: number; reason: string };
+        | { status: "skipped" | "failed"; checkedAt: number; reason: string };
       scannerReportsStorageId?: string;
       runId?: string;
     },
@@ -5469,7 +5469,7 @@ describe("securityScan", () => {
     },
   );
 
-  it("requests atomic cleanup for a newly stored report when committing the verdict fails", async () => {
+  it("deletes a newly stored report when committing the scan verdict fails", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: { _id: "securityScanJobs:1", targetKind: "skillVersion", leaseToken: "lease-token" },
@@ -5479,9 +5479,10 @@ describe("securityScan", () => {
       if ("llmAnalysis" in args) throw new Error("commit failed");
       return { ok: true };
     });
+    const storage = { store: vi.fn(async () => "storage:new-report"), delete: vi.fn() };
     await expect(
       completeCodexScanJobHandler(
-        { runQuery, runMutation },
+        { runQuery, runMutation, storage },
         {
           token: "worker-secret",
           jobId: "securityScanJobs:1",
@@ -5492,13 +5493,8 @@ describe("securityScan", () => {
         },
       ),
     ).rejects.toThrow("commit failed");
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        jobId: "securityScanJobs:1",
-        storageId: "storage:new-report",
-      }),
-    );
+    expect(storage.store).not.toHaveBeenCalled();
+    expect(storage.delete).toHaveBeenCalledWith("storage:new-report");
   });
 
   it("caps SkillSpector findings before storing completed scan results", async () => {
@@ -5724,7 +5720,7 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("commits package Endor and raw scanner results without persisting package AIG payloads", async () => {
+  it("commits the package Endor summary without persisting package AIG payloads", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: {
@@ -5751,7 +5747,6 @@ describe("securityScan", () => {
           reachableFunctionCount: 3,
           findings: [{ severity: "high", summary: "Reachable finding" }],
         },
-        scannerReportsStorageId: "storage:scanner-reports",
         aigAnalysis: {
           status: "error",
           issueCount: 99,
@@ -5773,8 +5768,8 @@ describe("securityScan", () => {
         status: "completed",
         reachableFunctionCount: 3,
       },
-      scannerReportsStorageId: "storage:scanner-reports",
     });
+    expect(releasePatches[0]).not.toHaveProperty("scannerReportsStorageId");
     expect(releasePatches).not.toContainEqual(expect.objectContaining({ aigAnalysis: undefined }));
     expect(releasePatches.some((patch) => "aigAnalysis" in patch)).toBe(false);
   });

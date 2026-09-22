@@ -1,5 +1,5 @@
+import type { PackageEndorAnalysis } from "clawhub-schema";
 import { strToU8, zipSync } from "fflate";
-import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import type {
   AigAnalysis,
   LlmAnalysis,
@@ -40,7 +40,7 @@ type SecurityAuditExportInput = {
   llmAnalysis?: LlmAnalysis | null;
   aigAnalysis?: AigAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
-  endorAnalysis?: EndorAnalysis | null;
+  endorAnalysis?: PackageEndorAnalysis | null;
   staticScan?: StaticScan | null;
   exportedAt?: string;
 };

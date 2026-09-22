@@ -215,7 +215,7 @@ export declare const PackageEndorAnalysisSchema: import("arktype/internal/varian
         summary: string;
     }[];
 } | {
-    status: "skipped";
+    status: "failed" | "skipped";
     checkedAt: number;
     reason: string;
 }, {}>;
@@ -949,7 +949,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
                 summary: string;
             }[];
         } | {
-            status: "skipped";
+            status: "failed" | "skipped";
             checkedAt: number;
             reason: string;
         } | null | undefined;
@@ -1086,7 +1086,7 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
                 summary: string;
             }[];
         } | {
-            status: "skipped";
+            status: "failed" | "skipped";
             checkedAt: number;
             reason: string;
         } | null | undefined;
@@ -1349,7 +1349,7 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
                 summary: string;
             }[];
         } | {
-            status: "skipped";
+            status: "failed" | "skipped";
             checkedAt: number;
             reason: string;
         } | null | undefined;
@@ -1434,7 +1434,7 @@ export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/v
                     summary: string;
                 }[];
             } | {
-                status: "skipped";
+                status: "failed" | "skipped";
                 checkedAt: number;
                 reason: string;
             } | null | undefined;

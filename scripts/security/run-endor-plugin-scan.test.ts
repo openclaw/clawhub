@@ -131,28 +131,11 @@ JSON`,
       },
     });
 
-    expect(result.analysis).toEqual({
+    expect(result).toEqual({
       status: "completed",
       checkedAt: Date.parse("2026-09-15T00:00:00Z"),
       reachableFunctionCount: 1,
       findings: [{ severity: "high", summary: "Reachable lodash function is vulnerable" }],
-    });
-    expect(result.scannerReport).toMatchObject({
-      status: "completed",
-      all_findings: [{ uuid: "exact" }, { uuid: "potential" }, { uuid: "dependency" }],
-      blocking_findings: [{ uuid: "exact" }],
-      warning_findings: [{ uuid: "potential" }],
-      preparation: {
-        sourceRoot: "artifact/package",
-        normalizations: [
-          {
-            dependencyNames: ["dev-workspace"],
-            kind: "omit-workspace-development-dependencies",
-            packageRoot: ".",
-          },
-          { kind: "npm-shrinkwrap-rename", packageRoot: "." },
-        ],
-      },
     });
     expect(
       JSON.parse(await readFile(join(workspace, "endor-artifact", "package.json"), "utf8")),
@@ -196,15 +179,56 @@ JSON`,
     await mkdir(join(workspace, "artifact"), { recursive: true });
 
     await expect(runEndorPluginScan({ workspace, env: {} })).resolves.toMatchObject({
-      analysis: {
-        status: "skipped",
-        reason: "Endor requires package.json at the package artifact root.",
+      status: "skipped",
+      reason: "Endor requires package.json at the package artifact root.",
+    });
+  });
+
+  it("bounds the summary without losing the total reachable-function count", async () => {
+    const workspace = await tempDir();
+    const packageRoot = join(workspace, "artifact", "package");
+    const command = join(workspace, "fake-clawscan");
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(join(packageRoot, "package.json"), '{"name":"fixture"}\n');
+    const allFindings = Array.from({ length: 52 }, (_, index) => ({
+      spec: {
+        finding_tags: ["FINDING_TAGS_REACHABLE_FUNCTION"],
+        level: "FINDING_LEVEL_HIGH",
+        summary: `${index}-${"x".repeat(2_100)}`,
       },
-      scannerReport: {
-        status: "skipped",
-        preparation: { normalizations: [] },
+    }));
+    await writeFakeClawScan(
+      command,
+      `output=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then output="$2"; shift 2; else shift; fi
+done
+cat > "$output" <<'JSON'
+${JSON.stringify({
+  completedAt: "2026-09-16T00:00:00Z",
+  scanners: {
+    endor: {
+      status: "completed",
+      raw: { all_findings: allFindings, blocking_findings: [], warning_findings: [] },
+    },
+  },
+})}
+JSON`,
+    );
+
+    const result = await runEndorPluginScan({
+      workspace,
+      env: {
+        CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND: command,
+        CODEX_SECURITY_SCAN_ENDOR_IMAGE: "clawscan-endor:test",
+        PATH: testPath(workspace),
       },
     });
+
+    expect(result).toMatchObject({ status: "completed", reachableFunctionCount: 52 });
+    if (result.status !== "completed") throw new Error("expected a completed Endor analysis");
+    expect(result.findings).toHaveLength(50);
+    expect(result.findings[0]?.summary).toHaveLength(2_000);
   });
 
   it("preserves a failed scanner artifact cause with configured secrets redacted", async () => {
@@ -457,7 +481,9 @@ JSON`,
       if (test.expected) await expect(promise, test.name).rejects.toThrow(test.expected);
       else
         await expect(promise, test.name).resolves.toMatchObject({
-          analysis: { status: "completed" },
+          status: "completed",
+          reachableFunctionCount: 0,
+          findings: [],
         });
     }
   });

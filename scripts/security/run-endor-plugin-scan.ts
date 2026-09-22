@@ -84,34 +84,6 @@ const endorArtifactSchema = z
   })
   .passthrough();
 
-export type EndorPreparationNormalization = {
-  kind: "npm-shrinkwrap-rename" | "omit-workspace-development-dependencies";
-  packageRoot: string;
-  dependencyNames?: string[];
-};
-
-export type EndorScannerReport =
-  | {
-      status: "skipped";
-      reason: string;
-      preparation: {
-        sourceRoot: string;
-        normalizations: EndorPreparationNormalization[];
-      };
-    }
-  | (z.infer<typeof endorRawReportSchema> & {
-      status: "completed";
-      preparation: {
-        sourceRoot: string;
-        normalizations: EndorPreparationNormalization[];
-      };
-    });
-
-export type EndorPluginScanResult = {
-  analysis: EndorAnalysis;
-  scannerReport: EndorScannerReport;
-};
-
 export type EndorCommandDiagnostic = {
   args?: string[];
   artifactPath?: string;
@@ -155,11 +127,7 @@ function packageRootLabel(scanRoot: string, manifestDirectory: string) {
   return relative(scanRoot, manifestDirectory).replaceAll("\\", "/") || ".";
 }
 
-async function normalizePackageRoot(
-  scanRoot: string,
-  manifestDirectory: string,
-): Promise<EndorPreparationNormalization[]> {
-  const normalizations: EndorPreparationNormalization[] = [];
+async function normalizePackageRoot(scanRoot: string, manifestDirectory: string) {
   const packageRoot = packageRootLabel(scanRoot, manifestDirectory);
   const manifestPath = join(manifestDirectory, "package.json");
   let parsedManifest: unknown;
@@ -183,11 +151,6 @@ async function normalizePackageRoot(
       for (const name of workspaceDependencyNames) delete devDependencies.data[name];
       manifest.devDependencies = devDependencies.data;
       await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-      normalizations.push({
-        kind: "omit-workspace-development-dependencies",
-        packageRoot,
-        dependencyNames: workspaceDependencyNames,
-      });
     }
   }
 
@@ -195,24 +158,18 @@ async function normalizePackageRoot(
   const packageLockPath = join(manifestDirectory, "package-lock.json");
   if ((await isRegularFile(shrinkwrapPath)) && !(await isRegularFile(packageLockPath))) {
     await rename(shrinkwrapPath, packageLockPath);
-    normalizations.push({ kind: "npm-shrinkwrap-rename", packageRoot });
   }
-  return normalizations;
 }
 
-async function normalizePackageTree(
-  scanRoot: string,
-  directory = scanRoot,
-): Promise<EndorPreparationNormalization[]> {
+async function normalizePackageTree(scanRoot: string, directory = scanRoot): Promise<void> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const normalizations = (await isRegularFile(join(directory, "package.json")))
-    ? await normalizePackageRoot(scanRoot, directory)
-    : [];
+  if (await isRegularFile(join(directory, "package.json"))) {
+    await normalizePackageRoot(scanRoot, directory);
+  }
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === ".git" || entry.name === "node_modules") continue;
-    normalizations.push(...(await normalizePackageTree(scanRoot, join(directory, entry.name))));
+    await normalizePackageTree(scanRoot, join(directory, entry.name));
   }
-  return normalizations;
 }
 
 function endorTimeoutMs(env: NodeJS.ProcessEnv) {
@@ -220,37 +177,23 @@ function endorTimeoutMs(env: NodeJS.ProcessEnv) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ENDOR_TIMEOUT_MS;
 }
 
-function endorCommandEnv(workspace: string, source: NodeJS.ProcessEnv) {
+function endorRuntimeEnv(
+  workspace: string,
+  source: NodeJS.ProcessEnv,
+  extraKeys: readonly string[] = [],
+) {
   const env: NodeJS.ProcessEnv = {
     NO_COLOR: "1",
     TEMP: workspace,
     TMP: workspace,
     TMPDIR: workspace,
   };
-  for (const key of [...CHILD_RUNTIME_ENV_KEYS, ...ENDOR_ENV_KEYS]) {
+  for (const key of [...CHILD_RUNTIME_ENV_KEYS, ...extraKeys]) {
     const value = source[key];
     if (value !== undefined) env[key] = value;
   }
   // The host Docker CLI needs its selected context. ClawScan independently
   // forwards only the Endor adapter's required and optional env into the container.
-  for (const key of ["HOME", "DOCKER_CONFIG"] as const) {
-    const value = source[key];
-    if (value !== undefined) env[key] = value;
-  }
-  return env;
-}
-
-function dockerCleanupEnv(workspace: string, source: NodeJS.ProcessEnv) {
-  const env: NodeJS.ProcessEnv = {
-    NO_COLOR: "1",
-    TEMP: workspace,
-    TMP: workspace,
-    TMPDIR: workspace,
-  };
-  for (const key of CHILD_RUNTIME_ENV_KEYS) {
-    const value = source[key];
-    if (value !== undefined) env[key] = value;
-  }
   for (const key of ["HOME", "DOCKER_CONFIG"] as const) {
     const value = source[key];
     if (value !== undefined) env[key] = value;
@@ -278,7 +221,7 @@ async function cleanupEndorSandboxContainers(input: {
   const lateCreateDeadline = input.waitForLateCreate
     ? Date.now() + DOCKER_LATE_CREATE_WINDOW_MS
     : Date.now();
-  const cleanupEnv = dockerCleanupEnv(input.workspace, input.env);
+  const cleanupEnv = endorRuntimeEnv(input.workspace, input.env);
   const remainingMs = () => {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error("Endor ClawScan Docker cleanup timed out");
@@ -406,19 +349,14 @@ export async function runEndorPluginScan(input: {
   env?: NodeJS.ProcessEnv;
   onDiagnostic?: (diagnostic: Partial<EndorCommandDiagnostic>) => void;
   workspace: string;
-}): Promise<EndorPluginScanResult> {
+}): Promise<EndorAnalysis> {
   const env = input.env ?? process.env;
   const sourceRoot = await resolvePackageArtifactRoot(input.workspace);
   if (!sourceRoot) {
-    const checkedAt = Date.now();
-    const reason = "Endor requires package.json at the package artifact root.";
     return {
-      analysis: { status: "skipped", checkedAt, reason },
-      scannerReport: {
-        status: "skipped",
-        reason,
-        preparation: { sourceRoot: "artifact", normalizations: [] },
-      },
+      status: "skipped",
+      checkedAt: Date.now(),
+      reason: "Endor requires package.json at the package artifact root.",
     };
   }
 
@@ -432,7 +370,7 @@ export async function runEndorPluginScan(input: {
     force: false,
     verbatimSymlinks: true,
   });
-  const normalizations = await normalizePackageTree(scanRoot);
+  await normalizePackageTree(scanRoot);
   const outputPath = join(input.workspace, "endor-clawscan-artifact.json");
   const command = env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND?.trim() || "clawscan";
   const target = await resolveClawScanTargetForRoot({
@@ -457,7 +395,7 @@ export async function runEndorPluginScan(input: {
     artifactPath: outputPath,
     sandboxRunId,
   });
-  const commandEnv = endorCommandEnv(input.workspace, env);
+  const commandEnv = endorRuntimeEnv(input.workspace, env, ENDOR_ENV_KEYS);
   commandEnv[SANDBOX_RUN_ID_ENV] = sandboxRunId;
 
   const captureArtifact = async () => {
@@ -544,18 +482,10 @@ export async function runEndorPluginScan(input: {
     severity: normalizeSeverity(finding.spec.level),
     summary: normalizeFindingSummary(finding),
   }));
-  const sourceRootLabel = relative(input.workspace, sourceRoot).replaceAll("\\", "/");
   return {
-    analysis: {
-      status: "completed",
-      checkedAt,
-      reachableFunctionCount: reachableFindings.length,
-      findings,
-    },
-    scannerReport: {
-      ...artifact.scanners.endor.raw,
-      status: "completed",
-      preparation: { sourceRoot: sourceRootLabel, normalizations },
-    },
+    status: "completed",
+    checkedAt,
+    reachableFunctionCount: reachableFindings.length,
+    findings,
   };
 }

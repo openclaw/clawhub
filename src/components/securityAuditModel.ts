@@ -1,5 +1,5 @@
 export { aggregateAuditVerdict } from "clawhub-schema";
-import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
+import type { PackageEndorAnalysis } from "clawhub-schema";
 import {
   type AigAnalysis,
   type LlmAnalysis,
@@ -16,7 +16,7 @@ type SecurityAuditSignals = {
   aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
-  endorAnalysis?: EndorAnalysis | null;
+  endorAnalysis?: PackageEndorAnalysis | null;
   staticScan?: {
     status?: string | null;
     summary?: string | null;

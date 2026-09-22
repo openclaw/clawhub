@@ -37,6 +37,7 @@ import {
   shouldPublishSkillsShCatalogEntry,
 } from "./lib/skillsShCatalogPublication";
 import { redactWorkerPublicText } from "./lib/workerTextRedaction";
+import { llmAnalysisValidator } from "./schema";
 import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
@@ -243,63 +244,6 @@ type EnqueuePackageReleaseScanArgs = {
   waitForVtMs?: number;
 };
 
-const llmAgenticRiskEvidenceValidator = v.object({
-  path: v.string(),
-  snippet: v.string(),
-  explanation: v.string(),
-});
-
-const llmAgenticRiskFindingValidator = v.object({
-  categoryId: v.string(),
-  categoryLabel: v.string(),
-  riskBucket: v.union(
-    v.literal("abnormal_behavior_control"),
-    v.literal("permission_boundary"),
-    v.literal("sensitive_data_protection"),
-  ),
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  severity: v.string(),
-  confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-  evidence: v.optional(llmAgenticRiskEvidenceValidator),
-  userImpact: v.string(),
-  recommendation: v.string(),
-});
-
-const llmRiskSummaryBucketValidator = v.object({
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  summary: v.string(),
-  highestSeverity: v.optional(v.string()),
-});
-
-const llmAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  confidence: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  dimensions: v.optional(
-    v.array(
-      v.object({
-        name: v.string(),
-        label: v.string(),
-        rating: v.string(),
-        detail: v.string(),
-      }),
-    ),
-  ),
-  guidance: v.optional(v.string()),
-  findings: v.optional(v.string()),
-  agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-  riskSummary: v.optional(
-    v.object({
-      abnormal_behavior_control: llmRiskSummaryBucketValidator,
-      permission_boundary: llmRiskSummaryBucketValidator,
-      sensitive_data_protection: llmRiskSummaryBucketValidator,
-    }),
-  ),
-  model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
 const skillSpectorIssueValidator = v.object({
   issueId: v.string(),
   category: v.optional(v.string()),
@@ -413,7 +357,6 @@ const internalRefs = internal as unknown as {
     listReadySourceJobsForClaimInternal: unknown;
     recordGitHubSkillScanResultInternal: unknown;
     completeCatalogSkillScanJobInternal: unknown;
-    deleteScannerReportIfUnattachedInternal: unknown;
     recordSkillScanRequestFailedInternal: unknown;
     recordSkillScanRequestSucceededInternal: unknown;
     requeueJobLeaseInternal: unknown;
@@ -3822,55 +3765,6 @@ export const getJobTargetInternal = internalQuery({
   },
 });
 
-export const deleteScannerReportIfUnattachedInternal = internalMutation({
-  args: {
-    jobId: v.id("securityScanJobs"),
-    storageId: v.id("_storage"),
-  },
-  handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.jobId);
-    if (!job) return { deleted: false as const, reason: "job-missing" as const };
-
-    if (job.targetKind === "packageRelease") {
-      if (!job.packageReleaseId) {
-        return { deleted: false as const, reason: "target-missing" as const };
-      }
-      const release = await ctx.db.get(job.packageReleaseId);
-      if (!release) return { deleted: false as const, reason: "target-missing" as const };
-      if (release.scannerReportsStorageId === args.storageId) {
-        return { deleted: false as const, reason: "attached" as const };
-      }
-    } else if (job.targetKind === "skillVersion") {
-      if (!job.skillVersionId) {
-        return { deleted: false as const, reason: "target-missing" as const };
-      }
-      const version = await ctx.db.get(job.skillVersionId);
-      if (!version) return { deleted: false as const, reason: "target-missing" as const };
-      if (version.scannerReportsStorageId === args.storageId) {
-        return { deleted: false as const, reason: "attached" as const };
-      }
-    } else if (job.targetKind === "skillScanRequest") {
-      if (!job.skillScanRequestId) {
-        return { deleted: false as const, reason: "target-missing" as const };
-      }
-      const request = await ctx.db.get(job.skillScanRequestId);
-      if (!request) return { deleted: false as const, reason: "target-missing" as const };
-      if (request.skillVersionId) {
-        const version = await ctx.db.get(request.skillVersionId);
-        if (!version) return { deleted: false as const, reason: "target-missing" as const };
-        if (version.scannerReportsStorageId === args.storageId) {
-          return { deleted: false as const, reason: "attached" as const };
-        }
-      }
-    } else {
-      return { deleted: false as const, reason: "target-missing" as const };
-    }
-
-    await ctx.storage.delete(args.storageId);
-    return { deleted: true as const };
-  },
-});
-
 export const succeedJobInternal = internalMutation({
   args: {
     jobId: v.id("securityScanJobs"),
@@ -4068,8 +3962,7 @@ async function hydrateClaimedCodexScanJob(
   }
   return {
     scannerReportsUploadUrl:
-      job.targetKind === "packageRelease" ||
-      (version && (job.targetKind === "skillVersion" || scanRequest?.update))
+      version && (job.targetKind === "skillVersion" || scanRequest?.update)
         ? await ctx.storage.generateUploadUrl()
         : null,
     job,
@@ -4208,13 +4101,6 @@ export const completeCodexScanJob = action({
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
-    async function deleteSubmittedScannerReportIfUnattached() {
-      if (!args.scannerReportsStorageId) return;
-      await runMutationRef(ctx, internalRefs.securityScan.deleteScannerReportIfUnattachedInternal, {
-        jobId: args.jobId,
-        storageId: args.scannerReportsStorageId,
-      });
-    }
     const target = await runQueryRef<JobTarget | null>(
       ctx,
       internalRefs.securityScan.getJobTargetInternal,
@@ -4222,29 +4108,19 @@ export const completeCodexScanJob = action({
         jobId: args.jobId,
       },
     );
-    if (!target) {
-      await deleteSubmittedScannerReportIfUnattached();
-      throw new ConvexError("Job not found");
-    }
+    if (!target) throw new ConvexError("Job not found");
     const isCatalogScanRequest =
       target.job.targetKind === "skillScanRequest" &&
       target.scanRequest?.sourceKind === "skills-sh-catalog" &&
       Boolean(target.scanRequest.skillsShCatalogAttemptId);
     if (!isCatalogScanRequest && target.job.leaseToken !== args.leaseToken) {
-      await deleteSubmittedScannerReportIfUnattached();
       throw new ConvexError("Lease mismatch");
     }
-    let endorAnalysis: EndorAnalysis | undefined;
-    try {
-      endorAnalysis = args.endorAnalysis
-        ? endorAnalysisSchema.parse(args.endorAnalysis)
-        : undefined;
-      if (endorAnalysis && target.job.targetKind !== "packageRelease") {
-        throw new ConvexError("Endor analysis is only supported for package release scans");
-      }
-    } catch (error) {
-      await deleteSubmittedScannerReportIfUnattached();
-      throw error;
+    const endorAnalysis: EndorAnalysis | undefined = args.endorAnalysis
+      ? endorAnalysisSchema.parse(args.endorAnalysis)
+      : undefined;
+    if (endorAnalysis && target.job.targetKind !== "packageRelease") {
+      throw new ConvexError("Endor analysis is only supported for package release scans");
     }
     const completedAigAnalysis = reusableAigAnalysis(args.aigAnalysis);
     if (
@@ -4275,7 +4151,7 @@ export const completeCodexScanJob = action({
           scannerReportsStorageId,
         });
       } catch (error) {
-        await deleteSubmittedScannerReportIfUnattached();
+        if (scannerReportsStorageId) await ctx.storage.delete(scannerReportsStorageId);
         throw error;
       }
     }
@@ -4283,33 +4159,23 @@ export const completeCodexScanJob = action({
     if (target.job.targetKind === "skillVersion" && target.version) {
       await updateSkillVersion(target.version._id);
     } else if (target.job.targetKind === "packageRelease" && target.release) {
-      const scannerReportsStorageId = args.scannerReportsStorageId;
-      let result: { ok: true };
-      try {
-        result = await runMutationRef(
-          ctx,
-          internalRefs.packages.completeReleaseSecurityScanInternal,
-          {
-            releaseId: target.release._id,
-            jobId: args.jobId,
-            leaseToken: args.leaseToken,
-            runId: args.runId,
-            llmAnalysis: args.llmAnalysis,
-            ...(args.skillSpectorAnalysis
-              ? {
-                  skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(
-                    args.skillSpectorAnalysis,
-                  ),
-                }
-              : {}),
-            endorAnalysis,
-            scannerReportsStorageId,
-          },
-        );
-      } catch (error) {
-        await deleteSubmittedScannerReportIfUnattached();
-        throw error;
-      }
+      const result = await runMutationRef<{ ok: true }>(
+        ctx,
+        internalRefs.packages.completeReleaseSecurityScanInternal,
+        {
+          releaseId: target.release._id,
+          jobId: args.jobId,
+          leaseToken: args.leaseToken,
+          runId: args.runId,
+          llmAnalysis: args.llmAnalysis,
+          ...(args.skillSpectorAnalysis
+            ? {
+                skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+              }
+            : {}),
+          endorAnalysis,
+        },
+      );
       await runMutationRef(
         ctx,
         internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
@@ -4381,7 +4247,6 @@ export const completeCodexScanJob = action({
         writtenBack,
       });
     } else {
-      await deleteSubmittedScannerReportIfUnattached();
       throw new ConvexError("Unsupported security scan target");
     }
 
@@ -4409,28 +4274,10 @@ export const failCodexScanJob = action({
     jobId: v.id("securityScanJobs"),
     leaseToken: v.string(),
     error: v.string(),
-    llmAnalysis: v.optional(llmAnalysisValidator),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
     const error = sanitizeWorkerErrorDetail(args.error, 2000);
-    if (args.llmAnalysis) {
-      const target = await runQueryRef<JobTarget | null>(
-        ctx,
-        internalRefs.securityScan.getJobTargetInternal,
-        { jobId: args.jobId },
-      );
-      if (target?.job.targetKind === "packageRelease" && target.release) {
-        await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
-          releaseId: target.release._id,
-          llmAnalysis: args.llmAnalysis,
-          securityScanJob: {
-            jobId: args.jobId,
-            leaseToken: args.leaseToken,
-          },
-        });
-      }
-    }
     const result = await runMutationRef<{ ok: true; retry: boolean }>(
       ctx,
       internalRefs.securityScan.failJobInternal,
