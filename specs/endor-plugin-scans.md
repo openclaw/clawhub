@@ -16,7 +16,8 @@ supports paced batches and preserves active jobs.
 ## Result contract
 
 - Apply Endor to package-release jobs. Skill scans keep their existing scanner set.
-- Run the native ClawScan `endor` adapter in Docker. The normal ClawHub profile
+- Use ClawScan's custom command scanner to run the ClawHub-owned Endor wrapper
+  in Docker. The normal ClawHub profile
   continues to use its existing execution configuration.
 - Keep Endor separate from the ClawScan judge and the existing moderation verdict.
   Dependency vulnerabilities are supplemental findings; they do not independently
@@ -45,17 +46,26 @@ The worker is off for Endor until `CODEX_SECURITY_SCAN_ENDOR_ENABLED=1` is set.
 Enable it only after the backend result contract is deployed and the following
 worker configuration is available:
 
-- `CODEX_SECURITY_SCAN_CLAWSCAN_VERSION`: an exact released ClawScan version that
-  includes the `endor` adapter. The current default, `0.1.8`, predates that adapter.
+- `CODEX_SECURITY_SCAN_CLAWSCAN_VERSION`: an exact released ClawScan version with
+  custom command scanners and sandbox ownership/timeout cleanup. Endor needs no
+  built-in adapter. The current default, `0.1.8`, predates the cleanup fixes.
 - `CODEX_SECURITY_SCAN_ENDOR_IMAGE`: the Endor scanner Docker image pinned by its
-  SHA-256 digest. Build it from ClawScan's `docker/clawscan-endor/Dockerfile` with
-  the chosen Endor CLI binary.
+  SHA-256 digest. Build it from `scripts/security/endor/Dockerfile`, with
+  `scan.sh` and the chosen Endor CLI binary in the build context.
 - `ENDOR_NAMESPACE` and the `ENDOR_API_CREDENTIALS_KEY` /
   `ENDOR_API_CREDENTIALS_SECRET` secrets. `ENDOR_API` is optional.
 
-The workflow checks that the adapter exists and pulls the pinned image before
-claiming work. Credentials are available only to the worker step; the Endor
+The workflow pulls the pinned image and checks its wrapper before claiming work.
+The worker writes a trusted scanner profile outside the submitted artifact;
+it contains credential names only. Credentials are available only to the worker step; the Endor
 subprocess receives its own credentials, and the main scan does not inherit them.
+
+The wrapper isolates npm/Yarn from scanner credentials, disables dependency
+scripts and target-selected Yarn executables, rejects `.npmrc`, and scans a fresh
+Git snapshot. It preserves findings JSON, converts successful empty output to an
+empty report, accepts Endor's policy exit 128, and rejects analysis errors even
+when Endor exits zero. The image retains the reviewed npm version that prevents
+Git dependency prepare scripts from bypassing script suppression.
 
 This integration does not publish a ClawScan release, publish a Docker image, set
 hosted secrets, or deploy ClawHub. Those are separate rollout actions.
