@@ -42,28 +42,38 @@ function testPath(workspace: string) {
 }
 
 describe("runEndorPluginScan", () => {
-  it("scans a normalized disposable package copy and retains only exact reachable functions in the summary", async () => {
-    const workspace = await tempDir();
-    const packageRoot = join(workspace, "artifact", "package");
-    await mkdir(packageRoot, { recursive: true });
-    await writeFile(
-      join(packageRoot, "package.json"),
-      `${JSON.stringify({
-        name: "fixture-plugin",
-        dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
-        devDependencies: { "dev-workspace": "workspace:^", typescript: "6.0.3" },
-      })}\n`,
-    );
-    await writeFile(join(packageRoot, "npm-shrinkwrap.json"), '{"lockfileVersion":3}\n');
-    await writeFile(join(packageRoot, "SKILL.md"), "# Bundled skill\n");
-    await writeFile(join(packageRoot, "openclaw.plugin.json"), '{"id":"fixture-plugin"}\n');
+  it.each(["plugin", "claw"] as const)(
+    "scans a normalized disposable %s package and retains only exact reachable functions",
+    async (family) => {
+      const workspace = await tempDir();
+      const packageRoot = join(workspace, "artifact", "package");
+      await mkdir(packageRoot, { recursive: true });
+      await writeFile(
+        join(packageRoot, "package.json"),
+        `${JSON.stringify({
+          name: "fixture-plugin",
+          ...(family === "claw" ? { openclaw: { claw: "CLAW.md" } } : {}),
+          dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
+          devDependencies: { "dev-workspace": "workspace:^", typescript: "6.0.3" },
+        })}\n`,
+      );
+      await writeFile(join(packageRoot, "npm-shrinkwrap.json"), '{"lockfileVersion":3}\n');
+      if (family === "plugin") {
+        await writeFile(join(packageRoot, "SKILL.md"), "# Bundled skill\n");
+        await writeFile(join(packageRoot, "openclaw.plugin.json"), '{"id":"fixture-plugin"}\n');
+      } else {
+        await writeFile(
+          join(packageRoot, "CLAW.md"),
+          "---\nschemaVersion: 1\nagent:\n  id: fixture-plugin\n---\n# Fixture Claw\n",
+        );
+      }
 
-    const command = join(workspace, "fake-clawscan");
-    const argsLog = join(workspace, "args.log");
-    const envLog = join(workspace, "env.log");
-    await writeFakeClawScan(
-      command,
-      `printf '%s\\n' "$@" > ${JSON.stringify(argsLog)}
+      const command = join(workspace, "fake-clawscan");
+      const argsLog = join(workspace, "args.log");
+      const envLog = join(workspace, "env.log");
+      await writeFakeClawScan(
+        command,
+        `printf '%s\\n' "$@" > ${JSON.stringify(argsLog)}
 printf '%s\\n' "\${ENDOR_NAMESPACE-}" "\${ENDOR_TOKEN-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" "\${HOME-}" "\${DOCKER_CONFIG-}" "\${DOCKER_HOST-}" "\${CLAWSCAN_SANDBOX_RUN_ID-}" > ${JSON.stringify(envLog)}
 output=""
 while [[ $# -gt 0 ]]; do
@@ -113,86 +123,88 @@ cat > "$output" <<'JSON'
   }
 }
 JSON`,
-    );
+      );
 
-    const result = await runEndorPluginScan({
-      workspace,
-      env: {
-        CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND: command,
-        CODEX_SECURITY_SCAN_ENDOR_IMAGE: "clawscan-endor:test",
-        DOCKER_CONFIG: "/tmp/fixture-docker-config",
-        DOCKER_HOST: "must-not-reach-endor",
-        ENDOR_NAMESPACE: "fixture-namespace",
-        ENDOR_TOKEN: "fixture-token",
-        HOME: "/tmp/fixture-home",
-        OPENAI_API_KEY: "must-not-reach-endor",
-        PATH: testPath(workspace),
-        SECURITY_SCAN_WORKER_TOKEN: "must-not-reach-endor",
-      },
-    });
-
-    expect(result).toEqual({
-      status: "completed",
-      checkedAt: Date.parse("2026-09-15T00:00:00Z"),
-      reachableFunctionCount: 1,
-      findings: [{ severity: "high", summary: "Reachable lodash function is vulnerable" }],
-    });
-    expect(
-      JSON.parse(await readFile(join(workspace, "endor-artifact", "package.json"), "utf8")),
-    ).toEqual({
-      name: "fixture-plugin",
-      dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
-      devDependencies: { typescript: "6.0.3" },
-    });
-    await expect(
-      readFile(join(workspace, "endor-artifact", "package-lock.json"), "utf8"),
-    ).resolves.toContain('"lockfileVersion":3');
-    await expect(readFile(join(packageRoot, "npm-shrinkwrap.json"), "utf8")).resolves.toContain(
-      '"lockfileVersion":3',
-    );
-    expect((await readFile(argsLog, "utf8")).trim().split("\n")).toEqual([
-      "./endor-artifact/openclaw.plugin.json",
-      "--config",
-      join(workspace, "endor-clawscan.json"),
-      "--profile",
-      "endor",
-      "--sandbox",
-      "docker",
-      "--sandbox-image",
-      "clawscan-endor:test",
-      "--output",
-      join(workspace, "endor-clawscan-artifact.json"),
-    ]);
-    const commandEnv = (await readFile(envLog, "utf8")).trim().split("\n");
-    expect(commandEnv.slice(0, 7)).toEqual([
-      "fixture-namespace",
-      "fixture-token",
-      "",
-      "",
-      "/tmp/fixture-home",
-      "/tmp/fixture-docker-config",
-      "",
-    ]);
-    expect(commandEnv[7]).toMatch(/^[a-f0-9]{32}$/);
-    const config = await readFile(join(workspace, "endor-clawscan.json"), "utf8");
-    expect(JSON.parse(config)).toEqual({
-      version: 1,
-      profiles: {
-        endor: {
-          scanners: [
-            {
-              id: "endor",
-              command: "clawhub-endor-scan {{target}}",
-              targets: ["plugin"],
-              env: ["ENDOR_NAMESPACE"],
-              secretEnv: ["ENDOR_TOKEN"],
-            },
-          ],
+      const result = await runEndorPluginScan({
+        workspace,
+        env: {
+          CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND: command,
+          CODEX_SECURITY_SCAN_ENDOR_IMAGE: "clawscan-endor:test",
+          DOCKER_CONFIG: "/tmp/fixture-docker-config",
+          DOCKER_HOST: "must-not-reach-endor",
+          ENDOR_NAMESPACE: "fixture-namespace",
+          ENDOR_TOKEN: "fixture-token",
+          HOME: "/tmp/fixture-home",
+          OPENAI_API_KEY: "must-not-reach-endor",
+          PATH: testPath(workspace),
+          SECURITY_SCAN_WORKER_TOKEN: "must-not-reach-endor",
         },
-      },
-    });
-    expect(config).not.toContain("fixture-token");
-  });
+      });
+
+      expect(result).toEqual({
+        status: "completed",
+        checkedAt: Date.parse("2026-09-15T00:00:00Z"),
+        reachableFunctionCount: 1,
+        findings: [{ severity: "high", summary: "Reachable lodash function is vulnerable" }],
+      });
+      expect(
+        JSON.parse(await readFile(join(workspace, "endor-artifact", "package.json"), "utf8")),
+      ).toEqual({
+        name: "fixture-plugin",
+        ...(family === "claw" ? { openclaw: { claw: "CLAW.md" } } : {}),
+        dependencies: { "runtime-workspace": "workspace:*", lodash: "4.17.20" },
+        devDependencies: { typescript: "6.0.3" },
+      });
+      await expect(
+        readFile(join(workspace, "endor-artifact", "package-lock.json"), "utf8"),
+      ).resolves.toContain('"lockfileVersion":3');
+      await expect(readFile(join(packageRoot, "npm-shrinkwrap.json"), "utf8")).resolves.toContain(
+        '"lockfileVersion":3',
+      );
+      expect((await readFile(argsLog, "utf8")).trim().split("\n")).toEqual([
+        family === "plugin" ? "./endor-artifact/openclaw.plugin.json" : "./endor-artifact",
+        "--config",
+        join(workspace, "endor-clawscan.json"),
+        "--profile",
+        "endor",
+        "--sandbox",
+        "docker",
+        "--sandbox-image",
+        "clawscan-endor:test",
+        "--output",
+        join(workspace, "endor-clawscan-artifact.json"),
+      ]);
+      const commandEnv = (await readFile(envLog, "utf8")).trim().split("\n");
+      expect(commandEnv.slice(0, 7)).toEqual([
+        "fixture-namespace",
+        "fixture-token",
+        "",
+        "",
+        "/tmp/fixture-home",
+        "/tmp/fixture-docker-config",
+        "",
+      ]);
+      expect(commandEnv[7]).toMatch(/^[a-f0-9]{32}$/);
+      const config = await readFile(join(workspace, "endor-clawscan.json"), "utf8");
+      expect(JSON.parse(config)).toEqual({
+        version: 1,
+        profiles: {
+          endor: {
+            scanners: [
+              {
+                id: "endor",
+                command: "clawhub-endor-scan {{target}}",
+                targets: ["skill", "plugin"],
+                env: ["ENDOR_NAMESPACE"],
+                secretEnv: ["ENDOR_TOKEN"],
+              },
+            ],
+          },
+        },
+      });
+      expect(config).not.toContain("fixture-token");
+    },
+  );
 
   it("returns an explicit skipped result when the package artifact has no package.json", async () => {
     const workspace = await tempDir();
