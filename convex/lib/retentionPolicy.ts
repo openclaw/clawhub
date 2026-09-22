@@ -178,9 +178,7 @@ export const RETENTION_POLICIES = {
   skills: permanent("Canonical skill records."),
   skillSlugAliases: permanent("Historical slug routing aliases."),
   packages: permanent("Canonical package records."),
-  packageReleases: permanent(
-    "Canonical package release records; raw scanner reports follow release deletion and replacement lifecycle.",
-  ),
+  packageReleases: permanent("Canonical package release records."),
   publishAttempts: ephemeral(
     "Private staged publish workflow state expires unless later retained by moderation policy.",
     {

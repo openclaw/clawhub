@@ -154,7 +154,7 @@ import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
 import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./publishAttempts";
-import schema from "./schema";
+import schema, { llmAnalysisValidator } from "./schema";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS = 500;
@@ -288,33 +288,6 @@ async function hasMissingPackageRecommendedScore(
   return Boolean(staleVersion);
 }
 
-const llmAgenticRiskEvidenceValidator = v.object({
-  path: v.string(),
-  snippet: v.string(),
-  explanation: v.string(),
-});
-
-const llmAgenticRiskFindingValidator = v.object({
-  categoryId: v.string(),
-  categoryLabel: v.string(),
-  riskBucket: v.union(
-    v.literal("abnormal_behavior_control"),
-    v.literal("permission_boundary"),
-    v.literal("sensitive_data_protection"),
-  ),
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  severity: v.string(),
-  confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-  evidence: v.optional(llmAgenticRiskEvidenceValidator),
-  userImpact: v.string(),
-  recommendation: v.string(),
-});
-
-const llmRiskSummaryBucketValidator = v.object({
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  summary: v.string(),
-  highestSeverity: v.optional(v.string()),
-});
 const packageOfficialMigrationPhaseValidator = v.union(
   v.literal("planned"),
   v.literal("published"),
@@ -1373,7 +1346,6 @@ function toPublicPluginRelease(release: Doc<"packageReleases">) {
     capabilities: _capabilities,
     clawManifestSummary: _clawManifestSummary,
     extractedClawManifest: _extractedClawManifest,
-    scannerReportsStorageId: _scannerReportsStorageId,
     ...publicRelease
   } = release as Doc<"packageReleases"> & {
     capabilities?: unknown;
@@ -6138,7 +6110,7 @@ async function deletePackageModerationEventsForAppeal(
 }
 
 async function hardDeletePackageDoc(
-  ctx: Pick<MutationCtx, "db" | "storage">,
+  ctx: Pick<MutationCtx, "db">,
   pkg: Doc<"packages">,
   params: {
     actorUserId: Id<"users">;
@@ -6215,11 +6187,6 @@ async function hardDeletePackageDoc(
   for (const dailyStat of dailyStats) await ctx.db.delete(dailyStat._id);
 
   for (const release of releases) await ctx.db.delete(release._id);
-  await Promise.allSettled(
-    releases.flatMap((release) =>
-      release.scannerReportsStorageId ? [ctx.storage.delete(release.scannerReportsStorageId)] : [],
-    ),
-  );
   await ctx.db.delete(pkg._id);
   await ctx.db.insert("auditLogs", {
     actorUserId: params.actorUserId,
@@ -11662,10 +11629,6 @@ export const discardPendingPackagePublicationInternal = internalMutation({
     if (typeof release?.clawpackStorageId === "string") {
       storageIds.add(release.clawpackStorageId as Id<"_storage">);
     }
-    if (release?.scannerReportsStorageId) {
-      storageIds.add(release.scannerReportsStorageId);
-    }
-
     if (release) await ctx.db.delete(release._id);
     await Promise.allSettled([...storageIds].map((storageId) => ctx.storage.delete(storageId)));
 
@@ -12728,37 +12691,9 @@ export const completeReleaseSecurityScanInternal = internalMutation({
     jobId: v.id("securityScanJobs"),
     leaseToken: v.string(),
     runId: v.optional(v.string()),
-    llmAnalysis: v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: llmRiskSummaryBucketValidator,
-          permission_boundary: llmRiskSummaryBucketValidator,
-          sensitive_data_protection: llmRiskSummaryBucketValidator,
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
+    llmAnalysis: llmAnalysisValidator,
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
     endorAnalysis: v.optional(endorAnalysisValidator),
-    scannerReportsStorageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
@@ -12777,17 +12712,14 @@ export const completeReleaseSecurityScanInternal = internalMutation({
       ? endorAnalysisSchema.parse(args.endorAnalysis)
       : undefined;
 
-    const previousScannerReportsStorageId = release.scannerReportsStorageId;
     const releaseWithScannerResults: Doc<"packageReleases"> = {
       ...release,
       skillSpectorAnalysis: args.skillSpectorAnalysis,
       endorAnalysis,
-      scannerReportsStorageId: args.scannerReportsStorageId,
     };
     await ctx.db.patch(args.releaseId, {
       skillSpectorAnalysis: args.skillSpectorAnalysis,
       endorAnalysis,
-      scannerReportsStorageId: args.scannerReportsStorageId,
     });
     await applyReleaseLlmAnalysis(ctx, releaseWithScannerResults, args.llmAnalysis);
 
@@ -12800,12 +12732,6 @@ export const completeReleaseSecurityScanInternal = internalMutation({
       leaseExpiresAt: undefined,
       updatedAt: now,
     });
-    if (
-      previousScannerReportsStorageId &&
-      previousScannerReportsStorageId !== args.scannerReportsStorageId
-    ) {
-      await ctx.storage.delete(previousScannerReportsStorageId);
-    }
     return { ok: true as const };
   },
 });
@@ -12813,54 +12739,9 @@ export const completeReleaseSecurityScanInternal = internalMutation({
 export const updateReleaseLlmAnalysisInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
-    securityScanJob: v.optional(
-      v.object({
-        jobId: v.id("securityScanJobs"),
-        leaseToken: v.string(),
-      }),
-    ),
-    llmAnalysis: v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: llmRiskSummaryBucketValidator,
-          permission_boundary: llmRiskSummaryBucketValidator,
-          sensitive_data_protection: llmRiskSummaryBucketValidator,
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
+    llmAnalysis: llmAnalysisValidator,
   },
   handler: async (ctx, args) => {
-    if (args.securityScanJob) {
-      const job = await ctx.db.get(args.securityScanJob.jobId);
-      if (
-        !job ||
-        job.status !== "running" ||
-        job.targetKind !== "packageRelease" ||
-        job.packageReleaseId !== args.releaseId ||
-        job.leaseToken !== args.securityScanJob.leaseToken
-      ) {
-        return;
-      }
-    }
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
     await applyReleaseLlmAnalysis(ctx, release, args.llmAnalysis);

@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
@@ -24,7 +25,6 @@ import {
   isEndorPluginScanEnabled,
   runEndorPluginScan,
   type EndorCommandDiagnostic,
-  type EndorPluginScanResult,
 } from "./run-endor-plugin-scan";
 import {
   calculateSecurityScanWorkerHealthSummary,
@@ -224,6 +224,7 @@ const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const MAX_STORED_AIG_FINDINGS = 25;
 const AIG_UNSAFE_BYTECODE_EXTENSIONS = new Set([".pyc", ".pyd", ".pyo"]);
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+const ENDOR_SCAN_FAILED_REASON = "Endor analysis failed. Request a rescan to try again.";
 const logger = createWorkerLogger({ name: "security-scan-worker" });
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
@@ -2070,7 +2071,7 @@ export async function processJob(
   let llmAnalysis: StoredLlmAnalysis | undefined;
   let aigAnalysis: AigAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
-  let endorAnalysis: EndorPluginScanResult["analysis"] | undefined;
+  let endorAnalysis: EndorAnalysis | undefined;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
@@ -2086,7 +2087,7 @@ export async function processJob(
               Object.assign(endor, next);
             },
           })
-        : Promise.resolve<EndorPluginScanResult | undefined>(undefined),
+        : Promise.resolve<EndorAnalysis | undefined>(undefined),
     ] as const);
     if (clawScanResult.status === "rejected") throw clawScanResult.reason;
     const mapped = clawScanResult.value;
@@ -2094,26 +2095,29 @@ export async function processJob(
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
-    if (endorScanResult.status === "rejected") throw endorScanResult.reason;
-    const endorResult = endorScanResult.value;
-    endorAnalysis = endorResult?.analysis;
-    let scannerReportsJson = mapped.scannerReportsJson;
-    if (endorResult) {
-      const scannerReports = asRecord(JSON.parse(scannerReportsJson) as unknown);
-      if (!scannerReports) throw new Error("Security scanner reports were malformed");
-      scannerReportsJson = JSON.stringify({
-        ...scannerReports,
-        endor: endorResult.scannerReport,
-      });
+    if (endorScanResult.status === "rejected") {
+      const endorError = sanitizeWorkerErrorMessage(
+        endorScanResult.reason instanceof Error
+          ? endorScanResult.reason.message
+          : String(endorScanResult.reason),
+      );
+      endor.scannerError ??= endorError;
+      endorAnalysis = {
+        status: "failed",
+        checkedAt: Date.now(),
+        reason: ENDOR_SCAN_FAILED_REASON,
+      };
+    } else {
+      endorAnalysis = endorScanResult.value;
     }
-    // A signed upload URL advertises support after the separately deployed
-    // backend updates. Upload directly to storage to avoid action argument limits.
+    // Package jobs persist scanner summaries only. Skill jobs retain their
+    // existing raw scanner upload when the backend advertises support.
     let scannerReportsStorageId: string | undefined;
-    if (job.scannerReportsUploadUrl) {
+    if (job.job.targetKind !== "packageRelease" && job.scannerReportsUploadUrl) {
       const uploaded = await fetch(job.scannerReportsUploadUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: scannerReportsJson,
+        body: mapped.scannerReportsJson,
       });
       if (!uploaded.ok) throw new Error(`Scanner report upload failed (${uploaded.status})`);
       const uploadResult = asRecord(await uploaded.json());
@@ -2170,7 +2174,6 @@ export async function processJob(
       jobId: job.job._id as Id<"securityScanJobs">,
       leaseToken: job.job.leaseToken,
       error: errorMessage,
-      ...(job.job.targetKind === "packageRelease" && llmAnalysis ? { llmAnalysis } : {}),
     })) as { retry?: boolean } | undefined;
     logger.error(
       {

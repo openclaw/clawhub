@@ -191,12 +191,12 @@ const PackageEndorCompletedAnalysisSchema = type({
     reachableFunctionCount: "number.integer >= 0",
     findings: PackageEndorFindingSchema.array().atMostLength(50),
 });
-const PackageEndorSkippedAnalysisSchema = type({
-    status: '"skipped"',
+const PackageEndorIncompleteAnalysisSchema = type({
+    status: '"skipped"|"failed"',
     checkedAt: "number",
     reason: type("string").atMostLength(2000),
 });
-export const PackageEndorAnalysisSchema = PackageEndorCompletedAnalysisSchema.or(PackageEndorSkippedAnalysisSchema);
+export const PackageEndorAnalysisSchema = PackageEndorCompletedAnalysisSchema.or(PackageEndorIncompleteAnalysisSchema);
 export const PackageAigFindingSchema = type({
     ruleId: "string",
     level: "string",

@@ -23,20 +23,21 @@ supports paced batches and preserves active jobs.
   quarantine a package or change its download policy.
 - Display only findings tagged `FINDING_TAGS_REACHABLE_FUNCTION`. A reachable
   dependency or a potentially reachable function does not satisfy that filter.
-- Store a bounded summary on the exact package release and the complete scanner
-  report in file storage. Keep the total count when the displayed list is capped.
-- An unsupported package is explicitly not analyzed. A scanner failure uses the
-  existing job failure/retry path and must never become a successful empty report.
-  Retries require an active, eligible release. If the primary scan quarantines a
-  release, later attempts stop through the existing missing-target handling.
+- Store a bounded summary on the exact package release. Keep the total count
+  when the displayed list is capped. Package jobs do not upload or retain full
+  scanner reports; worker diagnostics remain bounded and redacted.
+- An unsupported package is explicitly not analyzed. An Endor failure is saved
+  as a failed analysis with a safe reason, never a successful empty report.
+  The primary moderation result still completes and can quarantine the release.
+  An Endor failure does not retry the whole job; owners or admins can request a
+  rescan. Primary scanner failures retain the existing job failure/retry path.
 - Preserve the last stored result while replacement work is queued or running.
   Its check time identifies the analysis being displayed.
 - Settle both concurrent scan processes before deleting their workspace.
 
 The immutable uploaded artifact remains the source of truth. Endor's disposable
 copy may normalize an npm shrinkwrap filename and remove unresolved workspace
-development dependencies. Runtime dependencies remain unchanged; record those
-normalizations with the raw scanner report.
+development dependencies. Runtime dependencies remain unchanged.
 
 ## Hosted rollout
 
@@ -66,18 +67,17 @@ hosted secrets, or deploy ClawHub. Those are separate rollout actions.
    results can still complete jobs.
 2. Configure the released scanner version, image digest, and credentials while
    Endor remains disabled. Enable it for a small plugin batch, then inspect the
-   stored summaries, raw reports, failures, and queue health before expanding.
+   stored summaries, failures, and queue health before expanding.
 3. To stop Endor, disable the worker flag and allow active jobs to finish or stop
    their workers. Keep the additive backend schema and result handlers deployed.
-   Stored results remain readable; a later completed scan replaces that release's
-   combined scanner report, so an Endor-disabled scan is not a history archive.
+   The fields remain readable; later scans replace the release's current summary.
+   This is not a report history archive.
 
 Do not redeploy the old backend schema after an Endor result has been stored.
 Convex rejects those documents because the old schema does not accept
-`endorAnalysis` or `scannerReportsStorageId`. A complete backend rollback needs
+`endorAnalysis`. A complete backend rollback needs
 a revision that retains these optional fields and the compatible result
 handlers. Do not delete stored results just to make the old schema deployable.
 
-Endor runs with `--dry-run`; the plugin audit and its report download are the
-reporting surfaces. These scans do not create persistent projects in the Endor
-dashboard.
+Endor runs with `--dry-run`; the plugin audit and its report download contain the
+saved summary. These scans do not create persistent projects in the Endor dashboard.

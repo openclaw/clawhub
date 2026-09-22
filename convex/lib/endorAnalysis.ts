@@ -11,7 +11,7 @@ export const endorAnalysisSchema = z.discriminatedUnion("status", [
       .max(50),
   }),
   z.object({
-    status: z.literal("skipped"),
+    status: z.enum(["skipped", "failed"]),
     checkedAt: z.number().finite(),
     reason: z.string().max(2000),
   }),

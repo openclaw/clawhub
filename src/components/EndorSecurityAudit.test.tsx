@@ -60,4 +60,24 @@ describe("stored Endor plugin scan", () => {
       screen.getByText("Endor found no vulnerabilities marked as reachable functions."),
     ).toBeTruthy();
   });
+
+  it("shows an Endor failure and exports it without changing the primary verdict", () => {
+    const analysis = {
+      status: "failed" as const,
+      checkedAt: 1,
+      reason: "Run a rescan to try again.",
+    };
+    render(
+      <SecurityAuditPage
+        entity={entity}
+        endorAnalysis={analysis}
+        llmAnalysis={{ status: "malicious", verdict: "malicious", checkedAt: 1 }}
+      />,
+    );
+    expect(screen.getByText("Scan failed: Run a rescan to try again.")).toBeTruthy();
+    expect(screen.queryByText(/Endor found no vulnerabilities/)).toBeNull();
+    expect(screen.getAllByText("Malicious").length).toBeGreaterThan(0);
+    const entries = buildSecurityAuditExportEntries({ entity, endorAnalysis: analysis });
+    expect(entries.find((entry) => entry.path === "endor.json")?.value).toEqual(analysis);
+  });
 });

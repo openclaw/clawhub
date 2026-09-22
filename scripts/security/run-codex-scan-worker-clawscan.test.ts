@@ -1029,11 +1029,12 @@ JSON`,
     },
   );
 
-  it("waits for the primary scan to settle and retries the queue job when Endor fails", async () => {
+  it("waits for Endor cleanup and completes with the primary malicious verdict", async () => {
     const workspace = await tempDir();
     const diagnosticsRoot = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const primaryCompleted = join(workspace, "primary-completed");
+    const endorCleanupCompleted = join(workspace, "endor-cleanup-completed");
     await writeFakeClawScanCommand(
       fakeClawScan,
       `is_endor=false
@@ -1068,7 +1069,7 @@ touch ${JSON.stringify(primaryCompleted)}`,
     const packageJson = '{"name":"fixture-plugin","version":"1.0.0"}\n';
     const pluginManifest = '{"id":"fixture-plugin"}\n';
     const job = claimedJob({
-      jobId: "securityScanJobs:endor-retry",
+      jobId: "securityScanJobs:endor-failed-summary",
       source: "publish",
       targetKind: "packageRelease",
       target: {
@@ -1101,37 +1102,53 @@ touch ${JSON.stringify(primaryCompleted)}`,
     process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
     process.env.ENDOR_NAMESPACE = "fixture-namespace";
     process.env.ENDOR_TOKEN = "fixture-token";
-    process.env.PATH = await pathWithFakeDocker(workspace, previousEnv.path);
-    let primaryHadSettledAtFailure = false;
+    process.env.PATH = await pathWithFakeDocker(
+      workspace,
+      previousEnv.path,
+      `if [[ "$1" == "container" && "$2" == "ls" ]]; then
+  touch ${JSON.stringify(endorCleanupCompleted)}
+  exit 0
+fi
+echo "unexpected docker command: $*" >&2
+exit 99`,
+    );
+    let primaryHadSettledAtCompletion = false;
+    let endorCleanupHadSettledAtCompletion = false;
 
     try {
       const client = {
-        action: vi.fn(async (...args: unknown[]) => {
-          const payload = args[1] as { error?: string } | undefined;
-          if (!payload?.error) return {};
-          primaryHadSettledAtFailure = await readFile(primaryCompleted, "utf8")
+        action: vi.fn(async (..._args: unknown[]) => {
+          primaryHadSettledAtCompletion = await readFile(primaryCompleted, "utf8")
             .then(() => true)
             .catch(() => false);
-          return { retry: true };
+          endorCleanupHadSettledAtCompletion = await readFile(endorCleanupCompleted, "utf8")
+            .then(() => true)
+            .catch(() => false);
+          return {};
         }),
       };
 
       await expect(processJob(client, "worker-auth", job, diagnosticsRoot)).resolves.toEqual({
-        completed: false,
+        completed: true,
         hardFailed: false,
-        retryableFailed: true,
+        retryableFailed: false,
       });
-      expect(primaryHadSettledAtFailure).toBe(true);
+      expect(primaryHadSettledAtCompletion).toBe(true);
+      expect(endorCleanupHadSettledAtCompletion).toBe(true);
       expect(client.action).toHaveBeenCalledTimes(1);
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-        error:
-          "Endor ClawScan scanner status was failed: Dependency resolution failed with ENDOR_TOKEN=[redacted-secret]",
+        endorAnalysis: {
+          status: "failed",
+          checkedAt: expect.any(Number),
+          reason: "Endor analysis failed. Request a rescan to try again.",
+        },
         llmAnalysis: {
           status: "malicious",
           verdict: "malicious",
         },
       });
-      const jobDir = join(diagnosticsRoot, "securityScanJobs_endor-retry");
+      expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("error");
+      const jobDir = join(diagnosticsRoot, "securityScanJobs_endor-failed-summary");
       const artifact = await readFile(
         join(jobDir, "endor-clawscan-artifact.redacted.json"),
         "utf8",
@@ -1257,7 +1274,7 @@ exit 18`,
     }
   });
 
-  it("classifies an Endor timeout as a timed-out scanner-stage failure", async () => {
+  it("completes the primary job while reporting an Endor timeout to worker health", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const dockerRunId = join(workspace, "docker-run-id");
@@ -1349,18 +1366,24 @@ esac`,
       const onHealth = vi.fn();
 
       await expect(processJob(client, "worker-auth", job, undefined, onHealth)).resolves.toEqual({
-        completed: false,
+        completed: true,
         hardFailed: false,
-        retryableFailed: true,
+        retryableFailed: false,
       });
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-        error: expect.stringContaining("Endor ClawScan timed out"),
+        endorAnalysis: {
+          status: "failed",
+          checkedAt: expect.any(Number),
+          reason: "Endor analysis failed. Request a rescan to try again.",
+        },
         llmAnalysis: { status: "clean", verdict: "benign" },
       });
+      expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("error");
+      await expect(readFile(dockerRemoved, "utf8")).resolves.toBe("");
       expect(onHealth).toHaveBeenCalledWith(
         expect.objectContaining({
-          completed: false,
-          failureStage: "scanner",
+          completed: true,
+          failureStage: undefined,
           judgeStageFailed: false,
           scannerStageFailed: true,
           timedOut: true,
@@ -1372,9 +1395,9 @@ esac`,
         pool: {
           totalClaimed: 1,
           totalClaimFailures: 0,
-          totalCompleted: 0,
+          totalCompleted: 1,
           totalFailed: 0,
-          totalRetryableFailed: 1,
+          totalRetryableFailed: 0,
         },
         workerId: "fixture-worker",
       });
@@ -1399,7 +1422,7 @@ esac`,
     }
   });
 
-  it("persists the Endor summary and raw report for a completed package scan", async () => {
+  it("persists the Endor summary without uploading any package scanner report", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     await writeFakeClawScanCommand(
@@ -1486,17 +1509,9 @@ fi`,
           reachableFunctionCount: 1,
           findings: [{ severity: "high", summary: "GHSA-reachable" }],
         },
-        scannerReportsStorageId: "storage:endor-report",
       });
-      expect(uploadedReport).toMatchObject({
-        endor: {
-          status: "completed",
-          all_findings: [{ uuid: "reachable-finding" }],
-          blocking_findings: [],
-          warning_findings: [],
-          preparation: { sourceRoot: "artifact/package", normalizations: [] },
-        },
-      });
+      expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("scannerReportsStorageId");
+      expect(uploadedReport).toBeUndefined();
     } finally {
       if (previousEnv.command === undefined)
         delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;

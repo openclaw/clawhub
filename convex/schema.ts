@@ -152,7 +152,7 @@ const llmRiskSummaryBucketValidator = v.object({
   highestSeverity: v.optional(v.string()),
 });
 
-const llmAnalysisValidator = v.object({
+export const llmAnalysisValidator = v.object({
   status: v.string(),
   verdict: v.optional(v.string()),
   confidence: v.optional(v.string()),
@@ -1920,41 +1920,11 @@ const packageReleases = defineTable({
   verification: packageVerificationValidator,
   // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
-  scannerReportsStorageId: v.optional(v.id("_storage")),
   vtAnalysis: v.optional(vtAnalysisValidator),
   aigAnalysis: v.optional(aigAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   endorAnalysis: v.optional(endorAnalysisValidator),
-  llmAnalysis: v.optional(
-    v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: llmRiskSummaryBucketValidator,
-          permission_boundary: llmRiskSummaryBucketValidator,
-          sensitive_data_protection: llmRiskSummaryBucketValidator,
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
-  ),
+  llmAnalysis: v.optional(llmAnalysisValidator),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),

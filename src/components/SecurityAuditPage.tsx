@@ -1,8 +1,7 @@
-import { getSecurityAuditOverviewCopy } from "clawhub-schema";
+import { getSecurityAuditOverviewCopy, type PackageEndorAnalysis } from "clawhub-schema";
 import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
-import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import {
   buildSecurityAuditExportFilename,
@@ -57,7 +56,7 @@ type SecurityAuditPageProps = {
   aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
-  endorAnalysis?: EndorAnalysis | null;
+  endorAnalysis?: PackageEndorAnalysis | null;
   skillSpectorApplicable?: boolean;
   staticScan?: StaticScan | null;
   source?: Record<string, unknown> | null;
@@ -1014,8 +1013,11 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
                 </div>
                 <div className="security-report-overview-body">
                   <p>Checked {formatAuditSidebarTime(props.endorAnalysis.checkedAt)}</p>
-                  {props.endorAnalysis.status === "skipped" ? (
-                    <p>Not analyzed: {props.endorAnalysis.reason}</p>
+                  {props.endorAnalysis.status !== "completed" ? (
+                    <p>
+                      {props.endorAnalysis.status === "failed" ? "Scan failed" : "Not analyzed"}:{" "}
+                      {props.endorAnalysis.reason}
+                    </p>
                   ) : (
                     <>
                       <p>
