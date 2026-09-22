@@ -383,7 +383,8 @@ export async function runEndorPluginScan(input: {
             {
               id: "endor",
               command: "clawhub-endor-scan {{target}}",
-              targets: ["plugin"],
+              // ClawScan classifies CLAW.md package releases as skill targets.
+              targets: ["skill", "plugin"],
               env: ["ENDOR_NAMESPACE", ...(env.ENDOR_API?.trim() ? ["ENDOR_API"] : [])],
               secretEnv: env.ENDOR_TOKEN?.trim()
                 ? ["ENDOR_TOKEN"]
