@@ -170,7 +170,7 @@ describe("security-scan-codex workflow", () => {
     expect(clawScanInstall).not.toContain("@latest");
     const endorPrepare = steps.find((step) => step.name === "Prepare Endor scanner");
     expect(endorPrepare?.if).toBe("${{ env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}");
-    expect(endorPrepare?.run).toContain("clawscan scanners endor");
+    expect(endorPrepare?.run).toContain("test -x /usr/local/bin/clawhub-endor-scan");
     expect(endorPrepare?.run).toContain("@sha256:[a-f0-9]{64}$");
     expect(endorPrepare?.run).toContain('docker pull "$CODEX_SECURITY_SCAN_ENDOR_IMAGE"');
     expect(aigInstall).toContain(

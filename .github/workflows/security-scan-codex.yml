@@ -100,9 +100,9 @@ jobs:
         if: ${{ env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}
         run: |
           set -euo pipefail
-          clawscan scanners endor
           [[ "$CODEX_SECURITY_SCAN_ENDOR_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]] || { echo 'Endor requires a Docker image pinned by SHA-256 digest'; exit 1; }
           docker pull "$CODEX_SECURITY_SCAN_ENDOR_IMAGE"
+          docker run --rm --network none "$CODEX_SECURITY_SCAN_ENDOR_IMAGE" test -x /usr/local/bin/clawhub-endor-scan
 
       - name: Install A.I.G scanner
         run: |

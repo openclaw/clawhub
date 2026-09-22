@@ -152,7 +152,9 @@ JSON`,
     );
     expect((await readFile(argsLog, "utf8")).trim().split("\n")).toEqual([
       "./endor-artifact/openclaw.plugin.json",
-      "--scanner",
+      "--config",
+      join(workspace, "endor-clawscan.json"),
+      "--profile",
       "endor",
       "--sandbox",
       "docker",
@@ -172,6 +174,24 @@ JSON`,
       "",
     ]);
     expect(commandEnv[7]).toMatch(/^[a-f0-9]{32}$/);
+    const config = await readFile(join(workspace, "endor-clawscan.json"), "utf8");
+    expect(JSON.parse(config)).toEqual({
+      version: 1,
+      profiles: {
+        endor: {
+          scanners: [
+            {
+              id: "endor",
+              command: "clawhub-endor-scan {{target}}",
+              targets: ["plugin"],
+              env: ["ENDOR_NAMESPACE"],
+              secretEnv: ["ENDOR_TOKEN"],
+            },
+          ],
+        },
+      },
+    });
+    expect(config).not.toContain("fixture-token");
   });
 
   it("returns an explicit skipped result when the package artifact has no package.json", async () => {

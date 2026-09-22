@@ -1041,7 +1041,7 @@ JSON`,
 output=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --scanner)
+    --profile)
       if [[ "$2" == "endor" ]]; then is_endor=true; fi
       shift 2
       ;;
@@ -1190,7 +1190,7 @@ exit 99`,
       fakeClawScan,
       `is_endor=false
 while [[ $# -gt 0 ]]; do
-  if [[ "$1" == "--scanner" && "$2" == "endor" ]]; then is_endor=true; fi
+  if [[ "$1" == "--profile" && "$2" == "endor" ]]; then is_endor=true; fi
   shift
 done
 if [[ "$is_endor" == "true" ]]; then
@@ -1285,7 +1285,7 @@ exit 18`,
 output=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --scanner)
+    --profile)
       if [[ "$2" == "endor" ]]; then is_endor=true; fi
       shift 2
       ;;
@@ -1431,7 +1431,7 @@ esac`,
 output=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --scanner)
+    --profile)
       if [[ "$2" == "endor" ]]; then is_endor=true; fi
       shift 2
       ;;

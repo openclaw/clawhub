@@ -193,7 +193,7 @@ function endorRuntimeEnv(
     if (value !== undefined) env[key] = value;
   }
   // The host Docker CLI needs its selected context. ClawScan independently
-  // forwards only the Endor adapter's required and optional env into the container.
+  // forwards only the trusted custom-scanner config's env into the container.
   for (const key of ["HOME", "DOCKER_CONFIG"] as const) {
     const value = source[key];
     if (value !== undefined) env[key] = value;
@@ -372,6 +372,29 @@ export async function runEndorPluginScan(input: {
   });
   await normalizePackageTree(scanRoot);
   const outputPath = join(input.workspace, "endor-clawscan-artifact.json");
+  const configPath = join(input.workspace, "endor-clawscan.json");
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      version: 1,
+      profiles: {
+        endor: {
+          scanners: [
+            {
+              id: "endor",
+              command: "clawhub-endor-scan {{target}}",
+              targets: ["plugin"],
+              env: ["ENDOR_NAMESPACE", ...(env.ENDOR_API?.trim() ? ["ENDOR_API"] : [])],
+              secretEnv: env.ENDOR_TOKEN?.trim()
+                ? ["ENDOR_TOKEN"]
+                : ["ENDOR_API_CREDENTIALS_KEY", "ENDOR_API_CREDENTIALS_SECRET"],
+            },
+          ],
+        },
+      },
+    }),
+    "utf8",
+  );
   const command = env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND?.trim() || "clawscan";
   const target = await resolveClawScanTargetForRoot({
     artifactKind: "packageRelease",
@@ -380,7 +403,9 @@ export async function runEndorPluginScan(input: {
   });
   const args = [
     target,
-    "--scanner",
+    "--config",
+    configPath,
+    "--profile",
     "endor",
     "--sandbox",
     "docker",
