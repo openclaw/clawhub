@@ -162,7 +162,7 @@ describe("security-scan-codex workflow", () => {
     expect(codexInstall).toContain("npm install -g @openai/codex@0.142.3");
     expect(codexInstall).not.toContain("@latest");
     expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_VERSION).toBe(
-      "${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_VERSION || '0.1.8' }}",
+      "${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_VERSION || '0.2.0' }}",
     );
     expect(clawScanInstall).toContain(
       'npm install -g "@openclaw/clawscan@$CODEX_SECURITY_SCAN_CLAWSCAN_VERSION"',

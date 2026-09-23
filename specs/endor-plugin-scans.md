@@ -47,15 +47,19 @@ Enable it only after the backend result contract is deployed and the following
 worker configuration is available:
 
 - `CODEX_SECURITY_SCAN_CLAWSCAN_VERSION`: an exact released ClawScan version with
-  custom command scanners and sandbox ownership/timeout cleanup. Endor needs no
-  built-in adapter. The current default, `0.1.8`, predates the cleanup fixes.
+  custom command scanners and sandbox ownership labels. The default is `0.2.0`.
+  ClawHub uses those labels to clean up containers after a worker timeout.
+  Endor needs no built-in adapter.
 - `CODEX_SECURITY_SCAN_ENDOR_IMAGE`: the Endor scanner Docker image pinned by its
-  SHA-256 digest. Build it from `scripts/security/endor/Dockerfile`, with
-  `scan.sh` and the chosen Endor CLI binary in the build context.
+  SHA-256 digest. Run the manual `Endor Scanner Image` workflow from `main` to
+  publish `ghcr.io/openclaw/clawhub-endor`; copy the digest from its job summary.
+  It builds `scripts/security/endor/Dockerfile` with the pinned Endor CLI and
+  verifies its checksum. The package must grant this repository Actions access.
 - `ENDOR_NAMESPACE` and the `ENDOR_API_CREDENTIALS_KEY` /
   `ENDOR_API_CREDENTIALS_SECRET` secrets. `ENDOR_API` is optional.
 
-The workflow pulls the pinned image and checks its wrapper before claiming work.
+The worker authenticates to GHCR with its read-only package token, pulls the
+pinned image, and removes that login before claiming work.
 The worker writes a trusted scanner profile outside the submitted artifact;
 it contains credential names only. Credentials are available only to the worker step; the Endor
 subprocess receives its own credentials, and the main scan does not inherit them.
@@ -67,8 +71,8 @@ empty report, accepts Endor's policy exit 128, and rejects analysis errors even
 when Endor exits zero. The image retains the reviewed npm version that prevents
 Git dependency prepare scripts from bypassing script suppression.
 
-This integration does not publish a ClawScan release, publish a Docker image, set
-hosted secrets, or deploy ClawHub. Those are separate rollout actions.
+Image publication, hosted configuration, and ClawHub deployment remain separate
+manual rollout actions.
 
 ### Deployment and rollback order
 
