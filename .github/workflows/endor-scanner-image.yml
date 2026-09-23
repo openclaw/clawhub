@@ -1,0 +1,42 @@
+name: Endor Scanner Image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/clawhub-endor:${{ github.sha }}
+      ENDORCTL_VERSION: v1.7.1115
+      ENDORCTL_SHA256: 4022e91a39d04f852f8a6195a5f98297af6cf2738f4012b1591bc87976136d4b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and check scanner image
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            "https://api.endorlabs.com/download/endorlabs/$ENDORCTL_VERSION/binaries/endorctl_${ENDORCTL_VERSION}_linux_amd64" \
+            --output scripts/security/endor/endorctl
+          docker build --platform linux/amd64 \
+            --build-arg "ENDORCTL_SHA256=$ENDORCTL_SHA256" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --tag "$IMAGE" scripts/security/endor
+          docker run --rm --network none "$IMAGE" test -x /usr/local/bin/clawhub-endor-scan
+
+      - name: Publish image and report digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE"
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+          printf 'Set CODEX_SECURITY_SCAN_ENDOR_IMAGE to %s before enabling Endor.\n' "$digest" >> "$GITHUB_STEP_SUMMARY"
