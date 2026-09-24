@@ -38,6 +38,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
+- Hidden-skill HTTP hints and private moderation evidence follow current publisher
+  read access. Organization owners, admins, and publishers qualify through current
+  membership; historical `ownerUserId` does not preserve access after membership
+  removal. Personal publishers follow current linkage with the existing legacy
+  owner fallback, and skills without a publisher retain personal-owner access.
+  Existing platform staff access and public evidence redaction remain unchanged.
+
 - Skill transfer, delete, and restore authorization follows the resource's current
   publisher ownership. For organization skills, the historical `ownerUserId` is
   not an authorization grant: current organization admin/owner membership is
