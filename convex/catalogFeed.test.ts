@@ -242,10 +242,15 @@ describe("catalog feed projection", () => {
     ]);
   });
 
-  it("omits official plugins whose latest release is still unpublished", async () => {
+  it.each([
+    { publicationStatus: "pending" },
+    { publicationStatus: "blocked" },
+    { ownerDeletedAt: 0 },
+    { softDeletedAt: 0 },
+  ])("omits official plugins with an unavailable latest release: %j", async (patch) => {
     const result = await listOfficialEntriesHandler(
       makeCtx([makePackage()], {
-        "packageReleases:1": makeRelease({ publicationStatus: "pending" }),
+        "packageReleases:1": makeRelease(patch),
       }),
       { family: "code-plugin" },
     );

@@ -14,6 +14,7 @@ import {
   httpAction,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
@@ -107,6 +108,7 @@ async function getPreferredFallbackPackageRelease(
       .order("desc")
       .paginate({ cursor, numItems: 100 });
     for (const release of page.page) {
+      if (!isPublishedPackageRelease(release, packageId)) continue;
       const candidate: LatestPackageRelease = {
         _id: release._id,
         createdAt: release.createdAt,

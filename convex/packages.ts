@@ -99,6 +99,7 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
+import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
@@ -1216,19 +1217,6 @@ function resolvePublicPackageScanStatus(
     return releaseScanStatus === "not-run" ? pkg.scanStatus : releaseScanStatus;
   }
   return pkg.scanStatus;
-}
-
-function isPublishedPackageRelease(
-  release: Doc<"packageReleases"> | null | undefined,
-  packageId?: Id<"packages">,
-): release is Doc<"packageReleases"> {
-  return Boolean(
-    release &&
-    release.softDeletedAt === undefined &&
-    release.ownerDeletedAt === undefined &&
-    (packageId === undefined || release.packageId === packageId) &&
-    (release.publicationStatus === undefined || release.publicationStatus === "published"),
-  );
 }
 
 function hasNoPublishedPackageVersions(
