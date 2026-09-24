@@ -1,0 +1,160 @@
+{
+  "kind": "next-tranche-native-auth-assessment",
+  "createdAt": "2026-09-16T21:23:08.479566+00:00",
+  "pr": "https://github.com/openclaw/clawhub/pull/3762",
+  "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+  "submittedHead": "4ea31224c75d53509c7faf1cfd473fc95dbff214",
+  "candidateDefinition": "base 2c901 plus exact submitted convex/skillEvaluations.ts runtime file from 4ea31224; runtime diff is exactly two admin-guard lines",
+  "deployment": "anonymous:anonymous-agent",
+  "cloud": "http://127.0.0.1:3910",
+  "site": "http://127.0.0.1:3911",
+  "phases": [
+    {
+      "label": "baseline",
+      "sourceGitBlob": "ca2f77eb610fad012e4d7066c140524a77ce0459",
+      "sourceSha256": "f956ae8a9c3ea1ec0955eae100d7dcb19492303fda64e1d0de059fd480286941",
+      "actors": [
+        {
+          "actor": "anonymous",
+          "allowed": true,
+          "errorClass": null,
+          "beforeStatus": "skipped",
+          "afterStatus": "queued",
+          "rowUnchanged": false,
+          "dispatcherUnchanged": false,
+          "newScheduledJobs": 1,
+          "cancelledJobs": 1,
+          "assertions": 8
+        },
+        {
+          "actor": "member",
+          "allowed": true,
+          "errorClass": null,
+          "beforeStatus": "skipped",
+          "afterStatus": "queued",
+          "rowUnchanged": false,
+          "dispatcherUnchanged": false,
+          "newScheduledJobs": 1,
+          "cancelledJobs": 1,
+          "assertions": 8
+        },
+        {
+          "actor": "admin",
+          "allowed": true,
+          "errorClass": null,
+          "beforeStatus": "skipped",
+          "afterStatus": "queued",
+          "rowUnchanged": false,
+          "dispatcherUnchanged": false,
+          "newScheduledJobs": 1,
+          "cancelledJobs": 1,
+          "assertions": 8
+        }
+      ]
+    },
+    {
+      "label": "submitted",
+      "sourceGitBlob": "b019f0c5bf64e67b8f3de76526bdd2236ce7f2ac",
+      "sourceSha256": "e04e6e50848894e9dc98a405e98d64e95ef77aad3cc0964042a045dde7e9b13e",
+      "actors": [
+        {
+          "actor": "anonymous",
+          "allowed": false,
+          "errorClass": "Unauthorized",
+          "beforeStatus": "skipped",
+          "afterStatus": "skipped",
+          "rowUnchanged": true,
+          "dispatcherUnchanged": true,
+          "newScheduledJobs": 0,
+          "cancelledJobs": 0,
+          "assertions": 5
+        },
+        {
+          "actor": "member",
+          "allowed": false,
+          "errorClass": "Forbidden",
+          "beforeStatus": "skipped",
+          "afterStatus": "skipped",
+          "rowUnchanged": true,
+          "dispatcherUnchanged": true,
+          "newScheduledJobs": 0,
+          "cancelledJobs": 0,
+          "assertions": 5
+        },
+        {
+          "actor": "admin",
+          "allowed": true,
+          "errorClass": null,
+          "beforeStatus": "skipped",
+          "afterStatus": "queued",
+          "rowUnchanged": false,
+          "dispatcherUnchanged": false,
+          "newScheduledJobs": 1,
+          "cancelledJobs": 1,
+          "assertions": 8
+        }
+      ]
+    }
+  ],
+  "assertions": 42,
+  "evaluationJobsCancelled": 4,
+  "externalDispatch": "Not attempted: all evaluation jobs scheduled 24 hours ahead by an owned lease and cancelled while pending. No real GitHub credentials loaded. No worker execution or GitHub API dispatch proof claimed.",
+  "cleanup": {
+    "backendStopped": true,
+    "ports3910and3911": "verified free",
+    "localConfigAndEnvRemoved": true,
+    "temporaryFixtureRemoved": true,
+    "sourceRestored": true,
+    "worktreeClean": true,
+    "publicWrites": 0,
+    "commits": 0
+  },
+  "limits": [
+    "Admin and member identities are actual Convex administrative impersonation of schema-persisted local users; external identity-provider login was not exercised.",
+    "Proof is mutation authorization, queue transition and native scheduler insertion/cancellation; no browser or evaluation-worker completion.",
+    "No repairs or full PR gates performed; this is next-tranche assessment only."
+  ],
+  "initialHarnessIssue": "First run completed all six behavior cases but cleanup assertion wrongly required unrelated already-completed user-digest jobs to be canceled. Initial receipts retained; final fresh run restricts evaluation-job cancellation check and additionally rejects any pending/in-progress job.",
+  "artifacts": {
+    "run.json": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/run.json",
+      "sha256": "64b2fac17d8c0287fafcb94dffe54c0896541e8fc8237b7052b3a76a40790bf4"
+    },
+    "run.txt": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/run.txt",
+      "sha256": "74abab0b18a9f77712715c56e06945701608ee43b9854ed8553a7c1e0a2936a5"
+    },
+    "baseline.json": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/baseline.json",
+      "sha256": "09ccc4bc8014762656f85786e810cf81aa2777b56febe279ab98232e7e4d5515"
+    },
+    "submitted.json": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/submitted.json",
+      "sha256": "27f6f8e3a7a50f798ca5de58943a99a54479b0f48ef6771b2a0fc517d001ecec"
+    },
+    "baseline-push.txt": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/baseline-push.txt",
+      "sha256": "0031779472f2ca19335a2ebefd0b104034e888c2d71d98d2e3fa66a8bdec0554"
+    },
+    "submitted-push.txt": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/submitted-push.txt",
+      "sha256": "da516b051a70fc2518b9a69cdbeb0c7c550c641c65c1c8e6b4a680022b5c6380"
+    },
+    "fixture.ts": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/fixture.ts",
+      "sha256": "4b75280b813082f5fae605221c5532811234d5ad648082339598408159502307"
+    },
+    "run.mjs": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/run.mjs",
+      "sha256": "147444c44e282cb62f50b58e0b79813c67c988779282607c5db0091d0af8bdd5"
+    },
+    "applied-runtime.patch": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/applied-runtime.patch",
+      "sha256": "0ddeb5ac601f1e3018adb6db5329955479f8be81a4e1b646ff51303e3f14e31b"
+    },
+    "runtime.log": {
+      "path": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution/auth-native-proof/runtime.log",
+      "sha256": "7c1f011364a5bde29d864ef3e0c6263e70fe70eaa1e1b45d7ddfee1bf2b09eff"
+    }
+  }
+}

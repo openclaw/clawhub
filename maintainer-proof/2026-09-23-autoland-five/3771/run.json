@@ -1,0 +1,3126 @@
+{
+  "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+  "submittedHead": "34e000ac07539d26aa15a32e08cfd77230c5cb8e",
+  "scope": "Standalone anonymous local Convex; actual revoke/quarantine mutations and checked reads plus default file/download; no production",
+  "cloud": "http://127.0.0.1:3910",
+  "site": "http://127.0.0.1:3911",
+  "phases": [
+    {
+      "label": "baseline",
+      "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+      "submittedHead": null,
+      "sourceSha256": "9fe35b644cc2cc1a39a002de38d5266684b2a8bc7c66d8553fc651f4468360d7",
+      "sourceGitBlob": "8bb01cc1ecfd501102dcdc8ea927641d191cad1e",
+      "cases": [
+        {
+          "mode": "revoke",
+          "fallback": true,
+          "fixture": {
+            "moderatorId": "h17hv84qdp4xqjc0xd9n09t97s8ehecz",
+            "olderId": "yx713e65xsq04pqvymasajrrcn8eg98w",
+            "ownerHandle": "owner-baseline-revoke-older",
+            "pendingId": "yx72wdy8whzyfbqy0hkz80abx58egd71",
+            "skillId": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+            "slug": "native-rollback-baseline-revoke-older",
+            "targetId": "yx7ddj9dm52jgns3skcv00jyds8ehx5e"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594136059.3691,
+                "_id": "yx72wdy8whzyfbqy0hkz80abx58egd71",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594136059.3677,
+                "_id": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx7ddj9dm52jgns3skcv00jyds8ehx5e",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t174bkhda4xr5hjjwa8fvpnns58eh0x2",
+                "ownerUserId": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "slug": "native-rollback-baseline-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx7ddj9dm52jgns3skcv00jyds8ehx5e"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594136059.3684,
+                "_id": "yx7ddj9dm52jgns3skcv00jyds8ehx5e",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594136059.3665,
+                "_id": "t174bkhda4xr5hjjwa8fvpnns58eh0x2",
+                "displayName": "Owner",
+                "handle": "owner-baseline-revoke-older",
+                "kind": "user",
+                "linkedUserId": "h17vx4jgxxam7asqqs7dvkr5398ehvvf"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-revoke-older",
+              "resolvedSlug": "native-rollback-baseline-revoke-older",
+              "skill": {
+                "_creationTime": 1789594136059.3677,
+                "_id": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx7ddj9dm52jgns3skcv00jyds8ehx5e",
+                "ownerPublisherId": "t174bkhda4xr5hjjwa8fvpnns58eh0x2",
+                "ownerUserId": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "slug": "native-rollback-baseline-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx7ddj9dm52jgns3skcv00jyds8ehx5e"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594136059.3677,
+                "_id": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx7ddj9dm52jgns3skcv00jyds8ehx5e",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t174bkhda4xr5hjjwa8fvpnns58eh0x2",
+                "ownerUserId": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "slug": "native-rollback-baseline-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx7ddj9dm52jgns3skcv00jyds8ehx5e"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594136059.3684,
+                "_id": "yx7ddj9dm52jgns3skcv00jyds8ehx5e",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 571,
+                "bodySha256": "0cb82ecdc17fcf5d53bfcf023299d97e3522a5be3fd0e18c4535312e901ab789",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-revoke-older\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-revoke-older\",\"userId\":\"t174bkhda4xr5hjjwa8fvpnns58eh0x2\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-older/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-revoke-older",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 402,
+                "bodySha256": "7b2056b76c53acee5dc1f26130feb3b7785f7dd42e610130dd281fcfca41361d",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly0EOwiAQheF9T0FYS1OrBnXn0mOAjAVBsEw7khjv3pJu//e+X8MYT98I+W74lXG7l1SOr6EU9ZYKxxGlIZ9Ph8sZLNGT7yrAMA/1HdXkCEROIWj18EIrhODiWoCSB5GCgbwRgowuxar6tmu7rX5mHRxaMLdpXfrmvwBQSwcIwujAInsAAACQAAAAUEsBAhQAFAAIAAgAAAAhAGeIqPUlAAAAIwAAAAgAAAAAAAAAAAAAAAAAAAAAAFNLSUxMLm1kUEsBAhQAFAAIAAgAAAAhAMLowCJ7AAAAkAAAAAoAAAAAAAAAAAAAAAAAWwAAAF9tZXRhLmpzb25QSwUGAAAAAAIAAgBuAAAADgEAAAAA"
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594136059.3691,
+                "_id": "yx72wdy8whzyfbqy0hkz80abx58egd71",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594136059.3677,
+                "_id": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx72wdy8whzyfbqy0hkz80abx58egd71",
+                "latestVersionSummary": {
+                  "changelog": "Changes 5.0.0",
+                  "createdAt": 5,
+                  "description": "Description 5.0.0",
+                  "version": "5.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594137242,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx72wdy8whzyfbqy0hkz80abx58egd71",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t174bkhda4xr5hjjwa8fvpnns58eh0x2",
+                "ownerUserId": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "slug": "native-rollback-baseline-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx72wdy8whzyfbqy0hkz80abx58egd71"
+                },
+                "updatedAt": 1789594137242
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": null,
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594136059.3665,
+                "_id": "t174bkhda4xr5hjjwa8fvpnns58eh0x2",
+                "displayName": "Owner",
+                "handle": "owner-baseline-revoke-older",
+                "kind": "user",
+                "linkedUserId": "h17vx4jgxxam7asqqs7dvkr5398ehvvf"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-revoke-older",
+              "resolvedSlug": "native-rollback-baseline-revoke-older",
+              "skill": {
+                "_creationTime": 1789594136059.3677,
+                "_id": "z177mjvx40qtzg7zcfn71k4rzs8eh725",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx72wdy8whzyfbqy0hkz80abx58egd71",
+                "ownerPublisherId": "t174bkhda4xr5hjjwa8fvpnns58eh0x2",
+                "ownerUserId": "h17vx4jgxxam7asqqs7dvkr5398ehvvf",
+                "slug": "native-rollback-baseline-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx72wdy8whzyfbqy0hkz80abx58egd71"
+                },
+                "updatedAt": 1789594137242
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "status": "not_found"
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 452,
+                "bodySha256": "02fc9b942bd63bc8adf441fe3ec5f4f65086b0077fe6a34001dd58a6c7e83d89",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-revoke-older\",\"displayName\":\"Name 5.0.0\",\"summary\":\"Description 5.0.0\",\"icon\":null,\"description\":null,\"tags\":{},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":1789594137242},\"latestVersion\":null,\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-revoke-older\",\"userId\":\"t174bkhda4xr5hjjwa8fvpnns58eh0x2\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-older/file?path=SKILL.md",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-revoke-older",
+                "status": 404,
+                "contentType": "text/plain;charset=UTF-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "default file denied",
+            "default download denied"
+          ]
+        },
+        {
+          "mode": "revoke",
+          "fallback": false,
+          "fixture": {
+            "moderatorId": "h17hkkkmhrg340pjhqpf82zwns8egg38",
+            "olderId": null,
+            "ownerHandle": "owner-baseline-revoke-none",
+            "pendingId": "yx7abbxa1t7890n6s3k0wad5758eh1pf",
+            "skillId": "z174mdeev76wkvfmwrssefj5598egy16",
+            "slug": "native-rollback-baseline-revoke-none",
+            "targetId": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594138358.875,
+                "_id": "yx7abbxa1t7890n6s3k0wad5758eh1pf",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z174mdeev76wkvfmwrssefj5598egy16",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594138358.8738,
+                "_id": "z174mdeev76wkvfmwrssefj5598egy16",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t17esywvs0ft74yb8tmz4c3zj18ehr6t",
+                "ownerUserId": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "slug": "native-rollback-baseline-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594138358.8743,
+                "_id": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z174mdeev76wkvfmwrssefj5598egy16",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594138358.8726,
+                "_id": "t17esywvs0ft74yb8tmz4c3zj18ehr6t",
+                "displayName": "Owner",
+                "handle": "owner-baseline-revoke-none",
+                "kind": "user",
+                "linkedUserId": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-revoke-none",
+              "resolvedSlug": "native-rollback-baseline-revoke-none",
+              "skill": {
+                "_creationTime": 1789594138358.8738,
+                "_id": "z174mdeev76wkvfmwrssefj5598egy16",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg",
+                "ownerPublisherId": "t17esywvs0ft74yb8tmz4c3zj18ehr6t",
+                "ownerUserId": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "slug": "native-rollback-baseline-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594138358.8738,
+                "_id": "z174mdeev76wkvfmwrssefj5598egy16",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t17esywvs0ft74yb8tmz4c3zj18ehr6t",
+                "ownerUserId": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "slug": "native-rollback-baseline-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594138358.8743,
+                "_id": "yx72hre7eq14xzjcr4hx1wm9cx8ehcmg",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z174mdeev76wkvfmwrssefj5598egy16",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-none",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 569,
+                "bodySha256": "1336bafa7308a08a6c90e5aa494d06981be425fad94e9ea4d3eca1a2d08006fc",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-revoke-none\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-revoke-none\",\"userId\":\"t17esywvs0ft74yb8tmz4c3zj18ehr6t\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-none/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-revoke-none",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 401,
+                "bodySha256": "7ae8860f74c5f6408600ef93b60cd7285eb8e64aa12210f8ccc5865918d6dca4",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly0EOwiAQheF9T0FYS0MbtcadS4/BwKRgcTDQQqrx7i3p9n/v+zWM8VAI49PwO+O2Gyxc1+6i1Yvkt6wS1Nm+y5BuOGoD/FRB8stY36Rml1HE4D0oPQlQCb2jvWAOEwoKhIfIGJMLVFHfylYe9bOAd8miecz70jf/DVBLBwjHEyWfegAAAI8AAABQSwECFAAUAAgACAAAACEAZ4io9SUAAAAjAAAACAAAAAAAAAAAAAAAAAAAAAAAU0tJTEwubWRQSwECFAAUAAgACAAAACEAxxMln3oAAACPAAAACgAAAAAAAAAAAAAAAABbAAAAX21ldGEuanNvblBLBQYAAAAAAgACAG4AAAANAQAAAAA="
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594138358.875,
+                "_id": "yx7abbxa1t7890n6s3k0wad5758eh1pf",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z174mdeev76wkvfmwrssefj5598egy16",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594138358.8738,
+                "_id": "z174mdeev76wkvfmwrssefj5598egy16",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx7abbxa1t7890n6s3k0wad5758eh1pf",
+                "latestVersionSummary": {
+                  "changelog": "Changes 5.0.0",
+                  "createdAt": 5,
+                  "description": "Description 5.0.0",
+                  "version": "5.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594139528,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx7abbxa1t7890n6s3k0wad5758eh1pf",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t17esywvs0ft74yb8tmz4c3zj18ehr6t",
+                "ownerUserId": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "slug": "native-rollback-baseline-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx7abbxa1t7890n6s3k0wad5758eh1pf"
+                },
+                "updatedAt": 1789594139528
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": null,
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594138358.8726,
+                "_id": "t17esywvs0ft74yb8tmz4c3zj18ehr6t",
+                "displayName": "Owner",
+                "handle": "owner-baseline-revoke-none",
+                "kind": "user",
+                "linkedUserId": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-revoke-none",
+              "resolvedSlug": "native-rollback-baseline-revoke-none",
+              "skill": {
+                "_creationTime": 1789594138358.8738,
+                "_id": "z174mdeev76wkvfmwrssefj5598egy16",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx7abbxa1t7890n6s3k0wad5758eh1pf",
+                "ownerPublisherId": "t17esywvs0ft74yb8tmz4c3zj18ehr6t",
+                "ownerUserId": "h17hb6y15cajn0zwy0ba4hmw7s8egcdb",
+                "slug": "native-rollback-baseline-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx7abbxa1t7890n6s3k0wad5758eh1pf"
+                },
+                "updatedAt": 1789594139528
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "status": "not_found"
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-none",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 450,
+                "bodySha256": "70e186f66d645eef245984bb65d7c096eaca061b8d17fe7cd8bedcb549e5552f",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-revoke-none\",\"displayName\":\"Name 5.0.0\",\"summary\":\"Description 5.0.0\",\"icon\":null,\"description\":null,\"tags\":{},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":1789594139528},\"latestVersion\":null,\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-revoke-none\",\"userId\":\"t17esywvs0ft74yb8tmz4c3zj18ehr6t\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-revoke-none/file?path=SKILL.md",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-revoke-none",
+                "status": 404,
+                "contentType": "text/plain;charset=UTF-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "default file denied",
+            "default download denied"
+          ]
+        },
+        {
+          "mode": "quarantine",
+          "fallback": true,
+          "fixture": {
+            "moderatorId": "h17kqn1wxvkb7fecte21kz65a58ehv4n",
+            "olderId": "yx7cngx6w68y4t3nwxnr1yxjdx8ehkvj",
+            "ownerHandle": "owner-baseline-quarantine-older",
+            "pendingId": "yx72fx17msfv91cyfx3bhp84rh8ehe8v",
+            "skillId": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+            "slug": "native-rollback-baseline-quarantine-older",
+            "targetId": "yx75prwy4vega3d8qh4xak47098eghcv"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594140714.7861,
+                "_id": "yx72fx17msfv91cyfx3bhp84rh8ehe8v",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594140714.7847,
+                "_id": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75prwy4vega3d8qh4xak47098eghcv",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t173k90devchakgde39sh3gw5s8ehcjz",
+                "ownerUserId": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "slug": "native-rollback-baseline-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75prwy4vega3d8qh4xak47098eghcv"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594140714.7854,
+                "_id": "yx75prwy4vega3d8qh4xak47098eghcv",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594140714.7834,
+                "_id": "t173k90devchakgde39sh3gw5s8ehcjz",
+                "displayName": "Owner",
+                "handle": "owner-baseline-quarantine-older",
+                "kind": "user",
+                "linkedUserId": "h17th5nnqp7qdfdxqrsnab07a58eg21b"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-quarantine-older",
+              "resolvedSlug": "native-rollback-baseline-quarantine-older",
+              "skill": {
+                "_creationTime": 1789594140714.7847,
+                "_id": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75prwy4vega3d8qh4xak47098eghcv",
+                "ownerPublisherId": "t173k90devchakgde39sh3gw5s8ehcjz",
+                "ownerUserId": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "slug": "native-rollback-baseline-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75prwy4vega3d8qh4xak47098eghcv"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594140714.7847,
+                "_id": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75prwy4vega3d8qh4xak47098eghcv",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t173k90devchakgde39sh3gw5s8ehcjz",
+                "ownerUserId": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "slug": "native-rollback-baseline-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75prwy4vega3d8qh4xak47098eghcv"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594140714.7854,
+                "_id": "yx75prwy4vega3d8qh4xak47098eghcv",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 579,
+                "bodySha256": "acb64a7680a2df56ea689dd62bb05483034752ba5a11c8fdda04ce5419da7f9e",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-quarantine-older\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-quarantine-older\",\"userId\":\"t173k90devchakgde39sh3gw5s8ehcjz\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-older/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-quarantine-older",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 403,
+                "bodySha256": "d52e981a39a70cb92ac3b4fc8ba0ba8163d9514f51ac80c53c8cd62542ad34e9",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly8EOwiAQBNB7v6LhLA0laTDePPoZi6yFSJayQDUx/ruS3iYz8z7DOIr0IuSbE5dR+NlUvxDlzWT3cO/MhcAqA8sZVz1bceqgxLb2N0ENO0pOMVq4P6WFgjEQytyAgWqPKTrkg+3IJSTqUk9qUke7NRtD8eiu9b/o4fsDUEsHCIvtX1F8AAAAlAAAAFBLAQIUABQACAAIAAAAIQBniKj1JQAAACMAAAAIAAAAAAAAAAAAAAAAAAAAAABTS0lMTC5tZFBLAQIUABQACAAIAAAAIQCL7V9RfAAAAJQAAAAKAAAAAAAAAAAAAAAAAFsAAABfbWV0YS5qc29uUEsFBgAAAAACAAIAbgAAAA8BAAAAAA=="
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594140714.7861,
+                "_id": "yx72fx17msfv91cyfx3bhp84rh8ehe8v",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594140714.7847,
+                "_id": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx72fx17msfv91cyfx3bhp84rh8ehe8v",
+                "latestVersionSummary": {
+                  "changelog": "Changes 5.0.0",
+                  "createdAt": 5,
+                  "description": "Description 5.0.0",
+                  "version": "5.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594141840,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx72fx17msfv91cyfx3bhp84rh8ehe8v",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t173k90devchakgde39sh3gw5s8ehcjz",
+                "ownerUserId": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "slug": "native-rollback-baseline-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx72fx17msfv91cyfx3bhp84rh8ehe8v"
+                },
+                "updatedAt": 1789594141840
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": null,
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594140714.7834,
+                "_id": "t173k90devchakgde39sh3gw5s8ehcjz",
+                "displayName": "Owner",
+                "handle": "owner-baseline-quarantine-older",
+                "kind": "user",
+                "linkedUserId": "h17th5nnqp7qdfdxqrsnab07a58eg21b"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-quarantine-older",
+              "resolvedSlug": "native-rollback-baseline-quarantine-older",
+              "skill": {
+                "_creationTime": 1789594140714.7847,
+                "_id": "z170syz9g73zphcaaqfa3vk8m98egk1v",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx72fx17msfv91cyfx3bhp84rh8ehe8v",
+                "ownerPublisherId": "t173k90devchakgde39sh3gw5s8ehcjz",
+                "ownerUserId": "h17th5nnqp7qdfdxqrsnab07a58eg21b",
+                "slug": "native-rollback-baseline-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx72fx17msfv91cyfx3bhp84rh8ehe8v"
+                },
+                "updatedAt": 1789594141840
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "status": "not_found"
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 460,
+                "bodySha256": "a6ee8080f21362f6d524e435a8e6b7bee82b92ef70e736a12719a751d65dc321",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-quarantine-older\",\"displayName\":\"Name 5.0.0\",\"summary\":\"Description 5.0.0\",\"icon\":null,\"description\":null,\"tags\":{},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":1789594141840},\"latestVersion\":null,\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-quarantine-older\",\"userId\":\"t173k90devchakgde39sh3gw5s8ehcjz\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-older/file?path=SKILL.md",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-quarantine-older",
+                "status": 404,
+                "contentType": "text/plain;charset=UTF-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "default file denied",
+            "default download denied"
+          ]
+        },
+        {
+          "mode": "quarantine",
+          "fallback": false,
+          "fixture": {
+            "moderatorId": "h17g5a668qvtmyj9q6dh2rm9098egyjt",
+            "olderId": null,
+            "ownerHandle": "owner-baseline-quarantine-none",
+            "pendingId": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh",
+            "skillId": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+            "slug": "native-rollback-baseline-quarantine-none",
+            "targetId": "yx74crghp9v8644k50hqcb1q2d8eher8"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594143218.658,
+                "_id": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594143218.6567,
+                "_id": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx74crghp9v8644k50hqcb1q2d8eher8",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t17dp7wvvebrj7yh5awnk41xr18eh7vf",
+                "ownerUserId": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "slug": "native-rollback-baseline-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx74crghp9v8644k50hqcb1q2d8eher8"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594143218.6572,
+                "_id": "yx74crghp9v8644k50hqcb1q2d8eher8",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594143218.6555,
+                "_id": "t17dp7wvvebrj7yh5awnk41xr18eh7vf",
+                "displayName": "Owner",
+                "handle": "owner-baseline-quarantine-none",
+                "kind": "user",
+                "linkedUserId": "h17q49jhewwck4qrtkyv7yx6218egbt5"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-quarantine-none",
+              "resolvedSlug": "native-rollback-baseline-quarantine-none",
+              "skill": {
+                "_creationTime": 1789594143218.6567,
+                "_id": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx74crghp9v8644k50hqcb1q2d8eher8",
+                "ownerPublisherId": "t17dp7wvvebrj7yh5awnk41xr18eh7vf",
+                "ownerUserId": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "slug": "native-rollback-baseline-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx74crghp9v8644k50hqcb1q2d8eher8"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594143218.6567,
+                "_id": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx74crghp9v8644k50hqcb1q2d8eher8",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t17dp7wvvebrj7yh5awnk41xr18eh7vf",
+                "ownerUserId": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "slug": "native-rollback-baseline-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx74crghp9v8644k50hqcb1q2d8eher8"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594143218.6572,
+                "_id": "yx74crghp9v8644k50hqcb1q2d8eher8",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-none",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 577,
+                "bodySha256": "99abf095abd2de03e9ed02ceafa37e3e5617a990ad4ebc85415d1c17812d6686",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-quarantine-none\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-quarantine-none\",\"userId\":\"t17dp7wvvebrj7yh5awnk41xr18eh7vf\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-none/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-quarantine-none",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 404,
+                "bodySha256": "7b7a199aefe510db10e1fad572f967bbdce9c245c4135251b1dea2803333d013",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly00OgjAUBOA9pyBdWwINirpz6TFaeKG1zav9lxjvLg27ycx836ZtiS0I/rmQe0vkMLnx9pJQyqxH56Pe8rR9Lmy4wirimZwqCCat9Y08qgzUW2MEnzUVPIBRCNQl7jnGGtEiHCqDD8pihazru/5o30kYFSQsj7gvrPn9AVBLBwjm1vE5fQAAAJMAAABQSwECFAAUAAgACAAAACEAZ4io9SUAAAAjAAAACAAAAAAAAAAAAAAAAAAAAAAAU0tJTEwubWRQSwECFAAUAAgACAAAACEA5tbxOX0AAACTAAAACgAAAAAAAAAAAAAAAABbAAAAX21ldGEuanNvblBLBQYAAAAAAgACAG4AAAAQAQAAAAA="
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594143218.658,
+                "_id": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg2666vn31vyfvhsq1pd2jy9gn8ehxns"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594143218.6567,
+                "_id": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh",
+                "latestVersionSummary": {
+                  "changelog": "Changes 5.0.0",
+                  "createdAt": 5,
+                  "description": "Description 5.0.0",
+                  "version": "5.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594145020,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t17dp7wvvebrj7yh5awnk41xr18eh7vf",
+                "ownerUserId": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "slug": "native-rollback-baseline-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh"
+                },
+                "updatedAt": 1789594145020
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": null,
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594143218.6555,
+                "_id": "t17dp7wvvebrj7yh5awnk41xr18eh7vf",
+                "displayName": "Owner",
+                "handle": "owner-baseline-quarantine-none",
+                "kind": "user",
+                "linkedUserId": "h17q49jhewwck4qrtkyv7yx6218egbt5"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-baseline-quarantine-none",
+              "resolvedSlug": "native-rollback-baseline-quarantine-none",
+              "skill": {
+                "_creationTime": 1789594143218.6567,
+                "_id": "z171y7tmvn6j36bytq45y3k5x98ehjrs",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 5.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh",
+                "ownerPublisherId": "t17dp7wvvebrj7yh5awnk41xr18eh7vf",
+                "ownerUserId": "h17q49jhewwck4qrtkyv7yx6218egbt5",
+                "slug": "native-rollback-baseline-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 5.0.0",
+                "tags": {
+                  "latest": "yx7fzkvnf7apn7sa6cdvg3p9118eg9gh"
+                },
+                "updatedAt": 1789594145020
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "status": "not_found"
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-none",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 458,
+                "bodySha256": "b7bc9415ece83605575243e871e9b62d2808ab35645a67ecf0c207299ba9c05e",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-baseline-quarantine-none\",\"displayName\":\"Name 5.0.0\",\"summary\":\"Description 5.0.0\",\"icon\":null,\"description\":null,\"tags\":{},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":1789594145020},\"latestVersion\":null,\"metadata\":null,\"owner\":{\"handle\":\"owner-baseline-quarantine-none\",\"userId\":\"t17dp7wvvebrj7yh5awnk41xr18eh7vf\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-baseline-quarantine-none/file?path=SKILL.md",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-baseline-quarantine-none",
+                "status": 404,
+                "contentType": "text/plain;charset=UTF-8",
+                "bytes": 17,
+                "bodySha256": "a8f65ec3d83f0d49808fac4b620504a78e8be3f4fe60ca303777c0eef2ac9b18",
+                "body": "Version not found"
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "default file denied",
+            "default download denied"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "submitted",
+      "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+      "submittedHead": "34e000ac07539d26aa15a32e08cfd77230c5cb8e",
+      "sourceSha256": "56133f40cd27520e8d962cd008d431f5c3314d70a183fec13e12a96a875d8c0e",
+      "sourceGitBlob": "26ae3392b5c6cfbf9d0c95eb025fc1d9a5100266",
+      "cases": [
+        {
+          "mode": "revoke",
+          "fallback": true,
+          "fixture": {
+            "moderatorId": "h17t771rcny6b79yqq51nf5zth8eh5w1",
+            "olderId": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+            "ownerHandle": "owner-submitted-revoke-older",
+            "pendingId": "yx702htsh4wzpt41229j2vv6v98egdya",
+            "skillId": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+            "slug": "native-rollback-submitted-revoke-older",
+            "targetId": "yx76z6dcnhk5x5v2tdam39pt298eh5cp"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594156393.7012,
+                "_id": "yx702htsh4wzpt41229j2vv6v98egdya",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594156393.6997,
+                "_id": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx76z6dcnhk5x5v2tdam39pt298eh5cp",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "ownerUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "slug": "native-rollback-submitted-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx76z6dcnhk5x5v2tdam39pt298eh5cp"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594156393.7004,
+                "_id": "yx76z6dcnhk5x5v2tdam39pt298eh5cp",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594156393.6985,
+                "_id": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "displayName": "Owner",
+                "handle": "owner-submitted-revoke-older",
+                "kind": "user",
+                "linkedUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-submitted-revoke-older",
+              "resolvedSlug": "native-rollback-submitted-revoke-older",
+              "skill": {
+                "_creationTime": 1789594156393.6997,
+                "_id": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx76z6dcnhk5x5v2tdam39pt298eh5cp",
+                "ownerPublisherId": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "ownerUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "slug": "native-rollback-submitted-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx76z6dcnhk5x5v2tdam39pt298eh5cp"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594156393.6997,
+                "_id": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx76z6dcnhk5x5v2tdam39pt298eh5cp",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "ownerUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "slug": "native-rollback-submitted-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx76z6dcnhk5x5v2tdam39pt298eh5cp"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594156393.7004,
+                "_id": "yx76z6dcnhk5x5v2tdam39pt298eh5cp",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 573,
+                "bodySha256": "453555312a235eb3d3fa3adb09614eff6a0191b95603a31e5e3a29ea1e838d46",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-submitted-revoke-older\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-submitted-revoke-older\",\"userId\":\"t172kqc0m6qcykbg7xxddwzhfh8eh9je\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-older/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-revoke-older",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 404,
+                "bodySha256": "5a33bebbdf0fcc1c9ae88fb96b28b9dc61568ef277e7d5e9758a15b539b63f47",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly0sOgjAUheE5qyAdWwI1AXXm0GVQe+1tWlpy+zBg3Ls2TM/5v0/Ttiy8PdBDsVvLcJhIT5t9rWpE3MR1H877iLDgBbRVkZ0qiC7rWvs5mQKcgnNyfloes1xMSqA4QQkWeHAK6DAFKJrgKxNd3/XHumbpTERQ9/R/RPP9AVBLBwjAGc0zfQAAAJEAAABQSwECFAAUAAgACAAAACEAZ4io9SUAAAAjAAAACAAAAAAAAAAAAAAAAAAAAAAAU0tJTEwubWRQSwECFAAUAAgACAAAACEAwBnNM30AAACRAAAACgAAAAAAAAAAAAAAAABbAAAAX21ldGEuanNvblBLBQYAAAAAAgACAG4AAAAQAQAAAAA="
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594156393.7012,
+                "_id": "yx702htsh4wzpt41229j2vv6v98egdya",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594156393.6997,
+                "_id": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 1.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+                "latestVersionSummary": {
+                  "changelog": "Changes 1.0.0",
+                  "createdAt": 1,
+                  "description": "Description 1.0.0",
+                  "version": "1.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594157714,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "ownerUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "slug": "native-rollback-submitted-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 1.0.0",
+                "tags": {
+                  "latest": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9"
+                },
+                "updatedAt": 1789594157714
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594156393.7002,
+                "_id": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+                "changelog": "Changes 1.0.0",
+                "createdAt": 1,
+                "createdBy": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 1.0.0"
+                },
+                "skillId": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "version": "1.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594156393.6985,
+                "_id": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "displayName": "Owner",
+                "handle": "owner-submitted-revoke-older",
+                "kind": "user",
+                "linkedUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-submitted-revoke-older",
+              "resolvedSlug": "native-rollback-submitted-revoke-older",
+              "skill": {
+                "_creationTime": 1789594156393.6997,
+                "_id": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 1.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+                "ownerPublisherId": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "ownerUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "slug": "native-rollback-submitted-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 1.0.0",
+                "tags": {
+                  "latest": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9"
+                },
+                "updatedAt": 1789594157714
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594156393.6997,
+                "_id": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 1.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+                "latestVersionSummary": {
+                  "changelog": "Changes 1.0.0",
+                  "createdAt": 1,
+                  "description": "Description 1.0.0",
+                  "version": "1.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594157714,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t172kqc0m6qcykbg7xxddwzhfh8eh9je",
+                "ownerUserId": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "slug": "native-rollback-submitted-revoke-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 1.0.0",
+                "tags": {
+                  "latest": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9"
+                },
+                "updatedAt": 1789594157714
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594156393.7002,
+                "_id": "yx77v2ww4x2xm17dvjj5b7schd8eh0v9",
+                "changelog": "Changes 1.0.0",
+                "createdAt": 1,
+                "createdBy": "h17rg7ykfpd6hhy29z13z6hemh8egkds",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 1.0.0",
+                    "name": "Name 1.0.0"
+                  }
+                },
+                "skillId": "z17f6rt10kcwq9qx8wvkk5hyts8ehgd2",
+                "version": "1.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 576,
+                "bodySha256": "cbbe124f49ea462ea3a25abbd3f68f2f9af4c1405560794f21fb1002b0b9193f",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-submitted-revoke-older\",\"displayName\":\"Name 1.0.0\",\"summary\":\"Description 1.0.0\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"1.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":1789594157714},\"latestVersion\":{\"version\":\"1.0.0\",\"createdAt\":1,\"changelog\":\"Changes 1.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-submitted-revoke-older\",\"userId\":\"t172kqc0m6qcykbg7xxddwzhfh8eh9je\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-older/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-revoke-older",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 404,
+                "bodySha256": "284f3aca535ea3e15725d92a56b0a8facf4358e9bb8281798840a705455a1a1b",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly0sOgjAUheE5qyAdW0I1AXXm0GVQe+1tWlpy+zBg3Ls0TM/5v2/Ttix8PNBTsXvLUIykx9W+FzUgrufbJi7bgDDjFbRVkZ0qiC7rWvspmQKcgnNyelkes5xNSqA4QQkWeHAK6DAFKJrgKxNd3/XHumTpTERQj7Q/ovn9AVBLBwi+oFUzfQAAAJEAAABQSwECFAAUAAgACAAAACEAZ4io9SUAAAAjAAAACAAAAAAAAAAAAAAAAAAAAAAAU0tJTEwubWRQSwECFAAUAAgACAAAACEAvqBVM30AAACRAAAACgAAAAAAAAAAAAAAAABbAAAAX21ldGEuanNvblBLBQYAAAAAAgACAG4AAAAQAQAAAAA="
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "restored default file",
+            "restored default download"
+          ]
+        },
+        {
+          "mode": "revoke",
+          "fallback": false,
+          "fixture": {
+            "moderatorId": "h17wt2wsvz48qc8e45hjdnd4nd8egfws",
+            "olderId": null,
+            "ownerHandle": "owner-submitted-revoke-none",
+            "pendingId": "yx7fm9d3kc4bn5vqvt71z558v98egjxs",
+            "skillId": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+            "slug": "native-rollback-submitted-revoke-none",
+            "targetId": "yx7115x6a28n7s16g5jg9q4jv58egede"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594158920.9878,
+                "_id": "yx7fm9d3kc4bn5vqvt71z558v98egjxs",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594158920.9866,
+                "_id": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx7115x6a28n7s16g5jg9q4jv58egede",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t171jfx6mhet0jy5wce9bzsvdx8eggn4",
+                "ownerUserId": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "slug": "native-rollback-submitted-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx7115x6a28n7s16g5jg9q4jv58egede"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594158920.987,
+                "_id": "yx7115x6a28n7s16g5jg9q4jv58egede",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594158920.9854,
+                "_id": "t171jfx6mhet0jy5wce9bzsvdx8eggn4",
+                "displayName": "Owner",
+                "handle": "owner-submitted-revoke-none",
+                "kind": "user",
+                "linkedUserId": "h17kn26mbs3jja0nw5sx9emw7s8egv52"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-submitted-revoke-none",
+              "resolvedSlug": "native-rollback-submitted-revoke-none",
+              "skill": {
+                "_creationTime": 1789594158920.9866,
+                "_id": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx7115x6a28n7s16g5jg9q4jv58egede",
+                "ownerPublisherId": "t171jfx6mhet0jy5wce9bzsvdx8eggn4",
+                "ownerUserId": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "slug": "native-rollback-submitted-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx7115x6a28n7s16g5jg9q4jv58egede"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594158920.9866,
+                "_id": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx7115x6a28n7s16g5jg9q4jv58egede",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t171jfx6mhet0jy5wce9bzsvdx8eggn4",
+                "ownerUserId": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "slug": "native-rollback-submitted-revoke-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx7115x6a28n7s16g5jg9q4jv58egede"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594158920.987,
+                "_id": "yx7115x6a28n7s16g5jg9q4jv58egede",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-none",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 571,
+                "bodySha256": "42447d8f3831563d4077f5ab4519d045a1a61ca68ba64ef78a2b0b303118c98b",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-submitted-revoke-none\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-submitted-revoke-none\",\"userId\":\"t171jfx6mhet0jy5wce9bzsvdx8eggn4\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-none/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-revoke-none",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 402,
+                "bodySha256": "4df3b7c4f0f9c21b91249f28bfa7cb5c8436629cf646184e83274b150dd2a6d8",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly0sOwiAUheF5V9EwlqZiatWZQ5cBctNS4GK4PEyMe1fS6Tn/9+n6noWKEB+a3Xq2HmeL4uwVnbZNjlgnel/B15kusJRJsEMD5PLSapTJFOAxOKfk03LKypuUQPMIJVjgGBB2UiCSCdiUGMZh3NdXVs7QCvqe/o/ovj9QSwcIDGwGh3sAAACQAAAAUEsBAhQAFAAIAAgAAAAhAGeIqPUlAAAAIwAAAAgAAAAAAAAAAAAAAAAAAAAAAFNLSUxMLm1kUEsBAhQAFAAIAAgAAAAhAAxsBod7AAAAkAAAAAoAAAAAAAAAAAAAAAAAWwAAAF9tZXRhLmpzb25QSwUGAAAAAAIAAgBuAAAADgEAAAAA"
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594158920.9878,
+                "_id": "yx7fm9d3kc4bn5vqvt71z558v98egjxs",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594158920.9866,
+                "_id": "z17eesghx9ttpmtcq4q1gkjyrs8ehxg9",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "hiddenAt": 1789594160126,
+                "hiddenBy": "h17wt2wsvz48qc8e45hjdnd4nd8egfws",
+                "lastReviewedAt": 1789594160126,
+                "moderationNotes": "Native assessment fixture revocation",
+                "moderationReason": "manual.version_revoked",
+                "moderationStatus": "hidden",
+                "ownerPublisherId": "t171jfx6mhet0jy5wce9bzsvdx8eggn4",
+                "ownerUserId": "h17kn26mbs3jja0nw5sx9emw7s8egv52",
+                "slug": "native-rollback-submitted-revoke-none",
+                "softDeletedAt": 1789594160126,
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {},
+                "updatedAt": 1789594160126
+              }
+            },
+            "publicSkill": null,
+            "publicPending": null,
+            "selection": {
+              "status": "not_found"
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-none",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 15,
+                "bodySha256": "1a2985919d88bc3aca4a976de555a9d0dfc8fb6f0923cf51f2e94471ae9aa176",
+                "body": "Skill not found"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-revoke-none/file?path=SKILL.md",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 15,
+                "bodySha256": "1a2985919d88bc3aca4a976de555a9d0dfc8fb6f0923cf51f2e94471ae9aa176",
+                "body": "Skill not found"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-revoke-none",
+                "status": 404,
+                "contentType": "text/plain;charset=UTF-8",
+                "bytes": 15,
+                "bodySha256": "1a2985919d88bc3aca4a976de555a9d0dfc8fb6f0923cf51f2e94471ae9aa176",
+                "body": "Skill not found"
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "default file denied",
+            "default download denied"
+          ]
+        },
+        {
+          "mode": "quarantine",
+          "fallback": true,
+          "fixture": {
+            "moderatorId": "h17y1gpsyew0mn9d5ryp40d8zs8egdf5",
+            "olderId": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+            "ownerHandle": "owner-submitted-quarantine-older",
+            "pendingId": "yx7ch02appfg7qm45qd0shhtax8egcn7",
+            "skillId": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+            "slug": "native-rollback-submitted-quarantine-older",
+            "targetId": "yx75nyq04k7gjp93769ck2cw358ehyry"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594161113.1172,
+                "_id": "yx7ch02appfg7qm45qd0shhtax8egcn7",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594161113.1157,
+                "_id": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75nyq04k7gjp93769ck2cw358ehyry",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "ownerUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "slug": "native-rollback-submitted-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75nyq04k7gjp93769ck2cw358ehyry"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594161113.1165,
+                "_id": "yx75nyq04k7gjp93769ck2cw358ehyry",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594161113.1145,
+                "_id": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "displayName": "Owner",
+                "handle": "owner-submitted-quarantine-older",
+                "kind": "user",
+                "linkedUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-submitted-quarantine-older",
+              "resolvedSlug": "native-rollback-submitted-quarantine-older",
+              "skill": {
+                "_creationTime": 1789594161113.1157,
+                "_id": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75nyq04k7gjp93769ck2cw358ehyry",
+                "ownerPublisherId": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "ownerUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "slug": "native-rollback-submitted-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75nyq04k7gjp93769ck2cw358ehyry"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594161113.1157,
+                "_id": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75nyq04k7gjp93769ck2cw358ehyry",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "ownerUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "slug": "native-rollback-submitted-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75nyq04k7gjp93769ck2cw358ehyry"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594161113.1165,
+                "_id": "yx75nyq04k7gjp93769ck2cw358ehyry",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 581,
+                "bodySha256": "07dfdc403f24af37a637ce87650ed754b28531a9c2612f465d5fd26f6acd504f",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-submitted-quarantine-older\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-submitted-quarantine-older\",\"userId\":\"t17bxm2j6rcbttzxj2pvcf8sv18ehjme\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-older/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-quarantine-older",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 404,
+                "bodySha256": "a2b338ceca15c78d55517564133bb803847b48cd559c4aecf39c019ae7eb6a81",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24tzEEOwiAQheF9T9Gwlgaria07lx4DZAJEHHQYSo3x7kp0/d73v7q+F6ki0NmKYy/89kBmrrCyV3WiFZ/g9nOGHU7gclVi00COxbU3ag4LSEoxGn25ylzMLTCDlY+iSSMHBJmiBfq5BSiHhI2Ogxr+tXsxMWQP9sTfZezeH1BLBwju7cTGfQAAAJUAAABQSwECFAAUAAgACAAAACEAZ4io9SUAAAAjAAAACAAAAAAAAAAAAAAAAAAAAAAAU0tJTEwubWRQSwECFAAUAAgACAAAACEA7u3Exn0AAACVAAAACgAAAAAAAAAAAAAAAABbAAAAX21ldGEuanNvblBLBQYAAAAAAgACAG4AAAAQAQAAAAA="
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594161113.1172,
+                "_id": "yx7ch02appfg7qm45qd0shhtax8egcn7",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594161113.1157,
+                "_id": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 1.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+                "latestVersionSummary": {
+                  "changelog": "Changes 1.0.0",
+                  "createdAt": 1,
+                  "description": "Description 1.0.0",
+                  "version": "1.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594162291,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "ownerUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "slug": "native-rollback-submitted-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 1.0.0",
+                "tags": {
+                  "latest": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh"
+                },
+                "updatedAt": 1789594162291
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594161113.1162,
+                "_id": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+                "changelog": "Changes 1.0.0",
+                "createdAt": 1,
+                "createdBy": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 1.0.0"
+                },
+                "skillId": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "version": "1.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594161113.1145,
+                "_id": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "displayName": "Owner",
+                "handle": "owner-submitted-quarantine-older",
+                "kind": "user",
+                "linkedUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-submitted-quarantine-older",
+              "resolvedSlug": "native-rollback-submitted-quarantine-older",
+              "skill": {
+                "_creationTime": 1789594161113.1157,
+                "_id": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 1.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+                "ownerPublisherId": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "ownerUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "slug": "native-rollback-submitted-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 1.0.0",
+                "tags": {
+                  "latest": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh"
+                },
+                "updatedAt": 1789594162291
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594161113.1157,
+                "_id": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Name 1.0.0",
+                "isSuspicious": false,
+                "latestVersionId": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+                "latestVersionSummary": {
+                  "changelog": "Changes 1.0.0",
+                  "createdAt": 1,
+                  "description": "Description 1.0.0",
+                  "version": "1.0.0"
+                },
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594162291,
+                "moderationReason": "scanner.llm.clean",
+                "moderationSourceVersionId": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+                "moderationStatus": "active",
+                "moderationSummary": "No suspicious patterns detected.",
+                "moderationVerdict": "clean",
+                "ownerPublisherId": "t17bxm2j6rcbttzxj2pvcf8sv18ehjme",
+                "ownerUserId": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "slug": "native-rollback-submitted-quarantine-older",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Description 1.0.0",
+                "tags": {
+                  "latest": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh"
+                },
+                "updatedAt": 1789594162291
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594161113.1162,
+                "_id": "yx730kb0ttecrcr9wg2hvm7xxh8eh4yh",
+                "changelog": "Changes 1.0.0",
+                "createdAt": 1,
+                "createdBy": "h17rb9wexth0w8rxnyeg49se3n8egsw0",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 1.0.0",
+                    "name": "Name 1.0.0"
+                  }
+                },
+                "skillId": "z1726z1zqp0vp63af4whp1j5p18eh7wz",
+                "version": "1.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-older",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 584,
+                "bodySha256": "47c80bbd53366d595d127e2303d6fa44e6bd9002a47b97da51c8db95a5392658",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-submitted-quarantine-older\",\"displayName\":\"Name 1.0.0\",\"summary\":\"Description 1.0.0\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"1.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":1789594162291},\"latestVersion\":{\"version\":\"1.0.0\",\"createdAt\":1,\"changelog\":\"Changes 1.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-submitted-quarantine-older\",\"userId\":\"t17bxm2j6rcbttzxj2pvcf8sv18ehjme\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-older/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-quarantine-older",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 404,
+                "bodySha256": "8a056b0e6f286255e3cd6dd3e233a6b2aa49e928418f7f8181ec88b751db189a",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24tzEEOwiAQheF9T0FYSwPRxNadS48BMgEiDjpAqTHeXYldv/f974ExnhoCXSw/Me7VkczcYC1etolWfIE7zBn2OIHLTfJdBzlW19+oS1hAUIrR6OtN5GruoRSw4lk1aSwBQaRogf5uAcohYadqlONWe1QTQ/Zgz+W3qOHzBVBLBwiQVFzGfQAAAJUAAABQSwECFAAUAAgACAAAACEAZ4io9SUAAAAjAAAACAAAAAAAAAAAAAAAAAAAAAAAU0tJTEwubWRQSwECFAAUAAgACAAAACEAkFRcxn0AAACVAAAACgAAAAAAAAAAAAAAAABbAAAAX21ldGEuanNvblBLBQYAAAAAAgACAG4AAAAQAQAAAAA="
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "restored default file",
+            "restored default download"
+          ]
+        },
+        {
+          "mode": "quarantine",
+          "fallback": false,
+          "fixture": {
+            "moderatorId": "h17q7z8dar4zp751s4wwjmazp98ehm0r",
+            "olderId": null,
+            "ownerHandle": "owner-submitted-quarantine-none",
+            "pendingId": "yx7dft12b2xbwhngvmbh7cvn5n8eh00k",
+            "skillId": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+            "slug": "native-rollback-submitted-quarantine-none",
+            "targetId": "yx75fxr78xzc5ex9vnyqzyesc18ehj15"
+          },
+          "before": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594163477.0618,
+                "_id": "yx7dft12b2xbwhngvmbh7cvn5n8eh00k",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594163477.0605,
+                "_id": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75fxr78xzc5ex9vnyqzyesc18ehj15",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t1736vt1n3y2n9m9987r2m42xh8ehkh3",
+                "ownerUserId": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "slug": "native-rollback-submitted-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75fxr78xzc5ex9vnyqzyesc18ehj15"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicSkill": {
+              "ambiguous": false,
+              "canonical": null,
+              "forkOf": null,
+              "latestVersion": {
+                "_creationTime": 1789594163477.061,
+                "_id": "yx75fxr78xzc5ex9vnyqzyesc18ehj15",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35
+                  }
+                ],
+                "generatedSkillCard": null,
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "description": "Description 2.0.0"
+                },
+                "skillId": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "version": "2.0.0"
+              },
+              "moderationInfo": null,
+              "owner": {
+                "_creationTime": 1789594163477.0593,
+                "_id": "t1736vt1n3y2n9m9987r2m42xh8ehkh3",
+                "displayName": "Owner",
+                "handle": "owner-submitted-quarantine-none",
+                "kind": "user",
+                "linkedUserId": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r"
+              },
+              "pendingReview": false,
+              "requestedSlug": "native-rollback-submitted-quarantine-none",
+              "resolvedSlug": "native-rollback-submitted-quarantine-none",
+              "skill": {
+                "_creationTime": 1789594163477.0605,
+                "_id": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75fxr78xzc5ex9vnyqzyesc18ehj15",
+                "ownerPublisherId": "t1736vt1n3y2n9m9987r2m42xh8ehkh3",
+                "ownerUserId": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "slug": "native-rollback-submitted-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "installs": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75fxr78xzc5ex9vnyqzyesc18ehj15"
+                },
+                "updatedAt": 2
+              }
+            },
+            "publicPending": null,
+            "selection": {
+              "skill": {
+                "_creationTime": 1789594163477.0605,
+                "_id": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "latestVersionId": "yx75fxr78xzc5ex9vnyqzyesc18ehj15",
+                "latestVersionSummary": {
+                  "changelog": "Published",
+                  "createdAt": 2,
+                  "version": "2.0.0"
+                },
+                "moderationStatus": "active",
+                "ownerPublisherId": "t1736vt1n3y2n9m9987r2m42xh8ehkh3",
+                "ownerUserId": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "slug": "native-rollback-submitted-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {
+                  "latest": "yx75fxr78xzc5ex9vnyqzyesc18ehj15"
+                },
+                "updatedAt": 2
+              },
+              "status": "available",
+              "version": {
+                "_creationTime": 1789594163477.061,
+                "_id": "yx75fxr78xzc5ex9vnyqzyesc18ehj15",
+                "changelog": "Changes 2.0.0",
+                "createdAt": 2,
+                "createdBy": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 2.0.0",
+                    "name": "Name 2.0.0"
+                  }
+                },
+                "publicationStatus": "published",
+                "skillId": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "version": "2.0.0"
+              }
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-none",
+                "status": 200,
+                "contentType": "application/json",
+                "bytes": 579,
+                "bodySha256": "3a1c04c6eb54f24c93316e034dc381bd49132b5df7186d8f72ef84b244997a0a",
+                "body": "{\"skill\":{\"slug\":\"native-rollback-submitted-quarantine-none\",\"displayName\":\"Published 2.0.0\",\"summary\":\"Published description\",\"icon\":null,\"description\":\"# Harmless native rollback fixture\\n\",\"tags\":{\"latest\":\"2.0.0\"},\"stats\":{\"comments\":0,\"downloads\":0,\"installs\":0,\"stars\":0,\"versions\":5},\"createdAt\":1,\"updatedAt\":2},\"latestVersion\":{\"version\":\"2.0.0\",\"createdAt\":2,\"changelog\":\"Changes 2.0.0\",\"license\":null},\"metadata\":null,\"owner\":{\"handle\":\"owner-submitted-quarantine-none\",\"userId\":\"t1736vt1n3y2n9m9987r2m42xh8ehkh3\",\"displayName\":\"Owner\",\"image\":null},\"moderation\":null}"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-none/file?path=SKILL.md",
+                "status": 200,
+                "contentType": "application/octet-stream",
+                "bytes": 35,
+                "bodySha256": "767886711990ce7b7f89ede8caa2ab1545181eb51e325a3461f1fcc810fb32e6",
+                "body": "# Harmless native rollback fixture\n"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-quarantine-none",
+                "status": 200,
+                "contentType": "application/zip",
+                "bytes": 405,
+                "bodySha256": "0439828aa1e20da3e1ba04fd34118794f764e6c90342be191915140fd9b51ce1",
+                "zipBase64": "UEsDBBQACAAIAAAAIQAAAAAAAAAAAAAAAAAIAAAAU0tJTEwubWRTVvBILMrNSS0uVshLLMksS1Uoys/JSUpMzlZIy6woKS1K5QIAUEsHCGeIqPUlAAAAIwAAAFBLAwQUAAgACAAAACEAAAAAAAAAAAAAAAAACgAAAF9tZXRhLmpzb24ly0sOgjAUheE5qyAdWwIkKjhz6DIu7ZU21FvsEzXuXRum5/zfp6prZjOhu0l2qZnqzmmZAV4j0Wm7524V8BaDz+OAajs6dijAmziXmiDohNxZYyYQC/dxeugQUPJnBAcUNCEnS7izhM5rS0X2Tdu0+7rGyWivUF7D/+mr7w9QSwcITwMBRn4AAACUAAAAUEsBAhQAFAAIAAgAAAAhAGeIqPUlAAAAIwAAAAgAAAAAAAAAAAAAAAAAAAAAAFNLSUxMLm1kUEsBAhQAFAAIAAgAAAAhAE8DAUZ+AAAAlAAAAAoAAAAAAAAAAAAAAAAAWwAAAF9tZXRhLmpzb25QSwUGAAAAAAIAAgBuAAAAEQEAAAAA"
+              }
+            ]
+          },
+          "after": {
+            "raw": {
+              "pending": {
+                "_creationTime": 1789594163477.0618,
+                "_id": "yx7dft12b2xbwhngvmbh7cvn5n8eh00k",
+                "changelog": "Changes 5.0.0",
+                "createdAt": 5,
+                "createdBy": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "files": [
+                  {
+                    "path": "SKILL.md",
+                    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "size": 35,
+                    "storageId": "kg23c930hvswsvkyejc6g174j98ege9a"
+                  }
+                ],
+                "llmAnalysis": {
+                  "checkedAt": 1,
+                  "status": "clean"
+                },
+                "parsed": {
+                  "frontmatter": {
+                    "description": "Description 5.0.0",
+                    "name": "Name 5.0.0"
+                  }
+                },
+                "publicationStatus": "pending",
+                "skillId": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "version": "5.0.0"
+              },
+              "skill": {
+                "_creationTime": 1789594163477.0605,
+                "_id": "z17c7z8mw7ck11c73kwdzwgaq18ehvy7",
+                "badges": {},
+                "createdAt": 1,
+                "displayName": "Published 2.0.0",
+                "hiddenAt": 1789594164675,
+                "isSuspicious": false,
+                "lastReviewedAt": 1789594164675,
+                "moderationEngineVersion": "v2.4.26",
+                "moderationEvaluatedAt": 1789594164675,
+                "moderationFlags": [
+                  "blocked.malware"
+                ],
+                "moderationReason": "scanner.llm.malicious",
+                "moderationReasonCodes": [
+                  "malicious.llm_malicious"
+                ],
+                "moderationSourceVersionId": "yx75fxr78xzc5ex9vnyqzyesc18ehj15",
+                "moderationStatus": "hidden",
+                "moderationSummary": "Detected: malicious.llm_malicious",
+                "moderationVerdict": "malicious",
+                "ownerPublisherId": "t1736vt1n3y2n9m9987r2m42xh8ehkh3",
+                "ownerUserId": "h17vkgaay9nn6xfw1pcazc8sw98ehx5r",
+                "slug": "native-rollback-submitted-quarantine-none",
+                "stats": {
+                  "comments": 0,
+                  "downloads": 0,
+                  "stars": 0,
+                  "versions": 5
+                },
+                "summary": "Published description",
+                "tags": {},
+                "updatedAt": 1789594164675
+              }
+            },
+            "publicSkill": null,
+            "publicPending": null,
+            "selection": {
+              "status": "not_found"
+            },
+            "http": [
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-none",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 15,
+                "bodySha256": "1a2985919d88bc3aca4a976de555a9d0dfc8fb6f0923cf51f2e94471ae9aa176",
+                "body": "Skill not found"
+              },
+              {
+                "path": "/api/v1/skills/native-rollback-submitted-quarantine-none/file?path=SKILL.md",
+                "status": 404,
+                "contentType": "text/plain; charset=utf-8",
+                "bytes": 15,
+                "bodySha256": "1a2985919d88bc3aca4a976de555a9d0dfc8fb6f0923cf51f2e94471ae9aa176",
+                "body": "Skill not found"
+              },
+              {
+                "path": "/api/v1/download?slug=native-rollback-submitted-quarantine-none",
+                "status": 404,
+                "contentType": "text/plain;charset=UTF-8",
+                "bytes": 15,
+                "bodySha256": "1a2985919d88bc3aca4a976de555a9d0dfc8fb6f0923cf51f2e94471ae9aa176",
+                "body": "Skill not found"
+              }
+            ]
+          },
+          "assertions": [
+            "initial pointer published",
+            "initial file",
+            "initial download",
+            "pending row unchanged",
+            "public pending unavailable",
+            "latest pointer",
+            "latest tag",
+            "selection status",
+            "public parent name",
+            "public latest",
+            "default file denied",
+            "default download denied"
+          ]
+        }
+      ]
+    }
+  ],
+  "cleanup": true,
+  "deployment": "anonymous:anonymous-agent",
+  "complete": true,
+  "worktreeStatus": ""
+}

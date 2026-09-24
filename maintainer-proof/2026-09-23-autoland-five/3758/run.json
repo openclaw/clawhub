@@ -1,0 +1,1279 @@
+{
+  "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+  "submittedHead": "5500443a036778fc601f5a7f89b6e0b7c662a01e",
+  "scope": "Standalone anonymous local Convex; actual API tokens, HTTP responses and current publisher membership; no production",
+  "cloud": "http://127.0.0.1:3910",
+  "site": "http://127.0.0.1:3911",
+  "phases": [
+    {
+      "label": "baseline",
+      "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+      "submittedHead": null,
+      "sourceSha256": "6301047c78ca5e6f736a08adf3f6123b27929697ef2c4ff56b3a205b175ba9b8",
+      "sourceGitBlob": "d62d74dd974be038d40ddaf54f864a6f1f09fc24",
+      "cases": [
+        {
+          "name": "current-historical-org-member",
+          "kind": "org",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "removed-org-member",
+          "kind": "org",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "new-current-org-member",
+          "kind": "org",
+          "actor": "current",
+          "expectedOwner": false,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org",
+              "status": 404,
+              "body": "Skill not found",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org/moderation",
+              "status": 404,
+              "body": "Moderation details unavailable",
+              "contentType": "text/plain; charset=utf-8"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "private text absent metadata",
+            "HTTP status /moderation",
+            "private text absent /moderation"
+          ]
+        },
+        {
+          "name": "valid-linked-personal-owner",
+          "kind": "personal",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "former-linked-personal-owner",
+          "kind": "personal",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "new-linked-personal-owner",
+          "kind": "personal",
+          "actor": "current",
+          "expectedOwner": false,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal",
+              "status": 404,
+              "body": "Skill not found",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal/moderation",
+              "status": 404,
+              "body": "Moderation details unavailable",
+              "contentType": "text/plain; charset=utf-8"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "private text absent metadata",
+            "HTTP status /moderation",
+            "private text absent /moderation"
+          ]
+        },
+        {
+          "name": "valid-unlinked-personal-owner",
+          "kind": "unlinked",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-unlinked",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-unlinked/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "valid-legacy-personal-owner",
+          "kind": "legacy",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-legacy",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-legacy/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        }
+      ],
+      "before": {
+        "memberships": [
+          {
+            "_creationTime": 1789593912534.48,
+            "_id": "sx73kdxra5pvavr7770jsn7m3x8ehwwt",
+            "createdAt": 1,
+            "publisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "role": "publisher",
+            "updatedAt": 1,
+            "userId": "h17g1j73bka3k3f80baqz3ebr98eg222"
+          }
+        ],
+        "publishers": [
+          {
+            "_creationTime": 1789593912460.847,
+            "_id": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "createdAt": 1,
+            "displayName": "Native fixture org",
+            "handle": "native-fixture-org",
+            "kind": "org",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8481,
+            "_id": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "createdAt": 1,
+            "displayName": "Native fixture personal",
+            "handle": "native-fixture-personal",
+            "kind": "user",
+            "linkedUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8494,
+            "_id": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "createdAt": 1,
+            "displayName": "Native fixture unlinked",
+            "handle": "native-fixture-unlinked",
+            "kind": "user",
+            "updatedAt": 1
+          }
+        ],
+        "scheduled": [
+          {
+            "_creationTime": 1789593912460.8455,
+            "_id": "kc22p5cb000wb3r3anet9783nn8eh7ct",
+            "args": [
+              {
+                "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8462,
+            "_id": "kc2390r0c3g1xtfe1v1jyf57qx8egsd5",
+            "args": [
+              {
+                "ownerUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8474,
+            "_id": "kc24hn6kxn08f8rwn2dgvw4kqs8ehjjs",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.848,
+            "_id": "kc206jt23bmhjcee5kemmc44w18egt93",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8486,
+            "_id": "kc21t7kb50fp1evngm0wxpvxfh8egz6q",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.849,
+            "_id": "kc2a2gy1a8cdfhrww6j2g31ft58egpb5",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8499,
+            "_id": "kc2fv37zwvd9z8nm84363fkdxs8ehndq",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8503,
+            "_id": "kc2cthj7bw99q7gj7mp72421718egm2y",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          }
+        ],
+        "skills": [
+          {
+            "_id": "z172zsk9rx0a30fy4zmrmfd8n98egk7e",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-org"
+          },
+          {
+            "_id": "z170xv32z53bjzcvaztq6bnwv98egvfc",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-personal"
+          },
+          {
+            "_id": "z17cmxp2dqnpk00z8dr29rb4nx8ehavn",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-unlinked"
+          },
+          {
+            "_id": "z17f1k1z6qt1164vwptxtmda3s8egxd0",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-legacy"
+          }
+        ]
+      },
+      "membershipAfterRemoval": null,
+      "newMembership": {
+        "_creationTime": 1789593913340.697,
+        "_id": "sx73x6r020p2yz0mx4jdg0742x8eg2ek",
+        "createdAt": 1,
+        "publisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+        "role": "publisher",
+        "updatedAt": 1,
+        "userId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+      },
+      "transferredPublisher": {
+        "_creationTime": 1789593912460.8481,
+        "_id": "t171wk68cambszjxjxt8hmr08h8egmxr",
+        "createdAt": 1,
+        "displayName": "Native fixture personal",
+        "handle": "native-fixture-personal",
+        "kind": "user",
+        "linkedUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49",
+        "updatedAt": 1
+      },
+      "after": {
+        "memberships": [
+          {
+            "_creationTime": 1789593913340.697,
+            "_id": "sx73x6r020p2yz0mx4jdg0742x8eg2ek",
+            "createdAt": 1,
+            "publisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "role": "publisher",
+            "updatedAt": 1,
+            "userId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+          }
+        ],
+        "publishers": [
+          {
+            "_creationTime": 1789593912460.847,
+            "_id": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "createdAt": 1,
+            "displayName": "Native fixture org",
+            "handle": "native-fixture-org",
+            "kind": "org",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8481,
+            "_id": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "createdAt": 1,
+            "displayName": "Native fixture personal",
+            "handle": "native-fixture-personal",
+            "kind": "user",
+            "linkedUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8494,
+            "_id": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "createdAt": 1,
+            "displayName": "Native fixture unlinked",
+            "handle": "native-fixture-unlinked",
+            "kind": "user",
+            "updatedAt": 1
+          }
+        ],
+        "scheduled": [
+          {
+            "_creationTime": 1789593912460.8455,
+            "_id": "kc22p5cb000wb3r3anet9783nn8eh7ct",
+            "args": [
+              {
+                "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8462,
+            "_id": "kc2390r0c3g1xtfe1v1jyf57qx8egsd5",
+            "args": [
+              {
+                "ownerUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8474,
+            "_id": "kc24hn6kxn08f8rwn2dgvw4kqs8ehjjs",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.848,
+            "_id": "kc206jt23bmhjcee5kemmc44w18egt93",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8486,
+            "_id": "kc21t7kb50fp1evngm0wxpvxfh8egz6q",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.849,
+            "_id": "kc2a2gy1a8cdfhrww6j2g31ft58egpb5",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8499,
+            "_id": "kc2fv37zwvd9z8nm84363fkdxs8ehndq",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8503,
+            "_id": "kc2cthj7bw99q7gj7mp72421718egm2y",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          }
+        ],
+        "skills": [
+          {
+            "_id": "z172zsk9rx0a30fy4zmrmfd8n98egk7e",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-org"
+          },
+          {
+            "_id": "z170xv32z53bjzcvaztq6bnwv98egvfc",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-personal"
+          },
+          {
+            "_id": "z17cmxp2dqnpk00z8dr29rb4nx8ehavn",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-unlinked"
+          },
+          {
+            "_id": "z17f1k1z6qt1164vwptxtmda3s8egxd0",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-legacy"
+          }
+        ]
+      }
+    },
+    {
+      "label": "submitted",
+      "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+      "submittedHead": "5500443a036778fc601f5a7f89b6e0b7c662a01e",
+      "sourceSha256": "e0ac53b8ad992444cf567392447c57c4a366107a237fb5ea68251033b4db096f",
+      "sourceGitBlob": "98bbcb81ba27437e03c66aa259b49563d28655f1",
+      "cases": [
+        {
+          "name": "current-historical-org-member",
+          "kind": "org",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "removed-org-member",
+          "kind": "org",
+          "actor": "historical",
+          "expectedOwner": false,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org",
+              "status": 404,
+              "body": "Skill not found",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org/moderation",
+              "status": 404,
+              "body": "Moderation details unavailable",
+              "contentType": "text/plain; charset=utf-8"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "private text absent metadata",
+            "HTTP status /moderation",
+            "private text absent /moderation"
+          ]
+        },
+        {
+          "name": "new-current-org-member",
+          "kind": "org",
+          "actor": "current",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-org/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "valid-linked-personal-owner",
+          "kind": "personal",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "former-linked-personal-owner",
+          "kind": "personal",
+          "actor": "historical",
+          "expectedOwner": false,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal",
+              "status": 404,
+              "body": "Skill not found",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal/moderation",
+              "status": 404,
+              "body": "Moderation details unavailable",
+              "contentType": "text/plain; charset=utf-8"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "private text absent metadata",
+            "HTTP status /moderation",
+            "private text absent /moderation"
+          ]
+        },
+        {
+          "name": "new-linked-personal-owner",
+          "kind": "personal",
+          "actor": "current",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-personal/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "valid-unlinked-personal-owner",
+          "kind": "unlinked",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-unlinked",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-unlinked/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        },
+        {
+          "name": "valid-legacy-personal-owner",
+          "kind": "legacy",
+          "actor": "historical",
+          "expectedOwner": true,
+          "responses": [
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-legacy",
+              "status": 423,
+              "body": "Skill is hidden while security scan is pending. Try again in a few minutes.",
+              "contentType": "text/plain; charset=utf-8"
+            },
+            {
+              "url": "http://127.0.0.1:3911/api/v1/skills/native-owner-legacy/moderation",
+              "status": 200,
+              "body": "{\"moderation\":{\"isSuspicious\":true,\"isMalwareBlocked\":false,\"verdict\":\"suspicious\",\"reasonCodes\":[],\"summary\":null,\"engineVersion\":null,\"updatedAt\":1,\"evidence\":[{\"code\":\"suspicious.dynamic_code_execution\",\"evidence\":\"private-native-fixture-evidence\",\"file\":\"index.ts\",\"line\":3,\"message\":\"Synthetic fixture finding\",\"severity\":\"critical\"}],\"legacyReason\":\"pending.scan\"}}",
+              "contentType": "application/json"
+            }
+          ],
+          "assertions": [
+            "HTTP status metadata",
+            "allowed body metadata",
+            "HTTP status /moderation",
+            "allowed body /moderation"
+          ]
+        }
+      ],
+      "before": {
+        "memberships": [
+          {
+            "_creationTime": 1789593923359.513,
+            "_id": "sx7761jp7xjnsd527nvbtc81398egdqp",
+            "createdAt": 1,
+            "publisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "role": "publisher",
+            "updatedAt": 1,
+            "userId": "h17g1j73bka3k3f80baqz3ebr98eg222"
+          }
+        ],
+        "publishers": [
+          {
+            "_creationTime": 1789593912460.847,
+            "_id": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "createdAt": 1,
+            "displayName": "Native fixture org",
+            "handle": "native-fixture-org",
+            "kind": "org",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8481,
+            "_id": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "createdAt": 1,
+            "displayName": "Native fixture personal",
+            "handle": "native-fixture-personal",
+            "kind": "user",
+            "linkedUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8494,
+            "_id": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "createdAt": 1,
+            "displayName": "Native fixture unlinked",
+            "handle": "native-fixture-unlinked",
+            "kind": "user",
+            "updatedAt": 1
+          }
+        ],
+        "scheduled": [
+          {
+            "_creationTime": 1789593912460.8455,
+            "_id": "kc22p5cb000wb3r3anet9783nn8eh7ct",
+            "args": [
+              {
+                "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8462,
+            "_id": "kc2390r0c3g1xtfe1v1jyf57qx8egsd5",
+            "args": [
+              {
+                "ownerUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8474,
+            "_id": "kc24hn6kxn08f8rwn2dgvw4kqs8ehjjs",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.848,
+            "_id": "kc206jt23bmhjcee5kemmc44w18egt93",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8486,
+            "_id": "kc21t7kb50fp1evngm0wxpvxfh8egz6q",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.849,
+            "_id": "kc2a2gy1a8cdfhrww6j2g31ft58egpb5",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8499,
+            "_id": "kc2fv37zwvd9z8nm84363fkdxs8ehndq",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8503,
+            "_id": "kc2cthj7bw99q7gj7mp72421718egm2y",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          }
+        ],
+        "skills": [
+          {
+            "_id": "z172zsk9rx0a30fy4zmrmfd8n98egk7e",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-org"
+          },
+          {
+            "_id": "z170xv32z53bjzcvaztq6bnwv98egvfc",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-personal"
+          },
+          {
+            "_id": "z17cmxp2dqnpk00z8dr29rb4nx8ehavn",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-unlinked"
+          },
+          {
+            "_id": "z17f1k1z6qt1164vwptxtmda3s8egxd0",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-legacy"
+          }
+        ]
+      },
+      "membershipAfterRemoval": null,
+      "newMembership": {
+        "_creationTime": 1789593923999.845,
+        "_id": "sx79t4w1cfxy99zkn4ntzp02j98egmbc",
+        "createdAt": 1,
+        "publisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+        "role": "publisher",
+        "updatedAt": 1,
+        "userId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+      },
+      "transferredPublisher": {
+        "_creationTime": 1789593912460.8481,
+        "_id": "t171wk68cambszjxjxt8hmr08h8egmxr",
+        "createdAt": 1,
+        "displayName": "Native fixture personal",
+        "handle": "native-fixture-personal",
+        "kind": "user",
+        "linkedUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49",
+        "updatedAt": 1
+      },
+      "after": {
+        "memberships": [
+          {
+            "_creationTime": 1789593923999.845,
+            "_id": "sx79t4w1cfxy99zkn4ntzp02j98egmbc",
+            "createdAt": 1,
+            "publisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "role": "publisher",
+            "updatedAt": 1,
+            "userId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+          }
+        ],
+        "publishers": [
+          {
+            "_creationTime": 1789593912460.847,
+            "_id": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "createdAt": 1,
+            "displayName": "Native fixture org",
+            "handle": "native-fixture-org",
+            "kind": "org",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8481,
+            "_id": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "createdAt": 1,
+            "displayName": "Native fixture personal",
+            "handle": "native-fixture-personal",
+            "kind": "user",
+            "linkedUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49",
+            "updatedAt": 1
+          },
+          {
+            "_creationTime": 1789593912460.8494,
+            "_id": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "createdAt": 1,
+            "displayName": "Native fixture unlinked",
+            "handle": "native-fixture-unlinked",
+            "kind": "user",
+            "updatedAt": 1
+          }
+        ],
+        "scheduled": [
+          {
+            "_creationTime": 1789593912460.8455,
+            "_id": "kc22p5cb000wb3r3anet9783nn8eh7ct",
+            "args": [
+              {
+                "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8462,
+            "_id": "kc2390r0c3g1xtfe1v1jyf57qx8egsd5",
+            "args": [
+              {
+                "ownerUserId": "h17wtf75m3hww0gzggkqjqjhf98ehf49"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8474,
+            "_id": "kc24hn6kxn08f8rwn2dgvw4kqs8ehjjs",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.848,
+            "_id": "kc206jt23bmhjcee5kemmc44w18egt93",
+            "args": [
+              {
+                "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8486,
+            "_id": "kc21t7kb50fp1evngm0wxpvxfh8egz6q",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.849,
+            "_id": "kc2a2gy1a8cdfhrww6j2g31ft58egpb5",
+            "args": [
+              {
+                "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8499,
+            "_id": "kc2fv37zwvd9z8nm84363fkdxs8ehndq",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncPackageSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          },
+          {
+            "_creationTime": 1789593912460.8503,
+            "_id": "kc2cthj7bw99q7gj7mp72421718egm2y",
+            "args": [
+              {
+                "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5"
+              }
+            ],
+            "completedTime": 1789593912527.979,
+            "name": "functions.js:syncSkillSearchDigestsForOwnerPublisherIdInternal",
+            "scheduledTime": 1789593912460,
+            "state": {
+              "kind": "success"
+            }
+          }
+        ],
+        "skills": [
+          {
+            "_id": "z172zsk9rx0a30fy4zmrmfd8n98egk7e",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t1711qyxyr2yrsj1m6ys7g14598ehbrk",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-org"
+          },
+          {
+            "_id": "z170xv32z53bjzcvaztq6bnwv98egvfc",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t171wk68cambszjxjxt8hmr08h8egmxr",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-personal"
+          },
+          {
+            "_id": "z17cmxp2dqnpk00z8dr29rb4nx8ehavn",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerPublisherId": "t17b9x966260wdcc9t7nvxxpp98egjf5",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-unlinked"
+          },
+          {
+            "_id": "z17f1k1z6qt1164vwptxtmda3s8egxd0",
+            "moderationReason": "pending.scan",
+            "moderationStatus": "hidden",
+            "ownerUserId": "h17g1j73bka3k3f80baqz3ebr98eg222",
+            "slug": "native-owner-legacy"
+          }
+        ]
+      }
+    }
+  ],
+  "cleanup": true,
+  "deployment": "anonymous:anonymous-agent",
+  "complete": true,
+  "worktreeStatus": ""
+}

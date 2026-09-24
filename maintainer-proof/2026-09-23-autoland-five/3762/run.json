@@ -1,0 +1,1627 @@
+{
+  "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+  "submittedHead": "4ea31224c75d53509c7faf1cfd473fc95dbff214",
+  "scope": "Standalone anonymous local Convex; populated evaluation fixture; actual identity and future scheduler transactions; no GitHub dispatch",
+  "cloud": "http://127.0.0.1:3910",
+  "site": "http://127.0.0.1:3911",
+  "phases": [
+    {
+      "label": "baseline",
+      "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+      "submittedHead": null,
+      "sourceSha256": "f956ae8a9c3ea1ec0955eae100d7dcb19492303fda64e1d0de059fd480286941",
+      "sourceGitBlob": "ca2f77eb610fad012e4d7066c140524a77ce0459",
+      "actors": [
+        {
+          "actor": "anonymous",
+          "response": {
+            "prioritized": true,
+            "runId": "wh7bszxsasddy302hm9m3kw69h8ehzdw"
+          },
+          "error": null,
+          "before": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              }
+            ]
+          },
+          "after": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "scheduledAt": 1789680137580,
+                "scheduledToken": "33498792-3cfb-4231-82fe-5c04a73513e1",
+                "updatedAt": 1789593737766
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 0,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "queued",
+              "updatedAt": 1789593737766
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "pending"
+                }
+              }
+            ]
+          },
+          "newJobs": [
+            {
+              "_creationTime": 1789593737766.2383,
+              "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+              "args": [
+                {
+                  "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                }
+              ],
+              "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+              "scheduledTime": 1789680137580,
+              "state": {
+                "kind": "pending"
+              }
+            }
+          ],
+          "assertions": [
+            "allowed response",
+            "queued row",
+            "immediate row priority",
+            "one scheduled action",
+            "job still pending",
+            "future lease respected",
+            "no dispatch recorded",
+            "owned job cancellation count"
+          ],
+          "cleanup": {
+            "cancelled": 1
+          }
+        },
+        {
+          "actor": "member",
+          "response": {
+            "prioritized": true,
+            "runId": "wh7bszxsasddy302hm9m3kw69h8ehzdw"
+          },
+          "error": null,
+          "before": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              }
+            ]
+          },
+          "after": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "scheduledAt": 1789680137580,
+                "scheduledToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f",
+                "updatedAt": 1789593737801
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 0,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "queued",
+              "updatedAt": 1789593737801
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "pending"
+                }
+              }
+            ]
+          },
+          "newJobs": [
+            {
+              "_creationTime": 1789593737801.0513,
+              "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+              "args": [
+                {
+                  "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                }
+              ],
+              "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+              "scheduledTime": 1789680137580,
+              "state": {
+                "kind": "pending"
+              }
+            }
+          ],
+          "assertions": [
+            "allowed response",
+            "queued row",
+            "immediate row priority",
+            "one scheduled action",
+            "job still pending",
+            "future lease respected",
+            "no dispatch recorded",
+            "owned job cancellation count"
+          ],
+          "cleanup": {
+            "cancelled": 1
+          }
+        },
+        {
+          "actor": "admin",
+          "response": {
+            "prioritized": true,
+            "runId": "wh7bszxsasddy302hm9m3kw69h8ehzdw"
+          },
+          "error": null,
+          "before": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              }
+            ]
+          },
+          "after": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "scheduledAt": 1789680137580,
+                "scheduledToken": "05c5700e-4d4e-450b-af0f-c45eea404d17",
+                "updatedAt": 1789593737826
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 0,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "queued",
+              "updatedAt": 1789593737826
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737826.1501,
+                "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+                "args": [
+                  {
+                    "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                  }
+                ],
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "pending"
+                }
+              }
+            ]
+          },
+          "newJobs": [
+            {
+              "_creationTime": 1789593737826.1501,
+              "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+              "args": [
+                {
+                  "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                }
+              ],
+              "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+              "scheduledTime": 1789680137580,
+              "state": {
+                "kind": "pending"
+              }
+            }
+          ],
+          "assertions": [
+            "allowed response",
+            "queued row",
+            "immediate row priority",
+            "one scheduled action",
+            "job still pending",
+            "future lease respected",
+            "no dispatch recorded",
+            "owned job cancellation count"
+          ],
+          "cleanup": {
+            "cancelled": 1
+          }
+        }
+      ]
+    },
+    {
+      "label": "submitted",
+      "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+      "submittedHead": "4ea31224c75d53509c7faf1cfd473fc95dbff214",
+      "sourceSha256": "e04e6e50848894e9dc98a405e98d64e95ef77aad3cc0964042a045dde7e9b13e",
+      "sourceGitBlob": "b019f0c5bf64e67b8f3de76526bdd2236ce7f2ac",
+      "actors": [
+        {
+          "actor": "anonymous",
+          "response": null,
+          "error": "[Request ID: 13be7265a8b73664] Server Error\nUncaught Error: Unauthorized\n    at requireUser (../../convex/lib/access.ts:111:6)\n    at async handler (../../convex/skillEvaluations.ts:562:20)\n    at async handler (../../../../comments-retirement/node_modules/convex-helpers/server/customFunctions.js:268:27)\n",
+          "before": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737826.1501,
+                "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+                "args": [
+                  {
+                    "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                  }
+                ],
+                "completedTime": 1789593737830.25,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              }
+            ]
+          },
+          "after": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737826.1501,
+                "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+                "args": [
+                  {
+                    "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                  }
+                ],
+                "completedTime": 1789593737830.25,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              }
+            ]
+          },
+          "newJobs": [],
+          "assertions": [
+            "denial",
+            "row unchanged",
+            "dispatcher unchanged",
+            "no new scheduler job",
+            "owned job cancellation count"
+          ],
+          "cleanup": {
+            "cancelled": 0
+          }
+        },
+        {
+          "actor": "member",
+          "response": null,
+          "error": "[Request ID: 9acd346bdba449a5] Server Error\nUncaught Error: Forbidden\n    at assertRole (../../convex/lib/access.ts:152:0)\n    at assertAdmin (../../convex/lib/access.ts:156:0)\n    at handler (../../convex/skillEvaluations.ts:563:4)\n    at async handler (../../../../comments-retirement/node_modules/convex-helpers/server/customFunctions.js:268:27)\n",
+          "before": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737826.1501,
+                "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+                "args": [
+                  {
+                    "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                  }
+                ],
+                "completedTime": 1789593737830.25,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              }
+            ]
+          },
+          "after": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737826.1501,
+                "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+                "args": [
+                  {
+                    "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                  }
+                ],
+                "completedTime": 1789593737830.25,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              }
+            ]
+          },
+          "newJobs": [],
+          "assertions": [
+            "denial",
+            "row unchanged",
+            "dispatcher unchanged",
+            "no new scheduler job",
+            "owned job cancellation count"
+          ],
+          "cleanup": {
+            "cancelled": 0
+          }
+        },
+        {
+          "actor": "admin",
+          "response": {
+            "prioritized": true,
+            "runId": "wh7bszxsasddy302hm9m3kw69h8ehzdw"
+          },
+          "error": null,
+          "before": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "updatedAt": 1
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "completedAt": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 1234,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "skipReason": "stale-version",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "skipped",
+              "updatedAt": 1
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737826.1501,
+                "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+                "args": [
+                  {
+                    "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                  }
+                ],
+                "completedTime": 1789593737830.25,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              }
+            ]
+          },
+          "after": {
+            "dispatch": [
+              {
+                "_creationTime": 1789593737580.0981,
+                "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+                "key": "skill-evaluation-worker",
+                "leaseExpiresAt": 1789680137580,
+                "leaseToken": "native-proof-owned-future-lease",
+                "scheduledAt": 1789680137580,
+                "scheduledToken": "b7047d49-0d97-4829-a047-f43f42b16301",
+                "updatedAt": 1789593745570
+              }
+            ],
+            "row": {
+              "_creationTime": 1789593737580.098,
+              "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+              "agent": "codex",
+              "agentModel": "gpt-5.4-mini",
+              "attempts": 0,
+              "attemptsPerCase": 2,
+              "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+              "contentHash": "native-auth-fixture",
+              "createdAt": 1,
+              "environment": "docker",
+              "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+              "evaluatorRelease": "v0.1.0",
+              "evaluatorRepository": "NVIDIA/SkillEvaluator",
+              "judgeModel": "gpt-5.4",
+              "judgeProvider": "openai",
+              "nextRunAt": 0,
+              "scanStatus": "clean",
+              "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+              "source": "backfill",
+              "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourcePath": "skills/doca-dpa",
+              "sourceRepo": "nvidia/skills",
+              "status": "queued",
+              "updatedAt": 1789593745570
+            },
+            "scheduled": [
+              {
+                "_creationTime": 1789593737580.0964,
+                "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+                "args": [
+                  {
+                    "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737580.0972,
+                "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+                "args": [
+                  {
+                    "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+                  }
+                ],
+                "completedTime": 1789593737653.549,
+                "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+                "scheduledTime": 1789593737580,
+                "state": {
+                  "kind": "success"
+                }
+              },
+              {
+                "_creationTime": 1789593737766.2383,
+                "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+                "args": [
+                  {
+                    "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+                  }
+                ],
+                "completedTime": 1789593737774.428,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737801.0513,
+                "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+                "args": [
+                  {
+                    "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+                  }
+                ],
+                "completedTime": 1789593737804.424,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593737826.1501,
+                "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+                "args": [
+                  {
+                    "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+                  }
+                ],
+                "completedTime": 1789593737830.25,
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "canceled"
+                }
+              },
+              {
+                "_creationTime": 1789593745570.3481,
+                "_id": "kc2em6gy1tbw144scnkww94r9n8egajf",
+                "args": [
+                  {
+                    "scheduleToken": "b7047d49-0d97-4829-a047-f43f42b16301"
+                  }
+                ],
+                "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+                "scheduledTime": 1789680137580,
+                "state": {
+                  "kind": "pending"
+                }
+              }
+            ]
+          },
+          "newJobs": [
+            {
+              "_creationTime": 1789593745570.3481,
+              "_id": "kc2em6gy1tbw144scnkww94r9n8egajf",
+              "args": [
+                {
+                  "scheduleToken": "b7047d49-0d97-4829-a047-f43f42b16301"
+                }
+              ],
+              "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+              "scheduledTime": 1789680137580,
+              "state": {
+                "kind": "pending"
+              }
+            }
+          ],
+          "assertions": [
+            "allowed response",
+            "queued row",
+            "immediate row priority",
+            "one scheduled action",
+            "job still pending",
+            "future lease respected",
+            "no dispatch recorded",
+            "owned job cancellation count"
+          ],
+          "cleanup": {
+            "cancelled": 1
+          }
+        }
+      ]
+    }
+  ],
+  "cleanup": true,
+  "deployment": "anonymous:anonymous-agent",
+  "finalSnapshot": {
+    "dispatch": [
+      {
+        "_creationTime": 1789593737580.0981,
+        "_id": "vn75vam3tndfz325m57yg4pt2h8ehh5j",
+        "key": "skill-evaluation-worker",
+        "leaseExpiresAt": 1789680137580,
+        "leaseToken": "native-proof-owned-future-lease",
+        "updatedAt": 1
+      }
+    ],
+    "row": {
+      "_creationTime": 1789593737580.098,
+      "_id": "wh7bszxsasddy302hm9m3kw69h8ehzdw",
+      "agent": "codex",
+      "agentModel": "gpt-5.4-mini",
+      "attempts": 0,
+      "attemptsPerCase": 2,
+      "completedAt": 2,
+      "configKey": "v0.1.0:4975c97d49e3623eeab739248e52d83c4aa8f582:codex:gpt-5.4-mini:openai:gpt-5.4:docker:2",
+      "contentHash": "native-auth-fixture",
+      "createdAt": 1,
+      "environment": "docker",
+      "evaluatorCommit": "4975c97d49e3623eeab739248e52d83c4aa8f582",
+      "evaluatorRelease": "v0.1.0",
+      "evaluatorRepository": "NVIDIA/SkillEvaluator",
+      "judgeModel": "gpt-5.4",
+      "judgeProvider": "openai",
+      "nextRunAt": 1234,
+      "scanStatus": "clean",
+      "skillId": "z17fsvw3zs0vx5jejt1tza9ym18eg72b",
+      "skipReason": "stale-version",
+      "source": "backfill",
+      "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sourcePath": "skills/doca-dpa",
+      "sourceRepo": "nvidia/skills",
+      "status": "skipped",
+      "updatedAt": 1
+    },
+    "scheduled": [
+      {
+        "_creationTime": 1789593737580.0964,
+        "_id": "kc2fach56004j4brv5r7eag5yn8eg2ej",
+        "args": [
+          {
+            "ownerUserId": "h17hjpzsjr4q10030n9myf6tax8eg8nf"
+          }
+        ],
+        "completedTime": 1789593737653.549,
+        "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+        "scheduledTime": 1789593737580,
+        "state": {
+          "kind": "success"
+        }
+      },
+      {
+        "_creationTime": 1789593737580.0972,
+        "_id": "kc2e2zwyerm8911nvr7hgmyrgh8egs6t",
+        "args": [
+          {
+            "ownerUserId": "h17jdzhkjtmqpey8g3qjdq0zbn8eg46r"
+          }
+        ],
+        "completedTime": 1789593737653.549,
+        "name": "functions.js:syncPackageSearchDigestsForOwnerUserIdInternal",
+        "scheduledTime": 1789593737580,
+        "state": {
+          "kind": "success"
+        }
+      },
+      {
+        "_creationTime": 1789593737766.2383,
+        "_id": "kc223scay1h9b23cqagb19c3ax8ehjwy",
+        "args": [
+          {
+            "scheduleToken": "33498792-3cfb-4231-82fe-5c04a73513e1"
+          }
+        ],
+        "completedTime": 1789593737774.428,
+        "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+        "scheduledTime": 1789680137580,
+        "state": {
+          "kind": "canceled"
+        }
+      },
+      {
+        "_creationTime": 1789593737801.0513,
+        "_id": "kc2eh7289hg84z50w4pb423gk58ehfeb",
+        "args": [
+          {
+            "scheduleToken": "b197de9d-a852-4ec1-9ee6-45010ed69a5f"
+          }
+        ],
+        "completedTime": 1789593737804.424,
+        "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+        "scheduledTime": 1789680137580,
+        "state": {
+          "kind": "canceled"
+        }
+      },
+      {
+        "_creationTime": 1789593737826.1501,
+        "_id": "kc27r02y5scjn638ffjs07y3yd8eg9vs",
+        "args": [
+          {
+            "scheduleToken": "05c5700e-4d4e-450b-af0f-c45eea404d17"
+          }
+        ],
+        "completedTime": 1789593737830.25,
+        "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+        "scheduledTime": 1789680137580,
+        "state": {
+          "kind": "canceled"
+        }
+      },
+      {
+        "_creationTime": 1789593745570.3481,
+        "_id": "kc2em6gy1tbw144scnkww94r9n8egajf",
+        "args": [
+          {
+            "scheduleToken": "b7047d49-0d97-4829-a047-f43f42b16301"
+          }
+        ],
+        "completedTime": 1789593745574.652,
+        "name": "skillEvaluationDispatch.js:dispatchSkillEvaluationWorkerInternal",
+        "scheduledTime": 1789680137580,
+        "state": {
+          "kind": "canceled"
+        }
+      }
+    ]
+  },
+  "evaluationJobsCancelled": 4,
+  "complete": true,
+  "finalCleanup": {
+    "cancelled": 0
+  },
+  "worktreeStatus": ""
+}

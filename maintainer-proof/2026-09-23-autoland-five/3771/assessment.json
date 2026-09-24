@@ -1,0 +1,265 @@
+{
+  "assessedAt": "2026-09-16T21:30:15.699244+00:00",
+  "pr": "https://github.com/openclaw/clawhub/pull/3771",
+  "issue": "https://github.com/openclaw/clawhub/issues/3769",
+  "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+  "submittedHead": "34e000ac07539d26aa15a32e08cfd77230c5cb8e",
+  "runtime": "Standalone anonymous local Convex; registered native mutations and queries, stored blob, authenticated HTTP metadata/file/download; no convex-test",
+  "backendBinary": "/Users/patrickerichsen/.cache/convex/binaries/precompiled-2026-09-14-9a374bd/convex-local-backend",
+  "backendBinarySha256": "e0f89bcfdbbe1b606daa7cad660fb1af67c5bb16c7146d7ef67c803791c7c0d6",
+  "deployment": "anonymous:anonymous-agent",
+  "command": "/Users/patrickerichsen/.nvm/versions/node/v24.19.0/bin/node native-3771-proof/run.mjs > native-3771-proof/run.txt 2>&1",
+  "cwd": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution",
+  "exitCode": 0,
+  "complete": true,
+  "caseCount": 8,
+  "assertionCount": 96,
+  "httpRequests": 48,
+  "zipArchivesInspected": 10,
+  "phases": [
+    {
+      "label": "baseline",
+      "sourceGitBlob": "8bb01cc1ecfd501102dcdc8ea927641d191cad1e",
+      "sourceSha256": "9fe35b644cc2cc1a39a002de38d5266684b2a8bc7c66d8553fc651f4468360d7",
+      "pushCommand": "bunx convex run --push --inline-query null --typecheck enable --codegen disable",
+      "pushExitCode": 0
+    },
+    {
+      "label": "submitted",
+      "sourceGitBlob": "26ae3392b5c6cfbf9d0c95eb025fc1d9a5100266",
+      "sourceSha256": "56133f40cd27520e8d962cd008d431f5c3314d70a183fec13e12a96a875d8c0e",
+      "pushCommand": "bunx convex run --push --inline-query null --typecheck enable --codegen disable",
+      "pushExitCode": 0
+    }
+  ],
+  "summary": [
+    {
+      "phase": "baseline",
+      "mode": "revoke",
+      "fallback": true,
+      "latest": "5.0.0",
+      "parentStatus": "active",
+      "parentDisplayName": "Name 5.0.0",
+      "publicName": "Name 5.0.0",
+      "selection": "not_found",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-revoke-older",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-revoke-older/file?path=SKILL.md",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-baseline-revoke-older",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "phase": "baseline",
+      "mode": "revoke",
+      "fallback": false,
+      "latest": "5.0.0",
+      "parentStatus": "active",
+      "parentDisplayName": "Name 5.0.0",
+      "publicName": "Name 5.0.0",
+      "selection": "not_found",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-revoke-none",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-revoke-none/file?path=SKILL.md",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-baseline-revoke-none",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "phase": "baseline",
+      "mode": "quarantine",
+      "fallback": true,
+      "latest": "5.0.0",
+      "parentStatus": "active",
+      "parentDisplayName": "Name 5.0.0",
+      "publicName": "Name 5.0.0",
+      "selection": "not_found",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-quarantine-older",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-quarantine-older/file?path=SKILL.md",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-baseline-quarantine-older",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "phase": "baseline",
+      "mode": "quarantine",
+      "fallback": false,
+      "latest": "5.0.0",
+      "parentStatus": "active",
+      "parentDisplayName": "Name 5.0.0",
+      "publicName": "Name 5.0.0",
+      "selection": "not_found",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-quarantine-none",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-baseline-quarantine-none/file?path=SKILL.md",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-baseline-quarantine-none",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "phase": "submitted",
+      "mode": "revoke",
+      "fallback": true,
+      "latest": "1.0.0",
+      "parentStatus": "active",
+      "parentDisplayName": "Name 1.0.0",
+      "publicName": "Name 1.0.0",
+      "selection": "available",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-revoke-older",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-revoke-older/file?path=SKILL.md",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-submitted-revoke-older",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "phase": "submitted",
+      "mode": "revoke",
+      "fallback": false,
+      "latest": null,
+      "parentStatus": "hidden",
+      "parentDisplayName": "Published 2.0.0",
+      "publicName": null,
+      "selection": "not_found",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-revoke-none",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-revoke-none/file?path=SKILL.md",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-submitted-revoke-none",
+          "status": 404
+        }
+      ]
+    },
+    {
+      "phase": "submitted",
+      "mode": "quarantine",
+      "fallback": true,
+      "latest": "1.0.0",
+      "parentStatus": "active",
+      "parentDisplayName": "Name 1.0.0",
+      "publicName": "Name 1.0.0",
+      "selection": "available",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-quarantine-older",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-quarantine-older/file?path=SKILL.md",
+          "status": 200
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-submitted-quarantine-older",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "phase": "submitted",
+      "mode": "quarantine",
+      "fallback": false,
+      "latest": null,
+      "parentStatus": "hidden",
+      "parentDisplayName": "Published 2.0.0",
+      "publicName": null,
+      "selection": "not_found",
+      "http": [
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-quarantine-none",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/skills/native-rollback-submitted-quarantine-none/file?path=SKILL.md",
+          "status": 404
+        },
+        {
+          "path": "/api/v1/download?slug=native-rollback-submitted-quarantine-none",
+          "status": 404
+        }
+      ]
+    }
+  ],
+  "sourceBinding": "convex/skills.ts copied exactly from submitted commit34e000ac on main2c901; checked byte-equal to reviewed PR worktree. Other production source unchanged. Temporary same fixture pushed both phases, later removed.",
+  "safety": "Disposable standalone local backend; cron registrations disabled before first push; no external dispatch credentials configured; only synthetic local token rows. Native revoke and LLM malicious-result mutations used without public/scanner network invocation.",
+  "limits": [
+    "Direct standalone Convex HTTP, not Nitro/browser/CDN or deployed production.",
+    "Actual LLM result handling was invoked with synthetic malicious analysis; no scanner execution or external worker dispatch tested.",
+    "Fixture uses versions5.0 pending,4.0 blocked,3.0 owner-withdrawn,2.0 published target and optional1.0 legacy eligible fallback, with benign stored SKILL.md. This proves filtered candidates and failclosed absent fallback, not all restore ordering cases.",
+    "Prospective transition filter does not repair historical inconsistent rows; no production inventory was run.",
+    "Full PR static/unit/packages/review gates are not part of this bounded native replay."
+  ],
+  "localErrors": {
+    "baseline-push.txt": [],
+    "submitted-push.txt": [],
+    "runtime.log": []
+  },
+  "cleanup": {
+    "runtimeStopped": true,
+    "lsofExitCode": 1,
+    "listeners": "",
+    "worktreeStatus": "",
+    "worktreeHead": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+    "sourceAndGeneratedApiRestored": true,
+    "temporaryFixtureAndLocalStateRemoved": true
+  },
+  "artifacts": {
+    "baseline-push.txt": "fd0f54fcf2f655c04b50dc89b76a61d40a79944c389de232a1d670ac8e70cdc1",
+    "run.mjs": "ae0ff0f157adba52fdf4984ac02f3cab3a3174747935d6b1cffe72f2510cf921",
+    "applied-runtime.patch": "3de403558dbde3f99df288df5fa659cf3c4eb8fec9ee04cdcf85824236c9a178",
+    "archive-inspection.json": "80229f01a873836b65181fe79a0dc40cc99c127e21fc1ec88bddd1034cf302ab",
+    "submitted-push.txt": "7612b084f2e05bf6e6b184475509e4711c9cb57027906313c261466eabfa8a90",
+    "baseline.json": "8f3d5a5ce1218b90cdff69b5245b1552b9a63555acbdc8c6060e014b685062df",
+    "submitted.json": "d190c661fac216d12f4ab53472e055550c6954af2cc11fc5ce9081c100731a87",
+    "runtime.log": "3dcf237cc0565efff744824c39c409aecc819d7a9a16c30470a27a1480eca676",
+    "run.txt": "febf38d4f358c5839656ff9f4f45e326afb726414fcd1807a50de43bbb9b82cd",
+    "run.json": "9f2bf9e75c082b2b181eb0d4ee86236209e10c82a3a65817edb3407317be0452",
+    "fixture.ts": "468a55b9e6c777365dc4180c67a5f182750f3ff100a4c87de5909cd7d1752e94"
+  }
+}

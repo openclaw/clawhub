@@ -1,0 +1,69 @@
+{
+  "assessedAt": "2026-09-16T21:26:23.361490+00:00",
+  "pr": "https://github.com/openclaw/clawhub/pull/3758",
+  "issue": "https://github.com/openclaw/clawhub/issues/3757",
+  "base": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+  "submittedHead": "5500443a036778fc601f5a7f89b6e0b7c662a01e",
+  "runtime": "Standalone anonymous local Convex backend, actual HTTP on127.0.0.1:3911, native schema/functions/components; no convex-test or handler mocks",
+  "deployment": "anonymous:anonymous-agent",
+  "command": "/Users/patrickerichsen/.nvm/versions/node/v24.19.0/bin/node native-3758-proof/run.mjs > native-3758-proof/run.txt 2>&1",
+  "cwd": "/Users/patrickerichsen/Git/openclaw/inbox-zero-20260915/visibility-execution",
+  "exitCode": 0,
+  "complete": true,
+  "assertions": 64,
+  "cases": 16,
+  "httpRequests": 32,
+  "phases": [
+    {
+      "label": "baseline",
+      "sourceGitBlob": "d62d74dd974be038d40ddaf54f864a6f1f09fc24",
+      "sourceSha256": "6301047c78ca5e6f736a08adf3f6123b27929697ef2c4ff56b3a205b175ba9b8",
+      "pushCommand": "bunx convex run --push --inline-query null --typecheck enable --codegen disable",
+      "pushExitCode": 0
+    },
+    {
+      "label": "submitted",
+      "sourceGitBlob": "98bbcb81ba27437e03c66aa259b49563d28655f1",
+      "sourceSha256": "e0ac53b8ad992444cf567392447c57c4a366107a237fb5ea68251033b4db096f",
+      "pushCommand": "bunx convex run --push --inline-query null --typecheck enable --codegen disable",
+      "pushExitCode": 0
+    }
+  ],
+  "sourceBinding": "Submitted production hunk from head5500443 applied to main2c901; asserted byte-identical to already reviewed clean auto-merge runtime. Temporary internal fixture identical across both pushes, removed after run.",
+  "credentialScope": "Only disposable local admin configuration and hardcoded synthetic fixture API tokens; actual HTTP API requests authenticate real hashed token rows. No external credentials or production requests.",
+  "proven": [
+    "Current historical organization member can read hint/evidence.",
+    "Deleting persisted membership removes authorization only with candidate: baseline423/200\u2192candidate404/404.",
+    "A different current organization publisher gains423/200 only with candidate.",
+    "Updating actual personal-publisher linkedUserId flips access from historical user to current linked user only with candidate.",
+    "Valid linked/unlinked personal and legacy no-publisher owners preserve423/200."
+  ],
+  "limits": [
+    "Personal linkage was changed by an internal fixture mutation; this is persisted post-transfer-state proof, not execution of a product ownership-transfer workflow.",
+    "Only pending-scan hint and moderation evidence routes replayed natively. Quality/removed states, all membership ranks, inactive publisher, staff/public redaction are in the separate registered convex-test matrix.",
+    "No browser/public edge/caching proof, identity-provider login, token minting, production occurrence or exploitation investigation.",
+    "Not full PR gating or deployment approval; durable spec note and final integrated gates/review remain."
+  ],
+  "cleanup": {
+    "runtimeStopped": true,
+    "lsofExitCode": 1,
+    "listeners": "",
+    "sourceAndApiRestored": true,
+    "fixtureRemoved": true,
+    "localEnvironmentAndDeploymentStateRemoved": true,
+    "worktreeHead": "2c901bdf46ef9a75a1702616e6c0f3c5b9361be3",
+    "worktreeStatus": ""
+  },
+  "artifacts": {
+    "baseline-push.txt": "e5ba6596a324fc883aaa99dac5385a99462a8ee0f12a55a6eb9cf94a9d888863",
+    "run.mjs": "3285a85979f97b1dbb6ae0ad0805e787b31230daf89338204f0931fac94485f8",
+    "applied-runtime.patch": "a248ec08981ad20ad3d7a5b4e72b9c0e2bbe394be81c532c991ec97888f48377",
+    "submitted-push.txt": "9d669e0cd82ef1315bb9646593eb4b213d50b5cecb08aa034f88342cc8054c0d",
+    "baseline.json": "cc869407c675972336f26b95c56a9b81eaf85502756208e62c984d11eb19b91e",
+    "submitted.json": "58835038f2572f1f0c6e62ce0dcd5c3b102f1300aa42519ee2e01fac44f9de88",
+    "runtime.log": "3dcf237cc0565efff744824c39c409aecc819d7a9a16c30470a27a1480eca676",
+    "run.txt": "46f436b032c57bee71ab503b908c0e56bd1df9a5331953c8a88e077e3a7b5dcc",
+    "run.json": "f160c9d5621d22a015544385ead2e47f3b13f7f71c5726bdb102d172e55923c4",
+    "fixture.ts": "be3dd2517dd5e3d161354e8d69a7439a33d5896e81c838d169a83e63b4931c4a"
+  }
+}

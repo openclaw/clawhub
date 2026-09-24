@@ -1,0 +1,26 @@
+import { v } from 'convex/values';
+import { internalAction } from './_generated/server';
+import { internalMutation, internalQuery } from './functions';
+import { hashToken } from './lib/tokens';
+const contents = '# Harmless native rollback fixture\n';
+export const store = internalAction({args:{},handler:async ctx=>await ctx.storage.store(new Blob([contents],{type:'text/markdown'}))});
+export const seed = internalMutation({args:{key:v.string(),fallback:v.boolean(),storageId:v.id('_storage')},handler:async(ctx,args)=>{
+ const ownerUserId=await ctx.db.insert('users',{handle:`owner-${args.key}`});
+ const moderatorId=await ctx.db.insert('users',{handle:`moderator-${args.key}`,role:'moderator'});
+ const readerId=await ctx.db.insert('users',{handle:`reader-${args.key}`,role:'user'});
+ await ctx.db.insert('apiTokens',{userId:readerId,label:'local fixture',prefix:'fixture',tokenHash:await hashToken(`native-rollback-${args.key}`),createdAt:Date.now()});
+ const publisherId=await ctx.db.insert('publishers',{kind:'user',handle:`owner-${args.key}`,displayName:'Owner',linkedUserId:ownerUserId,createdAt:1,updatedAt:1});
+ await ctx.db.patch(ownerUserId,{personalPublisherId:publisherId});
+ const slug=`native-rollback-${args.key}`;
+ const skillId=await ctx.db.insert('skills',{slug,displayName:'Published 2.0.0',summary:'Published description',ownerUserId,ownerPublisherId:publisherId,tags:{},badges:{},moderationStatus:'active',stats:{versions:5,downloads:0,stars:0,comments:0},createdAt:1,updatedAt:2});
+ const common={skillId,createdBy:ownerUserId,files:[{path:'SKILL.md',size:contents.length,sha256:'a'.repeat(64),storageId:args.storageId}],llmAnalysis:{status:'clean',checkedAt:1}};
+ const make=(version:string)=>({...common,version,createdAt:Number(version[0]),changelog:`Changes ${version}`,parsed:{frontmatter:{name:`Name ${version}`,description:`Description ${version}`}}});
+ const olderId=args.fallback?await ctx.db.insert('skillVersions',make('1.0.0')):null;
+ const targetId=await ctx.db.insert('skillVersions',{...make('2.0.0'),publicationStatus:'published'});
+ await ctx.db.insert('skillVersions',{...make('3.0.0'),publicationStatus:'published',ownerDeletedAt:3});
+ await ctx.db.insert('skillVersions',{...make('4.0.0'),publicationStatus:'blocked'});
+ const pendingId=await ctx.db.insert('skillVersions',{...make('5.0.0'),publicationStatus:'pending'});
+ await ctx.db.patch(skillId,{latestVersionId:targetId,latestVersionSummary:{version:'2.0.0',createdAt:2,changelog:'Published'},tags:{latest:targetId}});
+ return {skillId,moderatorId,targetId,olderId,pendingId,slug,ownerHandle:`owner-${args.key}`};
+}});
+export const snapshot = internalQuery({args:{skillId:v.id('skills'),pendingId:v.id('skillVersions')},handler:async(ctx,args)=>({skill:await ctx.db.get(args.skillId),pending:await ctx.db.get(args.pendingId)})});
