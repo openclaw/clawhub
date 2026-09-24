@@ -4,6 +4,7 @@ import {
   SkillDetailRoutePage,
   skillDetailRouteHead,
 } from "../../$owner/$slug";
+import { SkillDetailSkeleton } from "../../../components/skeletons/SkillDetailSkeleton";
 import { isOwnerRouteHandleOrIdSegment } from "../../../lib/ownerRoute";
 
 function isPostPublishFlag(value: unknown) {
@@ -24,6 +25,7 @@ export const Route = createFileRoute("/$owner/skills/$slug")({
   },
   loader: async ({ params }) => loadSkillDetailRouteData(params),
   head: ({ params, loaderData }) => skillDetailRouteHead({ params, loaderData }),
+  pendingComponent: SkillDetailPending,
   component: OwnerSkill,
 });
 
@@ -39,5 +41,15 @@ function OwnerSkill() {
       published={search.published}
       initialData={initialData}
     />
+  );
+}
+
+function SkillDetailPending() {
+  return (
+    <main className="section detail-page-section skill-detail-page" aria-busy="true">
+      <div role="status" aria-label="Loading skill details">
+        <SkillDetailSkeleton />
+      </div>
+    </main>
   );
 }

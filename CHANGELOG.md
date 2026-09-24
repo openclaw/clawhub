@@ -11,6 +11,8 @@
 
 ### Fixes
 
+- Web: show the existing skill detail skeleton while navigating to a skill whose route data is still loading.
+
 - Deploy: coalesce pending skills.sh syncs per ref before they enter the production deployment queue, while preserving active sync cleanup and queued manual deploys.
 
 - Workers: reserve Skill Card capacity by lease slot to avoid global queue contention, continue after partial batches, and release undelivered leases when input hydration fails.
