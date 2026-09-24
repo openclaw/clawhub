@@ -60,7 +60,9 @@ export async function proveSkillCardReuse(
       markdown,
     });
   const burst = async () => {
-    const outcomes = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => claim(index)));
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, index) => claim(index)),
+    );
     const receipts = outcomes.flatMap((outcome) =>
       outcome.status === "fulfilled" ? outcome.value : [],
     );
