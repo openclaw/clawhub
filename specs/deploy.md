@@ -125,6 +125,11 @@ any reusable receipt because their recipe is unknown. New workers certify reuse
 only after a successful generation with the current semantic inputs. Deploying
 source does not itself prove the configured model is available to worker credentials.
 
+Before changing the worker model, dispatch `Skill Card Worker` at the candidate
+ref with `fixture-only=true`. This generates one benign card with the Production
+OpenAI credential and the real renderer. It does not receive Convex credentials
+or claim production jobs; the regular drain shards are excluded from that run.
+
 ## CLI npm release
 
 The `clawhub` CLI package is released separately from the app deploy.
