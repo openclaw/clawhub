@@ -629,8 +629,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   re-deriving trust from individual signal payloads.
 - Skill Card completion owns a newly stored card until its attachment mutation succeeds. If attachment rejects a stale lease or unavailable version, delete only that new blob and preserve the original error if cleanup fails. Successful replacement retains prior card blobs and generated bundle fingerprints so existing installs remain resolvable.
 - Skill Card workers default to GPT-6 Sol with medium reasoning and the fast service
-  tier. Recipe-hash claims remain inactive until the separate activation after
-  [backend deployment](deploy.md). Once activated, the backend binds each lease before
+  tier. After the required [backend deployment](deploy.md), recipe-hash claims
+  activate reuse. The backend binds each lease before
   generation to the source file hashes,
   server evidence, and worker recipe (model, effort, tier, prompt, template, and
   trusted NVIDIA generator bytes). A completed card is reused only when those

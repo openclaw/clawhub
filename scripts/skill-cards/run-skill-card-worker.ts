@@ -557,6 +557,7 @@ async function main() {
   const client = new ConvexHttpClient(convexUrl);
   const workerId = skillCardWorkerId();
   const settings = skillCardGenerationSettings();
+  const generationHash = await skillCardGenerationHash(resolve(toolDir), settings);
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
   let totalClaimed = 0;
@@ -569,13 +570,12 @@ async function main() {
     const claimLimit = Math.min(batchLimit, remainingJobs);
     let jobs: SkillCardReceipt[];
     try {
-      // Workflow runs can precede the manual backend deploy. Keep this claim
-      // compatible until the separately staged recipe-hash activation lands.
       jobs = (await client.action(api.skillCards.claimSkillCardJobs, {
         token,
         workerId,
         limit: claimLimit,
         leaseMs,
+        generationHash,
       })) as SkillCardReceipt[];
     } catch (error) {
       logger.error(
