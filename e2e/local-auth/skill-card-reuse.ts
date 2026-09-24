@@ -59,8 +59,37 @@ export async function proveSkillCardReuse(
       leaseToken: receipt.job.leaseToken!,
       markdown,
     });
-  const burst = async () =>
-    (await Promise.all(Array.from({ length: 8 }, (_, index) => claim(index)))).flat();
+  const burst = async () => {
+    const outcomes = await Promise.allSettled(Array.from({ length: 8 }, (_, index) => claim(index)));
+    const receipts = outcomes.flatMap((outcome) =>
+      outcome.status === "fulfilled" ? outcome.value : [],
+    );
+    const rejections = outcomes.flatMap((outcome, worker) => {
+      if (outcome.status === "fulfilled") return [];
+      const message = String(outcome.reason);
+      const admission = message
+        .split("\n")
+        .find((line) => line.startsWith("Uncaught Error: "))
+        ?.slice("Uncaught Error: ".length);
+      return [{ worker, admission: admission ?? message, message }];
+    });
+    console.log("Skill Card claim burst", {
+      callers: outcomes.length,
+      fulfilled: outcomes.filter((outcome) => outcome.status === "fulfilled").length,
+      rejected: rejections.length,
+      rejections,
+      receipts: receipts.length,
+    });
+    // Convex can reject excess callers before executing a nested function.
+    // This is not a retry: every delivered receipt and lease is checked below.
+    for (const { admission } of rejections) {
+      expect([
+        "Too many concurrent requests in a short period of time. Spread out your requests out over time or throttle them to avoid errors.",
+        "Couldn't acquire a permit on this funrun",
+      ]).toContain(admission);
+    }
+    return receipts;
+  };
   const versionIds = await run<Id<"skillVersions">[]>("skillCardDevSeed:seedExistingRows", {
     versionId,
   });
@@ -73,18 +102,41 @@ export async function proveSkillCardReuse(
     true,
   );
 
-  // No retry/warm-up here: the populated eight-worker burst exercises the same
-  // planner, admission and preparation transactions used by production workers.
+  // Eight simultaneous callers exceed the deployed two-shard claim fanout.
+  // Admission rejection is permitted, but all four jobs must still be delivered.
   const claimed = await burst();
   expect(claimed).toHaveLength(4);
   expect(new Set(claimed.map(({ job }) => job.skillVersionId)).size).toBe(4);
   expect(new Set(claimed.map(({ job }) => job.claimSlot)).size).toBe(4);
   expect(claimed.every((receipt) => receipt.target && !receipt.reused)).toBe(true);
+  const lease = (job: Doc<"skillCardGenerationJobs">) => ({
+    id: job._id,
+    token: job.leaseToken,
+    slot: job.claimSlot,
+  });
+  const running = (await state()).flatMap(({ jobs }) =>
+    jobs.filter((job) => job.status === "running"),
+  );
+  expect(running.map(lease).sort((a, b) => a.id.localeCompare(b.id))).toEqual(
+    claimed.map(({ job }) => lease(job)).sort((a, b) => a.id.localeCompare(b.id)),
+  );
   await Promise.all(
     claimed.map((receipt, index) => complete(receipt, `# Skill Card\n\nNative card ${index}.`)),
   );
   const completed = await state();
   expect(completed.every(({ version }) => version.skillCardGeneration?.inputHash)).toBe(true);
+  expect(
+    completed.every(({ jobs }) =>
+      jobs.every(
+        (job) =>
+          job.status === "succeeded" &&
+          job.leaseToken === undefined &&
+          job.leaseExpiresAt === undefined &&
+          job.claimSlot === undefined &&
+          job.workerId === undefined,
+      ),
+    ),
+  ).toBe(true);
 
   const beforeReuse = storageIds();
   for (const id of versionIds) {
@@ -100,7 +152,15 @@ export async function proveSkillCardReuse(
   );
   expect(
     (await state()).every(({ jobs }) =>
-      jobs.every((job) => job.status === "succeeded" && job.attempts <= 1),
+      jobs.every(
+        (job) =>
+          job.status === "succeeded" &&
+          job.attempts <= 1 &&
+          job.leaseToken === undefined &&
+          job.leaseExpiresAt === undefined &&
+          job.claimSlot === undefined &&
+          job.workerId === undefined,
+      ),
     ),
   ).toBe(true);
 
