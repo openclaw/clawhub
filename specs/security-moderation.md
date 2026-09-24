@@ -500,6 +500,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   restricted scanner subprocess environments. Workflow defaults and pinned
   scanner versions define the active policy; forwarding optional settings
   does not change those defaults or add support to older scanner clients.
+- The pending scanner policy uses GPT-6 Luna with high reasoning for the
+  ClawScan judge, SkillSpector, and A.I.G. Activating this policy requires pinned
+  ClawScan profiles and A.I.G releases that honor those settings; environment
+  variables alone do not update embedded judge arguments or add reasoning
+  support to older A.I.G clients.
 - ClawScan is the sole authority for the stored risk-analysis verdict and its
   moderation consequences. A.I.G is required supporting evidence for skill
   scans: missing, failed, or malformed A.I.G output fails the worker through
