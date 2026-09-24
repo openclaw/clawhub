@@ -186,7 +186,10 @@ describe("pre-publication publish worker workflow", () => {
     expect(runStep?.env).toEqual({
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       DEFAULT_BASE_URL: "https://api.openai.com/v1",
-      DEFAULT_MODEL: "gpt-5.6",
+      DEFAULT_MODEL: "gpt-6-luna",
+      REASONING_EFFORT: "high",
+      SKILLSPECTOR_MODEL: "gpt-6-luna",
+      SKILLSPECTOR_REASONING_EFFORT: "high",
       LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
