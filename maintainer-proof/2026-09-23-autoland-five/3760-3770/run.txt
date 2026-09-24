@@ -1,0 +1,42 @@
+Push to local anonymous runtime: baseline http://127.0.0.1:3930
+metrics baseline legacy owner 37 downloads
+metrics baseline legacy outsider 37 downloads
+metrics baseline linked owner 37 downloads
+metrics baseline linked outsider denied
+metrics baseline org owner 37 downloads
+metrics baseline org outsider denied
+catalog baseline quarantine true {"latest":"5.0.0","feed":"5.0.0","http":200}
+catalog baseline quarantine false {"latest":"5.0.0","feed":"5.0.0","http":200}
+catalog baseline restore true {"latest":"5.0.0","feed":"5.0.0","http":200}
+catalog baseline restore false {"latest":"5.0.0","feed":"5.0.0","http":200}
+catalog baseline delete true {"latest":"5.0.0","feed":"5.0.0","http":200}
+catalog baseline delete false {"latest":"5.0.0","feed":"5.0.0","http":200}
+catalog baseline withdrawn true {"latest":"3.0.0","feed":"3.0.0","http":200}
+Push to local anonymous runtime: submitted http://127.0.0.1:3930
+metrics submitted legacy owner denied
+metrics submitted legacy outsider denied
+metrics submitted linked owner 37 downloads
+metrics submitted linked outsider denied
+metrics submitted org owner 37 downloads
+metrics submitted org outsider denied
+catalog submitted quarantine true {"latest":"1.0.0","feed":"1.0.0","http":200}
+catalog submitted quarantine false {"latest":null,"feed":null,"http":200}
+catalog submitted restore true {"latest":"1.0.0","feed":"1.0.0","http":200}
+catalog submitted restore false {"latest":null,"feed":null,"http":200}
+catalog submitted delete true {"latest":"5.0.0","feed":null,"http":200}
+catalog submitted delete false {"latest":"5.0.0","feed":null,"http":200}
+catalog submitted withdrawn true {"latest":"3.0.0","feed":"3.0.0","http":200}
+Push to local anonymous runtime: repaired http://127.0.0.1:3930
+metrics repaired legacy owner 37 downloads
+metrics repaired legacy outsider denied
+metrics repaired linked owner 37 downloads
+metrics repaired linked outsider denied
+metrics repaired org owner 37 downloads
+metrics repaired org outsider denied
+catalog repaired quarantine true {"latest":"1.0.0","feed":"1.0.0","http":200}
+catalog repaired quarantine false {"latest":null,"feed":null,"http":200}
+catalog repaired restore true {"latest":"1.0.0","feed":"1.0.0","http":200}
+catalog repaired restore false {"latest":null,"feed":null,"http":200}
+catalog repaired delete true {"latest":"1.0.0","feed":"1.0.0","http":200}
+catalog repaired delete false {"latest":null,"feed":null,"http":200}
+catalog repaired withdrawn true {"latest":"3.0.0","feed":null,"http":200}
