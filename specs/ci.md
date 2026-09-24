@@ -37,6 +37,9 @@ five-minute timeout to enforce the pull-request feedback target.
   `blacksmith-16vcpu-ubuntu-2404` runner label and records actual CPU count,
   load, cgroup CPU statistics, memory pressure, and free memory before and after
   the test. The matrix runs at most eight shards concurrently.
+  The runner seeds the existing local skills.sh mirror fixture for the
+  profile-context shard's metadata layout checks, so those assertions do not
+  depend on the availability of a live public skill.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the

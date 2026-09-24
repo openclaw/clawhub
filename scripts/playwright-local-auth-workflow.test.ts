@@ -38,6 +38,10 @@ describe("playwright local-auth workflow", () => {
       ),
     ).toBe(false);
 
+    expect(
+      job.strategy?.matrix?.include?.find((entry) => entry.name === "profile-context")?.specs,
+    ).toContain("e2e/local-auth/skill-hero-metadata.pw.test.ts");
+
     const localAuthStep = job.steps.find((step) => step.name === "Local-auth browser e2e");
     expect(localAuthStep?.run).toContain("/sys/fs/cgroup/cpu.stat");
     expect(localAuthStep?.run).toContain("/proc/pressure/memory");
