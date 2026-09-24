@@ -496,6 +496,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
   SkillSpector, A.I.G, and static scan evidence as context.
+- Workers preserve explicitly configured model and reasoning settings through
+  restricted scanner subprocess environments. Workflow defaults and pinned
+  scanner versions define the active policy; forwarding optional settings
+  does not change those defaults or add support to older scanner clients.
 - ClawScan is the sole authority for the stored risk-analysis verdict and its
   moderation consequences. A.I.G is required supporting evidence for skill
   scans: missing, failed, or malformed A.I.G output fails the worker through

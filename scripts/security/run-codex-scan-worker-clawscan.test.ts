@@ -21,6 +21,7 @@ const sha256 = (content: string) => createHash("sha256").update(content).digest(
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
 });
 
@@ -288,7 +289,7 @@ describe("run-codex-scan-worker clawscan authority", () => {
     });
   });
 
-  it("passes only the approved provider endpoint to ClawScan", async () => {
+  it("passes scanner model settings and only the approved provider endpoint to ClawScan", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });
     await writeFile(join(workspace, "artifact", "SKILL.md"), "# Safe skill\n");
@@ -296,7 +297,7 @@ describe("run-codex-scan-worker clawscan authority", () => {
     const environmentLog = join(workspace, "clawscan-environment.log");
     await writeFakeClawScanCommand(
       fakeClawScan,
-      `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" > ${JSON.stringify(environmentLog)}
+      `printf '%s\\n' "\${DEFAULT_BASE_URL-}" "\${OPENAI_BASE_URL-}" "\${OPENAI_API_KEY-}" "\${SECURITY_SCAN_WORKER_TOKEN-}" "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" > ${JSON.stringify(environmentLog)}
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -326,6 +327,10 @@ JSON`,
     process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
     process.env.OPENAI_API_KEY = "mock-provider-key";
     process.env.SECURITY_SCAN_WORKER_TOKEN = "mock-worker-token";
+    vi.stubEnv("DEFAULT_MODEL", "gpt-6-luna");
+    vi.stubEnv("REASONING_EFFORT", "high");
+    vi.stubEnv("SKILLSPECTOR_MODEL", "gpt-6-luna");
+    vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", "high");
 
     try {
       const onDiagnostic = vi.fn();
@@ -346,6 +351,10 @@ JSON`,
         "",
         "mock-provider-key",
         "",
+        "gpt-6-luna",
+        "high",
+        "gpt-6-luna",
+        "high",
         "",
       ]);
     } finally {
@@ -489,6 +498,8 @@ JSON`,
     await writeFakeClawScanCommand(
       fakeSkillSpector,
       `target="$2"
+test "\${SKILLSPECTOR_MODEL-}" = "gpt-6-luna"
+test "\${SKILLSPECTOR_REASONING_EFFORT-}" = "high"
 printf '%s\\n' "$target" >> ${JSON.stringify(skillSpectorTargets)}
 out=""
 while [[ $# -gt 0 ]]; do
@@ -539,6 +550,8 @@ JSON`,
     const previousPath = process.env.PATH;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
     process.env.PATH = `${workspace}:${previousPath ?? ""}`;
+    vi.stubEnv("SKILLSPECTOR_MODEL", "gpt-6-luna");
+    vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", "high");
     try {
       const job = claimedJob({
         jobId: "securityScanJobs:bundled-roots-only",
