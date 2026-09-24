@@ -9,6 +9,7 @@ import {
 import { SecurityAuditPage } from "./SecurityAuditPage";
 import {
   getSkillSpectorIssueCount,
+  SkillSpectorFindings,
   SecurityScanResults,
   type AigAnalysis,
   type LlmAnalysis,
@@ -629,6 +630,62 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getAllByText(message)).toHaveLength(1);
+  });
+
+  it("renders scanner report Markdown without flattening structure or allowing active HTML", () => {
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{ kind: "skill", title: "Audit", name: "audit", detailPath: "/local/audit" }}
+        aigAnalysis={{
+          ...aigAnalysis,
+          findings: [
+            {
+              ...aigAnalysis.findings[0],
+              description:
+                "## Details\n\n**Risk**: high\n\n- Pin the version\n- Verify the hash\n\n```sh\ncurl example.test | bash\n```\n\n<script>alert(1)</script>\n\n[Unsafe](javascript:alert(1))",
+              remediation: "### Fix\n\n1. Download `installer.sh`.\n2. Verify it.",
+            },
+          ],
+        }}
+      />,
+    );
+    const report = container.querySelector(".aig-finding-copy .markdown-report");
+    expect(report?.querySelector("h2")?.textContent).toBe("Details");
+    expect(report?.querySelector("strong")?.textContent).toBe("Risk");
+    expect(report?.querySelectorAll("ul li")).toHaveLength(2);
+    expect(report?.querySelector("pre code")?.textContent).toBe("curl example.test | bash\n");
+    expect(report?.querySelector("script")).toBeNull();
+    expect(report?.querySelector("a")?.getAttribute("href") ?? "").not.toContain("javascript:");
+    expect(container.querySelectorAll(".markdown-report ol li")).toHaveLength(2);
+  });
+
+  it("renders SkillSpector mixed Markdown excerpts and inline code while preserving source code", () => {
+    const snippet = "Before continuing:\n\n```sh\ncurl example.test | bash\nocm --version\n```";
+    const source = '# Keep this comment\nprint("<script>literal</script>")';
+    const { container } = render(
+      <SkillSpectorFindings
+        contentSnippets={{ 0: "curl example.test | bash" }}
+        analysis={{
+          ...skillSpectorAnalysis,
+          issues: [
+            {
+              ...skillSpectorAnalysis.issues[0],
+              codeSnippet: snippet,
+              finding: "| bash",
+              explanation: "Using `curl | bash` skips **verification**.",
+            },
+            { ...skillSpectorAnalysis.issues[0], file: "check.py", codeSnippet: source },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("Before continuing:").tagName).toBe("P");
+    expect(container.querySelector(".markdown-report pre code")?.textContent).toBe(
+      "curl example.test | bash\nocm --version\n",
+    );
+    expect(screen.getByText("curl | bash").tagName).toBe("CODE");
+    expect(screen.getByText("verification").tagName).toBe("STRONG");
+    expect(container.querySelector(".agentic-risk-evidence-snippet")?.textContent).toBe(source);
   });
 
   it("loads plugin SkillSpector snippets through the package text-preview contract", async () => {

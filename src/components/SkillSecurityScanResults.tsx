@@ -2,6 +2,7 @@ import { getClawScanDisplayStatus, isVisibleAgenticRiskFinding } from "clawhub-s
 export { getClawScanDisplayStatus } from "clawhub-schema";
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { Badge, type BadgeProps } from "./ui/badge";
 
 type LlmAnalysisDimension = {
@@ -346,6 +347,10 @@ function SkillSpectorFindingCard({
 }) {
   const confidence = formatSkillSpectorConfidence(issue.confidence);
   const trimmedSnippet = issue.codeSnippet?.trim() || contentSnippet?.trim();
+  // Excerpts can mix Markdown prose and fences. Keep ordinary source code literal.
+  const isMarkdownSnippet =
+    (!issue.file || /\.(?:md|mdx|markdown)$/i.test(issue.file)) &&
+    /^\s{0,3}(?:`{3,}|~{3,})/m.test(trimmedSnippet ?? "");
 
   return (
     <article className="static-analysis-finding">
@@ -366,7 +371,13 @@ function SkillSpectorFindingCard({
           <div>
             <dt>Content</dt>
             <dd>
-              <pre className="agentic-risk-evidence-snippet">{trimmedSnippet}</pre>
+              {isMarkdownSnippet ? (
+                <MarkdownPreview variant="report" highlight={false}>
+                  {trimmedSnippet}
+                </MarkdownPreview>
+              ) : (
+                <pre className="agentic-risk-evidence-snippet">{trimmedSnippet}</pre>
+              )}
             </dd>
           </div>
         ) : null}
@@ -378,7 +389,11 @@ function SkillSpectorFindingCard({
         ) : null}
         <div>
           <dt>Finding</dt>
-          <dd>{issue.explanation || issue.finding}</dd>
+          <dd>
+            <MarkdownPreview variant="report" highlight={false}>
+              {issue.explanation?.trim() || issue.finding || ""}
+            </MarkdownPreview>
+          </dd>
         </div>
       </dl>
     </article>

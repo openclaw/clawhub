@@ -2249,7 +2249,7 @@ code {
 
 .static-analysis-finding-details > div {
   display: grid;
-  align-items: center;
+  align-items: start;
   grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
   gap: clamp(18px, 3.5vw, 52px);
   padding: 12px 0;
@@ -2278,12 +2278,32 @@ code {
 
 .aig-finding-copy {
   display: grid;
-  gap: 4px;
+  min-width: 0;
+  gap: 12px;
 }
 
-.aig-finding-copy strong {
+.aig-finding-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
   color: var(--ink);
   font-weight: 650;
+}
+
+.aig-finding-location {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.aig-finding-copy .markdown-report {
+  max-width: 76ch;
+}
+
+.aig-finding-remediation {
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 
 @media (max-width: 1100px) {
@@ -13683,6 +13703,50 @@ a.skills-sh-security-audit-row:focus-visible {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
   word-break: normal;
+}
+
+/* Scanner reports are nested content, not full-size README documents. */
+.markdown.markdown-report {
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.markdown.markdown-report :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1em 0 0.4em;
+  padding: 0;
+  border: 0;
+  font-family: inherit;
+  font-size: 1em;
+  font-weight: 650;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.markdown.markdown-report :is(p, ul, ol, blockquote, table, .markdown-code-block) {
+  margin-block: 0.65em;
+}
+
+.markdown.markdown-report > :first-child {
+  margin-top: 0;
+}
+
+.markdown.markdown-report > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown.markdown-report li {
+  margin-bottom: 0.25em;
+}
+
+.markdown.markdown-report strong {
+  color: var(--ink);
+}
+
+.markdown.markdown-report pre {
+  font-size: 0.75rem;
 }
 
 .markdown pre {

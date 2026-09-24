@@ -8,6 +8,7 @@ import {
   buildSecurityAuditExportZip,
   type StaticScan,
 } from "../lib/securityAuditExport";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { ScannerInfoTooltip } from "./ScannerInfoTooltip";
 import {
   aggregateAuditVerdict,
@@ -636,27 +637,22 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
           <ScanResultBadge status={finding.level} label={formatStaticScanSeverity(finding.level)} />
         </div>
       </div>
-      <dl className="static-analysis-finding-details">
-        {location ? (
-          <div>
-            <dt>Location</dt>
-            <dd>{location}</dd>
-          </div>
+      <div className="aig-finding-copy">
+        {findingTitle ? <h4 className="aig-finding-title">{findingTitle}</h4> : null}
+        {location ? <code className="aig-finding-location">{location}</code> : null}
+        {findingDescription !== findingTitle ? (
+          <MarkdownPreview variant="report" highlight={false}>
+            {findingDescription}
+          </MarkdownPreview>
         ) : null}
-        <div>
-          <dt>Finding</dt>
-          <dd className="aig-finding-copy">
-            {findingTitle ? <strong>{findingTitle}</strong> : null}
-            {findingDescription !== findingTitle ? <span>{findingDescription}</span> : null}
-          </dd>
-        </div>
         {finding.remediation?.trim() ? (
-          <div>
-            <dt>Remediation</dt>
-            <dd>{finding.remediation}</dd>
+          <div className="aig-finding-remediation">
+            <MarkdownPreview variant="report" highlight={false}>
+              {finding.remediation}
+            </MarkdownPreview>
           </div>
         ) : null}
-      </dl>
+      </div>
     </article>
   );
 }
