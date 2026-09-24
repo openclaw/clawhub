@@ -64,6 +64,8 @@ To run one authenticated local browser spec through the same infra:
 bun run test:pw:local-auth -- --project=chromium e2e/local-auth/<spec>.pw.test.ts
 ```
 
+The skill hero layout regression runs in the local-auth profile/context shard against the seeded skills.sh fixture. Public smoke tests must not rely on a particular third-party listing retaining its visibility or taxonomy.
+
 The local-auth runner supports Linux and macOS and uses dev auth and a local Convex deployment; it does not
 need production credentials or a ClawHub auth token. It starts its own isolated
 local Convex process and temporarily moves aside `.env.local` plus
