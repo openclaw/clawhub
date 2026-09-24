@@ -1,0 +1,99 @@
+{
+  "baseline": "73d65ef1df",
+  "candidate": "22b5b6f85a",
+  "generatedAt": "2026-09-24T23:58:06.039Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/inline-audit/proof/baseline",
+      "name": "baseline",
+      "ref": "73d65ef1df",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "AIG inline report 1440px dark",
+          "screenshot": "screenshots/aig-inline-report-1440px-dark.png",
+          "slug": "aig-inline-report-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector formatted excerpt 1440px dark",
+          "screenshot": "screenshots/skillspector-formatted-excerpt-1440px-dark.png",
+          "slug": "skillspector-formatted-excerpt-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "AIG inline report 390px dark",
+          "screenshot": "screenshots/aig-inline-report-390px-dark.png",
+          "slug": "aig-inline-report-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector formatted excerpt 390px dark",
+          "screenshot": "screenshots/skillspector-formatted-excerpt-390px-dark.png",
+          "slug": "skillspector-formatted-excerpt-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "AIG inline report 1440px light",
+          "screenshot": "screenshots/aig-inline-report-1440px-light.png",
+          "slug": "aig-inline-report-1440px-light",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/inline-audit/proof/candidate",
+      "name": "candidate",
+      "ref": "22b5b6f85a",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "AIG inline report 1440px dark",
+          "screenshot": "screenshots/aig-inline-report-1440px-dark.png",
+          "slug": "aig-inline-report-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector formatted excerpt 1440px dark",
+          "screenshot": "screenshots/skillspector-formatted-excerpt-1440px-dark.png",
+          "slug": "skillspector-formatted-excerpt-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "AIG inline report 390px dark",
+          "screenshot": "screenshots/aig-inline-report-390px-dark.png",
+          "slug": "aig-inline-report-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector formatted excerpt 390px dark",
+          "screenshot": "screenshots/skillspector-formatted-excerpt-390px-dark.png",
+          "slug": "skillspector-formatted-excerpt-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "AIG inline report 1440px light",
+          "screenshot": "screenshots/aig-inline-report-1440px-light.png",
+          "slug": "aig-inline-report-1440px-light",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/inline-audit/proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/proof-scenarios/inline-audit.pw.ts",
+  "status": "pass"
+}
