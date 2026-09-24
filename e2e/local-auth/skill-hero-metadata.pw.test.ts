@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
 
+test.skip(
+  process.env.VITE_ENABLE_DEV_AUTH !== "1",
+  "skill hero metadata tests require the local dev auth runner",
+);
+
 test("skill hero metadata keeps semantic wrap groups on mobile", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
   await page.route("**/_vercel/image?**", (route) => route.fulfill({ status: 204 }));
