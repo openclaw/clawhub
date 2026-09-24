@@ -1,4 +1,4 @@
-import { getSecurityAuditOverviewCopy } from "clawhub-schema";
+import { getSecurityAuditOverviewCopy, type PackageEndorAnalysis } from "clawhub-schema";
 import { ArrowLeft, Check, Clock, Download, Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -56,6 +56,7 @@ type SecurityAuditPageProps = {
   aigAnalysis?: AigAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
+  endorAnalysis?: PackageEndorAnalysis | null;
   skillSpectorApplicable?: boolean;
   staticScan?: StaticScan | null;
   source?: Record<string, unknown> | null;
@@ -1000,6 +1001,51 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
             {orderedScanners.map((kind) => (
               <SecurityAuditScannerSection key={kind} kind={kind} props={props} />
             ))}
+            {props.entity.kind === "plugin" && props.endorAnalysis ? (
+              <section
+                className="security-report-panel security-report-panel-compact"
+                aria-labelledby="endor-heading"
+              >
+                <div className="security-report-panel-header">
+                  <h2 id="endor-heading" className="skill-install-panel-title">
+                    Endor dependency reachability
+                  </h2>
+                </div>
+                <div className="security-report-overview-body">
+                  <p>Checked {formatAuditSidebarTime(props.endorAnalysis.checkedAt)}</p>
+                  {props.endorAnalysis.status !== "completed" ? (
+                    <p>
+                      {props.endorAnalysis.status === "failed" ? "Scan failed" : "Not analyzed"}:{" "}
+                      {props.endorAnalysis.reason}
+                    </p>
+                  ) : (
+                    <>
+                      <p>
+                        {props.endorAnalysis.reachableFunctionCount === 0
+                          ? "Endor found no vulnerabilities marked as reachable functions."
+                          : `${props.endorAnalysis.reachableFunctionCount} ${props.endorAnalysis.reachableFunctionCount === 1 ? "vulnerability" : "vulnerabilities"} marked as reachable functions by Endor.`}
+                      </p>
+                      {props.endorAnalysis.findings.length > 0 ? (
+                        <ul>
+                          {props.endorAnalysis.findings.map((finding) => (
+                            <li key={`${finding.severity}:${finding.summary}`}>
+                              <strong>
+                                {finding.severity.replace("FINDING_LEVEL_", "").toLowerCase()}
+                              </strong>{" "}
+                              — {finding.summary}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {props.endorAnalysis.reachableFunctionCount >
+                      props.endorAnalysis.findings.length ? (
+                        <p>Showing the first {props.endorAnalysis.findings.length} findings.</p>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </section>
+            ) : null}
           </div>
 
           <aside className="security-report-sidebar" aria-label="Security audit metadata">

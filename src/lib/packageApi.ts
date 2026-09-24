@@ -2,6 +2,7 @@ import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
   PackageCompatibility,
+  PackageEndorAnalysis,
   PluginManifestSummary,
   PackageVerificationSummary,
 } from "clawhub-schema";
@@ -45,6 +46,7 @@ export type PackageVersionDetail = {
     family: "skill" | "code-plugin" | "bundle-plugin";
   } | null;
   version: {
+    endorAnalysis?: PackageEndorAnalysis | null;
     version: string;
     createdAt: number;
     changelog: string;

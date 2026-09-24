@@ -318,6 +318,14 @@ const completeCodexScanJobHandler = (
         }>;
         checkedAt: number;
       };
+      endorAnalysis?:
+        | {
+            status: "completed";
+            checkedAt: number;
+            reachableFunctionCount: number;
+            findings: Array<{ severity: string; summary: string }>;
+          }
+        | { status: "skipped" | "failed"; checkedAt: number; reason: string };
       scannerReportsStorageId?: string;
       runId?: string;
     },
@@ -585,6 +593,7 @@ const getStoredScanReportForUserInternalHandler = (
       artifact: Record<string, unknown>;
       report: {
         clawscan: Record<string, unknown> | null;
+        endor: Record<string, unknown> | null;
         skillspector: Record<string, unknown> | null;
         staticAnalysis: Record<string, unknown> | null;
         virustotal: Record<string, unknown> | null;
@@ -2394,6 +2403,12 @@ describe("securityScan", () => {
             summary: "Runs unexpected shell commands.",
             checkedAt: 1_700_000_000_000,
           },
+          endorAnalysis: {
+            status: "completed",
+            checkedAt: 1_700_000_100_000,
+            reachableFunctionCount: 2,
+            findings: [{ severity: "high", summary: "Reachable vulnerable function" }],
+          },
           createdAt: 1_700_000_000_000,
         },
       },
@@ -2420,7 +2435,14 @@ describe("securityScan", () => {
           status: "malicious",
           summary: "Runs unexpected shell commands.",
         },
+        endor: {
+          status: "completed",
+          checkedAt: 1_700_000_100_000,
+          reachableFunctionCount: 2,
+          findings: [{ severity: "high", summary: "Reachable vulnerable function" }],
+        },
       },
+      completedAt: 1_700_000_100_000,
     });
   });
 
@@ -5698,7 +5720,7 @@ describe("securityScan", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
   });
 
-  it("ignores package AIG payloads because plugin scanning is out of scope", async () => {
+  it("commits the package Endor summary without persisting package AIG payloads", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
       job: {
@@ -5719,6 +5741,12 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:plugin",
         leaseToken: "lease-token",
         llmAnalysis: { status: "clean", checkedAt: 123 },
+        endorAnalysis: {
+          status: "completed",
+          checkedAt: 122,
+          reachableFunctionCount: 3,
+          findings: [{ severity: "high", summary: "Reachable finding" }],
+        },
         aigAnalysis: {
           status: "error",
           issueCount: 99,
@@ -5728,11 +5756,20 @@ describe("securityScan", () => {
       },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(4);
+    expect(runMutation).toHaveBeenCalledTimes(2);
     const releasePatches = runMutation.mock.calls
       .map(([, mutationArgs]) => mutationArgs as Record<string, unknown>)
       .filter((mutationArgs) => mutationArgs.releaseId === "packageReleases:plugin");
-    expect(releasePatches).toHaveLength(2);
+    expect(releasePatches).toHaveLength(1);
+    expect(releasePatches[0]).toMatchObject({
+      jobId: "securityScanJobs:plugin",
+      leaseToken: "lease-token",
+      endorAnalysis: {
+        status: "completed",
+        reachableFunctionCount: 3,
+      },
+    });
+    expect(releasePatches[0]).not.toHaveProperty("scannerReportsStorageId");
     expect(releasePatches).not.toContainEqual(expect.objectContaining({ aigAnalysis: undefined }));
     expect(releasePatches.some((patch) => "aigAnalysis" in patch)).toBe(false);
   });

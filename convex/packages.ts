@@ -68,6 +68,7 @@ import {
   buildPackageInspectorFindingsEmail,
   buildPackageInspectorValidationUrl,
 } from "./lib/emails";
+import { endorAnalysisSchema, endorAnalysisValidator } from "./lib/endorAnalysis";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { orderPublishedFeatured, readPublishedFeaturedOrder } from "./lib/featuredSelections";
@@ -153,7 +154,7 @@ import { buildPackageInventoryDigest, hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
 import { ACTIVE_PUBLISH_ATTEMPT_STATUSES, failedPublishAttemptPatch } from "./publishAttempts";
-import schema from "./schema";
+import schema, { llmAnalysisValidator } from "./schema";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS = 500;
@@ -287,33 +288,6 @@ async function hasMissingPackageRecommendedScore(
   return Boolean(staleVersion);
 }
 
-const llmAgenticRiskEvidenceValidator = v.object({
-  path: v.string(),
-  snippet: v.string(),
-  explanation: v.string(),
-});
-
-const llmAgenticRiskFindingValidator = v.object({
-  categoryId: v.string(),
-  categoryLabel: v.string(),
-  riskBucket: v.union(
-    v.literal("abnormal_behavior_control"),
-    v.literal("permission_boundary"),
-    v.literal("sensitive_data_protection"),
-  ),
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  severity: v.string(),
-  confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-  evidence: v.optional(llmAgenticRiskEvidenceValidator),
-  userImpact: v.string(),
-  recommendation: v.string(),
-});
-
-const llmRiskSummaryBucketValidator = v.object({
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  summary: v.string(),
-  highestSeverity: v.optional(v.string()),
-});
 const packageOfficialMigrationPhaseValidator = v.union(
   v.literal("planned"),
   v.literal("published"),
@@ -1358,6 +1332,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">, family: Package
       vtAnalysis: release.vtAnalysis,
       aigAnalysis: release.aigAnalysis,
       skillSpectorAnalysis: release.skillSpectorAnalysis,
+      endorAnalysis: release.endorAnalysis,
       llmAnalysis: release.llmAnalysis,
       staticScan: release.staticScan,
       createdAt: release.createdAt,
@@ -3850,6 +3825,7 @@ export const listAuditPage = query({
               version: latestRelease.version,
               createdAt: latestRelease.createdAt,
               vtAnalysis: latestRelease.vtAnalysis,
+              endorAnalysis: latestRelease.endorAnalysis,
               llmAnalysis: latestRelease.llmAnalysis,
               staticScan: latestRelease.staticScan
                 ? {
@@ -11653,7 +11629,6 @@ export const discardPendingPackagePublicationInternal = internalMutation({
     if (typeof release?.clawpackStorageId === "string") {
       storageIds.add(release.clawpackStorageId as Id<"_storage">);
     }
-
     if (release) await ctx.db.delete(release._id);
     await Promise.allSettled([...storageIds].map((storageId) => ctx.storage.delete(storageId)));
 
@@ -12691,51 +12666,85 @@ export const updateReleaseAigAnalysisInternal = internalMutation({
   },
 });
 
+type ReleaseLlmAnalysis = NonNullable<Doc<"packageReleases">["llmAnalysis"]>;
+
+async function applyReleaseLlmAnalysis(
+  ctx: Pick<MutationCtx, "db"> & Partial<Pick<MutationCtx, "scheduler">>,
+  release: Doc<"packageReleases">,
+  llmAnalysis: ReleaseLlmAnalysis,
+) {
+  await ctx.db.patch(release._id, { llmAnalysis });
+  const updatedRelease: Doc<"packageReleases"> = {
+    ...release,
+    llmAnalysis,
+  };
+  const llmVerdict = (llmAnalysis.verdict ?? llmAnalysis.status).trim().toLowerCase();
+  await syncLatestPackageVerification(ctx, updatedRelease, {
+    quarantineMaliciousLatest: llmVerdict === "malicious",
+    maliciousTrigger: "malicious.llm_malicious",
+  });
+}
+
+export const completeReleaseSecurityScanInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    jobId: v.id("securityScanJobs"),
+    leaseToken: v.string(),
+    runId: v.optional(v.string()),
+    llmAnalysis: llmAnalysisValidator,
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    endorAnalysis: v.optional(endorAnalysisValidator),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (
+      !job ||
+      job.status !== "running" ||
+      job.targetKind !== "packageRelease" ||
+      job.packageReleaseId !== args.releaseId ||
+      job.leaseToken !== args.leaseToken
+    ) {
+      throw new ConvexError("Lease mismatch");
+    }
+    const release = await ctx.db.get(args.releaseId);
+    if (!isReleaseActive(release)) throw new ConvexError("Package release not found");
+    const endorAnalysis = args.endorAnalysis
+      ? endorAnalysisSchema.parse(args.endorAnalysis)
+      : undefined;
+
+    const releaseWithScannerResults: Doc<"packageReleases"> = {
+      ...release,
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
+      endorAnalysis,
+    };
+    await ctx.db.patch(args.releaseId, {
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
+      endorAnalysis,
+    });
+    await applyReleaseLlmAnalysis(ctx, releaseWithScannerResults, args.llmAnalysis);
+
+    const now = Date.now();
+    await ctx.db.patch(args.jobId, {
+      status: "succeeded",
+      runId: args.runId,
+      completedAt: now,
+      leaseToken: undefined,
+      leaseExpiresAt: undefined,
+      updatedAt: now,
+    });
+    return { ok: true as const };
+  },
+});
+
 export const updateReleaseLlmAnalysisInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
-    llmAnalysis: v.object({
-      status: v.string(),
-      verdict: v.optional(v.string()),
-      confidence: v.optional(v.string()),
-      summary: v.optional(v.string()),
-      dimensions: v.optional(
-        v.array(
-          v.object({
-            name: v.string(),
-            label: v.string(),
-            rating: v.string(),
-            detail: v.string(),
-          }),
-        ),
-      ),
-      guidance: v.optional(v.string()),
-      findings: v.optional(v.string()),
-      agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-      riskSummary: v.optional(
-        v.object({
-          abnormal_behavior_control: llmRiskSummaryBucketValidator,
-          permission_boundary: llmRiskSummaryBucketValidator,
-          sensitive_data_protection: llmRiskSummaryBucketValidator,
-        }),
-      ),
-      model: v.optional(v.string()),
-      checkedAt: v.number(),
-    }),
+    llmAnalysis: llmAnalysisValidator,
   },
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
     if (!isReleaseActive(release)) return;
-    await ctx.db.patch(args.releaseId, { llmAnalysis: args.llmAnalysis });
-    const updatedRelease = {
-      ...release,
-      llmAnalysis: args.llmAnalysis,
-    } as Doc<"packageReleases">;
-    const llmVerdict = (args.llmAnalysis.verdict ?? args.llmAnalysis.status).trim().toLowerCase();
-    await syncLatestPackageVerification(ctx, updatedRelease, {
-      quarantineMaliciousLatest: llmVerdict === "malicious",
-      maliciousTrigger: "malicious.llm_malicious",
-    });
+    await applyReleaseLlmAnalysis(ctx, release, args.llmAnalysis);
   },
 });
 

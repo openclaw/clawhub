@@ -1,16 +1,17 @@
-import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
-import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { materializeVerifiedArtifactFiles } from "../lib/artifactMaterialization";
+import { CommandFailure, runWorkerCommand } from "../lib/runWorkerCommand";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
@@ -19,6 +20,12 @@ import {
   redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
+import { resolveClawScanTargetForRoot } from "./clawScanTarget";
+import {
+  isEndorPluginScanEnabled,
+  runEndorPluginScan,
+  type EndorCommandDiagnostic,
+} from "./run-endor-plugin-scan";
 import {
   calculateSecurityScanWorkerHealthSummary,
   renderSecurityScanWorkerSummaryMarkdown,
@@ -165,6 +172,7 @@ type JobDiagnosticInput = {
   clawscan?: ClawScanCommandDiagnostic;
   completedAt: number;
   diagnosticsRoot?: string;
+  endor?: EndorCommandDiagnostic;
   error?: string;
   job: ClaimedJob;
   llmAnalysis?: unknown;
@@ -216,6 +224,7 @@ const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const MAX_STORED_AIG_FINDINGS = 25;
 const AIG_UNSAFE_BYTECODE_EXTENSIONS = new Set([".pyc", ".pyd", ".pyo"]);
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+const ENDOR_SCAN_FAILED_REASON = "Endor analysis failed. Request a rescan to try again.";
 const logger = createWorkerLogger({ name: "security-scan-worker" });
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
@@ -735,6 +744,27 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
           rawArtifact: input.clawscan.rawArtifact,
         })
       : [];
+  const endorStdoutPath = await writeDiagnosticText(
+    jobDir,
+    "endor-clawscan.stdout.redacted.log",
+    input.endor?.stdout,
+    "endorClawscanStdout",
+  );
+  const endorStderrPath = await writeDiagnosticText(
+    jobDir,
+    "endor-clawscan.stderr.redacted.log",
+    input.endor?.stderr,
+    "endorClawscanStderr",
+  );
+  const endorArtifactPath = await writeDiagnosticText(
+    jobDir,
+    "endor-clawscan-artifact.redacted.json",
+    input.endor?.rawArtifact
+      ? redactEvidenceText(input.endor.rawArtifact, ["endorClawscanArtifact"])
+      : undefined,
+    "endorClawscanArtifact",
+    { structured: false },
+  );
 
   const diagnostic = {
     completedAt: input.completedAt,
@@ -776,6 +806,19 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       stderrPath: clawscanStderrPath,
       stdoutPath: clawscanStdoutPath,
     },
+    endorResult: input.endor
+      ? {
+          args: input.endor.args,
+          exitCode: input.endor.exitCode,
+          rawArtifactPath: endorArtifactPath,
+          scannerError: input.endor.scannerError
+            ? redactDiagnosticText(input.endor.scannerError)
+            : undefined,
+          stderrPath: endorStderrPath,
+          stdoutPath: endorStdoutPath,
+          timedOut: input.endor.timedOut,
+        }
+      : undefined,
   };
 
   await writeFile(join(jobDir, "diagnostic.json"), `${JSON.stringify(diagnostic, null, 2)}\n`);
@@ -884,94 +927,18 @@ function codexEnv(workspace: string) {
   return env;
 }
 
-class CommandFailure extends Error {
-  exitCode: number | null;
-  stderr: string;
-  stdout: string;
-  timedOut: boolean;
-
-  constructor(
-    message: string,
-    exitCode: number | null,
-    stdout: string,
-    stderr: string,
-    timedOut: boolean,
-  ) {
-    super(message);
-    this.name = "CommandFailure";
-    this.exitCode = exitCode;
-    this.stdout = stdout;
-    this.stderr = stderr;
-    this.timedOut = timedOut;
-  }
-}
-
 async function runCommand(
   command: string,
   args: string[],
   options: { cwd: string; input?: string; omitEnv?: string[]; timeoutMs: number },
 ) {
-  return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
-    const env = codexEnv(options.cwd);
-    for (const name of options.omitEnv ?? []) delete env[name];
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      detached: process.platform !== "win32",
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let forceKillTimeout: NodeJS.Timeout | undefined;
-    const killProcessTree = (signal: NodeJS.Signals) => {
-      if (process.platform !== "win32" && child.pid) {
-        try {
-          process.kill(-child.pid, signal);
-          return;
-        } catch {
-          // The process group may already have exited; fall back to the direct child.
-        }
-      }
-      child.kill(signal);
-    };
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      killProcessTree("SIGTERM");
-      forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
-      forceKillTimeout.unref();
-    }, options.timeoutMs);
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      if (timedOut) killProcessTree("SIGKILL");
-      if (forceKillTimeout) clearTimeout(forceKillTimeout);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      if (timedOut) killProcessTree("SIGKILL");
-      if (forceKillTimeout) clearTimeout(forceKillTimeout);
-      if (code === 0) resolvePromise({ stdout, stderr });
-      else {
-        reject(
-          new CommandFailure(
-            `${command} ${timedOut ? "timed out" : `exited ${code}`}; see redacted stdout/stderr diagnostics`,
-            code,
-            stdout,
-            stderr,
-            timedOut,
-          ),
-        );
-      }
-    });
-    if (options.input) child.stdin.end(options.input);
-    else child.stdin.end();
+  const env = codexEnv(options.cwd);
+  for (const name of options.omitEnv ?? []) delete env[name];
+  return await runWorkerCommand(command, args, {
+    cwd: options.cwd,
+    env,
+    ...(options.input !== undefined ? { input: options.input } : {}),
+    timeoutMs: options.timeoutMs,
   });
 }
 
@@ -1996,7 +1963,12 @@ export async function runClawScan(
   try {
     const output = await runCommand(command, args, {
       cwd: workspace,
-      omitEnv: ["VIRUSTOTAL_API_KEY"],
+      omitEnv: [
+        "VIRUSTOTAL_API_KEY",
+        "ENDOR_TOKEN",
+        "ENDOR_API_CREDENTIALS_KEY",
+        "ENDOR_API_CREDENTIALS_SECRET",
+      ],
       timeoutMs: clawScanTimeoutMs(),
     });
     onDiagnostic({
@@ -2035,34 +2007,36 @@ async function resolveScanArtifactRoot(workspace: string, job: ClaimedJob) {
 
 export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) {
   const root = await resolveScanArtifactRoot(workspace, job);
-  const manifests = ["SKILL.md", "openclaw.plugin.json"];
-  const present = await Promise.all(
-    manifests.map(async (name) =>
-      (await lstat(join(workspace, root, name)).catch(() => null))?.isFile(),
-    ),
-  );
-  // ClawScan rejects dual-manifest directories. An explicit manifest selects the
-  // claimed kind while ClawScan still scans the entire dual-layout directory.
-  return present.every(Boolean)
-    ? `${root}/${manifests[job.job.targetKind === "packageRelease" ? 1 : 0]}`
-    : root;
+  return await resolveClawScanTargetForRoot({
+    artifactKind: job.job.targetKind === "packageRelease" ? "packageRelease" : "skill",
+    root,
+    workspace,
+  });
 }
 
 export function scanHealthClassification(input: {
   clawscan: ClawScanCommandDiagnostic;
+  endor?: EndorCommandDiagnostic;
   errorMessage?: string;
   status: "completed" | "failed";
 }) {
-  const timedOut = Boolean(input.clawscan.timedOut);
+  const timedOut = Boolean(input.clawscan.timedOut || input.endor?.timedOut);
   const scannerStatuses = Object.values(input.clawscan.mapping?.scanners ?? {}).filter(
     (status): status is string => Boolean(status),
   );
   let scannerStageFailed = scannerStatuses.some(
     (status) => status !== "completed" && status !== "missing",
   );
+  scannerStageFailed ||= Boolean(
+    input.endor?.timedOut ||
+    input.endor?.scannerError ||
+    (input.endor?.exitCode !== undefined &&
+      input.endor.exitCode !== null &&
+      input.endor.exitCode !== 0),
+  );
   const judgeStatus = input.clawscan.mapping?.judge?.status;
   let judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
-  scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
+  scannerStageFailed ||= /ClawScan scanner|Endor ClawScan/i.test(input.errorMessage ?? "");
   judgeStageFailed ||= /ClawScan (artifact )?judge|output schema/i.test(input.errorMessage ?? "");
 
   const failureStage =
@@ -2091,25 +2065,55 @@ export async function processJob(
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
   const clawscan: ClawScanCommandDiagnostic = {};
+  const endor: EndorCommandDiagnostic = {};
   let errorMessage: string | undefined;
   let scanCompletedAt: number | undefined;
   let llmAnalysis: StoredLlmAnalysis | undefined;
   let aigAnalysis: AigAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
+  let endorAnalysis: EndorAnalysis | undefined;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
-    const mapped = await runClawScan(job, workspace, (next) => {
-      Object.assign(clawscan, next);
-    });
+    const shouldRunEndor = job.job.targetKind === "packageRelease" && isEndorPluginScanEnabled();
+    const [clawScanResult, endorScanResult] = await Promise.allSettled([
+      runClawScan(job, workspace, (next) => {
+        Object.assign(clawscan, next);
+      }),
+      shouldRunEndor
+        ? runEndorPluginScan({
+            workspace,
+            onDiagnostic: (next) => {
+              Object.assign(endor, next);
+            },
+          })
+        : Promise.resolve<EndorAnalysis | undefined>(undefined),
+    ] as const);
+    if (clawScanResult.status === "rejected") throw clawScanResult.reason;
+    const mapped = clawScanResult.value;
     llmAnalysis = mapped.llmAnalysis;
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
-    // A signed upload URL advertises support after the separately deployed
-    // backend updates. Upload directly to storage to avoid action argument limits.
+    if (endorScanResult.status === "rejected") {
+      const endorError = sanitizeWorkerErrorMessage(
+        endorScanResult.reason instanceof Error
+          ? endorScanResult.reason.message
+          : String(endorScanResult.reason),
+      );
+      endor.scannerError ??= endorError;
+      endorAnalysis = {
+        status: "failed",
+        checkedAt: Date.now(),
+        reason: ENDOR_SCAN_FAILED_REASON,
+      };
+    } else {
+      endorAnalysis = endorScanResult.value;
+    }
+    // Package jobs persist scanner summaries only. Skill jobs retain their
+    // existing raw scanner upload when the backend advertises support.
     let scannerReportsStorageId: string | undefined;
-    if (job.scannerReportsUploadUrl) {
+    if (job.job.targetKind !== "packageRelease" && job.scannerReportsUploadUrl) {
       const uploaded = await fetch(job.scannerReportsUploadUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2129,6 +2133,7 @@ export async function processJob(
       llmAnalysis,
       aigAnalysis,
       skillSpectorAnalysis,
+      ...(endorAnalysis ? { endorAnalysis } : {}),
       ...(scannerReportsStorageId
         ? { scannerReportsStorageId: scannerReportsStorageId as Id<"_storage"> }
         : {}),
@@ -2150,6 +2155,7 @@ export async function processJob(
     );
     const health = scanHealthClassification({
       clawscan,
+      endor,
       status: "completed",
     });
     onHealth?.({
@@ -2184,6 +2190,7 @@ export async function processJob(
     const completedAt = Date.now();
     const health = scanHealthClassification({
       clawscan,
+      endor,
       errorMessage,
       status: "failed",
     });
@@ -2203,6 +2210,7 @@ export async function processJob(
         completedAt: Date.now(),
         clawscan,
         diagnosticsRoot,
+        endor: Object.keys(endor).length > 0 ? endor : undefined,
         error: errorMessage,
         job,
         llmAnalysis,

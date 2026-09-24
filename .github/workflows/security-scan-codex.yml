@@ -32,6 +32,7 @@ on:
         default: "12"
 permissions:
   contents: read
+  packages: read
 
 jobs:
   codex-security-scan:
@@ -62,6 +63,9 @@ jobs:
       CODEX_SECURITY_SCAN_ASSIGNED_JOBS: ${{ inputs['assigned-jobs'] || '' }}
       CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
       CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}
+      CODEX_SECURITY_SCAN_CLAWSCAN_VERSION: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_VERSION || '0.2.0' }}
+      CODEX_SECURITY_SCAN_ENDOR_ENABLED: ${{ vars.CODEX_SECURITY_SCAN_ENDOR_ENABLED || '0' }}
+      CODEX_SECURITY_SCAN_ENDOR_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_ENDOR_IMAGE }}
       # The runner is disposable and installs the reviewed, hash-locked host scanners above.
       CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX: "off"
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
@@ -89,8 +93,23 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.8
+          [[ "$CODEX_SECURITY_SCAN_CLAWSCAN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'ClawScan requires an exact release version'; exit 1; }
+          npm install -g "@openclaw/clawscan@$CODEX_SECURITY_SCAN_CLAWSCAN_VERSION"
           clawscan --version
+
+      - name: Prepare Endor scanner
+        if: ${{ env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$CODEX_SECURITY_SCAN_ENDOR_IMAGE" =~ @sha256:[a-f0-9]{64}$ ]] || { echo 'Endor requires a Docker image pinned by SHA-256 digest'; exit 1; }
+          export DOCKER_CONFIG
+          DOCKER_CONFIG=$(mktemp -d)
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker pull "$CODEX_SECURITY_SCAN_ENDOR_IMAGE"
+          docker run --rm --network none "$CODEX_SECURITY_SCAN_ENDOR_IMAGE" test -x /usr/local/bin/clawhub-endor-scan
 
       - name: Install A.I.G scanner
         run: |
@@ -123,6 +142,10 @@ jobs:
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          ENDOR_NAMESPACE: ${{ vars.ENDOR_NAMESPACE }}
+          ENDOR_API: ${{ vars.ENDOR_API }}
+          ENDOR_API_CREDENTIALS_KEY: ${{ secrets.ENDOR_API_CREDENTIALS_KEY }}
+          ENDOR_API_CREDENTIALS_SECRET: ${{ secrets.ENDOR_API_CREDENTIALS_SECRET }}
         run: |
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \

@@ -563,6 +563,7 @@ type ReleaseLike = {
   sha256hash?: string;
   vtAnalysis?: Doc<"packageReleases">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"packageReleases">["skillSpectorAnalysis"];
+  endorAnalysis?: Doc<"packageReleases">["endorAnalysis"];
   llmAnalysis?: Doc<"packageReleases">["llmAnalysis"];
   staticScan?: Doc<"packageReleases">["staticScan"];
   manualModeration?: Doc<"packageReleases">["manualModeration"];
@@ -716,6 +717,7 @@ function toPackageVersionResponse(release: ReleaseLike, packageName: string) {
     sha256hash: release.sha256hash ?? null,
     vtAnalysis: release.vtAnalysis ?? null,
     skillSpectorAnalysis: release.skillSpectorAnalysis ?? null,
+    ...(release.endorAnalysis ? { endorAnalysis: release.endorAnalysis } : {}),
     llmAnalysis: release.llmAnalysis ?? null,
     staticScan: release.staticScan ?? null,
   };
@@ -753,6 +755,7 @@ function toPackageReleaseSecurityResponse(params: {
       ...(params.release.npmShasum ? { npmShasum: params.release.npmShasum } : {}),
       ...(params.release.npmTarballName ? { npmTarballName: params.release.npmTarballName } : {}),
       createdAt: params.release.createdAt,
+      ...(params.release.endorAnalysis ? { endorAnalysis: params.release.endorAnalysis } : {}),
     },
     trust: {
       scanStatus,

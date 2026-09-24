@@ -6,6 +6,11 @@ import { action, internalAction, internalMutation, internalQuery, mutation } fro
 import { applyGitHubSkillVerificationResultHandler } from "./githubSkillSync";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
+import {
+  endorAnalysisSchema,
+  endorAnalysisValidator,
+  type EndorAnalysis,
+} from "./lib/endorAnalysis";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
@@ -32,6 +37,7 @@ import {
   shouldPublishSkillsShCatalogEntry,
 } from "./lib/skillsShCatalogPublication";
 import { redactWorkerPublicText } from "./lib/workerTextRedaction";
+import { llmAnalysisValidator } from "./schema";
 import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
@@ -238,63 +244,6 @@ type EnqueuePackageReleaseScanArgs = {
   waitForVtMs?: number;
 };
 
-const llmAgenticRiskEvidenceValidator = v.object({
-  path: v.string(),
-  snippet: v.string(),
-  explanation: v.string(),
-});
-
-const llmAgenticRiskFindingValidator = v.object({
-  categoryId: v.string(),
-  categoryLabel: v.string(),
-  riskBucket: v.union(
-    v.literal("abnormal_behavior_control"),
-    v.literal("permission_boundary"),
-    v.literal("sensitive_data_protection"),
-  ),
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  severity: v.string(),
-  confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
-  evidence: v.optional(llmAgenticRiskEvidenceValidator),
-  userImpact: v.string(),
-  recommendation: v.string(),
-});
-
-const llmRiskSummaryBucketValidator = v.object({
-  status: v.union(v.literal("none"), v.literal("note"), v.literal("concern")),
-  summary: v.string(),
-  highestSeverity: v.optional(v.string()),
-});
-
-const llmAnalysisValidator = v.object({
-  status: v.string(),
-  verdict: v.optional(v.string()),
-  confidence: v.optional(v.string()),
-  summary: v.optional(v.string()),
-  dimensions: v.optional(
-    v.array(
-      v.object({
-        name: v.string(),
-        label: v.string(),
-        rating: v.string(),
-        detail: v.string(),
-      }),
-    ),
-  ),
-  guidance: v.optional(v.string()),
-  findings: v.optional(v.string()),
-  agenticRiskFindings: v.optional(v.array(llmAgenticRiskFindingValidator)),
-  riskSummary: v.optional(
-    v.object({
-      abnormal_behavior_control: llmRiskSummaryBucketValidator,
-      permission_boundary: llmRiskSummaryBucketValidator,
-      sensitive_data_protection: llmRiskSummaryBucketValidator,
-    }),
-  ),
-  model: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
 const skillSpectorIssueValidator = v.object({
   issueId: v.string(),
   category: v.optional(v.string()),
@@ -388,6 +337,7 @@ const catalogScanVerdictValidator = v.union(
 
 const internalRefs = internal as unknown as {
   packages: {
+    completeReleaseSecurityScanInternal: unknown;
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
     updateReleaseLlmAnalysisInternal: unknown;
@@ -1329,15 +1279,18 @@ function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
   };
 }
 
-function storedScanReportFromArtifact(
-  artifact: Pick<
-    Doc<"skillVersions"> | Doc<"packageReleases">,
-    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
-  >,
-) {
+type StoredScanArtifact = Pick<
+  Doc<"skillVersions"> | Doc<"packageReleases">,
+  "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+> & {
+  endorAnalysis?: EndorAnalysis;
+};
+
+function storedScanReportFromArtifact(artifact: StoredScanArtifact) {
   return {
     aig: artifact.aigAnalysis ?? null,
     clawscan: artifact.llmAnalysis ?? null,
+    endor: artifact.endorAnalysis ?? null,
     skillspector: artifact.skillSpectorAnalysis ?? null,
     staticAnalysis: artifact.staticScan ?? null,
     virustotal: artifact.vtAnalysis
@@ -1349,30 +1302,22 @@ function storedScanReportFromArtifact(
   };
 }
 
-function hasStoredScanReport(
-  artifact: Pick<
-    Doc<"skillVersions"> | Doc<"packageReleases">,
-    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
-  >,
-) {
+function hasStoredScanReport(artifact: StoredScanArtifact) {
   return Boolean(
     artifact.aigAnalysis ||
     artifact.llmAnalysis ||
+    artifact.endorAnalysis ||
     artifact.skillSpectorAnalysis ||
     artifact.staticScan ||
     artifact.vtAnalysis,
   );
 }
 
-function completedAtFromStoredScanReport(
-  artifact: Pick<
-    Doc<"skillVersions"> | Doc<"packageReleases">,
-    "aigAnalysis" | "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
-  >,
-) {
+function completedAtFromStoredScanReport(artifact: StoredScanArtifact) {
   const checkedAtValues = [
     artifact.aigAnalysis?.checkedAt,
     artifact.llmAnalysis?.checkedAt,
+    artifact.endorAnalysis?.checkedAt,
     artifact.skillSpectorAnalysis?.checkedAt,
     artifact.staticScan?.checkedAt,
     artifact.vtAnalysis?.checkedAt,
@@ -4150,6 +4095,7 @@ export const completeCodexScanJob = action({
     llmAnalysis: llmAnalysisValidator,
     aigAnalysis: v.optional(aigAnalysisValidator),
     skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    endorAnalysis: v.optional(endorAnalysisValidator),
     scannerReportsStorageId: v.optional(v.id("_storage")),
     runId: v.optional(v.string()),
   },
@@ -4169,6 +4115,12 @@ export const completeCodexScanJob = action({
       Boolean(target.scanRequest.skillsShCatalogAttemptId);
     if (!isCatalogScanRequest && target.job.leaseToken !== args.leaseToken) {
       throw new ConvexError("Lease mismatch");
+    }
+    const endorAnalysis: EndorAnalysis | undefined = args.endorAnalysis
+      ? endorAnalysisSchema.parse(args.endorAnalysis)
+      : undefined;
+    if (endorAnalysis && target.job.targetKind !== "packageRelease") {
+      throw new ConvexError("Endor analysis is only supported for package release scans");
     }
     const completedAigAnalysis = reusableAigAnalysis(args.aigAnalysis);
     if (
@@ -4207,16 +4159,29 @@ export const completeCodexScanJob = action({
     if (target.job.targetKind === "skillVersion" && target.version) {
       await updateSkillVersion(target.version._id);
     } else if (target.job.targetKind === "packageRelease" && target.release) {
-      await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
-        releaseId: target.release._id,
-        ...(args.skillSpectorAnalysis
-          ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
-          : {}),
-      });
-      await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
-        releaseId: target.release._id,
-        llmAnalysis: args.llmAnalysis,
-      });
+      const result = await runMutationRef<{ ok: true }>(
+        ctx,
+        internalRefs.packages.completeReleaseSecurityScanInternal,
+        {
+          releaseId: target.release._id,
+          jobId: args.jobId,
+          leaseToken: args.leaseToken,
+          runId: args.runId,
+          llmAnalysis: args.llmAnalysis,
+          ...(args.skillSpectorAnalysis
+            ? {
+                skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
+              }
+            : {}),
+          endorAnalysis,
+        },
+      );
+      await runMutationRef(
+        ctx,
+        internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+        {},
+      );
+      return result;
     } else if (target.job.targetKind === "skillScanRequest" && target.scanRequest) {
       let writtenBack = false;
       if (
