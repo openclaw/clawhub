@@ -117,6 +117,14 @@ functions and schema. Draining active jobs alone is insufficient.
 After backend deployment, verify the exact deployed SHA and a fresh Skill Card
 worker run. Compare terminal claim failures separately from successful job counts.
 
+Skill Card input reuse adds optional receipts to existing versions and jobs; no
+backfill is required. Deploy the backend before the updated worker checkout.
+Already-running workflow checkouts can omit the recipe hash for their remaining
+leases (up to 60 minutes). They still generate cards, but their completion clears
+any reusable receipt because their recipe is unknown. New workers certify reuse
+only after a successful generation with the current semantic inputs. Deploying
+source does not itself prove the configured model is available to worker credentials.
+
 ## CLI npm release
 
 The `clawhub` CLI package is released separately from the app deploy.

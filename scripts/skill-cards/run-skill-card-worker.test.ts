@@ -20,6 +20,8 @@ import {
   prepareNvidiaSkillCardSkill,
   processJob,
   skillCardWorkerId,
+  skillCardGenerationHash,
+  skillCardGenerationSettings,
   trustedRendererPath,
   writeWorkspace,
 } from "./run-skill-card-worker";
@@ -50,6 +52,52 @@ describe("run-skill-card-worker Codex skill setup", () => {
     expect(DEFAULT_MAX_RUNTIME_MS).toBe(40 * 60 * 1000);
     expect(DEFAULT_LEASE_MS).toBe(60 * 60 * 1000);
   });
+
+  it("defaults to Sol medium fast and fingerprints the effective recipe", async () => {
+    const settings = skillCardGenerationSettings({});
+    expect(settings).toEqual({
+      model: "gpt-6-sol",
+      reasoningEffort: "medium",
+      serviceTier: "fast",
+    });
+    const tool = await tempDir();
+    const automation = join(tool, "AI Transparency Card Automation");
+    await mkdir(automation);
+    await writeFile(join(automation, "Skill Card Generator.md"), "trusted workflow");
+    const hash = await skillCardGenerationHash(tool, settings);
+    expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(await skillCardGenerationHash(tool, settings)).toBe(hash);
+    for (const override of [
+      { model: "other-model" },
+      { reasoningEffort: "high" },
+      { serviceTier: "default" },
+    ]) {
+      expect(await skillCardGenerationHash(tool, { ...settings, ...override })).not.toBe(hash);
+    }
+    await writeFile(join(automation, "Skill Card Generator.md"), "changed trusted workflow");
+    expect(await skillCardGenerationHash(tool, settings)).not.toBe(hash);
+  });
+
+  it.each(["reused", "deferred"])(
+    "handles a %s receipt without downloading or starting a model",
+    async (outcome) => {
+      const client = { action: vi.fn() };
+      const fetch = vi.spyOn(globalThis, "fetch");
+      expect(
+        await processJob(
+          client as never,
+          "token",
+          {
+            job: { _id: "receipt", leaseToken: "released", source: "scan" },
+            [outcome]: true,
+          },
+          "/nonexistent-generator",
+        ),
+      ).toBe(outcome === "reused" ? true : null);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(client.action).not.toHaveBeenCalled();
+    },
+  );
 
   it("builds shard-aware worker ids like the security scan worker", () => {
     expect(

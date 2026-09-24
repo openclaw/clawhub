@@ -628,6 +628,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
   re-deriving trust from individual signal payloads.
 - Skill Card completion owns a newly stored card until its attachment mutation succeeds. If attachment rejects a stale lease or unavailable version, delete only that new blob and preserve the original error if cleanup fails. Successful replacement retains prior card blobs and generated bundle fingerprints so existing installs remain resolvable.
+- Skill Card workers default to GPT-6 Sol with medium reasoning and the fast service
+  tier. Before generation, the backend binds the lease to the source file hashes,
+  server evidence, and worker recipe (model, effort, tier, prompt, template, and
+  trusted NVIDIA generator bytes). A completed card is reused only when those
+  semantic inputs and the attached card SHA still match. Fresh scan timestamps and
+  storage URLs do not invalidate reuse. Completion rereads the same evidence in its
+  transaction: changed inputs requeue the job with a fresh attempt budget and delete
+  the unattached output. Reuse and deferred-input receipts count toward the existing
+  worker max-jobs bound and keep later batches discoverable.
 - Exact-version security verdict reads preserve the complete skill identity.
   Batch callers may qualify a request with the publisher handle; owner, slug,
   and version form the dedupe identity, and qualified success or failure results

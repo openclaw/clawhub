@@ -1,4 +1,4 @@
-import { ConvexError, v } from "convex/values";
+import { ConvexError, convexToJson, type Value, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
@@ -15,6 +15,7 @@ import {
   MAX_SKILL_CARD_FILE_BYTES,
   normalizeSkillCardSecurityStatus,
   replaceGeneratedSkillCardFile,
+  selectSkillCardFile,
   SKILL_CARD_FILE_PATH,
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
@@ -45,7 +46,7 @@ const internalRefs = internal as unknown as {
   skillCards: {
     planQueuedJobsInternal: unknown;
     claimQueuedJobsInternal: unknown;
-    getJobTargetInternal: unknown;
+    prepareJobTargetInternal: unknown;
     failJobInternal: unknown;
     abandonClaimsInternal: unknown;
     attachCardAndSucceedJobInternal: unknown;
@@ -80,14 +81,6 @@ function normalizeLimit(limit: number | undefined) {
     1,
     Math.min(Math.floor(limit ?? DEFAULT_SKILL_CARD_CLAIM_LIMIT), MAX_PARALLEL_SKILL_CARD_JOBS),
   );
-}
-
-function generatedBundleFingerprints(
-  entries: Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>,
-) {
-  return entries
-    .filter((entry) => entry.kind === "generated-bundle")
-    .map((entry) => entry.fingerprint);
 }
 
 function clawScanRiskFindings(version: Doc<"skillVersions">) {
@@ -189,24 +182,17 @@ export const claimQueuedJobsInternal = internalMutation({
   handler: (ctx, args) => admitSkillCardClaims(ctx, { ...args, limit: normalizeLimit(args.limit) }),
 });
 
-export const getJobTargetInternal = internalQuery({
-  args: {
-    jobId: v.id("skillCardGenerationJobs"),
-  },
-  handler: async (ctx, args): Promise<SkillCardTarget | null> => {
-    const job = await ctx.db.get(args.jobId);
-    if (!job) return null;
-    const version = await ctx.db.get(job.skillVersionId);
-    if (!version || version.softDeletedAt) return { job, missing: true as const };
-    const skill = await ctx.db.get(version.skillId);
-    if (!skill || skill.softDeletedAt) return { job, missing: true as const };
-    const [owner, publisher] = await Promise.all([
-      ctx.db.get(skill.ownerUserId),
-      skill.ownerPublisherId ? ctx.db.get(skill.ownerPublisherId) : Promise.resolve(null),
-    ]);
-    return { job, skill, version, owner, publisher };
-  },
-});
+async function getJobTarget(ctx: MutationCtx, job: SkillCardJob): Promise<SkillCardTarget> {
+  const version = await ctx.db.get(job.skillVersionId);
+  if (!version || version.softDeletedAt) return { job, missing: true };
+  const skill = await ctx.db.get(version.skillId);
+  if (!skill || skill.softDeletedAt) return { job, missing: true };
+  const [owner, publisher] = await Promise.all([
+    ctx.db.get(skill.ownerUserId),
+    skill.ownerPublisherId ? ctx.db.get(skill.ownerPublisherId) : Promise.resolve(null),
+  ]);
+  return { job, skill, version, owner, publisher };
+}
 
 function buildEvidencePacket(
   target: Required<Omit<SkillCardTarget, "missing">>,
@@ -280,15 +266,122 @@ function buildEvidencePacket(
   };
 }
 
+// Prepare and completion read the same evidence in their transaction. Storage URLs,
+// scan timestamps and the generated card itself never identify semantic inputs.
+async function skillCardInputs(
+  ctx: MutationCtx,
+  target: Required<Omit<SkillCardTarget, "missing">>,
+  generationHash?: string,
+) {
+  const generated = await ctx.db
+    .query("skillVersionFingerprints")
+    .withIndex("by_version_kind", (q) =>
+      q.eq("versionId", target.version._id).eq("kind", "generated-bundle"),
+    )
+    .take(1);
+  const files = [
+    ...sourceSkillVersionFiles(target.version.files, {
+      generatedBundleFingerprints: generated.map((entry) => entry.fingerprint),
+    }),
+  ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const evidence = buildEvidencePacket(target, files);
+  const semanticEvidence = {
+    ...evidence,
+    generatedAt: undefined,
+    provenance: { ...evidence.provenance, importedAt: undefined },
+  };
+  const inputHash = generationHash
+    ? await sha256Hex(
+        JSON.stringify(
+          convexToJson(
+            JSON.parse(JSON.stringify({ generationHash, evidence: semanticEvidence })) as Value,
+          ),
+        ),
+      )
+    : undefined;
+  return { files, evidence, inputHash };
+}
+
+const releasedLease = {
+  claimSlot: undefined,
+  leaseToken: undefined,
+  leaseExpiresAt: undefined,
+  workerId: undefined,
+};
+
+async function requeueChangedInputs(ctx: MutationCtx, job: SkillCardJob, settled: boolean) {
+  await ctx.db.patch(job._id, {
+    ...releasedLease,
+    status: "queued",
+    attempts: 0,
+    inputHash: undefined,
+    generationHash: undefined,
+    nextRunAt: Date.now() + (settled ? 0 : 60_000),
+    updatedAt: Date.now(),
+  });
+}
+
+export const prepareJobTargetInternal = internalMutation({
+  args: {
+    jobId: v.id("skillCardGenerationJobs"),
+    leaseToken: v.string(),
+    generationHash: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job || job.status !== "running" || job.leaseToken !== args.leaseToken) {
+      throw new ConvexError("Lease mismatch");
+    }
+    const target = await getJobTarget(ctx, job);
+    if (!target.skill || !target.version) return { missing: true as const };
+    const inputs = await skillCardInputs(
+      ctx,
+      target as Required<Omit<SkillCardTarget, "missing">>,
+      args.generationHash,
+    );
+    if (args.generationHash && !hasSettledSkillCardInputs(target.version)) {
+      await requeueChangedInputs(ctx, job, false);
+      return { deferred: true as const };
+    }
+    const receipt = target.version.skillCardGeneration;
+    if (
+      inputs.inputHash &&
+      receipt?.inputHash === inputs.inputHash &&
+      selectSkillCardFile(target.version.files)?.sha256 === receipt.cardSha256
+    ) {
+      await ctx.db.patch(job._id, {
+        ...releasedLease,
+        status: "succeeded",
+        attempts: Math.max(0, job.attempts - 1),
+        completedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      return { reused: true as const };
+    }
+    // Workers checked out before a backend deploy omit generationHash. Accept
+    // their leases, but never certify their unknown recipe for future reuse.
+    await ctx.db.patch(job._id, {
+      generationHash: args.generationHash,
+      inputHash: inputs.inputHash,
+      attempts: job.inputHash && job.inputHash !== inputs.inputHash ? 1 : job.attempts,
+    });
+    return { skill: target.skill, version: target.version, ...inputs };
+  },
+});
+
 export const claimSkillCardJobs = action({
   args: {
     token: v.string(),
     workerId: v.string(),
     limit: v.optional(v.number()),
     leaseMs: v.optional(v.number()),
+    generationHash: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
+    if (args.generationHash !== undefined && !/^[a-f0-9]{64}$/.test(args.generationHash)) {
+      throw new ConvexError("Invalid generation hash");
+    }
     const limit = normalizeLimit(args.limit);
     let jobs: SkillCardClaimResult["jobs"] = [];
     // Replan only an explicitly uncommitted admission. Once any lease commits,
@@ -320,12 +413,22 @@ export const claimSkillCardJobs = action({
     const hydrated = [];
     try {
       for (const job of jobs) {
-        const target = await runQueryRef<SkillCardTarget | null>(
-          ctx,
-          internalRefs.skillCards.getJobTargetInternal,
-          { jobId: job._id },
-        );
-        if (!target || target.missing || !target.skill || !target.version) {
+        const target = await runMutationRef<
+          | { missing: true }
+          | { reused: true }
+          | { deferred: true }
+          | {
+              skill: Doc<"skills">;
+              version: Doc<"skillVersions">;
+              evidence: ReturnType<typeof buildEvidencePacket>;
+              files: SkillVersionFile[];
+            }
+        >(ctx, internalRefs.skillCards.prepareJobTargetInternal, {
+          jobId: job._id,
+          leaseToken: job.leaseToken,
+          generationHash: args.generationHash,
+        });
+        if ("missing" in target) {
           await runMutationRef(ctx, internalRefs.skillCards.failJobInternal, {
             jobId: job._id,
             leaseToken: job.leaseToken,
@@ -333,15 +436,13 @@ export const claimSkillCardJobs = action({
           });
           continue;
         }
-
-        const fingerprintEntries = (await runQueryRef<
-          Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
-        >(ctx, internal.skills.listVersionFingerprintsInternal, {
-          skillVersionId: target.version._id,
-        })) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
-        const files = sourceSkillVersionFiles(target.version.files, {
-          generatedBundleFingerprints: generatedBundleFingerprints(fingerprintEntries),
-        });
+        if ("reused" in target || "deferred" in target) {
+          // Return progress even for a fully reused batch, so the worker keeps
+          // draining later jobs instead of interpreting it as an empty queue.
+          hydrated.push({ job, ...target });
+          continue;
+        }
+        const files = target.files;
         const fileUrls = [];
         let missingStoragePath: string | null = null;
         for (const file of files) {
@@ -372,16 +473,7 @@ export const claimSkillCardJobs = action({
           target: {
             skill: target.skill,
             version: target.version,
-            evidence: buildEvidencePacket(
-              {
-                job,
-                skill: target.skill,
-                version: target.version,
-                owner: target.owner ?? null,
-                publisher: target.publisher ?? null,
-              },
-              files,
-            ),
+            evidence: target.evidence,
             files: fileUrls,
           },
         });
@@ -430,7 +522,8 @@ export const failJobInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
-    if (!job || job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
+    if (!job || job.status !== "running" || job.leaseToken !== args.leaseToken)
+      throw new ConvexError("Lease mismatch");
     return settleSkillCardFailure(ctx, job, args.error);
   },
 });
@@ -469,9 +562,28 @@ export const attachCardAndSucceedJobInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
-    if (!job || job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
+    if (!job || job.status !== "running" || job.leaseToken !== args.leaseToken)
+      throw new ConvexError("Lease mismatch");
     const version = await ctx.db.get(job.skillVersionId);
     if (!version || version.softDeletedAt) throw new ConvexError("Skill version not found");
+
+    if (job.generationHash && job.inputHash) {
+      const target = await getJobTarget(ctx, job);
+      if (!target.skill || !target.version) throw new ConvexError("Skill version not found");
+      const inputs = await skillCardInputs(
+        ctx,
+        target as Required<Omit<SkillCardTarget, "missing">>,
+        job.generationHash,
+      );
+      const settled = hasSettledSkillCardInputs(version);
+      if (!settled || inputs.inputHash !== job.inputHash) {
+        // Delete only this unattached result in the same transaction as requeue,
+        // so cleanup cannot fail after releasing the worker's lease.
+        await ctx.storage.delete(args.cardFile.storageId);
+        await requeueChangedInputs(ctx, job, settled);
+        return { ok: true as const, requeued: true as const };
+      }
+    }
 
     const now = Date.now();
     const { files, bundleFingerprint } = await replaceGeneratedSkillCardFile(version.files, {
@@ -479,7 +591,12 @@ export const attachCardAndSucceedJobInternal = internalMutation({
       path: SKILL_CARD_FILE_PATH,
       contentType: args.cardFile.contentType ?? "text/markdown; charset=utf-8",
     });
-    await ctx.db.patch(version._id, { files });
+    await ctx.db.patch(version._id, {
+      files,
+      skillCardGeneration: job.inputHash
+        ? { inputHash: job.inputHash, cardSha256: args.cardFile.sha256 }
+        : undefined,
+    });
 
     const existingBundleFingerprints = await ctx.db
       .query("skillVersionFingerprints")
@@ -544,7 +661,11 @@ export const completeSkillCardJob = action({
       new Blob([args.markdown], { type: "text/markdown; charset=utf-8" }),
     );
     try {
-      return await runMutationRef(ctx, internalRefs.skillCards.attachCardAndSucceedJobInternal, {
+      const result = await runMutationRef<{
+        ok: true;
+        requeued?: true;
+        bundleFingerprint?: string;
+      }>(ctx, internalRefs.skillCards.attachCardAndSucceedJobInternal, {
         jobId: args.jobId,
         leaseToken: args.leaseToken,
         runId: args.runId,
@@ -556,6 +677,7 @@ export const completeSkillCardJob = action({
           contentType: "text/markdown; charset=utf-8",
         },
       });
+      return result;
     } catch (error) {
       await ctx.storage.delete(storageId).catch(() => undefined);
       throw error;

@@ -1191,6 +1191,7 @@ const skillVersions = defineTable({
       contentType: v.optional(v.string()),
     }),
   ),
+  skillCardGeneration: v.optional(v.object({ inputHash: v.string(), cardSha256: v.string() })),
   parsed: v.object({
     frontmatter: v.record(v.string(), v.any()),
     metadata: v.optional(v.any()),
@@ -2329,6 +2330,8 @@ const skillCardGenerationJobs = defineTable({
   leaseToken: v.optional(v.string()),
   leaseExpiresAt: v.optional(v.number()),
   workerId: v.optional(v.string()),
+  generationHash: v.optional(v.string()),
+  inputHash: v.optional(v.string()),
   lastError: v.optional(v.string()),
   runId: v.optional(v.string()),
   completedAt: v.optional(v.number()),
