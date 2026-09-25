@@ -3,10 +3,11 @@ import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/pro
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import type { EndorAnalysis } from "../../convex/lib/endorAnalysis";
+import { endorAnalysisSchema, type EndorAnalysis } from "../../convex/lib/endorAnalysis";
 import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
 import { readWorkerAssignment } from "../../packages/clawhub-admin/src/scanAssignments";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
@@ -20,6 +21,7 @@ import {
   redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
+import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
 import { resolveClawScanTargetForRoot } from "./clawScanTarget";
 import {
   isEndorPluginScanEnabled,
@@ -687,6 +689,20 @@ function sanitizedTargetForArtifactContext(target: ClaimedJob["target"]) {
   };
 }
 
+function artifactMetadata(job: ClaimedJob) {
+  return {
+    job: sanitizedJobForArtifactContext(job.job),
+    target: sanitizedTargetForArtifactContext(job.target),
+    policy: {
+      virusTotal: "telemetry-only; never final classifier; do not hide solely from VT",
+      maliciousSignalHold:
+        "if non-VT malicious signals held the artifact, Codex decides whether to release or hide",
+      openclawPluginTrust:
+        "plugins under @openclaw owned by the OpenClaw publisher are trusted unless artifact evidence proves malicious behavior",
+    },
+  };
+}
+
 async function writeDiagnosticText(
   jobDir: string,
   fileName: string,
@@ -705,7 +721,11 @@ async function writeDiagnosticText(
       : options?.structured === false
         ? redactDiagnosticText(value, options.maxChars)
         : redactCompleteDiagnosticText(value, rootKey);
-  await writeFile(join(jobDir, fileName), redacted.endsWith("\n") ? redacted : `${redacted}\n`);
+  const bounded =
+    options?.structured !== false && options?.maxChars !== undefined
+      ? redactDiagnosticText(redacted, options.maxChars)
+      : redacted;
+  await writeFile(join(jobDir, fileName), bounded.endsWith("\n") ? bounded : `${bounded}\n`);
   return fileName;
 }
 
@@ -719,12 +739,14 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
     "clawscan.stdout.redacted.log",
     input.clawscan?.stdout,
     "clawscanStdout",
+    { maxChars: MAX_DIAGNOSTIC_TEXT_CHARS },
   );
   const clawscanStderrPath = await writeDiagnosticText(
     jobDir,
     "clawscan.stderr.redacted.log",
     input.clawscan?.stderr,
     "clawscanStderr",
+    { maxChars: MAX_DIAGNOSTIC_TEXT_CHARS },
   );
   const clawscanArtifactPath = await writeDiagnosticText(
     jobDir,
@@ -849,18 +871,10 @@ async function download(url: string, artifact: { kind: "file" | "clawpack"; path
 
 export async function writeArtifactWorkspace(job: ClaimedJob, workspace: string) {
   await mkdir(join(workspace, "artifact"), { recursive: true });
-  const metadata = {
-    job: sanitizedJobForArtifactContext(job.job),
-    target: sanitizedTargetForArtifactContext(job.target),
-    policy: {
-      virusTotal: "telemetry-only; never final classifier; do not hide solely from VT",
-      maliciousSignalHold:
-        "if non-VT malicious signals held the artifact, Codex decides whether to release or hide",
-      openclawPluginTrust:
-        "plugins under @openclaw owned by the OpenClaw publisher are trusted unless artifact evidence proves malicious behavior",
-    },
-  };
-  await writeFile(join(workspace, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
+  await writeFile(
+    join(workspace, "metadata.json"),
+    `${JSON.stringify(artifactMetadata(job), null, 2)}\n`,
+  );
 
   await materializeVerifiedArtifactFiles({
     artifactRoot: join(workspace, "artifact"),
@@ -1661,10 +1675,15 @@ async function runBundledSkillSpector(
   return aggregateSkillSpectorAnalyses(analyses);
 }
 
-const REQUIRED_CLAWHUB_RESULT_KEYS = [
-  ...CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredResultKeys,
-  "artifact_inspection",
-];
+async function prepareBundledSkillSpector(job: ClaimedJob, workspace: string) {
+  const scanInputs = await resolveBundledSkillSpectorScanInputs(workspace, job);
+  const resultPath = join(workspace, "skillspector-aggregate.json");
+  const result = await runBundledSkillSpector(workspace, scanInputs);
+  await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+  return resultPath;
+}
+
+const REQUIRED_CLAWHUB_RESULT_KEYS = CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredResultKeys;
 const REQUIRED_CLAWHUB_DIMENSION_KEYS = CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredDimensionKeys;
 const REQUIRED_CLAWHUB_DIMENSION_FIELD_KEYS =
   CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredDimensionFieldKeys;
@@ -1838,6 +1857,7 @@ function clawScanDiagnosticMapping(
 function validateClawScanArtifactForClawHubProfile(
   artifact: Record<string, unknown>,
   scannerSet = REQUIRED_CLAWHUB_SCANNERS,
+  endorAnalysis?: EndorAnalysis,
 ) {
   const schemaVersion = readString(artifact, ["schemaVersion"]);
   if (schemaVersion !== "clawscan-run-v1") {
@@ -1878,6 +1898,16 @@ function validateClawScanArtifactForClawHubProfile(
   }
 
   const scanners = asRecord(artifact.scanners);
+  if (endorAnalysis) {
+    const endor = asRecord(scanners?.endor);
+    if (readString(endor ?? {}, ["status"]) !== "completed") {
+      throw new Error("ClawScan Endor evidence was not supplied to the judge");
+    }
+    const parsedEndor = endorAnalysisSchema.safeParse(endor?.raw);
+    if (!parsedEndor.success || !isDeepStrictEqual(parsedEndor.data, endorAnalysis)) {
+      throw new Error("ClawScan Endor evidence did not match the prepared analysis");
+    }
+  }
   const skillSpector = asRecord(scanners?.skillspector);
   if (!skillSpector || skillSpector.raw === undefined) {
     throw new Error("ClawScan skillspector scanner output was missing");
@@ -1917,6 +1947,8 @@ export async function runClawScan(
   job: ClaimedJob,
   workspace: string,
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
+  endorAnalysis?: EndorAnalysis,
+  preparedSkillSpectorPath?: string,
 ) {
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
@@ -1926,17 +1958,36 @@ export async function runClawScan(
     assertAigFilePathsHaveNoCompiledPython(job.target.files?.map((file) => file.path) ?? []);
   }
   const args = [target, "--profile", "clawhub"];
+  if (endorAnalysis) {
+    const configPath = await writeClawHubEndorProfile(workspace, schemaPath);
+    const endorResultPath = join(workspace, "endor-analysis.json");
+    const contextPath = join(workspace, "clawhub-endor-context.json");
+    await writeFile(endorResultPath, `${JSON.stringify(endorAnalysis)}\n`, "utf8");
+    await writeFile(
+      contextPath,
+      JSON.stringify({
+        targetKind: job.job.targetKind,
+        source: job.job.source,
+        hasMaliciousSignal: job.job.hasMaliciousSignal,
+        trustedOpenClawPlugin: job.target.trustedOpenClawPlugin === true,
+        metadata: artifactMetadata(job),
+      }),
+      "utf8",
+    );
+    args.push(
+      "--config",
+      configPath,
+      "--context",
+      contextPath,
+      "--scanner-result",
+      `endor=${endorResultPath}`,
+    );
+  }
   if (job.job.targetKind === "packageRelease") {
     // SkillSpector only understands skills. ClawHub owns the plugin manifest
     // boundary, so never let ClawScan fall back to scanning the whole package.
-    const scanInputs = await resolveBundledSkillSpectorScanInputs(workspace, job);
-    const skillSpectorResultPath = join(workspace, "skillspector-aggregate.json");
-    const skillSpectorResult = await runBundledSkillSpector(workspace, scanInputs);
-    await writeFile(
-      skillSpectorResultPath,
-      `${JSON.stringify(skillSpectorResult, null, 2)}\n`,
-      "utf8",
-    );
+    const skillSpectorResultPath =
+      preparedSkillSpectorPath ?? (await prepareBundledSkillSpector(job, workspace));
     args.push("--scanner-result", `skillspector=${skillSpectorResultPath}`);
   }
   args.push("--output", artifactPath);
@@ -1995,7 +2046,7 @@ export async function runClawScan(
   const artifact = await captureArtifact();
   if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
-  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet);
+  const mapped = validateClawScanArtifactForClawHubProfile(artifact, scannerSet, endorAnalysis);
   onDiagnostic({ mapping: mapped.mapping });
   return mapped;
 }
@@ -2079,10 +2130,7 @@ export async function processJob(
   try {
     await writeArtifactWorkspace(job, workspace);
     const shouldRunEndor = job.job.targetKind === "packageRelease" && isEndorPluginScanEnabled();
-    const [clawScanResult, endorScanResult] = await Promise.allSettled([
-      runClawScan(job, workspace, (next) => {
-        Object.assign(clawscan, next);
-      }),
+    const [endorResult, skillSpectorResult] = await Promise.allSettled([
       shouldRunEndor
         ? runEndorPluginScan({
             workspace,
@@ -2090,29 +2138,41 @@ export async function processJob(
               Object.assign(endor, next);
             },
           })
-        : Promise.resolve<EndorAnalysis | undefined>(undefined),
-    ] as const);
-    if (clawScanResult.status === "rejected") throw clawScanResult.reason;
-    const mapped = clawScanResult.value;
+        : Promise.resolve(undefined),
+      job.job.targetKind === "packageRelease"
+        ? prepareBundledSkillSpector(job, workspace)
+        : Promise.resolve(undefined),
+    ]);
+    if (shouldRunEndor) {
+      if (endorResult.status === "fulfilled") {
+        endorAnalysis = endorResult.value;
+      } else {
+        const error = endorResult.reason;
+        const endorError = sanitizeWorkerErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        );
+        endor.scannerError ??= endorError;
+        endorAnalysis = {
+          status: "failed",
+          checkedAt: Date.now(),
+          reason: ENDOR_SCAN_FAILED_REASON,
+        };
+      }
+    }
+    if (skillSpectorResult.status === "rejected") throw skillSpectorResult.reason;
+    const mapped = await runClawScan(
+      job,
+      workspace,
+      (next) => {
+        Object.assign(clawscan, next);
+      },
+      endorAnalysis,
+      skillSpectorResult.value,
+    );
     llmAnalysis = mapped.llmAnalysis;
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
-    if (endorScanResult.status === "rejected") {
-      const endorError = sanitizeWorkerErrorMessage(
-        endorScanResult.reason instanceof Error
-          ? endorScanResult.reason.message
-          : String(endorScanResult.reason),
-      );
-      endor.scannerError ??= endorError;
-      endorAnalysis = {
-        status: "failed",
-        checkedAt: Date.now(),
-        reason: ENDOR_SCAN_FAILED_REASON,
-      };
-    } else {
-      endorAnalysis = endorScanResult.value;
-    }
     // Package jobs persist scanner summaries only. Skill jobs retain their
     // existing raw scanner upload when the backend advertises support.
     let scannerReportsStorageId: string | undefined;

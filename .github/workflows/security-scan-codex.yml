@@ -63,8 +63,8 @@ jobs:
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging'))
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
     runs-on: blacksmith-16vcpu-ubuntu-2404
-    timeout-minutes: 40
-    environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || 'Production' }}
+    timeout-minutes: 60
+    environment: Production
     concurrency:
       # Bulk assignments must not wait behind ordinary queue workers on the same shard.
       # Priority remains one reserved lane shared by every dispatch mode.
