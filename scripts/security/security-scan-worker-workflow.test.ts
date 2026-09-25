@@ -89,7 +89,7 @@ describe("security-scan-codex workflow", () => {
     );
     expect(uploadStep?.with?.path).toBe("${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}");
     expect(uploadStep?.with?.["if-no-files-found"]).toBe("ignore");
-    expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(40);
+    expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(60);
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-security-scan"]);
     expect(workflow.on?.schedule).toBeUndefined();

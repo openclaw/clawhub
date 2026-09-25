@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-# ClawScan mounts the submitted artifact read-only. All writes stay in the container.
+# The worker mounts the normalized package read-only. All writes stay in the container.
 if [ ! -d "$1" ]; then set -- "$(dirname "$1")"; fi
 if [ ! -f "$1/package.json" ]; then
   echo "Endor requires package.json at the target root" >&2
@@ -74,7 +74,7 @@ report=$(mktemp)
 diagnostic=$(mktemp)
 status=0
 endorctl scan --dry-run --dependencies --languages=javascript,typescript --call-graph-languages=javascript,typescript --build=false --output-type=json --path "$scan_root" >"$report" 2>"$diagnostic" || status=$?
-# The custom-scanner protocol requires JSON, including for a successful empty scan.
+# The worker requires JSON, including for a successful empty scan.
 # Endor's 128 means policy findings; analysis failures must still fail the scanner.
 node - "$status" "$report" "$diagnostic" <<'JS'
 const fs = require("node:fs");
