@@ -647,6 +647,7 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
         ) : null}
         {finding.remediation?.trim() ? (
           <div className="aig-finding-remediation">
+            <h4 className="aig-finding-title">Remediation</h4>
             <MarkdownPreview variant="report" highlight={false}>
               {finding.remediation}
             </MarkdownPreview>

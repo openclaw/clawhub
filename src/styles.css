@@ -2301,6 +2301,8 @@ code {
 }
 
 .aig-finding-remediation {
+  display: grid;
+  gap: 8px;
   min-width: 0;
   padding-top: 16px;
   border-top: 1px solid var(--line);

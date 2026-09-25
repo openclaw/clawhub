@@ -592,6 +592,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
     expect(screen.getByText("SKILL.md:17")).toBeTruthy();
     expect(screen.getByText("Remove the session-file upload instruction.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Remediation", level: 4 })).toBeTruthy();
     expect(
       container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
     ).toBe("Embedded Malicious Code");
