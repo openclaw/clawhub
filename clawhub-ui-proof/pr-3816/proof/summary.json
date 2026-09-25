@@ -1,7 +1,7 @@
 {
   "baseline": "73d65ef1df",
-  "candidate": "22b5b6f85a",
-  "generatedAt": "2026-09-24T23:58:06.039Z",
+  "candidate": "7d3e845341",
+  "generatedAt": "2026-09-25T00:11:01.212Z",
   "lanes": [
     {
       "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/inline-audit/proof/baseline",
@@ -39,6 +39,13 @@
         },
         {
           "lane": "baseline",
+          "name": "AIG remediation label 1440px dark",
+          "screenshot": "screenshots/aig-remediation-label-1440px-dark.png",
+          "slug": "aig-remediation-label-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
           "name": "AIG inline report 1440px light",
           "screenshot": "screenshots/aig-inline-report-1440px-light.png",
           "slug": "aig-inline-report-1440px-light",
@@ -49,7 +56,7 @@
     {
       "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/inline-audit/proof/candidate",
       "name": "candidate",
-      "ref": "22b5b6f85a",
+      "ref": "7d3e845341",
       "status": "pass",
       "steps": [
         {
@@ -78,6 +85,13 @@
           "name": "SkillSpector formatted excerpt 390px dark",
           "screenshot": "screenshots/skillspector-formatted-excerpt-390px-dark.png",
           "slug": "skillspector-formatted-excerpt-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "AIG remediation label 1440px dark",
+          "screenshot": "screenshots/aig-remediation-label-1440px-dark.png",
+          "slug": "aig-remediation-label-1440px-dark",
           "status": "pass"
         },
         {
