@@ -410,7 +410,7 @@ function SkillSpectorContent({
   const reportedLine = start === undefined ? "" : ` (reported line ${start})`;
   const label = scannerSnippet
     ? `Scanner excerpt${location ? ` · ${location}` : ""}${reportedLine}`
-    : `Source excerpt${location ? ` · ${location}` : ""}${sourceRange}`;
+    : `${location}${sourceRange}`;
   const reportedLineCount =
     start !== undefined && issue.endLine !== undefined ? issue.endLine - start + 1 : lineCount;
   const isMarkdownSnippet =

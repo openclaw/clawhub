@@ -853,7 +853,7 @@ function extractLineRangeFromFile(content: string, startLine: number, endLine?: 
   if (!Number.isFinite(startLine) || startLine < 1) return null;
   const lines = content.split(/\r?\n/);
   const start = Math.floor(startLine);
-  const end = Math.max(start, Math.min(Math.floor(endLine ?? start), start + 12));
+  const end = Math.max(start, Math.floor(endLine ?? start));
   const value = lines.slice(start - 1, end).join("\n");
   return value.trim() ? value : null;
 }

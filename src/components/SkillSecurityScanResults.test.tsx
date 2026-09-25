@@ -797,7 +797,7 @@ describe("SecurityScanResults static guidance", () => {
         }}
       />,
     );
-    expect(screen.getByText("Source excerpt · scripts/check-update.mjs:254–266")).toBeTruthy();
+    expect(screen.getByText("scripts/check-update.mjs:254–266")).toBeTruthy();
     expect(screen.getByText("Showing 13 of 112 reported lines.")).toBeTruthy();
     await waitFor(() => expect(container.querySelector(".language-js span[style]")).not.toBeNull());
   });
@@ -825,7 +825,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(container.querySelector("pre code")?.textContent).toBe(`${source}\n`);
     expect(container.querySelector("h1")).toBeNull();
     expect(container.querySelector("script")).toBeNull();
-    expect(screen.getByText("Source excerpt · SKILL.md:20–25")).toBeTruthy();
+    expect(screen.getByText("SKILL.md:20–25")).toBeTruthy();
     expect(screen.getByText("Showing 6 of 10 reported lines.")).toBeTruthy();
   });
 
@@ -848,6 +848,42 @@ describe("SecurityScanResults static guidance", () => {
     expect(container.querySelectorAll("pre")).toHaveLength(1);
     expect(container.querySelector("pre code")?.textContent?.trimEnd()).toBe(source);
     expect(container.querySelector("script")).toBeNull();
+  });
+
+  it("renders the complete reported SkillSpector source range without extra lines", async () => {
+    const lines = Array.from({ length: 370 }, (_, i) => `const line${i + 1} = ${i + 1};`);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(lines.join("\n")));
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Release Validation",
+          name: "release-validation",
+          version: "0.1.7",
+          detailPath: "/openclaw/skills/release-validation",
+        }}
+        skillSpectorAnalysis={{
+          ...skillSpectorAnalysis,
+          issues: [
+            {
+              ...skillSpectorAnalysis.issues[0],
+              file: "scripts/check-update.mjs",
+              startLine: 254,
+              endLine: 365,
+              codeSnippet: undefined,
+            },
+          ],
+        }}
+      />,
+    );
+    await waitFor(() =>
+      expect(container.querySelector(".static-analysis-finding pre code")?.textContent).toBe(
+        `${lines.slice(253, 365).join("\n")}\n`,
+      ),
+    );
+    expect(screen.getByText("scripts/check-update.mjs:254–365")).toBeTruthy();
+    expect(screen.queryByText(/Source excerpt/)).toBeNull();
+    expect(screen.queryByText(/reported lines/)).toBeNull();
   });
 
   it("loads plugin SkillSpector snippets through the package text-preview contract", async () => {
