@@ -649,7 +649,11 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
         <div>
           <dt>Finding</dt>
           <dd>
-            <p className="aig-finding-title">{findingTitle || fallbackDescription}</p>
+            {findingTitle ? (
+              <p className="aig-finding-title">{findingTitle}</p>
+            ) : (
+              <MarkdownPreview variant="report">{fallbackDescription}</MarkdownPreview>
+            )}
           </dd>
         </div>
         {findingDescription !== (findingTitle || fallbackDescription) ? (

