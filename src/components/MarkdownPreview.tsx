@@ -310,7 +310,14 @@ export function MarkdownPreview({
   const rehypePlugins = useMemo<PluggableList>(() => {
     const baseRehype = buildBaseRehype(assetBaseUrl);
     if (highlight && highlighter) {
-      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: shikiTheme }]];
+      return [
+        ...baseRehype,
+        [
+          rehypeShikiFromHighlighter,
+          highlighter,
+          { theme: shikiTheme, addLanguageClass: true, fallbackLanguage: "text" },
+        ],
+      ];
     }
     return baseRehype;
   }, [highlight, highlighter, assetBaseUrl, shikiTheme]);

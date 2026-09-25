@@ -240,6 +240,8 @@ describe("MarkdownPreview — syntax highlighting", () => {
       { timeout: 8000 },
     );
 
+    expect(container.querySelector("code")?.className).toContain("language-ts");
+    expect(container.querySelector(".markdown-code-block-language")?.textContent).toBe("ts");
     // Raw code text must still be present after highlighting
     expect(container.querySelector("pre")?.textContent).toContain("const x");
   });

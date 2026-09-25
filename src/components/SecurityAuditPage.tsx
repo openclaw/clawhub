@@ -637,23 +637,44 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
           <ScanResultBadge status={finding.level} label={formatStaticScanSeverity(finding.level)} />
         </div>
       </div>
-      <div className="aig-finding-copy">
-        {findingTitle ? <h4 className="aig-finding-title">{findingTitle}</h4> : null}
-        {location ? <code className="aig-finding-location">{location}</code> : null}
-        {findingDescription !== findingTitle ? (
-          <MarkdownPreview variant="report" highlight={false}>
-            {findingDescription}
-          </MarkdownPreview>
-        ) : null}
-        {finding.remediation?.trim() ? (
-          <div className="aig-finding-remediation">
-            <h4 className="aig-finding-title">Remediation</h4>
-            <MarkdownPreview variant="report" highlight={false}>
-              {finding.remediation}
-            </MarkdownPreview>
+      <dl className="static-analysis-finding-details aig-finding-details">
+        {location ? (
+          <div>
+            <dt>Location</dt>
+            <dd>
+              <code className="aig-finding-location">{location}</code>
+            </dd>
           </div>
         ) : null}
-      </div>
+        <div>
+          <dt>Finding</dt>
+          <dd>
+            <p className="aig-finding-title">{findingTitle || fallbackDescription}</p>
+          </dd>
+        </div>
+        {findingDescription !== (findingTitle || fallbackDescription) ? (
+          <div>
+            <dt>Content</dt>
+            <dd>
+              <details className="security-report-disclosure">
+                <summary>View full analysis</summary>
+                <MarkdownPreview variant="report">{findingDescription}</MarkdownPreview>
+              </details>
+            </dd>
+          </div>
+        ) : null}
+        {finding.remediation?.trim() ? (
+          <div>
+            <dt>Remediation</dt>
+            <dd>
+              <details className="security-report-disclosure">
+                <summary>View remediation</summary>
+                <MarkdownPreview variant="report">{finding.remediation}</MarkdownPreview>
+              </details>
+            </dd>
+          </div>
+        ) : null}
+      </dl>
     </article>
   );
 }
@@ -829,10 +850,7 @@ function extractLineRangeFromFile(content: string, startLine: number, endLine?: 
   const lines = content.split(/\r?\n/);
   const start = Math.floor(startLine);
   const end = Math.max(start, Math.min(Math.floor(endLine ?? start), start + 12));
-  const value = lines
-    .slice(start - 1, end)
-    .map((line) => line.trimEnd())
-    .join("\n");
+  const value = lines.slice(start - 1, end).join("\n");
   return value.trim() ? value : null;
 }
 

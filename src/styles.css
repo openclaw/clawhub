@@ -2276,10 +2276,22 @@ code {
   line-height: 1.55;
 }
 
-.aig-finding-copy {
+.skill-spector-evidence {
   display: grid;
+  gap: 8px;
   min-width: 0;
-  gap: 12px;
+}
+
+.skill-spector-evidence-meta {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.skill-spector-evidence-meta span {
+  display: block;
 }
 
 .aig-finding-title {
@@ -2296,16 +2308,18 @@ code {
   overflow-wrap: anywhere;
 }
 
-.aig-finding-copy .markdown-report {
+.aig-finding-details .markdown-report {
   max-width: 76ch;
 }
 
-.aig-finding-remediation {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+.security-report-disclosure summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.security-report-disclosure > .markdown-report {
+  margin-top: 12px;
 }
 
 @media (max-width: 1100px) {

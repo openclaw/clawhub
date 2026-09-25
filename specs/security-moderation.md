@@ -493,6 +493,15 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   and ClawScan-powered risk review as one consolidated Security audit page.
   This is a product-facing model only; scanner storage, moderation decisions,
   and worker behavior remain separate internally.
+- Scanner finding content is source evidence, not the verdict or necessarily
+  only the matched risky text. SkillSpector preserves scanner-provided excerpts
+  ahead of source-file fallbacks and labels their provenance. Fallbacks must not
+  present a bare Markdown frontmatter delimiter as evidence, and shortened
+  reported line ranges must be disclosed. Source code remains literal and uses
+  syntax highlighting; scanner Markdown uses the sanitized report renderer.
+  SkillSpector details appear as Category, Confidence, Finding, then Content.
+  A.I.G shows concise labeled facts with long analysis and remediation collapsed
+  until requested; disclosure does not alter the stored report or scanner verdict.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
   SkillSpector, A.I.G, and static scan evidence as context.
