@@ -1,0 +1,155 @@
+{
+  "baseline": "0ae54008b3",
+  "candidate": "0e4a3b64f0c61fb4c1f5fd868c076accf55e93bb",
+  "generatedAt": "2026-09-25T04:59:42.065Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/skillspector-investigation/proof/baseline",
+      "name": "baseline",
+      "ref": "0ae54008b3",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "AIG compact rows 1440px dark",
+          "screenshot": "screenshots/aig-compact-rows-1440px-dark.png",
+          "slug": "aig-compact-rows-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector scanner context 1440px dark",
+          "screenshot": "screenshots/skillspector-scanner-context-1440px-dark.png",
+          "slug": "skillspector-scanner-context-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector missing excerpt 1440px dark",
+          "screenshot": "screenshots/skillspector-missing-excerpt-1440px-dark.png",
+          "slug": "skillspector-missing-excerpt-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector source code 1440px dark",
+          "screenshot": "screenshots/skillspector-source-code-1440px-dark.png",
+          "slug": "skillspector-source-code-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "AIG compact rows 390px dark",
+          "screenshot": "screenshots/aig-compact-rows-390px-dark.png",
+          "slug": "aig-compact-rows-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector scanner context 390px dark",
+          "screenshot": "screenshots/skillspector-scanner-context-390px-dark.png",
+          "slug": "skillspector-scanner-context-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector missing excerpt 390px dark",
+          "screenshot": "screenshots/skillspector-missing-excerpt-390px-dark.png",
+          "slug": "skillspector-missing-excerpt-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "SkillSpector source code 390px dark",
+          "screenshot": "screenshots/skillspector-source-code-390px-dark.png",
+          "slug": "skillspector-source-code-390px-dark",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/skillspector-investigation/proof/candidate",
+      "name": "candidate",
+      "ref": "0e4a3b64f0c61fb4c1f5fd868c076accf55e93bb",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "AIG compact rows 1440px dark",
+          "screenshot": "screenshots/aig-compact-rows-1440px-dark.png",
+          "slug": "aig-compact-rows-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector scanner context 1440px dark",
+          "screenshot": "screenshots/skillspector-scanner-context-1440px-dark.png",
+          "slug": "skillspector-scanner-context-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector missing excerpt 1440px dark",
+          "screenshot": "screenshots/skillspector-missing-excerpt-1440px-dark.png",
+          "slug": "skillspector-missing-excerpt-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector source code 1440px dark",
+          "screenshot": "screenshots/skillspector-source-code-1440px-dark.png",
+          "slug": "skillspector-source-code-1440px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "AIG compact rows 390px dark",
+          "screenshot": "screenshots/aig-compact-rows-390px-dark.png",
+          "slug": "aig-compact-rows-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector scanner context 390px dark",
+          "screenshot": "screenshots/skillspector-scanner-context-390px-dark.png",
+          "slug": "skillspector-scanner-context-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector missing excerpt 390px dark",
+          "screenshot": "screenshots/skillspector-missing-excerpt-390px-dark.png",
+          "slug": "skillspector-missing-excerpt-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector source code 390px dark",
+          "screenshot": "screenshots/skillspector-source-code-390px-dark.png",
+          "slug": "skillspector-source-code-390px-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "AIG expanded report",
+          "screenshot": "screenshots/aig-expanded-report.png",
+          "slug": "aig-expanded-report",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "SkillSpector highlighted source light",
+          "screenshot": "screenshots/skillspector-highlighted-source-light.png",
+          "slug": "skillspector-highlighted-source-light",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/skillspector-investigation/proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/proof-scenarios/scanner-evidence.pw.ts",
+  "status": "pass"
+}
