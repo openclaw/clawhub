@@ -1,0 +1,85 @@
+{
+  "baseline": "cb9c3ea5eefb",
+  "candidate": "bc8b06f641d95d29b3f91cc827fffb1bdb73c62e",
+  "generatedAt": "2026-09-25T05:46:38.685Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/skillspector-full-range/proof/baseline",
+      "name": "baseline",
+      "ref": "cb9c3ea5eefb",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "Source start 1440px",
+          "screenshot": "screenshots/source-start-1440px.png",
+          "slug": "source-start-1440px",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Source end 1440px",
+          "screenshot": "screenshots/source-end-1440px.png",
+          "slug": "source-end-1440px",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Source start 390px",
+          "screenshot": "screenshots/source-start-390px.png",
+          "slug": "source-start-390px",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Source end 390px",
+          "screenshot": "screenshots/source-end-390px.png",
+          "slug": "source-end-390px",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/skillspector-full-range/proof/candidate",
+      "name": "candidate",
+      "ref": "bc8b06f641d95d29b3f91cc827fffb1bdb73c62e",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Source start 1440px",
+          "screenshot": "screenshots/source-start-1440px.png",
+          "slug": "source-start-1440px",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Source end 1440px",
+          "screenshot": "screenshots/source-end-1440px.png",
+          "slug": "source-end-1440px",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Source start 390px",
+          "screenshot": "screenshots/source-start-390px.png",
+          "slug": "source-start-390px",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Source end 390px",
+          "screenshot": "screenshots/source-end-390px.png",
+          "slug": "source-end-390px",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/skillspector-full-range/proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-inline-audit/.artifacts/proof-scenarios/skillspector-full-range.pw.ts",
+  "status": "pass"
+}
