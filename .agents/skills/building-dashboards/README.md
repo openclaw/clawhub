@@ -38,7 +38,7 @@ org_id = "your-org-id"
 - **`org_id`** - The organization ID. Get it from Settings → Organization.
 - **`token`** - Use an advanced API token with minimal privileges.
 
-**Tip:** Run `scripts/setup` from the `axiom-sre` skill for interactive configuration.
+**Tip:** This skill uses `~/.axiom.toml`. The SRE skill has a separate [initializer and configuration](../sre/README.md#setup).
 
 ## Usage
 

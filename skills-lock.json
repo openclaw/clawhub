@@ -11,19 +11,19 @@
       "source": "axiomhq/skills",
       "sourceType": "github",
       "skillPath": "skills/sre/SKILL.md",
-      "computedHash": "36bedcba5ce07ea8192e75eee422ebbd0e96d37a02fb5c45d456b0aacce88194"
+      "computedHash": "b2e7126364985bcbabba4323d81a6b069b6eee3da2ed729d1d80f39491522a74"
     },
     "building-dashboards": {
       "source": "axiomhq/skills",
       "sourceType": "github",
       "skillPath": "skills/building-dashboards/SKILL.md",
-      "computedHash": "84a130aab324297fe3fe1203b56743359732d4386dff6f0d065726d175b6e413"
+      "computedHash": "a6c255b32a6cafe5c81caf95c5fc44ba6695369c4efb94e2a39e952c5c146037"
     },
     "controlling-costs": {
       "source": "axiomhq/skills",
       "sourceType": "github",
       "skillPath": "skills/controlling-costs/SKILL.md",
-      "computedHash": "73ed9a6417283ee4029a9e61d11ee3cc9ae64268d131150c4c0f4a71f87cd549"
+      "computedHash": "98345522ad798f9a3100c574f2ed606c1a2eed5c897a3ad5f1fcc3b0a57ac96e"
     },
     "openclaw-brand": {
       "source": "openclaw/carapace",
@@ -65,7 +65,7 @@
       "source": "axiomhq/skills",
       "sourceType": "github",
       "skillPath": "skills/query-metrics/SKILL.md",
-      "computedHash": "955a35d22ca2244c14abafe10c57b8314ddbbc5e9ce1040ddc91edf6cfb05f8e"
+      "computedHash": "1441ec71b64c47c12c7f91bd3decf74bf4b7b59442ee68e484719b45bdda04c3"
     },
     "sentry-fix-issues": {
       "source": "getsentry/sentry-for-ai",
