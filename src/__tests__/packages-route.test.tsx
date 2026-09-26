@@ -10,6 +10,7 @@ import {
 } from "./helpers/convexReactMocks";
 
 const fetchPluginCatalogMock = vi.fn();
+const queryNewPluginsMock = vi.fn();
 const isRateLimitedPackageApiErrorMock = vi.fn(
   (error: unknown) =>
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
@@ -71,6 +72,10 @@ vi.mock("../lib/packageApi", () => ({
   isRateLimitedPackageApiError: (error: unknown) => isRateLimitedPackageApiErrorMock(error),
 }));
 
+vi.mock("../convex/client", () => ({
+  convexHttp: { query: (...args: unknown[]) => queryNewPluginsMock(...args) },
+}));
+
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => convexReactMocks.useQuery(...args),
 }));
@@ -82,6 +87,7 @@ vi.mock("../../convex/_generated/api", () => ({
     },
     packages: {
       countPublicPlugins: "packages:countPublicPlugins",
+      listPublicNewPluginsPage: "packages:listPublicNewPluginsPage",
     },
   },
 }));
@@ -101,6 +107,8 @@ async function loadRoute() {
 describe("plugins route", () => {
   beforeEach(() => {
     fetchPluginCatalogMock.mockReset();
+    queryNewPluginsMock.mockReset();
+    queryNewPluginsMock.mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     isRateLimitedPackageApiErrorMock.mockClear();
     resetConvexReactMocks();
@@ -110,6 +118,128 @@ describe("plugins route", () => {
     redirectMock.mockClear();
     searchMock = {};
     loaderDataMock = undefined;
+  });
+
+  it.each([{ sort: "recommended" }, { q: "security" }])(
+    "does not label global plugin results Featured: %j",
+    async (search) => {
+      searchMock = search;
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+      expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
+        "false",
+      );
+    },
+  );
+
+  it.each([
+    [
+      { new: true, official: true },
+      { new: undefined, official: true, featured: undefined },
+    ],
+    [
+      { new: true, featured: true },
+      { new: true, official: undefined, featured: undefined },
+    ],
+    [
+      { official: true, featured: true },
+      { new: undefined, official: true, featured: undefined },
+    ],
+  ])("normalizes conflicting catalog tabs: %j", async (search, expected) => {
+    const route = await loadRoute();
+    expect(route.__config.validateSearch?.(search)).toMatchObject(expected);
+  });
+
+  it("defaults to Featured while retaining explicit legacy browse sorts", async () => {
+    const route = await loadRoute();
+    expect(route.__config.validateSearch?.({})).toMatchObject({ featured: true });
+    expect(route.__config.validateSearch?.({ sort: "recommended" }).featured).toBeUndefined();
+    expect(
+      route.__config.validateSearch?.({ new: "1", category: "tools", cursor: "new:next" }),
+    ).toMatchObject({ new: true, cursor: "new:next", featured: undefined });
+  });
+
+  it("loads New plugins by creation time with the shared recent window", async () => {
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+    const { DISCOVERY_RECENT_WINDOW_MS } = await import("../../convex/lib/discoveryWindows");
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const plugins = Array.from({ length: 25 }, (_, index) => ({
+      name: `recent-${index}`,
+      family: "code-plugin",
+      createdAt: now,
+    }));
+    queryNewPluginsMock.mockResolvedValue({
+      page: plugins,
+      isDone: false,
+      continueCursor: "new:next",
+    });
+    try {
+      const result = await loadPluginsPageData({
+        new: true,
+        category: "tools",
+        cursor: "new:current",
+      });
+      expect(queryNewPluginsMock).toHaveBeenCalledWith("packages:listPublicNewPluginsPage", {
+        category: "tools",
+        createdAfter: now - DISCOVERY_RECENT_WINDOW_MS,
+        paginationOpts: { cursor: "new:current", numItems: 25 },
+      });
+      expect(result).toMatchObject({ items: plugins, nextCursor: "new:next" });
+      expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("finds New topic matches beyond empty source pages", async () => {
+    const plugin = { name: "topic-match", family: "code-plugin", topics: ["browser"] };
+    queryNewPluginsMock
+      .mockResolvedValueOnce({
+        page: [{ ...plugin, topics: ["other"] }],
+        isDone: false,
+        continueCursor: "next",
+      })
+      .mockResolvedValueOnce({ page: [plugin], isDone: true, continueCursor: "" });
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+    const result = await loadPluginsPageData({ new: true, topic: "browser" });
+    expect(result).toMatchObject({ items: [plugin], nextCursor: null });
+    expect(queryNewPluginsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves New when searching globally and clears search when selecting New", async () => {
+    const route = await loadRoute();
+    expect(route.__config.validateSearch?.({ q: "security", new: true }).new).toBeUndefined();
+    searchMock = { q: "security" };
+    const Component = route.__config.component as ComponentType;
+    render(<Component />);
+    fireEvent.click(screen.getByRole("radio", { name: "New" }));
+    const change = navigateMock.mock.calls.at(-1)?.[0].search;
+    expect(change(searchMock)).toMatchObject({ q: undefined, new: true, featured: undefined });
+  });
+
+  it("bounds New plugin loading by the existing timeout", async () => {
+    vi.useFakeTimers();
+    queryNewPluginsMock.mockImplementation(() => new Promise(() => {}));
+    try {
+      const { loadPluginsPageData } = await import("../routes/plugins/index");
+      const result = loadPluginsPageData({ new: true });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await result).toMatchObject({ apiError: true, isLoading: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels New plugin loading when navigation aborts", async () => {
+    queryNewPluginsMock.mockImplementation(() => new Promise(() => {}));
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+    const controller = new AbortController();
+    const result = loadPluginsPageData({ new: true, signal: controller.signal });
+    const rejection = expect(result).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await rejection;
   });
 
   it("rejects skill family filter in search state", async () => {
@@ -1230,13 +1360,13 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
-  it("preserves featured browse when selecting All from the plugin tab group", async () => {
+  it("preserves featured browse when selecting Featured from the plugin tab group", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
@@ -1259,14 +1389,14 @@ describe("plugins route", () => {
     });
   });
 
-  it("keeps downloads explicit when selected from filtered plugin browse", async () => {
+  it("selects Featured within the current plugin category", async () => {
     searchMock = { category: "security" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
 
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       replace?: boolean;
@@ -1277,7 +1407,7 @@ describe("plugins route", () => {
       category: "security",
       cursor: undefined,
       family: undefined,
-      featured: undefined,
+      featured: true,
       sort: "recommended",
     });
   });
@@ -1405,8 +1535,6 @@ describe("plugins route", () => {
         cursor: undefined,
         family: undefined,
         category: "security",
-        featured: undefined,
-        sort: undefined,
       }),
     );
     expect(lastCall.search({ q: "api" })).toEqual(
@@ -1570,7 +1698,7 @@ describe("plugins route", () => {
   });
 
   it("keeps browse sort choices when only a category is active", async () => {
-    searchMock = { category: "security" };
+    searchMock = { category: "security", featured: true };
     loaderDataMock = {
       items: [
         {
@@ -1592,20 +1720,22 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
     expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Updated" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "New" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
 
-  it("keeps featured browse active when selecting All", async () => {
+  it("keeps featured browse active when selecting Featured", async () => {
     searchMock = { featured: true };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
 
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
@@ -1618,24 +1748,24 @@ describe("plugins route", () => {
     });
   });
 
-  it("selects visible search sort without changing the query", async () => {
+  it("selects Featured and leaves global search", async () => {
     searchMock = { q: "security" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
 
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
     };
     expect(lastCall.search({ q: "security", cursor: "cursor:current" })).toEqual({
-      q: "security",
+      q: undefined,
       cursor: undefined,
       family: undefined,
-      featured: undefined,
-      sort: undefined,
+      featured: true,
+      sort: "recommended",
     });
   });
 
@@ -1724,8 +1854,9 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.queryByRole("radio", { name: "Featured" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
 
@@ -1739,13 +1870,14 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Trending", "Official", "Updated"]);
+    expect(sortOptions).toEqual(["Featured", "Trending", "Official", "New"]);
     expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
   });
 
   it("puts the default plugin sort first", async () => {
+    searchMock = { featured: true };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -1754,7 +1886,9 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions[0]).toBe("All");
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+    expect(sortOptions[0]).toBe("Featured");
+    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
   });
 });

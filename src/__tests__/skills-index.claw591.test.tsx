@@ -105,7 +105,7 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("radio", { name: "Trending" }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    expect(tabLabels()).toEqual(["Trending", "Featured", "Official", "New"]);
+    expect(tabLabels()).toEqual(["Featured", "Trending", "Official", "New"]);
     expect(screen.queryByRole("radio", { name: "Top" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "All" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Sort" })).toBeNull();

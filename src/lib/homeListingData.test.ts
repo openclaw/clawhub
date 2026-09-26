@@ -70,6 +70,19 @@ describe("homeListingData", () => {
     });
   });
 
+  it("keeps the backend ranking when loading Trending plugins", async () => {
+    const ranked = [
+      { ...featuredPlugin, name: "popular", updatedAt: 1 },
+      { ...featuredPlugin, name: "newer", updatedAt: 5 },
+    ];
+    fetchPluginCatalogMock.mockResolvedValue({ items: ranked, nextCursor: null });
+    const result = await fetchHomePluginListing("trending", [], 20);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: "trending" }),
+    );
+    expect(result.items.map((item) => item.name)).toEqual(["popular", "newer"]);
+  });
+
   it("uses the mixed-source Featured selection", async () => {
     convexQueryMock.mockResolvedValue({ page: [] });
     await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);

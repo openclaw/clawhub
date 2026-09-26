@@ -322,7 +322,7 @@ export async function fetchHomeSkillListing(
 }
 
 export async function fetchHomePluginListing(
-  tab: Exclude<HomeListingTab, "trending">,
+  tab: HomeListingTab,
   categorySlugs: readonly string[],
   limit: number,
   signal?: AbortSignal,
@@ -439,7 +439,7 @@ export async function fetchHomePluginListing(
           category: categorySlug ?? undefined,
           cursor: cursor ?? undefined,
           isOfficial: tab === "official" ? true : undefined,
-          sort: "updated",
+          sort: tab === "trending" ? "trending" : "updated",
           limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
           signal,
         });
@@ -452,9 +452,9 @@ export async function fetchHomePluginListing(
       return { items, hasMore };
     }),
   );
-  const items = uniqueHomePlugins(results.flatMap((result) => result.items)).sort((left, right) => {
-    return right.updatedAt - left.updatedAt;
-  });
+  // The homepage selects one category, so Trending retains one backend feed's order.
+  const items = uniqueHomePlugins(results.flatMap((result) => result.items));
+  if (tab !== "trending") items.sort((left, right) => right.updatedAt - left.updatedAt);
   return {
     items: items.slice(0, limit),
     hasMore: items.length > limit || results.some((result) => result.hasMore),

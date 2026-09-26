@@ -34427,3 +34427,45 @@ a[class*="rounded-full"] {
     flex-wrap: wrap;
   }
 }
+
+/* Shared compact skill rows on the homepage and Featured browse page. */
+.skill-listing-head,
+.home-v2-listing-row.skill-listing-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  column-gap: 20px;
+  padding-inline: 4px;
+}
+
+.skill-listing-head {
+  padding-block: 0 10px;
+  border-bottom: 1px solid var(--oc-border-subtle);
+  color: var(--oc-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.home-v2-listing-row.skill-listing-row {
+  --hv2-text: var(--oc-text-primary);
+  --hv2-text-secondary: var(--oc-text-secondary);
+  --hv2-text-tertiary: var(--oc-text-muted);
+  --hv2-border: var(--oc-border-subtle);
+  min-height: 48px;
+}
+
+.skill-listing-row .home-v2-listing-row-body {
+  max-width: none;
+}
+
+.skill-listing-row .home-v2-listing-row-name {
+  flex-shrink: 0;
+  max-width: 75%;
+}
+
+.skill-listing-row .home-v2-listing-row-stats {
+  grid-column: 2;
+  gap: 10px;
+  min-width: 0;
+}

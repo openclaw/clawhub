@@ -1,9 +1,10 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { isPluginCategorySlug } from "clawhub-schema";
 import { useQuery } from "convex/react";
-import { BadgeCheck, PackageSearch, Plus } from "lucide-react";
+import { PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import { DISCOVERY_RECENT_WINDOW_MS } from "../../../convex/lib/discoveryWindows";
 import {
   BrowseActions,
   BrowseCategorySelect,
@@ -21,11 +22,13 @@ import {
 import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
+import { convexHttp } from "../../convex/client";
 import { formatBrowseCount } from "../../lib/browseCount";
 import {
   parseBrowseTopicFromSearchInput,
   sanitizeBrowseTopicSearch,
 } from "../../lib/browseTopicSearch";
+import { CATALOG_TABS } from "../../lib/catalogTabs";
 import { PLUGIN_CATEGORIES, resolvePluginBrowseCategorySlug } from "../../lib/categories";
 import {
   fetchPluginCatalog,
@@ -38,7 +41,7 @@ import { useMediaQuery } from "../../lib/useMediaQuery";
 type VisiblePluginSort = "recommended" | "updated" | "downloads" | "trending";
 type PluginSort = VisiblePluginSort | "relevance";
 type LegacyPluginSort = PluginSort | "newest" | "name" | "installs";
-type PluginBrowseTab = VisiblePluginSort | "official";
+type PluginBrowseTab = VisiblePluginSort | "official" | "featured" | "new";
 
 const PLUGINS_PAGE_SIZE = 25;
 const PLUGIN_CATALOG_REQUEST_TIMEOUT_MS = 5_000;
@@ -54,6 +57,7 @@ type PluginSearchState = {
   cursor?: string;
   family?: undefined;
   featured?: boolean;
+  new?: boolean;
   official?: boolean;
   sort?: LegacyPluginSort;
   view?: LegacyPluginView;
@@ -61,17 +65,6 @@ type PluginSearchState = {
 
 type PluginView = "list" | "grid";
 type LegacyPluginView = PluginView | "cards";
-
-const PLUGIN_BROWSE_TABS = [
-  { value: "recommended", label: "All" },
-  { value: "trending", label: "Trending" },
-  {
-    value: "official",
-    label: "Official",
-    icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
-  },
-  { value: "updated", label: "Updated" },
-];
 
 function normalizePluginView(value: unknown): PluginView | undefined {
   if (value === "list") return "list";
@@ -96,6 +89,7 @@ type PluginsPageDataRequest = {
   topic?: string;
   cursor?: string;
   featured?: boolean;
+  new?: boolean;
   official?: boolean;
   sort?: PluginSort;
   signal?: AbortSignal;
@@ -192,7 +186,48 @@ export async function loadPluginsPageData(
     requestController.abort(new DOMException("Plugin catalog request timed out", "TimeoutError"));
   }, PLUGIN_CATALOG_REQUEST_TIMEOUT_MS);
 
+  let rejectAbortedQuery: (() => void) | undefined;
   try {
+    if (args.new && !args.q) {
+      const aborted = new Promise<never>((_, reject) => {
+        rejectAbortedQuery = () => reject(requestController.signal.reason);
+        requestController.signal.addEventListener("abort", rejectAbortedQuery, { once: true });
+        if (requestController.signal.aborted) rejectAbortedQuery();
+      });
+      const createdAfter = Date.now() - DISCOVERY_RECENT_WINDOW_MS;
+      const items: PackageListItem[] = [];
+      let cursor = args.cursor ?? null;
+      let isDone = false;
+      do {
+        requestController.signal.throwIfAborted();
+        const result = await Promise.race([
+          convexHttp.query(api.packages.listPublicNewPluginsPage, {
+            category: args.category,
+            createdAfter,
+            paginationOpts: { cursor, numItems: PLUGINS_PAGE_SIZE - items.length },
+          }),
+          aborted,
+        ]);
+        // Topic matches can start on a later source page. Fill the visible page
+        // before returning so an empty transport page does not imply no results.
+        items.push(
+          ...(result.page.filter(
+            (item) =>
+              (item.family === "code-plugin" || item.family === "bundle-plugin") &&
+              (!args.topic || item.topics?.includes(args.topic)),
+          ) as PackageListItem[]),
+        );
+        isDone = result.isDone || !result.continueCursor || result.continueCursor === cursor;
+        cursor = result.continueCursor;
+      } while (!isDone && items.length < PLUGINS_PAGE_SIZE);
+      return {
+        items,
+        nextCursor: isDone ? null : cursor,
+        rateLimited: false,
+        retryAfterSeconds: null,
+        isLoading: false,
+      };
+    }
     const data = await fetchPluginCatalog({
       q: args.q,
       ...(args.searchSource ? { searchSource: args.searchSource } : {}),
@@ -261,6 +296,8 @@ export async function loadPluginsPageData(
     };
   } finally {
     clearTimeout(timeoutId);
+    if (rejectAbortedQuery)
+      requestController.signal.removeEventListener("abort", rejectAbortedQuery);
     args.signal?.removeEventListener("abort", abortFromNavigation);
   }
 }
@@ -286,10 +323,16 @@ export const Route = createFileRoute("/plugins/")({
       search.verified === "1"
         ? true
         : undefined;
+    const newOnly =
+      !q && !official && (search.new === true || search.new === "true" || search.new === "1");
+    const defaultFeatured = !q && search.sort === undefined && !official && !newOnly;
     const legacyInstallSort = search.sort === "installs";
     const noExplicitSort = search.sort === undefined;
     const staleImplicitFilteredCursor =
-      noExplicitSort && !q && hasPersistentPluginBrowseFilter({ category, featured, official });
+      noExplicitSort &&
+      !q &&
+      !newOnly &&
+      hasPersistentPluginBrowseFilter({ category, featured, official });
     return {
       q,
       category,
@@ -301,7 +344,8 @@ export const Route = createFileRoute("/plugins/")({
         search.cursor
           ? search.cursor
           : undefined,
-      featured,
+      featured: (featured || defaultFeatured) && !official && !newOnly ? true : undefined,
+      new: newOnly || undefined,
       official,
       sort: parsePluginSort(search.sort),
       view: normalizePluginView(search.view),
@@ -337,6 +381,7 @@ export const Route = createFileRoute("/plugins/")({
       topic: search.topic,
       cursor: hasQuery ? undefined : search.cursor,
       featured: search.featured,
+      new: search.new,
       official: search.official,
       sort: hasQuery ? undefined : normalizeActivePluginSort(search.sort),
     };
@@ -372,8 +417,8 @@ function PluginsIndexPending() {
         <BrowseControlsRow>
           <BrowseTabs
             ariaLabel="Sort order"
-            options={PLUGIN_BROWSE_TABS}
-            value="recommended"
+            options={CATALOG_TABS}
+            value="featured"
             onChange={() => {}}
           />
           <BrowseActions>
@@ -448,7 +493,8 @@ function PluginsIndex() {
     Boolean(search.category) ||
     Boolean(activeTopic) ||
     Boolean(search.official) ||
-    Boolean(search.featured);
+    Boolean(search.featured) ||
+    Boolean(search.new);
   const shouldResolveTotalCount =
     !hasActiveFilters && !search.cursor && catalogData.totalCount == null;
   const totalPluginsCount = useQuery(
@@ -486,51 +532,35 @@ function PluginsIndex() {
       : search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
         ? "recommended"
         : (search.sort ?? (hasQuery ? "recommended" : getDefaultPluginBrowseSort(search)));
-  const activeBrowseTab: PluginBrowseTab = search.official ? "official" : activeSort;
+  const activeBrowseTab: PluginBrowseTab = search.official
+    ? "official"
+    : search.new && !hasQuery
+      ? "new"
+      : search.featured && !hasQuery
+        ? "featured"
+        : activeSort;
   const visibleItems = useMemo(() => {
     return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
   }, [activeSort, hasQuery, items]);
   const handleBrowseTabChange = (value: string | undefined) => {
-    if (value === "official") {
-      void navigate({
-        search: (prev: PluginSearchState) => ({
-          ...prev,
-          cursor: undefined,
-          family: undefined,
-          official: true,
-          sort: undefined,
-        }),
-        replace: true,
-      });
-      return;
-    }
-
-    handleSortChange(value ?? "recommended");
-  };
-
-  const handleSortChange = (value: string) => {
-    const nextSort = parsePluginSort(value) ?? "recommended";
-
     void navigate({
-      search: (prev: PluginSearchState) => {
-        const isExplicitFilteredRecommendation =
-          nextSort === "recommended" && !prev.q && hasPersistentPluginBrowseFilter(prev);
-        const sort =
-          isExplicitFilteredRecommendation || nextSort === "downloads"
-            ? nextSort
-            : nextSort === "updated" || nextSort === "trending"
-              ? nextSort
-              : undefined;
-        const nextSearch: PluginSearchState = {
-          ...prev,
-          cursor: undefined,
-          family: undefined,
-          featured: prev.q ? undefined : prev.featured,
-          sort,
-        };
-        delete nextSearch.official;
-        return nextSearch;
-      },
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        cursor: undefined,
+        family: undefined,
+        q: value === "new" || value === "featured" ? undefined : prev.q,
+        featured: value === "featured" ? true : undefined,
+        new: value === "new" ? true : undefined,
+        official: value === "official" ? true : undefined,
+        sort:
+          value === "trending"
+            ? "trending"
+            : value === "official"
+              ? "updated"
+              : value === "featured"
+                ? "recommended"
+                : undefined,
+      }),
       replace: true,
     });
   };
@@ -544,8 +574,6 @@ function PluginsIndex() {
         family: undefined,
         category,
         topic: undefined,
-        featured: undefined,
-        sort: undefined,
       }),
       replace: true,
     });
@@ -582,6 +610,7 @@ function PluginsIndex() {
           cursor: undefined,
           family: undefined,
           q: trimmed ? next : undefined,
+          new: undefined,
           featured: undefined,
           sort: undefined,
         }),
@@ -658,6 +687,7 @@ function PluginsIndex() {
         topic: search.topic,
         cursor: nextCursor,
         featured: search.featured,
+        new: search.new,
         official: search.official,
         sort: normalizeActivePluginSort(search.sort),
         signal: controller.signal,
@@ -687,6 +717,7 @@ function PluginsIndex() {
     nextCursor,
     search.category,
     search.featured,
+    search.new,
     search.official,
     search.q,
     search.sort,
@@ -729,7 +760,7 @@ function PluginsIndex() {
         <BrowseControlsRow>
           <BrowseTabs
             ariaLabel="Sort order"
-            options={PLUGIN_BROWSE_TABS}
+            options={CATALOG_TABS}
             value={activeBrowseTab}
             onChange={handleBrowseTabChange}
           />

@@ -3,6 +3,11 @@ import { Download, ExternalLink, Plus } from "lucide-react";
 import type { RefObject } from "react";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillCard } from "../../components/SkillCard";
+import {
+  SkillListingHead,
+  SkillListingRow,
+  SkillListingSkeleton,
+} from "../../components/SkillListingRow";
 import { SkillListItem } from "../../components/SkillListItem";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Badge } from "../../components/ui/badge";
@@ -230,12 +235,17 @@ export function SkillsResults({
 }: SkillsResultsProps) {
   const isMobileBrowse = useMediaQuery("(max-width: 760px)");
   const effectiveView = isMobileBrowse ? "list" : view;
+  const showFeaturedLayout = catalogTab === "featured";
   const showTrendingLayout = !hasQuery && catalogTab === "trending";
 
   return (
     <>
       {isLoadingSkills ? (
-        <BrowseResultsSkeleton label="Skill" showIcon={false} variant={effectiveView} />
+        showFeaturedLayout && effectiveView === "list" ? (
+          <SkillListingSkeleton />
+        ) : (
+          <BrowseResultsSkeleton label="Skill" showIcon={false} variant={effectiveView} />
+        )
       ) : listFailed && sorted.length === 0 ? (
         <div className="empty-state" role="alert">
           <p className="empty-state-title">Skills couldn't be loaded</p>
@@ -311,22 +321,34 @@ export function SkillsResults({
         </div>
       ) : (
         <div className="browse-list-stack">
-          <div
-            className={`browse-list-head${
-              showTrendingLayout ? " browse-list-head-trending" : " browse-list-head-no-icon"
-            }`}
-            aria-hidden="true"
-          >
-            <span className="browse-list-head-label">Skill</span>
-            {showTrendingLayout ? null : (
-              <span className="browse-list-head-label browse-list-head-category">Category</span>
-            )}
-            <span className="browse-list-head-label browse-list-head-stat">
-              {showTrendingLayout ? "24h downloads" : "Downloads"}
-            </span>
-          </div>
-          <div className="results-list">
+          {showFeaturedLayout ? (
+            <SkillListingHead />
+          ) : (
+            <div
+              className={`browse-list-head${
+                showTrendingLayout ? " browse-list-head-trending" : " browse-list-head-no-icon"
+              }`}
+              aria-hidden="true"
+            >
+              <span className="browse-list-head-label">Skill</span>
+              {showTrendingLayout ? null : (
+                <span className="browse-list-head-label browse-list-head-category">Category</span>
+              )}
+              <span className="browse-list-head-label browse-list-head-stat">
+                {showTrendingLayout ? "24h downloads" : "Downloads"}
+              </span>
+            </div>
+          )}
+          <div className={showFeaturedLayout ? "home-v2-listing-list" : "results-list"}>
             {sorted.map((entry) => {
+              if (showFeaturedLayout) {
+                const key = isExternalSkillListEntry(entry)
+                  ? entry.external.id
+                  : isTrendingSkillListEntry(entry)
+                    ? entry.trending.id
+                    : entry.skill._id;
+                return <SkillListingRow key={key} entry={entry} />;
+              }
               if (isTrendingSkillListEntry(entry)) {
                 return <TrendingSkillListItem key={entry.trending.id} item={entry} />;
               }

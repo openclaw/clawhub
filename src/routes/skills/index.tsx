@@ -24,6 +24,7 @@ import {
   sanitizeBrowseTopicSearch,
 } from "../../lib/browseTopicSearch";
 import { fetchCatalogDiscoveryCapabilities } from "../../lib/catalogDiscoveryCapabilities";
+import { CATALOG_TABS } from "../../lib/catalogTabs";
 import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
 import {
   consumeManualCatalogSearch,
@@ -47,12 +48,6 @@ import {
   type SkillsSearchState,
 } from "./-useSkillsBrowseModel";
 
-const SKILLS_VIEW_OPTIONS = [
-  { value: "trending", label: "Trending" },
-  { value: "featured", label: "Featured" },
-  { value: "official", label: "Official" },
-  { value: "new", label: "New" },
-];
 const SKILLS_INITIAL_SEARCH_LIMIT = 25;
 export const SKILLS_INITIAL_PAGE_TIMEOUT_MS = 250;
 
@@ -255,8 +250,8 @@ export function SkillsIndex() {
 
   const activeView = model.catalogTab;
   const viewOptions = model.canonicalTrendingUnavailable
-    ? SKILLS_VIEW_OPTIONS.filter((option) => option.value !== "trending")
-    : SKILLS_VIEW_OPTIONS;
+    ? CATALOG_TABS.filter((option) => option.value !== "trending")
+    : CATALOG_TABS;
   const hasActiveFilters =
     model.catalogTab !== "trending" ||
     model.hasQuery ||

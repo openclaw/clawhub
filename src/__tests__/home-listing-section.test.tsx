@@ -179,6 +179,7 @@ describe("HomeListingSection", () => {
     );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "Featured",
+      "Trending",
       "Official",
       "New",
     ]);
@@ -246,7 +247,7 @@ describe("HomeListingSection", () => {
     const loadingResults = screen.getByRole("status", { name: "Loading results" });
     expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
     expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
-    expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(6);
+    expect(loadingResults.querySelectorAll(".skill-listing-row")).toHaveLength(6);
   });
 
   it("counts settled shelf input once while excluding switches, pagination, and repeat whitespace", async () => {

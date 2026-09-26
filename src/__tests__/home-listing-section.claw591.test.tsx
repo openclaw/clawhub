@@ -118,7 +118,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("17")).toBeNull();
     expect(screen.queryByText("3")).toBeNull();
     expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.getAllByLabelText("Downloads")).toHaveLength(2);
+    expect(screen.getAllByLabelText("24-hour downloads")).toHaveLength(2);
     expect(screen.queryByText("24h installs")).toBeNull();
     expect(screen.queryByLabelText("24-hour installs")).toBeNull();
     expect(screen.queryByText("9K")).toBeNull();
@@ -130,7 +130,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("button", { name: "Grid view" })).toBeNull();
   });
 
-  it("identifies skills.sh rows without presenting upstream installs as downloads", async () => {
+  it("shows upstream lifetime counts next to the skills.sh badge", async () => {
     const external = {
       ...makeTrending("reddit-automation", "reddit-automation", 0, 12_345, 0),
       id: "skills-sh:doany-skills/skills/reddit-automation",
@@ -162,11 +162,11 @@ describe("HomeListingSection", () => {
 
     expect(screen.getByText("@doany-skills")).toBeTruthy();
     const sourceBadge = screen.getByText("skills.sh");
-    const source = screen.getByLabelText("Source");
+    const source = sourceBadge.parentElement!;
     expect(source.firstElementChild).toBe(sourceBadge);
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(source.textContent).toBe("skills.sh");
-    expect(screen.queryByText("12.3k")).toBeNull();
+    expect(source.textContent).toBe("skills.sh12.3k");
+    expect(screen.getByLabelText("skills.sh lifetime installs").textContent).toBe("12.3k");
 
     fireEvent.pointerMove(sourceBadge);
     expect((await screen.findByRole("tooltip")).textContent).toBe("Synced from skills.sh");
@@ -204,7 +204,7 @@ describe("HomeListingSection", () => {
 
     const sourceBadge = screen.getByText("skills.sh");
     expect(sourceBadge.getAttribute("title")).toBeNull();
-    expect(screen.getByLabelText("Source").textContent).toBe("skills.sh");
+    expect(sourceBadge.parentElement?.textContent).toBe("skills.sh—");
   });
 
   it("searches within the canonical Trending feed without changing source or order", async () => {
@@ -342,10 +342,10 @@ describe("HomeListingSection", () => {
     );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "Featured",
+      "Trending",
       "Official",
       "New",
     ]);
-    expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Top" })).toBeNull();
     await waitFor(() =>
       expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
