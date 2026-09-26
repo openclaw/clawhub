@@ -4,7 +4,10 @@
 
 set -euo pipefail
 
-AXIOM_QUERY="${AXIOM_QUERY:-$HOME/.config/agents/skills/sre/scripts/axiom-query}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/lib/skill-paths.sh"
+
+AXIOM_QUERY="$(resolve_skill_script sre axiom-query "${AXIOM_QUERY:-}")"
 
 DEPLOYMENT=""
 AUDIT_DATASET=""
@@ -62,7 +65,7 @@ echo ""
 
 # Daily stats summary (human readable, no jq needed)
 echo "── Daily Ingest Statistics (30d) ────────────────────────────────────────────"
-$AXIOM_QUERY "$DEPLOYMENT" "
+"$AXIOM_QUERY" "$DEPLOYMENT" --since 30d <<< "
 ['$AUDIT_DATASET']
 | where action == 'usageCalculated'
 | where _time > ago(30d)
@@ -85,7 +88,7 @@ echo "════════════════════════�
 echo ""
 
 # Get all datasets (unfiltered first to compute global total for share%)
-QUEUE=$($AXIOM_QUERY "$DEPLOYMENT" "
+QUEUE=$("$AXIOM_QUERY" "$DEPLOYMENT" --since 30d --raw <<< "
 ['$AUDIT_DATASET']
 | where action == 'usageCalculated'
 | where _time > ago(30d)
@@ -94,7 +97,7 @@ QUEUE=$($AXIOM_QUERY "$DEPLOYMENT" "
     query_gbms = sum(toreal(['properties.hourly_billable_query_gbms']))
   by dataset = tostring(['properties.dataset'])
 | order by ingest_bytes desc
-" --raw | tabular_to_json | jq '
+" | tabular_to_json | jq '
 # Handle empty response
 if length == 0 then [] else
 
