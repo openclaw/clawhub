@@ -53,7 +53,6 @@ import {
 } from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
-import { orderPublishedFeatured, readPublishedFeaturedOrder } from "./lib/featuredSelections";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
@@ -2370,13 +2369,8 @@ async function loadHighlightedSkills(ctx: QueryCtx, limit: number) {
     .order("desc")
     .take(MAX_LIST_TAKE);
 
-  const ordered = orderPublishedFeatured(
-    entries,
-    await readPublishedFeaturedOrder(ctx, "skill"),
-    (badge) => `clawhub:${badge.skillId}`,
-  );
   const skills: Doc<"skills">[] = [];
-  for (const badge of ordered) {
+  for (const badge of entries) {
     const skill = await ctx.db.get(badge.skillId);
     if (!skill || skill.softDeletedAt) continue;
     skills.push(skill);
@@ -7498,7 +7492,7 @@ async function listOfficialFirstSkillCategoryPage(
   };
 }
 
-/** Resolve current highlighted membership in its approved publication order. */
+/** Resolve current highlighted membership newest-featured first. */
 async function fetchHighlightedPage(
   ctx: QueryCtx,
   opts: {
@@ -7541,11 +7535,8 @@ async function fetchHighlightedPage(
     digests.push(digest);
   }
 
-  const trimmed = orderPublishedFeatured(
-    digests,
-    await readPublishedFeaturedOrder(ctx, "skill"),
-    (digest) => `clawhub:${digest.skillId}`,
-  ).slice(0, opts.numItems);
+  // Filtering preserves the badge index's newest-featured order before applying the limit.
+  const trimmed = digests.slice(0, opts.numItems);
 
   const items: PublicSkillEntry[] = [];
   for (const digest of trimmed) {

@@ -678,6 +678,9 @@ Query params:
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
 - `sort` (optional): `recommended` (default), `trending`, `downloads`, `updated`, legacy alias `installs`
+- `featured` (optional): `true` returns Featured plugins in newest-featured order,
+  regardless of `sort`. Removing and re-featuring a plugin moves it to the front;
+  retaining an existing selection preserves its position.
 - `category` (optional): plugin category filter. The active browse values are
   returned by `GET /api/v1/plugins/categories`, including their descriptions and
   icons. The 22 categories cover core configuration surfaces and product uses.
@@ -704,6 +707,7 @@ top eight Featured, Trending, and official-first/download-sorted plugins for
 each category. Items may include `featured` and `trending` markers.
 Marked items also include their zero-based `featuredRank` or `trendingRank`, so
 clients preserve each shelf's independent order after deduplicating metadata.
+Featured ranks follow newest-featured order, matching `GET /api/v1/plugins?featured=true`.
 
 The response is public and carries shared-cache headers. Use the paginated
 `GET /api/v1/plugins` endpoint for searches, category expansion, and complete

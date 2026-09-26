@@ -74,6 +74,14 @@ automatic removal occurs, and new additions wait until there is capacity. Publis
 the proposed set requires Patrick's approval. The homepage default changes only after
 the deployed pipeline's initial selection has been reviewed.
 
+Public Featured shelves and browse lists show the most recently added badge first,
+for both plugins and skills. A saved publication remains approval/audit evidence and
+does not override that chronology. Keeping a member preserves its position; removing
+and featuring it again moves it to the front. Equal badge timestamps use the badge
+index's descending creation order. ClawHub returns this order before limiting or
+paginating; the plugin overview exports the same order as `featuredRank` for OpenClaw.
+An explicitly requested `officialFirst` grouping still preserves recency within each group.
+
 ## Aggregation and retention
 
 `searchInsights.aggregateInternal` runs hourly. The bounded 200-row ingestion batch

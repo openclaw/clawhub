@@ -70,7 +70,6 @@ import {
 } from "./lib/emails";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
-import { orderPublishedFeatured, readPublishedFeaturedOrder } from "./lib/featuredSelections";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -2864,17 +2863,14 @@ async function fetchHighlightedPackagePage(
     numItems: number;
   },
 ) {
-  const entries = orderPublishedFeatured(
-    await fetchHighlightedPackageEntries(ctx, args),
-    await readPublishedFeaturedOrder(ctx, "plugin"),
-    ({ digest }) => `plugin:${digest.name}`,
-  );
+  // Badge recency owns public order, including manual additions after a published lineup.
+  const entries = await fetchHighlightedPackageEntries(ctx, args);
   const items = await Promise.all(
     entries.map(
       async ({ digest, featuredAt }) => await toPublicPackageListItem(ctx, digest, featuredAt),
     ),
   );
-  // The published selection supplies order independently from badge timestamps.
+  // Explicit official-first requests group entries without changing recency within each group.
   if (!args.officialFirst) {
     return items.slice(0, args.numItems);
   }
