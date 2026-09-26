@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
 import { getClientIp } from "./lib/httpRateLimit";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
+import { readCanonicalStat } from "./lib/skillStats";
 import { hashToken } from "./lib/tokens";
 import { insertStatEvent } from "./skillStatEvents";
 
@@ -61,6 +62,25 @@ export const recordDownloadMetricInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const targetId = args.target.id;
+    // Touch the target before the dedupe insert so overlapping writes conflict
+    // and retry onto the committed dedupe row.
+    if (args.target.kind === "skill") {
+      const skill = await ctx.db.get(args.target.id);
+      if (skill) {
+        const statsDownloads =
+          skill.stats || typeof skill.statsDownloads === "number"
+            ? readCanonicalStat(skill, "downloads")
+            : 0;
+        await ctx.db.patch(skill._id, { statsDownloads });
+      }
+    } else {
+      const pkg = await ctx.db.get(args.target.id);
+      if (pkg?.stats && typeof pkg.stats.downloads === "number") {
+        await ctx.db.patch(pkg._id, {
+          stats: { ...pkg.stats, downloads: pkg.stats.downloads },
+        });
+      }
+    }
     const existing = await ctx.db
       .query("downloadMetricDedupes")
       .withIndex("by_target_identity_day", (q) =>
