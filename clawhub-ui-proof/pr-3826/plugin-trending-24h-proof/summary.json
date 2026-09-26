@@ -1,0 +1,70 @@
+{
+  "baseline": "origin/main",
+  "candidate": "worktree",
+  "generatedAt": "2026-09-26T07:16:08.460Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-24h-proof/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "24-hour API and displayed totals exclude the former weekly leader",
+          "screenshot": "screenshots/24-hour-api-and-displayed-totals-exclude-the-former-weekly-leader.png",
+          "slug": "24-hour-api-and-displayed-totals-exclude-the-former-weekly-leader",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Load more preserves ranking and excludes old activity",
+          "screenshot": "screenshots/load-more-preserves-ranking-and-excludes-old-activity.png",
+          "slug": "load-more-preserves-ranking-and-excludes-old-activity",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Search filters 24-hour ranking and closing restores it",
+          "screenshot": "screenshots/search-filters-24-hour-ranking-and-closing-restores-it.png",
+          "slug": "search-filters-24-hour-ranking-and-closing-restores-it",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive mobile",
+          "screenshot": "screenshots/responsive-mobile.png",
+          "slug": "responsive-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive tablet",
+          "screenshot": "screenshots/responsive-tablet.png",
+          "slug": "responsive-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive laptop",
+          "screenshot": "screenshots/responsive-laptop.png",
+          "slug": "responsive-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive desktop",
+          "screenshot": "screenshots/responsive-desktop.png",
+          "slug": "responsive-desktop",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-24h-proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/proof-scenarios/plugin-trending-24h.mjs",
+  "status": "pass"
+}
