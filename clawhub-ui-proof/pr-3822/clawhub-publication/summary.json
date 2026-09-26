@@ -1,0 +1,34 @@
+{
+  "status": "pass",
+  "mode": "before-after",
+  "provider": "local real Convex + built ClawHub + Chromium",
+  "scenario": "Actual ClawHub Memory category with same named fixture and canonical download counts. Synthetic @catalog-proof badges do not verify company ownership. Local URLs baseline14317/candidate14328; real HTTP pagination and English-filter evidence in report.md.",
+  "baseline": "8166335196",
+  "candidate": "6f5836c60de47f14cfe81e5ae8f6b4e68a2e9c39",
+  "lanes": [
+    {
+      "name": "baseline",
+      "baseURL": "http://127.0.0.1:14317/plugins?category=memory",
+      "steps": [
+        {
+          "name": "Memory: official-first catalog ordering",
+          "slug": "memory",
+          "screenshot": "memory.png",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "baseURL": "http://127.0.0.1:14328/plugins?category=memory",
+      "steps": [
+        {
+          "name": "Memory: Honcho, Mem0, Cognee first; tail by downloads",
+          "slug": "memory",
+          "screenshot": "memory.png",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}
