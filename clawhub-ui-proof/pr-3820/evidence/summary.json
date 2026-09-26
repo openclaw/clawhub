@@ -1,0 +1,47 @@
+{
+  "status": "pass",
+  "mode": "before-after",
+  "baseline": "f6a1b53566",
+  "candidate": "066dfe3e6a4e451f11340a44579264ea8bd1f927",
+  "runner": "local",
+  "fixture": "featured-newest-first",
+  "route": "/",
+  "lanes": [
+    {
+      "name": "baseline",
+      "baseURL": "http://127.0.0.1:4310",
+      "steps": [
+        {
+          "name": "Desktop Featured (1440\u00d7900)",
+          "slug": "desktop",
+          "status": "pass",
+          "screenshot": "desktop-viewport.png"
+        },
+        {
+          "name": "Mobile Featured (390\u00d7844)",
+          "slug": "mobile",
+          "status": "pass",
+          "screenshot": "mobile-viewport.png"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "baseURL": "http://127.0.0.1:4311",
+      "steps": [
+        {
+          "name": "Desktop Featured (1440\u00d7900)",
+          "slug": "desktop",
+          "status": "pass",
+          "screenshot": "desktop-viewport.png"
+        },
+        {
+          "name": "Mobile Featured (390\u00d7844)",
+          "slug": "mobile",
+          "status": "pass",
+          "screenshot": "mobile-viewport.png"
+        }
+      ]
+    }
+  ]
+}
