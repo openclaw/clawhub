@@ -7,6 +7,7 @@ import { CATALOG_TABS } from "../lib/catalogTabs";
 import { PLUGIN_CATEGORIES, SKILL_CATEGORIES } from "../lib/categories";
 import {
   fetchHomePluginListing as fetchPluginListing,
+  fetchHomeTrendingPluginListing,
   fetchHomeSkillListing as fetchSkillListing,
   searchHomeTrendingSkillListing,
   fetchHomeFeaturedSkillListing,
@@ -395,7 +396,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
 
     const handle = window.setTimeout(() => {
       const searchSource =
-        !(kind === "skills" && tab === "trending") &&
+        tab !== "trending" &&
         consumeManualCatalogSearch(
           manualSearchRef.current,
           kind === "skills" ? "skill" : "plugin",
@@ -449,21 +450,25 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                     setListingHasMore(searchHits.length >= fetchLimit);
                     setSearchStatus("idle");
                   })
-              : fetchPluginCatalog({
-                  q: trimmedSearch,
-                  ...(searchSource ? { searchSource } : {}),
-                  category: categorySlug,
-                  featured: tab === "featured" ? true : undefined,
-                  isOfficial: tab === "official" ? true : undefined,
-                  createdAfter: tab === "new" ? Date.now() - HOME_NEW_WINDOW_MS : undefined,
-                  limit: fetchLimit,
-                  signal: controller.signal,
-                }).then((result) => {
+              : (tab === "trending"
+                  ? fetchHomeTrendingPluginListing(fetchLimit, controller.signal, trimmedSearch)
+                  : fetchPluginCatalog({
+                      q: trimmedSearch,
+                      ...(searchSource ? { searchSource } : {}),
+                      category: categorySlug,
+                      featured: tab === "featured" ? true : undefined,
+                      isOfficial: tab === "official" ? true : undefined,
+                      createdAfter: tab === "new" ? Date.now() - HOME_NEW_WINDOW_MS : undefined,
+                      limit: fetchLimit,
+                      signal: controller.signal,
+                    }).then((result) => ({
+                      items: result.items,
+                      hasMore: result.nextCursor !== null || result.items.length >= fetchLimit,
+                    }))
+                ).then((result) => {
                   if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
                   setSearchPlugins(result.items);
-                  setListingHasMore(
-                    result.nextCursor !== null || result.items.length >= fetchLimit,
-                  );
+                  setListingHasMore(result.hasMore);
                   setSearchStatus("idle");
                 });
 
@@ -577,7 +582,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               onOpen={searchDisclosure.openSearch}
               label="Search catalog"
             />
-            {kind === "skills" && tab === "trending" ? null : (
+            {tab === "trending" ? null : (
               <BrowseCategorySelect
                 categories={listingCategories}
                 value={categorySlug}
@@ -598,7 +603,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             onChange={(next) => {
               if (next.trim() !== trimmedSearch) {
                 manualSearchRef.current =
-                  kind === "skills" && tab === "trending"
+                  tab === "trending"
                     ? null
                     : {
                         query: next.trim(),

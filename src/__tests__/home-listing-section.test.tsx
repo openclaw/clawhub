@@ -404,6 +404,84 @@ describe("HomeListingSection", () => {
     );
   });
 
+  it("browses, searches, and restores cached plugin Trending without category or relevance sorting", async () => {
+    const ranked = Array.from({ length: 25 }, (_, index) => ({
+      ...featuredPlugin,
+      name: `ranked-${index}`,
+      displayName: `Ranked Plugin ${index}`,
+      summary: index === 0 || index === 24 ? "Calendar workflow" : "Other workflow",
+      updatedAt: index,
+    }));
+    fetchPluginCatalogMock.mockImplementation(
+      ({ cursor, limit }: { cursor?: string; limit: number }) => {
+        const start = cursor ? Number(cursor) : 0;
+        return Promise.resolve({
+          items: ranked.slice(start, start + limit),
+          nextCursor: start + limit < ranked.length ? String(start + limit) : null,
+        });
+      },
+    );
+    render(<HomeListingSection initialListing={initialPluginListing()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Channels" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
+    expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
+    await screen.findByText("Ranked Plugin 0");
+    expect(screen.queryByText("Ranked Plugin 24")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByText("Ranked Plugin 24");
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    expect(
+      Array.from(
+        document.querySelectorAll(".home-v2-listing-row-name"),
+        (node) => node.textContent,
+      ),
+    ).toEqual(ranked.map((item) => item.displayName));
+
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search plugins" }), {
+      target: { value: "calendar" },
+    });
+    await waitFor(() =>
+      expect(document.querySelectorAll(".home-v2-listing-row-name")).toHaveLength(2),
+    );
+    expect(screen.getByText("Ranked Plugin 0")).toBeTruthy();
+    expect(screen.getByText("Ranked Plugin 24")).toBeTruthy();
+    expect(fetchPluginCatalogMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort: "trending", limit: 100 }),
+    );
+    expect(fetchPluginCatalogMock.mock.calls.some(([args]) => args.q)).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    await screen.findByText("Ranked Plugin 19");
+    fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
+    await screen.findByText("Demo Plugin");
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+      "All categories",
+    );
+    const callsBefore = fetchPluginCatalogMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
+    await screen.findByText("Ranked Plugin 0");
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(callsBefore);
+  });
+
+  it("keeps plugin Trending rows visible when loading more fails", async () => {
+    fetchPluginCatalogMock.mockRejectedValue(new Error("Feed unavailable"));
+    render(
+      <HomeListingSection
+        initialListing={{ ...initialPluginListing(), tab: "trending", hasMore: true }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Load more" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    expect(screen.getByText("Demo Plugin")).toBeTruthy();
+    expect(screen.queryByText("Listings took a coffee break")).toBeNull();
+  });
+
   it("passes New plugin eligibility into catalog search", async () => {
     render(<HomeListingSection initialListing={initialPluginListing()} />);
     fireEvent.click(screen.getByRole("tab", { name: "New" }));

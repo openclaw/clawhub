@@ -327,6 +327,9 @@ export async function fetchHomePluginListing(
   limit: number,
   signal?: AbortSignal,
 ) {
+  if (tab === "trending") {
+    return fetchHomeTrendingPluginListing(limit, signal);
+  }
   if (tab === "featured") {
     const result = await fetchPluginCatalog({
       featured: true,
@@ -439,7 +442,7 @@ export async function fetchHomePluginListing(
           category: categorySlug ?? undefined,
           cursor: cursor ?? undefined,
           isOfficial: tab === "official" ? true : undefined,
-          sort: tab === "trending" ? "trending" : "updated",
+          sort: "updated",
           limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
           signal,
         });
@@ -452,13 +455,50 @@ export async function fetchHomePluginListing(
       return { items, hasMore };
     }),
   );
-  // The homepage selects one category, so Trending retains one backend feed's order.
-  const items = uniqueHomePlugins(results.flatMap((result) => result.items));
-  if (tab !== "trending") items.sort((left, right) => right.updatedAt - left.updatedAt);
+  const items = uniqueHomePlugins(results.flatMap((result) => result.items)).sort(
+    (left, right) => right.updatedAt - left.updatedAt,
+  );
   return {
     items: items.slice(0, limit),
     hasMore: items.length > limit || results.some((result) => result.hasMore),
   };
+}
+
+export async function fetchHomeTrendingPluginListing(
+  limit: number,
+  signal?: AbortSignal,
+  query = "",
+) {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const items: PackageListItem[] = [];
+  let cursor: string | undefined;
+  let hasMore = false;
+  do {
+    signal?.throwIfAborted();
+    // The backend caps this leaderboard at 200 entries. Filter it in place:
+    // catalog search uses relevance order and includes non-trending plugins.
+    const result = await fetchPluginCatalog({
+      sort: "trending",
+      cursor,
+      limit: tokens.length
+        ? PLUGIN_CATALOG_PAGE_LIMIT
+        : Math.min(HOME_LISTING_PAGE_SIZE, limit - items.length),
+      signal,
+    });
+    items.push(
+      ...result.items.filter((item) => {
+        const text = [item.name, item.displayName, item.summary, item.ownerHandle]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return tokens.every((token) => text.includes(token));
+      }),
+    );
+    hasMore = Boolean(result.nextCursor && result.nextCursor !== cursor);
+    if (!hasMore) break;
+    cursor = result.nextCursor ?? undefined;
+  } while (items.length < limit);
+  return { items: items.slice(0, limit), hasMore: items.length > limit || hasMore };
 }
 
 export async function fetchInitialHomeListing(): Promise<HomeListingInitialData> {
