@@ -66,6 +66,28 @@ function client(overrides: Partial<Client> = {}): Client {
 }
 
 describe("production category operator guards", () => {
+  it("accepts exact named preview selection only for one cursor-free page", () => {
+    const selected = {
+      ...env,
+      CATEGORY_PACKAGE_NAMES: '["@example/browser"]',
+      CATEGORY_MAX_PAGES: "1",
+    };
+    expect(parseOptions(selected)).toMatchObject({ packageNames: ["@example/browser"] });
+    for (const override of [
+      { CATEGORY_PACKAGE_NAMES: "not-json" },
+      { CATEGORY_PACKAGE_NAMES: '["@example/browser","@example/browser"]' },
+      { CATEGORY_PACKAGE_NAMES: '[" @example/browser"]' },
+      { CATEGORY_PACKAGE_NAMES: '["@EXAMPLE/browser"]' },
+      { CATEGORY_PACKAGE_NAMES: '{"name":"plugin"}' },
+      {
+        CATEGORY_PACKAGE_NAMES: JSON.stringify(Array.from({ length: 11 }, (_, i) => `plugin-${i}`)),
+      },
+      { CATEGORY_MODE: "report" },
+      { CATEGORY_MAX_PAGES: "2" },
+      { CATEGORY_CURSOR: "resume" },
+    ])
+      expect(() => parseOptions({ ...selected, ...override })).toThrow();
+  });
   it.each([
     { GITHUB_REF: "refs/heads/codex/task" },
     { GITHUB_SHA: "b".repeat(40) },
@@ -249,6 +271,34 @@ describe("production category operator guards", () => {
 });
 
 describe("bounded preview checkpoints", () => {
+  it("forwards and records the same named selection for planning and preview", async () => {
+    const request = parseOptions({
+      ...env,
+      CATEGORY_PACKAGE_NAMES: '["@example/browser"]',
+      CATEGORY_MAX_PAGES: "1",
+    });
+    const run = vi.fn(async (name: string) =>
+      name.endsWith("getPage")
+        ? { cursor: "", isDone: true, ids: [id] }
+        : { cursor: "", isDone: true, previewed: 1, skipped: 0, failed: 0 },
+    ) as Client["run"];
+    const result = await previewPages(client({ run }), request, vi.fn());
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledWith("pluginCategoryRefresh:getPage", {
+      batchSize: 10,
+      packageNames: ["@example/browser"],
+    });
+    expect(run).toHaveBeenCalledWith("pluginCategoryRefresh:preview", {
+      runId: request.runId,
+      batchSize: 10,
+      packageNames: ["@example/browser"],
+    });
+    expect(result).toMatchObject({
+      packageNames: ["@example/browser"],
+      isDone: true,
+      previewed: 1,
+    });
+  });
   it("preserves bounded skip diagnostics even when no journal row was created", async () => {
     const run = vi.fn(async (name: string) =>
       name.endsWith("getPage")

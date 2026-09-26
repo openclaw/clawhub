@@ -164,6 +164,11 @@ describe("category refresh source revision", () => {
         };
       };
       expect(workflow.jobs.operate.environment.name).toBe("Production");
+      expect(
+        workflow.jobs.operate.steps.find(
+          (step) => step.run === "bun scripts/plugin-category-operator.ts",
+        )?.env,
+      ).toHaveProperty("CATEGORY_PACKAGE_NAMES", "${{ inputs.package_names }}");
       const preflight = async () => {
         for (const step of workflow.jobs.operate.steps) {
           // Exercise every real guard before the first checked-out action. A

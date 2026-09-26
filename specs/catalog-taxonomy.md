@@ -165,6 +165,13 @@ Operator entry points (run only against the deliberately selected deployment):
 - `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v6-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
+- For a bounded repair, preview optionally accepts `packageNames` with 1–10 distinct, exact
+  canonical names. It resolves only those plugin packages through the name index and returns one
+  terminal page. Unknown names, non-plugin packages, and a simultaneous cursor fail before any
+  preview rows are written. The workflow exposes this as the JSON `package_names` input and
+  requires preview mode, `max_pages: 1`, and no cursor. Its empty default keeps normal pagination.
+  Repeating the named preview under the same run ID retains its existing journal rows. Selection
+  does not override authored or reviewed assignments, accept proposals, or change live categories.
 - `pluginCategoryRefresh:accept` accepts at most 100 inspected row IDs with
   `confirm: "apply-plugin-category-refresh"`. The stock workflow's report/accept modes optionally
   take `corrections: [{"id":"<journal-id>","category":"<current-slug>","evidence":"<reviewed-source-reason>"}]`.

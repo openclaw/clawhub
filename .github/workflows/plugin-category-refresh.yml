@@ -21,6 +21,10 @@ on:
         description: "Previous resumeCursor; blank starts at the beginning"
         type: string
         default: ""
+      package_names:
+        description: "Optional JSON array of 1–10 exact package names; preview only, max_pages=1, no cursor"
+        type: string
+        default: "[]"
       max_pages:
         description: "Bounded pages per dispatch (1–20)"
         type: string
@@ -94,6 +98,7 @@ jobs:
           CATEGORY_EXPECTED_SHA: ${{ inputs.expected_sha }}
           CATEGORY_RUN_ID: ${{ inputs.run_id }}
           CATEGORY_CURSOR: ${{ inputs.cursor }}
+          CATEGORY_PACKAGE_NAMES: ${{ inputs.package_names }}
           CATEGORY_MAX_PAGES: ${{ inputs.max_pages }}
           CATEGORY_WORKERS: ${{ inputs.workers }}
           CATEGORY_REVIEWED_IDS: ${{ inputs.reviewed_ids }}
