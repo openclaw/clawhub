@@ -3272,6 +3272,7 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
     version: version.version,
     createdAt: version.createdAt,
     softDeletedAt: version.softDeletedAt,
+    publicationStatus: version.publicationStatus,
     ...(version.staticScan
       ? {
           staticScan: {
@@ -3357,10 +3358,15 @@ export const getSecurityVerdictTargetInternal = internalQuery({
     const owner = await getPublicSkillMetadataOwner(ctx, skill);
     if (!owner) return null;
 
-    const version = await ctx.db
+    const versionDoc = await ctx.db
       .query("skillVersions")
       .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
       .unique();
+    const version =
+      versionDoc &&
+      (versionDoc.softDeletedAt || isPublicSkillVersionAvailableForSkill(versionDoc, skill._id))
+        ? versionDoc
+        : null;
     const isPendingScan =
       skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
     const isHiddenByMod =

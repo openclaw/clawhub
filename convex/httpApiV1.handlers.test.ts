@@ -7874,6 +7874,41 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("does not return scan summaries for an unpublished skill version", async () => {
+    const runQuery = vi.fn(async () => ({
+      skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+      owner: { _id: "users:1", handle: "acme", displayName: "Acme" },
+      moderationInfo: null,
+      version: {
+        _id: "skillVersions:1",
+        version: "1.0.0",
+        createdAt: 1,
+        publicationStatus: "pending",
+        llmAnalysis: { status: "clean", verdict: "clean", summary: "hidden scan", checkedAt: 2 },
+      },
+    }));
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillSecurityVerdictsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/-/security-verdicts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ items: [{ slug: "demo", version: "1.0.0" }] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items[0]).toMatchObject({
+      ok: false,
+      decision: "fail",
+      reasons: ["version.not_found"],
+      error: { code: "version_not_found", message: "Version not found" },
+    });
+    expect(JSON.stringify(json)).not.toContain("hidden scan");
+  });
+
   it.each([
     {
       label: "suspicious",

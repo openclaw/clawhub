@@ -787,7 +787,10 @@ type SecurityVerdictTargetResult = {
   } | null;
   version:
     | (VerifySecurityVersion &
-        Pick<Doc<"skillVersions">, "_id" | "version" | "createdAt" | "softDeletedAt">)
+        Pick<
+          Doc<"skillVersions">,
+          "_id" | "version" | "createdAt" | "softDeletedAt" | "publicationStatus"
+        >)
     | null;
 } | null;
 
@@ -1174,6 +1177,14 @@ async function buildSecurityVerdictItem(
       "version_unavailable",
       "Version not available",
       "version.unavailable",
+    );
+  }
+  if (version.publicationStatus && version.publicationStatus !== "published") {
+    return buildSecurityVerdictError(
+      item,
+      "version_not_found",
+      "Version not found",
+      "version.not_found",
     );
   }
 
