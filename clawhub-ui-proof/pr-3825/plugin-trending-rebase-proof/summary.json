@@ -1,0 +1,113 @@
+{
+  "baseline": "0b899b1a2c",
+  "candidate": "ccf326aa29",
+  "generatedAt": "2026-09-26T07:55:14.287Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-rebase-proof/baseline",
+      "name": "baseline",
+      "ref": "0b899b1a2c",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "Plugin Trending controls",
+          "screenshot": "screenshots/plugin-trending-controls.png",
+          "slug": "plugin-trending-controls",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive mobile",
+          "screenshot": "screenshots/responsive-mobile.png",
+          "slug": "responsive-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive tablet",
+          "screenshot": "screenshots/responsive-tablet.png",
+          "slug": "responsive-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive laptop",
+          "screenshot": "screenshots/responsive-laptop.png",
+          "slug": "responsive-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive desktop",
+          "screenshot": "screenshots/responsive-desktop.png",
+          "slug": "responsive-desktop",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-rebase-proof/candidate",
+      "name": "candidate",
+      "ref": "ccf326aa29",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Plugin Trending controls",
+          "screenshot": "screenshots/plugin-trending-controls.png",
+          "slug": "plugin-trending-controls",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive mobile",
+          "screenshot": "screenshots/responsive-mobile.png",
+          "slug": "responsive-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive tablet",
+          "screenshot": "screenshots/responsive-tablet.png",
+          "slug": "responsive-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive laptop",
+          "screenshot": "screenshots/responsive-laptop.png",
+          "slug": "responsive-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive desktop",
+          "screenshot": "screenshots/responsive-desktop.png",
+          "slug": "responsive-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Load more preserves rank order",
+          "screenshot": "screenshots/load-more-preserves-rank-order.png",
+          "slug": "load-more-preserves-rank-order",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Search filters the ranked feed and restores it",
+          "screenshot": "screenshots/search-filters-the-ranked-feed-and-restores-it.png",
+          "slug": "search-filters-the-ranked-feed-and-restores-it",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-rebase-proof",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/proof-scenarios/plugin-trending-rebase.mjs",
+  "status": "pass"
+}
