@@ -700,7 +700,12 @@ Legacy v1 filter aliases remain accepted on read endpoints:
 - `observability` and `deployment` resolve to `gateway`.
 - `dev-tools` resolves to `runtime`.
 
-`trending` is a seven-day install/download leaderboard and does not use all-time totals.
+`trending` ranks activity in the latest 24 completed UTC hours, refreshed hourly.
+Its score is downloads plus three times net installs, with negative net installs
+clamped to zero. Trending items expose window metrics in the optional `trending24h`
+object: downloads, net installs, and `windowStart`/`windowEnd` timestamps in
+milliseconds (start inclusive, end exclusive). The regular `stats` fields retain
+their lifetime totals.
 On the unified `/api/v1/packages` endpoint it is plugin-only; use
 `/api/v1/skills?sort=trending` for the skill catalog.
 
