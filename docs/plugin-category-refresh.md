@@ -53,6 +53,23 @@ the beginning with the same run ID to reconcile changes during enumeration.
 Each page preserves bounded package IDs and diagnostic reasons for skipped or
 failed entries, including entries that never produced a journal row.
 
+For a small repair, select 1–10 distinct, exact canonical package names instead
+of traversing the corpus. Named selection requires `mode=preview`, `max_pages=1`,
+and no cursor:
+
+```bash
+gh workflow run plugin-category-refresh.yml --repo openclaw/clawhub --ref main \
+  -f mode=preview -f expected_sha="$DEPLOYED_SHA" -f run_id="$CATEGORY_RUN" \
+  -f max_pages=1 -f package_names='["@example/browser","another-plugin"]'
+```
+
+Replace the example names with existing plugin packages. Missing, duplicate,
+noncanonical, and non-plugin names reject the request before journal writes.
+The result is one terminal page; retry with the same run ID and names to skip
+existing proposals. Omit `package_names` for normal corpus pagination. Named
+selection preserves authored and reviewed assignments and still requires the
+separate report, accept, and apply steps below.
+
 Run `mode=report` with `cursor`/`max_pages` to export up to 2,000 journal rows per
 dispatch. Report cursors and preview cursors belong to different tables; do not
 interchange them. Inspect proposed categories, source, evidence, previous
