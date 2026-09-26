@@ -142,8 +142,10 @@ export async function preparePublishInspectorOpenClawTarget<ResolvedTarget, Prep
 ) {
   const resolvedTarget = await targets.resolveVersion("latest");
   return await targets.prepare(resolvedTarget, {
-    // The dependency defaults to os.homedir(), which can be unusable in serverless runtimes.
-    cacheDir: path.join(root, ".plugin-inspector-cache"),
+    // Honor the inspector's operator-configured cache for batch imports. Otherwise
+    // avoid its homedir default, which can be unusable in serverless runtimes.
+    cacheDir:
+      process.env.PLUGIN_INSPECTOR_CACHE_DIR?.trim() || path.join(root, ".plugin-inspector-cache"),
   });
 }
 

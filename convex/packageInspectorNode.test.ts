@@ -13,6 +13,7 @@ const originalPlatform = process.platform;
 
 afterEach(() => {
   Object.defineProperty(process, "platform", { value: originalPlatform });
+  vi.unstubAllEnvs();
 });
 
 describe("package inspector publish normalization", () => {
@@ -62,6 +63,7 @@ describe("package inspector publish normalization", () => {
   });
 
   it("prepares latest stable OpenClaw with a cache outside the inspected package", async () => {
+    vi.stubEnv("PLUGIN_INSPECTOR_CACHE_DIR", undefined);
     const resolvedTarget = { version: "2026.7.0" };
     const preparedTarget = { status: "ok", version: "2026.7.0" };
     const resolveVersion = vi.fn(async () => resolvedTarget);
@@ -77,6 +79,23 @@ describe("package inspector publish normalization", () => {
     expect(path.join("/tmp/plugin", ".plugin-inspector-cache")).not.toContain(
       path.join("/tmp/plugin", "package") + path.sep,
     );
+  });
+
+  it("shares an operator cache across imports while resolving latest for each inspection", async () => {
+    vi.stubEnv("PLUGIN_INSPECTOR_CACHE_DIR", " /tmp/company-plugin-cache ");
+    const first = { version: "2026.7.0" };
+    const second = { version: "2026.7.1" };
+    const resolveVersion = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const prepare = vi.fn(async (target) => target);
+
+    await preparePublishInspectorOpenClawTarget("/tmp/first-import", { resolveVersion, prepare });
+    await preparePublishInspectorOpenClawTarget("/tmp/second-import", { resolveVersion, prepare });
+
+    expect(resolveVersion.mock.calls).toEqual([["latest"], ["latest"]]);
+    expect(prepare.mock.calls).toEqual([
+      [first, { cacheDir: "/tmp/company-plugin-cache" }],
+      [second, { cacheDir: "/tmp/company-plugin-cache" }],
+    ]);
   });
 
   it("uses the prepared OpenClaw target for publish-time inspection", () => {
