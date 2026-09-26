@@ -1425,6 +1425,16 @@ const featuredSelections = defineTable({
   artifactKind: searchArtifactKind,
   revision: v.number(),
   editorial: v.array(editorialSelection),
+  // Staff selections only; the mirror continues to own visibility and source identity.
+  externalSkills: v.optional(
+    v.array(
+      v.object({
+        externalId: v.string(),
+        at: v.number(),
+        byUserId: v.id("users"),
+      }),
+    ),
+  ),
   published: v.optional(featuredPublication),
   updatedAt: v.number(),
   updatedBy: v.id("users"),

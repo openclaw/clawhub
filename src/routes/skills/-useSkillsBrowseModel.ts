@@ -23,7 +23,6 @@ import {
 } from "./-types";
 
 export const SKILLS_PAGE_SIZE = 20;
-const featuredPageSize = 40;
 const newWindowMs = 14 * 24 * 60 * 60 * 1_000;
 const maxConsecutiveEmptyPagesPerFetch = 3;
 
@@ -235,6 +234,18 @@ export function useSkillsBrowseModel({
           setListStatus(result.nextCursor ? "idle" : "done");
           return;
         }
+        if (catalogTab === "featured") {
+          const items = await convexHttp.query(api.featuredSkills.listPublic, {
+            categorySlug: activeCategory?.slug,
+            topic: activeTopic,
+          });
+          if (generation !== fetchGeneration.current) return;
+          setListResults(items.page);
+          setListCursor(null);
+          setListAutoLoadPaused(false);
+          setListStatus("done");
+          return;
+        }
         const capabilities =
           catalogTab === "new"
             ? await fetchCatalogDiscoveryCapabilities()
@@ -242,10 +253,10 @@ export function useSkillsBrowseModel({
         while (true) {
           const result = await convexHttp.query(api.skills.listPublicPageV4, {
             cursor: pageCursor ?? undefined,
-            numItems: catalogTab === "featured" ? featuredPageSize : SKILLS_PAGE_SIZE,
+            numItems: SKILLS_PAGE_SIZE,
             ...(listSort ? { sort: listSort } : {}),
             dir,
-            highlightedOnly: catalogTab === "featured" ? true : undefined,
+            highlightedOnly: undefined,
             officialOnly: catalogTab === "official" ? true : undefined,
             ...(catalogTab === "new" && capabilities.apiVersion >= 1
               ? { createdAfter: newCutoff }
@@ -268,7 +279,6 @@ export function useSkillsBrowseModel({
             capabilities.apiVersion === 0 &&
             result.page.some((entry) => entry.skill.createdAt < newCutoff);
           const nextCursor =
-            catalogTab !== "featured" &&
             !reachedLegacyNewCutoff &&
             result.hasMore &&
             result.nextCursor != null &&

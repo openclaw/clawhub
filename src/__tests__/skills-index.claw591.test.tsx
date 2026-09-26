@@ -208,7 +208,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
     await waitFor(() =>
-      expect(getLastListPageArgs()).toEqual(expect.objectContaining({ highlightedOnly: true })),
+      expect(getLastListPageArgs()).toEqual({ categorySlug: undefined, topic: undefined }),
     );
   });
 
@@ -224,7 +224,7 @@ describe("SkillsIndex", () => {
     );
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     await waitFor(() =>
-      expect(getLastListPageArgs()).toEqual(expect.objectContaining({ highlightedOnly: true })),
+      expect(getLastListPageArgs()).toEqual({ categorySlug: undefined, topic: undefined }),
     );
   });
 
@@ -286,7 +286,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
-  it("loads the latest 40 Featured skills from editorial history", async () => {
+  it("loads the finite mixed-source Featured selection", async () => {
     searchMock = { tab: "featured" };
     convexHttpMock.query.mockResolvedValue({
       page: [makeListResult("featured-skill", "Featured Skill")],
@@ -297,13 +297,7 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     expect(await screen.findByText("Featured Skill")).toBeTruthy();
 
-    expect(getLastListPageArgs()).toEqual(
-      expect.objectContaining({
-        highlightedOnly: true,
-        numItems: 40,
-        sort: "updated",
-      }),
-    );
+    expect(getLastListPageArgs()).toEqual({ categorySlug: undefined, topic: undefined });
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 

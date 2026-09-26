@@ -1297,6 +1297,7 @@ describe("search helpers", () => {
           withIndex: (index: string, build: (q: typeof queryBuilder) => unknown) => {
             usedIndexes.push(index);
             build(queryBuilder);
+            if (table === "featuredSelections") return { unique: vi.fn(async () => null) };
             if (table === "skillsShCatalogControls") {
               return {
                 unique: vi.fn(async () => ({
@@ -1343,6 +1344,7 @@ describe("search helpers", () => {
     expect(takeLimits).toEqual([50, 50, 50, 50, 50]);
     expect(usedIndexes).toEqual([
       "by_key",
+      "by_artifact_kind",
       "by_external_id",
       "by_active_visible_installable_fresh_slug",
       "by_active_visible_installable_fresh_display",

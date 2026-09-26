@@ -12,6 +12,7 @@ vi.mock("../convex/client", () => ({
 
 vi.mock("../../convex/_generated/api", () => ({
   api: {
+    featuredSkills: { listPublic: "featuredSkills:listPublic" },
     skills: {
       listPublicPageV4: "skills:listPublicPageV4",
       listPublicTrendingPage: "skills:listPublicTrendingPage",
@@ -69,51 +70,30 @@ describe("homeListingData", () => {
     });
   });
 
-  it("uses the highlighted browse path for Featured skills", async () => {
+  it("uses the mixed-source Featured selection", async () => {
+    convexQueryMock.mockResolvedValue({ page: [] });
     await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);
-
-    expect(convexQueryMock).toHaveBeenCalledWith(
-      "skills:listPublicPageV4",
-      expect.objectContaining({
-        highlightedOnly: true,
-        numItems: 16,
-      }),
-    );
+    expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", { query: undefined });
   });
 
-  it("preserves the published Featured skill order while filtering across categories", async () => {
+  it("preserves newest-selected order across sources while filtering categories", async () => {
+    const external = {
+      id: "skills-sh:humanlayer/skills/show-me",
+      slug: "show-me",
+      native: null,
+      categories: ["development"],
+    };
+    const native = {
+      skill: { _id: "skills:older", slug: "older" },
+      owner: null,
+      ownerHandle: null,
+    };
     convexQueryMock.mockResolvedValue({
       page: [
-        {
-          skill: {
-            _id: "skills:editorial",
-            slug: "editorial",
-            categories: ["development"],
-            badges: { highlighted: { at: 100 } },
-            stats: { downloads: 1 },
-          },
-        },
-        {
-          skill: {
-            _id: "skills:excluded",
-            slug: "excluded",
-            categories: ["writing"],
-            badges: { highlighted: { at: 500 } },
-            stats: { downloads: 1000 },
-          },
-        },
-        {
-          skill: {
-            _id: "skills:telemetry",
-            slug: "telemetry",
-            categories: ["integrations"],
-            badges: { highlighted: { at: 200 } },
-            stats: { downloads: 10000 },
-          },
-        },
+        { external, categories: external.categories },
+        { external: { id: "excluded" }, categories: ["writing"] },
+        { ...native, skill: { ...native.skill, categories: ["integrations"] } },
       ],
-      hasMore: false,
-      nextCursor: null,
     });
     const result = await fetchHomeSkillListing(
       "featured",
@@ -121,8 +101,14 @@ describe("homeListingData", () => {
       HOME_LISTING_PAGE_SIZE,
     );
     expect(
-      result.page.map((entry) => ("skill" in entry ? entry.skill.slug : entry.trending.slug)),
-    ).toEqual(["editorial", "telemetry"]);
+      result.page.map((entry) =>
+        "external" in entry
+          ? entry.external.slug
+          : "skill" in entry
+            ? entry.skill.slug
+            : "trending",
+      ),
+    ).toEqual(["show-me", "older"]);
     expect(result.hasMore).toBe(false);
     expect(convexQueryMock).toHaveBeenCalledTimes(1);
   });

@@ -1827,6 +1827,10 @@ uncached results. Recommendations never publish themselves.
 
 - `GET /api/v1/featured/{plugin|skill}` returns editorial revision, reservations
   (including pending reasons), and the last approved publication in its explicit order.
+- `POST /api/v1/skills-sh/{owner}/{repo}/{slug}/featured` accepts `{ "featured": true }`
+  (or `false`) for a public, installable mirrored entry. It shares the sixteen-slot
+  skill limit, preserves timestamps on repeated adds, and records staff audit history.
+  CLI: `clawhub-admin skills feature skills-sh:humanlayer/skills/show-me`.
 - `POST /api/v1/featured/plugin/editorial` accepts `expectedRevision` and up to
   eight `{ id, name, displayName, reason }` entries. Identities use `plugin:<package>`.
   Missing catalog entries remain reserved; saving does not change public badges.
@@ -1840,7 +1844,8 @@ Each publication item has `id`, `version`, `selectionBasis` (`editorial` or
 nonnegative `installs7d`, counted within that same window. Plugin order is all eight
 saved editorial reservations followed by eight telemetry selections. Skills use
 sixteen native `clawhub:<skill-id>` identities, all telemetry selections. Include
-editorial install counts too when the report provides them.
+editorial install counts too when the report provides them. Native-only skill reports
+cannot publish while skills.sh selections are present; remove those selections first.
 
 Create the recommendation report through `POST /api/v1/search-insights/reports`
 with `view: "recommendations"`, the catalog and completed `endDay`, then read its

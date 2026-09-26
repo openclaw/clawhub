@@ -36,6 +36,7 @@ vi.mock("../convex/client", () => ({
 
 vi.mock("../../convex/_generated/api", () => ({
   api: {
+    featuredSkills: { listPublic: "featuredSkills:listPublic" },
     skills: {
       listPublicPageV4: "skills:listPublicPageV4",
       listPublicTrendingPage: "skills:listPublicTrendingPage",
@@ -278,24 +279,30 @@ describe("HomeListingSection", () => {
     expect(convexActionMock.mock.calls.filter(([, args]) => args.searchSource)).toHaveLength(1);
     fireEvent.change(input, { target: { value: "pending" } });
     fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
-    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(5));
+    await waitFor(() =>
+      expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", {
+        query: "pending",
+      }),
+    );
     expect(convexActionMock.mock.calls.filter(([, args]) => args.searchSource)).toHaveLength(1);
   });
 
   it("searches skills within the selected tab and category", async () => {
-    convexActionMock.mockResolvedValue([
-      {
-        skill: {
-          _id: "skills:featured-development",
-          slug: "featured-development",
-          displayName: "Featured Development Skill",
-          summary: "Builds software.",
-          categories: ["development"],
-          stats: { stars: 1, downloads: 10 },
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:featured-development",
+            slug: "featured-development",
+            displayName: "Featured Development Skill",
+            summary: "Builds software.",
+            categories: ["development"],
+            stats: { stars: 1, downloads: 10 },
+          },
+          ownerHandle: "builder",
         },
-        ownerHandle: "builder",
-      },
-    ]);
+      ],
+    });
 
     render(<HomeListingSection initialListing={initialPluginListing()} />);
     fireEvent.click(screen.getByRole("button", { name: "Skills" }));
@@ -308,12 +315,8 @@ describe("HomeListingSection", () => {
     });
 
     await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
+      expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", {
         query: "development",
-        searchSource: "clawhub-web",
-        limit: 20,
-        highlightedOnly: true,
-        categorySlug: "development",
       });
       expect(screen.getByText("Featured Development Skill")).toBeTruthy();
     });
@@ -606,8 +609,8 @@ describe("HomeListingSection", () => {
   });
 
   it("reuses cached skill tabs instead of refetching when switching back", async () => {
-    convexQueryMock.mockImplementation((_name, args: { highlightedOnly?: boolean }) => {
-      const featured = args.highlightedOnly === true;
+    convexQueryMock.mockImplementation((name) => {
+      const featured = name === "featuredSkills:listPublic";
       return Promise.resolve({
         page: [
           {

@@ -37,6 +37,7 @@ vi.mock("../convex/client", () => ({
 
 vi.mock("../../convex/_generated/api", () => ({
   api: {
+    featuredSkills: { listPublic: "featuredSkills:listPublic" },
     packages: { listPublicNewPluginsPage: "packages:listPublicNewPluginsPage" },
     skills: { listPublicPageV4: "skills:listPublicPageV4" },
     search: { searchNativeSkills: "search:searchNativeSkills" },
@@ -275,10 +276,9 @@ describe("HomeListingSection", () => {
     );
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     await waitFor(() =>
-      expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicPageV4",
-        expect.objectContaining({ highlightedOnly: true }),
-      ),
+      expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", {
+        query: undefined,
+      }),
     );
   });
 
@@ -305,10 +305,9 @@ describe("HomeListingSection", () => {
     expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
     // The Featured request runs in the effect after the tab change commits.
     await waitFor(() =>
-      expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicPageV4",
-        expect.objectContaining({ highlightedOnly: true }),
-      ),
+      expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", {
+        query: undefined,
+      }),
     );
   });
 
@@ -385,10 +384,9 @@ describe("HomeListingSection", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Featured" }));
     await waitFor(() => {
-      expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicPageV4",
-        expect.objectContaining({ highlightedOnly: true, numItems: 16 }),
-      );
+      expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", {
+        query: undefined,
+      });
     });
 
     fireEvent.click(screen.getByRole("tab", { name: "Official" }));

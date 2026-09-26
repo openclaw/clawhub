@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -23,7 +24,14 @@ import {
   type SkillsShMirrorDetail,
   type SkillsShMirrorDigest,
 } from "../lib/skillsShMirrorPublic";
-import { json, requireAdminOrResponse, requireApiTokenUserOrResponse, text } from "./shared";
+import {
+  json,
+  requireAdminOrResponse,
+  requireApiTokenUserOrResponse,
+  requireModeratorOrResponse,
+  formatUserFacingErrorMessage,
+  text,
+} from "./shared";
 
 const internalRefs = internal as unknown as {
   canonicalTrending: {
@@ -1211,9 +1219,8 @@ export async function skillsShCatalogPublicV1Handler(ctx: ActionCtx, request: Re
   if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
     return text("Not found", 404);
   }
-  const rate = await applyRateLimit(ctx, request, "read");
+  const rate = await applyRateLimit(ctx, request, request.method === "GET" ? "read" : "write");
   if (!rate.ok) return rate.response;
-  if (request.method !== "GET") return text("Not found", 404, rate.headers);
   const prefix = "/api/v1/skills-sh/";
   const pathname = new URL(request.url).pathname;
   if (!pathname.startsWith(prefix)) return text("Not found", 404, rate.headers);
@@ -1227,6 +1234,39 @@ export async function skillsShCatalogPublicV1Handler(ctx: ActionCtx, request: Re
   } catch {
     return text("Not found", 404, rate.headers);
   }
+  const featured = segments.at(-1) === "featured";
+  if (request.method === "POST" && featured && segments.length === 4) {
+    const headers = new Headers(rate.headers);
+    headers.set("Cache-Control", "private, no-store");
+    const auth = await requireApiTokenUserOrResponse(ctx, request, headers);
+    if (!auth.ok) return auth.response;
+    const staff = requireModeratorOrResponse(auth.user, headers);
+    if (!staff.ok) return staff.response;
+    let body: Record<string, unknown> | null;
+    try {
+      body = asRecord(await request.json());
+    } catch {
+      return text("Invalid JSON body", 400, headers);
+    }
+    if (typeof body?.featured !== "boolean")
+      return text("featured must be a boolean", 400, headers);
+    try {
+      const result = await ctx.runMutation(internal.featuredSkills.setExternalForUserInternal, {
+        actorUserId: auth.userId,
+        externalId: segments.slice(0, 3).join("/"),
+        featured: body.featured,
+      });
+      return json(result, 200, headers);
+    } catch (error) {
+      if (
+        !(error instanceof ConvexError) &&
+        !/(?:Uncaught\s+)?ConvexError:/.test(error instanceof Error ? error.message : "")
+      )
+        return text("Internal Server Error", 500, headers);
+      return text(formatUserFacingErrorMessage(error, "Feature update failed"), 400, headers);
+    }
+  }
+  if (request.method !== "GET") return text("Not found", 404, rate.headers);
   const install = segments.at(-1) === "install";
   if ((install && segments.length !== 4) || (!install && segments.length !== 3)) {
     return text("Not found", 404, rate.headers);

@@ -8,6 +8,7 @@ import {
   fetchHomePluginListing as fetchPluginListing,
   fetchHomeSkillListing as fetchSkillListing,
   searchHomeTrendingSkillListing,
+  fetchHomeFeaturedSkillListing,
   HOME_LISTING_PAGE_SIZE,
   HOME_NEW_WINDOW_MS,
   homeListingCacheKey as listingCacheKey,
@@ -161,8 +162,8 @@ function skillLink(entry: HomeNativeSkillListingEntry) {
 }
 
 function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
-  if (isHomeTrendingSkillEntry(entry)) {
-    const item = entry.trending;
+  if (isHomeTrendingSkillEntry(entry) || "external" in entry) {
+    const item = "external" in entry ? entry.external : entry.trending;
     const isSkillsSh = item.source === "skills-sh";
     const owner = isSkillsSh
       ? (item.sourceIdentity?.owner ?? item.sourceIdentity?.host)
@@ -193,7 +194,8 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
               </TooltipContent>
             </Tooltip>
           </div>
-        ) : typeof item.metrics.trending24hDownloads === "number" ? (
+        ) : "trending24hDownloads" in item.metrics &&
+          typeof item.metrics.trending24hDownloads === "number" ? (
           <div className="home-v2-listing-row-stats" aria-label="Downloads">
             <span>{formatCompactStat(item.metrics.trending24hDownloads)}</span>
           </div>
@@ -513,39 +515,51 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 setSearchStatus("idle");
               },
             )
-          : kind === "skills"
-            ? convexHttp
-                .action(api.search.searchNativeSkills, {
-                  query: trimmedSearch,
-                  ...(searchSource ? { searchSource } : {}),
-                  limit: fetchLimit,
-                  ...(tab === "featured" ? { highlightedOnly: true } : {}),
-                  ...(tab === "official" ? { officialOnly: true } : {}),
-                  ...(tab === "new" ? { createdAfter: Date.now() - HOME_NEW_WINDOW_MS } : {}),
-                  ...(categorySlug ? { categorySlug } : {}),
-                })
-                .then((hits) => {
-                  if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-                  const searchHits = hits as HomeNativeSkillListingEntry[];
-                  setSearchSkills(searchHits);
-                  setListingHasMore(searchHits.length >= fetchLimit);
-                  setSearchStatus("idle");
-                })
-            : fetchPluginCatalog({
-                q: trimmedSearch,
-                ...(searchSource ? { searchSource } : {}),
-                category: categorySlug,
-                featured: tab === "featured" ? true : undefined,
-                isOfficial: tab === "official" ? true : undefined,
-                createdAfter: tab === "new" ? Date.now() - HOME_NEW_WINDOW_MS : undefined,
-                limit: fetchLimit,
-                signal: controller.signal,
-              }).then((result) => {
+          : kind === "skills" && tab === "featured"
+            ? fetchHomeFeaturedSkillListing(
+                categorySlug ? [categorySlug] : [],
+                fetchLimit,
+                trimmedSearch,
+              ).then((result) => {
                 if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-                setSearchPlugins(result.items);
-                setListingHasMore(result.nextCursor !== null || result.items.length >= fetchLimit);
+                setSearchSkills(result.page);
+                setListingHasMore(result.hasMore);
                 setSearchStatus("idle");
-              });
+              })
+            : kind === "skills"
+              ? convexHttp
+                  .action(api.search.searchNativeSkills, {
+                    query: trimmedSearch,
+                    ...(searchSource ? { searchSource } : {}),
+                    limit: fetchLimit,
+                    ...(tab === "official" ? { officialOnly: true } : {}),
+                    ...(tab === "new" ? { createdAfter: Date.now() - HOME_NEW_WINDOW_MS } : {}),
+                    ...(categorySlug ? { categorySlug } : {}),
+                  })
+                  .then((hits) => {
+                    if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
+                    const searchHits = hits as HomeNativeSkillListingEntry[];
+                    setSearchSkills(searchHits);
+                    setListingHasMore(searchHits.length >= fetchLimit);
+                    setSearchStatus("idle");
+                  })
+              : fetchPluginCatalog({
+                  q: trimmedSearch,
+                  ...(searchSource ? { searchSource } : {}),
+                  category: categorySlug,
+                  featured: tab === "featured" ? true : undefined,
+                  isOfficial: tab === "official" ? true : undefined,
+                  createdAfter: tab === "new" ? Date.now() - HOME_NEW_WINDOW_MS : undefined,
+                  limit: fetchLimit,
+                  signal: controller.signal,
+                }).then((result) => {
+                  if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
+                  setSearchPlugins(result.items);
+                  setListingHasMore(
+                    result.nextCursor !== null || result.items.length >= fetchLimit,
+                  );
+                  setSearchStatus("idle");
+                });
 
       load
         .catch(() => {
@@ -752,7 +766,13 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
           <div className="home-v2-listing-list">
             {visibleSkills.map((entry) => (
               <HomeListingSkillRow
-                key={isHomeTrendingSkillEntry(entry) ? entry.trending.id : String(entry.skill._id)}
+                key={
+                  isHomeTrendingSkillEntry(entry)
+                    ? entry.trending.id
+                    : "external" in entry
+                      ? entry.external.id
+                      : String(entry.skill._id)
+                }
                 entry={entry}
               />
             ))}

@@ -1808,7 +1808,7 @@ async function hardDeleteSkillStep(
   }
 }
 
-type PublicSkillEntry = {
+export type PublicSkillEntry = {
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   latestVersion: PublicSkillListVersion | null;
   ownerHandle: string | null;

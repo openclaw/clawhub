@@ -29,6 +29,7 @@ import type * as emailsNode from "../emailsNode.js";
 import type * as featuredArtifacts from "../featuredArtifacts.js";
 import type * as featuredIntelligence from "../featuredIntelligence.js";
 import type * as featuredSelections from "../featuredSelections.js";
+import type * as featuredSkills from "../featuredSkills.js";
 import type * as functions from "../functions.js";
 import type * as githubAccountAgeBackfill from "../githubAccountAgeBackfill.js";
 import type * as githubIdentity from "../githubIdentity.js";
@@ -290,6 +291,7 @@ declare const fullApi: ApiFromModules<{
   featuredArtifacts: typeof featuredArtifacts;
   featuredIntelligence: typeof featuredIntelligence;
   featuredSelections: typeof featuredSelections;
+  featuredSkills: typeof featuredSkills;
   functions: typeof functions;
   githubAccountAgeBackfill: typeof githubAccountAgeBackfill;
   githubIdentity: typeof githubIdentity;

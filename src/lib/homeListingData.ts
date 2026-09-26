@@ -1,6 +1,7 @@
 import { api } from "../../convex/_generated/api";
 import { FEATURED_CATALOG_SIZE } from "../../convex/lib/featuredPolicy";
 import { convexHttp } from "../convex/client";
+import type { SkillSearchEntry } from "../routes/skills/-types";
 import { fetchCatalogDiscoveryCapabilities } from "./catalogDiscoveryCapabilities";
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
@@ -25,7 +26,10 @@ type HomeTrendingSkillListingEntry = {
   trending: CanonicalTrendingItem;
 };
 
-export type HomeSkillListingEntry = HomeNativeSkillListingEntry | HomeTrendingSkillListingEntry;
+export type HomeSkillListingEntry =
+  | HomeNativeSkillListingEntry
+  | HomeTrendingSkillListingEntry
+  | { external: SkillSearchEntry };
 
 export function isHomeTrendingSkillEntry(
   entry: HomeSkillListingEntry,
@@ -186,6 +190,24 @@ export async function searchHomeTrendingSkillListing(
   };
 }
 
+export async function fetchHomeFeaturedSkillListing(
+  categorySlugs: readonly string[],
+  numItems: number,
+  query?: string,
+) {
+  const result = await convexHttp.query(api.featuredSkills.listPublic, { query });
+  const items: HomeSkillListingEntry[] = result.page.filter((entry) =>
+    "external" in entry
+      ? itemMatchesAnyHomeCategory(entry, categorySlugs)
+      : skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
+  );
+  return {
+    page: items.slice(0, numItems),
+    hasMore: items.length > numItems,
+    trendingState: undefined,
+  };
+}
+
 export async function fetchHomeSkillListing(
   tab: HomeListingTab,
   categorySlugs: readonly string[],
@@ -235,15 +257,7 @@ export async function fetchHomeSkillListing(
   }
 
   if (tab === "featured") {
-    // Filter the finite published selection once, preserving order across categories.
-    const result = await convexHttp.query(api.skills.listPublicPageV4, {
-      numItems: FEATURED_CATALOG_SIZE,
-      highlightedOnly: true,
-    });
-    const items = result.page.filter((entry) =>
-      skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
-    );
-    return { page: items.slice(0, numItems), hasMore: items.length > numItems };
+    return fetchHomeFeaturedSkillListing(categorySlugs, numItems);
   }
   const capabilities =
     tab === "new" ? await fetchCatalogDiscoveryCapabilities() : { apiVersion: 1 as const };

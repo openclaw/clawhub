@@ -1020,19 +1020,14 @@ describe("SkillsIndex", () => {
     expect(screen.queryByLabelText("Hide warnings")).toBeNull();
   });
 
-  it("passes highlightedOnly to list query when filter is active", async () => {
+  it("uses the mixed Featured list when its filter is active", async () => {
     searchMock = { highlighted: true };
     render(<SkillsIndex />);
     await act(async () => {});
-
-    const args = getLastListPageArgs();
-    expect(args).toEqual(
-      expect.objectContaining({
-        dir: "desc",
-        highlightedOnly: true,
-      }),
-    );
-    expect(args.sort).toBe("updated");
+    expect(convexHttpMock.query.mock.calls.at(-1)?.[1]).toEqual({
+      categorySlug: undefined,
+      topic: undefined,
+    });
   });
 
   it("shows load-more button when more results are available", async () => {
@@ -1075,7 +1070,7 @@ describe("SkillsIndex", () => {
         });
 
         expect(convexHttpMock.query).toHaveBeenCalledTimes(2);
-        expect(getLastListPageArgs().cursor ?? null).toBeNull();
+        expect(convexHttpMock.query.mock.calls.at(-1)?.[1]?.cursor ?? null).toBeNull();
         expect(screen.getByText("Recovered Skill")).toBeTruthy();
         expect(screen.queryByRole("alert")).toBeNull();
         expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();

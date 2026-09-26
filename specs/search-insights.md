@@ -74,6 +74,16 @@ automatic removal occurs, and new additions wait until there is capacity. Publis
 the proposed set requires Patrick's approval. The homepage default changes only after
 the deployed pipeline's initial selection has been reviewed.
 
+Staff may also select an existing public/installable skills.sh mirror entry using its
+source-qualified identity. These selections occupy the same sixteen skill slots and
+retain their external provenance, source label, and install route. Every public read
+rechecks the mirror visibility/install gate. Selection does not import, claim, or
+change the source record. Membership timestamps and actor IDs live in the bounded
+`featuredSelections.externalSkills` array; removal deletes that membership while the
+existing audit-log retention policy preserves the action. Native-only recommendation
+publication is rejected while external selections remain, so it cannot silently
+replace or exceed the mixed selection.
+
 Public Featured shelves and browse lists show the most recently added badge first,
 for both plugins and skills. A saved publication remains approval/audit evidence and
 does not override that chronology. Keeping a member preserves its position; removing

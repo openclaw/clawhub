@@ -21,6 +21,7 @@ import {
 import { CANONICAL_SKILL_SEARCH_BOUNDS } from "./lib/canonicalSkillSearchBounds";
 import { recordCatalogSearchFacts } from "./lib/catalogSearchObservations";
 import { generateEmbedding, generateEmbeddings } from "./lib/embeddings";
+import { getExternalFeaturedSkills } from "./lib/featuredPolicy";
 import { toDayKey } from "./lib/leaderboards";
 import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
@@ -871,9 +872,9 @@ type ExternalSkillSearchDigest = Pick<
   | "repo"
   | "upstreamInstalls"
   | "upstreamScanners"
->;
+> & { featured?: boolean };
 
-function buildExternalCanonicalResult(
+export function buildExternalCanonicalResult(
   digest: ExternalSkillSearchDigest,
   query: string,
 ): (CanonicalSkillSearchResult & CanonicalSkillSearchCandidate) | null {
@@ -899,7 +900,7 @@ function buildExternalCanonicalResult(
     source: "skills-sh",
     relevance,
     official: false,
-    featured: false,
+    featured: digest.featured ?? false,
     rolling60DayInstalls: 0,
     bookmarks: 0,
     updatedAt: digest.lastObservedAt,
@@ -1350,7 +1351,8 @@ export const getExternalSkillSearchCandidates = internalQuery({
   },
   handler: async (ctx, args): Promise<ExternalSkillSearchDigest[]> => {
     if (!(await getSkillsShPublicCatalogEnabledHandler(ctx))) return [];
-    if (args.highlightedOnly) return [];
+    const selections = await getExternalFeaturedSkills(ctx);
+    const featuredIds = new Set(selections.map((item) => item.externalId));
     const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
     if (categorySlug === null) return [];
     const topic = args.topic === undefined ? undefined : normalizeCatalogTopic(args.topic);
@@ -1362,86 +1364,99 @@ export const getExternalSkillSearchCandidates = internalQuery({
     const firstTokenUpperBound = firstToken ? prefixUpperBound(firstToken) : null;
 
     const [exact, slug, displayName, slugFirstToken, displayNameFirstToken, fullText] =
-      await Promise.all([
-        args.exactExternalId
-          ? ctx.db
+      args.highlightedOnly
+        ? [null, [], [], [], [], []]
+        : await Promise.all([
+            args.exactExternalId
+              ? ctx.db
+                  .query("skillsShMirrorDigests")
+                  .withIndex("by_external_id", (q) => q.eq("externalId", args.exactExternalId!))
+                  .unique()
+              : Promise.resolve(null),
+            ctx.db
               .query("skillsShMirrorDigests")
-              .withIndex("by_external_id", (q) => q.eq("externalId", args.exactExternalId!))
-              .unique()
-          : Promise.resolve(null),
-        ctx.db
-          .query("skillsShMirrorDigests")
-          .withIndex("by_active_visible_installable_fresh_slug", (q) =>
-            q
-              .eq("active", true)
-              .eq("publicVisible", true)
-              .eq("installable", true)
-              .eq("sourceFreshnessStatus", "observed-only")
-              .gte("normalizedSlug", normalizedQuery)
-              .lt("normalizedSlug", upperBound),
-          )
-          .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX),
-        ctx.db
-          .query("skillsShMirrorDigests")
-          .withIndex("by_active_visible_installable_fresh_display", (q) =>
-            q
-              .eq("active", true)
-              .eq("publicVisible", true)
-              .eq("installable", true)
-              .eq("sourceFreshnessStatus", "observed-only")
-              .gte("normalizedDisplayName", normalizedQuery)
-              .lt("normalizedDisplayName", upperBound),
-          )
-          .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX),
-        firstTokenUpperBound
-          ? ctx.db
-              .query("skillsShMirrorDigests")
-              .withIndex("by_active_visible_installable_fresh_slug_token", (q) =>
+              .withIndex("by_active_visible_installable_fresh_slug", (q) =>
                 q
                   .eq("active", true)
                   .eq("publicVisible", true)
                   .eq("installable", true)
                   .eq("sourceFreshnessStatus", "observed-only")
-                  .gte("normalizedSlugFirstToken", firstToken)
-                  .lt("normalizedSlugFirstToken", firstTokenUpperBound),
+                  .gte("normalizedSlug", normalizedQuery)
+                  .lt("normalizedSlug", upperBound),
               )
-              .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX)
-          : Promise.resolve([]),
-        firstTokenUpperBound
-          ? ctx.db
+              .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX),
+            ctx.db
               .query("skillsShMirrorDigests")
-              .withIndex("by_active_visible_installable_fresh_display_token", (q) =>
+              .withIndex("by_active_visible_installable_fresh_display", (q) =>
                 q
                   .eq("active", true)
                   .eq("publicVisible", true)
                   .eq("installable", true)
                   .eq("sourceFreshnessStatus", "observed-only")
-                  .gte("normalizedDisplayNameFirstToken", firstToken)
-                  .lt("normalizedDisplayNameFirstToken", firstTokenUpperBound),
+                  .gte("normalizedDisplayName", normalizedQuery)
+                  .lt("normalizedDisplayName", upperBound),
               )
-              .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX)
-          : Promise.resolve([]),
-        ctx.db
-          .query("skillsShMirrorDigests")
-          .withSearchIndex("search_by_search_text", (q) =>
-            q
-              .search("searchText", args.query)
-              .eq("active", true)
-              .eq("publicVisible", true)
-              .eq("installable", true)
-              .eq("sourceFreshnessStatus", "observed-only"),
-          )
-          .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX),
-      ]);
+              .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX),
+            firstTokenUpperBound
+              ? ctx.db
+                  .query("skillsShMirrorDigests")
+                  .withIndex("by_active_visible_installable_fresh_slug_token", (q) =>
+                    q
+                      .eq("active", true)
+                      .eq("publicVisible", true)
+                      .eq("installable", true)
+                      .eq("sourceFreshnessStatus", "observed-only")
+                      .gte("normalizedSlugFirstToken", firstToken)
+                      .lt("normalizedSlugFirstToken", firstTokenUpperBound),
+                  )
+                  .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX)
+              : Promise.resolve([]),
+            firstTokenUpperBound
+              ? ctx.db
+                  .query("skillsShMirrorDigests")
+                  .withIndex("by_active_visible_installable_fresh_display_token", (q) =>
+                    q
+                      .eq("active", true)
+                      .eq("publicVisible", true)
+                      .eq("installable", true)
+                      .eq("sourceFreshnessStatus", "observed-only")
+                      .gte("normalizedDisplayNameFirstToken", firstToken)
+                      .lt("normalizedDisplayNameFirstToken", firstTokenUpperBound),
+                  )
+                  .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX)
+              : Promise.resolve([]),
+            ctx.db
+              .query("skillsShMirrorDigests")
+              .withSearchIndex("search_by_search_text", (q) =>
+                q
+                  .search("searchText", args.query)
+                  .eq("active", true)
+                  .eq("publicVisible", true)
+                  .eq("installable", true)
+                  .eq("sourceFreshnessStatus", "observed-only"),
+              )
+              .take(MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX),
+          ]);
 
-    const candidates = [
-      ...(exact ? [exact] : []),
-      ...slug,
-      ...displayName,
-      ...slugFirstToken,
-      ...displayNameFirstToken,
-      ...fullText,
-    ];
+    const candidates = args.highlightedOnly
+      ? (
+          await Promise.all(
+            selections.map((item) =>
+              ctx.db
+                .query("skillsShMirrorDigests")
+                .withIndex("by_external_id", (q) => q.eq("externalId", item.externalId))
+                .unique(),
+            ),
+          )
+        ).filter((item): item is Doc<"skillsShMirrorDigests"> => item !== null)
+      : [
+          ...(exact ? [exact] : []),
+          ...slug,
+          ...displayName,
+          ...slugFirstToken,
+          ...displayNameFirstToken,
+          ...fullText,
+        ];
     const seen = new Set<string>();
     // Index text and ingestion metadata can dwarf the public fields. Project
     // here so ordinary search and report actions never receive those bodies.
@@ -1461,6 +1476,7 @@ export const getExternalSkillSearchCandidates = internalQuery({
       })
       .map((digest) => ({
         externalId: digest.externalId,
+        featured: featuredIds.has(digest.externalId),
         displayName: digest.displayName,
         slug: digest.slug,
         inferredCategories: digest.inferredCategories,

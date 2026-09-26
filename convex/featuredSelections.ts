@@ -171,6 +171,9 @@ async function publishForActor(
   args: PublishInput,
 ): Promise<PublishResult> {
   const row = await read(ctx, args.artifactKind);
+  // The native-only report cannot replace a mixed-source selection.
+  if (args.artifactKind === "skill" && row?.externalSkills?.length)
+    throw new ConvexError("Remove skills.sh selections before publishing a native-only report.");
   if ((row?.revision ?? 0) !== args.expectedEditorialRevision)
     throw new ConvexError("Editorial revision changed. Generate and review a new proposal.");
   if ((row?.published?.at ?? null) !== args.expectedPublicationAt)
