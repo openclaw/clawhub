@@ -4567,7 +4567,7 @@ export const seedCompanyPluginImportFixtures = internalMutation({
       displayName: "CLI Admin",
       role: "admin",
     });
-    for (const handle of ["cursor", "fixture-company"]) {
+    for (const handle of ["cursor", "anthropic", "openai", "fixture-company"]) {
       let publisher = await ctx.db
         .query("publishers")
         .withIndex("by_handle", (q) => q.eq("handle", handle))
