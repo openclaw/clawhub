@@ -293,22 +293,26 @@ export async function inventoryPlugins(input: InventoryInput) {
     }
     const eligible = group.filter((c) => c.status === "selected");
     const unique = [...new Map(eligible.map((c) => [sourceKey(c.repo, c.path), c])).values()];
-    unique.sort((a, b) => {
+    const registryPriority: Record<Registry, number> = { claude: 0, cursor: 1, openai: 2 };
+    const rankRegistry = (c: Candidate) => {
+      // Rank the curated source's publisher, not the registry that happened to discover it.
+      const registry = sources.get(sourceKey(c.repo, c.path))?.registry;
+      return registry ? registryPriority[registry] : 3;
+    };
+    const compare = (a: Candidate, b: Candidate) => {
       const tier = (c: Candidate) => (c.authorship === "company" ? 0 : 1);
+      if (tier(a) !== tier(b)) return tier(a) - tier(b);
+      if (a.authorship === "registry" && b.authorship === "registry")
+        return rankRegistry(a) - rankRegistry(b);
       return (
-        tier(a) - tier(b) ||
         b.capabilities.runnable.length - a.capabilities.runnable.length ||
         Date.parse(byRepo.get(b.repo)!.updatedAt) - Date.parse(byRepo.get(a.repo)!.updatedAt)
       );
-    });
+    };
+    unique.sort(compare);
     let winner = unique[0];
     if (!winner) continue;
-    const tied = unique.filter(
-      (c) =>
-        c.authorship === winner.authorship &&
-        c.capabilities.runnable.length === winner.capabilities.runnable.length &&
-        byRepo.get(c.repo)!.updatedAt === byRepo.get(winner.repo)!.updatedAt,
-    );
+    const tied = unique.filter((c) => compare(c, winner) === 0);
     if (tied.length > 1) {
       const preferred = tied.filter((c) => sources.get(sourceKey(c.repo, c.path))?.preferred);
       if (preferred.length !== 1) {
@@ -330,7 +334,9 @@ export async function inventoryPlugins(input: InventoryInput) {
     for (const c of eligible) {
       if (c === winner) {
         c.reasons.push(
-          "Canonical source selected by provenance, runnable coverage and maintenance",
+          c.authorship === "registry"
+            ? "Canonical registry source selected by Anthropic > Cursor > OpenAI priority"
+            : "Canonical company source selected by provenance, runnable coverage and maintenance",
         );
         continue;
       }
