@@ -1,0 +1,144 @@
+{
+  "status": "pass",
+  "mode": "before-after",
+  "provider": "local",
+  "scenario": "Real Chromium screenshots: ClawHub built app + isolated Convex; OpenClaw native Control UI WebSocket fixture carrying the actual HTTP client and catalog join against live Convex. Baseline has 63 synthetic public packages plus bundled unpublished CUA; candidate has 64 public packages and exercises the prospective CUA publication through the actual trusted catalog identity resolver. Synthetic badges do not verify company ownership. Full Gateway baseline build is blocked by INEFFECTIVE_DYNAMIC_IMPORT; see report.md. Final API evidence: Memory has 13 unique entries, Channels 16; homepage Research has eight English entries while View all retains all 14 entries across languages.",
+  "baseline": "ClawHub 8166335196 / OpenClaw 11ce05bac7c6",
+  "candidate": "ClawHub 8479d3f4d58a2a11d9c0bf7611159b77f0b69b99 / OpenClaw 2539eb110b6f8aba9b72e3a03acc7cdad74cc7b2",
+  "lanes": [
+    {
+      "name": "baseline",
+      "ref": "OpenClaw 11ce05bac7c6 / ClawHub 8166335196",
+      "baseURL": "http://127.0.0.1:49635/",
+      "steps": [
+        {
+          "name": "ClawHub Memory · before",
+          "slug": "clawhub-memory",
+          "screenshot": "clawhub-memory.png",
+          "status": "pass"
+        },
+        {
+          "name": "Channels",
+          "slug": "channels",
+          "screenshot": "channels.png",
+          "status": "pass"
+        },
+        {
+          "name": "Models",
+          "slug": "models",
+          "screenshot": "models.png",
+          "status": "pass"
+        },
+        {
+          "name": "Memory",
+          "slug": "memory",
+          "screenshot": "memory.png",
+          "status": "pass"
+        },
+        {
+          "name": "Voice",
+          "slug": "voice",
+          "screenshot": "voice.png",
+          "status": "pass"
+        },
+        {
+          "name": "Web",
+          "slug": "web",
+          "screenshot": "web.png",
+          "status": "pass"
+        },
+        {
+          "name": "Infrastructure",
+          "slug": "computer-use",
+          "screenshot": "computer-use.png",
+          "status": "pass"
+        },
+        {
+          "name": "Research",
+          "slug": "research",
+          "screenshot": "research.png",
+          "status": "pass"
+        },
+        {
+          "name": "Homepage · Other and Uncategorized visible",
+          "slug": "homepage",
+          "screenshot": "homepage.png",
+          "status": "pass"
+        },
+        {
+          "name": "ClawHub Research · View all retains every language",
+          "slug": "clawhub-research-view-all",
+          "screenshot": "clawhub-research-view-all.png",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "ref": "ClawHub 8479d3f4d58a2a11d9c0bf7611159b77f0b69b99 / OpenClaw 2539eb110b6f8aba9b72e3a03acc7cdad74cc7b2",
+      "baseURL": "http://127.0.0.1:50097/",
+      "steps": [
+        {
+          "name": "ClawHub Memory · after",
+          "slug": "clawhub-memory",
+          "screenshot": "clawhub-memory.png",
+          "status": "pass"
+        },
+        {
+          "name": "Channels",
+          "slug": "channels",
+          "screenshot": "channels.png",
+          "status": "pass"
+        },
+        {
+          "name": "Models",
+          "slug": "models",
+          "screenshot": "models.png",
+          "status": "pass"
+        },
+        {
+          "name": "Memory",
+          "slug": "memory",
+          "screenshot": "memory.png",
+          "status": "pass"
+        },
+        {
+          "name": "Voice",
+          "slug": "voice",
+          "screenshot": "voice.png",
+          "status": "pass"
+        },
+        {
+          "name": "Web",
+          "slug": "web",
+          "screenshot": "web.png",
+          "status": "pass"
+        },
+        {
+          "name": "Computer use",
+          "slug": "computer-use",
+          "screenshot": "computer-use.png",
+          "status": "pass"
+        },
+        {
+          "name": "Research",
+          "slug": "research",
+          "screenshot": "research.png",
+          "status": "pass"
+        },
+        {
+          "name": "Homepage · Other and Uncategorized hidden",
+          "slug": "homepage",
+          "screenshot": "homepage.png",
+          "status": "pass"
+        },
+        {
+          "name": "ClawHub Research · View all retains every language",
+          "slug": "clawhub-research-view-all",
+          "screenshot": "clawhub-research-view-all.png",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}
