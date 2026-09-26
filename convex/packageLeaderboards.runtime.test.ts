@@ -152,7 +152,7 @@ describe("24-hour plugin Trending", () => {
     expect(page.page[0].trending24h).toMatchObject({ downloads: 24, installs: 0 });
   });
 
-  it("does not serve a legacy seven-day snapshot before the first 24-hour rebuild", async () => {
+  it("keeps the legacy feed during upgrade, then switches atomically to 24-hour counts", async () => {
     const t = await setup();
     await t.run(async (ctx) => {
       const pkg = await ctx.db
@@ -168,14 +168,26 @@ describe("24-hour plugin Trending", () => {
         items: [{ packageId: pkg._id, score: 10000, downloads: 10000, installs: 0 }],
       });
     });
-    expect(
-      (
-        await t.query(api.packages.listPublicPage, {
-          sort: "trending",
-          paginationOpts: { cursor: null, numItems: 20 },
-        })
-      ).page,
-    ).toEqual([]);
+    const page = () =>
+      t.query(api.packages.listPublicPage, {
+        sort: "trending",
+        paginationOpts: { cursor: null, numItems: 20 },
+      });
+    const legacy = await page();
+    expect(legacy.page[0].name).toBe("trending-proof-weekly-leader");
+    expect(legacy.page[0].trending24h).toBeUndefined();
+    await t.action(internal.packageLeaderboards.rebuildTrendingLeaderboardAction, {});
+    const current = await page();
+    expect(current.page[0].name).toBe("trending-proof-00");
+    expect(current.page[0].trending24h?.downloads).toBe(25);
+    // A genuinely empty 24-hour window must not revive the legacy feed.
+    const { startAt, endAt } = getCompletedRolling24HourWindow(now);
+    await t.mutation(internal.packageLeaderboards.writeTrendingLeaderboard, {
+      items: [],
+      startAt,
+      endAt,
+    });
+    expect((await page()).page).toEqual([]);
   });
 
   it("keeps the development fixture idempotent and refuses production seeding", async () => {

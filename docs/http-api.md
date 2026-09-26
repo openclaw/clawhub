@@ -705,7 +705,8 @@ Its score is downloads plus three times net installs, with negative net installs
 clamped to zero. Trending items expose window metrics in the optional `trending24h`
 object: downloads, net installs, and `windowStart`/`windowEnd` timestamps in
 milliseconds (start inclusive, end exclusive). The regular `stats` fields retain
-their lifetime totals.
+their lifetime totals. During upgrade, the existing leaderboard remains available
+without window metrics until the first 24-hour snapshot is ready.
 On the unified `/api/v1/packages` endpoint it is plugin-only; use
 `/api/v1/skills?sort=trending` for the skill catalog.
 

@@ -4840,11 +4840,20 @@ async function listPackagePageImpl(
   }
 
   if (args.sort === "trending") {
-    const leaderboard = await ctx.db
+    const currentLeaderboard = await ctx.db
       .query("packageLeaderboards")
       .withIndex("by_kind", (q) => q.eq("kind", PACKAGE_TRENDING_LEADERBOARD_KIND))
       .order("desc")
       .first();
+    // Keep the existing feed until the first completed 24-hour snapshot is ready.
+    // Legacy entries have no window metrics and must never be labeled as 24-hour counts.
+    const leaderboard =
+      currentLeaderboard ??
+      (await ctx.db
+        .query("packageLeaderboards")
+        .withIndex("by_kind", (q) => q.eq("kind", "package_trending"))
+        .order("desc")
+        .first());
     if (!leaderboard) return { page: [], isDone: true, continueCursor: "" };
 
     const cursorState = decodePublicPageCursor(args.paginationOpts.cursor);
@@ -4861,7 +4870,9 @@ async function listPackagePageImpl(
       if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
       page.push({
         ...(await toPublicPackageListItemFromPackage(ctx, pkg)),
-        ...(leaderboard.rangeStartAt !== undefined && leaderboard.rangeEndAt !== undefined
+        ...(currentLeaderboard &&
+        leaderboard.rangeStartAt !== undefined &&
+        leaderboard.rangeEndAt !== undefined
           ? {
               trending24h: {
                 downloads: entry.downloads,
