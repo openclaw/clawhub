@@ -731,11 +731,11 @@ export function buildSkillsShMirrorObservation(
   row: SkillsShCatalogListRow,
   sourcePageHtml?: string,
 ) {
-  const externalId = row.id.trim().toLowerCase();
-  const slug = row.slug.trim().toLowerCase();
-  const source = row.source.trim().toLowerCase();
+  const externalId = typeof row.id === "string" ? row.id.trim().toLowerCase() : "";
+  const slug = typeof row.slug === "string" ? row.slug.trim().toLowerCase() : "";
+  const source = typeof row.source === "string" ? row.source.trim().toLowerCase() : "";
   const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
-  const installUrl = row.installUrl?.trim() || null;
+  const installUrl = typeof row.installUrl === "string" ? row.installUrl.trim() || null : null;
   const identityError = (reason: SkillsShMirrorQuarantineReason) =>
     new SkillsShMirrorIdentityError(
       reason,
@@ -746,8 +746,8 @@ export function buildSkillsShMirrorObservation(
   const base = {
     externalId,
     slug,
-    displayName: row.name.trim() || slug,
-    sourceUrl: row.url.trim(),
+    displayName: typeof row.name === "string" ? row.name.trim() || slug : slug,
+    sourceUrl: typeof row.url === "string" ? row.url.trim() : "",
     upstreamInstalls: row.installs,
     upstreamSourceType,
   };
@@ -812,11 +812,16 @@ function safeMirrorIdentityError(row: SkillsShCatalogListRow, error: unknown) {
   return quarantinedMirrorRow(row, reason);
 }
 
+function mirrorIdentityText(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return "missing";
+  return value.trim().toLowerCase().slice(0, maxLength) || "missing";
+}
+
 function quarantinedMirrorRow(row: SkillsShCatalogListRow, reason: SkillsShMirrorQuarantineReason) {
-  const externalId = row.id.trim().toLowerCase().slice(0, 512) || "missing";
+  const externalId = mirrorIdentityText(row.id, 512);
   const upstreamSourceType = normalizeUpstreamSourceType(row.sourceType);
-  const source = row.source.trim().toLowerCase().slice(0, 256) || "missing";
-  const installUrl = row.installUrl?.trim() || null;
+  const source = mirrorIdentityText(row.source, 256);
+  const installUrl = typeof row.installUrl === "string" ? row.installUrl.trim() || null : null;
   console.warn(
     `Quarantined skills.sh mirror row: ${externalId} ` +
       `(reason=${reason}, ` +
@@ -1649,8 +1654,12 @@ function normalizedTaxonomyFields(value: unknown) {
     .sort();
 }
 
-function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[]) {
-  return sha256Hex(rows.map((row) => `${row.id.trim().toLowerCase()}\n`).join(""));
+export function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[]) {
+  return sha256Hex(
+    rows
+      .map((row) => `${typeof row.id === "string" ? row.id.trim().toLowerCase() : "missing"}\n`)
+      .join(""),
+  );
 }
 
 function capturedSkillsShCatalogRows(rows: SkillsShCatalogListRow[]) {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSkillsShMirrorProofSnapshotId,
   buildSkillsShMirrorObservation,
+  skillsShPageIdentityHash,
   buildSkillsShMirrorControlledObservation,
   buildSkillsShMirrorDetail,
   buildSkillsShMirrorUpstreamScanners,
@@ -1113,6 +1114,27 @@ describe("skills.sh Vercel source boundary", () => {
         if (row.installUrl) expect(message).not.toContain(row.installUrl);
       }
     }
+  });
+
+  it("quarantines a non-string skills.sh id instead of throwing", () => {
+    const liveRow = {
+      id: "larksuite/cli/lark-doc",
+      installUrl: "https://github.com/larksuite/cli",
+      installs: 383_123,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "larksuite/cli",
+      sourceType: "repository",
+      url: "https://skills.sh/larksuite/cli/lark-doc",
+    };
+    const malformed = { ...liveRow, id: 12, source: { repo: "larksuite/cli" } };
+    expect(() => buildSkillsShMirrorObservation(malformed as never)).toThrow(
+      "Unsupported skills.sh mirror identity",
+    );
+    expect(() => skillsShPageIdentityHash([malformed as never])).not.toThrow();
+    expect(skillsShPageIdentityHash([malformed as never])).toBe(
+      skillsShPageIdentityHash([{ ...liveRow, id: "missing" }]),
+    );
   });
 
   it("requires the exact skills.sh site route for well-known identity", () => {
