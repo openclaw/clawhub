@@ -344,6 +344,12 @@ const PackageListItemFields = {
     categories: "string[]?",
     topics: "string[]?",
     featuredAt: "number?",
+    trending24h: type({
+        downloads: "number",
+        installs: "number",
+        windowStart: "number",
+        windowEnd: "number",
+    }).optional(),
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
 };

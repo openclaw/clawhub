@@ -67,7 +67,7 @@ async function fixture(setupCount = 0, workflowCategories = ["documents-files"])
       ids.push({ name, packageId });
     }
     await ctx.db.insert("packageLeaderboards", {
-      kind: "package_trending",
+      kind: "package_trending_24h",
       generatedAt: 1,
       rangeStartDay: 0,
       rangeEndDay: 1,
@@ -138,14 +138,19 @@ it("excludes setup purposes from Trending and Featured while retaining All, sear
 it("selects adoption leaders after discovery eligibility, so higher setup adoption cannot consume the limit", async () => {
   const { t, ids, ownerUserId } = await fixture(205);
   await t.run(async (ctx) => {
-    for (const [index, { packageId, name }] of ids.entries()) {
-      await ctx.db.insert("packageDailyStats", {
-        packageId,
-        day: Math.floor(Date.now() / 86400000),
-        downloads: 1000 - index,
-        installs: 0,
-        updatedAt: Date.now(),
-      });
+    for (const { packageId, name } of ids) {
+      // Every excluded setup plugin outranks the eligible plugins before filtering.
+      for (
+        let eventIndex = 0;
+        eventIndex < (name.startsWith("setup-") ? 6 : name === "official-workflow" ? 3 : 2);
+        eventIndex++
+      ) {
+        await ctx.db.insert("packageStatEvents", {
+          packageId,
+          kind: "download",
+          occurredAt: Math.floor(Date.now() / 3600000) * 3600000 - 1,
+        });
+      }
       await ctx.db.insert("packageBadges", {
         packageId,
         kind: "highlighted",

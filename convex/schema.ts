@@ -2362,6 +2362,7 @@ const packageStatEvents = defineTable({
   processedAt: v.optional(v.number()),
 })
   .index("by_unprocessed", ["processedAt"])
+  .index("by_occurred_at", ["occurredAt"])
   .index("by_package", ["packageId"]);
 
 const pluginSearchObservations = defineTable({
@@ -2394,6 +2395,8 @@ const packageLeaderboards = defineTable({
   generatedAt: v.number(),
   rangeStartDay: v.number(),
   rangeEndDay: v.number(),
+  rangeStartAt: v.optional(v.number()),
+  rangeEndAt: v.optional(v.number()),
   items: v.array(
     v.object({
       packageId: v.id("packages"),

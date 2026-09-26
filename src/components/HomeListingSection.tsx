@@ -50,10 +50,12 @@ function HomeListingEmptyPanel({
   variant,
   query,
   onClear,
+  kind = "skills",
 }: {
   variant: "error" | "empty" | "filter" | "search" | "trendingEmpty" | "trendingUnavailable";
   query?: string;
   onClear?: () => void;
+  kind?: ListingKind;
 }) {
   const Icon =
     variant === "error" || variant === "trendingUnavailable"
@@ -75,7 +77,7 @@ function HomeListingEmptyPanel({
     variant === "trendingUnavailable"
       ? "The canonical 24-hour feed isn't available right now. Try another tab."
       : variant === "trendingEmpty"
-        ? "No skills have eligible activity in the current 24-hour window."
+        ? `No ${kind} have eligible activity in the current 24-hour window.`
         : variant === "error"
           ? "We couldn't load this slice of the catalog. Give it another try in a moment."
           : variant === "search"
@@ -169,7 +171,9 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
         </p>
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Downloads">
-        <span>{formatCompactStat(plugin.stats?.downloads ?? 0)}</span>
+        <span>
+          {formatCompactStat(plugin.trending24h?.downloads ?? plugin.stats?.downloads ?? 0)}
+        </span>
       </div>
     </Link>
   );
@@ -648,12 +652,13 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
 
       {isEmpty ? (
         <HomeListingEmptyPanel
+          kind={kind}
           variant={
             isSearchMode
               ? "search"
               : categorySlug
                 ? "filter"
-                : kind === "skills" && tab === "trending"
+                : tab === "trending"
                   ? trendingState === "unavailable"
                     ? "trendingUnavailable"
                     : "trendingEmpty"

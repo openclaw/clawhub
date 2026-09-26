@@ -27,6 +27,7 @@ export type PackageListItem = {
   categories?: string[];
   topics?: string[];
   featuredAt?: number;
+  trending24h?: { downloads: number; installs: number; windowStart: number; windowEnd: number };
   verificationTier?: string | null;
   stats?: {
     downloads: number;

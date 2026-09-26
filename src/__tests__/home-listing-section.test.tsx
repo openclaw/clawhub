@@ -482,6 +482,36 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("Listings took a coffee break")).toBeNull();
   });
 
+  it("shows 24-hour downloads for plugin Trending instead of lifetime totals", () => {
+    render(
+      <HomeListingSection
+        initialListing={{
+          ...initialPluginListing(),
+          tab: "trending",
+          items: [
+            {
+              ...featuredPlugin,
+              trending24h: { downloads: 7, installs: 2, windowStart: 0, windowEnd: 86400000 },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(document.querySelector(".home-v2-listing-row")?.textContent).toContain("7");
+    expect(document.querySelector(".home-v2-listing-row")?.textContent).not.toContain("120");
+  });
+
+  it("explains the 24-hour window when plugin Trending has no eligible activity", () => {
+    render(
+      <HomeListingSection
+        initialListing={{ ...initialPluginListing({ items: [] }), tab: "trending" }}
+      />,
+    );
+    expect(
+      screen.getByText("No plugins have eligible activity in the current 24-hour window."),
+    ).toBeTruthy();
+  });
+
   it("passes New plugin eligibility into catalog search", async () => {
     render(<HomeListingSection initialListing={initialPluginListing()} />);
     fireEvent.click(screen.getByRole("tab", { name: "New" }));

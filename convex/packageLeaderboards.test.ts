@@ -37,23 +37,22 @@ describe("packageLeaderboards", () => {
     );
 
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), { limit: 200 });
-    expect(result).toEqual({ ok: true, count: 0, scheduled: true, days: 7 });
+    expect(result).toEqual({ ok: true, count: 0, scheduled: true, days: 1 });
   });
 
   it("aggregates recent installs and downloads into a weighted top list", async () => {
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if (Array.isArray(args.packageIds)) return args.packageIds;
-      if (args.day === Math.floor(Date.now() / 86_400_000)) {
-        return {
-          rows: [
-            { packageId: "packages:one", installs: 2, downloads: 1 },
-            { packageId: "packages:two", installs: 0, downloads: 8 },
-          ],
-          isDone: true,
-          continueCursor: "",
-        };
-      }
-      return { rows: [], isDone: true, continueCursor: "" };
+      return {
+        page: [
+          { packageId: "packages:one", kind: "install" },
+          { packageId: "packages:one", kind: "install" },
+          { packageId: "packages:one", kind: "download" },
+          ...Array.from({ length: 8 }, () => ({ packageId: "packages:two", kind: "download" })),
+        ],
+        isDone: true,
+        continueCursor: "",
+      };
     });
     const runMutation = vi.fn().mockResolvedValue({ ok: true });
 

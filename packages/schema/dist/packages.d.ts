@@ -411,6 +411,12 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     categories?: string[] | undefined;
     topics?: string[] | undefined;
     featuredAt?: number | undefined;
+    trending24h?: {
+        downloads: number;
+        installs: number;
+        windowStart: number;
+        windowEnd: number;
+    } | undefined;
     verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
     stats?: {
         downloads: number;
@@ -438,6 +444,12 @@ export declare const PluginOverviewItemSchema: import("arktype/internal/variants
     categories?: string[] | undefined;
     topics?: string[] | undefined;
     featuredAt?: number | undefined;
+    trending24h?: {
+        downloads: number;
+        installs: number;
+        windowStart: number;
+        windowEnd: number;
+    } | undefined;
     verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
     stats?: {
         downloads: number;
@@ -486,6 +498,12 @@ export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal
         categories?: string[] | undefined;
         topics?: string[] | undefined;
         featuredAt?: number | undefined;
+        trending24h?: {
+            downloads: number;
+            installs: number;
+            windowStart: number;
+            windowEnd: number;
+        } | undefined;
         verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
         stats?: {
             downloads: number;
@@ -519,6 +537,12 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         categories?: string[] | undefined;
         topics?: string[] | undefined;
         featuredAt?: number | undefined;
+        trending24h?: {
+            downloads: number;
+            installs: number;
+            windowStart: number;
+            windowEnd: number;
+        } | undefined;
         verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
         stats?: {
             downloads: number;
@@ -631,6 +655,12 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             categories?: string[] | undefined;
             topics?: string[] | undefined;
             featuredAt?: number | undefined;
+            trending24h?: {
+                downloads: number;
+                installs: number;
+                windowStart: number;
+                windowEnd: number;
+            } | undefined;
             verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
             stats?: {
                 downloads: number;

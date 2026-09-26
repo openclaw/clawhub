@@ -1,19 +1,26 @@
 import { getPluginDiscoveryExclusion, PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema";
+import {
+  type PaginationResult,
+  paginationOptsValidator,
+  paginationResultValidator,
+} from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { isPublicPluginDoc } from "./lib/globalStats";
-import { getTrendingRange, TRENDING_DAYS } from "./lib/leaderboards";
+import { toDayKey } from "./lib/leaderboards";
 import { isEnglishPluginListing } from "./lib/pluginDiscovery";
+import { getCompletedRolling24HourWindow } from "./lib/skillHourlyStats";
 
-const DAILY_STATS_PAGE_SIZE = 1_000;
+const STAT_EVENTS_PAGE_SIZE = 1_000;
 const KEEP_LEADERBOARD_ENTRIES = 3;
 const DISCOVERY_BATCH_SIZE = 100;
-export const PACKAGE_TRENDING_LEADERBOARD_KIND = "package_trending";
+export const PACKAGE_TRENDING_LEADERBOARD_KIND = "package_trending_24h";
 
 export const getDiscoveryPackageIds = internalQuery({
   args: { packageIds: v.array(v.id("packages")) },
+  returns: v.array(v.id("packages")),
   handler: async (ctx, { packageIds }) => {
     if (packageIds.length > DISCOVERY_BATCH_SIZE) throw new Error("Maximum 100 package identities");
     const eligible: Id<"packages">[] = [];
@@ -33,30 +40,24 @@ export const getDiscoveryPackageIds = internalQuery({
   },
 });
 
-export const getDailyStatsPage = internalQuery({
+export const getStatEventsPage = internalQuery({
   args: {
-    day: v.number(),
-    cursor: v.union(v.string(), v.null()),
-    limit: v.optional(v.number()),
+    startAt: v.number(),
+    endAt: v.number(),
+    paginationOpts: paginationOptsValidator,
   },
-  handler: async (ctx, { day, cursor, limit }) => {
-    const page = await ctx.db
-      .query("packageDailyStats")
-      .withIndex("by_day", (q) => q.eq("day", day))
-      .paginate({
-        cursor,
-        numItems: Math.min(limit ?? DAILY_STATS_PAGE_SIZE, DAILY_STATS_PAGE_SIZE),
-      });
-
-    return {
-      rows: page.page.map((row) => ({
-        packageId: row.packageId,
-        installs: row.installs,
-        downloads: row.downloads,
-      })),
-      isDone: page.isDone,
-      continueCursor: page.continueCursor,
-    };
+  returns: paginationResultValidator(
+    v.object({
+      packageId: v.id("packages"),
+      kind: v.union(v.literal("download"), v.literal("install"), v.literal("install_clear")),
+    }),
+  ),
+  handler: async (ctx, { startAt, endAt, paginationOpts }) => {
+    const result = await ctx.db
+      .query("packageStatEvents")
+      .withIndex("by_occurred_at", (q) => q.gte("occurredAt", startAt).lt("occurredAt", endAt))
+      .paginate(paginationOpts);
+    return { ...result, page: result.page.map(({ packageId, kind }) => ({ packageId, kind })) };
   },
 });
 
@@ -70,15 +71,18 @@ export const writeTrendingLeaderboard = internalMutation({
         downloads: v.number(),
       }),
     ),
-    startDay: v.number(),
-    endDay: v.number(),
+    startAt: v.number(),
+    endAt: v.number(),
   },
-  handler: async (ctx, { items, startDay, endDay }) => {
+  returns: v.object({ ok: v.literal(true), count: v.number() }),
+  handler: async (ctx, { items, startAt, endAt }) => {
     await ctx.db.insert("packageLeaderboards", {
       kind: PACKAGE_TRENDING_LEADERBOARD_KIND,
       generatedAt: Date.now(),
-      rangeStartDay: startDay,
-      rangeEndDay: endDay,
+      rangeStartDay: toDayKey(startAt),
+      rangeEndDay: toDayKey(endAt - 1),
+      rangeStartAt: startAt,
+      rangeEndAt: endAt,
       items,
     });
 
@@ -96,45 +100,50 @@ export const writeTrendingLeaderboard = internalMutation({
 
 export const rebuildTrendingLeaderboardAction = internalAction({
   args: { limit: v.optional(v.number()) },
+  returns: v.object({ ok: v.literal(true), count: v.number() }),
   handler: async (ctx, args): Promise<{ ok: true; count: number }> => {
     const limit = Math.min(
       Math.max(args.limit ?? PACKAGE_TRENDING_LEADERBOARD_LIMIT, 1),
       PACKAGE_TRENDING_LEADERBOARD_LIMIT,
     );
     const now = Date.now();
-    const { startDay, endDay } = getTrendingRange(now);
+    // Match Skills Trending: the 24 completed UTC hours before this rebuild.
+    // Retained raw events preserve the boundary that daily totals cannot express.
+    const { startAt, endAt } = getCompletedRolling24HourWindow(now);
     const totals = new Map<Id<"packages">, { installs: number; downloads: number }>();
-
-    for (let day = startDay; day <= endDay; day += 1) {
-      let cursor: string | null = null;
-      let isDone = false;
-      while (!isDone) {
-        const page = (await ctx.runQuery(internal.packageLeaderboards.getDailyStatsPage, {
-          day,
-          cursor,
-          limit: DAILY_STATS_PAGE_SIZE,
-        })) as {
-          rows: Array<{ packageId: Id<"packages">; installs: number; downloads: number }>;
-          isDone: boolean;
-          continueCursor: string;
-        };
-        for (const row of page.rows) {
-          const current = totals.get(row.packageId) ?? { installs: 0, downloads: 0 };
-          current.installs += row.installs;
-          current.downloads += row.downloads;
-          totals.set(row.packageId, current);
-        }
-        cursor = page.continueCursor;
-        isDone = page.isDone;
+    let cursor: string | null = null;
+    do {
+      const result: PaginationResult<{
+        packageId: Id<"packages">;
+        kind: "download" | "install" | "install_clear";
+      }> = await ctx.runQuery(internal.packageLeaderboards.getStatEventsPage, {
+        startAt,
+        endAt,
+        paginationOpts: { cursor, numItems: STAT_EVENTS_PAGE_SIZE },
+      });
+      for (const event of result.page) {
+        const current = totals.get(event.packageId) ?? { installs: 0, downloads: 0 };
+        if (event.kind === "download") current.downloads += 1;
+        else current.installs += event.kind === "install" ? 1 : -1;
+        totals.set(event.packageId, current);
       }
-    }
+      cursor = result.isDone ? null : result.continueCursor;
+    } while (cursor);
 
     const entries = Array.from(totals, ([packageId, entry]) => ({
       packageId,
-      installs: entry.installs,
+      installs: Math.max(0, entry.installs),
       downloads: entry.downloads,
-      score: entry.installs * 3 + entry.downloads,
-    })).sort((a, b) => b.score - a.score || b.downloads - a.downloads || b.installs - a.installs);
+      score: Math.max(0, entry.installs) * 3 + entry.downloads,
+    }))
+      .filter((entry) => entry.score > 0)
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          b.downloads - a.downloads ||
+          b.installs - a.installs ||
+          a.packageId.localeCompare(b.packageId),
+      );
 
     // Apply discovery visibility before the top-N budget. Otherwise setup plugins
     // with high adoption crowd out tools even when the public reader hides them.
@@ -157,8 +166,8 @@ export const rebuildTrendingLeaderboardAction = internalAction({
 
     await ctx.runMutation(internal.packageLeaderboards.writeTrendingLeaderboard, {
       items,
-      startDay,
-      endDay,
+      startAt,
+      endAt,
     });
     return { ok: true as const, count: items.length };
   },
@@ -166,6 +175,12 @@ export const rebuildTrendingLeaderboardAction = internalAction({
 
 export const rebuildTrendingLeaderboardInternal = internalMutation({
   args: { limit: v.optional(v.number()) },
+  returns: v.object({
+    ok: v.literal(true),
+    count: v.number(),
+    scheduled: v.literal(true),
+    days: v.literal(1),
+  }),
   handler: async (ctx, args) => {
     await ctx.scheduler.runAfter(0, internal.packageLeaderboards.rebuildTrendingLeaderboardAction, {
       limit: Math.min(
@@ -173,6 +188,6 @@ export const rebuildTrendingLeaderboardInternal = internalMutation({
         PACKAGE_TRENDING_LEADERBOARD_LIMIT,
       ),
     });
-    return { ok: true as const, count: 0, scheduled: true as const, days: TRENDING_DAYS };
+    return { ok: true as const, count: 0, scheduled: true as const, days: 1 as const };
   },
 });

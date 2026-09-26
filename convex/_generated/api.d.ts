@@ -23,6 +23,7 @@ import type * as dashboard from "../dashboard.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
 import type * as devSeed from "../devSeed.js";
 import type * as devSeedExtra from "../devSeedExtra.js";
+import type * as devSeedPackageTrending from "../devSeedPackageTrending.js";
 import type * as downloadMetrics from "../downloadMetrics.js";
 import type * as downloads from "../downloads.js";
 import type * as emailsNode from "../emailsNode.js";
@@ -286,6 +287,7 @@ declare const fullApi: ApiFromModules<{
   depRegistryScan: typeof depRegistryScan;
   devSeed: typeof devSeed;
   devSeedExtra: typeof devSeedExtra;
+  devSeedPackageTrending: typeof devSeedPackageTrending;
   downloadMetrics: typeof downloadMetrics;
   downloads: typeof downloads;
   emailsNode: typeof emailsNode;

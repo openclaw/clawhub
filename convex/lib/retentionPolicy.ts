@@ -224,7 +224,7 @@ export const RETENTION_POLICIES = {
     retention: "Parent skillScanRequests TTL.",
   }),
   skillCardGenerationJobs: permanent("Card generation job history and retry state."),
-  packageStatEvents: ephemeral("Package stat event log only needs to survive processing.", {
+  packageStatEvents: ephemeral("Package stat events support processing and 24-hour Trending.", {
     expirationField: "processedAt",
     expirationIndex: "by_unprocessed",
     prune: "packages.pruneProcessedPackageStatEventsInternal",
@@ -241,8 +241,8 @@ export const RETENTION_POLICIES = {
   ),
   packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
   packageLeaderboards: derived(
-    "Package trending snapshots can be rebuilt from packageDailyStats.",
-    "packageDailyStats",
+    "Package trending snapshots can be rebuilt from the retained packageStatEvents window.",
+    "packageStatEvents",
   ),
   packageTrustedPublishers: permanent("Trusted publishing configuration."),
   packagePublishTokens: ephemeral("Package publish tokens expire and can be revoked.", {
