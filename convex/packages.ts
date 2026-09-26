@@ -2786,6 +2786,7 @@ async function takeVisiblePackageCategoryDigestPage(
 
 type CuratedCategoryArgs = {
   category: PluginCategorySlug;
+  englishOnly?: boolean;
   family?: PackageFamily;
   channel?: PackageChannel;
   isOfficial?: boolean;
@@ -2812,6 +2813,7 @@ async function listCuratedPluginCategoryPage(
     args.isOfficial,
     args.topic,
     args.excludedScanStatuses,
+    args.englishOnly ?? false,
   ]);
   let state: CuratedCategoryCursor = { scope, pinOffset: 0 };
   if (args.paginationOpts.cursor) {
@@ -2845,7 +2847,7 @@ async function listCuratedPluginCategoryPage(
   const eligible = async (digest: PackageDigestLike) =>
     (digest.family === "code-plugin" || digest.family === "bundle-plugin") &&
     digestMatchesSearchFilters(digest, args) &&
-    isEnglishPluginListing(digest) &&
+    (!args.englishOnly || isEnglishPluginListing(digest)) &&
     (await canViewerReadPackage(ctx, digest, undefined, membershipCache));
   const result = (isDone: boolean): PublicPackageListPage => ({
     page,
@@ -2921,6 +2923,7 @@ async function listPluginOverviewCategory(
   return (
     await listCuratedPluginCategoryPage(ctx, {
       category: args.category,
+      englishOnly: true,
       paginationOpts: { cursor: null, numItems: args.numItems },
     })
   ).page;

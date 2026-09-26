@@ -97,13 +97,14 @@
   and filters older snapshots on read. Featured skips excluded badges before its returned-entry limit.
 - Plugin homepage shelves and `curated=true` category pages use the canonical ordered package
   pins in `convex/lib/pluginDiscovery.ts`, then downloads descending and canonical package name
-  ascending. Pins resolve before the shelf limit. Missing, private, blocked, or language-ineligible
-  pins are skipped. Official status does not change tail order. The API carries `pinnedPackages`
+  ascending. Pins resolve before the shelf limit. Missing, private, and blocked pins are skipped;
+  homepage shelves also skip language-ineligible pins. Official status does not change tail order. The API carries `pinnedPackages`
   with category metadata so OpenClaw can apply the same policy to trusted bundled packages.
-- Curated plugin discovery uses English listing text, never publisher nationality. It shares
+- Homepage plugin discovery uses English listing text, never publisher nationality. Complete
+  category browse retains all listing languages while sharing the curated ordering. Discovery shares
   Trending's title-script and text classifier; reviewed short English false negatives match the
   exact package identity, title, and summary, and expire when the text changes. Filtering precedes
-  shelf limits and pagination. Search and direct package reads remain available in every language.
+  homepage shelf limits. Category browse, search, and direct package reads remain available in every language.
 - Other and Uncategorized do not form plugin homepage shelves. Other remains a valid stored
   category and an explicit catalog filter.
 - Computer use follows Web and covers interactive desktop/browser navigation, clicks, typing,

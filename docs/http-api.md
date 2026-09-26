@@ -683,9 +683,16 @@ Query params:
   retaining an existing selection preserves its position.
 - `category` (optional): plugin category filter. The active browse values are
   returned by `GET /api/v1/plugins/categories`, including their descriptions and
-  icons. The 22 categories cover core configuration surfaces and product uses.
+  icons. The 23 categories cover core configuration surfaces and product uses,
+  including Computer use after Web for interactive desktop/browser control.
   Retired values `tools`, `runtime`, and `gateway` remain readable for existing
   metadata and links, but do not appear in the active browse list.
+- `curated` (optional): `true` requires `category` and `sort=downloads`, and cannot
+  be combined with `featured` or `officialFirst`. Eligible canonical package pins
+  come first, then remaining plugins by downloads descending and canonical name
+  ascending, consistently across pages and both plugin families. Category browse
+  retains all listing languages. The response includes category metadata with
+  optional ordered `pinnedPackages`.
 
 Legacy v1 filter aliases remain accepted on read endpoints:
 
@@ -703,8 +710,13 @@ Legacy aliases are not accepted as stored or author-declared category values.
 
 Returns the bounded data needed to render the plugin marketplace home page in
 one cacheable request: the canonical category metadata plus the union of the
-top eight Featured, Trending, and official-first/download-sorted plugins for
-each category. Items may include `featured` and `trending` markers.
+top eight Featured, Trending, and curated plugins for each category. Category
+shelves resolve eligible canonical pins before the eight-card limit, then sort
+by downloads descending and canonical package name ascending. Models pin only
+OpenAI, Anthropic, and Google. Other is omitted from homepage sections. Homepage
+discovery applies English-listing eligibility before filling its limits; complete
+category browse, search, and direct lookup retain all listing languages.
+Items may include `featured` and `trending` markers.
 Marked items also include their zero-based `featuredRank` or `trendingRank`, so
 clients preserve each shelf's independent order after deduplicating metadata.
 Featured ranks follow newest-featured order, matching `GET /api/v1/plugins?featured=true`.
@@ -717,7 +729,8 @@ catalog traversal.
 
 Returns the canonical plugin discovery taxonomy in display order. Each category
 contains `slug`, `label`, `description`, a bare Lucide `icon` key, and numeric
-`order`.
+`order`, plus optional ordered `pinnedPackages` for curated ordering. This full
+taxonomy includes Other even though homepage discovery omits its shelf.
 
 Use each category's description to choose the main reason someone installs the
 plugin. New plugin releases may declare exactly one category in

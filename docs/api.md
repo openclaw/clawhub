@@ -118,7 +118,7 @@ Public read:
 - `GET /api/v1/plugins?limit=&cursor=&sort=`
   - `sort`: `recommended` (default), `downloads`, `updated`, legacy alias `installs`
 - `GET /api/v1/plugins?category=memory&curated=true&sort=downloads`
-  - English discovery listings: curated package pins first, then downloads descending and package name ascending.
+  - Complete category browse: curated package pins first, then downloads descending and package name ascending. All listing languages remain available.
   - Returns cursor pagination and category metadata with ordered `pinnedPackages`; unavailable pins are skipped.
   - Search and ordinary catalog reads retain listings in every language.
 - `GET /api/v1/plugins/overview`

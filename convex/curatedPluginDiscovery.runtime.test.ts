@@ -140,7 +140,7 @@ describe("curated plugin discovery", () => {
     expect(names).toEqual(["@honcho-ai/openclaw-honcho", "a-first", "b-middle", "z-last"]);
   });
 
-  it("filters listing language before backfilling eight research cards and leaves direct lookup available", async () => {
+  it("filters homepage language before backfilling eight research cards while keeping category browse complete", async () => {
     const t = await setup([
       { name: "non-english", title: "社媒数据助手", downloads: 10000, category: "research" },
       ...Array.from({ length: 10 }, (_, index) => ({
@@ -173,6 +173,14 @@ describe("curated plugin discovery", () => {
         .map((item: { name: string }) => item.name),
     ).toEqual(Array.from({ length: 8 }, (_, index) => `research-${index}`));
     expect((await t.fetch("/api/v1/packages/non-english")).status).toBe(200);
+    const browse = await t.fetch(
+      "/api/v1/plugins?curated=true&category=research&sort=downloads&limit=100",
+    );
+    expect(browse.status).toBe(200);
+    expect((await browse.json()).items.map((item: { name: string }) => item.name)).toEqual([
+      "non-english",
+      ...Array.from({ length: 10 }, (_, index) => `research-${index}`),
+    ]);
   });
 
   it("expires a reviewed short English listing exception when its text changes", () => {
