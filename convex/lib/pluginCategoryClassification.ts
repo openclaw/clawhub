@@ -11,7 +11,7 @@ import { extractResponseText } from "./openaiResponse";
 import { derivePluginManifestSummary, toConvexSafeJsonValue } from "./packageRegistry";
 import type { PluginCategoryClassification } from "./pluginCategoryClassificationContract";
 
-export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v6";
+export const PLUGIN_CATEGORY_CLASSIFIER_VERSION = "plugin-single-category-v7";
 const DOCUMENTATION_CHARACTER_LIMIT = 16_000;
 export type PluginCategoryEvidence = {
   name: string;

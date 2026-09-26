@@ -131,6 +131,7 @@ import type * as lib_packageStatEvents from "../lib/packageStatEvents.js";
 import type * as lib_pluginCategoryClassification from "../lib/pluginCategoryClassification.js";
 import type * as lib_pluginCategoryClassificationContract from "../lib/pluginCategoryClassificationContract.js";
 import type * as lib_pluginCategoryReview from "../lib/pluginCategoryReview.js";
+import type * as lib_pluginDiscovery from "../lib/pluginDiscovery.js";
 import type * as lib_public from "../lib/public.js";
 import type * as lib_publicBrowse from "../lib/publicBrowse.js";
 import type * as lib_publicRouteReservations from "../lib/publicRouteReservations.js";
@@ -392,6 +393,7 @@ declare const fullApi: ApiFromModules<{
   "lib/pluginCategoryClassification": typeof lib_pluginCategoryClassification;
   "lib/pluginCategoryClassificationContract": typeof lib_pluginCategoryClassificationContract;
   "lib/pluginCategoryReview": typeof lib_pluginCategoryReview;
+  "lib/pluginDiscovery": typeof lib_pluginDiscovery;
   "lib/public": typeof lib_public;
   "lib/publicBrowse": typeof lib_publicBrowse;
   "lib/publicRouteReservations": typeof lib_publicRouteReservations;

@@ -2693,6 +2693,12 @@ const packagePluginCategorySearchDigest = defineTable({
   updatedAt: v.number(),
 })
   .index("by_package", ["packageId", "pluginCategory"])
+  .index("by_active_category_downloads_name", [
+    "softDeletedAt",
+    "pluginCategory",
+    "stats.downloads",
+    "name",
+  ])
   .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
   .index("by_active_category_downloads", [
     "softDeletedAt",

@@ -130,6 +130,7 @@ describe("plugin categories", () => {
       "context",
       "voice",
       "web",
+      "computer-use",
       "media",
       "security",
       "integrations",

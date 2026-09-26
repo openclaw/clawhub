@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { isPublicPluginDoc } from "./lib/globalStats";
 import { getTrendingRange, TRENDING_DAYS } from "./lib/leaderboards";
+import { isEnglishPluginListing } from "./lib/pluginDiscovery";
 
 const DAILY_STATS_PAGE_SIZE = 1_000;
 const KEEP_LEADERBOARD_ENTRIES = 3;
@@ -21,7 +22,11 @@ export const getDiscoveryPackageIds = internalQuery({
         .query("packageSearchDigest")
         .withIndex("by_package", (q) => q.eq("packageId", packageId))
         .unique();
-      if (isPublicPluginDoc(digest) && !getPluginDiscoveryExclusion(digest.categories))
+      if (
+        isPublicPluginDoc(digest) &&
+        !getPluginDiscoveryExclusion(digest.categories) &&
+        isEnglishPluginListing(digest)
+      )
         eligible.push(packageId);
     }
     return eligible;

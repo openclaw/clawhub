@@ -90,7 +90,7 @@ gh workflow run plugin-category-refresh.yml --repo openclaw/clawhub --ref main \
 Accept marks reviewed rows accepted and rehearses the first ten through a
 transaction that rolls back. Category state stays unchanged. A failed rehearsal
 leaves accepted rows available for inspection. Fresh generated previews must use
-classifier `plugin-single-category-v6`; bundled previews must match the pinned
+classifier `plugin-single-category-v7`; bundled previews must match the pinned
 OpenClaw source commit and manifest hashes in the checked-out inventory.
 
 ## Apply, monitor, and undo

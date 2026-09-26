@@ -471,16 +471,19 @@ export const PluginOverviewItemSchema = type({
 });
 export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
 
+export const PluginDiscoveryCategorySchema = type({
+  "+": "reject",
+  slug: "string",
+  label: "string",
+  description: "string",
+  icon: "string",
+  order: "number",
+  pinnedPackages: "string[]?",
+});
+
 export const ApiV1PluginOverviewResponseSchema = type({
   "+": "reject",
-  categories: type({
-    "+": "reject",
-    slug: "string",
-    label: "string",
-    description: "string",
-    icon: "string",
-    order: "number",
-  }).array(),
+  categories: PluginDiscoveryCategorySchema.array(),
   items: PluginOverviewItemSchema.array(),
 });
 export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];
@@ -488,6 +491,7 @@ export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSch
 export const ApiV1PackageListResponseSchema = type({
   items: PackageListItemSchema.array(),
   nextCursor: "string|null",
+  categories: PluginDiscoveryCategorySchema.array().optional(),
 });
 export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
 

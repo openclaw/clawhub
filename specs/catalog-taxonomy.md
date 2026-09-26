@@ -5,7 +5,7 @@
 - Skills and plugins use separate controlled slug registries from `clawhub-schema`.
 - Category slugs name one concept. Plugin categories combine seven core configuration surfaces
   (Channels, Models, Agent runtimes, Memory, Context, Voice, Web) with product uses and capabilities.
-- The remaining active plugin categories are Media, Security, Integrations, Developer tools,
+- The remaining active plugin categories are Computer use, Media, Security, Integrations, Developer tools,
   Infrastructure, Documents & files, Inbox & collaboration, Productivity, Scheduling,
   Finance & payments, Sales & marketing, Data & analytics, Agent orchestration, Research, and Other.
 - Tools, Runtime, and Gateway remain accepted for published metadata and old links, but are absent
@@ -17,7 +17,7 @@
   Generated assignments and bundled manifests also contain exactly one active category. Readers
   retain historical declarations, while the reviewed refresh reclassifies retired or multiple
   categories from static source evidence. Current single-purpose declarations remain authoritative.
-- The active registry has 22 categories. `agent-runtimes` uses the `bot` icon after Models. It covers
+- The active registry has 23 categories. `agent-runtimes` uses the `bot` icon after Models. It covers
   execution engines and backends that run the agent loop and manage native sessions. Context
   covers active-context assembly and compaction; Agent orchestration covers coordination and
   delegation. Session mirroring or locks alone do not make a plugin an execution engine.
@@ -95,7 +95,20 @@
   reporting also retain these setup categories; only Featured candidate eligibility changes.
 - Trending keeps its existing adoption ordering, selects eligible plugins before its snapshot limit,
   and filters older snapshots on read. Featured skips excluded badges before its returned-entry limit.
-- Category browse places official or curated entries before community entries.
+- Plugin homepage shelves and `curated=true` category pages use the canonical ordered package
+  pins in `convex/lib/pluginDiscovery.ts`, then downloads descending and canonical package name
+  ascending. Pins resolve before the shelf limit. Missing, private, blocked, or language-ineligible
+  pins are skipped. Official status does not change tail order. The API carries `pinnedPackages`
+  with category metadata so OpenClaw can apply the same policy to trusted bundled packages.
+- Curated plugin discovery uses English listing text, never publisher nationality. It shares
+  Trending's title-script and text classifier; reviewed short English false negatives match the
+  exact package identity, title, and summary, and expire when the text changes. Filtering precedes
+  shelf limits and pagination. Search and direct package reads remain available in every language.
+- Other and Uncategorized do not form plugin homepage shelves. Other remains a valid stored
+  category and an explicit catalog filter.
+- Computer use follows Web and covers interactive desktop/browser navigation, clicks, typing,
+  and screenshots. Search, fetching, crawling, and content extraction stay in Web; execution
+  hosting stays in Infrastructure; meeting participants stay in Voice.
 - Skill category browse paginates an indexed curated projection before community results; it does
   not cap the curated corpus or hydrate curated entries outside the requested page.
 - Category and topic filters use per-value digest rows that preserve the selected browse sort.
@@ -162,7 +175,7 @@ completion. The retained journal is the audit/rollback record.
 
 Operator entry points (run only against the deliberately selected deployment):
 
-- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v6-prod","batchSize":10}` returns
+- `pluginCategoryRefresh:preview {"runId":"plugin-single-category-v7-prod","batchSize":10}` returns
   a cursor and bounded skip/failure diagnostics. Pass each returned cursor to the next call;
   pause between calls. `pluginCategoryRefresh:list` lists that run with normal pagination.
 - `pluginCategoryRefresh:accept` accepts at most 100 inspected row IDs with
@@ -183,7 +196,7 @@ Operator entry points (run only against the deliberately selected deployment):
 
 Classification uses `OPENAI_API_KEY` and defaults to `gpt-5.6-luna`, with a dedicated
 `OPENAI_PLUGIN_CATEGORY_MODEL` override independent of skill-summary configuration. The current
-classifier revision is `plugin-single-category-v6`; superseded generated previews cannot be
+classifier revision is `plugin-single-category-v7`; superseded generated previews cannot be
 accepted or applied. The model receives all 22 purpose definitions and must return exactly one
 category. Missing credentials, timeouts, and
 invalid output are recorded as failed fallback classifications. They cannot be accepted unchanged.

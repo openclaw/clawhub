@@ -33,6 +33,8 @@ it("public Featured reads put new and re-added selections first despite an older
         name,
         normalizedName: name,
         displayName: name,
+        summary:
+          "Search the web and summarize research findings with citations to original sources.",
         family: name === "editorial" ? "bundle-plugin" : "code-plugin",
         ownerUserId,
         ownerPublisherId: publisher,

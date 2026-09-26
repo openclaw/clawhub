@@ -198,7 +198,13 @@ export async function loadPluginsPageData(
       ...(args.searchSource ? { searchSource: args.searchSource } : {}),
       category: args.category,
       topic: args.topic,
-      officialFirst: Boolean(args.category && !args.q),
+      curated: Boolean(
+        args.category &&
+        args.category !== "other" &&
+        !args.q &&
+        !args.featured &&
+        (!args.sort || args.sort === "recommended" || args.sort === "downloads"),
+      ),
       cursor: args.q ? undefined : args.cursor,
       featured: args.featured,
       isOfficial: args.official,
@@ -208,7 +214,12 @@ export async function loadPluginsPageData(
         args.sort === "trending" ||
         !args.sort ||
         args.sort === "recommended")
-        ? { sort: args.sort ?? getDefaultPluginBrowseSort(args) }
+        ? {
+            sort:
+              args.category && (!args.sort || args.sort === "recommended")
+                ? "downloads"
+                : (args.sort ?? getDefaultPluginBrowseSort(args)),
+          }
         : {}),
       limit: PLUGINS_PAGE_SIZE,
       signal: requestController.signal,

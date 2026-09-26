@@ -451,6 +451,14 @@ export declare const PluginOverviewItemSchema: import("arktype/internal/variants
     trendingRank?: number | undefined;
 }, {}>;
 export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
+export declare const PluginDiscoveryCategorySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    slug: string;
+    label: string;
+    description: string;
+    icon: string;
+    order: number;
+    pinnedPackages?: string[] | undefined;
+}, {}>;
 export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     categories: {
         slug: string;
@@ -458,6 +466,7 @@ export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal
         description: string;
         icon: string;
         order: number;
+        pinnedPackages?: string[] | undefined;
     }[];
     items: {
         name: string;
@@ -519,6 +528,14 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         } | undefined;
     }[];
     nextCursor: string | null;
+    categories?: {
+        slug: string;
+        label: string;
+        description: string;
+        icon: string;
+        order: number;
+        pinnedPackages?: string[] | undefined;
+    }[] | undefined;
 }, {}>;
 export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
 export declare const PackageValidationReportScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"clean" | "error" | "not-scanned" | "skipped" | "warning", {}>;

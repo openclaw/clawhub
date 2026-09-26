@@ -32,6 +32,8 @@ async function fixture(setupCount = 0, workflowCategories = ["documents-files"])
         name,
         normalizedName: name,
         displayName: name,
+        summary:
+          "Search the web and summarize research findings with citations to original sources.",
         ownerUserId,
         family: "code-plugin",
         channel: isOfficial ? "official" : "community",

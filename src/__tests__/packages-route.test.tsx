@@ -626,7 +626,7 @@ describe("plugins route", () => {
     render(<Component />);
 
     const categorySidebar = screen.getByLabelText("Plugin categories");
-    expect(categorySidebar.querySelectorAll("button")).toHaveLength(23);
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(24);
     expect(categorySidebar.textContent).toContain("Channels");
     expect(categorySidebar.textContent).toContain("Agent runtimes");
     expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
@@ -708,14 +708,14 @@ describe("plugins route", () => {
         q: "api",
         category: "tools",
         topic: "postgres",
-        officialFirst: false,
+        curated: false,
         cursor: undefined,
         limit: 25,
       }),
     );
   });
 
-  it("requests official-first pagination for category browse", async () => {
+  it("requests curated pagination for category browse", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
 
@@ -724,7 +724,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         category: "security",
-        officialFirst: true,
+        curated: true,
       }),
     );
   });
@@ -884,7 +884,8 @@ describe("plugins route", () => {
       expect.objectContaining({
         category: "security",
         cursor: "cursor:next",
-        sort: "recommended",
+        sort: "downloads",
+        curated: true,
       }),
     );
     expect(navigateMock).not.toHaveBeenCalled();
