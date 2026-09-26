@@ -1845,9 +1845,8 @@ async function installSkillWithOptionalStaging(
     backupCreated = true;
     await rename(stage, target);
     stageMoved = true;
-    await rm(backup, { recursive: true, force: true });
   } catch (error) {
-    if (backupCreated) {
+    if (backupCreated && !stageMoved) {
       await rm(target, { recursive: true, force: true }).catch(() => {});
       await rename(backup, target).catch(() => {});
     }
@@ -1857,6 +1856,8 @@ async function installSkillWithOptionalStaging(
       await rm(stage, { recursive: true, force: true }).catch(() => {});
     }
   }
+
+  await rm(backup, { recursive: true, force: true }).catch(() => {});
 }
 
 function gitHubZipUrl(repo: string, commit: string) {

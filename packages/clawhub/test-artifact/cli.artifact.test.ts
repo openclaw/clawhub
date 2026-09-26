@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -666,6 +666,60 @@ describe("built CLI artifact", () => {
       "/api/v1/download?slug=demo&version=1.0.0",
       "/api/cli/telemetry/install",
     ]);
+  });
+
+  it("keeps a completed force install when backup cleanup fails", async () => {
+    const { registry } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-force-");
+    const configPath = await writeConfigWithToken(workdir, registry);
+    const skillsDir = join(workdir, "skills");
+    const target = join(skillsDir, "demo");
+    await mkdir(target, { recursive: true });
+    await writeFile(join(target, "SKILL.md"), "# Previous version\n");
+    const faultModule = join(workdir, "backup-cleanup-fault.mjs");
+    await writeFile(
+      faultModule,
+      `import fs from "node:fs/promises";
+import { basename } from "node:path";
+import { syncBuiltinESMExports } from "node:module";
+const remove = fs.rm;
+fs.rm = async (path, options) => {
+  if (basename(String(path)).startsWith(".demo.backup-")) {
+    process.stderr.write("Injected EBUSY during backup cleanup\\n");
+    throw Object.assign(new Error("Backup is busy"), { code: "EBUSY" });
+  }
+  return remove(path, options);
+};
+syncBuiltinESMExports();
+`,
+    );
+
+    const result = await runNodeAsync(
+      [
+        "--import",
+        pathToFileURL(faultModule).href,
+        binPath,
+        "--workdir",
+        workdir,
+        "--registry",
+        registry,
+        "install",
+        "demo",
+        "--force",
+      ],
+      { CLAWHUB_CONFIG_PATH: configPath },
+    );
+
+    expect(result.stderr).toContain("Injected EBUSY during backup cleanup");
+    expect(result.status, result.stderr).toBe(0);
+    expect(await readFile(join(target, "SKILL.md"), "utf8")).toContain("A local registry fixture.");
+    const lock = JSON.parse(await readFile(join(workdir, ".clawhub", "lock.json"), "utf8"));
+    expect(lock.skills.demo.version).toBe("1.0.0");
+    const backups = (await readdir(skillsDir)).filter((name) => name.startsWith(".demo.backup-"));
+    expect(backups).toHaveLength(1);
+    expect(await readFile(join(skillsDir, backups[0]!, "SKILL.md"), "utf8")).toBe(
+      "# Previous version\n",
+    );
   });
 
   it("keeps the built dist free of compiled test files", async () => {

@@ -153,6 +153,8 @@ See [CLI login](./auth.md#cli-login) for the approval steps and expiry guidance.
   - `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`)
   - `<skill>/.clawhub/origin.json` (legacy `.clawdhub`)
 
+A completed replacement stays installed if deleting its old backup fails. The leftover `.backup-` directory can be removed once the file lock is released. Failures before the replacement completes still restore the previous install.
+
 ### `uninstall <skill>`
 
 - Removes `<workdir>/<dir>/<slug>` and deletes the lockfile entry.

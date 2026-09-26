@@ -11,6 +11,8 @@
 
 ### Fixes
 
+- CLI: keep completed skill installs and updates when deleting an old backup fails, without rolling back the new files (thanks @SebTardif).
+
 - Deploy: coalesce pending skills.sh syncs per ref before they enter the production deployment queue, while preserving active sync cleanup and queued manual deploys.
 
 - Workers: reserve Skill Card capacity by lease slot to avoid global queue contention, continue after partial batches, and release undelivered leases when input hydration fails.
