@@ -1066,10 +1066,11 @@ export async function cmdPublishPackage(
           if (spinner) {
             spinner.text = `Uploading ${file.relPath} (${index}/${plan.filesOnDisk.length})`;
           }
-          const blob = new Blob([Buffer.from(file.bytes)], {
+          // Bun loses the filename on empty Blobs read back from FormData by the curl transport.
+          const upload = new File([Buffer.from(file.bytes)], file.relPath, {
             type: file.contentType ?? "application/octet-stream",
           });
-          form.append("files", blob, file.relPath);
+          form.append("files", upload, file.relPath);
         }
       }
 

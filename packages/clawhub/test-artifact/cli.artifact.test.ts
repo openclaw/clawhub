@@ -1,12 +1,13 @@
 /* @vitest-environment node */
 
-import { spawn, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -575,6 +576,89 @@ describe("built CLI artifact", () => {
     expect(output.version).toBe("1.0.0");
     expect(output.commit).toBeTypeOf("string");
   });
+
+  it.each(["node", "bun"])(
+    "preserves empty bundle filenames when publishing with %s",
+    async (runtime) => {
+      const root = await makeTmpDir("clawhub-empty-bundle-");
+      await mkdir(join(root, ".cursor-plugin"), { recursive: true });
+      await mkdir(join(root, "assets"));
+      await writeFile(
+        join(root, ".cursor-plugin/plugin.json"),
+        JSON.stringify({ name: "empty-bundle", version: "1.0.0" }),
+      );
+      await writeFile(join(root, "openclaw.plugin.json"), JSON.stringify({ id: "empty-bundle" }));
+      await writeFile(
+        join(root, ".mcp.json"),
+        JSON.stringify({ mcpServers: { demo: { url: "https://example.com/mcp" } } }),
+      );
+      await writeFile(join(root, "assets/.gitkeep"), "");
+      await writeFile(join(root, "assets/second-empty.txt"), "");
+      const received: Array<{ name: string; size: number }> = [];
+      const server = createServer(async (request, response) => {
+        if (request.method !== "POST" || request.url !== "/api/v1/packages") {
+          writeJson(response, 404, { error: "Unexpected route" });
+          return;
+        }
+        try {
+          const form = await new Request("http://localhost/upload", {
+            method: "POST",
+            headers: { "Content-Type": request.headers["content-type"]! },
+            body: await readRequestBody(request),
+          }).formData();
+          for (const file of form.getAll("files") as File[]) {
+            received.push({ name: file.name, size: file.size });
+          }
+          writeJson(response, 200, {
+            ok: true,
+            packageId: "pkg_fixture",
+            releaseId: "rel_fixture",
+            publicationStatus: "published",
+          });
+        } catch (error) {
+          writeJson(response, 400, { error: String(error) });
+        }
+      });
+      servers.push(server);
+      await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+      const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      await promisify(execFile)(
+        runtime,
+        [
+          distCliPath,
+          "package",
+          "publish",
+          root,
+          "--name",
+          "empty-bundle",
+          "--version",
+          "1.0.0",
+          "--registry",
+          registry,
+          "--site",
+          registry,
+          "--json",
+        ],
+        {
+          cwd: root,
+          timeout: 20_000,
+          env: {
+            ...process.env,
+            CLAWHUB_TOKEN: "local-artifact-test",
+            CLAWHUB_CONFIG_PATH: join(root, "config.json"),
+            ACTIONS_ID_TOKEN_REQUEST_URL: "",
+            ACTIONS_ID_TOKEN_REQUEST_TOKEN: "",
+            TRUSTED_TOOLING_IDENTITY_JSON: "",
+          },
+        },
+      );
+      expect(received.filter((file) => file.size === 0)).toEqual([
+        { name: "assets/.gitkeep", size: 0 },
+        { name: "assets/second-empty.txt", size: 0 },
+      ]);
+      expect(received).toHaveLength(5);
+    },
+  );
 
   it("sends one explicit install telemetry event from the built install command", async () => {
     const { registry, requests } = await startLocalRegistry();
