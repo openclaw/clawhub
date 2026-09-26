@@ -1,0 +1,197 @@
+{
+  "baseline": "337e7b4c5c1bae715b5d4922fc356dc3d696ba23",
+  "candidate": "eaa8ac51532fa23d15dd4a12e601167090f98ea3",
+  "generatedAt": "2026-09-26T07:37:12.251Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-featured-row-parity/.artifacts/featured-rows/proof-final-reviewed/baseline",
+      "name": "baseline",
+      "ref": "337e7b4c5c1bae715b5d4922fc356dc3d696ba23",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "desktop Featured skills",
+          "screenshot": "screenshots/desktop-featured-skills.png",
+          "slug": "desktop-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "desktop Homepage loading",
+          "screenshot": "screenshots/desktop-homepage-loading.png",
+          "slug": "desktop-homepage-loading",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "desktop Homepage Featured skills",
+          "screenshot": "screenshots/desktop-homepage-featured-skills.png",
+          "slug": "desktop-homepage-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "desktop Featured empty",
+          "screenshot": "screenshots/desktop-featured-empty.png",
+          "slug": "desktop-featured-empty",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "desktop Featured plugins",
+          "screenshot": "screenshots/desktop-featured-plugins.png",
+          "slug": "desktop-featured-plugins",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "mobile Featured skills",
+          "screenshot": "screenshots/mobile-featured-skills.png",
+          "slug": "mobile-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "mobile Homepage loading",
+          "screenshot": "screenshots/mobile-homepage-loading.png",
+          "slug": "mobile-homepage-loading",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "mobile Homepage Featured skills",
+          "screenshot": "screenshots/mobile-homepage-featured-skills.png",
+          "slug": "mobile-homepage-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "mobile Featured empty",
+          "screenshot": "screenshots/mobile-featured-empty.png",
+          "slug": "mobile-featured-empty",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "mobile Featured plugins",
+          "screenshot": "screenshots/mobile-featured-plugins.png",
+          "slug": "mobile-featured-plugins",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "tablet Featured skills",
+          "screenshot": "screenshots/tablet-featured-skills.png",
+          "slug": "tablet-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "laptop Featured skills",
+          "screenshot": "screenshots/laptop-featured-skills.png",
+          "slug": "laptop-featured-skills",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-featured-row-parity/.artifacts/featured-rows/proof-final-reviewed/candidate",
+      "name": "candidate",
+      "ref": "eaa8ac51532fa23d15dd4a12e601167090f98ea3",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "desktop Featured skills",
+          "screenshot": "screenshots/desktop-featured-skills.png",
+          "slug": "desktop-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "desktop Homepage loading",
+          "screenshot": "screenshots/desktop-homepage-loading.png",
+          "slug": "desktop-homepage-loading",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "desktop Homepage Featured skills",
+          "screenshot": "screenshots/desktop-homepage-featured-skills.png",
+          "slug": "desktop-homepage-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "desktop Featured empty",
+          "screenshot": "screenshots/desktop-featured-empty.png",
+          "slug": "desktop-featured-empty",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "desktop Featured plugins",
+          "screenshot": "screenshots/desktop-featured-plugins.png",
+          "slug": "desktop-featured-plugins",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "mobile Featured skills",
+          "screenshot": "screenshots/mobile-featured-skills.png",
+          "slug": "mobile-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "mobile Homepage loading",
+          "screenshot": "screenshots/mobile-homepage-loading.png",
+          "slug": "mobile-homepage-loading",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "mobile Homepage Featured skills",
+          "screenshot": "screenshots/mobile-homepage-featured-skills.png",
+          "slug": "mobile-homepage-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "mobile Featured empty",
+          "screenshot": "screenshots/mobile-featured-empty.png",
+          "slug": "mobile-featured-empty",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "mobile Featured plugins",
+          "screenshot": "screenshots/mobile-featured-plugins.png",
+          "slug": "mobile-featured-plugins",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "tablet Featured skills",
+          "screenshot": "screenshots/tablet-featured-skills.png",
+          "slug": "tablet-featured-skills",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "laptop Featured skills",
+          "screenshot": "screenshots/laptop-featured-skills.png",
+          "slug": "laptop-featured-skills",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-featured-row-parity/.artifacts/featured-rows/proof-final-reviewed",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-featured-row-parity/.artifacts/proof-scenarios/featured-row-parity.pw.ts",
+  "status": "pass"
+}
