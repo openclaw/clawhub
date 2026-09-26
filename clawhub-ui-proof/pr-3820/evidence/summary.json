@@ -12,13 +12,13 @@
       "baseURL": "http://127.0.0.1:4310",
       "steps": [
         {
-          "name": "Desktop Featured (1440\u00d7900)",
+          "name": "Before \u2014 Desktop Featured (1440\u00d7900)",
           "slug": "desktop",
           "status": "pass",
           "screenshot": "desktop-viewport.png"
         },
         {
-          "name": "Mobile Featured (390\u00d7844)",
+          "name": "Before \u2014 Mobile Featured (390\u00d7844)",
           "slug": "mobile",
           "status": "pass",
           "screenshot": "mobile-viewport.png"
@@ -30,18 +30,20 @@
       "baseURL": "http://127.0.0.1:4311",
       "steps": [
         {
-          "name": "Desktop Featured (1440\u00d7900)",
+          "name": "After \u2014 Desktop Featured (1440\u00d7900)",
           "slug": "desktop",
           "status": "pass",
           "screenshot": "desktop-viewport.png"
         },
         {
-          "name": "Mobile Featured (390\u00d7844)",
+          "name": "After \u2014 Mobile Featured (390\u00d7844)",
           "slug": "mobile",
           "status": "pass",
           "screenshot": "mobile-viewport.png"
         }
       ]
     }
-  ]
+  ],
+  "provider": "local",
+  "scenario": "featured-newest-first"
 }
