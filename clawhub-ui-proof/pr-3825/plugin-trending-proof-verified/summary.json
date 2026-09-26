@@ -1,0 +1,120 @@
+{
+  "baseline": "650e3362864fd6b5180d8117bc3ee0a127112d79",
+  "candidate": "51af264a45332a119d4984f8a686d004dc54e089",
+  "generatedAt": "2026-09-26T07:02:12.989Z",
+  "lanes": [
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-proof-verified/baseline",
+      "name": "baseline",
+      "ref": "650e3362864fd6b5180d8117bc3ee0a127112d79",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "Plugin tabs on desktop",
+          "screenshot": "screenshots/plugin-tabs-on-desktop.png",
+          "slug": "plugin-tabs-on-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive mobile",
+          "screenshot": "screenshots/responsive-mobile.png",
+          "slug": "responsive-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive tablet",
+          "screenshot": "screenshots/responsive-tablet.png",
+          "slug": "responsive-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive laptop",
+          "screenshot": "screenshots/responsive-laptop.png",
+          "slug": "responsive-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Responsive desktop",
+          "screenshot": "screenshots/responsive-desktop.png",
+          "slug": "responsive-desktop",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "localOutputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-proof-verified/candidate",
+      "name": "candidate",
+      "ref": "51af264a45332a119d4984f8a686d004dc54e089",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Plugin tabs on desktop",
+          "screenshot": "screenshots/plugin-tabs-on-desktop.png",
+          "slug": "plugin-tabs-on-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Trending preserves the plugin feed order",
+          "screenshot": "screenshots/trending-preserves-the-plugin-feed-order.png",
+          "slug": "trending-preserves-the-plugin-feed-order",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Load more preserves the existing ranking",
+          "screenshot": "screenshots/load-more-preserves-the-existing-ranking.png",
+          "slug": "load-more-preserves-the-existing-ranking",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Search filters Trending and closing search restores it",
+          "screenshot": "screenshots/search-filters-trending-and-closing-search-restores-it.png",
+          "slug": "search-filters-trending-and-closing-search-restores-it",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive mobile",
+          "screenshot": "screenshots/responsive-mobile.png",
+          "slug": "responsive-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive tablet",
+          "screenshot": "screenshots/responsive-tablet.png",
+          "slug": "responsive-tablet",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive laptop",
+          "screenshot": "screenshots/responsive-laptop.png",
+          "slug": "responsive-laptop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Responsive desktop",
+          "screenshot": "screenshots/responsive-desktop.png",
+          "slug": "responsive-desktop",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/plugin-trending-proof-verified",
+  "provider": "local",
+  "runner": "local",
+  "scenario": "/Users/patrickerichsen/Git/openclaw/clawhub-plugin-trending/.artifacts/proof-scenarios/plugin-trending.mjs",
+  "status": "pass"
+}
