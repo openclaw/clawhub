@@ -59,9 +59,9 @@ export async function proveSkillCardReuse(
       leaseToken: receipt.job.leaseToken!,
       markdown,
     });
-  const burst = async () => {
+  const burst = async (round: number) => {
     const outcomes = await Promise.allSettled(
-      Array.from({ length: 8 }, (_, index) => claim(index)),
+      Array.from({ length: 8 }, (_, index) => claim(round * 8 + index)),
     );
     const receipts = outcomes.flatMap((outcome) =>
       outcome.status === "fulfilled" ? outcome.value : [],
@@ -82,8 +82,8 @@ export async function proveSkillCardReuse(
       rejections,
       receipts: receipts.length,
     });
-    // Convex can reject excess callers before executing a nested function.
-    // This is not a retry: every delivered receipt and lease is checked below.
+    // Convex can reject excess callers before they lease a job.
+    // Only delivered receipts are checked below.
     for (const { admission } of rejections) {
       expect([
         "Too many concurrent requests in a short period of time. Spread out your requests out over time or throttle them to avoid errors.",
@@ -91,6 +91,17 @@ export async function proveSkillCardReuse(
       ]).toContain(admission);
     }
     return receipts;
+  };
+  // A rejected admission never leases its job. Ask again with new worker
+  // ids until each seeded version has one receipt.
+  const collect = async (expected: number) => {
+    const byId = new Map<string, Receipt>();
+    for (let round = 0; round < 4 && byId.size < expected; round += 1) {
+      for (const receipt of await burst(round)) {
+        byId.set(receipt.job._id, receipt);
+      }
+    }
+    return [...byId.values()];
   };
   const versionIds = await run<Id<"skillVersions">[]>("skillCardDevSeed:seedExistingRows", {
     versionId,
@@ -106,7 +117,7 @@ export async function proveSkillCardReuse(
 
   // Eight simultaneous callers exceed the deployed two-shard claim fanout.
   // Admission rejection is permitted, but all four jobs must still be delivered.
-  const claimed = await burst();
+  const claimed = await collect(4);
   expect(claimed).toHaveLength(4);
   expect(new Set(claimed.map(({ job }) => job.skillVersionId)).size).toBe(4);
   expect(new Set(claimed.map(({ job }) => job.claimSlot)).size).toBe(4);
@@ -145,7 +156,7 @@ export async function proveSkillCardReuse(
     await change(id, false);
     await enqueue(id);
   }
-  const reused = await burst();
+  const reused = await collect(4);
   expect(reused).toHaveLength(4);
   expect(reused.every((receipt) => receipt.reused && !receipt.target)).toBe(true);
   expect(storageIds()).toEqual(beforeReuse);
