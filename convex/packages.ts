@@ -12813,6 +12813,8 @@ export const backfillLatestPackageScanStatus = action({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertAdmin(user);
     return await runMutationRef(
       ctx,
       internalRefs.packages.backfillLatestPackageScanStatusInternal,
