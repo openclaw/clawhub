@@ -253,7 +253,7 @@ describe("curated plugin inventory", () => {
     expect(selected).toHaveLength(1);
     expect(selected[0].repo).toBe("example/notes");
   });
-  it("prefers runnable capability coverage over registry branding", async () => {
+  it("prefers Cursor over a richer and newer OpenAI wrapper", async () => {
     const data = input();
     data.manifest.sources[1] = {
       ...data.manifest.sources[1],
@@ -263,9 +263,59 @@ describe("curated plugin inventory", () => {
     };
     data.snapshots[1] = {
       ...company,
+      updatedAt: "2026-09-25T00:00:00Z",
       files: { ...company.files, "skills/notes/SKILL.md": "# Notes" },
     };
-    expect((await inventoryPlugins(data)).candidates[1].status).toBe("selected");
+    const report = await inventoryPlugins(data);
+    expect(report.candidates.find((c) => c.publisher === "cursor")?.status).toBe("selected");
+    expect(report.candidates.find((c) => c.publisher === "openai")?.status).toBe("superseded");
+  });
+  it.each([
+    [[], "anthropic"],
+    [["anthropic"], "cursor"],
+    [["anthropic", "cursor"], "openai"],
+    [["anthropic", "cursor", "openai"], undefined],
+  ])("selects the first eligible registry after blocking %j", async (blocked, expected) => {
+    for (const reverse of [false, true]) {
+      const data = input();
+      data.manifest.sources[1] = {
+        ...data.manifest.sources[1],
+        authorship: "registry",
+        registry: "openai",
+        publisher: "openai",
+        preferred: true,
+        decisionReason: "A preference must not override the registry order",
+      };
+      data.snapshots[1].updatedAt = "2026-09-25T00:00:00Z";
+      data.snapshots[1].files["skills/notes/SKILL.md"] = "# Notes";
+      data.manifest.sources.push({
+        ...data.manifest.sources[1],
+        repo: "anthropics/claude-plugins-official",
+        registry: "claude",
+        publisher: "anthropic",
+        preferred: false,
+      });
+      data.snapshots.push({
+        ...structuredClone(company),
+        repo: "anthropics/claude-plugins-official",
+        updatedAt: "2026-08-01T00:00:00Z",
+      });
+      for (const publisher of blocked) {
+        const source = data.manifest.sources.find((s) => s.publisher === publisher)!;
+        const snapshot = data.snapshots.find((s) => s.repo === source.repo)!;
+        snapshot.files[source.path ? `${source.path}/LICENSE` : "LICENSE"] = "All rights reserved";
+      }
+      if (reverse) {
+        data.manifest.sources.reverse();
+        data.snapshots.reverse();
+      }
+      const report = await inventoryPlugins(data);
+      expect(
+        report.candidates.filter((c) => c.status === "selected").map((c) => c.publisher),
+      ).toEqual(expected ? [expected] : []);
+      for (const publisher of blocked)
+        expect(report.candidates.find((c) => c.publisher === publisher)?.status).toBe("blocked");
+    }
   });
   it("changes the source hash when an inherited license or notice changes", async () => {
     const data = input();

@@ -2,6 +2,10 @@
 
 This importer inventories registry entries but publishes only reviewed source entries. It reuses ClawHub's ordinary package publisher, immutable releases, GitHub folder hashing, prepublication workers, catalog and download API. It does not maintain upstream forks or contact authors.
 
+For registry wrappers with the same integration and primary job, select the first eligible source in this fixed order: **Anthropic → Cursor → OpenAI**. Additional capability types, repository update times and preferences on lower-ranked registries do not override this order. The rank comes from the curated source's registry identity, not whichever marketplace discovered it. A source blocked by the inventory's licensing, identity or runnable-capability checks cannot win. Publication still requires the existing compatibility, artifact-size and security gates; a publication failure does not silently approve another source.
+
+Equivalent OpenClaw integrations and verified company-source precedence remain unchanged. Exact repository/folder duplicates collapse to one source, and different primary jobs stay separate. Multiple distinct candidates within the same registry still require one explicit curator preference; that preference cannot cross registry tiers. Company-source comparisons retain their existing coverage/maintenance policy.
+
 ## Review an initial batch
 
 1. Run `bun run plugins:inventory --help` and inventory the configured registry snapshots and current ClawHub catalog. Review every winner and exclusion in the JSON report, including the informational permission-needed list.
