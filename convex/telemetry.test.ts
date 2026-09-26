@@ -135,7 +135,12 @@ function makeInstallCtx(params: {
     ),
   }));
 
-  return { ctx: { db: { insert, patch, query } }, insert, patch, query };
+  return {
+    ctx: { db: { insert, patch, query, get: async () => null } },
+    insert,
+    patch,
+    query,
+  };
 }
 
 describe("telemetry install events", () => {
@@ -178,6 +183,36 @@ describe("telemetry install events", () => {
       "skillStatEvents",
       expect.objectContaining({ skillId: "skills:calendar", kind: "install_new" }),
     );
+  });
+
+  it("touches the skill stat before inserting an install dedupe row", async () => {
+    const { ctx, insert, patch } = makeInstallCtx({
+      skills: [{ _id: "skills:demo", slug: "demo" }],
+      dedupes: [null],
+      installs: [null],
+    });
+    ctx.db.get = async () =>
+      ({
+        _id: "skills:demo",
+        stats: { installsAllTime: 4 },
+      }) as never;
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "demo",
+      version: "1.0.0",
+    });
+
+    expect(patch).toHaveBeenCalledWith("skills:demo", { statsInstallsAllTime: 4 });
+    expect(insert).toHaveBeenCalledWith(
+      "installTelemetryDedupes",
+      expect.objectContaining({ skillId: "skills:demo" }),
+    );
+    const patchOrder = patch.mock.invocationCallOrder[0];
+    const dedupeOrder = insert.mock.invocationCallOrder.find(
+      (_order, index) => insert.mock.calls[index]?.[0] === "installTelemetryDedupes",
+    );
+    expect(patchOrder).toBeLessThan(dedupeOrder ?? Number.POSITIVE_INFINITY);
   });
 
   it("records the first CLI install without root state", async () => {
@@ -501,6 +536,7 @@ describe("telemetry install events", () => {
         })),
         insert,
         patch: vi.fn(),
+        get: async () => null,
       },
     };
 
@@ -712,6 +748,7 @@ describe("telemetry install events", () => {
         })),
         insert,
         patch,
+        get: async () => null,
       },
     };
 
