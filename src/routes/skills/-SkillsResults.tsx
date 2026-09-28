@@ -3,11 +3,6 @@ import { Download, ExternalLink, Plus } from "lucide-react";
 import type { RefObject } from "react";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillCard } from "../../components/SkillCard";
-import {
-  SkillListingHead,
-  SkillListingRow,
-  SkillListingSkeleton,
-} from "../../components/SkillListingRow";
 import { SkillListItem } from "../../components/SkillListItem";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Badge } from "../../components/ui/badge";
@@ -16,7 +11,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/too
 import { getSkillBadges } from "../../lib/badges";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { timeAgo } from "../../lib/timeAgo";
-import type { TrendingFeedState } from "../../lib/trendingApi";
 import { truncateText } from "../../lib/truncateText";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import {
@@ -27,7 +21,7 @@ import {
   type SkillSearchEntry,
   type TrendingSkillListEntry,
 } from "./-types";
-import type { SkillsCatalogTab, SkillsView } from "./-useSkillsBrowseModel";
+import type { SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsResultsProps = {
   isLoadingSkills: boolean;
@@ -42,8 +36,6 @@ type SkillsResultsProps = {
   loadMore: () => void;
   listFailed: boolean;
   retryLoad: () => void;
-  catalogTab: SkillsCatalogTab;
-  trendingState?: TrendingFeedState;
 };
 
 function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
@@ -230,22 +222,14 @@ export function SkillsResults({
   loadMore,
   listFailed,
   retryLoad,
-  catalogTab,
-  trendingState,
 }: SkillsResultsProps) {
   const isMobileBrowse = useMediaQuery("(max-width: 760px)");
   const effectiveView = isMobileBrowse ? "list" : view;
-  const showFeaturedLayout = catalogTab === "featured";
-  const showTrendingLayout = !hasQuery && catalogTab === "trending";
 
   return (
     <>
       {isLoadingSkills ? (
-        showFeaturedLayout && effectiveView === "list" ? (
-          <SkillListingSkeleton />
-        ) : (
-          <BrowseResultsSkeleton label="Skill" showIcon={false} variant={effectiveView} />
-        )
+        <BrowseResultsSkeleton label="Skill" showIcon={false} variant={effectiveView} />
       ) : listFailed && sorted.length === 0 ? (
         <div className="empty-state" role="alert">
           <p className="empty-state-title">Skills couldn't be loaded</p>
@@ -258,30 +242,18 @@ export function SkillsResults({
         </div>
       ) : sorted.length === 0 && listDoneLoading ? (
         <div className="empty-state">
-          <p className="empty-state-title">
-            {!hasQuery && catalogTab === "trending"
-              ? trendingState === "unavailable"
-                ? "24-hour Trending unavailable"
-                : "No 24-hour activity yet"
-              : "No skills found"}
-          </p>
+          <p className="empty-state-title">No skills found</p>
           <p className="empty-state-body">
             {hasQuery
               ? "Try a different search term or remove filters."
-              : catalogTab === "trending"
-                ? trendingState === "unavailable"
-                  ? "The canonical 24-hour feed isn't available right now. Try another tab."
-                  : "No skills have eligible activity in the current 24-hour window."
-                : "No skills have been published yet."}
+              : "Try another category or remove filters."}
           </p>
-          {!hasQuery && catalogTab === "trending" ? null : (
-            <Button asChild size="sm" className="mt-4">
-              <Link to="/add" search={{ kind: "skill", ownerHandle: undefined, method: undefined }}>
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                Add a skill
-              </Link>
-            </Button>
-          )}
+          <Button asChild size="sm" className="mt-4">
+            <Link to="/add" search={{ kind: "skill", ownerHandle: undefined, method: undefined }}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add a skill
+            </Link>
+          </Button>
         </div>
       ) : effectiveView === "grid" ? (
         <div className="grid browse-results-grid">
@@ -321,34 +293,13 @@ export function SkillsResults({
         </div>
       ) : (
         <div className="browse-list-stack">
-          {showFeaturedLayout ? (
-            <SkillListingHead />
-          ) : (
-            <div
-              className={`browse-list-head${
-                showTrendingLayout ? " browse-list-head-trending" : " browse-list-head-no-icon"
-              }`}
-              aria-hidden="true"
-            >
-              <span className="browse-list-head-label">Skill</span>
-              {showTrendingLayout ? null : (
-                <span className="browse-list-head-label browse-list-head-category">Category</span>
-              )}
-              <span className="browse-list-head-label browse-list-head-stat">
-                {showTrendingLayout ? "24h downloads" : "Downloads"}
-              </span>
-            </div>
-          )}
-          <div className={showFeaturedLayout ? "home-v2-listing-list" : "results-list"}>
+          <div className="browse-list-head browse-list-head-no-icon" aria-hidden="true">
+            <span className="browse-list-head-label">Skill</span>
+            <span className="browse-list-head-label browse-list-head-category">Category</span>
+            <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
+          </div>
+          <div className="results-list">
             {sorted.map((entry) => {
-              if (showFeaturedLayout) {
-                const key = isExternalSkillListEntry(entry)
-                  ? entry.external.id
-                  : isTrendingSkillListEntry(entry)
-                    ? entry.trending.id
-                    : entry.skill._id;
-                return <SkillListingRow key={key} entry={entry} />;
-              }
               if (isTrendingSkillListEntry(entry)) {
                 return <TrendingSkillListItem key={entry.trending.id} item={entry} />;
               }

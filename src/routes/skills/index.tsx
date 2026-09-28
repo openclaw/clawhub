@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ConvexHttpClient } from "convex/browser";
 import { useQuery } from "convex/react";
 import { useCallback, useRef } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -7,12 +8,10 @@ import {
   BrowseCategorySelect,
   BrowseCategorySidebar,
   BrowseControls,
-  BrowseControlsDivider,
   BrowseControlsRow,
   BrowseSearchInput,
   BrowseSearchPanel,
   BrowseSearchTrigger,
-  BrowseTabs,
   BrowseTopicChips,
   BrowseViewToggle,
   useBrowseSearchDisclosure,
@@ -23,8 +22,6 @@ import {
   parseBrowseTopicFromSearchInput,
   sanitizeBrowseTopicSearch,
 } from "../../lib/browseTopicSearch";
-import { fetchCatalogDiscoveryCapabilities } from "../../lib/catalogDiscoveryCapabilities";
-import { CATALOG_TABS } from "../../lib/catalogTabs";
 import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
 import {
   consumeManualCatalogSearch,
@@ -32,18 +29,17 @@ import {
   type ManualCatalogSearch,
 } from "../../lib/manualCatalogSearch";
 import { fetchSkillSearch } from "../../lib/skillSearchApi";
-import { fetchCanonicalTrendingPage } from "../../lib/trendingApi";
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import type { SkillSearchEntry } from "./-types";
 import {
   buildSkillsSearchKey,
+  buildSkillsBrowseArgs,
+  buildSkillsBrowseKey,
   type InitialSkillsListData,
   type InitialSkillsSearchData,
   normalizeSkillsView,
-  normalizeSkillsCatalogTab,
-  SKILLS_PAGE_SIZE,
   useSkillsBrowseModel,
   type SkillsSearchState,
 } from "./-useSkillsBrowseModel";
@@ -61,43 +57,26 @@ export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
     const category = parseSkillCategorySlug(search.category);
     const topic = parseBrowseTopicFromSearchInput(search as Record<string, unknown>);
-    const sort = typeof search.sort === "string" ? parseSort(search.sort) : undefined;
-    const featured =
-      search.featured === "1" || search.featured === "true" || search.featured === true
-        ? true
-        : undefined;
-    const highlighted =
-      search.highlighted === "1" || search.highlighted === "true" || search.highlighted === true
-        ? true
+    const sort =
+      typeof search.sort === "string" && search.sort !== "trending"
+        ? parseSort(search.sort)
         : undefined;
     return {
       q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
       sort,
       dir: search.dir === "asc" || search.dir === "desc" ? search.dir : undefined,
-      highlighted,
-      featured,
       category,
       topic,
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
-      tab: normalizeSkillsCatalogTab(search.tab, {
-        category,
-        featured,
-        highlighted,
-        sort,
-        topic,
-      }),
     };
   },
   loaderDeps: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
     return {
       q: search.q,
-      featured: search.featured,
-      highlighted: search.highlighted,
       category: search.category,
       topic: search.topic,
-      tab: hasQuery ? undefined : search.tab,
       sort: hasQuery ? undefined : search.sort,
       dir: hasQuery ? undefined : search.dir,
     };
@@ -106,9 +85,9 @@ export const Route = createFileRoute("/skills/")({
     manualCatalogSearch: preload ? null : takeManualCatalogSearch(search.q),
   }),
   loader: async ({ deps, abortController, context }): Promise<InitialSkillsLoaderData> =>
-    isCanonicalSkillsBrowse(deps)
+    !deps.q?.trim()
       ? await loadInitialSkillsDataWithinBudget(deps, abortController.signal)
-      : await loadInitialSkillsData(deps, abortController.signal, context.manualCatalogSearch),
+      : await loadInitialSkillsData(deps, abortController.signal, context?.manualCatalogSearch),
   component: SkillsIndex,
 });
 
@@ -119,7 +98,7 @@ export async function loadInitialSkillsData(
 ): Promise<InitialSkillsLoaderData> {
   const query = search.q?.trim();
   if (query) {
-    const featuredOnly = search.featured ?? search.highlighted ?? false;
+    const featuredOnly = false;
     const key = buildSkillsSearchKey({
       query,
       featuredOnly,
@@ -148,23 +127,22 @@ export async function loadInitialSkillsData(
     }
   }
 
-  if (!isCanonicalSkillsBrowse(search)) return null;
-
   try {
-    const capabilities = await fetchCatalogDiscoveryCapabilities();
-    if (signal?.aborted) throw signal.reason;
-    if (!capabilities.canonicalTrendingEnabled) return null;
-
-    const result = await fetchCanonicalTrendingPage({
-      cursor: null,
-      limit: SKILLS_PAGE_SIZE,
-      signal,
-    });
+    // Keep timeout/navigation cancellation scoped to this request, never the shared client.
+    const client = signal
+      ? new ConvexHttpClient(convexHttp.url, {
+          fetch: (input, init) => fetch(input, { ...init, signal }),
+        })
+      : convexHttp;
+    const result = await client.query(api.skills.listPublicPageV4, buildSkillsBrowseArgs(search));
+    signal?.throwIfAborted();
+    // Let the client continue filtered scans instead of hydrating an empty transport page.
+    if (result.page.length === 0 && result.hasMore) return null;
     return {
-      kind: "canonical",
-      results: result.items.map((trending) => ({ trending })),
-      nextCursor: result.nextCursor,
-      trendingState: result.items.length > 0 || result.nextCursor ? "available" : "empty",
+      kind: "browse",
+      key: buildSkillsBrowseKey(search),
+      results: result.page,
+      nextCursor: result.hasMore ? result.nextCursor : null,
     };
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -214,18 +192,6 @@ async function loadInitialSkillsDataWithinBudget(
   }
 }
 
-function isCanonicalSkillsBrowse(search: SkillsSearchState) {
-  return (
-    search.tab === "trending" &&
-    search.sort === undefined &&
-    search.dir === undefined &&
-    search.featured === undefined &&
-    search.highlighted === undefined &&
-    search.category === undefined &&
-    search.topic === undefined
-  );
-}
-
 export function SkillsIndex() {
   const navigate = Route.useNavigate();
   const routeSearch = Route.useSearch();
@@ -248,15 +214,7 @@ export function SkillsIndex() {
     inputRef: searchInputRef,
   });
 
-  const activeView = model.catalogTab;
-  const viewOptions = model.canonicalTrendingUnavailable
-    ? CATALOG_TABS.filter((option) => option.value !== "trending")
-    : CATALOG_TABS;
-  const hasActiveFilters =
-    model.catalogTab !== "trending" ||
-    model.hasQuery ||
-    Boolean(model.activeCategory) ||
-    Boolean(activeTopic);
+  const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || Boolean(activeTopic);
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
   const categoryTopics = useQuery(
     api.catalogTopics.listTopByCategory,
@@ -268,39 +226,6 @@ export function SkillsIndex() {
       : "skip",
   );
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
-
-  const handleViewChange = useCallback(
-    (value: string) => {
-      void navigate({
-        search: (prev: SkillsSearchState) => {
-          if (value === "trending") {
-            return {
-              ...prev,
-              q: undefined,
-              tab: "trending",
-              sort: undefined,
-              dir: undefined,
-              category: undefined,
-              topic: undefined,
-              featured: undefined,
-              highlighted: undefined,
-            };
-          }
-          return {
-            ...prev,
-            q: undefined,
-            tab: value as "new" | "featured" | "official",
-            sort: undefined,
-            dir: undefined,
-            featured: undefined,
-            highlighted: undefined,
-          };
-        },
-        replace: true,
-      });
-    },
-    [navigate],
-  );
 
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {
@@ -354,29 +279,18 @@ export function SkillsIndex() {
       </div>
       <BrowseControls>
         <BrowseControlsRow>
-          <BrowseTabs
-            ariaLabel="Skill view"
-            options={viewOptions}
-            value={activeView}
-            onChange={(value) => {
-              if (value) handleViewChange(value);
-            }}
-          />
-          <BrowseControlsDivider />
           <BrowseActions>
             <BrowseSearchTrigger
               open={browseSearch.open}
               onOpen={browseSearch.openSearch}
               label="Search skills"
             />
-            {activeView === "trending" ? null : (
-              <BrowseCategorySelect
-                categories={SKILL_CATEGORIES}
-                value={model.activeCategory}
-                onChange={handleCategoryChange}
-                responsive
-              />
-            )}
+            <BrowseCategorySelect
+              categories={SKILL_CATEGORIES}
+              value={model.activeCategory}
+              onChange={handleCategoryChange}
+              responsive
+            />
             <BrowseViewToggle view={model.view} onToggle={model.onToggleView} />
           </BrowseActions>
           <BrowseSearchPanel open={browseSearch.open}>
@@ -391,26 +305,20 @@ export function SkillsIndex() {
             />
           </BrowseSearchPanel>
         </BrowseControlsRow>
-        {activeView === "trending" ? null : (
-          <BrowseTopicChips
-            topics={categoryTopics ?? []}
-            activeTopic={activeTopic}
-            onChange={handleTopicChange}
-            loading={Boolean(model.activeCategory && categoryTopics === undefined)}
-          />
-        )}
+        <BrowseTopicChips
+          topics={categoryTopics ?? []}
+          activeTopic={activeTopic}
+          onChange={handleTopicChange}
+          loading={Boolean(model.activeCategory && categoryTopics === undefined)}
+        />
       </BrowseControls>
-      <div
-        className={`browse-layout${activeView === "trending" ? "" : " browse-layout-with-sidebar"}`}
-      >
-        {activeView === "trending" ? null : (
-          <BrowseCategorySidebar
-            ariaLabel="Skill categories"
-            categories={SKILL_CATEGORIES}
-            value={model.activeCategory}
-            onChange={handleCategoryChange}
-          />
-        )}
+      <div className="browse-layout browse-layout-with-sidebar">
+        <BrowseCategorySidebar
+          ariaLabel="Skill categories"
+          categories={SKILL_CATEGORIES}
+          value={model.activeCategory}
+          onChange={handleCategoryChange}
+        />
         <div className="browse-results">
           {model.searchError ? (
             <p role="alert">Unable to search skills. Refresh to retry.</p>
@@ -428,8 +336,6 @@ export function SkillsIndex() {
               loadMore={model.loadMore}
               listFailed={model.listFailed}
               retryLoad={model.retryLoad}
-              catalogTab={model.catalogTab}
-              trendingState={model.trendingState}
             />
           )}
         </div>
