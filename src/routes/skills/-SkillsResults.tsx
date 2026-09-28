@@ -2,31 +2,24 @@ import { Link } from "@tanstack/react-router";
 import { Download, ExternalLink, Plus } from "lucide-react";
 import type { RefObject } from "react";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
-import { SkillCard } from "../../components/SkillCard";
 import { SkillListItem } from "../../components/SkillListItem";
-import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
-import { getSkillBadges } from "../../lib/badges";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { timeAgo } from "../../lib/timeAgo";
 import { truncateText } from "../../lib/truncateText";
-import { useMediaQuery } from "../../lib/useMediaQuery";
 import {
-  buildSkillHref,
   isExternalSkillListEntry,
   isTrendingSkillListEntry,
   type SkillListEntry,
   type SkillSearchEntry,
   type TrendingSkillListEntry,
 } from "./-types";
-import type { SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsResultsProps = {
   isLoadingSkills: boolean;
   sorted: SkillListEntry[];
-  view: SkillsView;
   listDoneLoading: boolean;
   hasQuery: boolean;
   canLoadMore: boolean;
@@ -85,54 +78,6 @@ function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
   );
 }
 
-function TrendingSkillCard({ item }: { item: TrendingSkillListEntry }) {
-  const trending = item.trending;
-  const owner = trending.publisher?.handle;
-  return (
-    <Link
-      to={trending.canonicalUrl}
-      className="card flex min-w-0 flex-col gap-3 p-5 transition-colors hover:border-[color:var(--oc-border-strong)]"
-    >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate font-semibold text-[color:var(--oc-text-primary)]">
-            {trending.displayName}
-          </h3>
-          {owner ? (
-            <p className="mt-1 truncate text-xs text-[color:var(--oc-text-muted)]">@{owner}</p>
-          ) : null}
-        </div>
-      </div>
-      {trending.summary ? (
-        <p className="line-clamp-3 text-sm leading-6 text-[color:var(--oc-text-secondary)]">
-          {trending.summary}
-        </p>
-      ) : null}
-      {trending.source === "skills-sh" ? (
-        <div className="skill-card-grid-meta" aria-label="Source">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge variant="compact" size="sm">
-                skills.sh
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent side="top" align="center">
-              Synced from skills.sh
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      ) : typeof trending.metrics.trending24hDownloads === "number" ? (
-        <div className="skill-card-grid-meta" aria-label="24-hour downloads">
-          <span>
-            <Download size={14} aria-hidden="true" />
-            {formatCompactStat(trending.metrics.trending24hDownloads)}
-          </span>
-        </div>
-      ) : null}
-    </Link>
-  );
-}
-
 function ExternalSkillSearchListItem({ result }: { result: SkillSearchEntry }) {
   const owner = result.sourceIdentity.owner ?? result.sourceIdentity.host;
   return (
@@ -177,42 +122,9 @@ function ExternalSkillSearchListItem({ result }: { result: SkillSearchEntry }) {
   );
 }
 
-function ExternalSkillSearchCard({ result }: { result: SkillSearchEntry }) {
-  const owner = result.sourceIdentity.owner ?? result.sourceIdentity.host;
-  return (
-    <a
-      href={result.canonicalUrl}
-      className="card flex min-w-0 flex-col gap-3 p-5 transition-colors hover:border-[color:var(--oc-border-strong)]"
-      target="_blank"
-      rel="noreferrer"
-    >
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate font-semibold text-[color:var(--oc-text-primary)]">
-              {result.displayName}
-            </h3>
-            <Badge variant="compact">skills.sh</Badge>
-          </div>
-          {owner ? (
-            <p className="mt-1 truncate text-xs text-[color:var(--oc-text-muted)]">@{owner}</p>
-          ) : null}
-        </div>
-        <ExternalLink className="shrink-0 text-[color:var(--oc-text-muted)]" size={16} />
-      </div>
-      {result.summary ? (
-        <p className="line-clamp-3 text-sm leading-6 text-[color:var(--oc-text-secondary)]">
-          {result.summary}
-        </p>
-      ) : null}
-    </a>
-  );
-}
-
 export function SkillsResults({
   isLoadingSkills,
   sorted,
-  view,
   listDoneLoading,
   hasQuery,
   canLoadMore,
@@ -223,13 +135,10 @@ export function SkillsResults({
   listFailed,
   retryLoad,
 }: SkillsResultsProps) {
-  const isMobileBrowse = useMediaQuery("(max-width: 760px)");
-  const effectiveView = isMobileBrowse ? "list" : view;
-
   return (
     <>
       {isLoadingSkills ? (
-        <BrowseResultsSkeleton label="Skill" showIcon={false} variant={effectiveView} />
+        <BrowseResultsSkeleton label="Skill" showIcon={false} />
       ) : listFailed && sorted.length === 0 ? (
         <div className="empty-state" role="alert">
           <p className="empty-state-title">Skills couldn't be loaded</p>
@@ -254,42 +163,6 @@ export function SkillsResults({
               Add a skill
             </Link>
           </Button>
-        </div>
-      ) : effectiveView === "grid" ? (
-        <div className="grid browse-results-grid">
-          {sorted.map((entry) => {
-            if (isTrendingSkillListEntry(entry)) {
-              return <TrendingSkillCard key={entry.trending.id} item={entry} />;
-            }
-            if (isExternalSkillListEntry(entry)) {
-              return <ExternalSkillSearchCard key={entry.external.id} result={entry.external} />;
-            }
-            const skill = entry.skill;
-            const clawdis = entry.latestVersion?.parsed?.clawdis;
-            const isPlugin = Boolean(clawdis?.nix?.plugin);
-            const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
-            const skillHref = buildSkillHref(skill, ownerHandle);
-            return (
-              <SkillCard
-                key={skill._id}
-                skill={skill}
-                href={skillHref}
-                className="skill-card-spaced-footer"
-                badge={getSkillBadges(skill)}
-                ownerHandle={ownerHandle}
-                chip={isPlugin ? "Plugin bundle (nix)" : undefined}
-                summaryFallback="Agent-ready skill pack."
-                meta={
-                  <div className="skill-card-grid-meta">
-                    <SkillStatsTripletLine stats={skill.stats} />
-                    <span className="skill-card-updated">Updated {timeAgo(skill.updatedAt)}</span>
-                  </div>
-                }
-                owner={entry.owner}
-                showIcon={false}
-              />
-            );
-          })}
         </div>
       ) : (
         <div className="browse-list-stack">
@@ -326,7 +199,7 @@ export function SkillsResults({
 
       {isLoadingMore ? (
         <div ref={canAutoLoad ? loadMoreRef : null} className="mt-4">
-          <BrowseResultsSkeleton count={2} showIcon={false} variant={effectiveView} />
+          <BrowseResultsSkeleton count={2} showIcon={false} />
         </div>
       ) : canLoadMore ? (
         <div ref={canAutoLoad ? loadMoreRef : null} className="card mt-4 flex justify-center">

@@ -30,15 +30,6 @@ function isNavigationAbortError(err: unknown) {
   );
 }
 
-export type SkillsView = "grid" | "list";
-type LegacySkillsView = SkillsView | "cards";
-
-export function normalizeSkillsView(value: unknown): SkillsView | undefined {
-  if (value === "list") return "list";
-  if (value === "grid" || value === "cards") return "grid";
-  return undefined;
-}
-
 export type SkillsSearchState = {
   q?: string;
   sort?: SortKey;
@@ -47,7 +38,7 @@ export type SkillsSearchState = {
   featured?: boolean;
   category?: string;
   topic?: string;
-  view?: LegacySkillsView;
+  view?: "list" | "grid" | "cards";
   focus?: "search";
   tab?: "trending" | "new" | "featured" | "official";
 };
@@ -130,7 +121,6 @@ export function useSkillsBrowseModel({
   const navigateTimer = useRef<number>(0);
   const manualSearch = useRef<ManualCatalogSearch | null>(null);
 
-  const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = false;
   const searchSkills = useAction(api.search.searchSkills);
 
@@ -575,16 +565,6 @@ export function useSkillsBrowseModel({
     });
   }, [navigate, sort]);
 
-  const onToggleView = useCallback(() => {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        view: normalizeSkillsView(prev.view) === "grid" ? undefined : "grid",
-      }),
-      replace: true,
-    });
-  }, [navigate]);
-
   return {
     activeCategory: activeCategory?.slug,
     activeTopic,
@@ -604,11 +584,9 @@ export function useSkillsBrowseModel({
     onQueryChange,
     onSortChange,
     onToggleDir,
-    onToggleView,
     query,
     retryLoad,
     sort,
     sorted,
-    view,
   };
 }

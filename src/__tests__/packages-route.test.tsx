@@ -178,7 +178,8 @@ describe("plugins route", () => {
         topic: "browser",
         view: "grid",
       }) ?? {};
-    expect(search).toMatchObject({ category: "computer-use", topic: "browser", view: "grid" });
+    expect(search).toMatchObject({ category: "computer-use", topic: "browser" });
+    expect(search).not.toHaveProperty("view");
     const { loadPluginsPageData } = await import("../routes/plugins/index");
     await loadPluginsPageData(route.__config.loaderDeps?.({ search }) ?? {});
     const request = fetchPluginCatalogMock.mock.calls.at(-1)?.[0];
@@ -405,30 +406,12 @@ describe("plugins route", () => {
     ).not.toThrow();
   });
 
-  it("uses grid as the canonical browse view in search state", async () => {
+  it.each(["grid", "cards", "list"])("ignores the retired %s view selector", async (view) => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
+      s: Record<string, unknown>,
     ) => Record<string, unknown>;
-
-    expect(validateSearch({ view: "grid" })).toEqual(
-      expect.objectContaining({
-        view: "grid",
-      }),
-    );
-  });
-
-  it("keeps legacy cards URLs compatible with the grid view", async () => {
-    const route = await loadRoute();
-    const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
-    ) => Record<string, unknown>;
-
-    expect(validateSearch({ view: "cards" })).toEqual(
-      expect.objectContaining({
-        view: "grid",
-      }),
-    );
+    expect(validateSearch({ view })).not.toHaveProperty("view");
   });
 
   it("forwards opaque cursors through catalog loading", async () => {
@@ -1108,7 +1091,7 @@ describe("plugins route", () => {
     expect(lastCall.replace).toBe(true);
   });
 
-  it("renders a label-only title without positive count data and switches to grid view", async () => {
+  it("renders a label-only title and always-visible search without view controls", async () => {
     loaderDataMock = {
       items: [
         {
@@ -1132,20 +1115,10 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.queryByText("1")).toBeNull();
-    expect(screen.getByRole("button", { name: "List" }).closest(".browse-controls")).not.toBeNull();
-    expect(document.querySelector(".browse-results-toolbar .browse-view-toggle")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
-
-    expect(navigateMock).toHaveBeenCalled();
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({})).toEqual({
-      view: "grid",
-    });
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "plugin search" }).closest("[hidden]")).toBeNull();
+    expect(screen.getByText("Demo Plugin").closest(".plugin-summary-item")).not.toBeNull();
   });
 
   it("does not render the publish CTA on the plugins browse page", async () => {
@@ -1169,8 +1142,8 @@ describe("plugins route", () => {
     expect(screen.queryByText("Unable to load plugins")).toBeNull();
   });
 
-  it("switches legacy cards URLs back to list view", async () => {
-    searchMock = { view: "cards" };
+  it.each(["cards", "grid"])("renders legacy %s URLs as lists", async (view) => {
+    searchMock = { view };
     loaderDataMock = {
       items: [
         {
@@ -1192,17 +1165,10 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    const gridButton = screen.getByRole("button", { name: "Grid" });
-    expect(gridButton.className).toContain("is-active");
-
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ view: "cards" })).toEqual({ view: undefined });
+    expect(screen.getByText("Demo Plugin").closest(".plugin-summary-item")).not.toBeNull();
+    expect(document.querySelector(".browse-results-grid")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
   });
 
   it("preserves catalog results during catalog loading", async () => {
@@ -1497,7 +1463,7 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear plugin search" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {

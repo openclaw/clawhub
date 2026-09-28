@@ -18928,6 +18928,48 @@ body:has(.browse-page-borderless-header) .navbar {
   margin-bottom: 28px;
 }
 
+/* Category catalogs keep search visible without a separate action toolbar. */
+.catalog-browse-page .browse-page-header {
+  margin-bottom: var(--oc-space-3);
+}
+
+.catalog-browse-page .browse-controls {
+  gap: var(--oc-space-3);
+  margin-bottom: var(--oc-space-4);
+}
+
+.catalog-browse-page .browse-search-control {
+  order: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--oc-space-2) 0;
+  border: 0;
+  border-bottom: 1px solid var(--oc-border-strong);
+  border-radius: 0;
+  background: transparent;
+}
+
+.catalog-browse-page .browse-search-control:focus-within {
+  border-color: var(--oc-focus-ring);
+  box-shadow: none;
+}
+
+.browse-search-shortcut {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: var(--oc-radius-inset);
+  color: var(--oc-text-muted);
+  font-size: var(--oc-font-size-sm);
+}
+
+.catalog-browse-page .browse-category-select {
+  order: 0;
+  width: 100%;
+}
+
 .browse-controls-row {
   display: flex;
   align-items: center;

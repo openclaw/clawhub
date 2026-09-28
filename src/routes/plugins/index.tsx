@@ -5,17 +5,11 @@ import { PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import {
-  BrowseActions,
   BrowseCategorySelect,
   BrowseCategorySidebar,
   BrowseControls,
-  BrowseControlsRow,
   BrowseSearchInput,
-  BrowseSearchPanel,
-  BrowseSearchTrigger,
   BrowseTopicChips,
-  BrowseViewToggle,
-  useBrowseSearchDisclosure,
 } from "../../components/BrowseControls";
 import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
@@ -32,7 +26,6 @@ import {
   type PackageListItem,
 } from "../../lib/packageApi";
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
-import { useMediaQuery } from "../../lib/useMediaQuery";
 
 type VisiblePluginSort = "recommended" | "updated" | "downloads" | "trending";
 type PluginSort = VisiblePluginSort | "relevance";
@@ -55,17 +48,8 @@ type PluginSearchState = {
   new?: boolean;
   official?: boolean;
   sort?: LegacyPluginSort;
-  view?: LegacyPluginView;
+  view?: "list" | "grid" | "cards";
 };
-
-type PluginView = "list" | "grid";
-type LegacyPluginView = PluginView | "cards";
-
-function normalizePluginView(value: unknown): PluginView | undefined {
-  if (value === "list") return "list";
-  if (value === "grid" || value === "cards") return "grid";
-  return undefined;
-}
 
 type PluginsLoaderData = {
   items: PackageListItem[];
@@ -265,7 +249,6 @@ export const Route = createFileRoute("/plugins/")({
           ? search.cursor
           : undefined,
       sort: search.sort === "trending" ? undefined : parsePluginSort(search.sort),
-      view: normalizePluginView(search.view),
     };
   },
   beforeLoad: ({ search }) => {
@@ -321,23 +304,25 @@ export const Route = createFileRoute("/plugins/")({
 
 function PluginsIndexPending() {
   return (
-    <main className="browse-page browse-page-borderless-header plugins-browse-page">
+    <main className="browse-page browse-page-borderless-header plugins-browse-page catalog-browse-page">
       <div className="browse-page-header">
         <h1 className="browse-title">Plugins</h1>
       </div>
       <BrowseControls>
-        <BrowseControlsRow>
-          <BrowseActions>
-            <BrowseSearchTrigger open={false} onOpen={() => {}} label="Search plugins" disabled />
-            <BrowseCategorySelect
-              categories={PLUGIN_CATEGORIES}
-              value={undefined}
-              onChange={() => {}}
-              responsive
-            />
-            <BrowseViewToggle view="list" onToggle={() => {}} />
-          </BrowseActions>
-        </BrowseControlsRow>
+        <BrowseSearchInput
+          label="plugin search"
+          placeholder="Search plugins..."
+          value=""
+          onChange={() => {}}
+          onClear={() => {}}
+          disabled
+        />
+        <BrowseCategorySelect
+          categories={PLUGIN_CATEGORIES}
+          value={undefined}
+          onChange={() => {}}
+          responsive
+        />
       </BrowseControls>
       <div className="browse-layout browse-layout-with-sidebar">
         <BrowseCategorySidebar
@@ -376,9 +361,6 @@ function PluginsIndex() {
   const retryAfterSeconds = catalogData.retryAfterSeconds;
   const isLoading = catalogData.isLoading ?? false;
   const apiError = catalogData.apiError ?? false;
-  const view = normalizePluginView(search.view) ?? "list";
-  const isMobileBrowse = useMediaQuery("(max-width: 760px)");
-  const effectiveView = isMobileBrowse ? "list" : view;
 
   const [query, setQuery] = useState(search.q ?? "");
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -525,22 +507,6 @@ function PluginsIndex() {
       replace: true,
     });
   };
-  const browseSearch = useBrowseSearchDisclosure({
-    value: query,
-    onClear: handleClearSearch,
-    inputRef: searchInputRef,
-  });
-
-  const handleToggleView = () => {
-    void navigate({
-      search: (prev: PluginSearchState) => ({
-        ...prev,
-        view: normalizePluginView(prev.view) === "grid" ? undefined : "grid",
-      }),
-      replace: true,
-    });
-  };
-
   const canLoadMore =
     !hasQuery && !isLoading && !apiError && !rateLimited && Boolean(nextCursor) && !isLoadingMore;
 
@@ -599,7 +565,7 @@ function PluginsIndex() {
   }, [canLoadMore, loadMore]);
 
   return (
-    <main className="browse-page browse-page-borderless-header plugins-browse-page">
+    <main className="browse-page browse-page-borderless-header plugins-browse-page catalog-browse-page">
       <div className="browse-page-header">
         <div className="browse-page-header-main">
           <h1 className="browse-title">
@@ -614,34 +580,22 @@ function PluginsIndex() {
         </div>
       </div>
       <BrowseControls>
-        <BrowseControlsRow>
-          <BrowseActions>
-            <BrowseSearchTrigger
-              open={browseSearch.open}
-              onOpen={browseSearch.openSearch}
-              label="Search plugins"
-            />
-            <BrowseCategorySelect
-              categories={PLUGIN_CATEGORIES}
-              value={activeCategory}
-              onChange={handleCategoryChange}
-              responsive
-            />
-            <BrowseViewToggle view={view} onToggle={handleToggleView} />
-          </BrowseActions>
-          <BrowseSearchPanel open={browseSearch.open}>
-            <BrowseSearchInput
-              inputRef={searchInputRef}
-              label="plugin search"
-              placeholder="Search plugins..."
-              value={query}
-              onChange={handleQueryChange}
-              onClear={browseSearch.closeSearch}
-              onSubmit={handleSearchSubmit}
-              closeLabel="Close search"
-            />
-          </BrowseSearchPanel>
-        </BrowseControlsRow>
+        <BrowseSearchInput
+          inputRef={searchInputRef}
+          focusShortcut
+          label="plugin search"
+          placeholder="Search plugins..."
+          value={query}
+          onChange={handleQueryChange}
+          onClear={handleClearSearch}
+          onSubmit={handleSearchSubmit}
+        />
+        <BrowseCategorySelect
+          categories={PLUGIN_CATEGORIES}
+          value={activeCategory}
+          onChange={handleCategoryChange}
+          responsive
+        />
         <BrowseTopicChips
           topics={categoryTopics ?? []}
           activeTopic={activeTopic}
@@ -658,11 +612,7 @@ function PluginsIndex() {
         />
         <div className="browse-results">
           {isLoading ? (
-            <BrowseResultsSkeleton
-              label="Plugin"
-              variant={effectiveView}
-              showCategoryColumn={false}
-            />
+            <BrowseResultsSkeleton label="Plugin" showCategoryColumn={false} />
           ) : apiError ? (
             <div className="empty-state">
               <PackageSearch size={22} className="empty-state-icon" aria-hidden="true" />
@@ -690,12 +640,6 @@ function PluginsIndex() {
                   Add a plugin
                 </Link>
               </Button>
-            </div>
-          ) : effectiveView === "grid" ? (
-            <div className="grid browse-results-grid">
-              {visibleItems.map((item) => (
-                <PluginListItem key={item.name} item={item} variant="card" />
-              ))}
             </div>
           ) : (
             <div className="browse-list-stack">

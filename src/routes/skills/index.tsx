@@ -4,17 +4,11 @@ import { useQuery } from "convex/react";
 import { useCallback, useRef } from "react";
 import { api } from "../../../convex/_generated/api";
 import {
-  BrowseActions,
   BrowseCategorySelect,
   BrowseCategorySidebar,
   BrowseControls,
-  BrowseControlsRow,
   BrowseSearchInput,
-  BrowseSearchPanel,
-  BrowseSearchTrigger,
   BrowseTopicChips,
-  BrowseViewToggle,
-  useBrowseSearchDisclosure,
 } from "../../components/BrowseControls";
 import { convexHttp } from "../../convex/client";
 import { formatBrowseCount } from "../../lib/browseCount";
@@ -39,7 +33,6 @@ import {
   buildSkillsBrowseKey,
   type InitialSkillsListData,
   type InitialSkillsSearchData,
-  normalizeSkillsView,
   useSkillsBrowseModel,
   type SkillsSearchState,
 } from "./-useSkillsBrowseModel";
@@ -67,7 +60,6 @@ export const Route = createFileRoute("/skills/")({
       dir: search.dir === "asc" || search.dir === "desc" ? search.dir : undefined,
       category,
       topic,
-      view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };
   },
@@ -208,11 +200,6 @@ export function SkillsIndex() {
     search,
     searchInputRef,
   });
-  const browseSearch = useBrowseSearchDisclosure({
-    value: model.query,
-    onClear: model.onClearQuery,
-    inputRef: searchInputRef,
-  });
 
   const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || Boolean(activeTopic);
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
@@ -263,7 +250,7 @@ export function SkillsIndex() {
   );
 
   return (
-    <main className="browse-page browse-page-borderless-header skills-browse-page">
+    <main className="browse-page browse-page-borderless-header skills-browse-page catalog-browse-page">
       <div className="browse-page-header">
         <div className="browse-page-header-main">
           <h1 className="browse-title">
@@ -278,33 +265,21 @@ export function SkillsIndex() {
         </div>
       </div>
       <BrowseControls>
-        <BrowseControlsRow>
-          <BrowseActions>
-            <BrowseSearchTrigger
-              open={browseSearch.open}
-              onOpen={browseSearch.openSearch}
-              label="Search skills"
-            />
-            <BrowseCategorySelect
-              categories={SKILL_CATEGORIES}
-              value={model.activeCategory}
-              onChange={handleCategoryChange}
-              responsive
-            />
-            <BrowseViewToggle view={model.view} onToggle={model.onToggleView} />
-          </BrowseActions>
-          <BrowseSearchPanel open={browseSearch.open}>
-            <BrowseSearchInput
-              inputRef={searchInputRef}
-              label="skill search"
-              placeholder="Search skills..."
-              value={model.query}
-              onChange={model.onQueryChange}
-              onClear={browseSearch.closeSearch}
-              closeLabel="Close search"
-            />
-          </BrowseSearchPanel>
-        </BrowseControlsRow>
+        <BrowseSearchInput
+          inputRef={searchInputRef}
+          focusShortcut
+          label="skill search"
+          placeholder="Search skills..."
+          value={model.query}
+          onChange={model.onQueryChange}
+          onClear={model.onClearQuery}
+        />
+        <BrowseCategorySelect
+          categories={SKILL_CATEGORIES}
+          value={model.activeCategory}
+          onChange={handleCategoryChange}
+          responsive
+        />
         <BrowseTopicChips
           topics={categoryTopics ?? []}
           activeTopic={activeTopic}
@@ -326,7 +301,6 @@ export function SkillsIndex() {
             <SkillsResults
               isLoadingSkills={model.isLoadingSkills}
               sorted={model.sorted}
-              view={model.view}
               listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
               hasQuery={model.hasQuery}
               canLoadMore={model.canLoadMore}

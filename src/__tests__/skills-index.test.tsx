@@ -379,7 +379,7 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear skill search" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
@@ -401,7 +401,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 
-  it("keeps search collapsed until slash opens and focuses it", async () => {
+  it("keeps search visible and focuses it with slash", async () => {
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -411,12 +411,11 @@ describe("SkillsIndex", () => {
     await act(async () => {});
 
     const input = screen.getByPlaceholderText("Search skills...");
-    const panel = input.closest(".browse-search-panel");
-    expect(panel?.hasAttribute("hidden")).toBe(true);
+    expect(input.closest("[hidden]")).toBeNull();
 
     fireEvent.keyDown(window, { key: "/" });
 
-    expect(panel?.hasAttribute("hidden")).toBe(false);
+    expect(input.closest("[hidden]")).toBeNull();
     expect(document.activeElement).toBe(input);
   });
 
@@ -471,7 +470,7 @@ describe("SkillsIndex", () => {
   });
 
   it.each(["list", "grid"] as const)(
-    "shows an iconless %s loading state before fetch completes",
+    "shows iconless list loading for legacy %s view links",
     async (view) => {
       searchMock = { tab: "new", view: view === "grid" ? view : undefined };
       // Never resolve the query to keep the component in loading state
@@ -483,57 +482,49 @@ describe("SkillsIndex", () => {
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
       expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
-      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(
-        view === "grid" ? 6 : 0,
-      );
-      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(
-        view === "list" ? 6 : 0,
-      );
+      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(0);
+      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(6);
       expect(screen.queryByText("No skills found")).toBeNull();
     },
   );
 
-  it("uses grid as the canonical browse view URL value", async () => {
-    render(<SkillsIndex />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({})).toEqual({ view: "grid" });
-  });
-
-  it("renders the view toggle above the skills search input", async () => {
+  it.each(["grid", "cards"])("renders legacy %s URLs as lists", async (view) => {
+    searchMock = { view };
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("list-only", "List Only")],
+      hasMore: false,
+      nextCursor: null,
+    });
     render(<SkillsIndex />);
     await act(async () => {});
-
-    const listButton = screen.getByRole("button", { name: "List" });
-    const searchInput = screen.getByPlaceholderText("Search skills...");
-
-    expect(listButton.closest(".browse-controls")).not.toBeNull();
-    expect(
-      Boolean(listButton.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
+    expect(screen.getByText("List Only").closest(".results-list")).not.toBeNull();
+    expect(document.querySelector(".browse-results-grid")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
   });
 
-  it("keeps legacy cards URLs compatible with the grid view", async () => {
-    searchMock = { view: "cards" };
+  it("renders search above category navigation and results", async () => {
     render(<SkillsIndex />);
+    await act(async () => {});
+    const searchInput = screen.getByRole("searchbox", { name: "skill search" });
+    const categories = screen.getByLabelText("Skill categories");
+    expect(searchInput.closest("[hidden]")).toBeNull();
+    expect(
+      Boolean(searchInput.compareDocumentPosition(categories) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Search skills" })).toBeNull();
+  });
 
-    const gridButton = screen.getByRole("button", { name: "Grid" });
-    expect(gridButton.className).toContain("is-active");
-
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ view: "cards" })).toEqual({ view: undefined });
+  it("clears with Escape while keeping the search field visible and focused", async () => {
+    searchMock = { q: "github" };
+    render(<SkillsIndex />);
+    await act(async () => {});
+    const input = screen.getByRole("searchbox", { name: "skill search" });
+    input.focus();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect((input as HTMLInputElement).value).toBe("");
+    expect(document.activeElement).toBe(input);
+    expect(input.closest("[hidden]")).toBeNull();
   });
 
   it("shows empty state immediately when search returns no results", async () => {
@@ -856,7 +847,7 @@ describe("SkillsIndex", () => {
     expect(document.querySelector(".browse-list-head-icon-spacer")).toBeNull();
   });
 
-  it("keeps native and external grid results free of skill icons", async () => {
+  it("keeps native and external results in a list for old grid links", async () => {
     searchMock = { q: "find skills", view: "grid" };
     convexReactMocks.useAction.mockReturnValue(
       vi
@@ -1271,7 +1262,7 @@ describe("SkillsIndex", () => {
   });
 
   it.each(["list", "grid"] as const)(
-    "shows iconless %s skeletons during load-more",
+    "shows iconless list load-more skeletons for legacy %s view links",
     async (view) => {
       vi.stubGlobal("IntersectionObserver", undefined);
       searchMock = { tab: "new", view: view === "grid" ? view : undefined };
@@ -1295,12 +1286,8 @@ describe("SkillsIndex", () => {
       const loadingResults = screen.getByRole("status", { name: "Loading results" });
       expect(loadingResults.querySelector(".browse-results-skeleton-icon")).toBeNull();
       expect(loadingResults.querySelector(".browse-list-head-icon-spacer")).toBeNull();
-      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(
-        view === "grid" ? 2 : 0,
-      );
-      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(
-        view === "list" ? 2 : 0,
-      );
+      expect(loadingResults.querySelectorAll(".skill-card-header-no-icon")).toHaveLength(0);
+      expect(loadingResults.querySelectorAll(".skill-list-item-no-icon")).toHaveLength(2);
       expect(screen.queryByText(/Loading/)).toBeNull();
     },
   );

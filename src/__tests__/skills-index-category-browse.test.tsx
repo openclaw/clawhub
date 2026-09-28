@@ -134,12 +134,11 @@ describe("category-only skill browse", () => {
     expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
   });
 
-  it("keeps search and grid controls available without feed tabs", async () => {
+  it("keeps search visible with no feed tabs or view controls", async () => {
     render(<SkillsIndex />);
     await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
-    expect(navigateMock.mock.calls.at(-1)?.[0].search({})).toEqual({ view: "grid" });
-    fireEvent.click(screen.getByRole("button", { name: "Search skills" }));
-    expect(screen.getByPlaceholderText("Search skills...")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "skill search" }).closest("[hidden]")).toBeNull();
   });
 });
