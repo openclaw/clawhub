@@ -13288,6 +13288,7 @@ describe("httpApiV1 handlers", () => {
       "web",
       "computer-use",
       "media",
+      "lobster-packs",
       "security",
       "integrations",
       "developer-tools",
@@ -13311,6 +13312,12 @@ describe("httpApiV1 handlers", () => {
           description: expect.any(String),
           icon: "message-circle",
           order: 0,
+        }),
+        expect.objectContaining({
+          slug: "lobster-packs",
+          label: "Lobster Packs",
+          icon: "shapes",
+          order: 9,
         }),
       ]),
     );

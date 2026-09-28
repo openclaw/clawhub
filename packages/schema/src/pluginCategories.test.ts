@@ -73,6 +73,35 @@ describe("plugin categories", () => {
     ).toEqual(["context"]);
   });
 
+  it("recognizes pack contributions without classifying consumers as packs", () => {
+    expect(
+      derivePluginCategoryTags({
+        family: "code-plugin",
+        pluginManifest: { lobsterPacks: [{ id: "reef", source: "lobsters/reef.json" }] },
+      }),
+    ).toEqual(["lobster-packs"]);
+    expect(getDeclaredPluginCategoriesFromManifest({ categories: ["lobster-packs"] })).toEqual([
+      "lobster-packs",
+    ]);
+    expect(inferPluginCategoriesFromManifest({ lobsterPacks: [] })).toEqual([]);
+    expect(
+      derivePluginCategoryTags({
+        family: "code-plugin",
+        name: "openclaw-pet",
+        summary: "Display LobsterDex characters",
+      }),
+    ).toEqual(["other"]);
+    expect(
+      derivePluginCategoryTags({
+        family: "code-plugin",
+        pluginManifest: {
+          categories: ["media"],
+          lobsterPacks: [{ id: "reef", source: "lobsters/reef.json" }],
+        },
+      }),
+    ).toEqual(["media"]);
+  });
+
   it("requires a declared secret provider integration before inferring security", () => {
     expect(
       derivePluginCategoryTags({
@@ -132,6 +161,7 @@ describe("plugin categories", () => {
       "web",
       "computer-use",
       "media",
+      "lobster-packs",
       "security",
       "integrations",
       "developer-tools",

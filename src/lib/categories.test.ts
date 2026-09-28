@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPluginCategoryBrowseHref,
   buildPluginTopicBrowseHref,
   buildSkillCategoryBrowseHref,
   buildSkillTopicBrowseHref,
   formatCatalogTopicLabel,
   getSkillCategoryForSkill,
+  PLUGIN_CATEGORIES,
   resolvePluginBrowseCategorySlug,
   resolveSkillBrowseCategorySlug,
   SKILL_CATEGORIES,
@@ -50,6 +52,17 @@ describe("skill category helpers", () => {
     });
 
     expect(category?.slug).toBe("operations");
+  });
+});
+
+describe("Lobster Packs discovery", () => {
+  it("exposes a canonical category and preserves its browse filter", () => {
+    const category = PLUGIN_CATEGORIES.find((item) => item.slug === "lobster-packs");
+    expect(category).toEqual({ slug: "lobster-packs", label: "Lobster Packs", icon: "shapes" });
+    expect(resolvePluginBrowseCategorySlug("lobster-packs")).toBe("lobster-packs");
+    expect(category && buildPluginCategoryBrowseHref(category)).toBe(
+      "/plugins?category=lobster-packs",
+    );
   });
 });
 
