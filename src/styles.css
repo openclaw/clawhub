@@ -3387,9 +3387,18 @@ code {
 
 .skill-summary-line {
   margin-bottom: 0;
+  overflow-wrap: anywhere;
 }
 
-.skill-summary-line .skill-summary-inline-code {
+.skill-summary-line a,
+.plugin-summary a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.skill-summary-line .skill-summary-inline-code,
+.plugin-summary .skill-summary-inline-code {
   padding: 0.12em 0.35em;
   border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--surface-muted) 74%, var(--ink) 6%);
@@ -3398,6 +3407,32 @@ code {
   -webkit-box-decoration-break: clone;
   font-size: 0.88em;
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* A sibling detail link keeps the full preview clickable without nesting summary links. */
+.plugin-summary-item {
+  position: relative;
+}
+
+.plugin-summary-item > .plugin-detail-link {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+}
+
+.plugin-summary-item > :not(.plugin-detail-link) {
+  position: relative;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.plugin-summary a {
+  pointer-events: auto;
+}
+
+.plugin-summary {
   overflow-wrap: anywhere;
 }
 

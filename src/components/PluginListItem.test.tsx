@@ -7,10 +7,42 @@ import type { PackageListItem } from "../lib/packageApi";
 import { PluginListItem } from "./PluginListItem";
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children?: ReactNode; to?: string }) => <a href={to}>{children}</a>,
+  Link: ({ children, to, ...props }: { children?: ReactNode; to?: string }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
 }));
 
 describe("PluginListItem", () => {
+  it.each(["list", "card"] as const)(
+    "renders complete Markdown links separately from %s navigation",
+    (variant) => {
+      const { container } = render(
+        <PluginListItem
+          item={makePlugin({
+            summary:
+              "Connect with [Microsoft Teams](https://example.com/" +
+              "long-path/".repeat(20) +
+              ") and **collaborate**.",
+          })}
+          variant={variant}
+        />,
+      );
+      expect(screen.getByRole("link", { name: "Plugin: Demo Plugin" }).getAttribute("href")).toBe(
+        "/local/plugins/demo-plugin",
+      );
+      expect(screen.getByRole("link", { name: "Microsoft Teams" }).getAttribute("href")).toBe(
+        "https://example.com/" + "long-path/".repeat(20),
+      );
+      expect(container.querySelector("a a")).toBeNull();
+      expect(container.querySelector("strong")?.textContent).toBe("collaborate");
+      expect(container.querySelector(".plugin-summary")?.textContent).toBe(
+        "Connect with Microsoft Teams and collaborate.",
+      );
+    },
+  );
+
   it("renders official list plugins with the compact official mark", () => {
     render(<PluginListItem item={makePlugin()} />);
 
