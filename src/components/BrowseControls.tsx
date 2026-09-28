@@ -359,11 +359,6 @@ export function BrowseSearchInput({
           }
         }}
       />
-      {!value && focusShortcut ? (
-        <kbd className="browse-search-shortcut" aria-hidden="true">
-          /
-        </kbd>
-      ) : null}
       {value || closeLabel ? (
         <button
           type="button"

@@ -18941,8 +18941,8 @@ body:has(.browse-page-borderless-header) .navbar {
 .catalog-browse-page .browse-search-control {
   order: 0;
   width: 100%;
-  min-height: 44px;
-  padding: var(--oc-space-2) 0;
+  min-height: 56px;
+  padding: var(--oc-space-3) 0;
   border: 0;
   border-bottom: 1px solid var(--oc-border-strong);
   border-radius: 0;
@@ -18952,17 +18952,6 @@ body:has(.browse-page-borderless-header) .navbar {
 .catalog-browse-page .browse-search-control:focus-within {
   border-color: var(--oc-focus-ring);
   box-shadow: none;
-}
-
-.browse-search-shortcut {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--oc-border-subtle);
-  border-radius: var(--oc-radius-inset);
-  color: var(--oc-text-muted);
-  font-size: var(--oc-font-size-sm);
 }
 
 .catalog-browse-page .browse-category-select {
