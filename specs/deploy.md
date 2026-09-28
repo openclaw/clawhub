@@ -118,13 +118,12 @@ After backend deployment, verify the exact deployed SHA and a fresh Skill Card
 worker run. Compare terminal claim failures separately from successful job counts.
 
 Skill Card input reuse adds optional receipts to existing versions and jobs; no
-backfill is required. The worker currently omits the recipe hash, so automatic
-workflow runs remain compatible with the backend before its manual deployment.
-Sol/medium/fast is enabled; input reuse is prepared but not active.
+backfill is required. Before landing the worker activation, successfully deploy
+the schema/functions from preparation commit `73d65ef1dfff4cdbecd16b3d2587872645973983`
+or a descendant containing it. Automatic workflow runs can start from the merged
+worker immediately, so the backend must already accept recipe-hash claims.
 
-Activate recipe-hash claims in the separate worker change only after a successful
-Convex deployment of the preparation commit or a descendant containing it. Verify
-the actual schema/function deployment step; `appMeta:getDeploymentInfo` alone is
+Verify the actual schema/function deployment step; `appMeta:getDeploymentInfo` alone is
 insufficient because the workflow stamps `APP_BUILD_SHA` before deployment.
 Existing workflow checkouts can omit the hash for their remaining leases (up to
 60 minutes). They still generate cards, but their completion clears any reusable

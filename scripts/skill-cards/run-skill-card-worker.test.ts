@@ -56,20 +56,25 @@ describe("run-skill-card-worker Codex skill setup", () => {
     expect(DEFAULT_LEASE_MS).toBe(60 * 60 * 1000);
   });
 
-  it("starts before backend deployment with the legacy claim contract", async () => {
+  it("claims with the prepared backend recipe contract", async () => {
     const requests: unknown[] = [];
+    const toolDir = await tempDir();
+    const automation = join(toolDir, "AI Transparency Card Automation");
+    await mkdir(automation);
+    await writeFile(join(automation, "Skill Card Generator.md"), "trusted workflow");
     const expected = {
       token: "fixture-token",
       workerId: "fixture-worker",
       limit: 4,
       leaseMs: 3_600_000,
+      generationHash: await skillCardGenerationHash(toolDir, skillCardGenerationSettings({})),
     };
     const server = createServer(async (request, response) => {
       let text = "";
       for await (const chunk of request) text += String(chunk);
       const body = JSON.parse(text);
       requests.push(body);
-      // Frozen pre-rollout claim validator (9a614dc): extra arguments fail.
+      // The deployed preparation must accept this recipe-bound claim contract.
       const accepted =
         request.url === "/api/action" &&
         body.path === "skillCards:claimSkillCardJobs" &&
@@ -98,7 +103,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
             CONVEX_URL: `http://127.0.0.1:${address.port}`,
             SECURITY_SCAN_WORKER_TOKEN: expected.token,
             SKILL_CARD_WORKER_ID: expected.workerId,
-            NVIDIA_TRUSTWORTHY_AI_DIR: "/nonexistent-generator",
+            NVIDIA_TRUSTWORTHY_AI_DIR: toolDir,
           },
         },
       );
