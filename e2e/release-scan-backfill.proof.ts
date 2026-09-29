@@ -4,11 +4,6 @@ import convexBrowser from "convex/browser";
 import convexServer from "convex/server";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 
-test.skip(
-  process.env.VITE_ENABLE_DEV_AUTH !== "1" && !process.env.REVIEW_ADMIN_KEY,
-  "Requires a disposable local Convex runtime",
-);
-
 const { ConvexHttpClient } = convexBrowser;
 const { makeFunctionReference } = convexServer;
 const publicBackfill = makeFunctionReference<"action">("packages:backfillPackageReleaseScans");
