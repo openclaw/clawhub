@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { getFunctionName } from "convex/server";
+import { ConvexError } from "convex/values";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArk } from "../packages/schema/src/ark";
@@ -11772,6 +11773,26 @@ describe("httpApiV1 handlers", () => {
       internal.skills.getSkillBySlugInternal,
       expect.objectContaining({ slug: "demo", ownerHandle: "openclaw" }),
     );
+  });
+
+  it("stars add maps wrapped missing-skill errors to 404", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const error = new ConvexError("Skill not found");
+    error.message = "Uncaught ConvexError: Skill not found\n    at handler (convex/stars.ts)";
+    const runQuery = vi.fn().mockResolvedValue({ _id: "skills:1" });
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockRejectedValueOnce(error);
+    const response = await __handlers.starsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/stars/demo", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
   });
 
   it("stars delete succeeds", async () => {

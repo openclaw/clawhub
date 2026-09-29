@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./functions";
@@ -109,7 +109,7 @@ export const addStarInternal = internalMutation({
   args: { userId: v.id("users"), skillId: v.id("skills") },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
-    if (!skill || !isPublicSkillDoc(skill)) throw new Error("Skill not found");
+    if (!skill || !isPublicSkillDoc(skill)) throw new ConvexError("Skill not found");
     const existing = await ctx.db
       .query("stars")
       .withIndex("by_skill_user", (q) => q.eq("skillId", args.skillId).eq("userId", args.userId))
