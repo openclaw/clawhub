@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "./_generated/dataModel";
 
 const { convexAuthMock } = vi.hoisted(() => ({
@@ -66,6 +66,11 @@ function makeAuthCtx(user: { _id: Id<"users">; deletedAt?: number; deactivatedAt
 }
 
 describe("auth callbacks", () => {
+  beforeEach(() => {
+    // Re-run auth registration after Vitest clears the mock call history.
+    vi.resetModules();
+  });
+
   it("defers banned account rejection until session creation", async () => {
     await import("./auth");
     const config = getCapturedAuthConfig();
