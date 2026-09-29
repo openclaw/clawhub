@@ -224,6 +224,7 @@ import type * as publisherAbuseOwnerSynchrony from "../publisherAbuseOwnerSynchr
 import type * as publisherAbuseTemporalScan from "../publisherAbuseTemporalScan.js";
 import type * as publishers from "../publishers.js";
 import type * as rateLimits from "../rateLimits.js";
+import type * as releaseScanBackfillDevSeed from "../releaseScanBackfillDevSeed.js";
 import type * as retention from "../retention.js";
 import type * as rolloutCapabilities from "../rolloutCapabilities.js";
 import type * as search from "../search.js";
@@ -488,6 +489,7 @@ declare const fullApi: ApiFromModules<{
   publisherAbuseTemporalScan: typeof publisherAbuseTemporalScan;
   publishers: typeof publishers;
   rateLimits: typeof rateLimits;
+  releaseScanBackfillDevSeed: typeof releaseScanBackfillDevSeed;
   retention: typeof retention;
   rolloutCapabilities: typeof rolloutCapabilities;
   search: typeof search;
