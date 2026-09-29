@@ -68,6 +68,8 @@ async function fixture(role: "user" | "admin" = "admin", categories = ["channels
         name: options.name,
         normalizedName: options.name,
         displayName: options.name,
+        summary:
+          "Search the web and summarize research findings with citations to original sources.",
         ownerUserId,
         family: options.family ?? "code-plugin",
         channel: options.channel ?? "official",

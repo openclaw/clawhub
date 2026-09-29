@@ -242,6 +242,22 @@ describe("catalog feed projection", () => {
     ]);
   });
 
+  it.each([
+    { publicationStatus: "pending" },
+    { publicationStatus: "blocked" },
+    { ownerDeletedAt: 0 },
+    { softDeletedAt: 0 },
+  ])("omits official plugins with an unavailable latest release: %j", async (patch) => {
+    const result = await listOfficialEntriesHandler(
+      makeCtx([makePackage()], {
+        "packageReleases:1": makeRelease(patch),
+      }),
+      { family: "code-plugin" },
+    );
+
+    expect(result).toEqual([]);
+  });
+
   it("projects highlighted official packages as featured install candidates", async () => {
     const result = await listOfficialEntriesHandler(
       makeCtx(

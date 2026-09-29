@@ -70,7 +70,6 @@ import {
 } from "./lib/emails";
 import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
-import { orderPublishedFeatured, readPublishedFeaturedOrder } from "./lib/featuredSelections";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -99,6 +98,7 @@ import {
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
+import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import { assertPackageRuntimeIdAvailable } from "./lib/packageRuntimeIdentity";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
@@ -116,6 +116,7 @@ import {
   pluginCategoryClassificationValidator,
   type PluginCategoryClassification,
 } from "./lib/pluginCategoryClassificationContract";
+import { getPluginDiscoveryPins, isEnglishPluginListing } from "./lib/pluginDiscovery";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
@@ -393,7 +394,8 @@ const PACKAGE_STAT_EVENT_BATCH_SIZE = 100;
 export const PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =
   "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS";
 const DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS = 7;
-const MIN_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS = 1;
+// A completed 24-hour window can start almost 25 hours before the current time.
+const MIN_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS = 2;
 const MAX_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS = 90;
 const DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_BATCH_SIZE = 1_000;
 const MAX_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_BATCH_SIZE = 5_000;
@@ -720,6 +722,7 @@ type PublicPackageListItem = {
   categories?: string[];
   topics?: string[];
   featuredAt?: number;
+  trending24h?: { downloads: number; installs: number; windowStart: number; windowEnd: number };
   verificationTier: PackageVerificationTier | null;
   stats: Doc<"packages">["stats"];
 };
@@ -1216,19 +1219,6 @@ function resolvePublicPackageScanStatus(
     return releaseScanStatus === "not-run" ? pkg.scanStatus : releaseScanStatus;
   }
   return pkg.scanStatus;
-}
-
-function isPublishedPackageRelease(
-  release: Doc<"packageReleases"> | null | undefined,
-  packageId?: Id<"packages">,
-): release is Doc<"packageReleases"> {
-  return Boolean(
-    release &&
-    release.softDeletedAt === undefined &&
-    release.ownerDeletedAt === undefined &&
-    (packageId === undefined || release.packageId === packageId) &&
-    (release.publicationStatus === undefined || release.publicationStatus === "published"),
-  );
 }
 
 function hasNoPublishedPackageVersions(
@@ -2796,34 +2786,149 @@ async function takeVisiblePackageCategoryDigestPage(
   };
 }
 
-const PLUGIN_OVERVIEW_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+type CuratedCategoryArgs = {
+  category: PluginCategorySlug;
+  englishOnly?: boolean;
+  family?: PackageFamily;
+  channel?: PackageChannel;
+  isOfficial?: boolean;
+  topic?: string;
+  excludedScanStatuses?: PackageListScanStatus[];
+  paginationOpts: { cursor: string | null; numItems: number };
+};
+
+type CuratedCategoryCursor = {
+  scope: string;
+  pinOffset: number;
+  downloads?: number | null;
+  name?: string;
+};
+
+async function listCuratedPluginCategoryPage(
+  ctx: DbReaderCtx,
+  args: CuratedCategoryArgs,
+): Promise<PublicPackageListPage> {
+  const scope = JSON.stringify([
+    args.category,
+    args.family,
+    args.channel,
+    args.isOfficial,
+    args.topic,
+    args.excludedScanStatuses,
+    args.englishOnly ?? false,
+  ]);
+  let state: CuratedCategoryCursor = { scope, pinOffset: 0 };
+  if (args.paginationOpts.cursor) {
+    try {
+      const value = JSON.parse(decodeURIComponent(atob(args.paginationOpts.cursor)));
+      if (
+        value.scope !== scope ||
+        !Number.isSafeInteger(value.pinOffset) ||
+        value.pinOffset < 0 ||
+        (value.downloads !== undefined &&
+          value.downloads !== null &&
+          (typeof value.downloads !== "number" ||
+            !Number.isFinite(value.downloads) ||
+            value.downloads < 0)) ||
+        (value.name !== undefined && typeof value.name !== "string")
+      )
+        throw new Error();
+      state = value;
+    } catch {
+      throw new ConvexError("Invalid curated category cursor");
+    }
+  }
+  const targetCount = Math.max(
+    1,
+    Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE),
+  );
+  const pins = getPluginDiscoveryPins(args.category);
+  const pinNames = new Set(pins);
+  const page: PublicPackageListItem[] = [];
+  const membershipCache = new Map<string, Promise<boolean>>();
+  const eligible = async (digest: PackageDigestLike) =>
+    (digest.family === "code-plugin" || digest.family === "bundle-plugin") &&
+    digestMatchesSearchFilters(digest, args) &&
+    (!args.englishOnly || isEnglishPluginListing(digest)) &&
+    (await canViewerReadPackage(ctx, digest, undefined, membershipCache));
+  const result = (isDone: boolean): PublicPackageListPage => ({
+    page,
+    isDone,
+    continueCursor: isDone ? "" : btoa(encodeURIComponent(JSON.stringify(state))),
+  });
+
+  // Resolve pins by canonical identity before taking the top N. A downloaded tail
+  // cannot crowd them out, and missing/private/blocked pins consume no visible slot.
+  while (state.pinOffset < pins.length && page.length < targetCount) {
+    const name = pins[state.pinOffset++];
+    const pkg = await getPackageByNormalizedName(ctx, name);
+    if (!pkg) continue;
+    const digest = await ctx.db
+      .query("packageSearchDigest")
+      .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+      .unique();
+    if (digest && (await eligible(digest))) page.push(await toPublicPackageListItem(ctx, digest));
+  }
+  if (page.length >= targetCount) return result(false);
+
+  // Walk one download-count group at a time: downloads descend, canonical names
+  // ascend even across page boundaries. The bounded scan also advances over
+  // ineligible rows, so a sparse category can backfill without repeating a page.
+  let remaining = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
+  while (page.length < targetCount && remaining > 0) {
+    if (!state.name) {
+      const next = await ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_category_downloads_name", (q) => {
+          const range = q.eq("softDeletedAt", undefined).eq("pluginCategory", args.category);
+          return state.downloads === undefined
+            ? range
+            : range.lt("stats.downloads", state.downloads ?? undefined);
+        })
+        .order("desc")
+        .first();
+      if (!next) return result(true);
+      state.downloads = next.stats?.downloads ?? null;
+      state.name = "";
+    }
+    const rows = await ctx.db
+      .query("packagePluginCategorySearchDigest")
+      .withIndex("by_active_category_downloads_name", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("pluginCategory", args.category)
+          .eq("stats.downloads", state.downloads ?? undefined)
+          .gt("name", state.name!),
+      )
+      .order("asc")
+      .take(Math.min(remaining, Math.max(targetCount - page.length, 20)));
+    if (rows.length === 0) {
+      delete state.name;
+      continue;
+    }
+    for (const digest of rows) {
+      remaining -= 1;
+      state.name = digest.name;
+      if (!pinNames.has(digest.name) && (await eligible(digest)))
+        page.push(await toPublicPackageListItem(ctx, digest));
+      if (page.length >= targetCount) return result(false);
+    }
+  }
+  return result(false);
+}
 
 async function listPluginOverviewCategory(
   ctx: DbReaderCtx,
   args: { category: PluginCategorySlug; numItems: number },
 ) {
-  const targetCount = Math.max(1, Math.min(args.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
-  // The marketplace home drops pagination, so select from the category indexes
-  // directly instead of truncating a sparse page from the general catalog scan.
-  const pages = await Promise.all(
-    PLUGIN_OVERVIEW_FAMILIES.map(
-      async (family) =>
-        await listOfficialFirstPackageCategoryPage(ctx, {
-          family,
-          category: args.category,
-          sort: "downloads",
-          paginationOpts: { cursor: null, numItems: targetCount },
-        }),
-    ),
-  );
-  return pages
-    .flatMap((page) => page.page)
-    .sort(
-      (a, b) =>
-        Number(b.isOfficial) - Number(a.isOfficial) ||
-        compareStablePackageDiscoveryCandidates(a, b, "downloads"),
-    )
-    .slice(0, targetCount);
+  if (args.category === "other") return [];
+  return (
+    await listCuratedPluginCategoryPage(ctx, {
+      category: args.category,
+      englishOnly: true,
+      paginationOpts: { cursor: null, numItems: args.numItems },
+    })
+  ).page;
 }
 
 async function fetchHighlightedPackageEntries(
@@ -2852,7 +2957,7 @@ async function fetchHighlightedPackageEntries(
       .withIndex("by_package", (q) => q.eq("packageId", badge.packageId))
       .unique();
     if (!digest || digest.softDeletedAt) continue;
-    if (getPluginDiscoveryExclusion(digest.categories)) continue;
+    if (getPluginDiscoveryExclusion(digest.categories) || !isEnglishPluginListing(digest)) continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
     entries.push({ digest, featuredAt: badge.at });
@@ -2876,17 +2981,14 @@ async function fetchHighlightedPackagePage(
     numItems: number;
   },
 ) {
-  const entries = orderPublishedFeatured(
-    await fetchHighlightedPackageEntries(ctx, args),
-    await readPublishedFeaturedOrder(ctx, "plugin"),
-    ({ digest }) => `plugin:${digest.name}`,
-  );
+  // Badge recency owns public order, including manual additions after a published lineup.
+  const entries = await fetchHighlightedPackageEntries(ctx, args);
   const items = await Promise.all(
     entries.map(
       async ({ digest, featuredAt }) => await toPublicPackageListItem(ctx, digest, featuredAt),
     ),
   );
-  // The published selection supplies order independently from badge timestamps.
+  // Explicit official-first requests group entries without changing recency within each group.
   if (!args.officialFirst) {
     return items.slice(0, args.numItems);
   }
@@ -4480,6 +4582,25 @@ export const listPageForViewerInternal = internalQuery({
   },
 });
 
+export const listPluginDiscoveryCategoryInternal = internalQuery({
+  args: {
+    category: v.string(),
+    family: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    channel: v.optional(
+      v.union(v.literal("official"), v.literal("community"), v.literal("private")),
+    ),
+    isOfficial: v.optional(v.boolean()),
+    topic: v.optional(v.string()),
+    excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (!isPluginCategorySlug(args.category) || args.category === "other")
+      return { page: [], isDone: true, continueCursor: "" };
+    return await listCuratedPluginCategoryPage(ctx, { ...args, category: args.category });
+  },
+});
+
 export const listPluginOverviewCategoryInternal = internalQuery({
   args: {
     category: v.string(),
@@ -4719,11 +4840,20 @@ async function listPackagePageImpl(
   }
 
   if (args.sort === "trending") {
-    const leaderboard = await ctx.db
+    const currentLeaderboard = await ctx.db
       .query("packageLeaderboards")
       .withIndex("by_kind", (q) => q.eq("kind", PACKAGE_TRENDING_LEADERBOARD_KIND))
       .order("desc")
       .first();
+    // Keep the existing feed until the first completed 24-hour snapshot is ready.
+    // Legacy entries have no window metrics and must never be labeled as 24-hour counts.
+    const leaderboard =
+      currentLeaderboard ??
+      (await ctx.db
+        .query("packageLeaderboards")
+        .withIndex("by_kind", (q) => q.eq("kind", "package_trending"))
+        .order("desc")
+        .first());
     if (!leaderboard) return { page: [], isDone: true, continueCursor: "" };
 
     const cursorState = decodePublicPageCursor(args.paginationOpts.cursor);
@@ -4735,10 +4865,24 @@ async function listPackagePageImpl(
       nextOffset = index + 1;
       const pkg = await ctx.db.get(entry.packageId);
       if (!pkg || pkg.softDeletedAt) continue;
-      if (getPluginDiscoveryExclusion(pkg.categories)) continue;
+      if (getPluginDiscoveryExclusion(pkg.categories) || !isEnglishPluginListing(pkg)) continue;
       if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
       if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
-      page.push(await toPublicPackageListItemFromPackage(ctx, pkg));
+      page.push({
+        ...(await toPublicPackageListItemFromPackage(ctx, pkg)),
+        ...(currentLeaderboard &&
+        leaderboard.rangeStartAt !== undefined &&
+        leaderboard.rangeEndAt !== undefined
+          ? {
+              trending24h: {
+                downloads: entry.downloads,
+                installs: entry.installs,
+                windowStart: leaderboard.rangeStartAt,
+                windowEnd: leaderboard.rangeEndAt,
+              },
+            }
+          : {}),
+      });
       if (page.length >= targetCount) break;
     }
     const isDone = nextOffset >= leaderboard.items.length;
@@ -6349,12 +6493,12 @@ function comparePackageRestoreLatestCandidates(
   return a._id.localeCompare(b._id);
 }
 
-function getPreferredRestoredPackageRelease(
+export function getPreferredRestoredPackageRelease(
   family: Doc<"packages">["family"],
   releases: Doc<"packageReleases">[],
 ) {
   return releases.reduce<Doc<"packageReleases"> | null>((best, release) => {
-    if (release.softDeletedAt) return best;
+    if (!isPublishedPackageRelease(release)) return best;
     if (!best || comparePackageRestoreLatestCandidates(family, best, release) < 0) return release;
     return best;
   }, null);
@@ -6365,7 +6509,9 @@ function getPreservedRestoredPackageRelease(
   releases: Doc<"packageReleases">[],
 ) {
   const byId = new Map(
-    releases.filter((release) => !release.softDeletedAt).map((release) => [release._id, release]),
+    releases
+      .filter((release) => isPublishedPackageRelease(release))
+      .map((release) => [release._id, release]),
   );
   return (
     byId.get(pkg.tags.latest) ??
@@ -6374,10 +6520,11 @@ function getPreservedRestoredPackageRelease(
   );
 }
 
-function rebuildPackageTagsFromActiveReleases(releases: Doc<"packageReleases">[]) {
+export function rebuildPackageTagsFromActiveReleases(releases: Doc<"packageReleases">[]) {
   const tags: Doc<"packages">["tags"] = {};
   for (const release of releases) {
     if (release.softDeletedAt) continue;
+    if (!isPublishedPackageRelease(release)) continue;
     for (const tag of release.distTags ?? []) {
       tags[tag] = release._id;
     }
@@ -6480,6 +6627,8 @@ async function restorePackageDoc(
         distTags: [...(nextLatest.distTags ?? []), "latest"],
       });
     }
+  } else {
+    delete nextTags.latest;
   }
 
   const packagePatch: Partial<Doc<"packages">> = {
@@ -12535,6 +12684,8 @@ async function quarantineMaliciousLatestPackageRelease(
         distTags: [...(nextLatest.distTags ?? []), "latest"],
       });
     }
+  } else {
+    delete nextTags.latest;
   }
 
   const restoredRuntimeId = packageRuntimeIdFromRelease(nextLatest);

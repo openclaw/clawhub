@@ -117,8 +117,14 @@ Public read:
   - Invalid `sort` values return `400`
 - `GET /api/v1/plugins?limit=&cursor=&sort=`
   - `sort`: `recommended` (default), `downloads`, `updated`, legacy alias `installs`
+- `GET /api/v1/plugins?category=memory&curated=true&sort=downloads`
+  - Complete category browse: curated package pins first, then downloads descending and package name ascending. All listing languages remain available.
+  - Returns cursor pagination and category metadata with ordered `pinnedPackages`; unavailable pins are skipped.
+  - Search and ordinary catalog reads retain listings in every language.
 - `GET /api/v1/plugins/overview`
-  - Cacheable bounded marketplace shelves and category metadata
+  - Cacheable bounded marketplace shelves and category metadata with `pinnedPackages`. Other is omitted.
+- `GET /api/v1/plugins/categories`
+  - Complete plugin taxonomy, including Computer use, and the current per-category pin policy.
 - `GET /api/v1/plugins/search?q=...`
 - `GET /api/v1/packages/{name}/versions/{version}/artifact`
 - `GET /api/v1/packages/{name}/versions/{version}/security`

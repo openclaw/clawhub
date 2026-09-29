@@ -1,8 +1,11 @@
 /* @vitest-environment node */
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { isDeepStrictEqual, promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertCodexWorkerExecutionAllowed,
@@ -20,6 +23,8 @@ import {
   prepareNvidiaSkillCardSkill,
   processJob,
   skillCardWorkerId,
+  skillCardGenerationHash,
+  skillCardGenerationSettings,
   trustedRendererPath,
   writeWorkspace,
 } from "./run-skill-card-worker";
@@ -50,6 +55,108 @@ describe("run-skill-card-worker Codex skill setup", () => {
     expect(DEFAULT_MAX_RUNTIME_MS).toBe(40 * 60 * 1000);
     expect(DEFAULT_LEASE_MS).toBe(60 * 60 * 1000);
   });
+
+  it("starts before backend deployment with the legacy claim contract", async () => {
+    const requests: unknown[] = [];
+    const expected = {
+      token: "fixture-token",
+      workerId: "fixture-worker",
+      limit: 4,
+      leaseMs: 3_600_000,
+    };
+    const server = createServer(async (request, response) => {
+      let text = "";
+      for await (const chunk of request) text += String(chunk);
+      const body = JSON.parse(text);
+      requests.push(body);
+      // Frozen pre-rollout claim validator (9a614dc): extra arguments fail.
+      const accepted =
+        request.url === "/api/action" &&
+        body.path === "skillCards:claimSkillCardJobs" &&
+        isDeepStrictEqual(body.args, [expected]);
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify(
+          accepted
+            ? { status: "success", value: [] }
+            : { status: "error", errorMessage: "ArgumentValidationError: unexpected claim shape" },
+        ),
+      );
+    });
+    try {
+      await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing fixture port");
+      const { stdout } = await promisify(execFile)(
+        "bun",
+        [resolve("scripts/skill-cards/run-skill-card-worker.ts")],
+        {
+          timeout: 10_000,
+          env: {
+            PATH: process.env.PATH,
+            CLAWHUB_ALLOW_LOCAL_CODEX_SCAN: "1",
+            CONVEX_URL: `http://127.0.0.1:${address.port}`,
+            SECURITY_SCAN_WORKER_TOKEN: expected.token,
+            SKILL_CARD_WORKER_ID: expected.workerId,
+            NVIDIA_TRUSTWORTHY_AI_DIR: "/nonexistent-generator",
+          },
+        },
+      );
+      expect(requests).toEqual([
+        { path: "skillCards:claimSkillCardJobs", format: "convex_encoded_json", args: [expected] },
+      ]);
+      expect(stdout).toContain("skill_card_worker_summary");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((done) => server.close(() => done()));
+    }
+  });
+
+  it("defaults to Sol medium fast and fingerprints the effective recipe", async () => {
+    const settings = skillCardGenerationSettings({});
+    expect(settings).toEqual({
+      model: "gpt-6-sol",
+      reasoningEffort: "medium",
+      serviceTier: "fast",
+    });
+    const tool = await tempDir();
+    const automation = join(tool, "AI Transparency Card Automation");
+    await mkdir(automation);
+    await writeFile(join(automation, "Skill Card Generator.md"), "trusted workflow");
+    const hash = await skillCardGenerationHash(tool, settings);
+    expect(hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(await skillCardGenerationHash(tool, settings)).toBe(hash);
+    for (const override of [
+      { model: "other-model" },
+      { reasoningEffort: "high" },
+      { serviceTier: "default" },
+    ]) {
+      expect(await skillCardGenerationHash(tool, { ...settings, ...override })).not.toBe(hash);
+    }
+    await writeFile(join(automation, "Skill Card Generator.md"), "changed trusted workflow");
+    expect(await skillCardGenerationHash(tool, settings)).not.toBe(hash);
+  });
+
+  it.each(["reused", "deferred"])(
+    "handles a %s receipt without downloading or starting a model",
+    async (outcome) => {
+      const client = { action: vi.fn() };
+      const fetch = vi.spyOn(globalThis, "fetch");
+      expect(
+        await processJob(
+          client as never,
+          "token",
+          {
+            job: { _id: "receipt", leaseToken: "released", source: "scan" },
+            [outcome]: true,
+          },
+          "/nonexistent-generator",
+        ),
+      ).toBe(outcome === "reused" ? true : null);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(client.action).not.toHaveBeenCalled();
+    },
+  );
 
   it("builds shard-aware worker ids like the security scan worker", () => {
     expect(

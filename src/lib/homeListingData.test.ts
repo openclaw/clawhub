@@ -12,6 +12,7 @@ vi.mock("../convex/client", () => ({
 
 vi.mock("../../convex/_generated/api", () => ({
   api: {
+    featuredSkills: { listPublic: "featuredSkills:listPublic" },
     skills: {
       listPublicPageV4: "skills:listPublicPageV4",
       listPublicTrendingPage: "skills:listPublicTrendingPage",
@@ -30,6 +31,7 @@ vi.mock("./catalogDiscoveryCapabilities", () => ({
 
 import {
   fetchHomePluginListing,
+  fetchHomeTrendingPluginListing,
   fetchHomeSkillListing,
   HOME_LISTING_PAGE_SIZE,
 } from "./homeListingData";
@@ -69,51 +71,43 @@ describe("homeListingData", () => {
     });
   });
 
-  it("uses the highlighted browse path for Featured skills", async () => {
-    await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);
-
-    expect(convexQueryMock).toHaveBeenCalledWith(
-      "skills:listPublicPageV4",
-      expect.objectContaining({
-        highlightedOnly: true,
-        numItems: 16,
-      }),
+  it("keeps the backend ranking when loading Trending plugins", async () => {
+    const ranked = [
+      { ...featuredPlugin, name: "popular", updatedAt: 1 },
+      { ...featuredPlugin, name: "newer", updatedAt: 5 },
+    ];
+    fetchPluginCatalogMock.mockResolvedValue({ items: ranked, nextCursor: null });
+    const result = await fetchHomePluginListing("trending", [], 20);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: "trending" }),
     );
+    expect(result.items.map((item) => item.name)).toEqual(["popular", "newer"]);
   });
 
-  it("preserves the published Featured skill order while filtering across categories", async () => {
+  it("uses the mixed-source Featured selection", async () => {
+    convexQueryMock.mockResolvedValue({ page: [] });
+    await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);
+    expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", { query: undefined });
+  });
+
+  it("preserves newest-selected order across sources while filtering categories", async () => {
+    const external = {
+      id: "skills-sh:humanlayer/skills/show-me",
+      slug: "show-me",
+      native: null,
+      categories: ["development"],
+    };
+    const native = {
+      skill: { _id: "skills:older", slug: "older" },
+      owner: null,
+      ownerHandle: null,
+    };
     convexQueryMock.mockResolvedValue({
       page: [
-        {
-          skill: {
-            _id: "skills:editorial",
-            slug: "editorial",
-            categories: ["development"],
-            badges: { highlighted: { at: 100 } },
-            stats: { downloads: 1 },
-          },
-        },
-        {
-          skill: {
-            _id: "skills:excluded",
-            slug: "excluded",
-            categories: ["writing"],
-            badges: { highlighted: { at: 500 } },
-            stats: { downloads: 1000 },
-          },
-        },
-        {
-          skill: {
-            _id: "skills:telemetry",
-            slug: "telemetry",
-            categories: ["integrations"],
-            badges: { highlighted: { at: 200 } },
-            stats: { downloads: 10000 },
-          },
-        },
+        { external, categories: external.categories },
+        { external: { id: "excluded" }, categories: ["writing"] },
+        { ...native, skill: { ...native.skill, categories: ["integrations"] } },
       ],
-      hasMore: false,
-      nextCursor: null,
     });
     const result = await fetchHomeSkillListing(
       "featured",
@@ -121,8 +115,14 @@ describe("homeListingData", () => {
       HOME_LISTING_PAGE_SIZE,
     );
     expect(
-      result.page.map((entry) => ("skill" in entry ? entry.skill.slug : entry.trending.slug)),
-    ).toEqual(["editorial", "telemetry"]);
+      result.page.map((entry) =>
+        "external" in entry
+          ? entry.external.slug
+          : "skill" in entry
+            ? entry.skill.slug
+            : "trending",
+      ),
+    ).toEqual(["show-me", "older"]);
     expect(result.hasMore).toBe(false);
     expect(convexQueryMock).toHaveBeenCalledTimes(1);
   });
@@ -144,5 +144,68 @@ describe("homeListingData", () => {
     expect(result.items.map((item) => item.name)).toEqual(["editorial", "telemetry"]);
     expect(result.hasMore).toBe(false);
     expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves plugin Trending rank across pages instead of sorting by update time", async () => {
+    const first = { ...featuredPlugin, name: "first", updatedAt: 1 };
+    const second = { ...featuredPlugin, name: "second", updatedAt: 999 };
+    fetchPluginCatalogMock
+      .mockResolvedValueOnce({ items: [first], nextCursor: "page-2" })
+      .mockResolvedValueOnce({ items: [second], nextCursor: "page-3" });
+
+    const result = await fetchHomePluginListing("trending", ["tools"], 2);
+
+    expect(result).toEqual({ items: [first, second], hasMore: true });
+    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(1, {
+      sort: "trending",
+      cursor: undefined,
+      limit: 2,
+      signal: undefined,
+    });
+    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(2, {
+      sort: "trending",
+      cursor: "page-2",
+      limit: 1,
+      signal: undefined,
+    });
+  });
+
+  it("searches the entire plugin Trending feed in rank order with accurate pagination", async () => {
+    const first = { ...featuredPlugin, name: "calendar-first", ownerHandle: "builder" };
+    const second = { ...featuredPlugin, name: "calendar-second", ownerHandle: "builder" };
+    const third = { ...featuredPlugin, name: "calendar-third", ownerHandle: "builder" };
+    fetchPluginCatalogMock.mockImplementation(({ cursor }: { cursor?: string }) =>
+      Promise.resolve(
+        cursor === "page-2"
+          ? { items: [first, second, third], nextCursor: null }
+          : { items: [featuredPlugin], nextCursor: "page-2" },
+      ),
+    );
+
+    expect(await fetchHomeTrendingPluginListing(2, undefined, " CALENDAR builder ")).toEqual({
+      items: [first, second],
+      hasMore: true,
+    });
+    expect(await fetchHomeTrendingPluginListing(4, undefined, "calendar builder")).toEqual({
+      items: [first, second, third],
+      hasMore: false,
+    });
+    expect(
+      fetchPluginCatalogMock.mock.calls.every(([args]) => args.sort === "trending" && !args.q),
+    ).toBe(true);
+  });
+
+  it("stops plugin Trending requests on abort and propagates later-page failures", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(fetchHomeTrendingPluginListing(20, controller.signal)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
+
+    fetchPluginCatalogMock
+      .mockResolvedValueOnce({ items: [featuredPlugin], nextCursor: "page-2" })
+      .mockRejectedValueOnce(new Error("Feed unavailable"));
+    await expect(fetchHomeTrendingPluginListing(20)).rejects.toThrow("Feed unavailable");
   });
 });

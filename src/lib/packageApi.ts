@@ -27,6 +27,7 @@ export type PackageListItem = {
   categories?: string[];
   topics?: string[];
   featuredAt?: number;
+  trending24h?: { downloads: number; installs: number; windowStart: number; windowEnd: number };
   verificationTier?: string | null;
   stats?: {
     downloads: number;
@@ -366,6 +367,7 @@ export async function fetchPackages(params: {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  curated?: boolean;
   excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
   sort?: PackageCatalogSort;
   limit?: number;
@@ -387,6 +389,7 @@ export async function fetchPackages(params: {
     if (params.category) url.searchParams.set("category", params.category);
     if (params.topic) url.searchParams.set("topic", params.topic);
     if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+    if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
     return await fetchJson<{
       results: Array<{
         score: number;
@@ -412,6 +415,7 @@ export async function fetchPackages(params: {
   if (params.category) url.searchParams.set("category", params.category);
   if (params.topic) url.searchParams.set("topic", params.topic);
   if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
   if (params.excludedScanStatuses?.length) {
     url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }
@@ -434,6 +438,7 @@ export async function fetchPluginCatalog(params: {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  curated?: boolean;
   excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
   sort?: PackageCatalogSort;
   limit?: number;
@@ -451,6 +456,7 @@ export async function fetchPluginCatalog(params: {
       category: params.category,
       topic: params.topic,
       officialFirst: params.officialFirst,
+      curated: params.curated,
       excludedScanStatuses: params.excludedScanStatuses,
       sort: params.sort,
       limit: params.limit,
@@ -511,6 +517,7 @@ export async function fetchPluginCatalog(params: {
   if (params.category) url.searchParams.set("category", params.category);
   if (params.topic) url.searchParams.set("topic", params.topic);
   if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
   if (params.excludedScanStatuses?.length) {
     url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }

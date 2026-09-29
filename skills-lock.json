@@ -79,6 +79,12 @@
       "skillPath": "skills/spl-to-apl/SKILL.md",
       "computedHash": "4bc60dd19ea863e38b3f0d40a9c03e20e90451727f098c659bd48405d5744f4d"
     },
+    "vercel-cli": {
+      "source": "vercel/vercel",
+      "sourceType": "github",
+      "skillPath": "skills/vercel-cli/SKILL.md",
+      "computedHash": "bc312e5c407c79c264503ef588613ee697508636b8e6ba76ee2585979b49ba2b"
+    },
     "writing-evals": {
       "source": "axiomhq/skills",
       "sourceType": "github",

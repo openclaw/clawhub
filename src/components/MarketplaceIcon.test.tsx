@@ -1,8 +1,68 @@
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 
 describe("MarketplaceIcon", () => {
+  const openclawIcon =
+    "/api/v1/skill-icons/79e24bf179e94e005912591a67ecdf30f04df50204ff5fa5fed06a8e8eb88532";
+
+  it.each(["xs", "sm", "md"] as const)(
+    "insets the shared OpenClaw plugin artwork at %s size",
+    (size) => {
+      const { container } = render(
+        <MarketplaceIcon
+          kind="plugin"
+          label="Lobster"
+          imageUrl={openclawIcon}
+          size={size}
+          tone="muted"
+        />,
+      );
+      expect(container.querySelector(".marketplace-icon-openclaw img")?.getAttribute("src")).toBe(
+        openclawIcon,
+      );
+    },
+  );
+
+  it("does not inset unrelated plugin logos, publisher avatars, or skill icons", () => {
+    const { container, rerender } = render(
+      <MarketplaceIcon
+        kind="plugin"
+        label="Lobster"
+        imageUrl={"/api/v1/skill-icons/" + "a".repeat(64)}
+      />,
+    );
+    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
+    rerender(
+      <MarketplaceIcon
+        kind="plugin"
+        label="OpenClaw"
+        publisherImageUrl="https://example.com/avatar.png"
+      />,
+    );
+    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
+    rerender(<MarketplaceIcon kind="skill" label="Lobster" imageUrl={openclawIcon} />);
+    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
+  });
+
+  it("removes the artwork treatment when the image fails or changes", () => {
+    const { container, rerender } = render(
+      <MarketplaceIcon kind="plugin" label="Lobster" imageUrl={openclawIcon} />,
+    );
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
+    expect(container.querySelector(".marketplace-icon-glyph")).toBeTruthy();
+    rerender(
+      <MarketplaceIcon
+        kind="plugin"
+        label="Lobster"
+        imageUrl={"/api/v1/skill-icons/" + "b".repeat(64)}
+      />,
+    );
+    expect(container.querySelector("img")).toBeTruthy();
+    expect(container.querySelector(".marketplace-icon-openclaw")).toBeNull();
+  });
+
   it("renders hosted skill icons before the category fallback", () => {
     const imageUrl = `/api/v1/skill-icons/${"a".repeat(64)}`;
     const { container } = render(

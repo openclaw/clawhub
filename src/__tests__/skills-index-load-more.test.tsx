@@ -71,28 +71,16 @@ describe("SkillsIndex load-more observer", () => {
     vi.unstubAllGlobals();
   });
 
-  it("loads the next canonical page only after an explicit click and preserves API order", async () => {
-    fetchCanonicalTrendingPageMock
+  it("loads the next catalog page only after an explicit click and preserves API order", async () => {
+    convexHttpMock.query
       .mockResolvedValueOnce({
-        kind: "skills",
-        snapshotId: "snapshot-1",
-        snapshotCursor: "snapshot-cursor",
-        generatedAt: "2026-07-26T00:00:00.000Z",
-        windowHours: 24,
-        rankingVersion: "skills-trending-v1",
-        totalItems: 2,
-        items: [makeTrendingResult("first", "First", 9)],
+        page: [makeListResult("first", "First", 9)],
+        hasMore: true,
         nextCursor: "opaque cursor 2",
       })
       .mockResolvedValueOnce({
-        kind: "skills",
-        snapshotId: "snapshot-1",
-        snapshotCursor: "snapshot-cursor",
-        generatedAt: "2026-07-26T00:00:00.000Z",
-        windowHours: 24,
-        rankingVersion: "skills-trending-v1",
-        totalItems: 2,
-        items: [makeTrendingResult("second", "Second", 4)],
+        page: [makeListResult("second", "Second", 4)],
+        hasMore: false,
         nextCursor: null,
       });
     render(<SkillsIndex />);
@@ -100,16 +88,20 @@ describe("SkillsIndex load-more observer", () => {
 
     expect(screen.getByText("First")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
-    expect(fetchCanonicalTrendingPageMock).toHaveBeenCalledTimes(1);
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
-    expect(fetchCanonicalTrendingPageMock).toHaveBeenNthCalledWith(2, {
-      cursor: "opaque cursor 2",
-      limit: 20,
-    });
+    expect(convexHttpMock.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        cursor: "opaque cursor 2",
+        numItems: 20,
+      }),
+    );
     expect([
       screen.getByTitle("First").textContent,
       screen.getByTitle("Second").textContent,
@@ -117,29 +109,19 @@ describe("SkillsIndex load-more observer", () => {
   });
 });
 
-function makeTrendingResult(slug: string, displayName: string, installs: number) {
+function makeListResult(slug: string, displayName: string, downloads: number) {
   return {
-    id: `clawhub:${slug}`,
-    source: "clawhub" as const,
-    slug,
-    displayName,
-    summary: `${displayName} summary`,
-    canonicalUrl: `/owner/${slug}`,
-    publisher: {
-      kind: "user" as const,
-      handle: "owner",
-      displayName: "Owner",
-      image: null,
-      official: false,
-    },
-    official: false,
-    featured: false,
-    metrics: {
-      trending24hInstalls: installs,
-      trending24hBookmarks: null,
-      lifetimeInstalls: 1000,
-      lifetimeInstallsPeriod: "lifetime" as const,
+    skill: {
+      _id: `skill_${slug}`,
+      slug,
+      displayName,
+      summary: `${displayName} summary`,
+      tags: {},
+      stats: { downloads, stars: 0, installs: 0, versions: 1, comments: 0 },
+      createdAt: 1,
       updatedAt: 1,
     },
+    latestVersion: null,
+    ownerHandle: "owner",
   };
 }

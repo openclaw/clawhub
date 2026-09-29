@@ -1,6 +1,7 @@
 import { api } from "../../convex/_generated/api";
 import { FEATURED_CATALOG_SIZE } from "../../convex/lib/featuredPolicy";
 import { convexHttp } from "../convex/client";
+import type { SkillSearchEntry } from "../routes/skills/-types";
 import { fetchCatalogDiscoveryCapabilities } from "./catalogDiscoveryCapabilities";
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
@@ -25,7 +26,10 @@ type HomeTrendingSkillListingEntry = {
   trending: CanonicalTrendingItem;
 };
 
-export type HomeSkillListingEntry = HomeNativeSkillListingEntry | HomeTrendingSkillListingEntry;
+export type HomeSkillListingEntry =
+  | HomeNativeSkillListingEntry
+  | HomeTrendingSkillListingEntry
+  | { external: SkillSearchEntry };
 
 export function isHomeTrendingSkillEntry(
   entry: HomeSkillListingEntry,
@@ -186,6 +190,24 @@ export async function searchHomeTrendingSkillListing(
   };
 }
 
+export async function fetchHomeFeaturedSkillListing(
+  categorySlugs: readonly string[],
+  numItems: number,
+  query?: string,
+) {
+  const result = await convexHttp.query(api.featuredSkills.listPublic, { query });
+  const items: HomeSkillListingEntry[] = result.page.filter((entry) =>
+    "external" in entry
+      ? itemMatchesAnyHomeCategory(entry, categorySlugs)
+      : skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
+  );
+  return {
+    page: items.slice(0, numItems),
+    hasMore: items.length > numItems,
+    trendingState: undefined,
+  };
+}
+
 export async function fetchHomeSkillListing(
   tab: HomeListingTab,
   categorySlugs: readonly string[],
@@ -235,15 +257,7 @@ export async function fetchHomeSkillListing(
   }
 
   if (tab === "featured") {
-    // Filter the finite published selection once, preserving order across categories.
-    const result = await convexHttp.query(api.skills.listPublicPageV4, {
-      numItems: FEATURED_CATALOG_SIZE,
-      highlightedOnly: true,
-    });
-    const items = result.page.filter((entry) =>
-      skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
-    );
-    return { page: items.slice(0, numItems), hasMore: items.length > numItems };
+    return fetchHomeFeaturedSkillListing(categorySlugs, numItems);
   }
   const capabilities =
     tab === "new" ? await fetchCatalogDiscoveryCapabilities() : { apiVersion: 1 as const };
@@ -308,11 +322,14 @@ export async function fetchHomeSkillListing(
 }
 
 export async function fetchHomePluginListing(
-  tab: Exclude<HomeListingTab, "trending">,
+  tab: HomeListingTab,
   categorySlugs: readonly string[],
   limit: number,
   signal?: AbortSignal,
 ) {
+  if (tab === "trending") {
+    return fetchHomeTrendingPluginListing(limit, signal);
+  }
   if (tab === "featured") {
     const result = await fetchPluginCatalog({
       featured: true,
@@ -438,23 +455,60 @@ export async function fetchHomePluginListing(
       return { items, hasMore };
     }),
   );
-  const items = uniqueHomePlugins(results.flatMap((result) => result.items)).sort((left, right) => {
-    return right.updatedAt - left.updatedAt;
-  });
+  const items = uniqueHomePlugins(results.flatMap((result) => result.items)).sort(
+    (left, right) => right.updatedAt - left.updatedAt,
+  );
   return {
     items: items.slice(0, limit),
     hasMore: items.length > limit || results.some((result) => result.hasMore),
   };
 }
 
+export async function fetchHomeTrendingPluginListing(
+  limit: number,
+  signal?: AbortSignal,
+  query = "",
+) {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const items: PackageListItem[] = [];
+  let cursor: string | undefined;
+  let hasMore = false;
+  do {
+    signal?.throwIfAborted();
+    // The backend caps this leaderboard at 200 entries. Filter it in place:
+    // catalog search uses relevance order and includes non-trending plugins.
+    const result = await fetchPluginCatalog({
+      sort: "trending",
+      cursor,
+      limit: tokens.length
+        ? PLUGIN_CATALOG_PAGE_LIMIT
+        : Math.min(HOME_LISTING_PAGE_SIZE, limit - items.length),
+      signal,
+    });
+    items.push(
+      ...result.items.filter((item) => {
+        const text = [item.name, item.displayName, item.summary, item.ownerHandle]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return tokens.every((token) => text.includes(token));
+      }),
+    );
+    hasMore = Boolean(result.nextCursor && result.nextCursor !== cursor);
+    if (!hasMore) break;
+    cursor = result.nextCursor ?? undefined;
+  } while (items.length < limit);
+  return { items: items.slice(0, limit), hasMore: items.length > limit || hasMore };
+}
+
 export async function fetchInitialHomeListing(): Promise<HomeListingInitialData> {
-  const result = await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);
+  const result = await fetchHomePluginListing("featured", [], HOME_LISTING_PAGE_SIZE);
   return {
-    kind: "skills",
+    kind: "plugins",
     tab: "featured",
     categorySlugs: [],
     fetchLimit: HOME_LISTING_PAGE_SIZE,
-    items: result.page,
+    items: result.items,
     hasMore: result.hasMore,
   };
 }

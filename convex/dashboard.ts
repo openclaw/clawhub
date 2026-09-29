@@ -171,11 +171,13 @@ export const getDownloadMetrics = query({
   handler: async (ctx, args) => {
     const userId = await getOptionalActiveAuthUserId(ctx);
     if (!userId) throw new ConvexError("Unauthorized");
+    const user = await ctx.db.get(userId);
     const publisher = await ctx.db.get(args.publisherId);
     const canAccess = await canAccessPublisherOwnerScope(ctx, {
       publisher,
       userId,
-      legacyOwnerUserId: userId,
+      // Legacy ownership comes from the stored account link, never the caller alone.
+      legacyOwnerUserId: user?.personalPublisherId === args.publisherId ? userId : undefined,
     });
     if (!publisher || !canAccess) throw new ConvexError("Forbidden");
 

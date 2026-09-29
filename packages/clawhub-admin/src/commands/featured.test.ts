@@ -26,6 +26,26 @@ afterEach(() => {
 });
 
 describe("featured catalog commands", () => {
+  it("features an exact skills.sh identity through the authenticated catalog API", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      featured: true,
+      slug: "show-me",
+      ownerHandle: "humanlayer",
+      externalId: "humanlayer/skills/show-me",
+    });
+    await cmdSetSkillFeatured(makeGlobalOpts(), "skills-sh:humanlayer/skills/show-me", true);
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills-sh/humanlayer/skills/show-me/featured",
+        token: "tkn",
+        body: { featured: true },
+      }),
+      undefined,
+    );
+  });
   it("features a plugin through the moderator API", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,

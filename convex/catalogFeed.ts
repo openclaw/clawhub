@@ -27,6 +27,7 @@ import { experimentalClawsEnabled } from "./lib/experimentalClaws";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { getOwnerPublisher } from "./lib/publishers";
 import { isSecurityScanStatusCompletedNonBlocked } from "./lib/securityScanPolicy";
@@ -140,7 +141,7 @@ async function buildEntry(
 ): Promise<CatalogFeedPluginEntry | ExperimentalClawFeedEntry | null> {
   if (pkg.softDeletedAt || pkg.channel !== "official" || !pkg.latestReleaseId) return null;
   const release = await ctx.db.get(pkg.latestReleaseId);
-  if (!release || release.packageId !== pkg._id || release.softDeletedAt) return null;
+  if (!isPublishedPackageRelease(release, pkg._id)) return null;
 
   // Keep ClawHub on RFC 19's canonical feed entry shape. OpenClaw's staged
   // consumer must land its legacy-catalog adapter before this URL is enabled.

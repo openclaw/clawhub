@@ -25,6 +25,7 @@ describe("catalog metadata", () => {
       "context",
       "voice",
       "web",
+      "computer-use",
       "media",
       "security",
       "integrations",
