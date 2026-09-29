@@ -26,7 +26,11 @@ import {
   pluginCategoryCorrectionValidator,
   pluginCategoryReviewProvenanceValidator,
 } from "./lib/pluginCategoryClassificationContract";
-import { categoryReviewPayload, validateCategoryCorrections } from "./lib/pluginCategoryReview";
+import {
+  categoryReviewPayload,
+  validateCategoryCorrections,
+  validateCategoryPackageNames,
+} from "./lib/pluginCategoryReview";
 import { pluginManifestSummaryValidator } from "./schema";
 
 const bundledAssignments = new Map(
@@ -190,8 +194,33 @@ export const getEvidence = internalQuery({
 });
 
 export const getPage = internalQuery({
-  args: { cursor: v.optional(v.string()), batchSize: v.number() },
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.number(),
+    packageNames: v.optional(v.array(v.string())),
+  },
   handler: async (ctx, args) => {
+    if (args.packageNames !== undefined) {
+      if (args.cursor !== undefined)
+        throw new ConvexError("Named package selection cannot include a cursor.");
+      const names = validateCategoryPackageNames(args.packageNames);
+      const packages = await Promise.all(
+        names.map((name) =>
+          ctx.db
+            .query("packages")
+            .withIndex("by_name", (q) => q.eq("normalizedName", name))
+            .unique(),
+        ),
+      );
+      const ids = packages.map((pkg, index) => {
+        if (!pkg || (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin"))
+          throw new ConvexError(
+            `Named selection requires an existing plugin package: ${names[index]}`,
+          );
+        return pkg._id;
+      });
+      return { ids, cursor: "", isDone: true };
+    }
     const page = await ctx.db
       .query("packages")
       .order("asc")
@@ -293,7 +322,12 @@ async function readRefreshManifests(
 
 /** One bounded page per call; the returned cursor resumes without replacing reviewed rows. */
 export const preview = internalAction({
-  args: { runId: v.string(), cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  args: {
+    runId: v.string(),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    packageNames: v.optional(v.array(v.string())),
+  },
   handler: async (
     ctx,
     args,
@@ -312,6 +346,7 @@ export const preview = internalAction({
     const page = await ctx.runQuery(internal.pluginCategoryRefresh.getPage, {
       cursor: args.cursor,
       batchSize: args.batchSize ?? 10,
+      packageNames: args.packageNames,
     });
     let previewed = 0;
     let skipped = 0;

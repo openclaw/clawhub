@@ -200,7 +200,7 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "COMSPEC",
   "PATHEXT",
 ] as const;
-// ClawScan's judge and A.I.G require these provider aliases. The pinned scanner
+// ClawScan's judge and scanners require these provider settings. The pinned scanner
 // process is the trust boundary; never add worker tokens or ambient endpoints.
 const SCANNER_PROVIDER_ENV_KEYS = [
   "CODEX_API_KEY",
@@ -208,6 +208,9 @@ const SCANNER_PROVIDER_ENV_KEYS = [
   "DEFAULT_MODEL",
   "LLM_API_KEY",
   "OPENAI_API_KEY",
+  "REASONING_EFFORT",
+  "SKILLSPECTOR_MODEL",
+  "SKILLSPECTOR_REASONING_EFFORT",
 ] as const;
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;

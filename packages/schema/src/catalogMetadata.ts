@@ -70,7 +70,14 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     label: "Web",
     icon: "globe",
     description:
-      "General web search, browser control, and fetching web pages. A tool whose main purpose is a specific research or business workflow belongs in that workflow's category.",
+      "General web search, fetching, crawling, and extracting web content. Interactive browser control belongs in Computer use. A tool whose main purpose is a specific research or business workflow belongs in that workflow's category.",
+  },
+  {
+    slug: "computer-use",
+    label: "Computer use",
+    icon: "monitor",
+    description:
+      "Controlling desktop and browser interfaces through navigation, clicks, typing, and screenshots. Web search and content extraction belong in Web; hosting execution environments belongs in Infrastructure; participating in meetings belongs in Voice.",
   },
   {
     slug: "media",

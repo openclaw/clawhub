@@ -22,6 +22,7 @@ const tempDirs: string[] = [];
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
 });
 
@@ -802,6 +803,7 @@ printf '%s\n' "\${SECURITY_SCAN_WORKER_TOKEN-}" > "${workspace}/clawscan-worker-
 printf '%s\n' "\${DEFAULT_BASE_URL-}" > "${workspace}/clawscan-default-base-url.txt"
 printf '%s\n' "\${OPENAI_BASE_URL-}" > "${workspace}/clawscan-openai-base-url.txt"
 printf '%s\n' "\${OPENAI_API_KEY-}" > "${workspace}/clawscan-provider-key.txt"
+printf '%s\n' "\${DEFAULT_MODEL-}" "\${REASONING_EFFORT-}" "\${SKILLSPECTOR_MODEL-}" "\${SKILLSPECTOR_REASONING_EFFORT-}" > "${workspace}/clawscan-model-settings.txt"
 output=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output" ]; then
@@ -828,6 +830,10 @@ JSON
     process.env.DEFAULT_BASE_URL = "https://api.openai.com/v1";
     process.env.OPENAI_BASE_URL = "https://unapproved.example.invalid/v1";
     process.env.OPENAI_API_KEY = "mock-provider-key";
+    vi.stubEnv("DEFAULT_MODEL", "gpt-6-luna");
+    vi.stubEnv("REASONING_EFFORT", "high");
+    vi.stubEnv("SKILLSPECTOR_MODEL", "gpt-6-luna");
+    vi.stubEnv("SKILLSPECTOR_REASONING_EFFORT", "high");
 
     try {
       await expect(
@@ -878,6 +884,9 @@ JSON
         "mock-provider-key\n",
       );
       expect(process.env.SECURITY_SCAN_WORKER_TOKEN).toBe("mock-completion-token");
+      expect(await readFile(join(workspace, "clawscan-model-settings.txt"), "utf8")).toBe(
+        "gpt-6-luna\nhigh\ngpt-6-luna\nhigh\n",
+      );
     } finally {
       if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
       else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;

@@ -2249,7 +2249,7 @@ code {
 
 .static-analysis-finding-details > div {
   display: grid;
-  align-items: center;
+  align-items: start;
   grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
   gap: clamp(18px, 3.5vw, 52px);
   padding: 12px 0;
@@ -2276,14 +2276,50 @@ code {
   line-height: 1.55;
 }
 
-.aig-finding-copy {
+.skill-spector-evidence {
   display: grid;
-  gap: 4px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.aig-finding-copy strong {
+.skill-spector-evidence-meta {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.skill-spector-evidence-meta span {
+  display: block;
+}
+
+.aig-finding-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
   color: var(--ink);
   font-weight: 650;
+}
+
+.aig-finding-location {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.aig-finding-details .markdown-report {
+  max-width: 76ch;
+}
+
+.security-report-disclosure summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.security-report-disclosure > .markdown-report {
+  margin-top: 12px;
 }
 
 @media (max-width: 1100px) {
@@ -3351,9 +3387,18 @@ code {
 
 .skill-summary-line {
   margin-bottom: 0;
+  overflow-wrap: anywhere;
 }
 
-.skill-summary-line .skill-summary-inline-code {
+.skill-summary-line a,
+.plugin-summary a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.skill-summary-line .skill-summary-inline-code,
+.plugin-summary .skill-summary-inline-code {
   padding: 0.12em 0.35em;
   border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--surface-muted) 74%, var(--ink) 6%);
@@ -3362,6 +3407,32 @@ code {
   -webkit-box-decoration-break: clone;
   font-size: 0.88em;
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* A sibling detail link keeps the full preview clickable without nesting summary links. */
+.plugin-summary-item {
+  position: relative;
+}
+
+.plugin-summary-item > .plugin-detail-link {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+}
+
+.plugin-summary-item > :not(.plugin-detail-link) {
+  position: relative;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.plugin-summary a {
+  pointer-events: auto;
+}
+
+.plugin-summary {
   overflow-wrap: anywhere;
 }
 
@@ -13685,6 +13756,50 @@ a.skills-sh-security-audit-row:focus-visible {
   word-break: normal;
 }
 
+/* Scanner reports are nested content, not full-size README documents. */
+.markdown.markdown-report {
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.markdown.markdown-report :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1em 0 0.4em;
+  padding: 0;
+  border: 0;
+  font-family: inherit;
+  font-size: 1em;
+  font-weight: 650;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.markdown.markdown-report :is(p, ul, ol, blockquote, table, .markdown-code-block) {
+  margin-block: 0.65em;
+}
+
+.markdown.markdown-report > :first-child {
+  margin-top: 0;
+}
+
+.markdown.markdown-report > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown.markdown-report li {
+  margin-bottom: 0.25em;
+}
+
+.markdown.markdown-report strong {
+  color: var(--ink);
+}
+
+.markdown.markdown-report pre {
+  font-size: 0.75rem;
+}
+
 .markdown pre {
   white-space: pre;
   max-width: 100%;
@@ -18811,6 +18926,37 @@ body:has(.browse-page-borderless-header) .navbar {
   flex-direction: column;
   gap: 10px;
   margin-bottom: 28px;
+}
+
+/* Category catalogs keep search visible without a separate action toolbar. */
+.catalog-browse-page .browse-page-header {
+  margin-bottom: var(--oc-space-3);
+}
+
+.catalog-browse-page .browse-controls {
+  gap: var(--oc-space-3);
+  margin-bottom: var(--oc-space-4);
+}
+
+.catalog-browse-page .browse-search-control {
+  order: 0;
+  width: 100%;
+  min-height: 56px;
+  padding: var(--oc-space-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--oc-border-strong);
+  border-radius: 0;
+  background: transparent;
+}
+
+.catalog-browse-page .browse-search-control:focus-within {
+  border-color: var(--oc-focus-ring);
+  box-shadow: none;
+}
+
+.catalog-browse-page .browse-category-select {
+  order: 0;
+  width: 100%;
 }
 
 .browse-controls-row {
@@ -34346,4 +34492,46 @@ a[class*="rounded-full"] {
   .featured-editorial .search-insights-header {
     flex-wrap: wrap;
   }
+}
+
+/* Shared compact skill rows on the homepage and Featured browse page. */
+.skill-listing-head,
+.home-v2-listing-row.skill-listing-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  column-gap: 20px;
+  padding-inline: 4px;
+}
+
+.skill-listing-head {
+  padding-block: 0 10px;
+  border-bottom: 1px solid var(--oc-border-subtle);
+  color: var(--oc-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.home-v2-listing-row.skill-listing-row {
+  --hv2-text: var(--oc-text-primary);
+  --hv2-text-secondary: var(--oc-text-secondary);
+  --hv2-text-tertiary: var(--oc-text-muted);
+  --hv2-border: var(--oc-border-subtle);
+  min-height: 48px;
+}
+
+.skill-listing-row .home-v2-listing-row-body {
+  max-width: none;
+}
+
+.skill-listing-row .home-v2-listing-row-name {
+  flex-shrink: 0;
+  max-width: 75%;
+}
+
+.skill-listing-row .home-v2-listing-row-stats {
+  grid-column: 2;
+  gap: 10px;
+  min-width: 0;
 }

@@ -1039,7 +1039,10 @@ function registerSkillModerationCommands(command: Command) {
 
 function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
   const label = kind === "plugin" ? "plugin" : "skill";
-  const argument = kind === "plugin" ? "Plugin package name" : "Skill ref, optionally @owner/slug";
+  const argument =
+    kind === "plugin"
+      ? "Plugin package name"
+      : "Skill ref: @owner/slug or skills-sh:owner/repo/slug";
 
   for (const [name, featured] of [
     ["feature", true],

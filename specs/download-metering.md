@@ -78,3 +78,9 @@ The metric capability retains its original 30-second lifetime. A healthy archive
 can finish after that lifetime, but its best-effort metric is then rejected as
 expired. Download completion never depends on metric acceptance; do not extend
 the capability or reuse expired tokens to compensate for slow downloads.
+
+Dashboard metrics require current publisher ownership. A personal publisher without
+`linkedUserId` is accessible only when the authenticated active user's stored
+`personalPublisherId` matches the requested publisher. Supplying the caller's ID
+is not evidence of legacy ownership. A current `linkedUserId` takes precedence
+over that legacy link, and organization access follows current membership.

@@ -110,7 +110,7 @@ const CHILD_RUNTIME_ENV_KEYS = [
   "COMSPEC",
   "PATHEXT",
 ] as const;
-// ClawScan's judge and A.I.G require these provider aliases. The pinned scanner
+// ClawScan's judge and scanners require these provider settings. The pinned scanner
 // process is the trust boundary; never add worker tokens or ambient endpoints.
 const CLAWSCAN_PROVIDER_ENV_KEYS = [
   "CODEX_API_KEY",
@@ -118,6 +118,9 @@ const CLAWSCAN_PROVIDER_ENV_KEYS = [
   "DEFAULT_MODEL",
   "LLM_API_KEY",
   "OPENAI_API_KEY",
+  "REASONING_EFFORT",
+  "SKILLSPECTOR_MODEL",
+  "SKILLSPECTOR_REASONING_EFFORT",
 ] as const;
 const logger = createWorkerLogger({ name: "prepublication-worker" });
 

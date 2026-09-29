@@ -8,6 +8,7 @@ import {
   buildSecurityAuditExportZip,
   type StaticScan,
 } from "../lib/securityAuditExport";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { ScannerInfoTooltip } from "./ScannerInfoTooltip";
 import {
   aggregateAuditVerdict,
@@ -636,24 +637,45 @@ function AigFindingCard({ finding }: { finding: AigAnalysis["findings"][number] 
           <ScanResultBadge status={finding.level} label={formatStaticScanSeverity(finding.level)} />
         </div>
       </div>
-      <dl className="static-analysis-finding-details">
+      <dl className="static-analysis-finding-details aig-finding-details">
         {location ? (
           <div>
             <dt>Location</dt>
-            <dd>{location}</dd>
+            <dd>
+              <code className="aig-finding-location">{location}</code>
+            </dd>
           </div>
         ) : null}
         <div>
           <dt>Finding</dt>
-          <dd className="aig-finding-copy">
-            {findingTitle ? <strong>{findingTitle}</strong> : null}
-            {findingDescription !== findingTitle ? <span>{findingDescription}</span> : null}
+          <dd>
+            {findingTitle ? (
+              <p className="aig-finding-title">{findingTitle}</p>
+            ) : (
+              <MarkdownPreview variant="report">{fallbackDescription}</MarkdownPreview>
+            )}
           </dd>
         </div>
+        {findingDescription !== (findingTitle || fallbackDescription) ? (
+          <div>
+            <dt>Content</dt>
+            <dd>
+              <details className="security-report-disclosure">
+                <summary>View full analysis</summary>
+                <MarkdownPreview variant="report">{findingDescription}</MarkdownPreview>
+              </details>
+            </dd>
+          </div>
+        ) : null}
         {finding.remediation?.trim() ? (
           <div>
             <dt>Remediation</dt>
-            <dd>{finding.remediation}</dd>
+            <dd>
+              <details className="security-report-disclosure">
+                <summary>View remediation</summary>
+                <MarkdownPreview variant="report">{finding.remediation}</MarkdownPreview>
+              </details>
+            </dd>
           </div>
         ) : null}
       </dl>
@@ -831,11 +853,8 @@ function extractLineRangeFromFile(content: string, startLine: number, endLine?: 
   if (!Number.isFinite(startLine) || startLine < 1) return null;
   const lines = content.split(/\r?\n/);
   const start = Math.floor(startLine);
-  const end = Math.max(start, Math.min(Math.floor(endLine ?? start), start + 12));
-  const value = lines
-    .slice(start - 1, end)
-    .map((line) => line.trimEnd())
-    .join("\n");
+  const end = Math.max(start, Math.floor(endLine ?? start));
+  const value = lines.slice(start - 1, end).join("\n");
   return value.trim() ? value : null;
 }
 

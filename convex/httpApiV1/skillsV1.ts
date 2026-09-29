@@ -417,6 +417,9 @@ const internalRefs = internal as unknown as {
     resolveSkillAppealForUserInternal: unknown;
     setSkillFeaturedForUserInternal: unknown;
   };
+  publishers: {
+    canAccessOwnerScopeInternal: unknown;
+  };
 };
 
 async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
@@ -1637,6 +1640,31 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
   return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
 }
 
+async function isCurrentSkillHttpOwner(
+  ctx: ActionCtx,
+  apiTokenUserId: Id<"users"> | string | null | undefined,
+  skill:
+    | {
+        ownerUserId?: Id<"users"> | string;
+        ownerPublisherId?: Id<"publishers"> | string | null;
+      }
+    | null
+    | undefined,
+): Promise<boolean> {
+  if (!apiTokenUserId || !skill?.ownerUserId) return false;
+  if (!skill.ownerPublisherId) {
+    return skill.ownerUserId === apiTokenUserId;
+  }
+  return Boolean(
+    await runQueryRef(ctx, internalRefs.publishers.canAccessOwnerScopeInternal, {
+      publisherId: skill.ownerPublisherId,
+      userId: apiTokenUserId,
+      allowedPublisherRoles: ["publisher"],
+      legacyOwnerUserId: skill.ownerUserId,
+    }),
+  );
+}
+
 async function describeOwnerVisibleSkillState(
   ctx: ActionCtx,
   request: Request,
@@ -1650,8 +1678,7 @@ async function describeOwnerVisibleSkillState(
   if (!skill) return null;
 
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
-  const isOwner = Boolean(apiTokenUserId && apiTokenUserId === skill.ownerUserId);
-  if (!isOwner) return null;
+  if (!(await isCurrentSkillHttpOwner(ctx, apiTokenUserId, skill))) return null;
 
   if (skill.softDeletedAt) {
     return {
@@ -2054,9 +2081,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     }
 
     const hiddenSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, skillLookupArgs);
-    const isOwner = Boolean(
-      apiTokenUserId && hiddenSkill && apiTokenUserId === hiddenSkill.ownerUserId,
-    );
+    const isOwner = await isCurrentSkillHttpOwner(ctx, apiTokenUserId, hiddenSkill);
 
     const result = (await ctx.runQuery(api.skills.getBySlug, skillLookupArgs)) as GetBySlugResult;
     if (!result?.skill) {

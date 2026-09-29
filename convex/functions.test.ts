@@ -171,142 +171,163 @@ describe("package digest sync", () => {
     );
   });
 
-  it("repoints packages to the highest-version active release and restores its summary", async () => {
-    const pkg = {
-      _id: "packages:demo",
-      _creationTime: 1,
-      name: "demo-plugin",
-      normalizedName: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      ownerUserId: "users:owner",
-      summary: "latest summary",
-      categories: ["models"],
-      tags: {
-        latest: "packageReleases:demo-2",
-        stable: "packageReleases:demo-2",
-      },
-      latestReleaseId: "packageReleases:demo-2",
-      latestVersionSummary: { version: "2.0.0" },
-      compatibility: { openclaw: "^2.0.0" },
-      verification: { tier: "community" },
-      runtimeId: null,
-      softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 2,
-    };
-    const fallbackRelease = {
-      _id: "packageReleases:demo-1",
-      _creationTime: 10,
-      packageId: "packages:demo",
-      version: "1.0.0",
-      changelog: "old stable",
-      summary: "stable summary",
-      compatibility: { openclaw: "^1.0.0" },
-      verification: { tier: "verified" },
-      distTags: ["stable"],
-      createdAt: 10,
-      softDeletedAt: undefined,
-    };
-    const legacyHotfixRelease = {
-      _id: "packageReleases:demo-legacy",
-      _creationTime: 20,
-      packageId: "packages:demo",
-      version: "0.9.9",
-      changelog: "legacy hotfix",
-      summary: "legacy summary",
-      compatibility: { openclaw: "^0.9.0" },
-      verification: { tier: "verified" },
-      distTags: ["legacy"],
-      createdAt: 20,
-      softDeletedAt: undefined,
-    };
-    const owner = {
-      _id: "users:owner",
-      handle: "owner",
-      deletedAt: undefined,
-      deactivatedAt: undefined,
-    };
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "packages:demo") return pkg;
-          if (id === "packageReleases:demo-1") return fallbackRelease;
-          if (id === "users:owner") return owner;
-          return null;
-        }),
-        query: vi.fn((table: string) => {
-          if (table === "packageReleases") {
-            return {
-              withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  paginate: vi.fn().mockResolvedValue({
-                    page: [legacyHotfixRelease, fallbackRelease],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                })),
-              })),
-            };
-          }
-          if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-                collect: vi.fn().mockResolvedValue([]),
-              })),
-            };
-          }
-          if (
-            table === "packageCapabilitySearchDigest" ||
-            table === "packageTopicSearchDigest" ||
-            table === "packagePluginCategorySearchDigest"
-          ) {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-                collect: vi.fn().mockResolvedValue([]),
-              })),
-            };
-          }
-          throw new Error(`Unexpected table ${table}`);
-        }),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        delete: vi.fn(),
-      },
-    };
-
-    await repointPackageLatestRelease(
-      ctx as never,
-      "packages:demo" as never,
-      "packageReleases:demo-2" as never,
-    );
-
-    expect(ctx.db.patch).toHaveBeenCalledWith("packageReleases:demo-1", {
-      distTags: ["stable", "latest"],
-    });
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "packages:demo",
-      expect.objectContaining({
-        latestReleaseId: "packageReleases:demo-1",
-        tags: { latest: "packageReleases:demo-1" },
-        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
+  it.each([
+    {},
+    { publicationStatus: "pending" },
+    { publicationStatus: "blocked" },
+    { ownerDeletedAt: 0 },
+  ])(
+    "repoints packages to a published release, skipping unavailable siblings: %j",
+    async (unavailable) => {
+      const pkg = {
+        _id: "packages:demo",
+        _creationTime: 1,
+        name: "demo-plugin",
+        normalizedName: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:owner",
+        summary: "latest summary",
+        categories: ["models"],
+        tags: {
+          latest: "packageReleases:demo-2",
+          stable: "packageReleases:demo-2",
+        },
+        latestReleaseId: "packageReleases:demo-2",
+        latestVersionSummary: { version: "2.0.0" },
+        compatibility: { openclaw: "^2.0.0" },
+        verification: { tier: "community" },
+        runtimeId: null,
+        softDeletedAt: undefined,
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const fallbackRelease = {
+        _id: "packageReleases:demo-1",
+        _creationTime: 10,
+        packageId: "packages:demo",
+        version: "1.0.0",
+        changelog: "old stable",
         summary: "stable summary",
-        categories: undefined,
-      }),
-    );
-    expect(ctx.db.insert).toHaveBeenCalledWith(
-      "packageSearchDigest",
-      expect.objectContaining({
-        latestVersion: "1.0.0",
-        categories: ["other"],
-        ownerHandle: "owner",
-      }),
-    );
-  });
+        compatibility: { openclaw: "^1.0.0" },
+        verification: { tier: "verified" },
+        distTags: ["stable"],
+        createdAt: 10,
+        softDeletedAt: undefined,
+      };
+      const legacyHotfixRelease = {
+        _id: "packageReleases:demo-legacy",
+        _creationTime: 20,
+        packageId: "packages:demo",
+        version: "0.9.9",
+        changelog: "legacy hotfix",
+        summary: "legacy summary",
+        compatibility: { openclaw: "^0.9.0" },
+        verification: { tier: "verified" },
+        distTags: ["legacy"],
+        createdAt: 20,
+        softDeletedAt: undefined,
+      };
+      const owner = {
+        _id: "users:owner",
+        handle: "owner",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+      };
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return pkg;
+            if (id === "packageReleases:demo-1") return fallbackRelease;
+            if (id === "users:owner") return owner;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReleases") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    paginate: vi.fn().mockResolvedValue({
+                      page: [
+                        legacyHotfixRelease,
+                        fallbackRelease,
+                        ...(Object.keys(unavailable).length
+                          ? [
+                              {
+                                ...fallbackRelease,
+                                _id: "packageReleases:unavailable",
+                                version: "9.0.0",
+                                ...unavailable,
+                              },
+                            ]
+                          : []),
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    }),
+                  })),
+                })),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          patch: vi.fn(),
+          insert: vi.fn(),
+          delete: vi.fn(),
+        },
+      };
+
+      await repointPackageLatestRelease(
+        ctx as never,
+        "packages:demo" as never,
+        "packageReleases:demo-2" as never,
+      );
+
+      expect(ctx.db.patch).toHaveBeenCalledWith("packageReleases:demo-1", {
+        distTags: ["stable", "latest"],
+      });
+      expect(ctx.db.patch).toHaveBeenCalledWith(
+        "packages:demo",
+        expect.objectContaining({
+          latestReleaseId: "packageReleases:demo-1",
+          tags: { latest: "packageReleases:demo-1" },
+          latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
+          summary: "stable summary",
+          categories: undefined,
+        }),
+      );
+      expect(ctx.db.insert).toHaveBeenCalledWith(
+        "packageSearchDigest",
+        expect.objectContaining({
+          latestVersion: "1.0.0",
+          categories: ["other"],
+          ownerHandle: "owner",
+        }),
+      );
+    },
+  );
 
   it("repoints bundle packages to the newest surviving release, not semver-looking versions", async () => {
     const pkg = {
