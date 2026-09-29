@@ -28,7 +28,6 @@ import {
   aggregateAuditVerdict,
   normalizeContentType,
   isPluginCategorySlug,
-  PLUGIN_CATEGORY_DEFINITIONS,
   parseArk,
   type ApiV1PackageCategoriesBatchRequest,
   type ApiV1PackageSecurityResponse,
@@ -66,6 +65,7 @@ import {
   getPackageTrustReasons,
   resolvePackageReleaseScanStatus,
 } from "../lib/packageSecurity";
+import { getPluginDiscoveryCategories } from "../lib/pluginDiscovery";
 import type { PublicPublisher } from "../lib/public";
 import {
   getClawPackSizeError,
@@ -134,6 +134,7 @@ const internalRefs = internal as unknown as {
     hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
     listPluginOverviewCategoryInternal: unknown;
+    listPluginDiscoveryCategoryInternal: unknown;
     listPluginValidationReportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -1749,6 +1750,8 @@ async function listPackages(
   const rawCategory = url.searchParams.get("category")?.trim() || undefined;
   const category = resolvePluginCategoryFilter(rawCategory);
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  const curated = parseBooleanQueryParam(url.searchParams, "curated");
+  if (!curated.ok) return text(curated.message, 400, rate.headers);
   const officialFirst = parseBooleanQueryParam(url.searchParams, "officialFirst");
   if (!officialFirst.ok) return text(officialFirst.message, 400, rate.headers);
   const excludedScanStatuses = parseExcludedScanStatuses(url.searchParams.get("excludeScanStatus"));
@@ -1786,6 +1789,47 @@ async function listPackages(
     return text(
       "Trending sort is only supported for plugin package endpoints; use /api/v1/skills?sort=trending for skills.",
       400,
+      rate.headers,
+    );
+  }
+
+  if (curated.value) {
+    if (
+      !category ||
+      includeSkills ||
+      (effectiveFamily &&
+        effectiveFamily !== "code-plugin" &&
+        effectiveFamily !== "bundle-plugin") ||
+      highlightedOnly ||
+      effectiveSort !== "downloads" ||
+      officialFirst.value
+    ) {
+      return text(
+        "Curated discovery requires a plugin category, downloads sort, and no featured or officialFirst filter",
+        400,
+        rate.headers,
+      );
+    }
+    const result = await runQueryRef<{
+      page: CatalogListItem[];
+      isDone: boolean;
+      continueCursor: string;
+    }>(ctx, internalRefs.packages.listPluginDiscoveryCategoryInternal, {
+      category,
+      family: effectiveFamily,
+      channel: channelParam.value,
+      isOfficial: isOfficial.value,
+      topic,
+      excludedScanStatuses: excludedScanStatuses.value,
+      paginationOpts: { cursor: rawCursor, numItems: limit },
+    });
+    return json(
+      {
+        items: result.page,
+        nextCursor: result.isDone ? null : result.continueCursor,
+        categories: getPluginDiscoveryCategories().filter((entry) => entry.slug === category),
+      },
+      200,
       rate.headers,
     );
   }
@@ -2623,11 +2667,12 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
       paginationOpts: { cursor: null, numItems: PLUGIN_OVERVIEW_SECTION_SIZE },
     });
 
+  const categories = getPluginDiscoveryCategories(true);
   // One bounded fanout replaces one public HTTP request per home-page shelf.
   const [featured, trending, ...categoryPages] = await Promise.all([
     page({ highlightedOnly: true }),
     page({ sort: "trending" }),
-    ...PLUGIN_CATEGORY_DEFINITIONS.map((category) =>
+    ...categories.map((category) =>
       runQueryRef<CatalogListItem[]>(
         ctx,
         internalRefs.packages.listPluginOverviewCategoryInternal,
@@ -2646,20 +2691,14 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
     mergePluginOverviewItem(items, item, { trendingRank });
   }
   for (const [index, result] of categoryPages.entries()) {
-    const category = PLUGIN_CATEGORY_DEFINITIONS[index];
+    const category = categories[index];
     for (const item of result) {
       mergePluginOverviewItem(items, item, { category: category.slug });
     }
   }
 
   const response: ApiV1PluginOverviewResponse = {
-    categories: PLUGIN_CATEGORY_DEFINITIONS.map((category, order) => ({
-      slug: category.slug,
-      label: category.label,
-      description: category.description,
-      icon: category.icon,
-      order,
-    })),
+    categories,
     items: [...items.values()],
   };
   return json(
@@ -2672,15 +2711,7 @@ export async function listPluginOverviewV1Handler(ctx: ActionCtx, request: Reque
 }
 
 export async function listPluginCategoriesV1Handler(_ctx: ActionCtx, _request: Request) {
-  return json({
-    categories: PLUGIN_CATEGORY_DEFINITIONS.map((category, order) => ({
-      slug: category.slug,
-      label: category.label,
-      description: category.description,
-      icon: category.icon,
-      order,
-    })),
-  });
+  return json({ categories: getPluginDiscoveryCategories() });
 }
 
 export async function listCodePluginsV1Handler(ctx: ActionCtx, request: Request) {

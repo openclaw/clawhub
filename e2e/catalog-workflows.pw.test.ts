@@ -85,7 +85,7 @@ test("known public skill detail links to owner profile", async ({ page, request 
 test("plugins browse can search, change view, and open detail", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
 
-  await page.goto("/plugins", { waitUntil: "domcontentloaded" });
+  await page.goto("/plugins?sort=downloads", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: /^Plugins/ })).toBeVisible();
   await waitForHydration(page);
   await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
@@ -94,20 +94,22 @@ test("plugins browse can search, change view, and open detail", async ({ page })
   await expect(page).toHaveURL(/view=grid/);
   await expect(page.locator(".skill-card").first()).toBeVisible();
 
+  await page.getByRole("button", { name: "Search plugins", exact: true }).click();
   const searchInput = page.getByPlaceholder("Search plugins...");
   await searchInput.fill("security");
+  await searchInput.press("Enter");
   await expect(page).toHaveURL(/q=security/);
   await expect(page.getByText("Unable to load plugins")).toHaveCount(0);
   await expect(page.locator(".skill-card, .skill-list-item, .empty-state").first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Clear plugin search" }).click();
+  await page.getByRole("button", { name: "Close search" }).click();
   await expect(page).not.toHaveURL(/q=security/);
   await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
 
-  const firstPlugin = page.locator("a.skill-card, a.skill-list-item").first();
+  const firstPlugin = page.getByRole("link", { name: /^Plugin:/ }).first();
   await expect(firstPlugin).toBeVisible();
   const href = await firstPlugin.getAttribute("href");
-  expect(href).toMatch(/^\/plugins\//);
+  expect(href).toMatch(/^\/(?:[^/]+\/)?plugins\//);
 
   await firstPlugin.scrollIntoViewIfNeeded();
   await firstPlugin.click();

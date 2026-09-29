@@ -2,6 +2,7 @@ import { getClawScanDisplayStatus, isVisibleAgenticRiskFinding } from "clawhub-s
 export { getClawScanDisplayStatus } from "clawhub-schema";
 import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { Badge, type BadgeProps } from "./ui/badge";
 
 type LlmAnalysisDimension = {
@@ -305,6 +306,7 @@ const SKILLSPECTOR_RULE_LABELS: Record<string, string> = {
   PE1: "Excessive Permissions",
   PE2: "Sudo/Root Execution",
   PE3: "Credential Access",
+  LP3: "Undeclared Tool Scope",
   SDI1: "Description-Behavior Mismatch",
   SDI2: "Context-Inappropriate Capability",
   SDI3: "Scope Creep",
@@ -337,6 +339,101 @@ function getSkillSpectorIssueTitle(issue: SkillSpectorIssue) {
   return SKILLSPECTOR_RULE_LABELS[normalized] ?? formatFallbackSkillSpectorTitle(issue.issueId);
 }
 
+const SOURCE_LANGUAGES: Record<string, string> = {
+  js: "js",
+  mjs: "js",
+  cjs: "js",
+  jsx: "jsx",
+  ts: "ts",
+  tsx: "tsx",
+  py: "python",
+  sh: "sh",
+  bash: "bash",
+  zsh: "shell",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  nix: "nix",
+  rs: "rust",
+  go: "go",
+  html: "html",
+  css: "css",
+  md: "md",
+  mdx: "md",
+  markdown: "md",
+  diff: "diff",
+};
+
+function sourceAsMarkdown(source: string, file?: string) {
+  const name = file?.split("/").at(-1)?.toLowerCase() ?? "";
+  const extension = name.split(".").at(-1) ?? "";
+  const language = name === "dockerfile" ? "dockerfile" : (SOURCE_LANGUAGES[extension] ?? "text");
+  // A source snippet can itself contain Markdown fences or HTML. Keep all of it literal.
+  let fenceLength = 3;
+  for (const match of source.matchAll(/`+/g))
+    fenceLength = Math.max(fenceLength, match[0].length + 1);
+  const fence = "`".repeat(fenceLength);
+  return `${fence}${language}\n${source}\n${fence}`;
+}
+
+function SkillSpectorContent({
+  issue,
+  contentSnippet,
+}: {
+  issue: SkillSpectorIssue;
+  contentSnippet?: string | null;
+}) {
+  const scannerSnippet = issue.codeSnippet?.trim() ? issue.codeSnippet : undefined;
+  const isMarkdownFile = !issue.file || /\.(?:md|mdx|markdown)$/i.test(issue.file);
+  const fileSnippet = contentSnippet?.trim() ? contentSnippet : undefined;
+  // File-wide findings can use the default location SKILL.md:1. Its frontmatter
+  // delimiter is not useful evidence of a missing permission declaration.
+  const usableFileSnippet =
+    isMarkdownFile && /^(?:---|\+\+\+|\.\.\.)$/.test(fileSnippet?.trim() ?? "")
+      ? undefined
+      : fileSnippet;
+  const snippet = scannerSnippet || usableFileSnippet;
+  if (!snippet)
+    return (
+      <p className="skill-spector-evidence-meta">
+        No source excerpt is available for this finding.
+      </p>
+    );
+
+  const lineCount = snippet.split("\n").length;
+  const start = issue.startLine;
+  const shownEnd = start === undefined ? undefined : start + lineCount - 1;
+  const location = issue.file ?? "";
+  const sourceRange =
+    start === undefined ? "" : `:${start}${shownEnd === start ? "" : `–${shownEnd}`}`;
+  const reportedLine = start === undefined ? "" : ` (reported line ${start})`;
+  const label = scannerSnippet
+    ? `Scanner excerpt${location ? ` · ${location}` : ""}${reportedLine}`
+    : `${location}${sourceRange}`;
+  const reportedLineCount =
+    start !== undefined && issue.endLine !== undefined ? issue.endLine - start + 1 : lineCount;
+  const isMarkdownSnippet =
+    Boolean(scannerSnippet) && isMarkdownFile && /^\s{0,3}(?:`{3,}|~{3,})/m.test(snippet);
+
+  return (
+    <div className="skill-spector-evidence">
+      <p className="skill-spector-evidence-meta">
+        {label}
+        {scannerSnippet ? <span>May include surrounding context.</span> : null}
+      </p>
+      <MarkdownPreview variant="report">
+        {isMarkdownSnippet ? snippet : sourceAsMarkdown(snippet, issue.file)}
+      </MarkdownPreview>
+      {!scannerSnippet && reportedLineCount > lineCount ? (
+        <p className="skill-spector-evidence-meta">
+          Showing {lineCount} of {reportedLineCount} reported lines.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SkillSpectorFindingCard({
   contentSnippet,
   issue,
@@ -345,8 +442,6 @@ function SkillSpectorFindingCard({
   issue: SkillSpectorIssue;
 }) {
   const confidence = formatSkillSpectorConfidence(issue.confidence);
-  const trimmedSnippet = issue.codeSnippet?.trim() || contentSnippet?.trim();
-
   return (
     <article className="static-analysis-finding">
       <div className="static-analysis-finding-header">
@@ -356,29 +451,27 @@ function SkillSpectorFindingCard({
         </div>
       </div>
       <dl className="static-analysis-finding-details">
-        {issue.category ? (
-          <div>
-            <dt>Category</dt>
-            <dd>{issue.category}</dd>
-          </div>
-        ) : null}
-        {trimmedSnippet ? (
-          <div>
-            <dt>Content</dt>
-            <dd>
-              <pre className="agentic-risk-evidence-snippet">{trimmedSnippet}</pre>
-            </dd>
-          </div>
-        ) : null}
-        {confidence ? (
-          <div>
-            <dt>Confidence</dt>
-            <dd>{confidence}</dd>
-          </div>
-        ) : null}
+        <div>
+          <dt>Category</dt>
+          <dd>{issue.category || "Not specified by scanner"}</dd>
+        </div>
+        <div>
+          <dt>Confidence</dt>
+          <dd>{confidence || "Not specified by scanner"}</dd>
+        </div>
         <div>
           <dt>Finding</dt>
-          <dd>{issue.explanation || issue.finding}</dd>
+          <dd>
+            <MarkdownPreview variant="report" highlight={false}>
+              {issue.explanation?.trim() || issue.finding || ""}
+            </MarkdownPreview>
+          </dd>
+        </div>
+        <div>
+          <dt>Content</dt>
+          <dd>
+            <SkillSpectorContent issue={issue} contentSnippet={contentSnippet} />
+          </dd>
         </div>
       </dl>
     </article>

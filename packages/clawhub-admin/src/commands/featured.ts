@@ -19,7 +19,8 @@ type FeaturedPackageResult = {
 type FeaturedSkillResult = {
   ok: true;
   featured: boolean;
-  skillId: string;
+  skillId?: string;
+  externalId?: string;
   slug: string;
   ownerHandle: string | null;
 };
@@ -27,6 +28,7 @@ type FeaturedSkillResult = {
 type SkillRef = {
   slug: string;
   ownerHandle?: string;
+  externalId?: string;
 };
 
 function normalizePackageNameOrFail(value: string) {
@@ -38,6 +40,17 @@ function normalizePackageNameOrFail(value: string) {
 function parseSkillRefOrFail(value: string): SkillRef {
   const ref = value.trim();
   if (!ref) fail("Skill ref required");
+  if (ref.startsWith("skills-sh:")) {
+    const externalId = ref.slice("skills-sh:".length).toLowerCase();
+    const parts = externalId.split("/");
+    if (
+      parts.length !== 3 ||
+      parts.some((part) => !/^[a-z0-9][a-z0-9._-]*$/.test(part) || part.includes(".."))
+    ) {
+      fail(`Invalid skill ref: ${value}`);
+    }
+    return { slug: parts[2]!, externalId };
+  }
 
   const slashIndex = ref.indexOf("/");
   if (slashIndex < 0) {
@@ -99,7 +112,9 @@ export async function cmdSetSkillFeatured(
   const registry = await getRegistry(opts, { cache: true });
   const result = await apiRequest<FeaturedSkillResult>(registry, {
     method: "POST",
-    path: `${ApiRoutes.skills}/${encodeURIComponent(ref.slug)}/featured`,
+    path: ref.externalId
+      ? `/api/v1/skills-sh/${ref.externalId.split("/").map(encodeURIComponent).join("/")}/featured`
+      : `${ApiRoutes.skills}/${encodeURIComponent(ref.slug)}/featured`,
     token,
     body: {
       featured,
@@ -111,7 +126,11 @@ export async function cmdSetSkillFeatured(
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result;
   }
-  const label = result.ownerHandle ? `@${result.ownerHandle}/${result.slug}` : result.slug;
+  const label = ref.externalId
+    ? `skills-sh:${ref.externalId}`
+    : result.ownerHandle
+      ? `@${result.ownerHandle}/${result.slug}`
+      : result.slug;
   console.log(`OK. ${featured ? "Featured" : "Unfeatured"} skill ${label}.`);
   return result;
 }

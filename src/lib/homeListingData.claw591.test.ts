@@ -11,6 +11,7 @@ vi.mock("../convex/client", () => ({
 
 vi.mock("../../convex/_generated/api", () => ({
   api: {
+    featuredSkills: { listPublic: "featuredSkills:listPublic" },
     packages: { listPublicNewPluginsPage: "packages:listPublicNewPluginsPage" },
     skills: {
       listPublicPageV4: "skills:listPublicPageV4",
@@ -203,7 +204,7 @@ describe("homeListingData", () => {
     );
   });
 
-  it("requests the latest 40 Featured skills and preserves editorial order", async () => {
+  it("requests the finite Featured selection and preserves newest-added order", async () => {
     convexQueryMock.mockResolvedValue({
       page: [makeNative("newest", 200, 1), makeNative("older", 100, 10_000)],
       hasMore: false,
@@ -216,13 +217,10 @@ describe("homeListingData", () => {
       "newest",
       "older",
     ]);
-    expect(convexQueryMock).toHaveBeenCalledWith(
-      "skills:listPublicPageV4",
-      expect.objectContaining({ highlightedOnly: true, numItems: 16 }),
-    );
+    expect(convexQueryMock).toHaveBeenCalledWith("featuredSkills:listPublic", { query: undefined });
   });
 
-  it("ends the finite Featured feed after exposing the latest 40", async () => {
+  it("ends the finite Featured feed without a continuation", async () => {
     convexQueryMock.mockResolvedValue({
       page: Array.from({ length: 40 }, (_, index) =>
         makeNative(`featured-${index}`, 40 - index, 0),

@@ -48,41 +48,6 @@ type BrowseTabsProps = {
   onChange: (value: string | undefined) => void;
 };
 
-export function BrowseTabs({ ariaLabel, options, value, onChange }: BrowseTabsProps) {
-  return (
-    <div className="browse-tabs" role="radiogroup" aria-label={ariaLabel}>
-      {options.map((option) => {
-        const active = value === option.value;
-        return (
-          <button
-            key={option.value ?? "all"}
-            className={`browse-tab${active ? " is-active" : ""}`}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-label={option.mobileLabel ? option.label : undefined}
-            onClick={() => onChange(option.value)}
-          >
-            {option.icon}
-            {option.mobileLabel ? (
-              <>
-                <span className="lg:hidden" aria-hidden="true">
-                  {option.mobileLabel}
-                </span>
-                <span className="hidden lg:inline" aria-hidden="true">
-                  {option.label}
-                </span>
-              </>
-            ) : (
-              option.label
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function BrowseChipTabs({ ariaLabel, options, value, onChange }: BrowseTabsProps) {
   return (
     <div className="browse-chip-tabs" role="radiogroup" aria-label={ariaLabel}>
@@ -347,6 +312,8 @@ type BrowseSearchInputProps = {
   label: string;
   placeholder: string;
   closeLabel?: string;
+  disabled?: boolean;
+  focusShortcut?: boolean;
 };
 
 export function BrowseSearchInput({
@@ -358,18 +325,39 @@ export function BrowseSearchInput({
   label,
   placeholder,
   closeLabel,
+  disabled,
+  focusShortcut = false,
 }: BrowseSearchInputProps) {
+  useEffect(() => {
+    if (!focusShortcut || disabled) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented || isTypingTarget(event.target)) return;
+      event.preventDefault();
+      inputRef?.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [disabled, focusShortcut, inputRef]);
+
   const content = (
     <>
       <Search size={16} className="browse-search-icon" aria-hidden="true" />
       <input
         ref={inputRef}
+        disabled={disabled}
         className="browse-search-input"
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         type="search"
+        onKeyDown={(event) => {
+          if (focusShortcut && event.key === "Escape" && value) {
+            event.preventDefault();
+            onClear();
+          }
+        }}
       />
       {value || closeLabel ? (
         <button
