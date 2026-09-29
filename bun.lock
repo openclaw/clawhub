@@ -99,7 +99,7 @@
         "react-email": "^6.9.5",
         "skills": "1.5.26",
         "typescript": "6.0.3",
-        "undici": "7.29.0",
+        "undici": "7.29.1",
         "vite": "8.3.0",
         "vitest": "4.1.11",
       },
@@ -124,7 +124,7 @@
         "ora": "9.4.1",
         "p-retry": "8.0.0",
         "semver": "7.8.5",
-        "undici": "7.29.0",
+        "undici": "7.29.1",
         "unicode-case-folding": "1.1.1",
         "yaml": "2.9.0",
       },
@@ -151,7 +151,7 @@
         "ora": "9.4.1",
         "p-retry": "8.0.0",
         "semver": "7.8.5",
-        "undici": "7.29.0",
+        "undici": "7.29.1",
       },
       "devDependencies": {
         "@types/node": "26.5.1",
@@ -183,7 +183,7 @@
     "brace-expansion": "5.0.9",
     "dompurify": "3.4.13",
     "esbuild": "0.28.1",
-    "fast-uri": "3.1.6",
+    "fast-uri": "3.1.7",
     "js-yaml": "4.3.2",
     "nanoid": "3.3.18",
     "next": "16.3.3",
@@ -191,7 +191,7 @@
     "sharp": "0.35.4",
     "shell-quote": "1.10.0",
     "socket.io-parser": "4.2.7",
-    "undici": "7.29.0",
+    "undici": "7.29.1",
     "ws": "8.21.0",
   },
   "packages": {
@@ -1335,7 +1335,7 @@
 
     "fast-string-width": ["fast-string-width@3.0.2", "", { "dependencies": { "fast-string-truncated-width": "^3.0.2" } }, "sha512-gX8LrtNEI5hq8DVUfRQMbr5lpaS4nMIWV+7XEbXk2b8kiQIizgnlr12B4dA3ZEx3308ze0O4Q1R+cHts8kyUJg=="],
 
-    "fast-uri": ["fast-uri@3.1.6", "", {}, "sha512-7Ical1vFEMr0onbVzEDIreM22I4khW+fzyQPwvAFWBp1iwdshSZRsL4jjRvPG9JP1uiqMHRto+YU6R2/CzDz5Q=="],
+    "fast-uri": ["fast-uri@3.1.7", "", {}, "sha512-dOvZVzjdZdz7phd9v6jCbwxrBW3fK6n8Rc0CtdmM4bumzMnxywBYhuph6J819RRw/ku+rLbelwfMunktuzVVHg=="],
 
     "fast-wrap-ansi": ["fast-wrap-ansi@0.2.2", "", { "dependencies": { "fast-string-width": "^3.0.2" } }, "sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q=="],
 
@@ -1963,7 +1963,7 @@
 
     "uint8array-extras": ["uint8array-extras@1.5.0", "", {}, "sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A=="],
 
-    "undici": ["undici@7.29.0", "", {}, "sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw=="],
+    "undici": ["undici@7.29.1", "", {}, "sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q=="],
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 

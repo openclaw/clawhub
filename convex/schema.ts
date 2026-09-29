@@ -1191,6 +1191,7 @@ const skillVersions = defineTable({
       contentType: v.optional(v.string()),
     }),
   ),
+  skillCardGeneration: v.optional(v.object({ inputHash: v.string(), cardSha256: v.string() })),
   parsed: v.object({
     frontmatter: v.record(v.string(), v.any()),
     metadata: v.optional(v.any()),
@@ -1424,6 +1425,16 @@ const featuredSelections = defineTable({
   artifactKind: searchArtifactKind,
   revision: v.number(),
   editorial: v.array(editorialSelection),
+  // Staff selections only; the mirror continues to own visibility and source identity.
+  externalSkills: v.optional(
+    v.array(
+      v.object({
+        externalId: v.string(),
+        at: v.number(),
+        byUserId: v.id("users"),
+      }),
+    ),
+  ),
   published: v.optional(featuredPublication),
   updatedAt: v.number(),
   updatedBy: v.id("users"),
@@ -2325,15 +2336,19 @@ const skillCardGenerationJobs = defineTable({
   priority: v.number(),
   nextRunAt: v.number(),
   attempts: v.number(),
+  claimSlot: v.optional(v.number()),
   leaseToken: v.optional(v.string()),
   leaseExpiresAt: v.optional(v.number()),
   workerId: v.optional(v.string()),
+  generationHash: v.optional(v.string()),
+  inputHash: v.optional(v.string()),
   lastError: v.optional(v.string()),
   runId: v.optional(v.string()),
   completedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
+  .index("by_status_and_claim_slot", ["status", "claimSlot"])
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
   .index("by_status_and_lease_expires_at", ["status", "leaseExpiresAt"])
   .index("by_skill", ["skillId"])
@@ -2347,6 +2362,7 @@ const packageStatEvents = defineTable({
   processedAt: v.optional(v.number()),
 })
   .index("by_unprocessed", ["processedAt"])
+  .index("by_occurred_at", ["occurredAt"])
   .index("by_package", ["packageId"]);
 
 const pluginSearchObservations = defineTable({
@@ -2379,6 +2395,8 @@ const packageLeaderboards = defineTable({
   generatedAt: v.number(),
   rangeStartDay: v.number(),
   rangeEndDay: v.number(),
+  rangeStartAt: v.optional(v.number()),
+  rangeEndAt: v.optional(v.number()),
   items: v.array(
     v.object({
       packageId: v.id("packages"),
@@ -2688,6 +2706,12 @@ const packagePluginCategorySearchDigest = defineTable({
   updatedAt: v.number(),
 })
   .index("by_package", ["packageId", "pluginCategory"])
+  .index("by_active_category_downloads_name", [
+    "softDeletedAt",
+    "pluginCategory",
+    "stats.downloads",
+    "name",
+  ])
   .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
   .index("by_active_category_downloads", [
     "softDeletedAt",

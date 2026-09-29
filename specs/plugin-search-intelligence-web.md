@@ -11,9 +11,9 @@ official provenance, or user/device/session metadata.
 - Plugins browse: the existing 250 ms debounce or explicit submit creates a
   one-navigation intent. The loader consumes it before dispatch. Initial URL
   loads, reloads, preloads, retries, filter changes, and pagination are unmarked.
-- Homepage listing: manual plugin input and native Featured/Official/New skill
-  input create a per-catalog intent consumed by the existing debounce. Skill Trending
-  filters a local feed and creates no search intent. Filter, view, and page changes
+- Homepage listing: manual Featured/Official/New plugin and skill input
+  creates a per-catalog intent consumed by the existing debounce. Plugin and Skill Trending
+  filter their ranked feeds and create no search intent. Filter, view, and page changes
   clear pending intent and remain unmarked.
 - Native Skills browse: manual settled input uses the canonical skill HTTP search;
   initial URLs, repeated normalized input, filters, refresh, and pagination are unmarked.

@@ -38,6 +38,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
+- Hidden-skill HTTP hints and private moderation evidence follow current publisher
+  read access. Organization owners, admins, and publishers qualify through current
+  membership; historical `ownerUserId` does not preserve access after membership
+  removal. Personal publishers follow current linkage with the existing legacy
+  owner fallback, and skills without a publisher retain personal-owner access.
+  Existing platform staff access and public evidence redaction remain unchanged.
+
 - Skill transfer, delete, and restore authorization follows the resource's current
   publisher ownership. For organization skills, the historical `ownerUserId` is
   not an authorization grant: current organization admin/owner membership is
@@ -486,9 +493,23 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   and ClawScan-powered risk review as one consolidated Security audit page.
   This is a product-facing model only; scanner storage, moderation decisions,
   and worker behavior remain separate internally.
+- Scanner finding content is source evidence, not the verdict or necessarily
+  only the matched risky text. SkillSpector preserves scanner-provided excerpts
+  ahead of source-file fallbacks and labels their provenance. Fallbacks render
+  the full reported line range, labeled with the file path and displayed range.
+  They must not present a bare Markdown frontmatter delimiter as evidence; if the
+  available source is shorter than the reported range, disclose it. Source code
+  remains literal and uses syntax highlighting; scanner Markdown uses the sanitized report renderer.
+  SkillSpector details appear as Category, Confidence, Finding, then Content.
+  A.I.G shows concise labeled facts with long analysis and remediation collapsed
+  until requested; disclosure does not alter the stored report or scanner verdict.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
   hosted LLM call. Codex reviews the materialized artifact workspace with
   SkillSpector, A.I.G, and static scan evidence as context.
+- Workers preserve explicitly configured model and reasoning settings through
+  restricted scanner subprocess environments. Workflow defaults and pinned
+  scanner versions define the active policy; forwarding optional settings
+  does not change those defaults or add support to older scanner clients.
 - ClawScan is the sole authority for the stored risk-analysis verdict and its
   moderation consequences. A.I.G is required supporting evidence for skill
   scans: missing, failed, or malformed A.I.G output fails the worker through
@@ -617,6 +638,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   decisions off `ok`, `decision`, `reasons`, and `security.status` instead of
   re-deriving trust from individual signal payloads.
 - Skill Card completion owns a newly stored card until its attachment mutation succeeds. If attachment rejects a stale lease or unavailable version, delete only that new blob and preserve the original error if cleanup fails. Successful replacement retains prior card blobs and generated bundle fingerprints so existing installs remain resolvable.
+- Skill Card workers default to GPT-6 Sol with medium reasoning and the fast service
+  tier. Recipe-hash claims remain inactive until the separate activation after
+  [backend deployment](deploy.md). Once activated, the backend binds each lease before
+  generation to the source file hashes,
+  server evidence, and worker recipe (model, effort, tier, prompt, template, and
+  trusted NVIDIA generator bytes). A completed card is reused only when those
+  semantic inputs and the attached card SHA still match. Fresh scan timestamps and
+  storage URLs do not invalidate reuse. Completion rereads the same evidence in its
+  transaction: changed inputs requeue the job with a fresh attempt budget and delete
+  the unattached output. Reuse and deferred-input receipts count toward the existing
+  worker max-jobs bound and keep later batches discoverable.
 - Exact-version security verdict reads preserve the complete skill identity.
   Batch callers may qualify a request with the publisher handle; owner, slug,
   and version form the dedupe identity, and qualified success or failure results

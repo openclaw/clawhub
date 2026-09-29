@@ -3,7 +3,6 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
-import { fetchCatalogDiscoveryCapabilities } from "../../lib/catalogDiscoveryCapabilities";
 import {
   ALL_CATEGORY_KEYWORDS,
   getSkillCategoryBySlug,
@@ -13,7 +12,6 @@ import {
   navigateWithManualCatalogSearch,
   type ManualCatalogSearch,
 } from "../../lib/manualCatalogSearch";
-import { fetchCanonicalTrendingPage, type TrendingFeedState } from "../../lib/trendingApi";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import {
   isExternalSkillListEntry,
@@ -23,8 +21,6 @@ import {
 } from "./-types";
 
 export const SKILLS_PAGE_SIZE = 20;
-const featuredPageSize = 40;
-const newWindowMs = 14 * 24 * 60 * 60 * 1_000;
 const maxConsecutiveEmptyPagesPerFetch = 3;
 
 function isNavigationAbortError(err: unknown) {
@@ -32,16 +28,6 @@ function isNavigationAbortError(err: unknown) {
   return (
     err.name === "AbortError" || err.message === "Failed to fetch" || err.message === "Load failed"
   );
-}
-
-export type SkillsView = "grid" | "list";
-export type SkillsCatalogTab = "trending" | "new" | "featured" | "official";
-type LegacySkillsView = SkillsView | "cards";
-
-export function normalizeSkillsView(value: unknown): SkillsView | undefined {
-  if (value === "list") return "list";
-  if (value === "grid" || value === "cards") return "grid";
-  return undefined;
 }
 
 export type SkillsSearchState = {
@@ -52,22 +38,29 @@ export type SkillsSearchState = {
   featured?: boolean;
   category?: string;
   topic?: string;
-  view?: LegacySkillsView;
+  view?: "list" | "grid" | "cards";
   focus?: "search";
-  tab?: SkillsCatalogTab;
+  tab?: "trending" | "new" | "featured" | "official";
 };
 
-export function normalizeSkillsCatalogTab(
-  value: unknown,
-  legacy?: Pick<SkillsSearchState, "featured" | "highlighted" | "sort" | "category" | "topic">,
-): SkillsCatalogTab {
-  if (value === "trending" || value === "new" || value === "featured" || value === "official") {
-    return value;
-  }
-  if (legacy?.featured || legacy?.highlighted) return "featured";
-  if (legacy?.sort === "newest") return "new";
-  if (legacy?.category || legacy?.topic) return "new";
-  return "trending";
+export function buildSkillsBrowseArgs(search: SkillsSearchState) {
+  const category = getSkillCategoryBySlug(search.category);
+  const sort = parseSort(search.sort);
+  const listSort = toListSort(sort);
+  return {
+    numItems: SKILLS_PAGE_SIZE,
+    ...(listSort ? { sort: listSort } : {}),
+    dir: parseDir(search.dir, sort),
+    categorySlug: category?.slug,
+    topic: search.topic ? normalizeCatalogTopic(search.topic) : undefined,
+    ...(category ? { officialFirst: true } : {}),
+    categoryKeywords: category && category.slug !== "other" ? category.keywords : undefined,
+    excludeCategoryKeywords: category?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined,
+  };
+}
+
+export function buildSkillsBrowseKey(search: SkillsSearchState) {
+  return JSON.stringify(buildSkillsBrowseArgs(search));
 }
 
 export type InitialSkillsSearchData = {
@@ -77,10 +70,10 @@ export type InitialSkillsSearchData = {
 } | null;
 
 export type InitialSkillsListData = {
-  kind: "canonical";
+  kind: "browse";
+  key: string;
   results: SkillListEntry[];
   nextCursor: string | null;
-  trendingState: TrendingFeedState;
 };
 
 type SkillsNavigate = (options: {
@@ -121,7 +114,6 @@ export function useSkillsBrowseModel({
   searchInputRef: RefObject<HTMLInputElement | null>;
 }) {
   const [query, setQuery] = useState(search.q ?? "");
-  const [canonicalTrendingUnavailable, setCanonicalTrendingUnavailable] = useState(false);
   const searchRequest = useRef(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
@@ -129,40 +121,25 @@ export function useSkillsBrowseModel({
   const navigateTimer = useRef<number>(0);
   const manualSearch = useRef<ManualCatalogSearch | null>(null);
 
-  const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
-  const featuredOnly = search.featured ?? search.highlighted ?? false;
+  const featuredOnly = false;
   const searchSkills = useAction(api.search.searchSkills);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
   const urlCategory = useMemo(() => getSkillCategoryBySlug(search.category), [search.category]);
   const activeCategory = urlCategory;
   const activeTopic = search.topic ? normalizeCatalogTopic(search.topic) : undefined;
-  const categoryKeywords =
-    activeCategory && activeCategory.slug !== "other" ? activeCategory.keywords : undefined;
-  const excludeCategoryKeywords =
-    activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
   const hasQuery = trimmedQuery.length > 0;
-  const requestedCatalogTab = normalizeSkillsCatalogTab(search.tab, search);
-  const catalogTab =
-    requestedCatalogTab === "trending" && canonicalTrendingUnavailable
-      ? "featured"
-      : requestedCatalogTab;
-  const requestedSort = hasQuery
-    ? search.sort === "default"
-      ? "recommended"
-      : search.sort
-    : catalogTab === "new" || catalogTab === "official"
-      ? "newest"
-      : catalogTab === "featured"
-        ? "updated"
-        : "trending";
+  const requestedSort = search.sort === "default" ? "recommended" : search.sort;
+  const browseArgs = useMemo(
+    () => buildSkillsBrowseArgs(search),
+    [search.category, search.topic, search.sort, search.dir],
+  );
   const sort: SortKey =
     requestedSort === "relevance" && !hasQuery
       ? "recommended"
       : requestedSort === "recommended" && hasQuery
         ? "relevance"
         : (requestedSort ?? (hasQuery ? "relevance" : "recommended"));
-  const listSort = sort === "trending" ? undefined : toListSort(sort);
   const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
   const searchKey = buildSkillsSearchKey({
     query: trimmedQuery,
@@ -183,7 +160,8 @@ export function useSkillsBrowseModel({
   const appliedInitialSearchKey = useRef(matchedInitialSearch ? matchedInitialSearch.key : null);
 
   // One-shot paginated fetches (no reactive subscription)
-  const matchedInitialList = !hasQuery && requestedCatalogTab === "trending" ? initialList : null;
+  const matchedInitialList =
+    !hasQuery && initialList?.key === JSON.stringify(browseArgs) ? initialList : null;
   const [listResults, setListResults] = useState<SkillListEntry[]>(
     () => matchedInitialList?.results ?? [],
   );
@@ -193,86 +171,24 @@ export function useSkillsBrowseModel({
   const [listStatus, setListStatus] = useState<ListStatus>(() =>
     matchedInitialList?.nextCursor ? "idle" : matchedInitialList ? "done" : "loading",
   );
-  const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>(
-    () => matchedInitialList?.trendingState,
-  );
   const [, setListAutoLoadPaused] = useState(false);
   const fetchGeneration = useRef(0);
   const appliedInitialList = useRef(matchedInitialList);
-  const newCutoff = useMemo(() => Date.now() - newWindowMs, [catalogTab]);
 
   const fetchPage = useCallback(
     async (cursor: string | null, generation: number) => {
       let pageCursor = cursor;
       let consecutiveEmptyPages = 0;
       try {
-        if (catalogTab === "trending") {
-          // Trending selection clears category/topic URL state and hides those controls.
-          // Consume the one canonical order instead of constructing filtered variants.
-          const capabilities = await fetchCatalogDiscoveryCapabilities();
-          if (!capabilities.canonicalTrendingEnabled) {
-            if (generation !== fetchGeneration.current) return;
-            setCanonicalTrendingUnavailable(true);
-            setListResults([]);
-            setListCursor(null);
-            setListAutoLoadPaused(false);
-            setTrendingState("unavailable");
-            setListStatus("done");
-            return;
-          }
-
-          const result = await fetchCanonicalTrendingPage({
-            cursor: pageCursor,
-            limit: SKILLS_PAGE_SIZE,
-          });
-          if (generation !== fetchGeneration.current) return;
-          const entries = result.items.map((trending) => ({ trending }));
-          setCanonicalTrendingUnavailable(false);
-          setListResults((prev) => (cursor ? [...prev, ...entries] : entries));
-          setListCursor(result.nextCursor);
-          setListAutoLoadPaused(false);
-          setTrendingState(entries.length > 0 || result.nextCursor ? "available" : "empty");
-          setListStatus(result.nextCursor ? "idle" : "done");
-          return;
-        }
-        const capabilities =
-          catalogTab === "new"
-            ? await fetchCatalogDiscoveryCapabilities()
-            : { apiVersion: 1 as const };
         while (true) {
           const result = await convexHttp.query(api.skills.listPublicPageV4, {
             cursor: pageCursor ?? undefined,
-            numItems: catalogTab === "featured" ? featuredPageSize : SKILLS_PAGE_SIZE,
-            ...(listSort ? { sort: listSort } : {}),
-            dir,
-            highlightedOnly: catalogTab === "featured" ? true : undefined,
-            officialOnly: catalogTab === "official" ? true : undefined,
-            ...(catalogTab === "new" && capabilities.apiVersion >= 1
-              ? { createdAfter: newCutoff }
-              : {}),
-            categorySlug: activeCategory?.slug,
-            topic: activeTopic,
-            ...(activeCategory && catalogTab !== "new" && catalogTab !== "official"
-              ? { officialFirst: true }
-              : {}),
-            categoryKeywords,
-            excludeCategoryKeywords,
+            ...browseArgs,
           });
           if (generation !== fetchGeneration.current) return;
-          const visiblePage =
-            catalogTab === "new" && capabilities.apiVersion === 0
-              ? result.page.filter((entry) => entry.skill.createdAt >= newCutoff)
-              : result.page;
-          const reachedLegacyNewCutoff =
-            catalogTab === "new" &&
-            capabilities.apiVersion === 0 &&
-            result.page.some((entry) => entry.skill.createdAt < newCutoff);
+          const visiblePage = result.page;
           const nextCursor =
-            catalogTab !== "featured" &&
-            !reachedLegacyNewCutoff &&
-            result.hasMore &&
-            result.nextCursor != null &&
-            result.nextCursor !== pageCursor
+            result.hasMore && result.nextCursor != null && result.nextCursor !== pageCursor
               ? result.nextCursor
               : null;
 
@@ -296,33 +212,13 @@ export function useSkillsBrowseModel({
         if (!isNavigationAbortError(err)) {
           console.error("Failed to fetch skills page:", err);
         }
-        if (catalogTab === "trending" && !pageCursor) {
-          setCanonicalTrendingUnavailable(true);
-          setListResults([]);
-          setTrendingState("unavailable");
-        }
-        // Keep canonical Trending's dedicated unavailable state. Elsewhere a failed first page
-        // gets its own error state, so neither the empty state nor the load-more affordance has
-        // to stand in for "the request failed"; later pages stay retryable through load-more.
+        // A failed first page gets its own error state; later pages remain retryable.
         setListCursor(pageCursor);
         setListAutoLoadPaused(Boolean(pageCursor));
-        setListStatus(
-          catalogTab === "trending" && !pageCursor ? "done" : pageCursor ? "idle" : "error",
-        );
+        setListStatus(pageCursor ? "idle" : "error");
       }
     },
-    [
-      activeCategory?.slug,
-      activeTopic,
-      catalogTab,
-      categoryKeywords,
-      dir,
-      excludeCategoryKeywords,
-      featuredOnly,
-      listSort,
-      newCutoff,
-      sort,
-    ],
+    [browseArgs],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -334,11 +230,9 @@ export function useSkillsBrowseModel({
     const generation = fetchGeneration.current;
     if (matchedInitialList) {
       if (appliedInitialList.current !== matchedInitialList) {
-        setCanonicalTrendingUnavailable(false);
         setListResults(matchedInitialList.results);
         setListCursor(matchedInitialList.nextCursor);
         setListAutoLoadPaused(false);
-        setTrendingState(matchedInitialList.trendingState);
         setListStatus(matchedInitialList.nextCursor ? "idle" : "done");
         appliedInitialList.current = matchedInitialList;
       }
@@ -350,7 +244,6 @@ export function useSkillsBrowseModel({
     setListResults([]);
     setListCursor(null);
     setListAutoLoadPaused(false);
-    setTrendingState(undefined);
     setListStatus("loading");
     void fetchPage(null, generation);
     return () => {
@@ -602,17 +495,6 @@ export function useSkillsBrowseModel({
     [navigate, query],
   );
 
-  const onToggleFeatured = useCallback(() => {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        featured: prev.featured || prev.highlighted ? undefined : true,
-        highlighted: undefined,
-      }),
-      replace: true,
-    });
-  }, [navigate]);
-
   const onClearFilters = useCallback(() => {
     window.clearTimeout(navigateTimer.current);
     setQuery("");
@@ -683,25 +565,9 @@ export function useSkillsBrowseModel({
     });
   }, [navigate, sort]);
 
-  const onToggleView = useCallback(() => {
-    void navigate({
-      search: (prev) => ({
-        ...prev,
-        view: normalizeSkillsView(prev.view) === "grid" ? undefined : "grid",
-      }),
-      replace: true,
-    });
-  }, [navigate]);
-
-  const activeFilters: string[] = [];
-  if (featuredOnly) activeFilters.push("featured");
-
   return {
-    activeFilters,
     activeCategory: activeCategory?.slug,
     activeTopic,
-    canonicalTrendingUnavailable,
-    catalogTab,
     canAutoLoad,
     canLoadMore,
     dir,
@@ -718,13 +584,9 @@ export function useSkillsBrowseModel({
     onQueryChange,
     onSortChange,
     onToggleDir,
-    onToggleFeatured,
-    onToggleView,
     query,
     retryLoad,
     sort,
     sorted,
-    trendingState,
-    view,
   };
 }

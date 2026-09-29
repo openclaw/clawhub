@@ -49,12 +49,20 @@ Production deploy notes:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
   - `frontend`: wait for the Vercel production deploy for the selected `main` SHA, then run smoke tests
-- Production deploys and hourly skills.sh synchronization share the `deploy-production` concurrency
-  group. `queue: max` retains up to 100 pending runs without cancelling the active run, so an hourly
-  sync cannot replace a queued manual deploy. The group covers synchronization cleanup and deployment
-  rollout restoration. Neither workflow dispatches or waits for the other while holding the group.
-  The existing job timeouts remain 180 minutes for synchronization and 45 minutes for deployment;
-  either workflow can wait behind the other, including frontend deployment readiness checks.
+- skills.sh synchronization first takes the workflow-level `skills-sh-sync-${{ github.ref }}`
+  concurrency group with `queue: single` and `cancel-in-progress: false`. Each ref keeps one active
+  sync workflow and only the latest pending request. Scheduled and same-ref manual requests both
+  coalesce: a newer request replaces an older pending request without cancelling the active sync.
+- The entire sync job then takes the `deploy-production` group shared with production deployments.
+  Its `queue: max` retains up to 100 pending jobs or workflows without cancelling the active holder,
+  so a sync cannot replace a queued manual deploy. A sync waiting for this group still holds its
+  outer group; each ref contributes at most one sync job waiting for or holding the production lock,
+  plus one pending sync workflow outside it. Lock order is sync group then production group;
+  deployment takes only the production group. Both groups remain held through sync cleanup and proof
+  upload, and the production group covers deployment rollout restoration. Neither workflow
+  dispatches or waits for the other while holding the group. Existing queued runs retain the workflow
+  definition they started with. Job timeouts remain 180 minutes for synchronization and 45 minutes for
+  deployment; either can wait behind the other, including frontend deployment readiness checks.
 - The sync CLI writes `skills-sh-sync-proof.json` before exiting nonzero on failure. Failure receipts
   contain `ok: false`, a redacted primary `error`, and separately redacted `rollbackErrors`, with each
   message capped at 2,000 characters plus a truncation marker. `rollbackErrors: null` means execution
@@ -70,6 +78,64 @@ Production deploy notes:
 - The real deploy job uses the GitHub `Production` environment for deploy secrets, but it does not wait for a separate approval.
 - Required `Production` environment secret: `CONVEX_DEPLOY_KEY`.
 - Optional `Production` environment secret: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON` for authenticated smoke coverage.
+
+### Skill Card lease capacity
+
+Skill Card jobs own one of 64 capacity slots while running. Discovery runs in a
+separate query; admission rereads the selected jobs, version leases, and slots
+transactionally. Expiry, failure, completion, and aborted hydration release or
+fence the same lease. Workers keep the existing array response and stop on
+ambiguous transport errors; a partial batch does not imply an empty queue.
+
+One action makes at most 64 discovery/admission pairs (128 internal query/mutation calls).
+Only explicit zero-lease contention can replan; the first committed batch is
+final. Exhaustion raises `SKILL_CARD_CLAIM_CONTENDED` instead of reporting an
+empty queue. Competing claimers can still produce OCC retries; the slot index
+removes unrelated numeric-slot completions from the capacity read set.
+
+The optional `claimSlot` field needs no data backfill. Existing unslotted leases
+remain counted during forward deployment. Keep this compatibility until all
+pre-deployment writers and their unslotted leases are gone. An old action already
+in progress can fail its next internal call when the admission arguments change;
+it must not retry an ambiguous claim. Verify a fresh scheduled worker after
+deployment.
+
+Deploy the field, `by_status_and_claim_slot` index, and functions together with
+the ordinary backend workflow. [Convex completes index backfill before activating
+the new functions](https://docs.convex.dev/database/reading-data/indexes), so an
+unknown historical table size affects deployment duration, not index readiness.
+The deployment job has a 45-minute limit. If an operator chooses staged
+backfilling for a large table, deploy only the optional field and staged index
+first; wait for completion before enabling the index and these functions.
+
+Runtime rollback must retain slot-aware admission and every slot-release path,
+plus the optional field and index. Old writers can preserve a stale slot on a
+queued row and later admit it into an occupied slot, breaking the global cap.
+Restoring the old runtime requires a separately qualified pause of all writers,
+lease settlement, removal and verification of every slot field, then the old
+functions and schema. Draining active jobs alone is insufficient.
+After backend deployment, verify the exact deployed SHA and a fresh Skill Card
+worker run. Compare terminal claim failures separately from successful job counts.
+
+Skill Card input reuse adds optional receipts to existing versions and jobs; no
+backfill is required. The worker currently omits the recipe hash, so automatic
+workflow runs remain compatible with the backend before its manual deployment.
+Sol/medium/fast is enabled; input reuse is prepared but not active.
+
+Activate recipe-hash claims in the separate worker change only after a successful
+Convex deployment of the preparation commit or a descendant containing it. Verify
+the actual schema/function deployment step; `appMeta:getDeploymentInfo` alone is
+insufficient because the workflow stamps `APP_BUILD_SHA` before deployment.
+Existing workflow checkouts can omit the hash for their remaining leases (up to
+60 minutes). They still generate cards, but their completion clears any reusable
+receipt because their recipe is unknown. Activated workers certify reuse only
+after a successful generation with the current semantic inputs. Deploying source
+does not itself prove the configured model is available to worker credentials.
+
+Before changing the worker model, dispatch `Skill Card Worker` at the candidate
+ref with `fixture-only=true`. This generates one benign card with the Production
+OpenAI credential and the real renderer. It does not receive Convex credentials
+or claim production jobs; the regular drain shards are excluded from that run.
 
 ## CLI npm release
 

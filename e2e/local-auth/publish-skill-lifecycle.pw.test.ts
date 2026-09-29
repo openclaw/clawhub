@@ -21,6 +21,7 @@ import {
   signInAsLocalPublisher,
   skillMd,
 } from "./helpers";
+import { proveSkillCardReuse } from "./skill-card-reuse";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -41,7 +42,7 @@ type ClaimedScanJob = {
 
 type ClaimedSkillCardJob = {
   job: { _id: Id<"skillCardGenerationJobs">; leaseToken: string };
-  target?: { skill?: { slug?: string }; version?: { version?: string } };
+  target?: { skill?: { slug?: string }; version?: { _id: Id<"skillVersions">; version?: string } };
 };
 
 type PrePublicationSkillAttemptState = {
@@ -442,6 +443,13 @@ test("publishing a skill queues scan, queues skill-card generation, and shows th
   await expect(skillCardPanel).toContainText("Skill Card");
 
   expect(await cardResponse.text()).toBe(markdown);
+
+  await proveSkillCardReuse(
+    client,
+    cardJob.target!.version!._id,
+    WORKER_TOKEN,
+    readLocalStorageIds,
+  );
 
   await expectHealthyPublishPage(page, errors);
 });

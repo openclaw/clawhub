@@ -5,10 +5,10 @@ on:
     - cron: "17 * * * *"
   workflow_dispatch:
 
-# Deploy pauses rollouts; share its group until synchronization and rollback finish.
+# Coalesce recurring syncs before they enter the shared production queue.
 concurrency:
-  group: deploy-production
-  queue: max
+  group: skills-sh-sync-${{ github.ref }}
+  queue: single
   cancel-in-progress: false
 
 permissions:
@@ -17,6 +17,11 @@ permissions:
 
 jobs:
   sync:
+    # Deploy pauses rollouts; hold its group through sync cleanup and proof upload.
+    concurrency:
+      group: deploy-production
+      queue: max
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:

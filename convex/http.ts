@@ -438,6 +438,11 @@ http.route({
   method: "GET",
   handler: skillsShCatalogPublicV1Http,
 });
+http.route({
+  pathPrefix: "/api/v1/skills-sh/",
+  method: "POST",
+  handler: skillsShCatalogPublicV1Http,
+});
 
 http.route({
   path: "/api/v1/operator/skills-sh/catalog-test",

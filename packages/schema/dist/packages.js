@@ -344,6 +344,12 @@ const PackageListItemFields = {
     categories: "string[]?",
     topics: "string[]?",
     featuredAt: "number?",
+    trending24h: type({
+        downloads: "number",
+        installs: "number",
+        windowStart: "number",
+        windowEnd: "number",
+    }).optional(),
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
 };
@@ -356,21 +362,24 @@ export const PluginOverviewItemSchema = type({
     trending: "boolean?",
     trendingRank: "number?",
 });
+export const PluginDiscoveryCategorySchema = type({
+    "+": "reject",
+    slug: "string",
+    label: "string",
+    description: "string",
+    icon: "string",
+    order: "number",
+    pinnedPackages: "string[]?",
+});
 export const ApiV1PluginOverviewResponseSchema = type({
     "+": "reject",
-    categories: type({
-        "+": "reject",
-        slug: "string",
-        label: "string",
-        description: "string",
-        icon: "string",
-        order: "number",
-    }).array(),
+    categories: PluginDiscoveryCategorySchema.array(),
     items: PluginOverviewItemSchema.array(),
 });
 export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),
     nextCursor: "string|null",
+    categories: PluginDiscoveryCategorySchema.array().optional(),
 });
 export const PackageValidationReportScanStatusSchema = type('"not-scanned"|"skipped"|"clean"|"warning"|"error"');
 export const PackageValidationReportFindingSeveritySchema = type('"info"|"warning"|"error"');
