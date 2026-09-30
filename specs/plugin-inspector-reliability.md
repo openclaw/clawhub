@@ -20,7 +20,8 @@ and `package/dist/**/*.d.ts`, the inputs of the packed-package surface reader
 (`reports.readOpenClawTargetSurface`). Nothing is written until the whole
 archive verifies. The verified surface lives in a process-stable temp cache
 keyed by version and integrity, is renamed into place atomically, and is shared
-by concurrent or warm invocations; older targets are pruned. The prepared
+by concurrent or warm invocations. Targets are not pruned, because another
+process may still read an older one; each is about 18 MB. The prepared
 target must stay field-for-field identical to the dependency's output.
 
 Isolated successful retries establish recovery only, not a concurrency,

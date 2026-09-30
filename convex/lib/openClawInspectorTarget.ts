@@ -1,7 +1,7 @@
 "use node";
 
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -22,7 +22,6 @@ const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const MAX_SELECTED_BYTES = 128 * 1024 * 1024;
 const MAX_PAX_HEADER_BYTES = 1024 * 1024;
 const TARGET_DIRECTORY = "openclaw";
-const STALE_TARGET_MS = 60 * 60 * 1000;
 
 type OpenClawTargetSurface = { status?: unknown; [key: string]: unknown };
 
@@ -47,7 +46,6 @@ type SelectedEntry = { path: string; bytes: Uint8Array };
 
 // Concurrent and warm invocations in one Node process share one download per target.
 const preparedTargets = new Map<string, Promise<Record<string, unknown>>>();
-const usedTargetDirs = new Set<string>();
 
 export async function prepareOpenClawInspectorTarget(
   cacheRoot: string,
@@ -158,7 +156,6 @@ async function ensurePackedSurface(
   const targetsDir = path.join(cacheRoot, TARGET_DIRECTORY);
   const targetDir = path.join(targetsDir, key);
   const packageDir = path.join(targetDir, "package");
-  usedTargetDirs.add(targetDir);
   if (await isPreparedPackage(packageDir, resolved.version)) return { packageDir, hit: true };
 
   const entries = await downloadPackedSurface(resolved, fetchImpl);
@@ -185,7 +182,8 @@ async function ensurePackedSurface(
   } finally {
     await rm(temporaryDir, { recursive: true, force: true });
   }
-  await pruneStaleTargets(targetsDir);
+  // Targets are never pruned: another process may still be reading an older one,
+  // and each is ~18 MB against sandboxes recycled far more often than OpenClaw ships.
   return { packageDir, hit: false };
 }
 
@@ -196,23 +194,6 @@ async function isPreparedPackage(packageDir: string, version: string) {
   } catch {
     return false;
   }
-}
-
-// Another preparation may still be reading a target it resolved before `latest`
-// moved, so prune only targets this process has not used and nobody touched lately.
-async function pruneStaleTargets(targetsDir: string) {
-  const names = await readdir(targetsDir).catch(() => [] as string[]);
-  const cutoff = Date.now() - STALE_TARGET_MS;
-  await Promise.allSettled(
-    names
-      .filter((name) => !name.startsWith(".") && !usedTargetDirs.has(path.join(targetsDir, name)))
-      .map(async (name) => {
-        const target = path.join(targetsDir, name);
-        if ((await stat(target)).mtimeMs < cutoff) {
-          await rm(target, { recursive: true, force: true });
-        }
-      }),
-  );
 }
 
 async function downloadPackedSurface(resolved: ResolvedOpenClaw, fetchImpl: typeof fetch) {
