@@ -4,6 +4,7 @@
 
 ### Changes
 
+- API: expose public exact-version package publication state to distinguish staged, failed, absent, and published releases with advisory recovery eligibility.
 - CI: record dependency advisories from `bun audit` as warning annotations instead of failing `static` and blocking Deploy Test; known-malware findings still fail.
 - Workers: default Skill Cards to GPT-6 Sol with medium reasoning and fast service, and prepare semantic input reuse with stale-result fencing for separate activation after backend deployment.
 - Workers: preserve optional scanner model and reasoning settings in restricted subprocess environments without changing workflow defaults.

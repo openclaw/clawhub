@@ -9,6 +9,7 @@ import {
   ApiV1PackageValidationReportPageSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageSecurityResponseSchema,
+  ApiV1PackageVersionPublicationResponseSchema,
   ApiV1PluginDetailResponseSchema,
   PackageHardDeleteRequestSchema,
   PackageAppealResolveRequestSchema,
@@ -4522,6 +4523,25 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       "Package security response",
     );
     return json(parsed, 200, rate.headers);
+  }
+
+  if (
+    packageSegments[0] === "versions" &&
+    packageSegments[1] &&
+    packageSegments[2] === "publication" &&
+    packageSegments.length === 3
+  ) {
+    const result = await ctx.runQuery(internal.packages.getVersionPublicationStateInternal, {
+      name: normalizedPackageName,
+      version: packageSegments[1],
+      viewerUserId: viewerUserId ?? undefined,
+    });
+    if ("error" in result) return text(result.error, 404, rate.headers);
+    return json(
+      parseArk(ApiV1PackageVersionPublicationResponseSchema, result, "Package publication state"),
+      200,
+      rate.headers,
+    );
   }
 
   const ownerHandle = getOwnerHandleParam(request);

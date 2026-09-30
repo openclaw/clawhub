@@ -6,8 +6,7 @@ import { internalAction, internalMutation, internalQuery } from "./functions";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import {
   assertManualPackagePublisher,
-  assertRecoveryArtifact,
-  manualPackageRecovery,
+  assertPackageRecoveryEligibility,
   recoveryReason,
   type ManualPackageRecovery,
 } from "./lib/packagePublishRecovery";
@@ -130,62 +129,14 @@ export const commitInternal = internalMutation({
       return result(existing, attempt._id, true);
     }
     if (!release) throw new ConvexError("Publish attempt not found");
-    if (
-      attempt.status !== "failed" ||
-      release.publicationStatus !== "pending" ||
-      (release.publishAttemptId !== undefined && release.publishAttemptId !== attempt._id)
-    )
-      throw new ConvexError("Only the current failed staged publish attempt can be recovered");
     const now = Date.now();
-    if (release.publishAttemptId === undefined) {
-      // Older staged attempts acquired the backlink only after successful scans.
-      // Validate that no live or finalized sibling owns this exact release first.
-      for (const status of [
-        "pending_checks",
-        "ready_to_finalize",
-        "finalizing",
-        "finalized",
-      ] as const) {
-        const other = await ctx.db
-          .query("publishAttempts")
-          .withIndex("by_kind_status_slug_version_created", (q) =>
-            q
-              .eq("kind", "package")
-              .eq("status", status)
-              .eq("slug", pkg.name)
-              .eq("version", release.version),
-          )
-          .filter((q) => q.eq(q.field("packageReleaseId"), release._id))
-          .first();
-        if (other) throw new ConvexError("Another publish attempt owns this staged release");
-      }
-    }
-    if ((attempt.checkClaimExpiresAt ?? 0) > now || (attempt.finalizationClaimExpiresAt ?? 0) > now)
-      throw new ConvexError("Publish attempt still has an active claim");
-    const followup = attempt.packageFollowup as Record<string, unknown> | undefined;
-    const pending = release.pendingPublication as Record<string, unknown> | undefined;
-    const priorRecovery = manualPackageRecovery(followup);
-    if (
-      priorRecovery &&
-      JSON.stringify(manualPackageRecovery(pending)) !== JSON.stringify(priorRecovery)
-    )
-      throw new ConvexError("Original manual recovery binding changed");
-    const originalTokenId = priorRecovery?.originalTokenId ?? followup?.trustedPublishTokenId;
-    if (typeof originalTokenId !== "string")
-      throw new ConvexError("Original OpenClaw authorization is missing");
-    const tokenId = ctx.db.normalizeId("packagePublishTokens", originalTokenId);
-    if (!tokenId || !followup || !pending)
-      throw new ConvexError("Original OpenClaw authorization is missing");
-    const originalToken = await assertRecoveryArtifact(ctx, pkg, release, attempt, tokenId);
-    if (
-      !priorRecovery &&
-      (followup.trustedPublishAuthorizationVersion !== 2 ||
-        pending.trustedPublishTokenId !== tokenId ||
-        pending.trustedPublishAuthorizationVersion !== 2 ||
-        followup.trustedPublishInventoryDigest !== originalToken.inventoryDigest ||
-        pending.trustedPublishInventoryDigest !== originalToken.inventoryDigest)
-    )
-      throw new ConvexError("Original OpenClaw authorization binding changed");
+    const { followup, pending, tokenId, originalToken } = await assertPackageRecoveryEligibility(
+      ctx,
+      pkg,
+      release,
+      attempt,
+      { now },
+    );
     const recovery: ManualPackageRecovery = {
       kind: "manual-package-recovery",
       fromAttemptId: attempt._id,

@@ -963,6 +963,29 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
     } | null;
 }, {}>;
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
+export declare const ApiV1PackageVersionPublicationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    version: string;
+    state: "absent" | "published";
+} | {
+    name: string;
+    version: string;
+    state: "pending";
+    stage: "staging";
+} | {
+    name: string;
+    version: string;
+    state: "pending";
+    stage: "checks" | "finalization";
+    attemptId: string;
+} | {
+    name: string;
+    version: string;
+    state: "failed";
+    attemptId?: string | undefined;
+    recoverable: boolean;
+}, {}>;
+export type ApiV1PackageVersionPublicationResponse = (typeof ApiV1PackageVersionPublicationResponseSchema)[inferred];
 export declare const ApiV1PackageArtifactResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     package: {
         name: string;

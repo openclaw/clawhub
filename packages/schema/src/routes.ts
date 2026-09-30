@@ -27,6 +27,7 @@ export const ApiRoutes = {
   pluginCategories: "/api/v1/plugins/categories",
   pluginsExport: "/api/v1/plugins/export",
   packages: "/api/v1/packages",
+  packageVersionPublication: "/api/v1/packages/{name}/versions/{version}/publication",
   packageCategoriesBatch: "/api/v1/packages/categories:batch",
   codePlugins: "/api/v1/code-plugins",
   bundlePlugins: "/api/v1/bundle-plugins",

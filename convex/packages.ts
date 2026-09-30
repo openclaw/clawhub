@@ -15,6 +15,7 @@ import {
   resolveStoredPluginCategories,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
+  type ApiV1PackageVersionPublicationResponse,
   type PackageChannel,
   type PackageFamily,
   type PluginCategorySlug,
@@ -81,6 +82,7 @@ import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { resolvePackageIcon } from "./lib/packageIcons";
 import {
   assertManualRecoveryFinalization,
+  assertPackageRecoveryEligibility,
   manualPackageRecovery,
 } from "./lib/packagePublishRecovery";
 import {
@@ -3651,6 +3653,60 @@ export const getVersionByNameForViewerInternal = internalQuery({
     viewerUserId: v.optional(v.id("users")),
   },
   handler: readPackageVersionForViewer,
+});
+
+export const getVersionPublicationStateInternal = internalQuery({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    viewerUserId: v.optional(v.id("users")),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    ApiV1PackageVersionPublicationResponse | { error: "Package not found" | "Version not found" }
+  > => {
+    const snapshot = await readPackageSnapshotForViewer(ctx, args);
+    if (!snapshot || snapshot.pkg.family === "skill") return { error: "Package not found" };
+    const { pkg } = snapshot;
+    const identity = { name: pkg.name, version: args.version };
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", args.version),
+      )
+      .unique();
+    if (!release) return { ...identity, state: "absent" };
+    if (release.publicationStatus === undefined || release.publicationStatus === "published") {
+      return isPublishedPackageRelease(release, pkg._id)
+        ? { ...identity, state: "published" }
+        : { error: "Version not found" };
+    }
+    const attempt = release.publishAttemptId ? await ctx.db.get(release.publishAttemptId) : null;
+    const binding = attempt ? { attemptId: attempt._id } : {};
+    if (release.publicationStatus === "blocked")
+      return { ...identity, ...binding, state: "failed", recoverable: false };
+    if (!attempt) return { ...identity, state: "pending", stage: "staging" };
+    if (attempt.status === "failed") {
+      let recoverable = false;
+      try {
+        await assertPackageRecoveryEligibility(ctx, pkg, release, attempt);
+        recoverable = true;
+      } catch (error) {
+        if (!(error instanceof ConvexError)) throw error;
+      }
+      return { ...identity, attemptId: attempt._id, state: "failed", recoverable };
+    }
+    if (attempt.status === "blocked" || attempt.status === "expired")
+      return { ...identity, attemptId: attempt._id, state: "failed", recoverable: false };
+    return {
+      ...identity,
+      attemptId: attempt._id,
+      state: "pending",
+      stage: attempt.status === "pending_checks" ? "checks" : "finalization",
+    };
+  },
 });
 
 async function readPackageReleaseSnapshotForViewer(
