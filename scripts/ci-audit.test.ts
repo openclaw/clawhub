@@ -81,6 +81,24 @@ describe("ci-audit", () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error title=Dependency malware::/));
   });
 
+  it("does not treat vulnerabilities about malicious input as malware", () => {
+    const output = JSON.stringify({
+      "@babel/traverse": [
+        {
+          title:
+            "Babel vulnerable to arbitrary code execution when compiling specifically crafted malicious code",
+          severity: "critical",
+        },
+      ],
+      "evil-pkg": [{ title: "Malicious code in evil-pkg (npm)" }],
+    });
+    const log = vi.fn();
+
+    expect(auditExitCode({ exitCode: 1, output }, log)).toBe(1);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*@babel\/traverse/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*evil-pkg/));
+  });
+
   it("keeps unparseable audit failures blocking", () => {
     expect(auditExitCode({ exitCode: 2, output: "error: lockfile unreadable\n" }, vi.fn())).toBe(2);
   });

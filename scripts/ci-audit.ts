@@ -40,6 +40,11 @@ export function auditArgs(): string[] {
 
 type Advisory = { title?: unknown; url?: unknown; severity?: unknown };
 
+// GitHub's malware advisories name the package itself ("Malware in x",
+// "Malicious code in x"); ordinary advisories may merely mention malicious input.
+const MALWARE_TITLE =
+  /^\s*(?:embedded\s+)?(?:malware|malicious\s+(?:code|package|version))\s+in\b/i;
+
 // Release policy: advisories never block CI or a deploy; they are recorded as
 // warnings and patched through main. A known-malware package still blocks.
 export function classifyAuditFindings(output: string) {
@@ -60,7 +65,7 @@ export function classifyAuditFindings(output: string) {
     })),
   );
   return {
-    malware: findings.filter((finding) => /\bmalware\b|\bmalicious\b/i.test(finding.title)),
+    malware: findings.filter((finding) => MALWARE_TITLE.test(finding.title)),
     advisories: findings,
   };
 }
