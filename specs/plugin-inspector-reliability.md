@@ -24,6 +24,12 @@ by concurrent or warm invocations. Targets are not pruned, because another
 process may still read an older one; each is about 18 MB. The prepared
 target must stay field-for-field identical to the dependency's output.
 
+The static publish scan runs in its own Node action and must import only leaf
+modules. Loading the `clawhub-schema` barrel (ArkType schemas) costs about
+150 MB RSS before any file is read; with the whatsapp 2026.9.7 ClawPack (1,655
+files, 22 MB) that measured 390 MB peak locally versus 252 MB with the
+`clawhub-schema/textFiles` import, and the production action hit 512 MiB.
+
 Isolated successful retries establish recovery only, not a concurrency,
 capacity, or memory root cause. On recurrence, retain the stage/request id and
 obtain backend disk/inode and executor diagnostics before changing resource
