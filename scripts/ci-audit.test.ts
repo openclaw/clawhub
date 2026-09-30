@@ -81,7 +81,7 @@ describe("ci-audit", () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error title=Dependency malware::/));
   });
 
-  it("fails closed on any advisory that mentions malware or compromise", () => {
+  it("blocks malware and compromise advisories but warns on malicious-input bugs", () => {
     const output = JSON.stringify({
       synckit: [
         {
@@ -91,6 +91,10 @@ describe("ci-audit", () => {
       ],
       duckdb: [{ title: "DuckDB NPM packages briefly compromised with malware" }],
       "fast-uri": [{ title: "fast-uri host normalization", severity: "moderate" }],
+      undici: [{ title: "Undici: Malicious WebSocket 64-bit length overflows parser" }],
+      "@babel/traverse": [
+        { title: "Babel arbitrary code execution when compiling crafted malicious code" },
+      ],
     });
     const log = vi.fn();
 
@@ -98,6 +102,23 @@ describe("ci-audit", () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*synckit/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*duckdb/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*fast-uri/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*undici/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*@babel\/traverse/));
+  });
+
+  it("applies the reviewed ignore list that bun audit --json skips", () => {
+    const output = JSON.stringify({
+      reviewed: [
+        {
+          title: "Malware in reviewed",
+          url: "https://github.com/advisories/GHSA-pr7r-676h-xcf6",
+        },
+      ],
+    });
+    const log = vi.fn();
+
+    expect(auditExitCode({ exitCode: 1, output }, log)).toBe(0);
+    expect(log).not.toHaveBeenCalled();
   });
 
   it("keeps unparseable audit failures blocking", () => {

@@ -40,12 +40,17 @@ export function auditArgs(): string[] {
 
 type Advisory = { title?: unknown; url?: unknown; severity?: unknown; cwe?: unknown };
 
-// Malware detection fails closed: advisory titles vary ("Malware in x", "x have
-// embedded malicious code", "briefly compromised with malware") and npm's bulk
-// endpoint omits CWE data, so any mention blocks. A vulnerability that merely
-// mentions malicious input goes to the reviewed IGNORED_ADVISORIES list.
+// Malware advisories carry CWE-506 or say the package itself is malware or was
+// compromised ("Malware in x", "x have embedded malicious code", "briefly
+// compromised with malware"). Vulnerabilities that merely mention malicious input
+// ("crafted malicious code", "Malicious WebSocket ...") stay warnings.
 const MALWARE_CWE = "CWE-506";
-const MALWARE_TITLE = /\bmalware\b|\bmalicious\b|\bcompromised\b/i;
+const MALWARE_TITLES = [
+  /\bmalware\b/i,
+  /\bcompromised\b/i,
+  /^\s*malicious\s+(?:code|packages?|versions?)\s+in\b/i,
+  /\b(?:embedded|contains?|has|have)\s+(?:embedded\s+)?malicious\s+code\b/i,
+];
 
 // Release policy: advisories never block CI or a deploy; they are recorded as
 // warnings and patched through main. A known-malware package still blocks.
@@ -58,18 +63,26 @@ export function classifyAuditFindings(output: string) {
   } catch {
     return null;
   }
+  // `bun audit --json` returns the unfiltered response, so apply the reviewed list here.
+  const ignored = (advisory: Advisory) =>
+    typeof advisory.url === "string" &&
+    IGNORED_ADVISORIES.some((id) => advisory.url === `https://github.com/advisories/${id}`);
   const findings = Object.entries(report).flatMap(([name, advisories]) =>
-    (Array.isArray(advisories) ? advisories : []).map((advisory) => ({
-      name,
-      title: typeof advisory.title === "string" ? advisory.title : "advisory",
-      url: typeof advisory.url === "string" ? advisory.url : "",
-      severity: typeof advisory.severity === "string" ? advisory.severity : "unknown",
-      cwe: Array.isArray(advisory.cwe) ? advisory.cwe : [],
-    })),
+    (Array.isArray(advisories) ? advisories : [])
+      .filter((advisory) => !ignored(advisory))
+      .map((advisory) => ({
+        name,
+        title: typeof advisory.title === "string" ? advisory.title : "advisory",
+        url: typeof advisory.url === "string" ? advisory.url : "",
+        severity: typeof advisory.severity === "string" ? advisory.severity : "unknown",
+        cwe: Array.isArray(advisory.cwe) ? advisory.cwe : [],
+      })),
   );
   return {
     malware: findings.filter(
-      (finding) => finding.cwe.includes(MALWARE_CWE) || MALWARE_TITLE.test(finding.title),
+      (finding) =>
+        finding.cwe.includes(MALWARE_CWE) ||
+        MALWARE_TITLES.some((pattern) => pattern.test(finding.title)),
     ),
     advisories: findings,
   };
