@@ -91,12 +91,21 @@ describe("ci-audit", () => {
         },
       ],
       "evil-pkg": [{ title: "Malicious code in evil-pkg (npm)" }],
+      synckit: [
+        {
+          title:
+            "eslint-config-prettier, eslint-plugin-prettier, synckit have embedded malicious code",
+        },
+      ],
+      "cwe-only": [{ title: "Compromised release", cwe: ["CWE-506"] }],
     });
     const log = vi.fn();
 
     expect(auditExitCode({ exitCode: 1, output }, log)).toBe(1);
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*@babel\/traverse/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*evil-pkg/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*synckit/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*cwe-only/));
   });
 
   it("keeps unparseable audit failures blocking", () => {

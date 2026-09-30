@@ -38,12 +38,15 @@ export function auditArgs(): string[] {
   return ["audit", "--json", ...IGNORED_ADVISORIES.flatMap((id) => ["--ignore", id])];
 }
 
-type Advisory = { title?: unknown; url?: unknown; severity?: unknown };
+type Advisory = { title?: unknown; url?: unknown; severity?: unknown; cwe?: unknown };
 
-// GitHub's malware advisories name the package itself ("Malware in x",
-// "Malicious code in x"); ordinary advisories may merely mention malicious input.
-const MALWARE_TITLE =
-  /^\s*(?:embedded\s+)?(?:malware|malicious\s+(?:code|package|version))\s+in\b/i;
+// Malware advisories carry CWE-506 (Embedded Malicious Code) or say the package
+// itself is malware; ordinary advisories may merely mention malicious input.
+const MALWARE_CWE = "CWE-506";
+const MALWARE_TITLES = [
+  /^\s*(?:embedded\s+)?(?:malware|malicious\s+(?:code|package|version))\s+in\b/i,
+  /\b(?:has|have|contains?)\s+(?:embedded\s+)?(?:malicious\s+code|malware)\b/i,
+];
 
 // Release policy: advisories never block CI or a deploy; they are recorded as
 // warnings and patched through main. A known-malware package still blocks.
@@ -62,10 +65,15 @@ export function classifyAuditFindings(output: string) {
       title: typeof advisory.title === "string" ? advisory.title : "advisory",
       url: typeof advisory.url === "string" ? advisory.url : "",
       severity: typeof advisory.severity === "string" ? advisory.severity : "unknown",
+      cwe: Array.isArray(advisory.cwe) ? advisory.cwe : [],
     })),
   );
   return {
-    malware: findings.filter((finding) => MALWARE_TITLE.test(finding.title)),
+    malware: findings.filter(
+      (finding) =>
+        finding.cwe.includes(MALWARE_CWE) ||
+        MALWARE_TITLES.some((pattern) => pattern.test(finding.title)),
+    ),
     advisories: findings,
   };
 }
