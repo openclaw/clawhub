@@ -51,7 +51,7 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 
 - Framework: Vitest 4 + jsdom.
 - Tests live in `src/**` and `convex/lib/**`.
-- Coverage threshold: 80% global (lines/functions/branches/statements).
+- Coverage thresholds: use `test.coverage.thresholds` in `vitest.config.ts` as the source of truth.
 - Example: `convex/lib/skills.test.ts`.
 - For local UI state testing, prefer creating realistic backend state through seed logic plus a DevPersonaFab entry for the associated test user. Avoid one-off manual DB edits when the state is likely to be reused, such as org membership, official publisher access, moderation holds, or publishing permissions.
 
