@@ -4,6 +4,9 @@
 
 ### Changes
 
+- Dependencies: refresh runtime and development dependencies and pair Vitest and its coverage provider at 5.0.2 (thanks @Patrick-Erichsen for the auth test adaptation).
+- CI: use Bun 1.3.14 so the updated server-rendering bundle loads without the Bun 1.3.10 label-scope parser error, and pin Node 24.15.0 for Vitest 5 checks and remote validation.
+- Web: initialize each request's CSP nonce before framework serialization so server-rendered hydration scripts retain their nonce after the router update.
 - CI: record dependency advisories from `bun audit` as warning annotations instead of failing `static` and blocking Deploy Test; known-malware findings still fail.
 - Workers: default Skill Cards to GPT-6 Sol with medium reasoning and fast service, and prepare semantic input reuse with stale-result fencing for separate activation after backend deployment.
 - Workers: preserve optional scanner model and reasoning settings in restricted subprocess environments without changing workflow defaults.

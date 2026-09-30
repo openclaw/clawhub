@@ -7,20 +7,14 @@ import {
 import { createContentSecurityPolicy, isLocalDevelopmentRequestUrl } from "./lib/securityHeaders";
 import { getThemeModeFromCookieHeader } from "./lib/themeCookie";
 
-function createNonce() {
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  return Buffer.from(bytes).toString("base64");
-}
-
 const fetch = createStartHandler(async (ctx) => {
-  const nonce = createNonce();
+  const nonce = ctx.router.options.ssr?.nonce;
+  if (!nonce) throw new Error("SSR nonce was not initialized");
   ctx.router.update({
     context: {
       ...ctx.router.options.context,
       initialThemeMode: getThemeModeFromCookieHeader(ctx.request.headers.get("cookie")),
     },
-    ssr: { nonce },
   });
   ctx.responseHeaders.set(
     "Content-Security-Policy",

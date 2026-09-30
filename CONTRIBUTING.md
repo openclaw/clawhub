@@ -10,8 +10,8 @@ Welcome! ClawHub is the public skill registry for [OpenClaw](https://github.com/
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) (Convex CLI runs via `bunx`, no global install needed)
-- [Node.js](https://nodejs.org/) v18, 20, 22, or 24 (required by the local Convex backend; v25+ is not yet supported)
+- [Bun](https://bun.sh/) 1.3.14 or newer (older Bun runtimes cannot parse the current server-rendering bundle; Convex CLI runs via `bunx`, no global install needed)
+- [Node.js](https://nodejs.org/) v22.12 or newer in the v22 line, or v24 (Vitest 5 requires Node 22.12+; CI uses v24.15.0, and the local Convex backend does not yet support v25+)
 - [Worktrunk](https://github.com/max-sixty/worktrunk) (`wt`) for `bun run dev:worktree` and disposable/Codex worktrees. On macOS, `brew install worktrunk` is the quickest path; shell integration is optional.
 
 ### Install and configure

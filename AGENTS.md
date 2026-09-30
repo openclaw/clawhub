@@ -49,7 +49,7 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 
 ## Testing Guidelines
 
-- Framework: Vitest 4 + jsdom.
+- Framework: Vitest 5 + jsdom.
 - Tests live in `src/**` and `convex/lib/**`.
 - Coverage threshold: 80% global (lines/functions/branches/statements).
 - Example: `convex/lib/skills.test.ts`.
