@@ -3,7 +3,7 @@
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { convexTest } from "convex-test";
 import { expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
 
@@ -106,8 +106,36 @@ async function readReleaseAndJob(
   }));
 }
 
-it("atomically stores a completed Endor summary and succeeds the package scan job", async () => {
+it("claims an assigned plugin, stores its Endor summary, and serves the exact release", async () => {
   const { t, releaseId, jobId } = await createPackageScanFixture();
+  await t.run((ctx) =>
+    ctx.db.patch(jobId, {
+      status: "queued",
+      source: "bulk-rescan",
+      attempts: 0,
+      leaseToken: undefined,
+      workerId: undefined,
+      leaseExpiresAt: undefined,
+    }),
+  );
+  vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "fixture-worker-token");
+  const leases = await t
+    .action(api.securityScan.claimCodexScanJobLeases, {
+      token: "fixture-worker-token",
+      workerId: "endor-worker",
+      lane: "shared",
+      limit: 3,
+      assignedJobIds: [jobId],
+    })
+    .finally(() => vi.unstubAllEnvs());
+  expect(leases.map((job) => job._id)).toEqual([jobId]);
+  const lease = leases[0];
+  if (!lease) throw new Error("Plugin scan was not claimed");
+  expect((await readReleaseAndJob(t, releaseId, jobId)).job).toMatchObject({
+    status: "running",
+    workerId: "endor-worker",
+    leaseToken: lease.leaseToken,
+  });
   const endorAnalysis = {
     status: "completed" as const,
     checkedAt: 9,
@@ -119,7 +147,7 @@ it("atomically stores a completed Endor summary and succeeds the package scan jo
     t.mutation(internal.packages.completeReleaseSecurityScanInternal, {
       releaseId,
       jobId,
-      leaseToken: "lease-one",
+      leaseToken: lease.leaseToken,
       runId: "run-one",
       llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 10 },
       endorAnalysis,

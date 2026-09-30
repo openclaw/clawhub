@@ -3219,7 +3219,7 @@ export const claimQueuedJobsInternal = internalMutation({
         if (
           job?.status === "queued" &&
           job.source === "bulk-rescan" &&
-          job.targetKind === "skillVersion" &&
+          (job.targetKind === "skillVersion" || job.targetKind === "packageRelease") &&
           !job.rolloutGate &&
           job.nextRunAt <= now
         ) {
