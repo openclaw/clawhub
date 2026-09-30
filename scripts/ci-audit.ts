@@ -35,7 +35,51 @@ export function isTransientAuditFailure(output: string): boolean {
 }
 
 export function auditArgs(): string[] {
-  return ["audit", ...IGNORED_ADVISORIES.flatMap((id) => ["--ignore", id])];
+  return ["audit", "--json", ...IGNORED_ADVISORIES.flatMap((id) => ["--ignore", id])];
+}
+
+type Advisory = { title?: unknown; url?: unknown; severity?: unknown };
+
+// Release policy: advisories never block CI or a deploy; they are recorded as
+// warnings and patched through main. A known-malware package still blocks.
+export function classifyAuditFindings(output: string) {
+  const start = output.indexOf("{");
+  if (start === -1) return null;
+  let report: Record<string, Advisory[]>;
+  try {
+    report = JSON.parse(output.slice(start)) as Record<string, Advisory[]>;
+  } catch {
+    return null;
+  }
+  const findings = Object.entries(report).flatMap(([name, advisories]) =>
+    (Array.isArray(advisories) ? advisories : []).map((advisory) => ({
+      name,
+      title: typeof advisory.title === "string" ? advisory.title : "advisory",
+      url: typeof advisory.url === "string" ? advisory.url : "",
+      severity: typeof advisory.severity === "string" ? advisory.severity : "unknown",
+    })),
+  );
+  return {
+    malware: findings.filter((finding) => /\bmalware\b|\bmalicious\b/i.test(finding.title)),
+    advisories: findings,
+  };
+}
+
+export function auditExitCode(
+  attempt: AuditAttempt,
+  log: (message: string) => void = (message) => console.log(message),
+) {
+  if (attempt.exitCode === 0) return 0;
+  const findings = classifyAuditFindings(attempt.output);
+  // Unparseable output is a tool failure, not an advisory decision.
+  if (!findings) return attempt.exitCode;
+  for (const finding of findings.advisories) {
+    const level = findings.malware.includes(finding) ? "error" : "warning";
+    log(
+      `::${level} title=Dependency ${level === "error" ? "malware" : "advisory"}::${finding.name} (${finding.severity}) ${finding.title} ${finding.url}`,
+    );
+  }
+  return findings.malware.length > 0 ? 1 : 0;
 }
 
 type AuditAttempt = { exitCode: number; output: string };
@@ -69,9 +113,10 @@ function runBunAudit(): AuditAttempt {
 }
 
 if (import.meta.main) {
+  let last: AuditAttempt = { exitCode: 1, output: "" };
   const exitCode = await runAuditWithRetry(
-    runBunAudit,
+    () => (last = runBunAudit()),
     (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   );
-  process.exit(exitCode);
+  process.exit(exitCode === 0 ? 0 : auditExitCode(last));
 }

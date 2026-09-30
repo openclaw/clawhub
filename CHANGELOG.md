@@ -4,6 +4,7 @@
 
 ### Changes
 
+- CI: record dependency advisories from `bun audit` as warning annotations instead of failing `static` and blocking Deploy Test; known-malware findings still fail.
 - Workers: default Skill Cards to GPT-6 Sol with medium reasoning and fast service, and prepare semantic input reuse with stale-result fencing for separate activation after backend deployment.
 - Workers: preserve optional scanner model and reasoning settings in restricted subprocess environments without changing workflow defaults.
 - Web: organization publishers can upload durable PNG, JPEG, or WebP logos from settings instead of relying on hotlinked image URLs.

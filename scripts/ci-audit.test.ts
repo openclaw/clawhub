@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { auditArgs, isTransientAuditFailure, runAuditWithRetry } from "./ci-audit";
+import { auditArgs, auditExitCode, isTransientAuditFailure, runAuditWithRetry } from "./ci-audit";
 
 const CONNECTION_DROP = "bun audit v1.3.10 (30e609e0)\nConnectionClosed: audit request failed\n";
 const FINDINGS =
@@ -51,5 +51,37 @@ describe("ci-audit", () => {
     await expect(runAuditWithRetry(attempt, sleep, () => {})).resolves.toBe(3);
     expect(attempt).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("records advisories as warnings without failing the gate", () => {
+    const log = vi.fn();
+    const output = JSON.stringify({
+      "fast-uri": [
+        {
+          title: "fast-uri host normalization",
+          url: "https://github.com/advisories/GHSA-hrr3-gc8f-f4qj",
+          severity: "moderate",
+        },
+      ],
+    });
+
+    expect(auditExitCode({ exitCode: 1, output }, log)).toBe(0);
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(/^::warning title=Dependency advisory::fast-uri \(moderate\)/),
+    );
+  });
+
+  it("still fails on known malware", () => {
+    const log = vi.fn();
+    const output = JSON.stringify({
+      "evil-pkg": [{ title: "Malware in evil-pkg", url: "https://github.com/advisories/GHSA-x" }],
+    });
+
+    expect(auditExitCode({ exitCode: 1, output }, log)).toBe(1);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error title=Dependency malware::/));
+  });
+
+  it("keeps unparseable audit failures blocking", () => {
+    expect(auditExitCode({ exitCode: 2, output: "error: lockfile unreadable\n" }, vi.fn())).toBe(2);
   });
 });
