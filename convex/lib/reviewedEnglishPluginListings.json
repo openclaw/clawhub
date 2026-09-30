@@ -1,0 +1,197 @@
+[
+  {
+    "name": "@openclaw/deepseek-provider",
+    "displayName": "OpenClaw DeepSeek Provider",
+    "summary": "OpenClaw DeepSeek provider plugin."
+  },
+  {
+    "name": "@openclaw/searxng-plugin",
+    "displayName": "SearXNG OpenClaw plugin",
+    "summary": "OpenClaw SearXNG plugin"
+  },
+  {
+    "name": "@openclaw/tokenjuice",
+    "displayName": "tokenjuice",
+    "summary": "OpenClaw tokenjuice exec output compaction plugin"
+  },
+  {
+    "name": "@openclaw/duckduckgo-plugin",
+    "displayName": "OpenClaw DuckDuckGo Plugin",
+    "summary": "OpenClaw DuckDuckGo plugin."
+  },
+  {
+    "name": "@openclaw/parallel-plugin",
+    "displayName": "OpenClaw Parallel Plugin",
+    "summary": "OpenClaw Parallel web search plugin."
+  },
+  {
+    "name": "@openclaw/firecrawl-plugin",
+    "displayName": "OpenClaw Firecrawl Plugin",
+    "summary": "OpenClaw Firecrawl plugin."
+  },
+  {
+    "name": "@openclaw/qwen-provider",
+    "displayName": "OpenClaw Qwen Cloud Provider",
+    "summary": "OpenClaw Qwen Cloud provider plugin."
+  },
+  {
+    "name": "@openclaw/zai-provider",
+    "displayName": "Z.AI OpenClaw provider",
+    "summary": "OpenClaw Z.AI provider plugin"
+  },
+  {
+    "name": "@openclaw/groq-provider",
+    "displayName": "OpenClaw Groq Provider",
+    "summary": "OpenClaw Groq media-understanding provider."
+  },
+  {
+    "name": "@openclaw/mattermost",
+    "displayName": "Mattermost",
+    "summary": "OpenClaw Mattermost channel plugin"
+  },
+  {
+    "name": "@openclaw/clickclack",
+    "displayName": "ClickClack",
+    "summary": "OpenClaw ClickClack channel plugin"
+  },
+  {
+    "name": "@openclaw/exa-plugin",
+    "displayName": "OpenClaw Exa Plugin",
+    "summary": "OpenClaw Exa plugin."
+  },
+  {
+    "name": "@openclaw/opencode-provider",
+    "displayName": "OpenCode Zen OpenClaw provider",
+    "summary": "OpenClaw OpenCode Zen provider plugin"
+  },
+  {
+    "name": "@openclaw/pixverse-provider",
+    "displayName": "PixVerse",
+    "summary": "OpenClaw PixVerse video generation provider plugin."
+  },
+  {
+    "name": "@openclaw/comfy-provider",
+    "displayName": "@openclaw/comfy-provider",
+    "summary": "OpenClaw ComfyUI provider plugin."
+  },
+  {
+    "name": "@openclaw/tlon",
+    "displayName": "Tlon/Urbit",
+    "summary": "OpenClaw Tlon/Urbit channel plugin for chat workflows."
+  },
+  {
+    "name": "@openclaw/xiaomi-provider",
+    "displayName": "OpenClaw Xiaomi Provider",
+    "summary": "OpenClaw Xiaomi provider plugin."
+  },
+  {
+    "name": "@openclaw/cerebras-provider",
+    "displayName": "OpenClaw Cerebras Provider",
+    "summary": "OpenClaw Cerebras provider plugin."
+  },
+  {
+    "name": "@openclaw/stepfun-provider",
+    "displayName": "StepFun",
+    "summary": "OpenClaw StepFun provider plugin."
+  },
+  {
+    "name": "@openclaw/venice-provider",
+    "displayName": "Venice OpenClaw provider",
+    "summary": "OpenClaw Venice provider plugin"
+  },
+  {
+    "name": "@openclaw/mistral-provider",
+    "displayName": "OpenClaw Mistral Provider",
+    "summary": "OpenClaw Mistral provider plugin"
+  },
+  {
+    "name": "@openclaw/deepinfra-provider",
+    "displayName": "OpenClaw DeepInfra Provider",
+    "summary": "OpenClaw DeepInfra provider plugin."
+  },
+  {
+    "name": "@openclaw/meta-provider",
+    "displayName": "Meta provider",
+    "summary": "OpenClaw Meta provider plugin."
+  },
+  {
+    "name": "@openclaw/qianfan-provider",
+    "displayName": "OpenClaw Qianfan Provider",
+    "summary": "OpenClaw Qianfan provider plugin."
+  },
+  {
+    "name": "@openclaw/irc",
+    "displayName": "IRC",
+    "summary": "OpenClaw IRC channel plugin"
+  },
+  {
+    "name": "@openclaw/inworld-speech",
+    "displayName": "Inworld",
+    "summary": "OpenClaw Inworld speech plugin."
+  },
+  {
+    "name": "@openclaw/fireworks-provider",
+    "displayName": "Fireworks OpenClaw provider",
+    "summary": "OpenClaw Fireworks provider plugin"
+  },
+  {
+    "name": "@openclaw/voyage-provider",
+    "displayName": "OpenClaw Voyage Provider",
+    "summary": "OpenClaw Voyage embedding provider plugin."
+  },
+  {
+    "name": "@openclaw/gradium-speech",
+    "displayName": "OpenClaw Gradium Plugin",
+    "summary": "OpenClaw Gradium speech plugin."
+  },
+  {
+    "name": "@openclaw/teams-meetings",
+    "displayName": "Microsoft Teams meetings",
+    "summary": "OpenClaw Microsoft Teams browser meeting participant plugin."
+  },
+  {
+    "name": "@openclaw/zoom-meetings",
+    "displayName": "Zoom meetings",
+    "summary": "OpenClaw Zoom browser meeting participant plugin."
+  },
+  {
+    "name": "@openclaw/longcat-provider",
+    "displayName": "LongCat",
+    "summary": "OpenClaw LongCat provider plugin."
+  },
+  {
+    "name": "@openclaw/chutes-provider",
+    "displayName": "OpenClaw Chutes Provider",
+    "summary": "OpenClaw Chutes.ai provider plugin."
+  },
+  {
+    "name": "@openclaw/raft",
+    "displayName": "Raft",
+    "summary": "OpenClaw Raft channel plugin for Raft CLI wake bridges."
+  },
+  {
+    "name": "@openclaw/fish-audio-speech",
+    "displayName": "Fish Audio",
+    "summary": "OpenClaw Fish Audio speech plugin."
+  },
+  {
+    "name": "@openclaw/byteplus-provider",
+    "displayName": "OpenClaw BytePlus Provider",
+    "summary": "OpenClaw BytePlus provider plugin."
+  },
+  {
+    "name": "@openclaw/baseten-provider",
+    "displayName": "Baseten",
+    "summary": "OpenClaw Baseten provider plugin."
+  },
+  {
+    "name": "@openclaw/vydra-provider",
+    "displayName": "OpenClaw Vydra Provider",
+    "summary": "OpenClaw Vydra media provider plugin."
+  },
+  {
+    "name": "@openclaw/radius-provider",
+    "displayName": "Radius",
+    "summary": "OpenClaw Radius model gateway provider plugin."
+  }
+]

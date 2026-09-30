@@ -9,6 +9,7 @@ import {
   categoryReviewPayload,
   reviewRow,
   validateCategoryCorrections,
+  validateCategoryPackageNames,
   type CategoryCorrection,
   type CategoryReviewRow,
   type CategoryReviewProvenance,
@@ -35,6 +36,7 @@ type Options = {
   cursor: string | null;
   maxPages: number;
   workers: number;
+  packageNames?: string[];
   ids: string[];
   reviewHash: string;
   corrections: CategoryCorrection[];
@@ -90,6 +92,19 @@ export function parseOptions(env: NodeJS.ProcessEnv): Options {
   const workers = Number(env.CATEGORY_WORKERS ?? "3");
   requireValue(Number.isInteger(maxPages) && maxPages >= 1 && maxPages <= 20, "Use 1–20 pages.");
   requireValue(Number.isInteger(workers) && workers >= 1 && workers <= 4, "Use 1–4 workers.");
+  let packageNames: string[] | undefined;
+  try {
+    const selection: unknown = JSON.parse(env.CATEGORY_PACKAGE_NAMES || "[]");
+    if (!Array.isArray(selection) || selection.length > 0)
+      packageNames = validateCategoryPackageNames(selection);
+  } catch (error) {
+    throw new OperatorError(`Invalid package names: ${(error as Error).message}`);
+  }
+  if (packageNames) {
+    requireValue(mode === "preview", "Package names are only supported by preview.");
+    requireValue(maxPages === 1, "Named package preview requires max_pages=1.");
+    requireValue(cursor === null, "Named package preview cannot include a cursor.");
+  }
   let ids: unknown;
   try {
     ids = JSON.parse(env.CATEGORY_REVIEWED_IDS || "[]");
@@ -171,6 +186,7 @@ export function parseOptions(env: NodeJS.ProcessEnv): Options {
     cursor,
     maxPages,
     workers,
+    ...(packageNames ? { packageNames } : {}),
     ids,
     reviewHash,
     corrections: decisions,
@@ -288,6 +304,7 @@ export async function previewPages(
     const page = await client.run<Page>("pluginCategoryRefresh:getPage", {
       batchSize: 10,
       ...(cursor ? { cursor } : {}),
+      ...(options.packageNames ? { packageNames: options.packageNames } : {}),
     });
     requireValue(
       page.isDone || (page.cursor && page.cursor !== cursor),
@@ -306,6 +323,7 @@ export async function previewPages(
     const last = completed[contiguous - 1];
     return {
       runId: options.runId,
+      ...(options.packageNames ? { packageNames: options.packageNames } : {}),
       inputCursor: options.cursor,
       resumeCursor: last?.cursor ?? options.cursor,
       isDone: last?.isDone ?? false,
@@ -341,6 +359,7 @@ export async function previewPages(
             runId: options.runId,
             batchSize: 10,
             ...(page.input ? { cursor: page.input } : {}),
+            ...(options.packageNames ? { packageNames: options.packageNames } : {}),
           });
           // A moving corpus can change page boundaries. Resume from the last
           // contiguous result and reconcile from the beginning after the sweep.

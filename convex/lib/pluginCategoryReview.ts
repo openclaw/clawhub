@@ -1,8 +1,22 @@
 import { isCurrentPluginCategoryAssignment } from "clawhub-schema";
 import type { Infer } from "convex/values";
+import { tryNormalizePackageName } from "./packageRegistry";
 import type { pluginCategoryReviewProvenanceValidator } from "./pluginCategoryClassificationContract";
 
 export type CategoryReviewProvenance = Infer<typeof pluginCategoryReviewProvenanceValidator>;
+
+export function validateCategoryPackageNames(value: unknown): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > 10 ||
+    value.some((name) => typeof name !== "string" || tryNormalizePackageName(name) !== name) ||
+    new Set(value).size !== value.length
+  ) {
+    throw new Error("Use 1–10 distinct, exact canonical package names.");
+  }
+  return value;
+}
 
 export type CategoryCorrection = { id: string; category: string; evidence: string };
 export type CategoryReviewRow = {

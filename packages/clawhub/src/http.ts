@@ -16,17 +16,19 @@ const RETRY_BACKOFF_BASE_MS = 300;
 const RETRY_BACKOFF_MAX_MS = 5_000;
 const RETRY_AFTER_JITTER_MS = 250;
 const CURL_META_MARKER = "__CLAWHUB_CURL_META__";
+// curl 7.84+ spells response headers `%header{name}`; `%{header:name}` is an
+// unknown variable that prints nothing, which silently dropped Retry-After.
 const CURL_WRITE_OUT_FORMAT = [
   "",
   CURL_META_MARKER,
   "%{http_code}",
-  "%{header:x-ratelimit-limit}",
-  "%{header:x-ratelimit-remaining}",
-  "%{header:x-ratelimit-reset}",
-  "%{header:ratelimit-limit}",
-  "%{header:ratelimit-remaining}",
-  "%{header:ratelimit-reset}",
-  "%{header:retry-after}",
+  "%header{x-ratelimit-limit}",
+  "%header{x-ratelimit-remaining}",
+  "%header{x-ratelimit-reset}",
+  "%header{ratelimit-limit}",
+  "%header{ratelimit-remaining}",
+  "%header{ratelimit-reset}",
+  "%header{retry-after}",
 ].join("\n");
 
 export type HttpRuntime = "node" | "bun";

@@ -6,6 +6,10 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
+      fixture-only:
+        description: "Generate one benign fixture card without accessing the production queue"
+        type: boolean
+        default: false
       batch-limit:
         description: "Maximum Skill Card jobs to run in parallel per worker shard"
         required: true
@@ -24,6 +28,7 @@ permissions:
 
 jobs:
   skill-card-worker:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.fixture-only != true }}
     name: Skill Card worker shard ${{ matrix.shard }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 60
@@ -88,3 +93,31 @@ jobs:
             --nvidia-tool-dir "$NVIDIA_TRUSTWORTHY_AI_DIR"
           )
           bun scripts/skill-cards/run-skill-card-worker.ts "${args[@]}"
+
+  fixture:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture-only == true }}
+    name: Skill Card credential canary
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 20
+    environment: Production
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: NVIDIA/Trustworthy-AI
+          ref: fb5867e9070b4080d28818242e20334e10ac55fc
+          path: .artifacts/nvidia-trustworthy-ai
+          persist-credentials: false
+      - uses: ./.github/actions/setup-bun
+      - name: Install Codex CLI and renderer dependencies
+        run: |
+          npm install -g @openai/codex@0.142.3
+          python3 -m pip install --user --retries 5 --timeout 60 'jinja2==3.1.6'
+      - name: Authenticate Codex CLI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
+      - name: Generate one fixture card
+        run: bun scripts/skill-cards/credential-canary.ts

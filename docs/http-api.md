@@ -678,11 +678,21 @@ Query params:
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
 - `sort` (optional): `recommended` (default), `trending`, `downloads`, `updated`, legacy alias `installs`
+- `featured` (optional): `true` returns Featured plugins in newest-featured order,
+  regardless of `sort`. Removing and re-featuring a plugin moves it to the front;
+  retaining an existing selection preserves its position.
 - `category` (optional): plugin category filter. The active browse values are
   returned by `GET /api/v1/plugins/categories`, including their descriptions and
-  icons. The 22 categories cover core configuration surfaces and product uses.
+  icons. The 23 categories cover core configuration surfaces and product uses,
+  including Computer use after Web for interactive desktop/browser control.
   Retired values `tools`, `runtime`, and `gateway` remain readable for existing
   metadata and links, but do not appear in the active browse list.
+- `curated` (optional): `true` requires `category` and `sort=downloads`, and cannot
+  be combined with `featured` or `officialFirst`. Eligible canonical package pins
+  come first, then remaining plugins by downloads descending and canonical name
+  ascending, consistently across pages and both plugin families. Category browse
+  retains all listing languages. The response includes category metadata with
+  optional ordered `pinnedPackages`.
 
 Legacy v1 filter aliases remain accepted on read endpoints:
 
@@ -690,7 +700,13 @@ Legacy v1 filter aliases remain accepted on read endpoints:
 - `observability` and `deployment` resolve to `gateway`.
 - `dev-tools` resolves to `runtime`.
 
-`trending` is a seven-day install/download leaderboard and does not use all-time totals.
+`trending` ranks activity in the latest 24 completed UTC hours, refreshed hourly.
+Its score is downloads plus three times net installs, with negative net installs
+clamped to zero. Trending items expose window metrics in the optional `trending24h`
+object: downloads, net installs, and `windowStart`/`windowEnd` timestamps in
+milliseconds (start inclusive, end exclusive). Regular `stats` fields are unchanged;
+`stats.downloads` remains the lifetime download total. During upgrade, the existing leaderboard remains available
+without window metrics until the first 24-hour snapshot is ready.
 On the unified `/api/v1/packages` endpoint it is plugin-only; use
 `/api/v1/skills?sort=trending` for the skill catalog.
 
@@ -700,10 +716,16 @@ Legacy aliases are not accepted as stored or author-declared category values.
 
 Returns the bounded data needed to render the plugin marketplace home page in
 one cacheable request: the canonical category metadata plus the union of the
-top eight Featured, Trending, and official-first/download-sorted plugins for
-each category. Items may include `featured` and `trending` markers.
+top eight Featured, Trending, and curated plugins for each category. Category
+shelves resolve eligible canonical pins before the eight-card limit, then sort
+by downloads descending and canonical package name ascending. Models pin only
+OpenAI, Anthropic, and Google. Other is omitted from homepage sections. Homepage
+discovery applies English-listing eligibility before filling its limits; complete
+category browse, search, and direct lookup retain all listing languages.
+Items may include `featured` and `trending` markers.
 Marked items also include their zero-based `featuredRank` or `trendingRank`, so
 clients preserve each shelf's independent order after deduplicating metadata.
+Featured ranks follow newest-featured order, matching `GET /api/v1/plugins?featured=true`.
 
 The response is public and carries shared-cache headers. Use the paginated
 `GET /api/v1/plugins` endpoint for searches, category expansion, and complete
@@ -713,7 +735,8 @@ catalog traversal.
 
 Returns the canonical plugin discovery taxonomy in display order. Each category
 contains `slug`, `label`, `description`, a bare Lucide `icon` key, and numeric
-`order`.
+`order`, plus optional ordered `pinnedPackages` for curated ordering. This full
+taxonomy includes Other even though homepage discovery omits its shelf.
 
 Use each category's description to choose the main reason someone installs the
 plugin. New plugin releases may declare exactly one category in
@@ -905,6 +928,47 @@ Notes:
 - `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are
   included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
+
+### `GET /api/v1/packages/{name}/versions/{version}/publication`
+
+Returns publication state for an exact package version. This is a public read
+endpoint in the `read` rate-limit bucket. An optional bearer token affects
+package visibility exactly as on the version endpoint. Encode scoped names as
+`%40openclaw%2Fdiscord`; the `/@openclaw/discord/versions/...` path form also works.
+
+The response is a closed object with `name`, `version`, and one of these shapes:
+
+```json
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "published" }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "absent" }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "pending", "stage": "staging" }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "pending", "stage": "checks", "attemptId": "..." }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "pending", "stage": "finalization", "attemptId": "..." }
+{ "name": "@openclaw/discord", "version": "2026.9.2", "state": "failed", "attemptId": "...", "recoverable": true }
+```
+
+An unknown version returns `200` with `absent`. Pending releases without a bound
+attempt return `staging`; checks and finalization include the bound attempt ID.
+Blocked or expired attempts, and blocked releases, return `failed` with
+`recoverable: false`. Failed responses omit `attemptId` only when no attempt row
+is bound. `recoverable` is advisory static recovery eligibility: it checks
+artifact/token bindings, package family, and moderation, but does not check the
+caller's publisher membership, active claims, or stored bytes. Recovery revalidates
+all of these and requires a current publisher's user API token.
+
+Invisible or soft-deleted packages and skill names return `404 Package not found`.
+Published releases follow the existing version endpoint's visibility: hidden
+published versions return `404 Version not found`, while moderated releases whose
+metadata remains readable return `published`. Publication state does not imply
+download permission. Error text, scanner results, identities, token IDs, GitHub
+run IDs, idempotency keys, artifact digests, and storage IDs are never returned.
+Attempt IDs grant no access to attempt details or recovery.
+
+Older servers may serve ordinary version JSON for this path. Clients should use
+a recognized, valid `state` response; on `404`, or `200` without `state`, fall back
+to `GET /api/v1/packages/{name}/versions/{version}` (`200` means published, `404`
+means not published). A `200` with an unknown state or malformed recognized shape
+must fail closed. Other non-2xx responses retain normal error handling and retries.
 
 ### `GET /api/v1/packages/{name}/versions/{version}/security`
 
@@ -1823,6 +1887,10 @@ uncached results. Recommendations never publish themselves.
 
 - `GET /api/v1/featured/{plugin|skill}` returns editorial revision, reservations
   (including pending reasons), and the last approved publication in its explicit order.
+- `POST /api/v1/skills-sh/{owner}/{repo}/{slug}/featured` accepts `{ "featured": true }`
+  (or `false`) for a public, installable mirrored entry. It shares the sixteen-slot
+  skill limit, preserves timestamps on repeated adds, and records staff audit history.
+  CLI: `clawhub-admin skills feature skills-sh:humanlayer/skills/show-me`.
 - `POST /api/v1/featured/plugin/editorial` accepts `expectedRevision` and up to
   eight `{ id, name, displayName, reason }` entries. Identities use `plugin:<package>`.
   Missing catalog entries remain reserved; saving does not change public badges.
@@ -1836,7 +1904,8 @@ Each publication item has `id`, `version`, `selectionBasis` (`editorial` or
 nonnegative `installs7d`, counted within that same window. Plugin order is all eight
 saved editorial reservations followed by eight telemetry selections. Skills use
 sixteen native `clawhub:<skill-id>` identities, all telemetry selections. Include
-editorial install counts too when the report provides them.
+editorial install counts too when the report provides them. Native-only skill reports
+cannot publish while skills.sh selections are present; remove those selections first.
 
 Create the recommendation report through `POST /api/v1/search-insights/reports`
 with `view: "recommendations"`, the catalog and completed `endDay`, then read its

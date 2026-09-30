@@ -452,6 +452,11 @@ security verdict, ClawHub may enqueue that exact commit, path, and content hash
 for a pinned SkillEvaluator Tier 3 run. Evaluation is asynchronous and never
 blocks promotion or installation. Unchanged syncs do not enqueue another run.
 
+Public evaluation maintenance mutations, including targeted prioritization and
+backfill scheduling, require an active admin before reading or changing queues.
+Anonymous callers and non-admin users cannot requeue evaluations or schedule
+worker dispatch; the existing admin scheduling behavior remains available.
+
 The worker discovers only SkillEvaluator's supported upstream `evals/` layout.
 Missing, conflicting, or unsupported eval inputs produce a durable skipped
 reason instead of a guessed mapping. A completed result is published only while

@@ -26,6 +26,31 @@ function expectSecretStepAllowlist(
 }
 
 describe("skill-card-worker workflow", () => {
+  it("isolates fixture dispatch from queue draining and backend credentials", async () => {
+    const workflow = parseYaml(await readFile(".github/workflows/skill-card-worker.yml", "utf8"));
+    expect(workflow.on.workflow_dispatch.inputs["fixture-only"]).toMatchObject({
+      type: "boolean",
+      default: false,
+    });
+    expect(workflow.jobs["skill-card-worker"].if).toBe(
+      "${{ github.event_name != 'workflow_dispatch' || inputs.fixture-only != true }}",
+    );
+    const fixture = workflow.jobs.fixture;
+    expect(fixture.if).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && inputs.fixture-only == true }}",
+    );
+    expect(fixture.environment).toBe("Production");
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(fixture.env).toBeUndefined();
+    expectSecretStepAllowlist(fixture.steps, "OPENAI_API_KEY", ["Authenticate Codex CLI"]);
+    expectSecretStepAllowlist(fixture.steps, "SECURITY_SCAN_WORKER_TOKEN", []);
+    expectSecretStepAllowlist(fixture.steps, "CONVEX_DEPLOY_KEY", []);
+    expect(JSON.stringify(fixture)).not.toMatch(
+      /CONVEX_URL|VITE_CONVEX_URL|upload-artifact|run-skill-card-worker/,
+    );
+    expect(fixture.steps.at(-1).run).toBe("bun scripts/skill-cards/credential-canary.ts");
+  });
+
   it("does not expose OPENAI_API_KEY to the artifact-processing worker step", async () => {
     const workflow = parseYaml(
       await readFile(".github/workflows/skill-card-worker.yml", "utf8"),

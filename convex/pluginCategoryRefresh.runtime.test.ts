@@ -26,12 +26,16 @@ async function fixture() {
     });
     return { userId: createdUserId, publisherId: createdPublisherId };
   });
-  const publish = async (version: string, declared?: string[]) =>
+  const publish = async (
+    version: string,
+    declared?: string[],
+    name = "@category-proof/appointments",
+  ) =>
     t.mutation(internal.packages.insertReleaseInternal, {
       actorUserId: userId,
       ownerUserId: userId,
       ownerPublisherId: publisherId,
-      name: "@category-proof/appointments",
+      name,
       displayName: "Appointments",
       family: "code-plugin",
       version,
@@ -125,6 +129,75 @@ async function staffFixture(fallback = false) {
 }
 
 describe("latest plugin category refresh", () => {
+  it("previews only the exact named packages and reuses their journal rows on retry", async () => {
+    const { t, publish, readCategories } = await fixture();
+    await publish("1.0.0", undefined, "@category-proof/unselected");
+    const selected = await publish("1.0.0", ["web"], "@category-proof/selected");
+    const args = { runId: "named-preview", packageNames: ["@category-proof/selected"] };
+    expect(
+      await t.query(internal.pluginCategoryRefresh.getPage, {
+        packageNames: args.packageNames,
+        batchSize: 10,
+      }),
+    ).toEqual({ ids: [selected.packageId], cursor: "", isDone: true });
+    await expect(t.action(internal.pluginCategoryRefresh.preview, args)).resolves.toMatchObject({
+      isDone: true,
+      previewed: 1,
+      skipped: 0,
+    });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: args.runId,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(rows.page.map((row) => row.packageName)).toEqual(args.packageNames);
+    expect(rows.page[0].classification.source).toBe("manifest");
+    expect(await t.run(async (ctx) => (await ctx.db.get(selected.packageId))?.categories)).toEqual([
+      "tools",
+    ]);
+    await expect(t.action(internal.pluginCategoryRefresh.preview, args)).resolves.toMatchObject({
+      previewed: 0,
+      skipped: 1,
+    });
+    expect((await readCategories()).map((row) => row.categories)).toEqual([["tools"], ["tools"]]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid named selections before previewing any package", async () => {
+    const { t, latest } = await fixture();
+    for (const packageNames of [
+      [],
+      ["@category-proof/appointments", "@category-proof/appointments"],
+      [" @category-proof/appointments"],
+      ["@category-proof/appointments", "@category-proof/missing"],
+      Array.from({ length: 11 }, (_, index) => `plugin-${index}`),
+    ]) {
+      await expect(
+        t.action(internal.pluginCategoryRefresh.preview, {
+          runId: "invalid-selection",
+          packageNames,
+        }),
+      ).rejects.toThrow();
+    }
+    await expect(
+      t.query(internal.pluginCategoryRefresh.getPage, {
+        packageNames: ["@category-proof/appointments"],
+        batchSize: 10,
+        cursor: "existing-cursor",
+      }),
+    ).rejects.toThrow("cursor");
+    await t.run(async (ctx) => ctx.db.patch(latest.packageId, { family: "skill" }));
+    await expect(
+      t.action(internal.pluginCategoryRefresh.preview, {
+        runId: "invalid-selection",
+        packageNames: ["@category-proof/appointments"],
+      }),
+    ).rejects.toThrow("plugin package");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await t.run(async (ctx) => ctx.db.query("pluginCategoryRefreshes").collect())).toEqual(
+      [],
+    );
+  });
+
   it("requires an explicit source review to correct a fallback, and records its provenance", async () => {
     const { t, row, args, latest } = await staffFixture(true);
     expect(row.classification.source).toBe("fallback");
@@ -348,7 +421,10 @@ describe("latest plugin category refresh", () => {
     expect(
       (await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.categoryClassification,
     ).toMatchObject({ source: "reviewed", reviewId: original._id });
-    await t.action(internal.pluginCategoryRefresh.preview, { runId: "same-artifact" });
+    await t.action(internal.pluginCategoryRefresh.preview, {
+      runId: "same-artifact",
+      packageNames: ["@category-proof/appointments"],
+    });
     const retained = await t.query(internal.pluginCategoryRefresh.list, {
       runId: "same-artifact",
       paginationOpts: { cursor: null, numItems: 10 },

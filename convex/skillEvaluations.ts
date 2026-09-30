@@ -559,6 +559,8 @@ export const prioritizeDocaDpaSkillEvaluation = mutation({
     sourcePath: v.literal("skills/doca-dpa"),
   },
   handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertAdmin(user);
     const now = Date.now();
     const queuedRows = await ctx.db
       .query("skillEvaluationRuns")

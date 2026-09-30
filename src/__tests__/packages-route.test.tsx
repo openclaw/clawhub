@@ -10,6 +10,7 @@ import {
 } from "./helpers/convexReactMocks";
 
 const fetchPluginCatalogMock = vi.fn();
+const queryNewPluginsMock = vi.fn();
 const isRateLimitedPackageApiErrorMock = vi.fn(
   (error: unknown) =>
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
@@ -71,6 +72,10 @@ vi.mock("../lib/packageApi", () => ({
   isRateLimitedPackageApiError: (error: unknown) => isRateLimitedPackageApiErrorMock(error),
 }));
 
+vi.mock("../convex/client", () => ({
+  convexHttp: { query: (...args: unknown[]) => queryNewPluginsMock(...args) },
+}));
+
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => convexReactMocks.useQuery(...args),
 }));
@@ -82,6 +87,7 @@ vi.mock("../../convex/_generated/api", () => ({
     },
     packages: {
       countPublicPlugins: "packages:countPublicPlugins",
+      listPublicNewPluginsPage: "packages:listPublicNewPluginsPage",
     },
   },
 }));
@@ -101,6 +107,8 @@ async function loadRoute() {
 describe("plugins route", () => {
   beforeEach(() => {
     fetchPluginCatalogMock.mockReset();
+    queryNewPluginsMock.mockReset();
+    queryNewPluginsMock.mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     isRateLimitedPackageApiErrorMock.mockClear();
     resetConvexReactMocks();
@@ -110,6 +118,79 @@ describe("plugins route", () => {
     redirectMock.mockClear();
     searchMock = {};
     loaderDataMock = undefined;
+  });
+
+  it("renders category-only plugin browsing and ignores retired catalog filters", async () => {
+    const route = await loadRoute();
+    searchMock =
+      route.__config.validateSearch?.({
+        featured: true,
+        official: true,
+        new: true,
+        sort: "trending",
+        category: "computer-use",
+        cursor: "old-feed-cursor",
+      }) ?? {};
+    const Component = route.__config.component as ComponentType;
+    render(<Component />);
+    expect(screen.queryByRole("radiogroup", { name: "Sort order" })).toBeNull();
+    expect(screen.getByLabelText("Plugin categories")).toBeTruthy();
+    const deps = route.__config.loaderDeps?.({ search: searchMock }) ?? {};
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+    await loadPluginsPageData(deps);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ category: "computer-use", cursor: undefined }),
+    );
+    const request = fetchPluginCatalogMock.mock.calls.at(-1)?.[0];
+    expect(request?.featured).toBeUndefined();
+    expect(request?.isOfficial).toBeUndefined();
+    expect(queryNewPluginsMock).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { q: "security" }, { category: "computer-use" }])(
+    "does not render catalog tabs: %j",
+    async (search) => {
+      searchMock = search;
+      const route = await loadRoute();
+      const Component = route.__config.component as ComponentType;
+      render(<Component />);
+      expect(screen.queryByRole("radiogroup", { name: "Sort order" })).toBeNull();
+      for (const name of ["Trending", "Featured", "Official", "New", "All"])
+        expect(screen.queryByRole("radio", { name })).toBeNull();
+    },
+  );
+
+  it.each([
+    {},
+    { featured: true },
+    { official: "true" },
+    { verified: "1" },
+    { new: true },
+    { tab: "trending" },
+    { sort: "trending" },
+    { highlighted: true },
+  ])("opens the full plugin catalog for retired feed URLs: %j", async (legacy) => {
+    const route = await loadRoute();
+    const search =
+      route.__config.validateSearch?.({
+        ...legacy,
+        category: "computer-use",
+        topic: "browser",
+        view: "grid",
+      }) ?? {};
+    expect(search).toMatchObject({ category: "computer-use", topic: "browser" });
+    expect(search).not.toHaveProperty("view");
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+    await loadPluginsPageData(route.__config.loaderDeps?.({ search }) ?? {});
+    const request = fetchPluginCatalogMock.mock.calls.at(-1)?.[0];
+    expect(request).toMatchObject({
+      category: "computer-use",
+      topic: "browser",
+      sort: "downloads",
+    });
+    expect(request?.featured).toBeUndefined();
+    expect(request?.isOfficial).toBeUndefined();
+    expect(queryNewPluginsMock).not.toHaveBeenCalled();
   });
 
   it("rejects skill family filter in search state", async () => {
@@ -139,23 +220,6 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: undefined,
-      sort: undefined,
-      view: undefined,
-    });
-  });
-
-  it("keeps legacy verified search params as official browse", async () => {
-    const route = await loadRoute();
-    const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
-    ) => Record<string, unknown>;
-
-    expect(validateSearch({ verified: "1" })).toEqual({
-      q: undefined,
-      category: undefined,
-      cursor: undefined,
-      featured: undefined,
-      official: true,
       sort: undefined,
       view: undefined,
     });
@@ -342,68 +406,12 @@ describe("plugins route", () => {
     ).not.toThrow();
   });
 
-  it("redirects browse-only featured URLs when search is active", async () => {
-    const route = await loadRoute();
-    const beforeLoad = (
-      route.__config as never as {
-        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
-      }
-    ).beforeLoad;
-
-    expect(() =>
-      beforeLoad?.({
-        search: { q: "security", featured: true },
-      }),
-    ).toThrow();
-  });
-
-  it("preserves valid search sort when clearing stale featured URLs", async () => {
-    const route = await loadRoute();
-    const beforeLoad = (
-      route.__config as never as {
-        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
-      }
-    ).beforeLoad;
-
-    expect(() =>
-      beforeLoad?.({
-        search: { q: "security", sort: "updated", featured: true },
-      }),
-    ).toThrow();
-    expect(redirectMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        search: expect.objectContaining({
-          featured: undefined,
-          sort: "updated",
-        }),
-      }),
-    );
-  });
-
-  it("uses grid as the canonical browse view in search state", async () => {
+  it.each(["grid", "cards", "list"])("ignores the retired %s view selector", async (view) => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
+      s: Record<string, unknown>,
     ) => Record<string, unknown>;
-
-    expect(validateSearch({ view: "grid" })).toEqual(
-      expect.objectContaining({
-        view: "grid",
-      }),
-    );
-  });
-
-  it("keeps legacy cards URLs compatible with the grid view", async () => {
-    const route = await loadRoute();
-    const validateSearch = route.__config.validateSearch as (
-      search: Record<string, unknown>,
-    ) => Record<string, unknown>;
-
-    expect(validateSearch({ view: "cards" })).toEqual(
-      expect.objectContaining({
-        view: "grid",
-      }),
-    );
+    expect(validateSearch({ view })).not.toHaveProperty("view");
   });
 
   it("forwards opaque cursors through catalog loading", async () => {
@@ -456,7 +464,6 @@ describe("plugins route", () => {
         category: "tools",
         topic: "oauth",
         cursor: undefined,
-        isOfficial: true,
         signal: expect.any(AbortSignal),
         viewerMode: "anonymous",
       }),
@@ -626,7 +633,7 @@ describe("plugins route", () => {
     render(<Component />);
 
     const categorySidebar = screen.getByLabelText("Plugin categories");
-    expect(categorySidebar.querySelectorAll("button")).toHaveLength(23);
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(24);
     expect(categorySidebar.textContent).toContain("Channels");
     expect(categorySidebar.textContent).toContain("Agent runtimes");
     expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
@@ -708,14 +715,14 @@ describe("plugins route", () => {
         q: "api",
         category: "tools",
         topic: "postgres",
-        officialFirst: false,
+        curated: false,
         cursor: undefined,
         limit: 25,
       }),
     );
   });
 
-  it("requests official-first pagination for category browse", async () => {
+  it("requests curated pagination for category browse", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
 
@@ -724,7 +731,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         category: "security",
-        officialFirst: true,
+        curated: true,
       }),
     );
   });
@@ -884,7 +891,8 @@ describe("plugins route", () => {
       expect.objectContaining({
         category: "security",
         cursor: "cursor:next",
-        sort: "recommended",
+        sort: "downloads",
+        curated: true,
       }),
     );
     expect(navigateMock).not.toHaveBeenCalled();
@@ -1009,7 +1017,7 @@ describe("plugins route", () => {
   });
 
   it("hides the total plugin count when filters are active", async () => {
-    searchMock = { official: true };
+    searchMock = { category: "security" };
     loaderDataMock = {
       items: [],
       nextCursor: null,
@@ -1083,7 +1091,7 @@ describe("plugins route", () => {
     expect(lastCall.replace).toBe(true);
   });
 
-  it("renders a label-only title without positive count data and switches to grid view", async () => {
+  it("renders a label-only title and always-visible search without view controls", async () => {
     loaderDataMock = {
       items: [
         {
@@ -1107,20 +1115,10 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.queryByText("1")).toBeNull();
-    expect(screen.getByRole("button", { name: "List" }).closest(".browse-controls")).not.toBeNull();
-    expect(document.querySelector(".browse-results-toolbar .browse-view-toggle")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
-
-    expect(navigateMock).toHaveBeenCalled();
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({})).toEqual({
-      view: "grid",
-    });
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "plugin search" }).closest("[hidden]")).toBeNull();
+    expect(screen.getByText("Demo Plugin").closest(".plugin-summary-item")).not.toBeNull();
   });
 
   it("does not render the publish CTA on the plugins browse page", async () => {
@@ -1144,8 +1142,8 @@ describe("plugins route", () => {
     expect(screen.queryByText("Unable to load plugins")).toBeNull();
   });
 
-  it("switches legacy cards URLs back to list view", async () => {
-    searchMock = { view: "cards" };
+  it.each(["cards", "grid"])("renders legacy %s URLs as lists", async (view) => {
+    searchMock = { view };
     loaderDataMock = {
       items: [
         {
@@ -1167,17 +1165,10 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    const gridButton = screen.getByRole("button", { name: "Grid" });
-    expect(gridButton.className).toContain("is-active");
-
-    fireEvent.click(screen.getByRole("button", { name: "List" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ view: "cards" })).toEqual({ view: undefined });
+    expect(screen.getByText("Demo Plugin").closest(".plugin-summary-item")).not.toBeNull();
+    expect(document.querySelector(".browse-results-grid")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "List" })).toBeNull();
   });
 
   it("preserves catalog results during catalog loading", async () => {
@@ -1209,76 +1200,6 @@ describe("plugins route", () => {
     const result = await loadPluginsPageData({});
 
     expect(result.items).toHaveLength(2);
-  });
-
-  it("uses plugin-only catalog fetching for official browse", async () => {
-    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
-    const { loadPluginsPageData } = await import("../routes/plugins/index");
-
-    await loadPluginsPageData({
-      official: true,
-    });
-
-    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        isOfficial: true,
-        sort: "recommended",
-        limit: 25,
-      }),
-    );
-    expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
-  });
-
-  it("preserves featured browse when selecting All from the plugin tab group", async () => {
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-
-    expect(navigateMock).toHaveBeenCalled();
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(
-      lastCall.search({
-        family: "code-plugin",
-        cursor: "cursor:current",
-        featured: true,
-        sort: "updated",
-      }),
-    ).toEqual({
-      family: undefined,
-      cursor: undefined,
-      featured: true,
-      sort: "recommended",
-    });
-  });
-
-  it("keeps downloads explicit when selected from filtered plugin browse", async () => {
-    searchMock = { category: "security" };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      replace?: boolean;
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ category: "security", cursor: "cursor:current" })).toEqual({
-      category: "security",
-      cursor: undefined,
-      family: undefined,
-      featured: undefined,
-      sort: "recommended",
-    });
   });
 
   it("returns a retryable empty state when the catalog is rate limited", async () => {
@@ -1404,8 +1325,6 @@ describe("plugins route", () => {
         cursor: undefined,
         family: undefined,
         category: "security",
-        featured: undefined,
-        sort: undefined,
       }),
     );
     expect(lastCall.search({ q: "api" })).toEqual(
@@ -1544,7 +1463,7 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear plugin search" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
@@ -1566,76 +1485,6 @@ describe("plugins route", () => {
     });
     expect(lastCall.replace).toBe(true);
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
-  });
-
-  it("keeps browse sort choices when only a category is active", async () => {
-    searchMock = { category: "security" };
-    loaderDataMock = {
-      items: [
-        {
-          name: "demo-plugin",
-          displayName: "Demo Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      nextCursor: null,
-      rateLimited: false,
-      retryAfterSeconds: null,
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Updated" })).toBeTruthy();
-    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
-  });
-
-  it("keeps featured browse active when selecting All", async () => {
-    searchMock = { featured: true };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.search({ featured: true, cursor: "cursor:current" })).toEqual({
-      featured: true,
-      cursor: undefined,
-      family: undefined,
-      sort: "recommended",
-    });
-  });
-
-  it("selects visible search sort without changing the query", async () => {
-    searchMock = { q: "security" };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.search({ q: "security", cursor: "cursor:current" })).toEqual({
-      q: "security",
-      cursor: undefined,
-      family: undefined,
-      featured: undefined,
-      sort: undefined,
-    });
   });
 
   it("sorts loaded search results by the selected search sort", async () => {
@@ -1714,46 +1563,5 @@ describe("plugins route", () => {
     const zulu = screen.getByText("Zulu Plugin");
     const alpha = screen.getByText("Alpha Plugin");
     expect(zulu.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("keeps search sort visible even if a stale featured flag is present", async () => {
-    searchMock = { q: "security", featured: true };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.queryByRole("radio", { name: "Featured" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
-  });
-
-  it("keeps plugin sort options stable while searching", async () => {
-    searchMock = { q: "security" };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    const sortOptions = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Trending", "Official", "Updated"]);
-    expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
-  });
-
-  it("puts the default plugin sort first", async () => {
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    const sortOptions = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    expect(sortOptions[0]).toBe("All");
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
   });
 });

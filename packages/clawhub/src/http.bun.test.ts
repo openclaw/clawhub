@@ -151,6 +151,37 @@ describe("bun http client", () => {
     expect(spawnImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("reads rate-limit headers from real curl responses", async ({ signal }) => {
+    const receiver = new Worker(
+      `const { createServer } = require('node:http');
+       const { parentPort } = require('node:worker_threads');
+       const server = createServer((req, res) => {
+         res.writeHead(429, {
+           'content-type': 'text/plain',
+           'retry-after': '7',
+           'x-ratelimit-limit': '20',
+           'x-ratelimit-remaining': '0',
+         });
+         res.end('rate limited');
+       });
+       server.listen(0, '127.0.0.1', () => parentPort.postMessage(server.address().port));`,
+      { eval: true },
+    );
+    try {
+      const [port] = await once(receiver, "message", { signal });
+      const client = createHttpClient({ runtime: "bun", configureDispatcher: false });
+      await expect(
+        client.apiRequest(`http://127.0.0.1:${port}`, {
+          method: "GET",
+          path: "/v1/ping",
+          retryCount: 0,
+        }),
+      ).rejects.toThrow(/retry in 7s.*remaining: 0\/20/i);
+    } finally {
+      await receiver.terminate();
+    }
+  });
+
   it("retries 429 responses and keeps 404 non-retryable", async () => {
     const rateLimited = createBunClient({
       spawnImpl: () => ({ status: 0, stdout: "rate limited\n429", stderr: "" }),

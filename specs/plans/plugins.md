@@ -1025,3 +1025,11 @@ product UX without forcing full npm-general behavior into the first iteration.
   approval temporarily override missing provenance?
 - For npm compatibility, how far do we want to mimic npm metadata and dist-tag
   behavior for code plugins in v1?
+
+Latest-release replacement after deletion, quarantine, or restore must select only
+releases belonging to the package that are published (or legacy rows without a
+publication status), neither soft-deleted nor owner-withdrawn. Rebuilt tags follow
+the same eligibility rule. Catalog projection independently checks this invariant
+before publishing a new feed snapshot; existing stored feed snapshots are not
+rewritten by changing the projection code. Release ordering and separate malware
+checks remain specific to each lifecycle operation.

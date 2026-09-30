@@ -690,6 +690,9 @@ async function main() {
     e2eEnv,
   );
 
+  console.log("Seeding the local skills.sh route for browser layout proof.");
+  await runConvexFunctionWhenReady("devSeed:seedCanonicalSearchFixture", {}, e2eEnv);
+
   console.log("Building ClawHub for local-auth Playwright e2e.");
   await runRequired("bun", ["run", "build"], e2eEnv);
 

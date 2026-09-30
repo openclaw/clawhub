@@ -14,6 +14,8 @@ import { CodeWrapToggleButton, useCodeWrapToggle } from "./CodeWrapToggle";
 interface MarkdownPreviewProps {
   children: string;
   className?: string;
+  /** Compact typography for Markdown embedded in scanner findings. */
+  variant?: "document" | "report";
   /** Enable Shiki syntax highlighting for fenced code blocks. Default: true. */
   highlight?: boolean;
   urlTransform?: UrlTransform;
@@ -281,6 +283,7 @@ const MARKDOWN_COMPONENTS = {
 export function MarkdownPreview({
   children,
   className,
+  variant = "document",
   highlight = true,
   urlTransform,
   assetBaseUrl,
@@ -307,13 +310,20 @@ export function MarkdownPreview({
   const rehypePlugins = useMemo<PluggableList>(() => {
     const baseRehype = buildBaseRehype(assetBaseUrl);
     if (highlight && highlighter) {
-      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: shikiTheme }]];
+      return [
+        ...baseRehype,
+        [
+          rehypeShikiFromHighlighter,
+          highlighter,
+          { theme: shikiTheme, addLanguageClass: true, fallbackLanguage: "text" },
+        ],
+      ];
     }
     return baseRehype;
   }, [highlight, highlighter, assetBaseUrl, shikiTheme]);
 
   return (
-    <div className={cn("markdown", className)}>
+    <div className={cn("markdown", variant === "report" && "markdown-report", className)}>
       <ReactMarkdown
         key={shikiTheme}
         remarkPlugins={[remarkGfm]}

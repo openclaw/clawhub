@@ -137,8 +137,9 @@ returns its stored bytes unchanged and provides:
 Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
 `/v1/feeds/promotions` through the same environment-aware Convex proxy used for
 `/api/*`. Their unversioned `/feeds/*` paths permanently redirect to the
-versioned paths. The `registry.openclaw.ai` custom domain must point at the same
-Vercel project before the public RFC URLs are enabled.
+versioned paths. Discovery advertises the live `clawhub.ai` host until the
+`registry.openclaw.ai` custom domain points at the same Vercel project and the
+OpenClaw RFC-entry adapter is ready.
 
 The serialized payload uses stable object-key ordering and deterministic entry
 and install-candidate ordering. Additive fields may be introduced within a

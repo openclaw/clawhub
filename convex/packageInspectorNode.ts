@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
+import { prepareOpenClawInspectorTarget } from "./lib/openClawInspectorTarget";
 
 type InspectorFinding = {
   id?: string;
@@ -43,6 +44,7 @@ type InspectorReport = {
 
 const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
 const PACKAGE_INSPECTOR_TEMP_PREFIX = "clawhub-plugin-inspector-";
+const OPENCLAW_TARGET_CACHE_DIR = "clawhub-plugin-inspector-openclaw";
 const SERVERLESS_TEMP_DIR = "/tmp";
 const TEMP_DIR_FALLBACK_ERROR_CODES = new Set(["EACCES", "ENOENT", "ENOTDIR", "EPERM", "EROFS"]);
 
@@ -130,23 +132,6 @@ const inspectorMetadataValidator = v.object({
   targetOpenClawVersion: v.optional(v.string()),
 });
 
-export async function preparePublishInspectorOpenClawTarget<ResolvedTarget, PreparedTarget>(
-  root: string,
-  targets: {
-    resolveVersion: (requestedVersion: string) => Promise<ResolvedTarget>;
-    prepare: (
-      resolvedTarget: ResolvedTarget,
-      options: { cacheDir: string },
-    ) => Promise<PreparedTarget>;
-  },
-) {
-  const resolvedTarget = await targets.resolveVersion("latest");
-  return await targets.prepare(resolvedTarget, {
-    // The dependency defaults to os.homedir(), which can be unusable in serverless runtimes.
-    cacheDir: path.join(root, ".plugin-inspector-cache"),
-  });
-}
-
 export function buildPublishInspectorRunCheckOptions(
   root: string,
   generatedAt: string,
@@ -175,18 +160,37 @@ export async function createPackageInspectorWorkspace(
   try {
     return await createTempDir(path.join(preferredTempDir, PACKAGE_INSPECTOR_TEMP_PREFIX));
   } catch (error) {
-    const code =
-      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (
-      process.platform === "win32" ||
-      path.resolve(preferredTempDir) === SERVERLESS_TEMP_DIR ||
-      typeof code !== "string" ||
-      !TEMP_DIR_FALLBACK_ERROR_CODES.has(code)
-    ) {
-      throw error;
-    }
+    if (!canUseServerlessTempFallback(preferredTempDir, error)) throw error;
     return await createTempDir(path.join(SERVERLESS_TEMP_DIR, PACKAGE_INSPECTOR_TEMP_PREFIX));
   }
+}
+
+// The prepared OpenClaw target outlives each inspection so warm Node actions reuse it.
+export async function resolveOpenClawTargetCacheRoot(
+  preferredTempDir = tmpdir(),
+  makeDir: (dir: string) => Promise<unknown> = (dir) => mkdir(dir, { recursive: true }),
+) {
+  const preferred = path.join(preferredTempDir, OPENCLAW_TARGET_CACHE_DIR);
+  try {
+    await makeDir(preferred);
+    return preferred;
+  } catch (error) {
+    if (!canUseServerlessTempFallback(preferredTempDir, error)) throw error;
+    const fallback = path.join(SERVERLESS_TEMP_DIR, OPENCLAW_TARGET_CACHE_DIR);
+    await makeDir(fallback);
+    return fallback;
+  }
+}
+
+function canUseServerlessTempFallback(preferredTempDir: string, error: unknown) {
+  const code =
+    typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+  return (
+    process.platform !== "win32" &&
+    path.resolve(preferredTempDir) !== SERVERLESS_TEMP_DIR &&
+    typeof code === "string" &&
+    TEMP_DIR_FALLBACK_ERROR_CODES.has(code)
+  );
 }
 
 export const runPackageInspectorForPublishInternal = internalAction({
@@ -249,11 +253,14 @@ export const runPackageInspectorForPublishInternal = internalAction({
       }
       await writeSyntheticInspectorConfigIfNeeded(root, args.files, args.packageName);
 
-      const { openClawTargets, pluginRoot } = await import("@openclaw/plugin-inspector");
+      const { openClawTargets, pluginRoot, reports } = await import("@openclaw/plugin-inspector");
       enterStage("OpenClaw target preparation");
-      const targetOpenClaw = await preparePublishInspectorOpenClawTarget(
-        workspaceRoot,
-        openClawTargets,
+      const targetOpenClaw = await prepareOpenClawInspectorTarget(
+        await resolveOpenClawTargetCacheRoot(),
+        {
+          readTargetSurface: (options) => reports.readOpenClawTargetSurface(options),
+          eligibilityVersion: (version) => openClawTargets.eligibilityVersion(version),
+        },
       );
       const runCheckOptions = buildPublishInspectorRunCheckOptions(
         root,

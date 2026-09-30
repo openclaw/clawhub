@@ -425,6 +425,12 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     categories?: string[] | undefined;
     topics?: string[] | undefined;
     featuredAt?: number | undefined;
+    trending24h?: {
+        downloads: number;
+        installs: number;
+        windowStart: number;
+        windowEnd: number;
+    } | undefined;
     verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
     stats?: {
         downloads: number;
@@ -452,6 +458,12 @@ export declare const PluginOverviewItemSchema: import("arktype/internal/variants
     categories?: string[] | undefined;
     topics?: string[] | undefined;
     featuredAt?: number | undefined;
+    trending24h?: {
+        downloads: number;
+        installs: number;
+        windowStart: number;
+        windowEnd: number;
+    } | undefined;
     verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
     stats?: {
         downloads: number;
@@ -465,6 +477,14 @@ export declare const PluginOverviewItemSchema: import("arktype/internal/variants
     trendingRank?: number | undefined;
 }, {}>;
 export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
+export declare const PluginDiscoveryCategorySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    slug: string;
+    label: string;
+    description: string;
+    icon: string;
+    order: number;
+    pinnedPackages?: string[] | undefined;
+}, {}>;
 export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     categories: {
         slug: string;
@@ -472,6 +492,7 @@ export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal
         description: string;
         icon: string;
         order: number;
+        pinnedPackages?: string[] | undefined;
     }[];
     items: {
         name: string;
@@ -491,6 +512,12 @@ export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal
         categories?: string[] | undefined;
         topics?: string[] | undefined;
         featuredAt?: number | undefined;
+        trending24h?: {
+            downloads: number;
+            installs: number;
+            windowStart: number;
+            windowEnd: number;
+        } | undefined;
         verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
         stats?: {
             downloads: number;
@@ -524,6 +551,12 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         categories?: string[] | undefined;
         topics?: string[] | undefined;
         featuredAt?: number | undefined;
+        trending24h?: {
+            downloads: number;
+            installs: number;
+            windowStart: number;
+            windowEnd: number;
+        } | undefined;
         verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
         stats?: {
             downloads: number;
@@ -533,6 +566,14 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         } | undefined;
     }[];
     nextCursor: string | null;
+    categories?: {
+        slug: string;
+        label: string;
+        description: string;
+        icon: string;
+        order: number;
+        pinnedPackages?: string[] | undefined;
+    }[] | undefined;
 }, {}>;
 export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
 export declare const PackageValidationReportScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"clean" | "error" | "not-scanned" | "skipped" | "warning", {}>;
@@ -628,6 +669,12 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             categories?: string[] | undefined;
             topics?: string[] | undefined;
             featuredAt?: number | undefined;
+            trending24h?: {
+                downloads: number;
+                installs: number;
+                windowStart: number;
+                windowEnd: number;
+            } | undefined;
             verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
             stats?: {
                 downloads: number;
@@ -943,6 +990,29 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
     } | null;
 }, {}>;
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
+export declare const ApiV1PackageVersionPublicationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    version: string;
+    state: "absent" | "published";
+} | {
+    name: string;
+    version: string;
+    state: "pending";
+    stage: "staging";
+} | {
+    name: string;
+    version: string;
+    state: "pending";
+    stage: "checks" | "finalization";
+    attemptId: string;
+} | {
+    name: string;
+    version: string;
+    state: "failed";
+    attemptId?: string | undefined;
+    recoverable: boolean;
+}, {}>;
+export type ApiV1PackageVersionPublicationResponse = (typeof ApiV1PackageVersionPublicationResponseSchema)[inferred];
 export declare const ApiV1PackageArtifactResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     package: {
         name: string;

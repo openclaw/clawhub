@@ -31,13 +31,16 @@ declare module "@openclaw/plugin-inspector" {
   };
 
   export const openClawTargets: {
-    resolveVersion(requestedVersion: string): Promise<unknown>;
-    prepare(resolvedTarget: unknown, options?: { cacheDir?: string }): Promise<unknown>;
+    eligibilityVersion(version: string): string;
   };
 
   export const reports: {
     renderTextSummary(report: PluginInspectorReport, options?: Record<string, unknown>): string;
     sanitizeArtifact(report: PluginInspectorReport): unknown;
+    readOpenClawTargetSurface(options: {
+      rootDir: string;
+      configuredPath: string;
+    }): Promise<{ status?: unknown; [key: string]: unknown }>;
   };
 
   export const ci: {

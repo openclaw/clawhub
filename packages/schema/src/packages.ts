@@ -476,6 +476,12 @@ const PackageListItemFields = {
   categories: "string[]?",
   topics: "string[]?",
   featuredAt: "number?",
+  trending24h: type({
+    downloads: "number",
+    installs: "number",
+    windowStart: "number",
+    windowEnd: "number",
+  }).optional(),
   verificationTier: PackageVerificationTierSchema.or("null").optional(),
   stats: PackageStatsSchema.optional(),
 } as const;
@@ -493,16 +499,19 @@ export const PluginOverviewItemSchema = type({
 });
 export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
 
+export const PluginDiscoveryCategorySchema = type({
+  "+": "reject",
+  slug: "string",
+  label: "string",
+  description: "string",
+  icon: "string",
+  order: "number",
+  pinnedPackages: "string[]?",
+});
+
 export const ApiV1PluginOverviewResponseSchema = type({
   "+": "reject",
-  categories: type({
-    "+": "reject",
-    slug: "string",
-    label: "string",
-    description: "string",
-    icon: "string",
-    order: "number",
-  }).array(),
+  categories: PluginDiscoveryCategorySchema.array(),
   items: PluginOverviewItemSchema.array(),
 });
 export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];
@@ -510,6 +519,7 @@ export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSch
 export const ApiV1PackageListResponseSchema = type({
   items: PackageListItemSchema.array(),
   nextCursor: "string|null",
+  categories: PluginDiscoveryCategorySchema.array().optional(),
 });
 export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
 
@@ -644,6 +654,30 @@ export const ApiV1PackageVersionResponseSchema = type({
   }).or("null"),
 });
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
+
+export const ApiV1PackageVersionPublicationResponseSchema = type({
+  name: "string",
+  version: "string",
+  state: '"published"|"absent"',
+})
+  .or({ name: "string", version: "string", state: '"pending"', stage: '"staging"' })
+  .or({
+    name: "string",
+    version: "string",
+    state: '"pending"',
+    stage: '"checks"|"finalization"',
+    attemptId: "string",
+  })
+  .or({
+    name: "string",
+    version: "string",
+    state: '"failed"',
+    "attemptId?": "string",
+    recoverable: "boolean",
+  })
+  .onUndeclaredKey("reject");
+export type ApiV1PackageVersionPublicationResponse =
+  (typeof ApiV1PackageVersionPublicationResponseSchema)[inferred];
 
 export const ApiV1PackageArtifactResponseSchema = type({
   package: type({

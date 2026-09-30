@@ -1,4 +1,7 @@
-import { decodeUtf8Text } from "clawhub-schema";
+// Import the leaf module, never the clawhub-schema barrel: this runs in the 512 MiB
+// Node action, and the barrel's ArkType schemas cost ~150 MB RSS at load, which
+// pushed large ClawPacks (whatsapp 2026.9.7: 1,655 files, 22 MB) out of memory.
+import { decodeUtf8Text } from "clawhub-schema/textFiles";
 import type { ActionCtx } from "../_generated/server";
 import { runStaticModerationScan, type StaticScanResult } from "./moderationEngine";
 
