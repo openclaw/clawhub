@@ -15,6 +15,8 @@
 - Publishing: prepare the Plugin Inspector OpenClaw target by streaming and verifying only its public declaration surface, so plugin publishes no longer run the Node action out of memory or fill `/tmp` with the full OpenClaw package.
 - Deploy: coalesce pending skills.sh syncs per ref before they enter the production deployment queue, while preserving active sync cleanup and queued manual deploys.
 
+- Dependencies: align brace-expansion and fast-uri overrides with their patched lockfile versions so dependency resolution cannot restore the vulnerable pins.
+
 - Workers: reserve Skill Card capacity by lease slot to avoid global queue contention, continue after partial batches, and release undelivered leases when input hydration fails.
 
 - Workers: redact quoted credentials completely in serialized JSON diagnostics while preserving adjacent non-secret context.
