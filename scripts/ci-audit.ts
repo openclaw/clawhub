@@ -40,13 +40,12 @@ export function auditArgs(): string[] {
 
 type Advisory = { title?: unknown; url?: unknown; severity?: unknown; cwe?: unknown };
 
-// Malware advisories carry CWE-506 (Embedded Malicious Code) or say the package
-// itself is malware; ordinary advisories may merely mention malicious input.
+// Malware detection fails closed: advisory titles vary ("Malware in x", "x have
+// embedded malicious code", "briefly compromised with malware") and npm's bulk
+// endpoint omits CWE data, so any mention blocks. A vulnerability that merely
+// mentions malicious input goes to the reviewed IGNORED_ADVISORIES list.
 const MALWARE_CWE = "CWE-506";
-const MALWARE_TITLES = [
-  /^\s*(?:embedded\s+)?(?:malware|malicious\s+(?:code|package|version))\s+in\b/i,
-  /\b(?:has|have|contains?)\s+(?:embedded\s+)?(?:malicious\s+code|malware)\b/i,
-];
+const MALWARE_TITLE = /\bmalware\b|\bmalicious\b|\bcompromised\b/i;
 
 // Release policy: advisories never block CI or a deploy; they are recorded as
 // warnings and patched through main. A known-malware package still blocks.
@@ -70,9 +69,7 @@ export function classifyAuditFindings(output: string) {
   );
   return {
     malware: findings.filter(
-      (finding) =>
-        finding.cwe.includes(MALWARE_CWE) ||
-        MALWARE_TITLES.some((pattern) => pattern.test(finding.title)),
+      (finding) => finding.cwe.includes(MALWARE_CWE) || MALWARE_TITLE.test(finding.title),
     ),
     advisories: findings,
   };

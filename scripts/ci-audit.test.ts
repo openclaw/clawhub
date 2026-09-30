@@ -81,31 +81,23 @@ describe("ci-audit", () => {
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error title=Dependency malware::/));
   });
 
-  it("does not treat vulnerabilities about malicious input as malware", () => {
+  it("fails closed on any advisory that mentions malware or compromise", () => {
     const output = JSON.stringify({
-      "@babel/traverse": [
+      synckit: [
         {
-          title:
-            "Babel vulnerable to arbitrary code execution when compiling specifically crafted malicious code",
+          title: "eslint-config-prettier, synckit have embedded malicious code",
           severity: "critical",
         },
       ],
-      "evil-pkg": [{ title: "Malicious code in evil-pkg (npm)" }],
-      synckit: [
-        {
-          title:
-            "eslint-config-prettier, eslint-plugin-prettier, synckit have embedded malicious code",
-        },
-      ],
-      "cwe-only": [{ title: "Compromised release", cwe: ["CWE-506"] }],
+      duckdb: [{ title: "DuckDB NPM packages briefly compromised with malware" }],
+      "fast-uri": [{ title: "fast-uri host normalization", severity: "moderate" }],
     });
     const log = vi.fn();
 
     expect(auditExitCode({ exitCode: 1, output }, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*@babel\/traverse/));
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*evil-pkg/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*synckit/));
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*cwe-only/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::error .*duckdb/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^::warning .*fast-uri/));
   });
 
   it("keeps unparseable audit failures blocking", () => {
