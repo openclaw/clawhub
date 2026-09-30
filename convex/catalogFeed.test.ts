@@ -1,4 +1,5 @@
 import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID, EXPERIMENTAL_CLAW_FEED_ID } from "clawhub-schema";
+import { getFunctionName } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   listOfficialClawEntries,
@@ -18,15 +19,23 @@ type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
 };
 
-const listOfficialEntriesHandler = (
+type EntryPage = { entries: unknown[]; isDone: boolean; continueCursor: string };
+
+const listOfficialEntriesPageHandler = (
   listOfficialEntries as unknown as WrappedHandler<
-    { family: "code-plugin" | "bundle-plugin" },
-    unknown[]
+    { family: "code-plugin" | "bundle-plugin"; cursor: string | null },
+    EntryPage
   >
 )._handler;
-const listOfficialClawEntriesHandler = (
-  listOfficialClawEntries as unknown as WrappedHandler<Record<string, never>, unknown[]>
+const listOfficialEntriesHandler = async (
+  ctx: unknown,
+  args: { family: "code-plugin" | "bundle-plugin" },
+) => (await listOfficialEntriesPageHandler(ctx, { ...args, cursor: null })).entries;
+const listOfficialClawEntriesPageHandler = (
+  listOfficialClawEntries as unknown as WrappedHandler<{ cursor: string | null }, EntryPage>
 )._handler;
+const listOfficialClawEntriesHandler = async (ctx: unknown, _args: Record<string, never>) =>
+  (await listOfficialClawEntriesPageHandler(ctx, { cursor: null })).entries;
 const listOfficialSkillEntriesHandler = (
   listOfficialSkillEntries as unknown as WrappedHandler<
     { publisherId: string; cursor: string | null },
@@ -544,7 +553,7 @@ describe("catalog feed projection", () => {
       }),
     );
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if ("family" in args) return [];
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
       if ("publisherId" in args) {
         return { entries: skillEntries, isDone: true, continueCursor: "" };
       }
@@ -611,10 +620,25 @@ describe("catalog feed projection", () => {
         ],
       },
     };
-    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if ("family" in args) return [];
-      if ("cursor" in args) return { publishers: [], isDone: true, continueCursor: "" };
-      return [clawEntry];
+    const secondClawEntry = {
+      ...clawEntry,
+      id: "@openclaw/scout",
+      title: "Scout",
+      install: {
+        candidates: [{ ...clawEntry.install.candidates[0], package: "@openclaw/scout" }],
+      },
+    };
+    const runQuery = vi.fn(async (ref: unknown, args: Record<string, unknown>) => {
+      const functionName = getFunctionName(ref as Parameters<typeof getFunctionName>[0]);
+      if (functionName === "catalogFeed:listOfficialEntries") {
+        return { entries: [], isDone: true, continueCursor: "" };
+      }
+      if (functionName === "catalogFeed:listOfficialPublisherPage") {
+        return { publishers: [], isDone: true, continueCursor: "" };
+      }
+      return args.cursor === null
+        ? { entries: [clawEntry], isDone: false, continueCursor: "claw-next" }
+        : { entries: [secondClawEntry], isDone: true, continueCursor: "" };
     });
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => ({
       feedId: typeof args.feedId === "string" ? args.feedId : EXPERIMENTAL_CLAW_FEED_ID,
@@ -629,10 +653,11 @@ describe("catalog feed projection", () => {
     expect(runMutation).toHaveBeenCalledTimes(3);
     expect(runMutation).toHaveBeenLastCalledWith(
       expect.anything(),
-      expect.objectContaining({ entries: [clawEntry] }),
+      expect.objectContaining({ entries: [secondClawEntry, clawEntry] }),
     );
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), { cursor: "claw-next" });
     expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("feedId");
-    expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 1 });
+    expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 2 });
   });
 
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {
