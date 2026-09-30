@@ -42,13 +42,13 @@ function tgz(entries: TarEntry[]) {
 
 function paxRecord(key: string, value: string) {
   const suffix = ` ${key}=${value}\n`;
-  let length = suffix.length + 1;
-  while (`${length}${suffix}`.length !== length) length += 1;
+  let length = Buffer.byteLength(suffix) + 1;
+  while (Buffer.byteLength(`${length}${suffix}`) !== length) length += 1;
   return `${length}${suffix}`;
 }
 
 const packageJson = JSON.stringify({ name: "openclaw", version: "2026.9.7" });
-const longDeclarationPath = `package/dist/${"nested/".repeat(20)}deep.d.ts`;
+const longDeclarationPath = `package/dist/${"nested/".repeat(20)}überdeep.d.ts`;
 
 function urlOf(input: string | URL | Request) {
   return input instanceof Request ? input.url : input.toString();
@@ -88,7 +88,7 @@ afterEach(async () => {
 
 describe("prepareOpenClawInspectorTarget", () => {
   it("extracts only the verified packed plugin surface and reuses it", async () => {
-    const pax = paxRecord("path", longDeclarationPath);
+    const pax = paxRecord("mtime", "1790740000.5") + paxRecord("path", longDeclarationPath);
     const fetchImpl = registryFetch(
       tgz([
         { name: "package/package.json", body: packageJson },
