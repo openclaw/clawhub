@@ -40,6 +40,11 @@ export function auditArgs(): string[] {
 
 type Advisory = { title?: unknown; url?: unknown; severity?: unknown; cwe?: unknown };
 
+function isExpectedAuditStderr(output: string): boolean {
+  const plain = output.replace(/\u001b\[[0-9;]*m/g, "").trim();
+  return plain === "" || /^bun audit v\d+\.\d+\.\d+ \([0-9a-f]+\)$/.test(plain);
+}
+
 // Malware advisories carry CWE-506 or say the package itself is malware or was
 // compromised ("Malware in x", "x have embedded malicious code", "briefly
 // compromised with malware"). Vulnerabilities that merely mention malicious input
@@ -92,8 +97,12 @@ export function auditExitCode(
   attempt: AuditAttempt,
   log: (message: string) => void = (message) => console.log(message),
 ) {
+  if (attempt.toolFailure || !isExpectedAuditStderr(attempt.stderr ?? "")) {
+    return attempt.exitCode || 1;
+  }
   if (attempt.exitCode === 0) return 0;
-  const findings = classifyAuditFindings(attempt.output);
+  // Bun 1.3.x writes its audit banner to stderr after the JSON on stdout.
+  const findings = classifyAuditFindings(attempt.jsonOutput ?? attempt.output);
   // Unparseable output is a tool failure, not an advisory decision.
   if (!findings) return attempt.exitCode;
   for (const finding of findings.advisories) {
@@ -105,7 +114,13 @@ export function auditExitCode(
   return findings.malware.length > 0 ? 1 : 0;
 }
 
-type AuditAttempt = { exitCode: number; output: string };
+type AuditAttempt = {
+  exitCode: number;
+  output: string;
+  jsonOutput?: string;
+  stderr?: string;
+  toolFailure?: boolean;
+};
 
 export async function runAuditWithRetry(
   attempt: () => AuditAttempt,
@@ -132,7 +147,13 @@ function runBunAudit(): AuditAttempt {
   const timedOut = result.error !== undefined || result.signal !== null;
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}${timedOut ? "\n[ci-audit] ETIMEDOUT: bun audit exceeded 60s\n" : ""}`;
   process.stdout.write(output);
-  return { exitCode: result.status ?? 1, output };
+  return {
+    exitCode: result.status ?? 1,
+    output,
+    jsonOutput: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    toolFailure: timedOut,
+  };
 }
 
 if (import.meta.main) {
