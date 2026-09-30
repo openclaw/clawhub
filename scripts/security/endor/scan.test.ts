@@ -37,8 +37,8 @@ async function fixture(body: string) {
   return { root, source, bin, env };
 }
 
-async function run(test: Awaited<ReturnType<typeof fixture>>, target = test.source) {
-  return runWorkerCommand("/bin/sh", [scanScript, target], {
+async function run(test: Awaited<ReturnType<typeof fixture>>) {
+  return runWorkerCommand("/bin/sh", [scanScript, test.source], {
     commandLabel: "Endor wrapper",
     cwd: test.root,
     env: test.env,
@@ -134,7 +134,6 @@ describe("Endor custom-scanner wrapper", () => {
   it("scans a fresh snapshot and keeps credentials away from package managers", async () => {
     const test = await fixture("");
     const observation = join(test.root, "observation.json");
-    await writeFile(join(test.source, "openclaw.plugin.json"), '{"id":"fixture"}');
     execFileSync("git", ["init", "-q", test.source]);
     execFileSync("git", [
       "-C",
@@ -168,9 +167,7 @@ fs.writeFileSync("generated-by-endor", "disposable");
 process.stdout.write(${JSON.stringify(JSON.stringify(emptyReport))});
 `,
     );
-    expect(JSON.parse((await run(test, join(test.source, "openclaw.plugin.json"))).stdout)).toEqual(
-      emptyReport,
-    );
+    expect(JSON.parse((await run(test)).stdout)).toEqual(emptyReport);
     const observed = JSON.parse(await readFile(observation, "utf8"));
     expect(observed.cwd).not.toBe(test.source);
     expect(observed.token).toBe("fixture-token");

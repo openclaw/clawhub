@@ -131,7 +131,6 @@ it("atomically stores a completed Endor summary and succeeds the package scan jo
     endorAnalysis,
     llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 10 },
   });
-  expect(release).not.toHaveProperty("scannerReportsStorageId");
   expect(job).toMatchObject({ status: "succeeded", runId: "run-one" });
   expect(job).not.toHaveProperty("leaseToken");
 

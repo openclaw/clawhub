@@ -66,11 +66,9 @@ const endorRawReportSchema = z
 
 export type EndorCommandDiagnostic = {
   args?: string[];
-  artifactPath?: string;
+  // The worker records the thrown failure message; the runner never sets it.
+  error?: string;
   exitCode?: number | null;
-  rawArtifact?: string;
-  scannerError?: string;
-  sandboxRunId?: string;
   stderr?: string;
   stdout?: string;
   timedOut?: boolean;
@@ -341,15 +339,12 @@ export async function runEndorPluginScan(input: {
     "clawhub-endor-scan",
     "/workspace",
   ];
-  input.onDiagnostic?.({
-    args: ["docker", ...args],
-    sandboxRunId,
-  });
+  input.onDiagnostic?.({ args: ["docker", ...args] });
   const commandEnv = endorRuntimeEnv(input.workspace, env, ENDOR_ENV_KEYS);
   const deadline = Date.now() + endorTimeoutMs(env);
   let commandError: unknown;
+  let containerId: string | undefined;
   let output: { stdout: string; stderr: string } | undefined;
-  let createTimedOut = false;
   try {
     const created = await runWorkerCommand("docker", args, {
       commandLabel: "Endor Docker create",
@@ -357,59 +352,30 @@ export async function runEndorPluginScan(input: {
       env: commandEnv,
       timeoutMs: Math.max(1, deadline - Date.now()),
     });
-    const containerId = created.stdout.trim();
+    containerId = created.stdout.trim();
     if (!/^[a-f0-9]{64}$/.test(containerId)) {
       throw new Error("Endor Docker create did not return a valid container ID");
     }
+    // An attached start exits with the container's own status, so a nonzero
+    // scanner exit surfaces here as a CommandFailure.
     output = await runWorkerCommand("docker", ["container", "start", "--attach", containerId], {
       commandLabel: "Endor Docker start",
       cwd: input.workspace,
       env: endorRuntimeEnv(input.workspace, env),
       timeoutMs: Math.max(1, deadline - Date.now()),
     });
-    const waited = await runWorkerCommand("docker", ["container", "wait", containerId], {
-      commandLabel: "Endor Docker wait",
-      cwd: input.workspace,
-      env: endorRuntimeEnv(input.workspace, env),
-      timeoutMs: Math.max(1, deadline - Date.now()),
-    });
-    const rawExitCode = waited.stdout.trim();
-    if (!/^(0|[1-9][0-9]*)$/.test(rawExitCode)) {
-      throw new Error("Endor Docker wait did not return a valid exit code");
-    }
-    const exitCode = Number(rawExitCode);
-    if (!Number.isSafeInteger(exitCode)) {
-      throw new Error("Endor Docker wait did not return a valid exit code");
-    }
-    if (exitCode !== 0) {
-      throw new CommandFailure(
-        `Endor scanner exited ${exitCode}; see redacted stdout/stderr diagnostics`,
-        exitCode,
-        output.stdout,
-        output.stderr,
-        false,
-      );
-    }
     input.onDiagnostic?.({
       exitCode: 0,
       stderr: redactEndorDiagnosticText(output.stderr, env),
       stdout: redactEndorDiagnosticText(output.stdout, env),
-      rawArtifact: redactEndorDiagnosticText(output.stdout, env),
     });
   } catch (error) {
     commandError = error;
     if (error instanceof CommandFailure) {
-      createTimedOut = error.timedOut && error.message.startsWith("Endor Docker create");
       input.onDiagnostic?.({
         exitCode: error.exitCode,
         stderr: redactEndorDiagnosticText(error.stderr, env),
         stdout: redactEndorDiagnosticText(error.stdout, env),
-        ...(output?.stdout || (error.message.startsWith("Endor Docker start") && error.stdout)
-          ? { rawArtifact: redactEndorDiagnosticText(output?.stdout || error.stdout, env) }
-          : {}),
-        ...(error.stderr
-          ? { scannerError: redactEndorDiagnosticText(error.stderr, env).trim() }
-          : {}),
         timedOut: error.timedOut,
       });
     }
@@ -420,7 +386,11 @@ export async function runEndorPluginScan(input: {
     await cleanupEndorContainer({
       env,
       runId: sandboxRunId,
-      waitForLateCreate: createTimedOut,
+      // A killed create command can still leave the daemon to finish creating it.
+      waitForLateCreate:
+        containerId === undefined &&
+        commandError instanceof CommandFailure &&
+        commandError.timedOut,
       workspace: input.workspace,
     });
   } catch (error) {

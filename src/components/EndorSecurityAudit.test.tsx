@@ -17,9 +17,7 @@ describe("stored Endor plugin scan", () => {
       status: "completed" as const,
       checkedAt: Date.parse("2026-09-15T00:00:00Z"),
       reachableFunctionCount: 1,
-      findings: [
-        { severity: "FINDING_LEVEL_HIGH", summary: "Axios uploads bypass maxBodyLength." },
-      ],
+      findings: [{ severity: "high", summary: "Axios uploads bypass maxBodyLength." }],
     };
     render(
       <SecurityAuditPage

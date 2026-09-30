@@ -48,9 +48,6 @@ case "$2" in
     if [[ -f "$root/docker-start-stderr" ]]; then cat "$root/docker-start-stderr" >&2; fi
     if [[ -f "$root/docker-start-exit" ]]; then exit "$(cat "$root/docker-start-exit")"; fi
     ;;
-  wait)
-    if [[ -f "$root/docker-wait-exit" ]]; then cat "$root/docker-wait-exit"; else printf '0\\n'; fi
-    ;;
   inspect)
     printf '%s|%s|%s|%s|%s|%s|%s\\n' "$ENDOR_NAMESPACE" "$ENDOR_TOKEN" "$OPENAI_API_KEY" "$SECURITY_SCAN_WORKER_TOKEN" "$HOME" "$DOCKER_CONFIG" "$DOCKER_HOST" > "$root/docker-cleanup-env"
     if [[ -f "$root/docker-inspect-missing-once" ]]; then
@@ -150,7 +147,6 @@ describe("runEndorPluginScan", () => {
       const result = await runScan(
         workspace,
         {
-          CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND: join(workspace, "missing-clawscan"),
           DOCKER_CONFIG: "/tmp/fixture-docker-config",
           DOCKER_HOST: "must-not-reach-endor",
           ENDOR_NAMESPACE: "fixture-namespace",
@@ -187,7 +183,10 @@ describe("runEndorPluginScan", () => {
         .trim()
         .split("\n");
       expect(createArgs).toContain("clawhub-endor-scan");
-      const runId = Object.assign({}, ...diagnostics).sandboxRunId;
+      const runId = (await readFile(join(workspace, "docker-name"), "utf8")).replace(
+        "clawhub-endor-",
+        "",
+      );
       expect(runId).toMatch(/^[a-f0-9]{32}$/);
       expect(createArgs).toContain(`clawhub-endor-${runId}`);
       expect(createArgs).toContain(`org.openclaw.clawhub.endor-run-id=${runId}`);
@@ -210,13 +209,7 @@ describe("runEndorPluginScan", () => {
       );
       expect(
         (await readFile(join(workspace, "docker-commands"), "utf8")).trim().split("\n"),
-      ).toEqual([
-        "container create",
-        "container start",
-        "container wait",
-        "container inspect",
-        "container rm",
-      ]);
+      ).toEqual(["container create", "container start", "container inspect", "container rm"]);
       expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
       expect(Object.assign({}, ...diagnostics)).toMatchObject({ exitCode: 0 });
       expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
@@ -275,29 +268,18 @@ describe("runEndorPluginScan", () => {
     await packageRoot(workspace);
     await writeFile(join(workspace, "docker-start-stdout"), '{"detail":"fixture-token"}');
     await writeFile(join(workspace, "docker-start-stderr"), "ENDOR_TOKEN=fixture-token\n");
-    await writeFile(join(workspace, "docker-wait-exit"), "17\n");
+    await writeFile(join(workspace, "docker-start-exit"), "17");
     const diagnostics: Array<Partial<EndorCommandDiagnostic>> = [];
     await expect(
       runScan(workspace, { ENDOR_TOKEN: "fixture-token" }, (next) => diagnostics.push(next)),
-    ).rejects.toThrow("Endor scanner exited 17");
+    ).rejects.toThrow("Endor Docker start exited 17");
     expect(Object.assign({}, ...diagnostics)).toMatchObject({
       exitCode: 17,
       stderr: "ENDOR_TOKEN=[redacted-secret]\n",
-      rawArtifact: '{"detail":"[redacted-secret]"}',
+      stdout: '{"detail":"[redacted-secret]"}',
       timedOut: false,
     });
     expect(JSON.stringify(diagnostics)).not.toContain("fixture-token");
-    expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
-  });
-
-  it("fails when Docker does not confirm the scanner exit status", async () => {
-    const workspace = await tempDir();
-    await packageRoot(workspace);
-    await writeFile(join(workspace, "docker-start-stdout"), report());
-    await writeFile(join(workspace, "docker-wait-exit"), "");
-    await expect(runScan(workspace)).rejects.toThrow(
-      "Endor Docker wait did not return a valid exit code",
-    );
     expect(await readFile(join(workspace, "docker-removed"), "utf8")).toBe(containerId);
   });
 
@@ -348,9 +330,11 @@ describe("runEndorPluginScan", () => {
       await packageRoot(workspace);
       await writeFile(join(workspace, "docker-start-stdout"), report());
       await writeFile(join(workspace, "docker-rm-exit"), "23");
-      if (failScan) await writeFile(join(workspace, "docker-wait-exit"), "17");
+      if (failScan) await writeFile(join(workspace, "docker-start-exit"), "17");
       await expect(runScan(workspace)).rejects.toThrow(
-        failScan ? "Endor scan failed: Endor scanner exited 17;" : "Endor Docker cleanup failed",
+        failScan
+          ? "Endor scan failed: Endor Docker start exited 17;"
+          : "Endor Docker cleanup failed",
       );
     }
   });
