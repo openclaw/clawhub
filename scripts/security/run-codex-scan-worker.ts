@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -22,7 +22,6 @@ import {
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
 import { writeClawHubEndorProfile } from "./clawHubEndorProfile";
-import { resolveClawScanTargetForRoot } from "./clawScanTarget";
 import {
   isEndorPluginScanEnabled,
   runEndorPluginScan,
@@ -700,6 +699,16 @@ function artifactMetadata(job: ClaimedJob) {
   };
 }
 
+// The judge prompt carries this run's Endor result. Drop the release's stored
+// summary so a stale earlier result cannot contradict a failed or skipped run.
+function judgeMetadata(job: ClaimedJob) {
+  const metadata = artifactMetadata(job);
+  const release = metadata.target.release;
+  if (!release) return metadata;
+  const { endorAnalysis: _storedEndorAnalysis, ...currentRelease } = release;
+  return { ...metadata, target: { ...metadata.target, release: currentRelease } };
+}
+
 async function writeDiagnosticText(
   jobDir: string,
   fileName: string,
@@ -768,24 +777,17 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       : [];
   const endorStdoutPath = await writeDiagnosticText(
     jobDir,
-    "endor-clawscan.stdout.redacted.log",
+    "endor.stdout.redacted.log",
     input.endor?.stdout,
-    "endorClawscanStdout",
+    "endorStdout",
+    { maxChars: MAX_DIAGNOSTIC_TEXT_CHARS },
   );
   const endorStderrPath = await writeDiagnosticText(
     jobDir,
-    "endor-clawscan.stderr.redacted.log",
+    "endor.stderr.redacted.log",
     input.endor?.stderr,
-    "endorClawscanStderr",
-  );
-  const endorArtifactPath = await writeDiagnosticText(
-    jobDir,
-    "endor-clawscan-artifact.redacted.json",
-    input.endor?.rawArtifact
-      ? redactEvidenceText(input.endor.rawArtifact, ["endorClawscanArtifact"])
-      : undefined,
-    "endorClawscanArtifact",
-    { structured: false },
+    "endorStderr",
+    { maxChars: MAX_DIAGNOSTIC_TEXT_CHARS },
   );
 
   const diagnostic = {
@@ -831,11 +833,8 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
     endorResult: input.endor
       ? {
           args: input.endor.args,
+          error: input.endor.error ? redactDiagnosticText(input.endor.error) : undefined,
           exitCode: input.endor.exitCode,
-          rawArtifactPath: endorArtifactPath,
-          scannerError: input.endor.scannerError
-            ? redactDiagnosticText(input.endor.scannerError)
-            : undefined,
           stderrPath: endorStderrPath,
           stdoutPath: endorStdoutPath,
           timedOut: input.endor.timedOut,
@@ -1960,17 +1959,8 @@ export async function runClawScan(
     const endorResultPath = join(workspace, "endor-analysis.json");
     const contextPath = join(workspace, "clawhub-endor-context.json");
     await writeFile(endorResultPath, `${JSON.stringify(endorAnalysis)}\n`, "utf8");
-    await writeFile(
-      contextPath,
-      JSON.stringify({
-        targetKind: job.job.targetKind,
-        source: job.job.source,
-        hasMaliciousSignal: job.job.hasMaliciousSignal,
-        trustedOpenClawPlugin: job.target.trustedOpenClawPlugin === true,
-        metadata: artifactMetadata(job),
-      }),
-      "utf8",
-    );
+    // ClawScan writes only context.metadata into the judge's metadata.json.
+    await writeFile(contextPath, JSON.stringify({ metadata: judgeMetadata(job) }), "utf8");
     args.push(
       "--config",
       configPath,
@@ -2014,12 +2004,7 @@ export async function runClawScan(
   try {
     const output = await runCommand(command, args, {
       cwd: workspace,
-      omitEnv: [
-        "VIRUSTOTAL_API_KEY",
-        "ENDOR_TOKEN",
-        "ENDOR_API_CREDENTIALS_KEY",
-        "ENDOR_API_CREDENTIALS_SECRET",
-      ],
+      omitEnv: ["VIRUSTOTAL_API_KEY"],
       timeoutMs: clawScanTimeoutMs(),
     });
     onDiagnostic({
@@ -2058,11 +2043,17 @@ async function resolveScanArtifactRoot(workspace: string, job: ClaimedJob) {
 
 export async function resolveClawScanTarget(workspace: string, job: ClaimedJob) {
   const root = await resolveScanArtifactRoot(workspace, job);
-  return await resolveClawScanTargetForRoot({
-    artifactKind: job.job.targetKind === "packageRelease" ? "packageRelease" : "skill",
-    root,
-    workspace,
-  });
+  const manifests = ["SKILL.md", "openclaw.plugin.json"];
+  const present = await Promise.all(
+    manifests.map(async (name) =>
+      (await lstat(join(workspace, root, name)).catch(() => null))?.isFile(),
+    ),
+  );
+  // ClawScan rejects dual-manifest directories. An explicit manifest selects the
+  // claimed kind while ClawScan still scans the entire dual-layout directory.
+  return present.every(Boolean)
+    ? `${root}/${manifests[job.job.targetKind === "packageRelease" ? 1 : 0]}`
+    : root;
 }
 
 export function scanHealthClassification(input: {
@@ -2078,16 +2069,11 @@ export function scanHealthClassification(input: {
   let scannerStageFailed = scannerStatuses.some(
     (status) => status !== "completed" && status !== "missing",
   );
-  scannerStageFailed ||= Boolean(
-    input.endor?.timedOut ||
-    input.endor?.scannerError ||
-    (input.endor?.exitCode !== undefined &&
-      input.endor.exitCode !== null &&
-      input.endor.exitCode !== 0),
-  );
+  // processJob records an Endor error for every failed run, including exits and timeouts.
+  scannerStageFailed ||= Boolean(input.endor?.error);
   const judgeStatus = input.clawscan.mapping?.judge?.status;
   let judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
-  scannerStageFailed ||= /ClawScan scanner|Endor ClawScan/i.test(input.errorMessage ?? "");
+  scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
   judgeStageFailed ||= /ClawScan (artifact )?judge|output schema/i.test(input.errorMessage ?? "");
 
   const failureStage =
@@ -2140,21 +2126,18 @@ export async function processJob(
         ? prepareBundledSkillSpector(job, workspace)
         : Promise.resolve(undefined),
     ]);
-    if (shouldRunEndor) {
-      if (endorResult.status === "fulfilled") {
-        endorAnalysis = endorResult.value;
-      } else {
-        const error = endorResult.reason;
-        const endorError = sanitizeWorkerErrorMessage(
-          error instanceof Error ? error.message : String(error),
-        );
-        endor.scannerError ??= endorError;
-        endorAnalysis = {
-          status: "failed",
-          checkedAt: Date.now(),
-          reason: ENDOR_SCAN_FAILED_REASON,
-        };
-      }
+    if (endorResult.status === "fulfilled") {
+      endorAnalysis = endorResult.value;
+    } else {
+      const { reason } = endorResult;
+      endor.error = sanitizeWorkerErrorMessage(
+        reason instanceof Error ? reason.message : String(reason),
+      );
+      endorAnalysis = {
+        status: "failed",
+        checkedAt: Date.now(),
+        reason: ENDOR_SCAN_FAILED_REASON,
+      };
     }
     if (skillSpectorResult.status === "rejected") throw skillSpectorResult.reason;
     const mapped = await runClawScan(
@@ -2170,10 +2153,10 @@ export async function processJob(
     aigAnalysis = mapped.aigAnalysis;
     skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
-    // Package jobs persist scanner summaries only. Skill jobs retain their
-    // existing raw scanner upload when the backend advertises support.
+    // A signed upload URL advertises support after the separately deployed
+    // backend updates. Upload directly to storage to avoid action argument limits.
     let scannerReportsStorageId: string | undefined;
-    if (job.job.targetKind !== "packageRelease" && job.scannerReportsUploadUrl) {
+    if (job.scannerReportsUploadUrl) {
       const uploaded = await fetch(job.scannerReportsUploadUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -6,11 +6,7 @@ import { action, internalAction, internalMutation, internalQuery, mutation } fro
 import { applyGitHubSkillVerificationResultHandler } from "./githubSkillSync";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { reusableAigAnalysis } from "./lib/aigAnalysis";
-import {
-  endorAnalysisSchema,
-  endorAnalysisValidator,
-  type EndorAnalysis,
-} from "./lib/endorAnalysis";
+import { endorAnalysisValidator, type EndorAnalysis } from "./lib/endorAnalysis";
 import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
@@ -4116,10 +4112,7 @@ export const completeCodexScanJob = action({
     if (!isCatalogScanRequest && target.job.leaseToken !== args.leaseToken) {
       throw new ConvexError("Lease mismatch");
     }
-    const endorAnalysis: EndorAnalysis | undefined = args.endorAnalysis
-      ? endorAnalysisSchema.parse(args.endorAnalysis)
-      : undefined;
-    if (endorAnalysis && target.job.targetKind !== "packageRelease") {
+    if (args.endorAnalysis && target.job.targetKind !== "packageRelease") {
       throw new ConvexError("Endor analysis is only supported for package release scans");
     }
     const completedAigAnalysis = reusableAigAnalysis(args.aigAnalysis);
@@ -4173,7 +4166,8 @@ export const completeCodexScanJob = action({
                 skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
               }
             : {}),
-          endorAnalysis,
+          // The release mutation parses Endor's bounds before its first write.
+          endorAnalysis: args.endorAnalysis,
         },
       );
       await runMutationRef(

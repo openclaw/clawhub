@@ -21,7 +21,10 @@ supports paced batches and preserves active jobs.
   SkillSpector and ClawScan static evidence. The custom `clawhub` profile keeps
   the existing judge workspace and artifact-inspection contract while explicitly
   putting Endor's result in the one judge prompt. Pass sanitized job, package,
-  and policy metadata through ClawScan's `--context` so the judge receives it.
+  and policy metadata through ClawScan's `--context` so the judge receives it as
+  `metadata.json`. Omit the release's stored Endor summary from that metadata:
+  the judge must see only this run's result, so an earlier completed scan cannot
+  contradict a failed or skipped one.
 - The ClawHub judge decides the existing moderation verdict from the totality of
   artifact and scanner evidence. A dependency vulnerability is supplemental
   evidence; it does not independently quarantine a package or change its download

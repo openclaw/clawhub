@@ -1,7 +1,6 @@
 #!/bin/sh
 set -eu
 # The worker mounts the normalized package read-only. All writes stay in the container.
-if [ ! -d "$1" ]; then set -- "$(dirname "$1")"; fi
 if [ ! -f "$1/package.json" ]; then
   echo "Endor requires package.json at the target root" >&2
   exit 1
@@ -62,13 +61,14 @@ find "$scan_root" \( -name .git -o -name node_modules \) -prune -exec rm -rf {} 
 export GIT_CONFIG_COUNT=1
 export GIT_CONFIG_KEY_0=safe.directory
 export GIT_CONFIG_VALUE_0="$scan_root"
-git -c core.hooksPath=/dev/null -c user.name=ClawScan -c user.email=clawscan@example.invalid -C "$scan_root" init -q -b main
+git -C "$scan_root" init -q -b main
+# Persist the config so endorctl's own Git calls also run without hooks.
 git -C "$scan_root" config core.hooksPath /dev/null
 git -C "$scan_root" config user.name ClawScan
 git -C "$scan_root" config user.email clawscan@example.invalid
-git -c core.hooksPath=/dev/null -c user.name=ClawScan -c user.email=clawscan@example.invalid -C "$scan_root" add --all --force
-git -c core.hooksPath=/dev/null -c user.name=ClawScan -c user.email=clawscan@example.invalid -C "$scan_root" commit -q --allow-empty -m "ClawScan scan snapshot"
-git -c core.hooksPath=/dev/null -C "$scan_root" remote add origin https://example.invalid/clawscan/scan-target.git
+git -C "$scan_root" add --all --force
+git -C "$scan_root" commit -q --allow-empty -m "ClawScan scan snapshot"
+git -C "$scan_root" remote add origin https://example.invalid/clawscan/scan-target.git
 cd "$scan_root"
 report=$(mktemp)
 diagnostic=$(mktemp)

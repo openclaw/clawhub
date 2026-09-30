@@ -1,5 +1,10 @@
 #!/bin/sh
 set -eu
+# Manual isolation proof for the scanner image's real npm and Yarn. A stand-in
+# endorctl installs registry and Git dependencies through scan.sh's shims and
+# fails if a synthetic secret or dependency script escapes. Run it inside the
+# image with this directory at /fixture and ENDOR_FIXTURE_OUTPUT=/output,
+# passing the installed clawhub-endor-scan path as the only argument.
 
 scan_script=$1
 work=$(mktemp -d)

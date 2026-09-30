@@ -1279,27 +1279,17 @@ describe("run-codex-scan-worker diagnostics", () => {
     ]);
   });
 
-  it("writes bounded Endor failure artifacts and command diagnostics with secrets redacted", async () => {
+  it("writes bounded Endor failure diagnostics with secrets redacted", async () => {
     const diagnosticsRoot = await tempDir();
-    const longDetail = "x".repeat(21_000);
     await writeJobDiagnostic({
       completedAt: 2000,
       diagnosticsRoot,
       endor: {
-        args: ["clawscan", "./endor-artifact/openclaw.plugin.json", "--scanner", "endor"],
-        artifactPath: "/tmp/removed-endor-artifact.json",
-        exitCode: 1,
-        rawArtifact: JSON.stringify({
-          scanners: {
-            endor: {
-              status: "failed",
-              error: `Dependency resolution failed with ENDOR_TOKEN=fixture-token ${longDetail}`,
-            },
-          },
-        }),
-        scannerError: "Dependency resolution failed with ENDOR_TOKEN=fixture-token",
-        stderr: "ENDOR_TOKEN=fixture-token\ncommand failed\n",
-        stdout: "scan started\n",
+        args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+        error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+        exitCode: null,
+        stderr: `ENDOR_TOKEN=fixture-token\ndependency resolution failed ${"x".repeat(21_000)}\n`,
+        stdout: "",
         timedOut: true,
       },
       job: {
@@ -1314,24 +1304,21 @@ describe("run-codex-scan-worker diagnostics", () => {
         target: {},
       },
       startedAt: 1000,
-      status: "failed",
+      status: "completed",
     });
 
     const jobDir = join(diagnosticsRoot, "job-endor-failure-evidence");
-    const artifact = await readFile(join(jobDir, "endor-clawscan-artifact.redacted.json"), "utf8");
-    const stderr = await readFile(join(jobDir, "endor-clawscan.stderr.redacted.log"), "utf8");
+    const stderr = await readFile(join(jobDir, "endor.stderr.redacted.log"), "utf8");
     const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
-    expect(artifact).toContain("Dependency resolution failed");
-    expect(artifact).toContain("...[truncated ");
-    expect(artifact).not.toContain("fixture-token");
     expect(stderr).toContain("ENDOR_TOKEN=[redacted-secret]");
+    expect(stderr).toContain("...[truncated ");
     expect(stderr).not.toContain("fixture-token");
-    expect(diagnostic.endorResult).toMatchObject({
-      exitCode: 1,
-      rawArtifactPath: "endor-clawscan-artifact.redacted.json",
-      scannerError: "Dependency resolution failed with ENDOR_TOKEN=[redacted-secret]",
-      stderrPath: "endor-clawscan.stderr.redacted.log",
-      stdoutPath: "endor-clawscan.stdout.redacted.log",
+    expect(diagnostic.endorResult).toEqual({
+      args: ["docker", "container", "create", "--env", "ENDOR_TOKEN", "clawhub-endor-scan"],
+      error: "Endor Docker start timed out; see redacted stdout/stderr diagnostics",
+      exitCode: null,
+      stderrPath: "endor.stderr.redacted.log",
+      stdoutPath: "endor.stdout.redacted.log",
       timedOut: true,
     });
   });

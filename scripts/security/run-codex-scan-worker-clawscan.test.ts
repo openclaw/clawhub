@@ -139,27 +139,6 @@ async function writeFakeClawScanCommand(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
-async function pathWithFakeDocker(
-  workspace: string,
-  currentPath: string | undefined,
-  body = `if [[ "$1" == "container" && "$2" == "ls" ]]; then exit 0; fi
-echo "unexpected docker command: $*" >&2
-exit 99`,
-) {
-  const binDirectory = join(workspace, "fake-docker-bin");
-  const path = join(binDirectory, "docker");
-  await mkdir(binDirectory, { recursive: true });
-  await writeFile(
-    path,
-    `#!/usr/bin/env bash
-set -euo pipefail
-${body}
-`,
-  );
-  await chmod(path, 0o755);
-  return currentPath ? `${binDirectory}:${currentPath}` : binDirectory;
-}
-
 type ClawScanVerdict = "benign" | "suspicious" | "malicious";
 
 function completeJudgeDimensions() {
@@ -403,8 +382,8 @@ function fakeEndorDockerBody(input: {
     cat <<'JSON'
 ${input.startOutput}
 JSON
+    exit ${input.exitCode}
     ;;
-  wait) printf '%s\\n' ${input.exitCode} ;;
   inspect)
     name="\${@: -1}"
     printf '%064d\\n/%s\\n%s\\n' 0 "$name" "\${name#clawhub-endor-}"
@@ -425,13 +404,13 @@ async function configureEndorFakeCommands(input: {
   vi.stubEnv("CODEX_SECURITY_SCAN_ENDOR_IMAGE", "clawscan-endor:test");
   vi.stubEnv("ENDOR_NAMESPACE", "fixture-namespace");
   vi.stubEnv("ENDOR_TOKEN", "fixture-token");
-  vi.stubEnv("PATH", await pathWithFakeDocker(input.workspace, process.env.PATH, input.dockerBody));
+  const binDirectory = join(input.workspace, "fake-docker-bin");
+  await mkdir(binDirectory, { recursive: true });
+  await writeFakeClawScanCommand(join(binDirectory, "docker"), input.dockerBody);
   if (input.skillSpectorBody) {
-    await writeFakeClawScanCommand(
-      join(input.workspace, "fake-docker-bin", "skillspector"),
-      input.skillSpectorBody,
-    );
+    await writeFakeClawScanCommand(join(binDirectory, "skillspector"), input.skillSpectorBody);
   }
+  vi.stubEnv("PATH", `${binDirectory}:${process.env.PATH}`);
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
@@ -873,6 +852,15 @@ JSON`,
         targetKind: "packageRelease",
         target: {
           package: { name: "@openclaw/fixture-plugin" },
+          release: {
+            version: "1.0.0",
+            endorAnalysis: {
+              status: "completed",
+              checkedAt: 1_700_000_000_000,
+              reachableFunctionCount: 0,
+              findings: [],
+            },
+          },
           trustedOpenClawPlugin: true,
         },
       });
@@ -901,19 +889,18 @@ JSON`,
       if (!contextPath) throw new Error("ClawScan context path was missing");
       const contextText = await readFile(contextPath, "utf8");
       const context = JSON.parse(contextText);
-      expect(context).toMatchObject({
-        targetKind: "packageRelease",
-        source: "publish",
-        trustedOpenClawPlugin: true,
-        metadata: {
-          job: { _id: job.job._id, source: "publish" },
-          target: {
-            package: { name: "@openclaw/fixture-plugin" },
-            trustedOpenClawPlugin: true,
-          },
-          policy: { openclawPluginTrust: expect.stringContaining("trusted") },
+      expect(Object.keys(context)).toEqual(["metadata"]);
+      expect(context.metadata).toMatchObject({
+        job: { _id: job.job._id, source: "publish", targetKind: "packageRelease" },
+        target: {
+          package: { name: "@openclaw/fixture-plugin" },
+          release: { version: "1.0.0" },
+          trustedOpenClawPlugin: true,
         },
+        policy: { openclawPluginTrust: expect.stringContaining("trusted") },
       });
+      // Only this run's Endor result reaches the judge; the stored one may be stale.
+      expect(context.metadata.target.release).not.toHaveProperty("endorAnalysis");
       expect(contextText).not.toContain("lease-fixture");
       expect(JSON.parse(await readFile(join(workspace, "endor-analysis.json"), "utf8"))).toEqual(
         analysis,
@@ -1313,68 +1300,40 @@ JSON`,
       cleanupMarker,
       path: fakeClawScan,
     });
-    const previousEnv = {
-      command: process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND,
-      enabled: process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED,
-      image: process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
-      namespace: process.env.ENDOR_NAMESPACE,
-      path: process.env.PATH,
-      token: process.env.ENDOR_TOKEN,
-    };
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = "1";
-    process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
-    process.env.ENDOR_NAMESPACE = "fixture-namespace";
-    process.env.ENDOR_TOKEN = "fixture-token";
-    process.env.PATH = await pathWithFakeDocker(
+    await configureEndorFakeCommands({
+      clawScan: fakeClawScan,
+      dockerBody: fakeEndorDockerBody({
+        cleanupMarker,
+        exitCode: 0,
+        startOutput: endorArtifactJson(),
+      }),
       workspace,
-      previousEnv.path,
-      fakeEndorDockerBody({ cleanupMarker, exitCode: 0, startOutput: endorArtifactJson() }),
-    );
-    const job = {
-      ...pluginPackageJob("securityScanJobs:endor-reachable"),
-      scannerReportsUploadUrl: "https://storage.example/unused",
-    };
-    const originalFetch = globalThis.fetch;
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(async (url, init) => originalFetch(url, init));
+    });
 
-    try {
-      const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
-      await expect(processJob(client, "worker-auth", job, undefined)).resolves.toEqual({
-        completed: true,
-        hardFailed: false,
-        retryableFailed: false,
-      });
-      expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
-      expect(client.action).toHaveBeenCalledTimes(1);
-      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-        endorAnalysis: {
-          status: "completed",
-          reachableFunctionCount: 1,
-          findings: [{ severity: "high", summary: "GHSA-reachable" }],
-        },
-        llmAnalysis: { status: "malicious", verdict: "malicious" },
-      });
-      expect(client.action.mock.calls[0]?.[1]).not.toHaveProperty("scannerReportsStorageId");
-      expect(fetchSpy.mock.calls.some(([url]) => url === job.scannerReportsUploadUrl)).toBe(false);
-      expect(await readFile(cleanupMarker, "utf8")).toBe("");
-    } finally {
-      if (previousEnv.command === undefined)
-        delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousEnv.command;
-      if (previousEnv.enabled === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED;
-      else process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = previousEnv.enabled;
-      if (previousEnv.image === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE;
-      else process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = previousEnv.image;
-      if (previousEnv.namespace === undefined) delete process.env.ENDOR_NAMESPACE;
-      else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
-      if (previousEnv.path === undefined) delete process.env.PATH;
-      else process.env.PATH = previousEnv.path;
-      if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
-      else process.env.ENDOR_TOKEN = previousEnv.token;
-    }
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    await expect(
+      processJob(
+        client,
+        "worker-auth",
+        pluginPackageJob("securityScanJobs:endor-reachable"),
+        undefined,
+      ),
+    ).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
+    expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
+    expect(client.action).toHaveBeenCalledTimes(1);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      endorAnalysis: {
+        status: "completed",
+        reachableFunctionCount: 1,
+        findings: [{ severity: "high", summary: "GHSA-reachable" }],
+      },
+      llmAnalysis: { status: "malicious", verdict: "malicious" },
+    });
+    expect(await readFile(cleanupMarker, "utf8")).toBe("");
   });
 
   it("passes failed Endor analysis to the judge and completes the moderation result", async () => {
@@ -1389,71 +1348,51 @@ JSON`,
       cleanupMarker,
       path: fakeClawScan,
     });
-    const previousEnv = {
-      command: process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND,
-      enabled: process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED,
-      image: process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE,
-      namespace: process.env.ENDOR_NAMESPACE,
-      path: process.env.PATH,
-      token: process.env.ENDOR_TOKEN,
-    };
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = "1";
-    process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = "clawscan-endor:test";
-    process.env.ENDOR_NAMESPACE = "fixture-namespace";
-    process.env.ENDOR_TOKEN = "fixture-token";
-    process.env.PATH = await pathWithFakeDocker(
+    await configureEndorFakeCommands({
+      clawScan: fakeClawScan,
+      dockerBody: fakeEndorDockerBody({ cleanupMarker, exitCode: 17, startOutput: "{}" }),
       workspace,
-      previousEnv.path,
-      fakeEndorDockerBody({ cleanupMarker, exitCode: 17, startOutput: "{}" }),
-    );
-    const job = pluginPackageJob("securityScanJobs:endor-failed-summary");
+    });
 
-    try {
-      const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
-      const onHealth = vi.fn();
-      await expect(
-        processJob(client, "worker-auth", job, diagnosticsRoot, onHealth),
-      ).resolves.toEqual({
-        completed: true,
-        hardFailed: false,
-        retryableFailed: false,
-      });
-      expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
-      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-        endorAnalysis: {
-          status: "failed",
-          checkedAt: expect.any(Number),
-          reason: "Endor analysis failed. Request a rescan to try again.",
-        },
-        llmAnalysis: { status: "clean", verdict: "benign" },
-      });
-      expect(onHealth).toHaveBeenCalledWith(
-        expect.objectContaining({ completed: true, scannerStageFailed: true }),
-      );
-      const diagnostic = JSON.parse(
-        await readFile(
-          join(diagnosticsRoot, "securityScanJobs_endor-failed-summary", "diagnostic.json"),
-          "utf8",
-        ),
-      );
-      expect(diagnostic.endorResult).toMatchObject({ exitCode: 17, timedOut: false });
-      expect(await readFile(cleanupMarker, "utf8")).toBe("");
-    } finally {
-      if (previousEnv.command === undefined)
-        delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousEnv.command;
-      if (previousEnv.enabled === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED;
-      else process.env.CODEX_SECURITY_SCAN_ENDOR_ENABLED = previousEnv.enabled;
-      if (previousEnv.image === undefined) delete process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE;
-      else process.env.CODEX_SECURITY_SCAN_ENDOR_IMAGE = previousEnv.image;
-      if (previousEnv.namespace === undefined) delete process.env.ENDOR_NAMESPACE;
-      else process.env.ENDOR_NAMESPACE = previousEnv.namespace;
-      if (previousEnv.path === undefined) delete process.env.PATH;
-      else process.env.PATH = previousEnv.path;
-      if (previousEnv.token === undefined) delete process.env.ENDOR_TOKEN;
-      else process.env.ENDOR_TOKEN = previousEnv.token;
-    }
+    const client = { action: vi.fn(async (..._args: unknown[]) => ({})) };
+    const onHealth = vi.fn();
+    await expect(
+      processJob(
+        client,
+        "worker-auth",
+        pluginPackageJob("securityScanJobs:endor-failed-summary"),
+        diagnosticsRoot,
+        onHealth,
+      ),
+    ).resolves.toEqual({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    });
+    expect((await readFile(callLog, "utf8")).trim().split("\n")).toEqual(["called"]);
+    expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+      endorAnalysis: {
+        status: "failed",
+        checkedAt: expect.any(Number),
+        reason: "Endor analysis failed. Request a rescan to try again.",
+      },
+      llmAnalysis: { status: "clean", verdict: "benign" },
+    });
+    expect(onHealth).toHaveBeenCalledWith(
+      expect.objectContaining({ completed: true, scannerStageFailed: true }),
+    );
+    const diagnostic = JSON.parse(
+      await readFile(
+        join(diagnosticsRoot, "securityScanJobs_endor-failed-summary", "diagnostic.json"),
+        "utf8",
+      ),
+    );
+    expect(diagnostic.endorResult).toMatchObject({
+      error: expect.stringContaining("Endor Docker start exited 17"),
+      exitCode: 17,
+      timedOut: false,
+    });
+    expect(await readFile(cleanupMarker, "utf8")).toBe("");
   });
 
   it("prepares bundled SkillSpector while Endor is active, then judges after both finish", async () => {
@@ -1617,7 +1556,7 @@ exit 19`,
       clawscanResult: { exitCode: 19, stderrPath: "clawscan.stderr.redacted.log" },
       endorResult: {
         exitCode: 17,
-        stderrPath: "endor-clawscan.stderr.redacted.log",
+        stderrPath: "endor.stderr.redacted.log",
         timedOut: false,
       },
     });

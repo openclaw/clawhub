@@ -5769,7 +5769,6 @@ describe("securityScan", () => {
         reachableFunctionCount: 3,
       },
     });
-    expect(releasePatches[0]).not.toHaveProperty("scannerReportsStorageId");
     expect(releasePatches).not.toContainEqual(expect.objectContaining({ aigAnalysis: undefined }));
     expect(releasePatches.some((patch) => "aigAnalysis" in patch)).toBe(false);
   });

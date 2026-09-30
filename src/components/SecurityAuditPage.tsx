@@ -1029,10 +1029,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
                         <ul>
                           {props.endorAnalysis.findings.map((finding) => (
                             <li key={`${finding.severity}:${finding.summary}`}>
-                              <strong>
-                                {finding.severity.replace("FINDING_LEVEL_", "").toLowerCase()}
-                              </strong>{" "}
-                              — {finding.summary}
+                              <strong>{finding.severity}</strong> — {finding.summary}
                             </li>
                           ))}
                         </ul>
