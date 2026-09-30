@@ -11307,12 +11307,6 @@ describe("packages public queries", () => {
         role: "user",
         githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
       })
-      .mockResolvedValueOnce({
-        _id: "publishers:owner",
-        kind: "user",
-        handle: "owner",
-        linkedUserId: "users:owner",
-      })
       .mockResolvedValueOnce(existingRelease)
       .mockResolvedValueOnce({
         attemptId: "publishAttempts:pending",
@@ -11388,6 +11382,8 @@ describe("packages public queries", () => {
       });
 
       expect(runMutation).toHaveBeenCalledTimes(1);
+      // The retry settles before the Node static scan and inspector run again.
+      expect(ctx.runAction).not.toHaveBeenCalled();
       expect(runQuery).toHaveBeenLastCalledWith(
         expect.anything(),
         expect.objectContaining({
@@ -11413,12 +11409,9 @@ describe("packages public queries", () => {
           role: "user",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
         })
-        .mockResolvedValueOnce({
-          _id: "publishers:owner",
-          kind: "user",
-          handle: "owner",
-          linkedUserId: "users:owner",
-        });
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
 
       await expect(
         publishPackageForUserInternalHandler(ctx as never, {
@@ -11477,12 +11470,6 @@ describe("packages public queries", () => {
           _id: "users:owner",
           role: "user",
           githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "publishers:owner",
-          kind: "user",
-          handle: "owner",
-          linkedUserId: "users:owner",
         })
         .mockResolvedValueOnce(existingRelease)
         .mockResolvedValueOnce(null)

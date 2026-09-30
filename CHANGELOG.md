@@ -11,6 +11,7 @@
 
 ### Fixes
 
+- Publishing: settle retries of an exact staged package artifact before scans and Plugin Inspector run again, returning the pending or published result, and name a failed attempt with its recovery command instead of a bare "already exists".
 - CLI: read `Retry-After` and rate-limit headers from curl responses under Bun, so publishes back off for the time the server asks instead of retrying blind.
 - Publishing: prepare the Plugin Inspector OpenClaw target by streaming and verifying only its public declaration surface, so plugin publishes no longer run the Node action out of memory or fill `/tmp` with the full OpenClaw package.
 - Deploy: coalesce pending skills.sh syncs per ref before they enter the production deployment queue, while preserving active sync cleanup and queued manual deploys.

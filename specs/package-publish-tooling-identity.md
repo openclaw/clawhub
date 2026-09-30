@@ -176,6 +176,19 @@ authorization.
 The package source recorded by the registry comes from
 `candidateRepository`/`candidateSha`, not the tooling workflow SHA.
 
+## Retries of a staged version
+
+A staged publish settles an existing attempt for the exact artifact (same actor,
+owner, version, and file or ClawPack fingerprint) before storage scans, the Node
+Plugin Inspector, and classification run again, so a retry costs a lookup, not a
+full re-inspection. A finalized attempt with a published release returns the
+published result. A live attempt returns its pending status and attempt ID, but
+for GitHub Actions only to the same workflow run and attempt: finalization is
+authorized by that run's parent, so another run must not report the release as
+its own. A failed attempt names its ID and reason and, for OpenClaw release
+attempts, the `clawhub package recover` command. Other artifacts and actors for
+the version still get `Version … already exists`.
+
 ## Terminal outcomes
 
 An automated-route attempt whose exact parent attempt completed without success
