@@ -4174,9 +4174,17 @@ describe("securityScan", () => {
     ).rejects.toThrow("Exact GitHub Skill Sync job claims are Test-only");
   });
 
-  it("claims only locally assigned bulk skill jobs without reading the shared queue", async () => {
+  it("claims only assigned bulk skill and plugin jobs without reading the shared queue", async () => {
     const jobs = [
       makeScanJob({ _id: "securityScanJobs:assigned", source: "bulk-rescan", nextRunAt: 1 }),
+      makeScanJob({
+        _id: "securityScanJobs:assigned-plugin",
+        source: "bulk-rescan",
+        nextRunAt: 1,
+        targetKind: "packageRelease",
+        skillVersionId: undefined,
+        packageReleaseId: "packageReleases:assigned-plugin",
+      }),
       makeScanJob({ _id: "securityScanJobs:unassigned", source: "bulk-rescan", nextRunAt: 1 }),
       makeScanJob({ _id: "securityScanJobs:priority", source: "publish", nextRunAt: 1 }),
     ];
@@ -4185,13 +4193,20 @@ describe("securityScan", () => {
       workerId: "local-assignment",
       lane: "shared",
       limit: 32,
-      assignedJobIds: ["securityScanJobs:assigned", "securityScanJobs:priority"],
+      assignedJobIds: [
+        "securityScanJobs:assigned",
+        "securityScanJobs:assigned-plugin",
+        "securityScanJobs:priority",
+      ],
     });
-    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:assigned"]);
+    expect(claimed.map((job) => job._id)).toEqual([
+      "securityScanJobs:assigned",
+      "securityScanJobs:assigned-plugin",
+    ]);
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
 
-  it("keeps stale, failed, deferred, package and gated assignments out of claims", async () => {
+  it("keeps stale, failed, deferred and gated assignments out of claims", async () => {
     const jobs = [
       makeScanJob({ _id: "securityScanJobs:running", source: "bulk-rescan", status: "running" }),
       makeScanJob({ _id: "securityScanJobs:failed", source: "bulk-rescan", status: "failed" }),
@@ -4199,11 +4214,6 @@ describe("securityScan", () => {
         _id: "securityScanJobs:future",
         source: "bulk-rescan",
         nextRunAt: Date.now() + 60000,
-      }),
-      makeScanJob({
-        _id: "securityScanJobs:package",
-        source: "bulk-rescan",
-        targetKind: "packageRelease",
       }),
       makeScanJob({
         _id: "securityScanJobs:gated",
