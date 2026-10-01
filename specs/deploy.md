@@ -121,11 +121,18 @@ One-time target configuration:
   variables to the `staging` branch. Set `CLAWHUB_ENV=staging`, the paired
   `VITE_CONVEX_URL=https://cheery-civet-733.convex.cloud` and
   `VITE_CONVEX_SITE_URL=https://cheery-civet-733.convex.site`, and the same
-  `SITE_URL`/`VITE_SITE_URL` as the GitHub `Staging` environment. Do not give
-  this frontend a Convex deploy key. The build verifies the branch, both site
-  URL variables, backend URLs, and matching deployed SHA before it runs; it never creates or seeds a
-  Convex Preview deployment. `CLAWHUB_ENV=staging` remains the branch marker
-  when Vercel reports its system `VERCEL_TARGET_ENV` as `preview`.
+  `SITE_URL`/`VITE_SITE_URL` as the GitHub `Staging` environment. Set a random,
+  at least 32-character `CLAWHUB_STAGING_EDGE_SECRET` only on the `staging`
+  branch and set the same value on `cheery-civet-733`. The server sends it only
+  to that Convex site, and Convex requires it alongside Vercel OIDC before
+  trusting visitor IPs or issuing archive manifests. Other Preview branches
+  share Vercel's project/environment OIDC identity and must not receive this
+  secret; keep Vercel's Git fork protection enabled. Do not give this frontend
+  a Convex deploy key. The build verifies the branch, both site URL variables,
+  backend URLs, edge secret, and matching deployed SHA before it runs; it never
+  creates or seeds a Convex Preview deployment. `CLAWHUB_ENV=staging` remains
+  the branch marker when Vercel reports its system `VERCEL_TARGET_ENV` as
+  `preview`.
 - The Vercel Deploy Hook named `clawhub-staging-github-actions` is bound to the
   `staging` branch. `vercel.json` disables automatic Git builds only for this
   branch; CI invokes the hook after the backend is ready. Do not set the
@@ -152,8 +159,9 @@ One-time target configuration:
   Redeploy other consumers of the Vercel system default before revocation:
   Vercel snapshots that value when each deployment is built.
 - On the staging Convex deployment, configure `AUTH_GITHUB_ID`,
-  `AUTH_GITHUB_SECRET`, `JWT_PRIVATE_KEY`, and `JWKS` for staging sign-in. The
-  workflow checks the names without printing their values. It stamps
+  `AUTH_GITHUB_SECRET`, `JWT_PRIVATE_KEY`, `JWKS`, and
+  `CLAWHUB_STAGING_EDGE_SECRET` for staging identity. The workflow checks the
+  names without printing their values. It stamps
   `CLAWHUB_ENV=staging`, `CLAWHUB_DISABLE_CRONS=1`, both external-skill rollout
   modes to `off`, and `SITE_URL` before deploying.
 

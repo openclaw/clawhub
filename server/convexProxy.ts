@@ -15,6 +15,8 @@ import {
   ARCHIVE_REQUEST_IDENTITY_HEADER,
   CLAWHUB_VERCEL_PROJECT,
   CLAWHUB_VERCEL_TEAM,
+  STAGING_CONVEX_SITE_ORIGIN,
+  STAGING_EDGE_SECRET_HEADER,
 } from "../convex/lib/clawhubVercelOidc";
 import {
   buildDeterministicZipStream,
@@ -53,6 +55,7 @@ const ARCHIVE_REPRESENTATION_HEADERS = [
 ] as const;
 
 type ProxyEnv = {
+  CLAWHUB_STAGING_EDGE_SECRET?: string;
   CONVEX_URL?: string;
   VERCEL_ENV?: string;
   VERCEL_TARGET_ENV?: string;
@@ -149,6 +152,22 @@ export async function proxyConvexRequest(
 
   const requestUrl = getRequestURL(event);
   const target = buildConvexProxyTarget(`${requestUrl.pathname}${requestUrl.search}`, env);
+  const stagingFrontend = isStagingFrontend(env);
+  const stagingTarget = new URL(target).origin === STAGING_CONVEX_SITE_ORIGIN;
+  const stagingEdgeSecret =
+    stagingFrontend && stagingTarget ? env.CLAWHUB_STAGING_EDGE_SECRET?.trim() : undefined;
+  if (
+    stagingFrontend &&
+    (!stagingTarget ||
+      !stagingEdgeSecret ||
+      stagingEdgeSecret.length < 32 ||
+      stagingEdgeSecret.length > 256)
+  ) {
+    return new Response("ClawHub staging edge identity unavailable", {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   const isArchiveRequest = isArchivePath(new URL(target).pathname);
   let archiveRequestToken: string | undefined;
   const isVercelRuntime = env.VERCEL_ENV === "production" || env.VERCEL_ENV === "preview";
@@ -173,6 +192,7 @@ export async function proxyConvexRequest(
     fetchOptions: {
       headers: {
         [ARCHIVE_REQUEST_IDENTITY_HEADER]: archiveRequestToken ?? "",
+        [STAGING_EDGE_SECRET_HEADER]: stagingEdgeSecret ?? "",
         [VERIFIED_CLIENT_IP_HEADER]: clientIp ?? "",
         ...(isArchiveRequest ? { [ARCHIVE_MANIFEST_REQUEST_HEADER]: "v1" } : {}),
       },

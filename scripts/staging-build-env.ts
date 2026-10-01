@@ -8,6 +8,7 @@ const STAGING_SITE_URLS = new Set([
 
 export type StagingBuildEnv = {
   CLAWHUB_ENV?: string;
+  CLAWHUB_STAGING_EDGE_SECRET?: string;
   CONVEX_DEPLOY_KEY?: string;
   SITE_URL?: string;
   VERCEL_ENV?: string;
@@ -37,6 +38,10 @@ export function assertStagingBuildEnv(env: StagingBuildEnv) {
   }
   if (env.CONVEX_DEPLOY_KEY?.trim()) {
     throw new Error("Staging Vercel builds must not receive CONVEX_DEPLOY_KEY");
+  }
+  const edgeSecret = env.CLAWHUB_STAGING_EDGE_SECRET?.trim();
+  if (!edgeSecret || edgeSecret.length < 32 || edgeSecret.length > 256) {
+    throw new Error("Staging Vercel builds require CLAWHUB_STAGING_EDGE_SECRET");
   }
   if (env.VERCEL_GIT_COMMIT_REF?.trim() !== "staging") {
     throw new Error("Staging Vercel builds require VERCEL_GIT_COMMIT_REF=staging");

@@ -124,6 +124,7 @@ describe("Staging deploy workflow", () => {
     expect(config.run).toContain("https://cheery-civet-733.convex.cloud");
     expect(config.run).toContain("https://cheery-civet-733.convex.site");
     expect(plan.run).toContain('CLAWHUB_ENV: "staging"');
+    expect(plan.run).toContain('CLAWHUB_STAGING_EDGE_SECRET: "build-plan-fixture"');
     expect(plan.run).toContain('VERCEL_TARGET_ENV: "preview"');
     expect(plan.run).toContain('VERCEL_GIT_COMMIT_REF: "staging"');
     expect(plan.env?.STAGING_SITE_URL).toContain("clawhub-git-staging");
@@ -135,7 +136,13 @@ describe("Staging deploy workflow", () => {
     expect(plan.run).toContain(".frontend.SITE_URL == $site");
     expect(plan.run).toContain(".frontend.VITE_SITE_URL == $site");
     expect(auth.run).toContain("convex env list --names-only --prod");
-    for (const name of ["AUTH_GITHUB_ID", "AUTH_GITHUB_SECRET", "JWT_PRIVATE_KEY", "JWKS"]) {
+    for (const name of [
+      "AUTH_GITHUB_ID",
+      "AUTH_GITHUB_SECRET",
+      "JWT_PRIVATE_KEY",
+      "JWKS",
+      "CLAWHUB_STAGING_EDGE_SECRET",
+    ]) {
       expect(auth.run).toContain(name);
     }
     expect(JSON.stringify(workflow)).not.toContain("VERCEL_TOKEN");

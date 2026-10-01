@@ -9,6 +9,7 @@ const previewEnv = {
 const stagingSha = "a".repeat(40);
 const stagingEnv = {
   CLAWHUB_ENV: "staging",
+  CLAWHUB_STAGING_EDGE_SECRET: "s".repeat(48),
   SITE_URL: "https://stg.clawhub.ai",
   VERCEL_ENV: "preview",
   VERCEL_TARGET_ENV: "preview",
@@ -141,6 +142,8 @@ describe("Vercel build plan", () => {
     ["missing marker", { CLAWHUB_ENV: "" }, /CLAWHUB_ENV=staging/],
     ["wrong Vercel environment", { VERCEL_ENV: "production" }, /VERCEL_ENV=preview/],
     ["wrong target environment", { VERCEL_TARGET_ENV: "production" }, /preview or staging/],
+    ["missing edge secret", { CLAWHUB_STAGING_EDGE_SECRET: "" }, /CLAWHUB_STAGING_EDGE_SECRET/],
+    ["weak edge secret", { CLAWHUB_STAGING_EDGE_SECRET: "short" }, /CLAWHUB_STAGING_EDGE_SECRET/],
     ["wrong branch", { VERCEL_GIT_COMMIT_REF: "feature/demo" }, /COMMIT_REF=staging/],
     ["missing SHA", { VERCEL_GIT_COMMIT_SHA: "" }, /full VERCEL_GIT_COMMIT_SHA/],
     [

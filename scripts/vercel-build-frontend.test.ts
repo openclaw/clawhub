@@ -66,6 +66,7 @@ describe("Vercel frontend build environment", () => {
     (targetEnvironment) => {
       const env = resolveFrontendBuildEnv({
         CLAWHUB_ENV: "staging",
+        CLAWHUB_STAGING_EDGE_SECRET: "s".repeat(48),
         SITE_URL: "https://stg.clawhub.ai",
         VERCEL_ENV: "preview",
         VERCEL_TARGET_ENV: targetEnvironment,
@@ -88,6 +89,7 @@ describe("Vercel frontend build environment", () => {
     expect(() =>
       resolveFrontendBuildEnv({
         CLAWHUB_ENV: "staging",
+        CLAWHUB_STAGING_EDGE_SECRET: "s".repeat(48),
         SITE_URL: "https://stg.clawhub.ai",
         VERCEL_ENV: "preview",
         VERCEL_TARGET_ENV: "preview",
@@ -103,6 +105,7 @@ describe("Vercel frontend build environment", () => {
     expect(() =>
       resolveFrontendBuildEnv({
         CLAWHUB_ENV: "staging",
+        CLAWHUB_STAGING_EDGE_SECRET: "s".repeat(48),
         SITE_URL: "https://stg.clawhub.ai",
         VERCEL_ENV: "preview",
         VERCEL_GIT_COMMIT_REF: "staging",

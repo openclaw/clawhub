@@ -224,6 +224,7 @@ jobs:
             import { resolveFrontendBuildEnv } from "./scripts/vercel-build-frontend.ts";
             const env = {
               CLAWHUB_ENV: "staging",
+              CLAWHUB_STAGING_EDGE_SECRET: "build-plan-fixture".padEnd(32, "x"),
               VERCEL_ENV: "preview",
               VERCEL_TARGET_ENV: "preview",
               VERCEL_GIT_COMMIT_REF: "staging",
@@ -256,7 +257,7 @@ jobs:
           set -euo pipefail
           names="$(bunx convex env list --names-only --prod)"
           missing=()
-          for name in AUTH_GITHUB_ID AUTH_GITHUB_SECRET JWT_PRIVATE_KEY JWKS; do
+          for name in AUTH_GITHUB_ID AUTH_GITHUB_SECRET JWT_PRIVATE_KEY JWKS CLAWHUB_STAGING_EDGE_SECRET; do
             if ! grep -Fxq "$name" <<< "$names"; then
               missing+=("$name")
             fi

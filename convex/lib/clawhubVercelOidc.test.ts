@@ -8,6 +8,8 @@ import {
   CLAWHUB_VERCEL_PROJECT_ID,
   CLAWHUB_VERCEL_TEAM,
   expectedVercelEnvironmentForConvexSite,
+  hasValidStagingEdgeSecret,
+  STAGING_EDGE_SECRET_HEADER,
   verifyClawHubVercelOidcToken,
 } from "./clawhubVercelOidc";
 
@@ -72,6 +74,41 @@ describe("ClawHub Vercel OIDC", () => {
         { CLAWHUB_ENV: "staging", CLAWHUB_PREVIEW: "1" },
       ),
     ).toBeNull();
+  });
+
+  it("requires a separate branch secret for the Staging Convex site", () => {
+    const secret = "s".repeat(48);
+    const env = { CLAWHUB_ENV: "staging", CLAWHUB_STAGING_EDGE_SECRET: secret };
+    const request = (value?: string) =>
+      new Request("https://cheery-civet-733.convex.site/api/v1/download", {
+        headers: value ? { [STAGING_EDGE_SECRET_HEADER]: value } : {},
+      });
+
+    expect(hasValidStagingEdgeSecret(request(secret), env)).toBe(true);
+    expect(hasValidStagingEdgeSecret(request(), env)).toBe(false);
+    expect(hasValidStagingEdgeSecret(request("wrong"), env)).toBe(false);
+    expect(hasValidStagingEdgeSecret(request(secret), { CLAWHUB_ENV: "staging" })).toBe(false);
+    expect(
+      hasValidStagingEdgeSecret(request(secret), {
+        CLAWHUB_ENV: "staging",
+        CLAWHUB_STAGING_EDGE_SECRET: "short",
+      }),
+    ).toBe(false);
+    expect(hasValidStagingEdgeSecret(request(secret), { ...env, CLAWHUB_PREVIEW: "1" })).toBe(
+      false,
+    );
+    expect(
+      hasValidStagingEdgeSecret(
+        new Request("https://preview-branch-123.convex.site/api/v1/download"),
+        env,
+      ),
+    ).toBe(false);
+    expect(
+      hasValidStagingEdgeSecret(
+        new Request("https://preview-branch-123.convex.site/api/v1/download"),
+        { CLAWHUB_ENV: "preview" },
+      ),
+    ).toBe(true);
   });
 
   it("accepts only the ClawHub project identity for the expected environment", async () => {
