@@ -1470,7 +1470,7 @@ function isClawOutsideOpenClawPublisher(digest: PackageDigestLike) {
   );
 }
 
-async function isClawDigestPublisherActive(
+async function isClawDigestPublisherAuthorized(
   ctx: DbReaderCtx,
   digest: PackageDigestLike,
   cache: Map<string, Promise<boolean>>,
@@ -1480,7 +1480,11 @@ async function isClawDigestPublisherActive(
   const id = String(digest.ownerPublisherId);
   let allowed = cache.get(id);
   if (!allowed) {
-    allowed = ctx.db.get(digest.ownerPublisherId).then((owner) => isOpenClawClawPublisher(owner));
+    allowed = ctx.db
+      .get(digest.ownerPublisherId)
+      .then(
+        async (owner) => isOpenClawClawPublisher(owner) && (await isOfficialPublisher(ctx, owner)),
+      );
     cache.set(id, allowed);
   }
   return await allowed;
@@ -2744,7 +2748,7 @@ async function mayHaveVisiblePackageCategoryDigest(
     if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
     if (!digestMatchesFilters(digest, args)) continue;
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
-    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) continue;
+    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
     return true;
   }
   // A saturated bounded probe cannot prove that later rows are also invisible.
@@ -2802,7 +2806,7 @@ async function takeVisiblePackageCategoryDigestPage(
     if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
     if (!digestMatchesFilters(digest, args)) continue;
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
-    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) continue;
+    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
     page.push(await toPublicPackageListItem(ctx, digest));
     if (page.length >= targetCount) break;
   }
@@ -2999,7 +3003,7 @@ async function fetchHighlightedPackageEntries(
     if (getPluginDiscoveryExclusion(digest.categories) || !isEnglishPluginListing(digest)) continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
-    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) continue;
+    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) continue;
     entries.push({ digest, featuredAt: badge.at });
     if (entries.length >= MAX_PUBLIC_LIST_PAGE_SIZE) break;
   }
@@ -3048,7 +3052,9 @@ async function isPackageAllowedInPublicClawCatalog(ctx: DbReaderCtx, pkg: Doc<"p
   if (pkg.family !== "claw") return true;
   if (!experimentalClawsEnabled() || !isOpenClawClawName(pkg.normalizedName)) return false;
   const ownerPublisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
-  return isOpenClawClawPublisher(ownerPublisher);
+  return (
+    isOpenClawClawPublisher(ownerPublisher) && (await isOfficialPublisher(ctx, ownerPublisher))
+  );
 }
 
 async function getReadablePackageByName(
@@ -5279,7 +5285,7 @@ async function listPackagePageImpl(
         if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
           continue;
         }
-        if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) {
+        if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) {
           skippedPolicyClaw = true;
           continue;
         }
@@ -5707,7 +5713,7 @@ async function searchPackagesImpl(
   for (const digest of candidateDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
-    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) {
+    if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) {
       skippedPolicyClaw = true;
       continue;
     }
@@ -5736,7 +5742,7 @@ async function searchPackagesImpl(
       for (const digest of digests) {
         if (!(await canViewPackage(digest))) continue;
         if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
-        if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) {
+        if (!(await isClawDigestPublisherAuthorized(ctx, digest, clawPublisherCache))) {
           skippedPolicyClaw = true;
           continue;
         }

@@ -1435,6 +1435,7 @@ function makeDigestCtx(options: {
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
   officialDigests?: Array<Record<string, unknown>>;
+  officialPublisherIds?: string[];
   publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
   highlightedBadges?: Array<Record<string, unknown>>;
@@ -1937,7 +1938,27 @@ function makeDigestCtx(options: {
             };
           }
           if (table === "officialPublishers") {
-            return { withIndex: () => ({ unique: async () => null }) };
+            return {
+              withIndex: (
+                _indexName: string,
+                builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+              ) => {
+                let publisherId = "";
+                const queryBuilder = {
+                  eq: (_field: string, value: string) => {
+                    publisherId = value;
+                    return queryBuilder;
+                  },
+                };
+                builder?.(queryBuilder);
+                return {
+                  unique: async () =>
+                    (options.officialPublisherIds ?? [openClawPublisher._id]).includes(publisherId)
+                      ? { publisherId }
+                      : null,
+                };
+              },
+            };
           }
           if (
             table !== "packageCapabilitySearchDigest" &&
@@ -2925,6 +2946,7 @@ function makePackageCtx(options: {
     continueCursor: string;
   };
   ownerPublisher?: Record<string, unknown> | null;
+  officialPublisher?: boolean;
   viewerMembershipRole?: "owner" | "admin" | "publisher" | null;
 }) {
   const pkg = options.pkg ?? makePackageDoc();
@@ -3013,6 +3035,19 @@ function makePackageCtx(options: {
                       }
                     : null,
                 ),
+              })),
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi
+                  .fn()
+                  .mockResolvedValue(
+                    options.officialPublisher === false
+                      ? null
+                      : { publisherId: pkg?.ownerPublisherId },
+                  ),
               })),
             };
           }
@@ -21461,6 +21496,44 @@ describe("restorePackageInternal", () => {
     },
   );
 
+  it("hides a Claw immediately when @openclaw loses official publisher status", async () => {
+    const pkg = makeOpenClawClawPackageDoc();
+    const { ctx: namedCtx } = makePackageCtx({
+      pkg,
+      latestRelease: makeReleaseDoc({ files: [] }),
+      officialPublisher: false,
+    });
+    await expect(getByNameHandler(namedCtx, { name: pkg.name as string })).resolves.toBeNull();
+    await expect(
+      getVersionByNameHandler(namedCtx, { name: pkg.name as string, version: "1.0.0" }),
+    ).resolves.toBeNull();
+
+    const digest = makeDigest(pkg.name as string, {
+      family: "claw",
+      channel: "official",
+      isOfficial: true,
+      ownerPublisherId: openClawPublisher._id,
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+    });
+    const { ctx: discoveryCtx } = makeDigestCtx({
+      pages: [{ page: [digest], isDone: true, continueCursor: "" }],
+      publisherDocs: activeOpenClawPublisherDocs,
+      officialPublisherIds: [],
+    });
+    const listed = await listPublicPageHandler(discoveryCtx, {
+      family: "claw",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(listed.page).toEqual([]);
+    const searched = await searchPublicHandler(discoveryCtx, {
+      query: "demo-claw",
+      family: "claw",
+      limit: 10,
+    });
+    expect(searched).toEqual([]);
+  });
+
   it("lists an @openclaw Claw beyond a first page of hidden legacy Claws", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
       makeDigest(`@other/legacy-${index}`, {
@@ -21721,7 +21794,16 @@ describe("restorePackageInternal", () => {
     ]);
 
     const result = await getPublicReleaseSelectionsInternalHandler(
-      { db: { get: vi.fn(async (id: string) => records.get(id) ?? null) } },
+      {
+        db: {
+          get: vi.fn(async (id: string) => records.get(id) ?? null),
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue({ publisherId: "publishers:openclaw" }),
+            })),
+          })),
+        },
+      },
       {
         selections: [
           { packageId: "packages:other", releaseId: "packageReleases:other" },
