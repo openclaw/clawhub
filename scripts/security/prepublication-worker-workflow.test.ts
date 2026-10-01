@@ -29,10 +29,6 @@ describe("pre-publication publish worker workflow", () => {
           steps: WorkflowStep[];
           permissions?: Record<string, string>;
         };
-        "reject-test-target-on-staging-ref": {
-          if?: string;
-          steps: WorkflowStep[];
-        };
         "prepublication-publish-checks": {
           concurrency?: unknown;
           env?: Record<string, unknown>;
@@ -88,13 +84,7 @@ describe("pre-publication publish worker workflow", () => {
 
     const job = workflow.jobs["prepublication-publish-checks"];
     const testRelay = workflow.jobs["dispatch-test"];
-    const invalidTarget = workflow.jobs["reject-test-target-on-staging-ref"];
     const steps = job.steps;
-    expect(invalidTarget.if).toContain("github.ref == 'refs/heads/staging'");
-    expect(invalidTarget.if).toContain("inputs['target-environment'] == 'test'");
-    expect(
-      invalidTarget.steps.find((step) => step.name === "Reject mismatched branch and target")?.run,
-    ).toContain("exit 1");
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-prepublication-publish"]);
     expect(workflow.on?.schedule?.[0]?.cron).toBe("*/5 * * * *");
     expect(workflow.on?.workflow_dispatch).toBeDefined();
@@ -133,7 +123,7 @@ describe("pre-publication publish worker workflow", () => {
       options: ["production", "test"],
     });
     expect(job.environment).toBe(
-      "${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}",
+      "${{ inputs['target-environment'] == 'test' && 'Test' || 'Production' }}",
     );
     expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(job["timeout-minutes"]).toBe(25);
@@ -143,9 +133,9 @@ describe("pre-publication publish worker workflow", () => {
     expect(job.strategy?.["max-parallel"]).toBe(2);
     expect(job.env).toMatchObject({
       CONVEX_URL:
-        "${{ github.ref == 'refs/heads/staging' && 'https://cheery-civet-733.convex.cloud' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'https://academic-chihuahua-392.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud') }}",
+        "${{ inputs['target-environment'] == 'test' && 'https://academic-chihuahua-392.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
       PREPUBLICATION_WORKER_ENVIRONMENT:
-        "${{ github.ref == 'refs/heads/staging' && 'staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'test' || 'production') }}",
+        "${{ inputs['target-environment'] == 'test' && 'test' || 'production' }}",
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
         "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}",
       PREPUBLICATION_CLAWSCAN_SANDBOX: "off",
@@ -168,7 +158,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(workflow).toMatchObject({
       concurrency: {
         group:
-          "${{ (github.ref == 'refs/heads/staging' || github.event.client_payload.environment == 'staging') && format('staging-{0}-', github.ref_name) || ((github.event.client_payload.environment == 'test' || inputs['target-environment'] == 'test') && 'test-' || '') }}${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}",
+          "${{ (github.event.client_payload.environment == 'test' || inputs['target-environment'] == 'test') && 'test-' || '' }}${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}",
         "cancel-in-progress": false,
       },
     });
@@ -200,9 +190,7 @@ describe("pre-publication publish worker workflow", () => {
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
     });
     expect(testRunStep?.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
-    expect(runStep?.if).toBe(
-      "github.ref != 'refs/heads/main' || inputs['target-environment'] != 'test'",
-    );
+    expect(runStep?.if).toBe("inputs['target-environment'] != 'test'");
     expect(runStep?.run).toBe("bun run publish:prepublication-worker");
     expect(runStep?.run).not.toContain("--attempt-id");
     expect(runStep?.run).not.toContain("--kind");

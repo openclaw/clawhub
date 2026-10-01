@@ -183,25 +183,6 @@ describe("publishAttemptDispatch", () => {
     expect(runAfter).not.toHaveBeenCalled();
   });
 
-  it("marks staging publish events for the branch relay", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "staging");
-    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-    await dispatchPublishAttemptWorkflow(
-      { token: "installation-token", permissions: { contents: "write" } },
-      {
-        attemptId: "publishAttempts:staging" as never,
-        kind: "skill",
-        slug: "staging-proof",
-        version: "1.0.0",
-      },
-      fetchImpl,
-    );
-    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
-      event_type: "clawhub-prepublication-publish",
-      client_payload: { environment: "staging", attempt_id: "publishAttempts:staging" },
-    });
-  });
-
   it("marks Test publish events for the Test worker relay", async () => {
     vi.stubEnv("CLAWHUB_ENV", "test");
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
@@ -218,6 +199,25 @@ describe("publishAttemptDispatch", () => {
     expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
       event_type: "clawhub-prepublication-publish",
       client_payload: { environment: "test", attempt_id: "publishAttempts:test" },
+    });
+  });
+
+  it("marks retired Staging publish events so the Production worker can reject them", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "staging");
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    await dispatchPublishAttemptWorkflow(
+      { token: "installation-token", permissions: { contents: "write" } },
+      {
+        attemptId: "publishAttempts:staging" as never,
+        kind: "package",
+        slug: "@openclaw/staging-proof",
+        version: "1.0.0",
+      },
+      fetchImpl,
+    );
+    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      event_type: "clawhub-prepublication-publish",
+      client_payload: { environment: "staging", attempt_id: "publishAttempts:staging" },
     });
   });
 

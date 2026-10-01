@@ -54,6 +54,8 @@ export async function dispatchSecurityScanWorkflow(
     {
       eventType: "clawhub-security-scan",
       clientPayload: {
+        // Keep the retired marker until the old backend is deleted so the
+        // main-only workflow drops its events instead of running them in Prod.
         ...(process.env.CLAWHUB_ENV === "staging" ? { environment: "staging" } : {}),
         batch_limit: "4",
         max_runtime_minutes: "12",

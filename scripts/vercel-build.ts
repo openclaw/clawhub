@@ -1,20 +1,6 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from "node:child_process";
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "../convex/_generated/api";
-import {
-  assertStagingBuildEnv,
-  isStagingBuildRequested,
-  STAGING_CONVEX_URL,
-  type StagingBuildEnv,
-} from "./staging-build-env";
-
-const STAGING_BACKEND_POLL_MS = 5_000;
-const STAGING_BACKEND_WAIT_MS = 120_000;
-const STAGING_QUERY_TIMEOUT_MS = 10_000;
-
-type BuildEnv = StagingBuildEnv;
 
 type BuildStep = {
   command: string;
@@ -22,12 +8,9 @@ type BuildStep = {
 };
 
 type Sleep = (delayMs: number) => Promise<void>;
-type ReadStagingBackendBuildSha = (convexUrl: string) => Promise<string | null>;
 
 type MainOptions = {
-  env?: BuildEnv;
-  now?: () => number;
-  readStagingBackendBuildSha?: ReadStagingBackendBuildSha;
+  env?: NodeJS.ProcessEnv;
   sleep?: Sleep;
   spawn?: typeof spawnSync;
 };
@@ -37,58 +20,8 @@ const defaultSleep: Sleep = (delayMs) =>
     setTimeout(resolve, delayMs);
   });
 
-const readStagingBackendBuildSha: ReadStagingBackendBuildSha = async (convexUrl) => {
-  const client = new ConvexHttpClient(convexUrl, {
-    logger: false,
-    fetch: (input, init) =>
-      fetch(input, { ...init, signal: AbortSignal.timeout(STAGING_QUERY_TIMEOUT_MS) }),
-  });
-  const deploymentInfo = await client.query(api.appMeta.getDeploymentInfo, {});
-  return deploymentInfo.appBuildSha;
-};
-
-async function waitForStagingBackend(
-  env: BuildEnv,
-  readBuildSha: ReadStagingBackendBuildSha,
-  sleep: Sleep,
-  now: () => number,
-) {
-  const expectedSha = assertStagingBuildEnv(env);
-
-  const deadline = now() + STAGING_BACKEND_WAIT_MS;
-  let lastObserved = "unavailable";
-  let loggedWait = false;
-  for (;;) {
-    try {
-      const observedSha = await readBuildSha(STAGING_CONVEX_URL);
-      if (observedSha === expectedSha) return;
-      lastObserved = observedSha ?? "unset";
-    } catch {
-      // The query may not exist until the first Staging backend deploy completes.
-      lastObserved = "query unavailable";
-    }
-
-    const remainingMs = deadline - now();
-    if (remainingMs <= 0) {
-      throw new Error(
-        `Staging Convex APP_BUILD_SHA did not reach ${expectedSha} within 2 minutes (last observed: ${lastObserved})`,
-      );
-    }
-    if (!loggedWait) {
-      console.error("[vercel-build] waiting for the matching Staging Convex backend SHA...");
-      loggedWait = true;
-    }
-    await sleep(Math.min(STAGING_BACKEND_POLL_MS, remainingMs));
-  }
-}
-
-export function resolveVercelBuildPlan(env: BuildEnv, previewNameOverride?: string): BuildStep[] {
+export function resolveVercelBuildPlan(env: NodeJS.ProcessEnv, previewNameOverride?: string) {
   const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
-
-  if (isStagingBuildRequested(env)) {
-    assertStagingBuildEnv(env);
-    return [{ command: "bun", args: ["scripts/vercel-build-frontend.ts"] }];
-  }
 
   if (targetEnvironment === "production" || targetEnvironment === "test") {
     if (env.CONVEX_DEPLOY_KEY?.trim()) {
@@ -151,20 +84,12 @@ function runBuildPlan(steps: BuildStep[], spawn: typeof spawnSync) {
 
 export async function main({
   env = process.env,
-  now = Date.now,
-  readStagingBackendBuildSha: readBuildSha = readStagingBackendBuildSha,
   sleep = defaultSleep,
   spawn = spawnSync,
-}: MainOptions = {}): Promise<number> {
-  const initialPlan = resolveVercelBuildPlan(env);
+}: MainOptions = {}) {
   const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
-  const stagingBuild = isStagingBuildRequested(env);
-
-  if (stagingBuild) {
-    await waitForStagingBackend(env, readBuildSha, sleep, now);
-  }
-
-  if (stagingBuild || targetEnvironment !== "preview") {
+  const initialPlan = resolveVercelBuildPlan(env);
+  if (targetEnvironment !== "preview") {
     const failure = runBuildPlan(initialPlan, spawn);
     if (!failure) return 0;
     if (failure.error) throw failure.error;

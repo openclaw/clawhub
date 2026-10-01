@@ -163,7 +163,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   uses the shared terminal state so scheduled work stops, records the actor, and
   is a no-op if that exact run has already finished or been replaced. A signal run
   from an older model must not lock the control that starts its replacement.
-  New scan indexes must ship in a staging-only release before any function
+  New scan indexes must ship in a Test-only release before any function
   queries them. Keep the indexes marked `staged: true`, deploy that schema,
   and wait until Convex reports every index ready. Only a later release may
   activate and query them. This applies to
