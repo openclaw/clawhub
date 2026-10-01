@@ -36,6 +36,8 @@ Normal package validation and security gates apply, including to the OpenClaw pu
 
 ## Install and connect
 
+The OpenClaw consumer must include the [remote MCP loader fix](https://github.com/openclaw/openclaw/pull/162376). Until a release containing that fix is available, use a verified build containing it; older consumers may fail to start an agent session after enabling a remote MCP plugin.
+
 Once available, users install the package through the normal OpenClaw plugin flow, enable it, and connect their account when required. API-key integrations require the named credential in a consumer that supports their environment placeholders. Account-level testing is separate from package validation.
 
 OpenClaw's Control UI lists the plugin's MCP servers on its detail page. Follow the package's setup notes to connect the service.
