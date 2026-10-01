@@ -106,12 +106,12 @@ Exception: for sparse metrics where `$__interval` rounds to empty buckets, a fix
 
 #### 1. At-a-Glance (Statistic panels)
 Current values — "what's the state right now?"
-- Use `group using avg` (gauges) or `group using last` (counters).
+- Choose the `group` function by what the panel should show across series.
 - Read the metric's `unit` via `metrics-info … metrics <m> info` and pass it to `chart-add --unit`. Ratio metrics (0–1) need `| map * 100` in MPL before `--unit "%"`.
 
 #### 2. Trends (TimeSeries panels)
 Trends over time — "what changed?"
-- `align to $__interval using avg|sum|last`.
+- Choose the `align` function by what each interval should show.
 - Group by low-cardinality tags only (≤10 series per chart).
 - Embed the unit in `--name` (`"P95 Latency (ms)"`, `"Memory (MiB)"`); scale magnitudes in MPL (`| map / 1048576` for bytes → MiB).
 
@@ -123,7 +123,7 @@ Per-entity detail — "where should I look?"
 
 #### 4. Entity State (TimeSeries or Table panels)
 Boolean/state metrics — answer "what is on/off/active?"
-- Use `align to $__interval using last`.
+- Choose the `align` function by the state question each interval answers.
 - Sparse state metrics may need a fixed wider interval (1h+).
 
 ---

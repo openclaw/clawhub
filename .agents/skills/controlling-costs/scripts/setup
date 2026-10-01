@@ -10,8 +10,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/lib/skill-paths.sh"
 
 echo "=== axiom-cost-control Setup ==="
 echo ""
@@ -52,21 +52,21 @@ echo "✓ Scripts ready"
 echo ""
 echo "[3/4] Checking dependent skills..."
 
-AXIOM_SRE="$HOME/.config/agents/skills/axiom-sre"
-BUILDING_DASHBOARDS="$HOME/.config/agents/skills/building-dashboards"
+AXIOM_QUERY="$(resolve_skill_script sre axiom-query "${AXIOM_QUERY:-}")"
+DASHBOARD_CREATE="$(resolve_skill_script building-dashboards dashboard-create "${DASHBOARD_CREATE:-}")"
 
-if [[ -d "$AXIOM_SRE" && -x "$AXIOM_SRE/scripts/axiom-query" ]]; then
+if [[ -x "$AXIOM_QUERY" ]]; then
     echo "✓ axiom-sre skill found"
 else
-    echo "✗ axiom-sre skill not found"
+    echo "✗ axiom-query not found at $AXIOM_QUERY"
     echo "  Install: amp skill install axiom-sre"
     exit 1
 fi
 
-if [[ -d "$BUILDING_DASHBOARDS" && -x "$BUILDING_DASHBOARDS/scripts/dashboard-create" ]]; then
+if [[ -x "$DASHBOARD_CREATE" ]]; then
     echo "✓ building-dashboards skill found"
 else
-    echo "⚠ building-dashboards skill not found (optional, needed for deploy-dashboard)"
+    echo "⚠ dashboard-create not found at $DASHBOARD_CREATE (optional, needed for deploy-dashboard)"
     echo "  Install: amp skill install building-dashboards"
 fi
 
@@ -104,7 +104,7 @@ echo "  1. Discover baseline usage:"
 echo "     scripts/baseline-stats <deployment>"
 echo ""
 echo "  2. Deploy cost control dashboard:"
-echo "     scripts/deploy-dashboard <deployment> [name]"
+echo "     scripts/deploy-dashboard -d <deployment> -a <audit-dataset>"
 echo ""
 echo "  3. Create monitors (adjust contract_tb for your usage):"
 echo "     scripts/create-monitors <deployment> [notifier_id] [contract_tb] [glidepath_tb]"
