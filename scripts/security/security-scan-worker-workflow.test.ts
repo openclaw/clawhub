@@ -155,7 +155,6 @@ describe("security-scan-codex workflow", () => {
     expectSecretStepAllowlist(steps, "CONVEX_DEPLOY_KEY", [
       "Check Test scan target",
       "Prepare Test scan authentication",
-      "Restore Test scan authentication",
     ]);
     expectSecretStepAllowlist(steps, "ENDOR_API_CREDENTIALS_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "ENDOR_API_CREDENTIALS_SECRET", ["Run Codex security worker"]);
@@ -258,7 +257,7 @@ describe("security-scan-codex workflow", () => {
       expect(run(rejected).status, JSON.stringify(rejected)).not.toBe(0);
   });
 
-  it("bounds Test assignments and restores authentication after success or partial failure", async () => {
+  it("bounds Test assignments and preserves the existing worker credential", async () => {
     const workflow = parseYaml(
       await readFile(".github/workflows/security-scan-codex.yml", "utf8"),
     ) as {
@@ -266,8 +265,6 @@ describe("security-scan-codex workflow", () => {
     };
     const steps = workflow.jobs["codex-security-scan"].steps;
     const prepare = steps.find((step) => step.id === "test-auth");
-    const restore = steps.find((step) => step.name === "Restore Test scan authentication");
-    expect(restore?.if).toBe("${{ always() && steps.test-target.outcome == 'success' }}");
     const root = await mkdtemp(join(tmpdir(), "endor-test-auth-"));
     try {
       const state = join(root, "backend-token");
@@ -281,8 +278,6 @@ case "$3:$4" in
   securityScan:getJobTargetInternal:*) printf '%s\\n' "$TEST_JOB_TARGET" ;;
   get:APP_BUILD_SHA) printf '%s\\n' "$GITHUB_SHA" ;;
   get:SECURITY_SCAN_WORKER_TOKEN) if [[ -f "$TEST_TOKEN_STATE" ]]; then cat "$TEST_TOKEN_STATE"; printf '\\n'; fi ;;
-  set:SECURITY_SCAN_WORKER_TOKEN) cp "$6" "$TEST_TOKEN_STATE"; [[ "\${TEST_FAIL_ROTATION:-}" != 1 ]] ;;
-  remove:SECURITY_SCAN_WORKER_TOKEN) rm -f "$TEST_TOKEN_STATE" ;;
   *) exit 99 ;;
 esac
 `,
@@ -313,6 +308,7 @@ esac
           env: { ...env, ...overrides },
           encoding: "utf8",
         });
+      await writeFile(state, "shared-fixture-token");
       for (const invalid of [
         { CODEX_SECURITY_SCAN_ASSIGNED_JOBS: assignments(0) },
         { CODEX_SECURITY_SCAN_ASSIGNED_JOBS: assignments(4) },
@@ -327,21 +323,19 @@ esac
         },
       ]) {
         expect(run(prepare?.run, invalid).status).not.toBe(0);
-        expect(run(restore?.run).status).toBe(0);
-        await expect(readFile(state)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(await readFile(state, "utf8")).toBe("shared-fixture-token");
+        await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" });
       }
-      for (const failure of ["", "1"]) {
-        await writeFile(state, "previous-fixture-token");
-        const result = run(prepare?.run, { TEST_FAIL_ROTATION: failure });
-        expect(result.status).toBe(failure ? 1 : 0);
-        expect(await readFile(state, "utf8")).toMatch(/^[a-f0-9]{64}$/);
-        expect(run(restore?.run).status).toBe(0);
-        expect(await readFile(state, "utf8")).toBe("previous-fixture-token");
-      }
+      const result = run(prepare?.run);
+      expect(result.status).toBe(0);
+      expect(await readFile(state, "utf8")).toBe("shared-fixture-token");
+      expect(await readFile(output, "utf8")).toBe("token=shared-fixture-token\n");
+      expect(result.stdout).toContain("::add-mask::shared-fixture-token");
       await rm(state);
-      expect(run(prepare?.run).status).toBe(0);
-      expect(run(restore?.run).status).toBe(0);
+      await rm(output);
+      expect(run(prepare?.run).status).not.toBe(0);
       await expect(readFile(state)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
