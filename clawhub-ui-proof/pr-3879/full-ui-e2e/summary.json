@@ -1,0 +1,354 @@
+{
+  "status": "passed-with-disclosed-simulation",
+  "scenario": "managed-mcp-real-admin-to-openclaw",
+  "provider": "Real local ClawHub + real local OpenClaw + isolated Chromium (no browser/network mocks)",
+  "candidate": "ad781daa521e42ba1cbb4b57a7eec09f4db33165",
+  "baselineConsumer": "0338bb3adbafa24f8887e169634169ae60d690af",
+  "package": "@openclaw/deepwiki-e2e@1.0.0",
+  "collectionCount": 66,
+  "disposableDemoCount": 1,
+  "security": {
+    "queue": {
+      "capturedAt": "2026-10-01T03:40:38.233Z",
+      "target": "isolated local ClawHub (57230/57231)",
+      "readOnly": true,
+      "sourceStage": "managedMcp.publish -> packages staged release -> publishAttempts durable prepublication queue",
+      "queueTable": "publishAttempts",
+      "attemptId": "rn75vm48zb5cgmgxdwyg1y7xrh8fevt5",
+      "name": "@openclaw/deepwiki-e2e",
+      "version": "1.0.0",
+      "status": "pending_checks",
+      "checks": {
+        "clawscan": {
+          "status": "pending"
+        },
+        "trufflehog": {
+          "status": "pending"
+        }
+      },
+      "createdAt": "2026-10-01T03:40:10.822Z",
+      "updatedAt": "2026-10-01T03:40:10.822Z",
+      "artifactFingerprint": "2d44859ae9a84a8a24b2dc3bd67da5147d10e8ad6884826afc8bc58e94331049",
+      "artifactSha256": "a294a59ab2640aa4e353b489bc306cced4a20ddaf106c9b6cad52bb95a9982d8",
+      "files": [
+        {
+          "path": "package.json",
+          "size": 188,
+          "sha256": "f3925d975ee9c794343bafd759d057929d4657fe961e08dfd7d35cd034401ace"
+        },
+        {
+          "path": "openclaw.plugin.json",
+          "size": 570,
+          "sha256": "518f358d80bdd4f78b5b72b83677fa593ac3cd0ae0baa9c868b81a06cd812a1b"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "size": 227,
+          "sha256": "a69e7342d018ad0cf7ec801229701f06807dff134df7d3aa8b42928301aefa8c"
+        },
+        {
+          "path": ".mcp.json",
+          "size": 258,
+          "sha256": "3dacc96e9d3ecf9f2a082b5d770ce3ab0f0a6cf00cb7880d5ab7d1981d7b8f4c"
+        },
+        {
+          "path": "clawhub-mcp.json",
+          "size": 924,
+          "sha256": "c881723250d19c6c4dc767301f46fcd1600d811b412023968bdd15b5d05f1dc0"
+        },
+        {
+          "path": "README.md",
+          "size": 245,
+          "sha256": "7e3282df9a98b499cab877739a62c88a2edb5c7167b3fb3727eb627e09199d1e"
+        },
+        {
+          "path": "LICENSE",
+          "size": 1078,
+          "sha256": "5095e5b99bcf0e0cab95b905f24bbac0d9ef65b3772785b9bb0194af76f11239"
+        },
+        {
+          "path": "NOTICE",
+          "size": 267,
+          "sha256": "bf0c15b56711c2f867816d7e16e98f7d785f1f85a1498854a57f7bdd02c8a2b4"
+        },
+        {
+          "path": "assets/icon.png",
+          "size": 202,
+          "sha256": "cc9b1c71a3c2a50877f426fce2a71731f6c56585482c564273bf0d9d3f06954e"
+        }
+      ],
+      "stagedRelease": {
+        "id": "qd79s1ez2j1ap5r0ptcgm1xzz58ffg18",
+        "packageId": "r573g1dpjz1237cafa7p6vatps8ffmzp",
+        "publicationStatus": "pending",
+        "boundToSameAttempt": true,
+        "version": "1.0.0"
+      },
+      "worker": {
+        "claimActive": false,
+        "claimedAt": null,
+        "pendingDispatchTargetPresent": true
+      },
+      "localAutomation": {
+        "stagedPublicationEnabled": true,
+        "cronsDisabled": true,
+        "githubAppConfigured": false,
+        "eventDispatchEnabled": false,
+        "interpretation": "Durable queue is real; no GitHub workflow is scheduled by event dispatch on this local instance."
+      },
+      "publicDownloadHttpStatus": 404,
+      "pendingGateVerified": true,
+      "limitation": "This proves stored queue state and download gating, not completed scanner verdicts."
+    },
+    "workerClaim": {
+      "capturedAt": "2026-10-01T03:43:35.090Z",
+      "attemptId": "rn75vm48zb5cgmgxdwyg1y7xrh8fevt5",
+      "name": "@openclaw/deepwiki-e2e",
+      "version": "1.0.0",
+      "status": "pending_checks",
+      "artifactFingerprint": "2d44859ae9a84a8a24b2dc3bd67da5147d10e8ad6884826afc8bc58e94331049",
+      "fileCount": 9,
+      "leaseAcquired": true,
+      "leaseExpiresAt": "2026-10-01T04:13:34.967Z",
+      "method": "Normal authenticated publishAttempts.claimPrePublicationChecks worker action"
+    },
+    "completion": {
+      "capturedAt": "2026-10-01T03:43:37.816Z",
+      "attemptId": "rn75vm48zb5cgmgxdwyg1y7xrh8fevt5",
+      "name": "@openclaw/deepwiki-e2e",
+      "version": "1.0.0",
+      "artifactFingerprint": "2d44859ae9a84a8a24b2dc3bd67da5147d10e8ad6884826afc8bc58e94331049",
+      "method": "Normal processPrePublicationAttempt including verified artifact materialization and authenticated completePrePublicationChecks",
+      "trufflehog": {
+        "status": "clean",
+        "summary": "TruffleHog found no verified secrets in the staged publish artifact.",
+        "exitCode": 0,
+        "scannerVersion": "trufflehog 3.97.5",
+        "simulated": false
+      },
+      "clawscan": {
+        "simulated": true,
+        "status": "clean",
+        "summary": "SIMULATED local UI E2E fixture: ClawScan completion only; no ClawScan judge or provider-backed scanner executed. TruffleHog ran separately on the exact staged artifact."
+      },
+      "processed": {
+        "completed": true,
+        "result": {
+          "attemptId": "rn75vm48zb5cgmgxdwyg1y7xrh8fevt5",
+          "kind": "package",
+          "result": {
+            "ok": true,
+            "packageId": "r573g1dpjz1237cafa7p6vatps8ffmzp",
+            "releaseId": "qd79s1ez2j1ap5r0ptcgm1xzz58ffg18"
+          },
+          "status": "finalized"
+        }
+      },
+      "status": "finalized",
+      "stagedRelease": {
+        "id": "qd79s1ez2j1ap5r0ptcgm1xzz58ffg18",
+        "publicationStatus": "published",
+        "boundToSameAttempt": true
+      },
+      "download": {
+        "beforeHttpStatus": 404,
+        "afterHttpStatus": 200,
+        "byteLength": 3730,
+        "sha256": "a294a59ab2640aa4e353b489bc306cced4a20ddaf106c9b6cad52bb95a9982d8",
+        "contentType": "application/zip"
+      },
+      "limitation": "Queue/claim/artifact materialization/TruffleHog/publication/download are real. Only ClawScan verdict is simulated. No production state or worker was used."
+    }
+  },
+  "installation": {
+    "method": "plugins.install",
+    "params": {
+      "source": "clawhub",
+      "packageName": "@openclaw/deepwiki-e2e"
+    },
+    "ok": true,
+    "payload": {
+      "ok": true,
+      "restartRequired": false,
+      "runtime": {
+        "operationId": "7021c5f4-5891-43dd-a03f-07775916dbd8",
+        "generation": 3,
+        "pluginIds": [
+          "deepwiki-e2e"
+        ],
+        "sourceDigests": {},
+        "selectedEntries": {}
+      },
+      "plugin": {
+        "id": "deepwiki-e2e",
+        "name": "deepwiki-e2e",
+        "installed": true,
+        "enabled": true,
+        "state": "enabled",
+        "removable": true,
+        "packageName": "@openclaw/deepwiki-e2e",
+        "clawhubPackage": "@openclaw/deepwiki-e2e",
+        "description": "Ask questions about any public GitHub repo (Devin's DeepWiki).",
+        "version": "1.0.0",
+        "origin": "global",
+        "hasIcon": true,
+        "categories": [
+          "research"
+        ]
+      },
+      "warnings": [
+        "\u256d\u2500 ClawHub Security Audit \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256e\n\u2502 @openclaw/deepwiki-e2e@1.0.0                                                         \u2502\n\u2502                                                                                      \u2502\n\u2502 Outcome: Review                                                                      \u2502\n\u2502                                                                                      \u2502\n\u2502 Overview:                                                                            \u2502\n\u2502 No security analysis has been recorded yet.                                          \u2502\n\u2502                                                                                      \u2502\n\u2502 Details:                                                                             \u2502\n\u2502 http://127.0.0.1:57232/openclaw/plugins/deepwiki-e2e/security-audit?version=1.0.0    \u2502\n\u2570\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u256f"
+      ]
+    }
+  },
+  "runtimeBefore": {
+    "status": "failed",
+    "reason": "thread/start rejects cwd for streamable_http in mcp_servers.deepwiki-e2e"
+  },
+  "lanes": [
+    {
+      "name": "admin",
+      "steps": [
+        {
+          "name": "01-admin-before",
+          "slug": "01-admin-before",
+          "screenshot": "01-admin-before.png",
+          "status": "passed"
+        },
+        {
+          "name": "02-admin-definition",
+          "slug": "02-admin-definition",
+          "screenshot": "02-admin-definition.png",
+          "status": "passed"
+        },
+        {
+          "name": "03-admin-submit",
+          "slug": "03-admin-submit",
+          "screenshot": "03-admin-submit.png",
+          "status": "passed"
+        },
+        {
+          "name": "04-admin-security-pending",
+          "slug": "04-admin-security-pending",
+          "screenshot": "04-admin-security-pending.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "catalog",
+      "steps": [
+        {
+          "name": "06-openclaw-pending-hidden",
+          "slug": "06-openclaw-pending-hidden",
+          "screenshot": "06-openclaw-pending-hidden.png",
+          "status": "passed"
+        },
+        {
+          "name": "07-openclaw-search-found",
+          "slug": "07-openclaw-search-found",
+          "screenshot": "07-openclaw-search-found.png",
+          "status": "passed"
+        },
+        {
+          "name": "ClawHub published detail desktop",
+          "slug": "13-clawhub-published-1440",
+          "screenshot": "13-clawhub-published-1440.png",
+          "status": "passed"
+        },
+        {
+          "name": "ClawHub published detail mobile",
+          "slug": "13-clawhub-published-390",
+          "screenshot": "13-clawhub-published-390.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "install",
+      "steps": [
+        {
+          "name": "08-openclaw-before-install",
+          "slug": "08-openclaw-before-install",
+          "screenshot": "08-openclaw-before-install.png",
+          "status": "passed"
+        },
+        {
+          "name": "10-openclaw-installed",
+          "slug": "10-openclaw-installed",
+          "screenshot": "10-openclaw-installed.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "runtime",
+      "steps": [
+        {
+          "name": "11-openclaw-chat-prompt",
+          "slug": "11-openclaw-chat-prompt",
+          "screenshot": "11-openclaw-chat-prompt.png",
+          "status": "expected-baseline-failure"
+        },
+        {
+          "name": "12-openclaw-live-tool",
+          "slug": "12-openclaw-live-tool",
+          "screenshot": "12-openclaw-live-tool.png",
+          "status": "expected-baseline-failure"
+        }
+      ]
+    },
+    {
+      "name": "runtime-after",
+      "steps": [
+        {
+          "name": "Real installed MCP tool result in OpenClaw chat",
+          "slug": "14-openclaw-live-tool-after",
+          "screenshot": "14-openclaw-live-tool-after.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "packageInspector": {
+    "status": "pass",
+    "summary": {
+      "breakageCount": 0,
+      "warningCount": 0,
+      "deprecationWarningCount": 0,
+      "issueCount": 0
+    },
+    "targetVersion": "2026.9.7",
+    "source": "Fresh public package download; real Plugin Inspector, no runtime mocks"
+  },
+  "runtimeAfter": {
+    "status": "passed",
+    "consumer": "8416ff3fc8f6cc481bdd38b7c3227549e2d8f273",
+    "change": "0338bb3 +34e5840 shared remote-MCP cwd fix",
+    "runtime": "codex",
+    "model": "gpt-6-astra",
+    "runId": "16ff2fd0-cee6-428d-92a5-65425e5901ad",
+    "sessionKey": "agent:main:dashboard:1ccda3bd-f1f3-466b-826d-4d3d0ab8d6af",
+    "tool": "deepwiki-e2e.read_wiki_structure",
+    "arguments": {
+      "repoName": "facebook/react"
+    },
+    "toolCallCount": 1,
+    "statusOfTool": "completed",
+    "isError": false,
+    "toolDurationMs": 125,
+    "resultContentSha256": "8ac4b88bf55203ca82e19a449df1852d1286c0bbd943835e640fff6f5f20fa17",
+    "returnedTopLevelSections": [
+      "React Repository Overview",
+      "Core Reconciler Architecture",
+      "Rendering Targets",
+      "React Compiler",
+      "React DevTools",
+      "Build System and Tooling",
+      "Additional Packages and Utilities",
+      "Glossary"
+    ],
+    "noSeparatelyConfiguredMcpServers": true,
+    "accountAuthScope": "Public DeepWiki call only; other providers OAuth/token use not established"
+  }
+}
