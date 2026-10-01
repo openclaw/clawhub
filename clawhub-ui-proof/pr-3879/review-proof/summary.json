@@ -1,0 +1,119 @@
+{
+  "status": "passed",
+  "mode": "before-after",
+  "scenario": "managed-company-mcp",
+  "provider": "isolated Playwright Chromium / real local Convex",
+  "baseline": "72a32c2626700c4b05954289b8bf7ed4ccf00115",
+  "candidate": "CLAW-723 managed MCP stack",
+  "lanes": [
+    {
+      "name": "baseline",
+      "steps": [
+        {
+          "name": "Management before",
+          "slug": "management",
+          "screenshot": "before-management.png",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Management with MCP authoring",
+          "slug": "management",
+          "screenshot": "after-management.png",
+          "status": "passed"
+        },
+        {
+          "name": "Edit an immutable version",
+          "slug": "edit",
+          "screenshot": "edit-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "Edit on mobile",
+          "slug": "edit-mobile",
+          "screenshot": "edit-mobile.png",
+          "status": "passed"
+        },
+        {
+          "name": "Unpublish confirmation result",
+          "slug": "unpublished",
+          "screenshot": "unpublished-mobile.png",
+          "status": "passed"
+        },
+        {
+          "name": "MCP public details",
+          "slug": "public-details",
+          "screenshot": "details-public-desktop.png",
+          "status": "passed"
+        },
+        {
+          "name": "MCP OAuth details on mobile",
+          "slug": "oauth-details",
+          "screenshot": "details-auth-mobile.png",
+          "status": "passed"
+        },
+        {
+          "name": "Published company catalog",
+          "slug": "catalog",
+          "screenshot": "catalog-desktop.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "packageProof": {
+    "imported": 66,
+    "version": "1.3.0",
+    "pendingDownloads404": 66,
+    "publishedDownloads200": 66,
+    "catalogBrowserEntries": 66,
+    "security": "simulated TruffleHog/ClawScan worker outcomes; real staged publication gates"
+  },
+  "commits": [
+    "0a8781ddd2",
+    "7b9b9bde75",
+    "f1a3310302",
+    "08eada83bb"
+  ],
+  "consumerProof": {
+    "head": "0338bb3adbafa24f8887e169634169ae60d690af",
+    "version": "1.3.0",
+    "packageCount": 66,
+    "installedAndEnabledCount": 66,
+    "nativeDiscoveredCount": 66,
+    "allIdentitiesAndVersionsMatch": true,
+    "allExactUrlsAndQueriesPreserved": true,
+    "allTransportsPreserved": true,
+    "allOAuthScopesPreserved": true,
+    "nativeDiscoveryDiagnostics": [],
+    "noManualMcpServers": true,
+    "indeed": {
+      "name": "indeed",
+      "pluginId": "indeed",
+      "transportType": "streamable-http",
+      "kind": "http",
+      "url": "https://mcp.indeed.com/claude/mcp",
+      "auth": "oauth",
+      "oauthScope": "job_seeker.jobs.search offline_access",
+      "oauthScopeMatches": true,
+      "exactUrlAndQueryMatch": true,
+      "transportMatches": true
+    },
+    "deepwiki": {
+      "toolCount": 3,
+      "call": {
+        "server": "deepwiki",
+        "tool": "read_wiki_structure",
+        "arguments": {
+          "repoName": "facebook/react"
+        }
+      },
+      "isError": false,
+      "contentItems": 1
+    }
+  }
+}
