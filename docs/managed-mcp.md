@@ -2,7 +2,7 @@
 summary: "Publish and maintain company MCP integrations through the ClawHub management UI and admin CLI."
 read_when:
   - Adding or updating a managed company MCP plugin
-  - Inspecting MCP connection settings
+  - Installing a managed company MCP plugin
 ---
 
 # Manage company MCP plugins
@@ -34,10 +34,10 @@ Publication checks the public endpoint and, for OAuth, discovery metadata advert
 
 Normal package validation and security gates apply, including to the OpenClaw publisher. A pending release is not installable. Scanning covers the published files and configuration; it does not certify the remote provider or its future tools.
 
-## Install and inspect
+## Install and connect
 
 Once available, users install the package through the normal OpenClaw plugin flow, enable it, and connect their account when required. API-key integrations require the named credential in a consumer that supports their environment placeholders. Account-level testing is separate from package validation.
 
-On the plugin page, click an MCP server to inspect the saved endpoint, transport, authentication, scopes, and setup notes. Public server information is a bounded, unauthenticated observation. Missing metadata never prevents viewing the saved settings. No sign-in or authenticated tool browser runs inside ClawHub.
+OpenClaw's Control UI lists the plugin's MCP servers on its detail page. Follow the package's setup notes to connect the service.
 
 Editing a connection creates a new immutable version. Installed copies retain their existing settings until updated. Unpublishing stops new availability through normal package policy; it does not uninstall existing copies.
