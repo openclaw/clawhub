@@ -1,7 +1,7 @@
 export declare const CLAWHUB_SKILLS_SH_ROLLOUT_MODE = "CLAWHUB_SKILLS_SH_ROLLOUT_MODE";
 export declare const CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE = "CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE";
 export type ClawHubRolloutMode = "off" | "test" | "production";
-export type ClawHubRuntimeEnvironment = "local" | "test" | "preview" | "production" | "unknown";
+export type ClawHubRuntimeEnvironment = "local" | "test" | "staging" | "preview" | "production" | "unknown";
 export type ClawHubRolloutEnvironment = {
     CLAWHUB_DEPLOYMENT_NAME?: string;
     CLAWHUB_ENV?: string;

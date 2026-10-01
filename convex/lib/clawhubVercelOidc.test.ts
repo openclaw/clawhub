@@ -27,6 +27,12 @@ describe("ClawHub Vercel OIDC", () => {
     ).toBe("preview");
     expect(
       expectedVercelEnvironmentForConvexSite(
+        "https://cheery-civet-733.convex.site/api/v1/download",
+        { CLAWHUB_ENV: "staging" },
+      ),
+    ).toBe("preview");
+    expect(
+      expectedVercelEnvironmentForConvexSite(
         "https://preview-branch-123.convex.site/api/v1/download",
         { CLAWHUB_PREVIEW: "1" },
       ),
@@ -43,6 +49,27 @@ describe("ClawHub Vercel OIDC", () => {
       expectedVercelEnvironmentForConvexSite(
         "https://unclassified.convex.site/api/v1/download",
         {},
+      ),
+    ).toBeNull();
+  });
+
+  it("binds Staging's preview identity to its own Convex site", () => {
+    expect(
+      expectedVercelEnvironmentForConvexSite(
+        "https://cheery-civet-733.convex.site/api/v1/download",
+        { CLAWHUB_ENV: "production" },
+      ),
+    ).toBeNull();
+    expect(
+      expectedVercelEnvironmentForConvexSite(
+        "https://wry-manatee-359.convex.site/api/v1/download",
+        { CLAWHUB_ENV: "staging" },
+      ),
+    ).toBeNull();
+    expect(
+      expectedVercelEnvironmentForConvexSite(
+        "https://cheery-civet-733.convex.site/api/v1/download",
+        { CLAWHUB_ENV: "staging", CLAWHUB_PREVIEW: "1" },
       ),
     ).toBeNull();
   });

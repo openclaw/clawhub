@@ -56,6 +56,7 @@ type ProxyEnv = {
   CONVEX_URL?: string;
   VERCEL_ENV?: string;
   VERCEL_TARGET_ENV?: string;
+  VITE_APP_BUILD_SHA?: string;
   VITE_CLAWHUB_DEPLOY_ENV?: string;
   VITE_CONVEX_SITE_URL?: string;
   VITE_CONVEX_URL?: string;
@@ -74,6 +75,7 @@ const DEFAULT_PROXY_DEPENDENCIES: ProxyDependencies = {
 const archiveJwksByOrigin = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 const BUNDLED_PROXY_ENV: ProxyEnv = {
+  VITE_APP_BUILD_SHA: import.meta.env.VITE_APP_BUILD_SHA,
   VITE_CLAWHUB_DEPLOY_ENV: import.meta.env.VITE_CLAWHUB_DEPLOY_ENV,
   VITE_CONVEX_SITE_URL: import.meta.env.VITE_CONVEX_SITE_URL,
   VITE_CONVEX_URL: import.meta.env.VITE_CONVEX_URL,
@@ -85,6 +87,7 @@ export function resolveConvexProxyEnv(
 ): ProxyEnv {
   return {
     ...runtimeEnv,
+    ...(bundledEnv.VITE_APP_BUILD_SHA ? { VITE_APP_BUILD_SHA: bundledEnv.VITE_APP_BUILD_SHA } : {}),
     ...(bundledEnv.VITE_CLAWHUB_DEPLOY_ENV
       ? { VITE_CLAWHUB_DEPLOY_ENV: bundledEnv.VITE_CLAWHUB_DEPLOY_ENV }
       : {}),
@@ -105,6 +108,12 @@ function isTestFrontend(env: ProxyEnv) {
   const targetEnvironment =
     env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
   return targetEnvironment === "test";
+}
+
+function isStagingFrontend(env: ProxyEnv) {
+  const targetEnvironment =
+    env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
+  return targetEnvironment === "staging";
 }
 
 export function isConvexProxyMethodAllowed(method: string, env: ProxyEnv) {
@@ -193,15 +202,7 @@ export async function proxyConvexRequest(
   ) {
     return new Response("Invalid or expired archive manifest", { status: 502 });
   }
-  if (isPreviewFrontend(env) || isTestFrontend(env)) {
-    const deployment = convexDeploymentName(target);
-    if (deployment) {
-      response.headers.set(
-        isTestFrontend(env) ? "X-ClawHub-Test-Backend" : "X-ClawHub-Preview-Backend",
-        deployment,
-      );
-    }
-  }
+  addDeploymentProofHeader(response, env, target);
   return response;
 }
 
@@ -306,15 +307,7 @@ async function streamArchive(
     }),
   );
   const response = new Response(completedStream, { status: 200, headers });
-  if (isPreviewFrontend(env) || isTestFrontend(env)) {
-    const deployment = convexDeploymentName(target);
-    if (deployment) {
-      response.headers.set(
-        isTestFrontend(env) ? "X-ClawHub-Test-Backend" : "X-ClawHub-Preview-Backend",
-        deployment,
-      );
-    }
-  }
+  addDeploymentProofHeader(response, env, target);
   return response;
 }
 
@@ -499,13 +492,24 @@ function archiveResponseHeaders(manifestResponse: Response, filename: string) {
 }
 
 function addDeploymentProofHeader(response: Response, env: ProxyEnv, target: string) {
-  if (!isPreviewFrontend(env) && !isTestFrontend(env)) return;
+  const header = isTestFrontend(env)
+    ? "X-ClawHub-Test-Backend"
+    : isStagingFrontend(env)
+      ? "X-ClawHub-Staging-Backend"
+      : isPreviewFrontend(env)
+        ? "X-ClawHub-Preview-Backend"
+        : null;
+  if (!header) return;
   const deployment = convexDeploymentName(target);
   if (!deployment) return;
-  response.headers.set(
-    isTestFrontend(env) ? "X-ClawHub-Test-Backend" : "X-ClawHub-Preview-Backend",
-    deployment,
-  );
+  response.headers.set(header, deployment);
+  if (isStagingFrontend(env)) {
+    response.headers.delete("X-ClawHub-Staging-Build-SHA");
+    const buildSha = env.VITE_APP_BUILD_SHA?.trim();
+    if (buildSha && /^[0-9a-f]{40}$/.test(buildSha)) {
+      response.headers.set("X-ClawHub-Staging-Build-SHA", buildSha);
+    }
+  }
 }
 
 async function readBoundedArchiveManifest(response: Response) {

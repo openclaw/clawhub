@@ -70,6 +70,17 @@ describe("Convex HTTP proxy", () => {
     expect(isConvexProxyMethodAllowed("DELETE", testEnv)).toBe(true);
   });
 
+  it("allows writes in the permanent custom staging environment", () => {
+    const stagingEnv = {
+      VERCEL_ENV: "preview",
+      VERCEL_TARGET_ENV: "preview",
+      VITE_CLAWHUB_DEPLOY_ENV: "staging",
+    };
+
+    expect(isConvexProxyMethodAllowed("POST", stagingEnv)).toBe(true);
+    expect(isConvexProxyMethodAllowed("DELETE", stagingEnv)).toBe(true);
+  });
+
   it("prefers the build-paired Convex URL over stale Vercel runtime values", () => {
     expect(
       resolveConvexProxyEnv(
@@ -89,6 +100,30 @@ describe("Convex HTTP proxy", () => {
       VITE_CLAWHUB_DEPLOY_ENV: "preview",
       VITE_CONVEX_SITE_URL: "https://paired-preview-123.convex.site",
       VITE_CONVEX_URL: "https://paired-preview-123.convex.cloud",
+    });
+  });
+
+  it("prefers the bundled staging marker and SHA over stale runtime values", () => {
+    expect(
+      resolveConvexProxyEnv(
+        {
+          VERCEL_ENV: "preview",
+          VERCEL_TARGET_ENV: "preview",
+          VITE_APP_BUILD_SHA: "b".repeat(40),
+          VITE_CLAWHUB_DEPLOY_ENV: "preview",
+        },
+        {
+          VITE_APP_BUILD_SHA: "a".repeat(40),
+          VITE_CLAWHUB_DEPLOY_ENV: "staging",
+          VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
+          VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+        },
+      ),
+    ).toMatchObject({
+      VITE_APP_BUILD_SHA: "a".repeat(40),
+      VITE_CLAWHUB_DEPLOY_ENV: "staging",
+      VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
+      VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
     });
   });
 
@@ -1187,6 +1222,31 @@ describe("Convex HTTP proxy", () => {
 
     expect(response.headers.get("X-ClawHub-Test-Backend")).toBe("academic-chihuahua-392");
     expect(response.headers.get("X-ClawHub-Preview-Backend")).toBeNull();
+  });
+
+  it("exposes the permanent Staging backend name for deployment proof", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ items: [], nextCursor: null }))),
+    );
+    const event = mockEvent("https://stg.clawhub.ai/api/v1/skills?limit=1");
+
+    const response = await proxyConvexRequest(
+      event,
+      {
+        VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: "preview",
+        VITE_APP_BUILD_SHA: "a".repeat(40),
+        VITE_CLAWHUB_DEPLOY_ENV: "staging",
+        VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+      },
+      TEST_ARCHIVE_DEPENDENCIES,
+    );
+
+    expect(response.headers.get("X-ClawHub-Staging-Backend")).toBe("cheery-civet-733");
+    expect(response.headers.get("X-ClawHub-Staging-Build-SHA")).toBe("a".repeat(40));
+    expect(response.headers.get("X-ClawHub-Preview-Backend")).toBeNull();
+    expect(response.headers.get("X-ClawHub-Test-Backend")).toBeNull();
   });
 
   it("rejects preview writes without contacting Convex", async () => {

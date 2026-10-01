@@ -9,6 +9,7 @@ export const ARCHIVE_REQUEST_IDENTITY_HEADER = "x-clawhub-vercel-oidc-token";
 const VERCEL_OIDC_ISSUER = `https://oidc.vercel.com/${CLAWHUB_VERCEL_TEAM}`;
 const VERCEL_OIDC_AUDIENCE = `https://vercel.com/${CLAWHUB_VERCEL_TEAM}`;
 const VERCEL_OIDC_JWKS = createRemoteJWKSet(new URL(`${VERCEL_OIDC_ISSUER}/.well-known/jwks`));
+const STAGING_CONVEX_SITE = "cheery-civet-733.convex.site";
 
 type ClawHubArchiveRuntimeEnvironment = {
   CLAWHUB_ENV?: string;
@@ -33,6 +34,9 @@ export function expectedVercelEnvironmentForConvexSite(
   if (url.protocol !== "https:" || !url.hostname.endsWith(".convex.site")) return null;
 
   const runtimeEnvironment = env.CLAWHUB_ENV?.trim();
+  if (url.hostname === STAGING_CONVEX_SITE) {
+    return runtimeEnvironment === "staging" && env.CLAWHUB_PREVIEW !== "1" ? "preview" : null;
+  }
   if (env.CLAWHUB_PREVIEW === "1") {
     return runtimeEnvironment && runtimeEnvironment !== "preview" ? null : "preview";
   }
