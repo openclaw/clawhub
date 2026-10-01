@@ -7,10 +7,12 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction, internalQuery, type ActionCtx } from "./_generated/server";
+import { internalMutation } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
 import { sha256Hex } from "./lib/clawpack";
 import { buildManagedMcpBundle } from "./lib/managedMcpBundle";
 import type { McpPublicInspection } from "./lib/mcpPublicInspection";
+import { getPublisherByHandle, requirePublisherRole } from "./lib/publishers";
 
 type PublishResult = {
   ok: true;
@@ -35,13 +37,20 @@ export const getReleaseInternal = internalQuery({
     if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("Unauthorized");
     assertAdmin(user);
     if (!/^[a-z][a-z0-9-]{0,62}$/.test(id)) throw new ConvexError("Invalid integration id");
+    const publisher = await getPublisherByHandle(ctx, "openclaw");
+    if (!publisher || publisher.kind !== "org")
+      throw new ConvexError("Managed MCP publisher is unavailable");
+    await requirePublisherRole(ctx, {
+      publisherId: publisher._id,
+      userId: actorUserId,
+      allowed: ["publisher"],
+    });
     const pkg = await ctx.db
       .query("packages")
       .withIndex("by_name", (q) => q.eq("normalizedName", `@openclaw/${id}`))
       .unique();
     if (!pkg) return null;
-    const owner = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
-    if (owner?.handle !== "openclaw" || pkg.family !== "bundle-plugin")
+    if (pkg.ownerPublisherId !== publisher._id || pkg.family !== "bundle-plugin")
       throw new ConvexError("Package identity is already in use");
     const release = await ctx.db
       .query("packageReleases")
@@ -179,9 +188,11 @@ export const publish = action({
   },
 });
 
-export const unpublishForAdminInternal = internalAction({
+export const unpublishForAdminInternal = internalMutation({
   args: { actorUserId: v.id("users"), id: v.string() },
   handler: async (ctx, args): Promise<{ ok: true }> => {
+    // Nested query and mutation calls share this transaction, so a membership
+    // revocation cannot race between the authorization check and soft deletion.
     const release = await ctx.runQuery(internal.managedMcp.getReleaseInternal, args);
     if (!release) throw new ConvexError("Managed integration not found");
     await ctx.runMutation(internal.packages.softDeletePackageInternal, {
@@ -197,7 +208,7 @@ export const unpublish = action({
   handler: async (ctx, args): Promise<{ ok: true }> => {
     const { userId, user } = await requireUserFromAction(ctx);
     assertAdmin(user);
-    return ctx.runAction(internal.managedMcp.unpublishForAdminInternal, {
+    return ctx.runMutation(internal.managedMcp.unpublishForAdminInternal, {
       ...args,
       actorUserId: userId,
     });

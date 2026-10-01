@@ -834,7 +834,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Managed company MCP wrappers
 
-Admin-managed MCP packages use ordinary package releases as their authority. Both management UI and admin CLI require an active administrator and normal OpenClaw organization publishing access. They cannot replace unrelated package identities. Each edit creates a new immutable version; unpublication uses the existing package policy. Finalizing a queued managed release rechecks the submitting administrator, the active OpenClaw publisher, and current publishing membership in the same transaction that makes the release public. Revocation while scans run must leave the release unavailable.
+Admin-managed MCP packages use ordinary package releases as their authority. Both management UI and admin CLI require an active administrator and normal OpenClaw organization publishing access, including definition reads and unpublication. They cannot replace unrelated package identities. Each edit creates a new immutable version; unpublication uses the existing package policy and checks current administrator, publisher, and membership authority in the same transaction as soft deletion. Finalizing a queued managed release rechecks the submitting administrator, the active OpenClaw publisher, and current publishing membership in the same transaction that makes the release public. Revocation while scans run must leave the release unavailable.
 
 Generated wrappers accept only remote public HTTPS HTTP/SSE connections, current categories, credential placeholders, and MIT-licensed PNG icons with attribution. They contain no arbitrary local commands or fetched provider code. OpenClaw wrapper authorship is distinct from remote-service ownership.
 

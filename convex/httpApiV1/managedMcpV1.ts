@@ -76,7 +76,7 @@ export async function managedMcpV1Handler(ctx: ActionCtx, request: Request, segm
     }
     if (request.method === "POST" && segments.length === 4 && segments[3] === "unpublish") {
       return json(
-        await ctx.runAction(internal.managedMcp.unpublishForAdminInternal, {
+        await ctx.runMutation(internal.managedMcp.unpublishForAdminInternal, {
           actorUserId: auth.userId,
           id,
         }),
