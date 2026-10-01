@@ -12266,6 +12266,9 @@ export const publishPendingReleaseInternal = internalMutation({
       if (!isOpenClawClawName(pkg.normalizedName) || !isOpenClawClawPublisher(ownerPublisher)) {
         throw new ConvexError("Claw packages are limited to the @openclaw publisher");
       }
+      if (!(await isOfficialPublisher(ctx, ownerPublisher))) {
+        throw new ConvexError("Claw packages require an active official @openclaw publisher");
+      }
     }
     const currentLatest = await resolvePackageCurrentLatestForPublish(ctx, pkg);
     const { effectiveTags, shouldPromoteLatest } = resolvePackageReleaseTagsForPublish({
@@ -12557,6 +12560,9 @@ export const insertReleaseInternal = internalMutation({
       ownerUserId: args.ownerUserId,
     });
     const publisherOfficial = await isOfficialPublisher(ctx, officialPublisher);
+    if (args.family === "claw" && !publisherOfficial) {
+      throw new ConvexError("Claw packages require an active official @openclaw publisher");
+    }
     if (args.channel === "official" && !publisherOfficial) {
       throw new ConvexError("Only official publishers may publish to the official channel");
     }

@@ -63,8 +63,9 @@ artifact digest.
   the gate requires a separate compatibility and migration decision.
 
 For the initial public catalog, only canonical `@openclaw/*` Claws owned by the
-active OpenClaw publisher organization can be published or exposed. Recheck
-that owner's current authority when a pending release becomes public and at
+active OpenClaw publisher organization with a current Official designation can
+be published or exposed. Recheck that owner's current authority when a pending
+release becomes public and at
 public named, download, list, search, and feed reads; cached search digest
 owner fields are not sufficient after an organization is deactivated or
 deleted. This restriction does not apply to skills or plugins. Previously

@@ -2356,6 +2356,7 @@ function makeInsertReleaseCtx(
   runtimePackages: Array<Record<string, unknown>> = [],
   finalPublisherMembershipRole?: "owner" | "admin" | "publisher" | null,
   packageReleaseReadLimitBytes?: number,
+  officialPublisherIds: readonly string[] = [openClawPublisher._id],
 ) {
   let insertedPackage: Record<string, unknown> | null = null;
   const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
@@ -2555,12 +2556,14 @@ function makeInsertReleaseCtx(
                 buildQuery?.(query);
                 const rawPublisherId = filters.get("publisherId");
                 const publisherId = typeof rawPublisherId === "string" ? rawPublisherId : "";
-                const publisher = recordsById[publisherId];
+                const publisher =
+                  recordsById[publisherId] ??
+                  (publisherId === openClawPublisher._id ? openClawPublisher : null);
                 return {
                   unique: vi
                     .fn()
                     .mockResolvedValue(
-                      publisher?.handle === "openclaw"
+                      publisher?.handle === "openclaw" && officialPublisherIds.includes(publisherId)
                         ? { _id: "officialPublishers:openclaw", publisherId }
                         : null,
                     ),
@@ -10049,6 +10052,70 @@ describe("packages public queries", () => {
     );
   });
 
+  it("rejects a Claw release when the active @openclaw owner is no longer Official", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      { [openClawPublisher._id]: openClawPublisher },
+      [],
+      undefined,
+      undefined,
+      [],
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).rejects.toThrow(/active official @openclaw publisher/);
+    expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+  });
+
+  it("keeps plugin release admission available after its publisher loses Official status", async () => {
+    const ctx = makeInsertReleaseCtx(
+      null,
+      [],
+      { [openClawPublisher._id]: openClawPublisher },
+      [],
+      undefined,
+      undefined,
+      [],
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ channel: "community", isOfficial: false }),
+    );
+  });
+
   it("rejects a Claw release whose @openclaw name is owned by another publisher", async () => {
     const ctx = makeInsertReleaseCtx(null, [], {
       "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
@@ -10206,6 +10273,59 @@ describe("packages public queries", () => {
       expect(ctx.patch).not.toHaveBeenCalled();
     },
   );
+
+  it("does not finalize a staged Claw after @openclaw loses Official status", async () => {
+    const reservation = makeOpenClawClawPackageDoc({
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const officialPublisherIds = [openClawPublisher._id];
+    const recordsById = {
+      "packages:demo": reservation,
+      [openClawPublisher._id]: openClawPublisher,
+    } as Record<string, Record<string, unknown>>;
+    const ctx = makeInsertReleaseCtx(
+      reservation,
+      [],
+      recordsById,
+      [],
+      undefined,
+      undefined,
+      officialPublisherIds,
+    );
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: openClawPublisher._id,
+        name: "@openclaw/demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+        publicationStatus: "pending",
+      }),
+    ).resolves.toMatchObject({ publicationStatus: "pending" });
+    const pendingInsert = ctx.insert.mock.calls.find(([table]) => table === "packageReleases");
+    if (!pendingInsert) throw new Error("Expected a staged Claw release");
+    recordsById["packageReleases:new"] = makeReleaseDoc({
+      ...pendingInsert[1],
+      _id: "packageReleases:new",
+    });
+    officialPublisherIds.length = 0;
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:new" }),
+    ).rejects.toThrow(/active official @openclaw publisher/);
+    expect(ctx.patch).not.toHaveBeenCalled();
+  });
 
   it("preserves trusted GitHub Actions package publishes without org membership", async () => {
     const ctx = makeInsertReleaseCtx(
