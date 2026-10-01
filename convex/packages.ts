@@ -703,6 +703,7 @@ type PackagePublishAuthContext =
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
 type PackagePublishOptions = {
   stagePrePublicationChecks?: boolean;
+  requireSecurityChecks?: boolean;
   onFilesAdopted?: () => void;
 };
 type PackageDoc = Doc<"packages">;
@@ -9536,11 +9537,14 @@ async function publishPackageImpl(
         publisherId: ownerPublisherId,
       })
     : null;
-  const trustedOpenClawPlugin = isTrustedOpenClawPluginPackage({
-    family,
-    normalizedName: name,
-    ownerPublisher,
-  });
+  const trustedOpenClawPlugin =
+    !options.requireSecurityChecks &&
+    !files.some((file) => file.path === "clawhub-mcp.json") &&
+    isTrustedOpenClawPluginPackage({
+      family,
+      normalizedName: name,
+      ownerPublisher,
+    });
   const verificationSource = codeArtifacts?.verification ?? bundleArtifacts?.verification;
   const initialScanStatus = trustedOpenClawPlugin ? "clean" : "pending";
   const verification = verificationSource
@@ -10091,11 +10095,14 @@ export const publishPackageForUserInternal = internalAction({
     actorUserId: v.id("users"),
     payload: v.any(),
     requestStorageIds: v.optional(v.array(v.id("_storage"))),
+    requireSecurityChecks: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     return await withRequestPackageStorage(ctx, args.requestStorageIds, (onFilesAdopted) =>
       publishPackageImpl(ctx, { kind: "user", actorUserId: args.actorUserId }, args.payload, {
-        stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
+        stagePrePublicationChecks:
+          args.requireSecurityChecks || stagedPrePublicationPublishesEnabled(),
+        requireSecurityChecks: args.requireSecurityChecks,
         onFilesAdopted,
       }),
     );
