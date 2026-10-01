@@ -18,10 +18,11 @@ This registry gate is independent from OpenClaw's local Claws controls. Hosting
 does not enable local preview or installation.
 
 For the initial public catalog, ClawHub accepts and exposes Claws only when the
-package name is `@openclaw/*` and the owner is the OpenClaw publisher
+package name is `@openclaw/*` and the owner is the active OpenClaw publisher
 organization. This restriction does not apply to skills or plugins. Existing
 Claws owned by other publishers remain unavailable through public discovery
-and downloads.
+and downloads. A stored Claw feed from before this restriction is unavailable
+until a new restricted snapshot is published.
 
 ## Package shape
 

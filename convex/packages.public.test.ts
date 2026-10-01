@@ -1250,6 +1250,7 @@ const openClawPublisher = {
   kind: "org",
   handle: "openclaw",
 };
+const activeOpenClawPublisherDocs = { [openClawPublisher._id]: openClawPublisher };
 
 function makeOpenClawClawPackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
   return makePackageDoc({
@@ -10143,6 +10144,33 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
     expect(ctx.patch).not.toHaveBeenCalled();
   });
+
+  it.each(["deletedAt", "deactivatedAt"] as const)(
+    "does not finalize a pending Claw when its publisher has %s",
+    async (inactiveField) => {
+      const reservation = makeOpenClawClawPackageDoc({
+        family: "code-plugin",
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      });
+      const pendingRelease = makeReleaseDoc({
+        _id: "packageReleases:pending",
+        publicationStatus: "pending",
+        pendingPublication: { family: "claw", displayName: "Demo Claw", tags: ["latest"] },
+      });
+      const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
+        "packages:demo": reservation,
+        "packageReleases:pending": pendingRelease,
+        [openClawPublisher._id]: { ...openClawPublisher, [inactiveField]: 123 },
+      });
+
+      await expect(
+        publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
+      ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
+      expect(ctx.patch).not.toHaveBeenCalled();
+    },
+  );
 
   it("preserves trusted GitHub Actions package publishes without org membership", async () => {
     const ctx = makeInsertReleaseCtx(
@@ -21357,6 +21385,7 @@ describe("restorePackageInternal", () => {
           continueCursor: "",
         },
       ],
+      publisherDocs: activeOpenClawPublisherDocs,
     });
 
     const listed = await listPublicPageHandler(ctx, {
@@ -21368,6 +21397,69 @@ describe("restorePackageInternal", () => {
     const searched = await searchPublicHandler(ctx, { query: "claw", family: "claw", limit: 10 });
     expect(searched.map((entry) => entry.package.name)).toEqual(["@openclaw/matching-claw"]);
   });
+
+  it.each(["deletedAt", "deactivatedAt"] as const)(
+    "hides an @openclaw Claw when its publisher has %s",
+    async (inactiveField) => {
+      const inactivePublisher = { ...openClawPublisher, [inactiveField]: 123 };
+      const pkg = makeOpenClawClawPackageDoc();
+      const { ctx: namedCtx } = makePackageCtx({
+        pkg,
+        latestRelease: makeReleaseDoc({ files: [] }),
+        ownerPublisher: inactivePublisher,
+      });
+
+      await expect(getByNameHandler(namedCtx, { name: pkg.name as string })).resolves.toBeNull();
+      await expect(
+        getVersionByNameHandler(namedCtx, { name: pkg.name as string, version: "1.0.0" }),
+      ).resolves.toBeNull();
+
+      const digest = makeDigest(pkg.name as string, {
+        family: "claw",
+        ownerPublisherId: openClawPublisher._id,
+        ownerHandle: "openclaw",
+        ownerKind: "org",
+      });
+      const { ctx: discoveryCtx } = makeDigestCtx({
+        pages: [{ page: [digest], isDone: true, continueCursor: "" }],
+        publisherDocs: { [openClawPublisher._id]: inactivePublisher },
+      });
+      const listed = await listPublicPageHandler(discoveryCtx, {
+        family: "claw",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(listed.page).toEqual([]);
+      const searched = await searchPublicHandler(discoveryCtx, {
+        query: "demo-claw",
+        family: "claw",
+        limit: 10,
+      });
+      expect(searched).toEqual([]);
+
+      const { ctx: sortedCtx } = makeDigestCtx({
+        packagePages: [{ page: [pkg], isDone: true, continueCursor: "" }],
+        publisherDocs: { [openClawPublisher._id]: inactivePublisher },
+      });
+      const sorted = await listPublicPageHandler(sortedCtx, {
+        family: "claw",
+        sort: "downloads",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(sorted.page).toEqual([]);
+
+      const release = makeReleaseDoc({ files: [] });
+      const rows = new Map<string, Record<string, unknown>>([
+        [pkg._id as string, pkg],
+        [release._id as string, release],
+        [openClawPublisher._id, inactivePublisher],
+      ]);
+      const selected = await getPublicReleaseSelectionsInternalHandler(
+        { db: { get: vi.fn(async (id: string) => rows.get(id) ?? null) } },
+        { selections: [{ packageId: pkg._id as string, releaseId: release._id as string }] },
+      );
+      expect(selected).toEqual([null]);
+    },
+  );
 
   it("lists an @openclaw Claw beyond a first page of hidden legacy Claws", async () => {
     const hidden = Array.from({ length: 50 }, (_, index) =>
@@ -21389,6 +21481,7 @@ describe("restorePackageInternal", () => {
         { page: hidden, isDone: false, continueCursor: "after-legacy" },
         { page: [official], isDone: true, continueCursor: "" },
       ],
+      publisherDocs: activeOpenClawPublisherDocs,
     });
 
     const result = await listPublicPageHandler(ctx, {
@@ -21417,6 +21510,7 @@ describe("restorePackageInternal", () => {
         { page: [hidden], isDone: false, continueCursor: "after-legacy" },
         { page: [official], isDone: true, continueCursor: "" },
       ],
+      publisherDocs: activeOpenClawPublisherDocs,
     });
 
     const result = await listPublicPageHandler(ctx, {
@@ -21452,6 +21546,7 @@ describe("restorePackageInternal", () => {
         { page: [official], isDone: true, continueCursor: "" },
       ],
       officialDigests: [],
+      publisherDocs: activeOpenClawPublisherDocs,
     });
 
     const result = await searchPublicHandler(ctx, {
@@ -21487,6 +21582,7 @@ describe("restorePackageInternal", () => {
         { page: [official], isDone: true, continueCursor: "" },
       ],
       officialDigests: [],
+      publisherDocs: activeOpenClawPublisherDocs,
     });
 
     const result = await searchPublicHandler(ctx, { query: "assistant", limit: 10 });

@@ -6,6 +6,7 @@ import {
   listOfficialEntries,
   listOfficialSkillEntries,
   publish,
+  storeClawPublication,
 } from "./catalogFeed";
 import { getOwnerPublisher } from "./lib/publishers";
 
@@ -45,6 +46,12 @@ const listOfficialSkillEntriesHandler = (
 )._handler;
 const publishHandler = (
   publish as unknown as WrappedHandler<{ expiresAt: string }, Array<{ feedId: string }>>
+)._handler;
+const storeClawPublicationHandler = (
+  storeClawPublication as unknown as WrappedHandler<
+    { generatedAt: string; expiresAt: string; entries: unknown[] },
+    { entryCount: number }
+  >
 )._handler;
 
 function makePackage(overrides: Record<string, unknown> = {}) {
@@ -708,6 +715,78 @@ describe("catalog feed projection", () => {
     expect(runQuery).toHaveBeenCalledWith(expect.anything(), { cursor: "claw-next" });
     expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("feedId");
     expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 2 });
+  });
+
+  it("stamps only a current @openclaw Claw publication with its publisher authority", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const entry = {
+      type: "claw",
+      id: "@openclaw/triage",
+      title: "Triage",
+      version: "1.0.0",
+      state: "available",
+      publisher: { id: "openclaw", trust: "official" },
+      clawManifestSummary: {
+        schemaVersion: 1,
+        agent: { id: "triage" },
+        workspace: { bootstrapFiles: [], fileCount: 0 },
+        packages: { skillCount: 0, pluginCount: 0 },
+        mcpServerCount: 0,
+        cronJobCount: 0,
+      },
+      install: {
+        candidates: [
+          {
+            sourceRef: "public-clawhub",
+            package: "@openclaw/triage",
+            version: "1.0.0",
+            integrity: `sha256:${"a".repeat(64)}`,
+          },
+        ],
+      },
+    };
+    const publisher = { _id: "publishers:openclaw", kind: "org", handle: "openclaw" };
+    const insert = vi.fn().mockResolvedValue("catalogFeedPublications:1");
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (_index: string, apply: (q: { eq: ReturnType<typeof vi.fn> }) => void) => {
+              const q = { eq: vi.fn(() => q) };
+              apply(q);
+              return { unique: vi.fn(async () => (table === "publishers" ? publisher : null)) };
+            },
+          ),
+        })),
+        insert,
+      },
+    };
+    const args = {
+      generatedAt: "2026-10-01T00:00:00.000Z",
+      expiresAt: "2026-10-02T00:00:00.000Z",
+      entries: [entry],
+    };
+
+    await expect(storeClawPublicationHandler(ctx, args)).resolves.toMatchObject({ entryCount: 1 });
+    expect(insert).toHaveBeenCalledWith(
+      "catalogFeedPublications",
+      expect.objectContaining({
+        clawPolicyVersion: 1,
+        clawEntryCount: 1,
+        clawPublisherId: publisher._id,
+      }),
+    );
+
+    Object.assign(publisher, { deactivatedAt: 123 });
+    await expect(storeClawPublicationHandler(ctx, args)).rejects.toThrow(/unavailable/);
+
+    await expect(
+      storeClawPublicationHandler(ctx, {
+        ...args,
+        entries: [{ ...entry, id: "@other/triage" }],
+      }),
+    ).rejects.toThrow(/@openclaw/);
+    expect(insert).toHaveBeenCalledTimes(1);
   });
 
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {

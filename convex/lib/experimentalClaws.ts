@@ -9,9 +9,17 @@ export function isOpenClawClawName(name: string) {
 }
 
 export function isOpenClawClawPublisher(
-  owner: { kind?: string; handle?: string } | null | undefined,
+  owner:
+    | { kind?: string; handle?: string; deletedAt?: number; deactivatedAt?: number }
+    | null
+    | undefined,
 ) {
-  return owner?.kind === "org" && owner.handle === "openclaw";
+  return (
+    owner?.kind === "org" &&
+    owner.handle === "openclaw" &&
+    owner.deletedAt === undefined &&
+    owner.deactivatedAt === undefined
+  );
 }
 
 export function isClawFamilyPubliclyVisible(

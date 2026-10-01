@@ -1470,6 +1470,22 @@ function isClawOutsideOpenClawPublisher(digest: PackageDigestLike) {
   );
 }
 
+async function isClawDigestPublisherActive(
+  ctx: DbReaderCtx,
+  digest: PackageDigestLike,
+  cache: Map<string, Promise<boolean>>,
+) {
+  if (digest.family !== "claw") return true;
+  if (isClawOutsideOpenClawPublisher(digest) || !digest.ownerPublisherId) return false;
+  const id = String(digest.ownerPublisherId);
+  let allowed = cache.get(id);
+  if (!allowed) {
+    allowed = ctx.db.get(digest.ownerPublisherId).then((owner) => isOpenClawClawPublisher(owner));
+    cache.set(id, allowed);
+  }
+  return await allowed;
+}
+
 function digestMatchesFilters(
   digest: PackageDigestLike,
   args: {
@@ -2701,6 +2717,7 @@ async function mayHaveVisiblePackageCategoryDigest(
   },
 ) {
   const membershipCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<string, Promise<boolean>>();
   const digests = await (
     args.topic
       ? buildPackageTopicDigestQuery(ctx, {
@@ -2727,6 +2744,7 @@ async function mayHaveVisiblePackageCategoryDigest(
     if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
     if (!digestMatchesFilters(digest, args)) continue;
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
+    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) continue;
     return true;
   }
   // A saturated bounded probe cannot prove that later rows are also invisible.
@@ -2752,6 +2770,7 @@ async function takeVisiblePackageCategoryDigestPage(
     return { page: [], isDone: true, continueCursor: "" };
   }
   const membershipCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<string, Promise<boolean>>();
   const scanPageSize = MAX_PUBLIC_LIST_PAGE_SIZE;
   const digests = await (
     args.topic
@@ -2783,6 +2802,7 @@ async function takeVisiblePackageCategoryDigestPage(
     if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
     if (!digestMatchesFilters(digest, args)) continue;
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
+    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) continue;
     page.push(await toPublicPackageListItem(ctx, digest));
     if (page.length >= targetCount) break;
   }
@@ -2963,6 +2983,7 @@ async function fetchHighlightedPackageEntries(
 ) {
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<string, Promise<boolean>>();
   const badges = ctx.db
     .query("packageBadges")
     .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
@@ -2978,6 +2999,7 @@ async function fetchHighlightedPackageEntries(
     if (getPluginDiscoveryExclusion(digest.categories) || !isEnglishPluginListing(digest)) continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
+    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) continue;
     entries.push({ digest, featuredAt: badge.at });
     if (entries.length >= MAX_PUBLIC_LIST_PAGE_SIZE) break;
   }
@@ -5014,6 +5036,7 @@ async function listPackagePageImpl(
   }
 
   const collected: PublicPackageListItem[] = [];
+  const clawPublisherCache = new Map<string, Promise<boolean>>();
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
@@ -5256,7 +5279,10 @@ async function listPackagePageImpl(
         if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
           continue;
         }
-        if (isClawOutsideOpenClawPublisher(digest)) skippedPolicyClaw = true;
+        if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) {
+          skippedPolicyClaw = true;
+          continue;
+        }
         if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
         collected.push(await toPublicPackageListItem(ctx, digest));
         if (collected.length >= targetCount) {
@@ -5555,6 +5581,8 @@ async function searchPackagesImpl(
   const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
+  const clawPublisherCache = new Map<string, Promise<boolean>>();
+  let skippedPolicyClaw = false;
   const canViewPackage = async (digest: PackageDigestLike) =>
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
   const category = isPluginCategorySlug(args.category) ? args.category : undefined;
@@ -5679,6 +5707,10 @@ async function searchPackagesImpl(
   for (const digest of candidateDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
+    if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) {
+      skippedPolicyClaw = true;
+      continue;
+    }
     const match = packageSearchMatch(digest, queryText);
     if (!match || seen.has(digest.packageId)) continue;
     seen.add(digest.packageId);
@@ -5704,6 +5736,10 @@ async function searchPackagesImpl(
       for (const digest of digests) {
         if (!(await canViewPackage(digest))) continue;
         if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
+        if (!(await isClawDigestPublisherActive(ctx, digest, clawPublisherCache))) {
+          skippedPolicyClaw = true;
+          continue;
+        }
         const match = packageSearchMatch(digest, queryText);
         if (!match || seen.has(digest.packageId)) continue;
         seen.add(digest.packageId);
@@ -5771,7 +5807,7 @@ async function searchPackagesImpl(
       if (
         !args.family &&
         experimentalClawsEnabled() &&
-        fallbackDigests.some(isClawOutsideOpenClawPublisher) &&
+        (fallbackDigests.some(isClawOutsideOpenClawPublisher) || skippedPolicyClaw) &&
         authoritativeMatchCount() < targetCount
       ) {
         let cursor: string | null = null;
