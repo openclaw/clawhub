@@ -15,7 +15,8 @@ const FLAG_RULES: Array<{ flag: string; pattern: RegExp }> = [
   // not legitimate integrations that mention generic webhook support.
   {
     flag: "suspicious.webhook",
-    pattern: /(discord\.gg\/|discord\.com\/api\/webhooks|discordapp\.com\/api\/webhooks|hooks\.slack)/i,
+    pattern:
+      /(discord\.gg\/|discord\.com\/api\/webhooks|discordapp\.com\/api\/webhooks|hooks\.slack)/i,
   },
 
   // Arbitrary code execution - curl | bash is dangerous

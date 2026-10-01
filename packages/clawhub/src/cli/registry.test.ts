@@ -60,4 +60,17 @@ describe("registry resolution", () => {
       token: "tkn",
     });
   });
+
+  it("ignores the retired registry.clawhub.ai host", async () => {
+    readGlobalConfig.mockResolvedValue({ registry: "https://registry.clawhub.ai", token: "tkn" });
+    discoverRegistryFromSite.mockResolvedValue(null);
+
+    const registry = await getRegistry(makeOpts(), { cache: true });
+
+    expect(registry).toBe("https://clawhub.ai");
+    expect(writeGlobalConfig).toHaveBeenCalledWith({
+      registry: "https://clawhub.ai",
+      token: "tkn",
+    });
+  });
 });

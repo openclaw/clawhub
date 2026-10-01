@@ -1,5 +1,5 @@
 import { customCtx, customMutation } from "convex-helpers/server/customFunctions";
-import { Triggers } from "convex-helpers/server/triggers";
+import { Triggers, type Change } from "convex-helpers/server/triggers";
 import { v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
@@ -14,13 +14,23 @@ import {
   httpAction,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { isPublishedPackageRelease } from "./lib/packageReleaseVisibility";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
 import { getOwnerPublisher } from "./lib/publishers";
-import { extractDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
+import {
+  adjustPublisherStatsForPackageChange,
+  adjustPublisherStatsForSkillChange,
+} from "./lib/publisherStats";
+import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
+import {
+  deleteSkillSearchDigests,
+  extractValidatedDigestFields,
+  upsertSkillSearchDigest,
+} from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
 
@@ -33,6 +43,7 @@ function isMissingTableError(error: unknown, table: string) {
 
 type PackageDigestSyncCtx = Pick<MutationCtx, "db">;
 type OwnerPublisherDigestScheduleCtx = Pick<Partial<MutationCtx>, "scheduler">;
+const OWNER_PUBLISHER_DIGEST_PAGE_SIZE = 100;
 type LatestPackageRelease = Pick<
   Doc<"packageReleases">,
   | "_id"
@@ -40,10 +51,11 @@ type LatestPackageRelease = Pick<
   | "version"
   | "changelog"
   | "summary"
+  | "icon"
   | "compatibility"
-  | "capabilities"
   | "verification"
   | "distTags"
+  | "pluginManifestSummary"
 > & {
   scanStatus?: Doc<"packages">["scanStatus"];
 };
@@ -56,8 +68,8 @@ function toPackageLatestVersionSummary(
     version: release.version,
     createdAt: release.createdAt,
     changelog: release.changelog,
+    icon: release.icon,
     compatibility: release.compatibility,
-    capabilities: release.capabilities,
     verification: release.verification,
   };
 }
@@ -96,17 +108,19 @@ async function getPreferredFallbackPackageRelease(
       .order("desc")
       .paginate({ cursor, numItems: 100 });
     for (const release of page.page) {
+      if (!isPublishedPackageRelease(release, packageId)) continue;
       const candidate: LatestPackageRelease = {
         _id: release._id,
         createdAt: release.createdAt,
         version: release.version,
         changelog: release.changelog,
         summary: release.summary,
+        icon: release.icon,
         compatibility: release.compatibility,
-        capabilities: release.capabilities,
         verification: release.verification,
         scanStatus: release.verification?.scanStatus,
         distTags: release.distTags,
+        pluginManifestSummary: release.pluginManifestSummary,
       };
       if (!best || compareFallbackReleases(family, candidate, best) > 0) best = candidate;
     }
@@ -146,22 +160,28 @@ export async function syncPackageSearchDigestForPackageId(
 }
 
 export async function syncPackageSearchDigestsForOwnerUserId(
-  ctx: PackageDigestSyncCtx,
+  ctx: PackageDigestSyncCtx & OwnerPublisherDigestScheduleCtx,
   ownerUserId: Id<"users"> | null | undefined,
+  cursor: string | null = null,
 ) {
   if (!ownerUserId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
-        .paginate({ cursor, numItems: 100 });
-      for (const pkg of page.page) {
-        await syncPackageSearchDigest(ctx, pkg);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+      .paginate({ cursor, numItems: OWNER_PUBLISHER_DIGEST_PAGE_SIZE });
+    for (const pkg of page.page) {
+      await syncPackageSearchDigest(ctx, pkg);
+    }
+    if (!page.isDone && ctx.scheduler && page.continueCursor) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.functions.syncPackageSearchDigestsForOwnerUserIdInternal,
+        {
+          ownerUserId,
+          cursor: page.continueCursor,
+        },
+      );
     }
   } catch (error) {
     if (isMissingTableError(error, "packages")) return;
@@ -170,22 +190,25 @@ export async function syncPackageSearchDigestsForOwnerUserId(
 }
 
 export async function syncPackageSearchDigestsForOwnerPublisherId(
-  ctx: PackageDigestSyncCtx,
+  ctx: PackageDigestSyncCtx & OwnerPublisherDigestScheduleCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
+  cursor: string | null = null,
 ) {
   if (!ownerPublisherId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const pkg of page.page) {
-        await syncPackageSearchDigest(ctx, pkg);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .paginate({ cursor, numItems: OWNER_PUBLISHER_DIGEST_PAGE_SIZE });
+    for (const pkg of page.page) {
+      await syncPackageSearchDigest(ctx, pkg);
+    }
+    if (!page.isDone && ctx.scheduler && page.continueCursor) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal,
+        { ownerPublisherId, cursor: page.continueCursor },
+      );
     }
   } catch (error) {
     if (isMissingTableError(error, "packages")) return;
@@ -198,7 +221,7 @@ async function syncSkillSearchDigestForSkill(
   skill: Doc<"skills"> | null | undefined,
 ) {
   if (!skill) return;
-  const fields = extractDigestFields(skill);
+  const fields = await extractValidatedDigestFields(ctx, skill);
   const owner = await getOwnerPublisher(ctx, {
     ownerPublisherId: skill.ownerPublisherId,
     ownerUserId: skill.ownerUserId,
@@ -214,22 +237,25 @@ async function syncSkillSearchDigestForSkill(
 }
 
 export async function syncSkillSearchDigestsForOwnerPublisherId(
-  ctx: PackageDigestSyncCtx,
+  ctx: PackageDigestSyncCtx & OwnerPublisherDigestScheduleCtx,
   ownerPublisherId: Id<"publishers"> | null | undefined,
+  cursor: string | null = null,
 ) {
   if (!ownerPublisherId) return;
-  let cursor: string | null = null;
   try {
-    while (true) {
-      const page = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-        .paginate({ cursor, numItems: 100 });
-      for (const skill of page.page) {
-        await syncSkillSearchDigestForSkill(ctx, skill);
-      }
-      if (page.isDone) break;
-      cursor = page.continueCursor;
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
+      .paginate({ cursor, numItems: OWNER_PUBLISHER_DIGEST_PAGE_SIZE });
+    for (const skill of page.page) {
+      await syncSkillSearchDigestForSkill(ctx, skill);
+    }
+    if (!page.isDone && ctx.scheduler && page.continueCursor) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
+        { ownerPublisherId, cursor: page.continueCursor },
+      );
     }
   } catch (error) {
     if (isMissingTableError(error, "skills")) return;
@@ -254,21 +280,94 @@ export async function scheduleOwnerPublisherDigestSync(
   );
 }
 
+export async function scheduleOwnerUserPackageDigestSync(
+  ctx: OwnerPublisherDigestScheduleCtx,
+  ownerUserId: Id<"users"> | null | undefined,
+) {
+  if (!ownerUserId || !ctx.scheduler) return;
+  await ctx.scheduler.runAfter(
+    0,
+    internal.functions.syncPackageSearchDigestsForOwnerUserIdInternal,
+    {
+      ownerUserId,
+    },
+  );
+}
+
+export function shouldScheduleOwnerUserPackageDigestSyncForUserChange(
+  change: Change<DataModel, "users">,
+) {
+  if (change.operation === "delete") return true;
+  if (
+    change.operation === "update" &&
+    change.oldDoc.handle === change.newDoc.handle &&
+    change.oldDoc.deletedAt === change.newDoc.deletedAt &&
+    change.oldDoc.deactivatedAt === change.newDoc.deactivatedAt
+  ) {
+    return false;
+  }
+  if (change.operation === "update" && (change.newDoc.deletedAt || change.newDoc.deactivatedAt)) {
+    return false;
+  }
+  return true;
+}
+
+export function shouldScheduleOwnerPublisherDigestSyncForPublisherChange(
+  change: Change<DataModel, "publishers">,
+) {
+  if (change.operation === "delete") return true;
+  if (
+    change.operation === "update" &&
+    change.oldDoc.handle === change.newDoc.handle &&
+    change.oldDoc.kind === change.newDoc.kind &&
+    change.oldDoc.displayName === change.newDoc.displayName &&
+    change.oldDoc.image === change.newDoc.image &&
+    change.oldDoc.deletedAt === change.newDoc.deletedAt &&
+    change.oldDoc.deactivatedAt === change.newDoc.deactivatedAt
+  ) {
+    return false;
+  }
+  if (change.operation === "update" && (change.newDoc.deletedAt || change.newDoc.deactivatedAt)) {
+    return false;
+  }
+  return true;
+}
+
+export const syncPackageSearchDigestsForOwnerUserIdInternal = rawInternalMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    await syncPackageSearchDigestsForOwnerUserId(ctx, args.ownerUserId, args.cursor ?? null);
+  },
+});
+
 export const syncPackageSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
   args: {
     ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    await syncPackageSearchDigestsForOwnerPublisherId(ctx, args.ownerPublisherId);
+    await syncPackageSearchDigestsForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
   },
 });
 
 export const syncSkillSearchDigestsForOwnerPublisherIdInternal = rawInternalMutation({
   args: {
     ownerPublisherId: v.id("publishers"),
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    await syncSkillSearchDigestsForOwnerPublisherId(ctx, args.ownerPublisherId);
+    await syncSkillSearchDigestsForOwnerPublisherId(
+      ctx,
+      args.ownerPublisherId,
+      args.cursor ?? null,
+    );
   },
 });
 
@@ -280,6 +379,7 @@ export async function repointPackageLatestRelease(
   if (!packageId || !affectedReleaseId) return;
   const pkg = await ctx.db.get(packageId);
   if (!pkg) return;
+  if (pkg.softDeletedAt) return;
 
   const nextTags = Object.fromEntries(
     Object.entries(pkg.tags).filter(([, releaseId]) => releaseId !== affectedReleaseId),
@@ -308,13 +408,12 @@ export async function repointPackageLatestRelease(
     patch.latestReleaseId = nextLatest?._id;
     patch.latestVersionSummary = toPackageLatestVersionSummary(nextLatest);
     patch.summary = nextLatest?.summary;
-    patch.capabilityTags = nextLatest?.capabilities?.capabilityTags;
-    patch.executesCode =
-      typeof nextLatest?.capabilities?.executesCode === "boolean"
-        ? nextLatest.capabilities.executesCode
-        : undefined;
+    if (pkg.family === "code-plugin" || pkg.family === "bundle-plugin") {
+      // Discovery must follow the surviving release, including unknown historical categories.
+      patch.categories = nextLatest?.pluginManifestSummary?.categories;
+    }
+    patch.icon = nextLatest?.icon;
     patch.compatibility = nextLatest?.compatibility;
-    patch.capabilities = nextLatest?.capabilities;
     patch.verification = nextLatest?.verification;
     patch.scanStatus = nextLatest?.scanStatus;
   }
@@ -323,18 +422,44 @@ export async function repointPackageLatestRelease(
 }
 
 triggers.register("skills", async (ctx, change) => {
+  assertRankingMetricWritesAllowed();
+  await adjustPublisherStatsForSkillChange(
+    ctx,
+    change.operation === "insert" ? null : change.oldDoc,
+    change.operation === "delete" ? null : change.newDoc,
+  );
   if (change.operation === "delete") {
-    const existing = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_skill", (q) => q.eq("skillId", change.id))
-      .unique();
-    if (existing) await ctx.db.delete(existing._id);
+    await deleteSkillSearchDigests(ctx, change.id);
   } else {
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }
 });
 
+triggers.register("skillVersions", async (ctx, change) => {
+  if (change.operation === "insert") return;
+  if (
+    change.operation === "update" &&
+    change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt &&
+    change.oldDoc.ownerDeletedAt === change.newDoc.ownerDeletedAt &&
+    change.oldDoc.publicationStatus === change.newDoc.publicationStatus &&
+    change.oldDoc.vtAnalysis?.status === change.newDoc.vtAnalysis?.status &&
+    (change.oldDoc.llmAnalysis?.verdict ?? change.oldDoc.llmAnalysis?.status) ===
+      (change.newDoc.llmAnalysis?.verdict ?? change.newDoc.llmAnalysis?.status) &&
+    change.oldDoc.staticScan?.status === change.newDoc.staticScan?.status
+  ) {
+    return;
+  }
+  const skillId = change.operation === "delete" ? change.oldDoc.skillId : change.newDoc.skillId;
+  await syncSkillSearchDigestForSkill(ctx, await ctx.db.get(skillId));
+});
+
 triggers.register("packages", async (ctx, change) => {
+  assertRankingMetricWritesAllowed();
+  await adjustPublisherStatsForPackageChange(
+    ctx,
+    change.operation === "insert" ? null : change.oldDoc,
+    change.operation === "delete" ? null : change.newDoc,
+  );
   if (change.operation === "delete") {
     await deletePackageSearchDigests(ctx, change.id);
     return;
@@ -362,21 +487,25 @@ triggers.register("packageReleases", async (ctx, change) => {
 });
 
 triggers.register("users", async (ctx, change) => {
-  if (
-    change.operation === "update" &&
-    change.oldDoc.handle === change.newDoc.handle &&
-    change.oldDoc.deletedAt === change.newDoc.deletedAt &&
-    change.oldDoc.deactivatedAt === change.newDoc.deactivatedAt
-  ) {
-    return;
-  }
+  assertRankingMetricWritesAllowed();
+  if (!shouldScheduleOwnerUserPackageDigestSyncForUserChange(change)) return;
   const ownerUserId = change.operation === "delete" ? change.id : change.newDoc._id;
-  await syncPackageSearchDigestsForOwnerUserId(ctx, ownerUserId);
+  await scheduleOwnerUserPackageDigestSync(ctx, ownerUserId);
 });
 
 triggers.register("publishers", async (ctx, change) => {
+  assertRankingMetricWritesAllowed();
+  if (!shouldScheduleOwnerPublisherDigestSyncForPublisherChange(change)) return;
   const ownerPublisherId = change.operation === "delete" ? change.id : change.newDoc._id;
   await scheduleOwnerPublisherDigestSync(ctx, ownerPublisherId);
+});
+
+triggers.register("skillDailyStats", async () => {
+  assertRankingMetricWritesAllowed();
+});
+
+triggers.register("packageDailyStats", async () => {
+  assertRankingMetricWritesAllowed();
 });
 
 export const mutation = customMutation(rawMutation, customCtx(triggers.wrapDB));

@@ -1,0 +1,7 @@
+# Journal Directory
+
+Append-only logs during investigations go here.
+
+Files are named: journal-YYYY-MM.md
+
+Example: journal-2025-01.md

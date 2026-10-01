@@ -5,6 +5,11 @@ set -euo pipefail
 mode="${1:-}"
 publish_target="${2:-}"
 
+if [[ "$#" -gt 2 ]]; then
+  echo "usage: bash scripts/clawhub-cli-npm-publish.sh --publish [package.tgz]" >&2
+  exit 2
+fi
+
 if [[ "${mode}" != "--publish" ]]; then
   echo "usage: bash scripts/clawhub-cli-npm-publish.sh --publish [package.tgz]" >&2
   exit 2
@@ -34,6 +39,35 @@ fi
 if [[ ! "${package_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "clawhub CLI npm publish only supports stable X.Y.Z versions; found ${package_version}." >&2
   exit 1
+fi
+
+if [[ -n "${publish_target}" ]]; then
+  artifact_version="$(
+    tar -xOzf "${publish_target}" package/package.json 2>/dev/null |
+      node --input-type=module -e '
+        import { readFileSync } from "node:fs";
+
+        try {
+          const pkg = JSON.parse(readFileSync(0, "utf8"));
+          process.stdout.write(String(pkg.version ?? "").trim());
+        } catch {
+          process.exit(1);
+        }
+      '
+  )" || {
+    echo "Unable to resolve package/package.json version from ${publish_target}." >&2
+    exit 1
+  }
+
+  if [[ -z "${artifact_version}" ]]; then
+    echo "Unable to resolve package/package.json version from ${publish_target}." >&2
+    exit 1
+  fi
+
+  if [[ "${artifact_version}" != "${package_version}" ]]; then
+    echo "Publish target version ${artifact_version} does not match packages/clawhub/package.json version ${package_version}." >&2
+    exit 1
+  fi
 fi
 
 echo "Resolved package version: ${package_version}"

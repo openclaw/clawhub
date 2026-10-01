@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DEPLOYMENT="${1:-}"
+ID="${2:-}"
+START_TIME="${3:-}"
+END_TIME="${4:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "$DEPLOYMENT" || -z "$ID" || -z "$START_TIME" || -z "$END_TIME" ]]; then
+  echo "Usage: monitor-history <deployment> <id> <startTime> <endTime>" >&2
+  echo "Example: monitor-history prod mon_123 2026-05-03T00:00:00Z 2026-05-04T00:00:00Z" >&2
+  exit 1
+fi
+"$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "/monitors/$ID/history?startTime=$START_TIME&endTime=$END_TIME"

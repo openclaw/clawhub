@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Sync org memory (git pull)
+# Usage: scripts/mem-sync [org-name]
+#   org-name   Sync specific org
+#   (none)     Sync all orgs
+
+set -euo pipefail
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+ORGS_DIR="$CONFIG_DIR/memory/orgs"
+
+sync_org() {
+  local org_dir="$1"
+  local org_name
+  org_name=$(basename "$org_dir")
+
+  if [[ ! -d "$org_dir" ]]; then
+    echo "⚠️  Org '$org_name' not found at $org_dir"
+    return 1
+  fi
+
+  if [[ -d "$org_dir/.git" ]]; then
+    echo "Syncing $org_name..."
+    if (cd "$org_dir" && git pull --ff-only 2>/dev/null); then
+      echo "✓ $org_name synced"
+    else
+      echo "⚠️  $org_name: pull failed (conflicts or network error)"
+      echo "   Using cached version. Resolve manually in $org_dir"
+    fi
+  else
+    echo "⚠️  $org_name: no git repo (local-only org)"
+  fi
+}
+
+echo "=== Memory Sync ==="
+echo ""
+
+if [[ $# -gt 0 ]]; then
+  # Sync specific org
+  sync_org "$ORGS_DIR/$1"
+else
+  # Sync all orgs
+  if [[ ! -d "$ORGS_DIR" ]] || [[ -z "$(ls -A "$ORGS_DIR" 2>/dev/null)" ]]; then
+    echo "No orgs configured."
+    echo "Add one with: scripts/org-add <name> <git-repo-url>"
+    exit 0
+  fi
+
+  for org_dir in "$ORGS_DIR"/*/; do
+    [[ -d "$org_dir" ]] && sync_org "$org_dir"
+  done
+fi
+
+echo ""
+echo "Done."

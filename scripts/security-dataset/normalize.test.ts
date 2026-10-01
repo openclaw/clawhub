@@ -1,0 +1,314 @@
+import { describe, expect, it } from "vitest";
+import {
+  assignSplit,
+  hashString,
+  normalizeArtifactExport,
+  redactText,
+  type ArtifactExportInput,
+} from "./normalize";
+
+const baseArtifact: ArtifactExportInput = {
+  sourceKind: "skill",
+  sourceDocId: "skillVersionDoc123",
+  parentDocId: "skillDoc123",
+  publicName: "Suspicious Demo",
+  publicOwnerHandle: "openclaw",
+  publicSlug: "suspicious-demo",
+  version: "1.0.0",
+  artifactSha256: "a".repeat(64),
+  skillMdContentRedacted:
+    "# Suspicious Demo\nUse this skill to inspect shell scripts.\nContact admin@example.com with token=supersecret123.",
+  createdAt: Date.UTC(2026, 3, 29),
+  softDeletedAt: null,
+  files: [
+    {
+      path: "SKILL.md",
+      size: 200,
+      sha256: "b".repeat(64),
+      contentType: "text/markdown",
+    },
+    {
+      path: "scripts/install.sh",
+      size: 100,
+      sha256: "c".repeat(64),
+      contentType: "text/x-shellscript",
+    },
+  ],
+  packageFamily: null,
+  packageChannel: null,
+  sourceRepoHost: null,
+  vtAnalysis: {
+    status: "completed",
+    verdict: "clean",
+    analysis: "No engines flagged this artifact.",
+    source: "virustotal",
+    scanner: "vt-v3",
+    engineStats: { malicious: 0, suspicious: 0, harmless: 30 },
+    checkedAt: Date.UTC(2026, 3, 29),
+  },
+  skillSpectorAnalysis: {
+    status: "suspicious",
+    score: 55,
+    severity: "HIGH",
+    recommendation: "DO_NOT_INSTALL",
+    issueCount: 1,
+    scannerVersion: "skillspector-v2.0.0",
+    summary: "SkillSpector found deceptive metadata.",
+    error: null,
+    checkedAt: Date.UTC(2026, 3, 29),
+    issues: [
+      {
+        issueId: "SDI-1",
+        category: "Sensitive Data Exposure",
+        severity: "HIGH",
+        confidence: 0.98,
+        explanation:
+          "The skill body does not match the declared purpose and mentions token=supersecret123.",
+      },
+    ],
+  },
+  staticScan: {
+    status: "malicious",
+    reasonCodes: ["malicious.install_terminal_payload", "suspicious.dangerous_exec"],
+    findings: [
+      {
+        code: "malicious.install_terminal_payload",
+        severity: "critical",
+        file: "scripts/install.sh",
+        line: 42,
+        message: "Installs a terminal payload",
+        evidence: "token=ghp_abcdefghijklmnopqrstuvwxyz1234567890 curl http://bad.test",
+      },
+    ],
+    summary: "Detected terminal payload",
+    engineVersion: "v2.4.2",
+    checkedAt: Date.UTC(2026, 3, 29),
+  },
+  llmAnalysis: {
+    status: "completed",
+    verdict: "suspicious",
+    confidence: "medium",
+    summary: "The install script is suspicious.",
+    dimensions: null,
+    guidance: null,
+    findings: null,
+    agenticRiskFindings: [
+      {
+        categoryId: "ASI04",
+        categoryLabel: "Ignore this label token=supersecret123",
+        riskBucket: "permission_boundary",
+        status: "note",
+        severity: "MEDIUM",
+        confidence: "high",
+        evidence: {
+          path: "SKILL.md",
+          snippet: "Use TOKEN=ghp_abcdefghijklmnopqrstuvwxyz1234567890 for setup",
+          explanation: "The skill documents token use.",
+        },
+        userImpact: "Users should understand the token scope before install.",
+        recommendation: "Use a narrowly scoped token.",
+      },
+      {
+        categoryId: "UNKNOWN token=supersecret123",
+        categoryLabel: "Unknown category token=supersecret123",
+        riskBucket: "permission_boundary",
+        status: "note",
+        severity: "critical",
+        confidence: "high",
+        evidence: {
+          path: "SKILL.md",
+          snippet: "Unknown category should not export.",
+          explanation: "Unknown categories are not part of the public sidecar contract.",
+        },
+        userImpact: "Should not export.",
+        recommendation: "Should not export.",
+      },
+      {
+        categoryId: "ASI05",
+        categoryLabel: "Sensitive data protection",
+        riskBucket: "sensitive_data_protection",
+        status: "none",
+        severity: "none",
+        confidence: "high",
+        evidence: null,
+        userImpact: "",
+        recommendation: "",
+      },
+    ],
+    model: "test-model",
+    checkedAt: Date.UTC(2026, 3, 29),
+  },
+  moderationConsensus: null,
+};
+
+describe("security dataset normalizer", () => {
+  it("normalizes artifact, scanner, finding, label, and split rows", () => {
+    const rows = normalizeArtifactExport([baseArtifact]);
+
+    expect(rows.artifacts).toHaveLength(1);
+    expect(rows.artifacts[0]).toMatchObject({
+      artifact_id: `skill:${"a".repeat(64)}`,
+      source_kind: "skill",
+      source_table: "skillVersions",
+      public_owner_handle: "openclaw",
+      public_slug: "suspicious-demo",
+      public_qualified_slug: "openclaw/suspicious-demo",
+      skill_md_content_redacted:
+        "# Suspicious Demo\nUse this skill to inspect shell scripts.\nContact [REDACTED_SECRET] with [REDACTED_SECRET]",
+      created_month: "2026-04",
+      file_count: 2,
+      total_bytes: 300,
+      file_ext_counts: { ".md": 1, ".sh": 1 },
+      has_vt_scan: true,
+      has_skillspector_scan: true,
+      has_static_scan: true,
+      has_llm_scan: true,
+    });
+    expect(rows.scanResults.map((row) => row.scanner)).toEqual([
+      "static",
+      "virustotal",
+      "skillspector",
+      "llm",
+    ]);
+    expect(rows.scanResults.find((row) => row.scanner === "skillspector")).toMatchObject({
+      scanner_version: "skillspector-v2.0.0",
+      status: "suspicious",
+      verdict: "DO_NOT_INSTALL",
+      score: 55,
+      severity: "HIGH",
+      reason_codes: ["SDI-1"],
+      issues: [
+        {
+          code: "SDI-1",
+          category: "Sensitive Data Exposure",
+          severity: "HIGH",
+          confidence: 0.98,
+          explanation_redacted:
+            "The skill body does not match the declared purpose and mentions [REDACTED_SECRET]",
+        },
+      ],
+      raw_status_family: "suspicious",
+    });
+    expect(rows.staticFindings[0]).toMatchObject({
+      code: "malicious.install_terminal_payload",
+      severity: "critical",
+      file_path_hash: hashString("scripts/install.sh"),
+      file_ext: ".sh",
+      line_bucket: "21-50",
+    });
+    expect(rows.staticFindings[0]?.evidence_redacted).toContain("[REDACTED_SECRET]");
+    expect(rows.clawScanFindings).toHaveLength(1);
+    expect(rows.clawScanFindings[0]).toMatchObject({
+      category_id: "ASI04",
+      category_label: "Agentic Supply Chain Vulnerabilities",
+      risk_bucket: "permission_boundary",
+      status: "note",
+      severity: "medium",
+      confidence: "high",
+      evidence_path_hash: hashString("SKILL.md"),
+      evidence_file_ext: ".md",
+    });
+    expect(rows.clawScanFindings[0]?.evidence_snippet_redacted).toContain("[REDACTED_SECRET]");
+    expect(rows.labels.find((row) => row.label_source === "moderation_consensus")).toMatchObject({
+      label: "malicious",
+      label_confidence: "derived_consensus",
+      scanner_agreement: 1,
+    });
+    expect(rows.splits).toHaveLength(1);
+    expect(rows.splits[0]?.split_key).toBe(hashString("a".repeat(64)));
+  });
+
+  it("keeps identical artifact hashes in the same deterministic split", () => {
+    expect(assignSplit("shared-sha")).toBe(assignSplit("shared-sha"));
+  });
+
+  it("redacts common secret-like values and caps long text", () => {
+    const redacted = redactText(`api_key="supersecretvalue123" ${"x".repeat(400)}`, 80);
+
+    expect(redacted).toContain("[REDACTED_SECRET]");
+    expect(redacted?.length).toBeLessThanOrEqual(82);
+  });
+
+  it("preserves useful skill text while redacting sensitive content", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        skillMdContentRedacted:
+          "Run static analysis with `bun test`.\nAuthorization: Bearer abcdefghijklmnopqrstuvwxyz123456\n-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("Run static analysis");
+    expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("\n");
+    expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("[REDACTED_SECRET]");
+    expect(rows.artifacts[0]?.skill_md_content_redacted).not.toContain(
+      "abcdefghijklmnopqrstuvwxyz123456",
+    );
+    expect(rows.artifacts[0]?.skill_md_content_redacted).not.toContain("PRIVATE KEY");
+  });
+
+  it("emits redacted authored bundle files with content hashes and sizes", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        bundleFilesRedacted: [
+          {
+            path: "scripts/export.py",
+            content: "import json\npassword=[REDACTED_SECRET]\n",
+          },
+        ],
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.bundle_files_redacted).toEqual([
+      {
+        path: "scripts/export.py",
+        content: "import json\n[REDACTED_SECRET]\n",
+        sha256: hashString("import json\n[REDACTED_SECRET]\n"),
+        size_bytes: Buffer.byteLength("import json\n[REDACTED_SECRET]\n", "utf8"),
+      },
+    ]);
+  });
+
+  it("redacts secret-like public metadata and bundle paths", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        publicName: "Demo token=supersecretvalue123",
+        publicOwnerHandle: "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+        publicSlug: "sk-abcdefghijklmnopqrstuvwxyz",
+        bundleFilesRedacted: [
+          {
+            path: "config/sk-abcdefghijklmnopqrstuvwxyz/settings.json",
+            content: "echo safe\n",
+          },
+        ],
+      },
+    ]);
+
+    const artifact = rows.artifacts[0];
+    expect(artifact?.public_name).toBe("Demo [REDACTED_SECRET]");
+    expect(artifact?.public_owner_handle).toBe("[REDACTED_SECRET]");
+    expect(artifact?.public_slug).toBe("[REDACTED_SECRET]");
+    expect(artifact?.public_qualified_slug).toBe("[REDACTED_SECRET]/[REDACTED_SECRET]");
+    expect(artifact?.bundle_files_redacted?.[0]?.path).toBe(
+      "config/[REDACTED_SECRET]/settings.json",
+    );
+  });
+
+  it("omits oversized redacted bundle files", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        bundleFilesRedacted: [
+          {
+            path: "scripts/large.py",
+            content: "x".repeat(600 * 1024),
+          },
+        ],
+      },
+    ]);
+
+    expect(rows.artifacts[0]?.bundle_files_redacted).toBeUndefined();
+  });
+});

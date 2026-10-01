@@ -1,13 +1,18 @@
 import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, getRequestHost, setHeader } from "h3";
+import { fetchImageDataUrl, fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchSkillOgMeta } from "../../og/fetchSkillOgMeta";
+import { resolveOgDownloadsDisplay } from "../../og/formatOgStats";
 import {
   ensureResvgWasm,
   FONT_MONO,
   FONT_SANS,
   getFontBuffers,
   getMarkDataUrl,
+  getWatermarkDataUrl,
 } from "../../og/ogAssets";
+import { pngResponse } from "../../og/pngResponse";
+import { buildOgDownloadsStat } from "../../og/registryOgSvg";
 import { buildSkillOgSvg } from "../../og/skillOgSvg";
 
 type OgQuery = {
@@ -16,6 +21,10 @@ type OgQuery = {
   version?: string;
   title?: string;
   description?: string;
+  downloads?: string;
+  installs?: string;
+  audit?: string;
+  avatar?: string;
   v?: string;
 };
 
@@ -47,10 +56,14 @@ export default defineEventHandler(async (event) => {
   const versionFromQuery = cleanString(query.version);
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
+  const auditFromQuery = cleanString(query.audit);
+  const avatarFromQuery = cleanString(query.avatar);
 
   const needFetch =
     !titleFromQuery || !descriptionFromQuery || !ownerFromQuery || !versionFromQuery;
-  const meta = needFetch ? await fetchSkillOgMeta(slug, getApiBase(getRequestHost(event))) : null;
+  const meta = needFetch
+    ? await fetchSkillOgMeta(slug, getApiBase(getRequestHost(event)), ownerFromQuery || undefined)
+    : null;
 
   const owner = ownerFromQuery || meta?.owner || "";
   const version = versionFromQuery || meta?.version || "";
@@ -59,24 +72,46 @@ export default defineEventHandler(async (event) => {
 
   const ownerLabel = owner ? `@${owner}` : "clawhub";
   const versionLabel = version ? `v${version}` : "latest";
-  const footer = owner ? `clawhub.ai/${owner}/${slug}` : `clawhub.ai/skills/${slug}`;
+  const auditLabel =
+    auditFromQuery ||
+    (meta?.moderation?.isMalwareBlocked || meta?.moderation?.verdict === "malicious"
+      ? "Audit BLOCK"
+      : meta?.moderation?.isSuspicious || meta?.moderation?.verdict === "suspicious"
+        ? "Audit REVIEW"
+        : "Audit PASS");
 
   const cacheKey = version ? "public, max-age=31536000, immutable" : "public, max-age=3600";
-  setHeader(event, "Cache-Control", cacheKey);
-  setHeader(event, "Content-Type", "image/png");
-
-  const [markDataUrl, fontBuffers] = await Promise.all([
+  const [markDataUrl, watermarkDataUrl, fontBuffers] = await Promise.all([
     getMarkDataUrl(),
+    getWatermarkDataUrl(),
     ensureResvgWasm().then(() => getFontBuffers()),
   ]);
+  const skillIconDataUrl = avatarFromQuery
+    ? null
+    : await fetchPublisherProfileImageDataUrl(meta?.icon);
+  const avatarDataUrl = avatarFromQuery
+    ? await fetchImageDataUrl(avatarFromQuery)
+    : (skillIconDataUrl ?? (await fetchPublisherProfileImageDataUrl(meta?.ownerImage)));
 
   const svg = buildSkillOgSvg({
     markDataUrl,
+    watermarkDataUrl,
+    avatarDataUrl,
+    avatarShape: skillIconDataUrl ? "rounded" : "circle",
+    avatarFit: skillIconDataUrl ? "contain" : "cover",
     title,
     description,
     ownerLabel,
     versionLabel,
-    footer,
+    installCommand: {
+      subject: "skills",
+      action: "install",
+      target: slug,
+    },
+    stats: [
+      buildOgDownloadsStat(resolveOgDownloadsDisplay(query, meta?.stats.downloads)),
+      { value: auditLabel.replace(/^Audit\s+/i, ""), label: "Audit" },
+    ],
   });
 
   const resvg = new Resvg(svg, {
@@ -90,5 +125,5 @@ export default defineEventHandler(async (event) => {
   });
   const png = resvg.render().asPng();
   resvg.free();
-  return png;
+  return pngResponse(png, cacheKey);
 });

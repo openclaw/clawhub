@@ -1,17 +1,25 @@
+import { Link } from "@tanstack/react-router";
+import { Download, ExternalLink, Plus } from "lucide-react";
 import type { RefObject } from "react";
-import { SkillCard } from "../../components/SkillCard";
+import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillListItem } from "../../components/SkillListItem";
-import { getPlatformLabels } from "../../components/skillDetailUtils";
-import { SkillStatsTripletLine } from "../../components/SkillStats";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { UserBadge } from "../../components/UserBadge";
-import { getSkillBadges } from "../../lib/badges";
-import { buildSkillHref, type SkillListEntry } from "./-types";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
+import { formatCompactStat } from "../../lib/numberFormat";
+import { timeAgo } from "../../lib/timeAgo";
+import { truncateText } from "../../lib/truncateText";
+import {
+  isExternalSkillListEntry,
+  isTrendingSkillListEntry,
+  type SkillListEntry,
+  type SkillSearchEntry,
+  type TrendingSkillListEntry,
+} from "./-types";
 
 type SkillsResultsProps = {
   isLoadingSkills: boolean;
   sorted: SkillListEntry[];
-  view: "cards" | "list";
   listDoneLoading: boolean;
   hasQuery: boolean;
   canLoadMore: boolean;
@@ -19,108 +27,187 @@ type SkillsResultsProps = {
   canAutoLoad: boolean;
   loadMoreRef: RefObject<HTMLDivElement | null>;
   loadMore: () => void;
+  listFailed: boolean;
+  retryLoad: () => void;
 };
+
+function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
+  const trending = item.trending;
+  const owner = trending.publisher?.handle;
+  return (
+    <Link
+      to={trending.canonicalUrl}
+      className="skill-list-item skill-list-item-skill skill-list-item-no-icon skill-list-item-simple-no-icon"
+    >
+      <div className="skill-list-item-body">
+        <div className="skill-list-item-main">
+          <span className="skill-list-item-identity">
+            <span className="skill-list-item-name" title={trending.displayName}>
+              {truncateText(trending.displayName, 48)}
+            </span>
+            {owner ? <span className="skill-list-item-owner">@{owner}</span> : null}
+          </span>
+        </div>
+        {trending.summary ? (
+          <p className="skill-list-item-summary">{truncateText(trending.summary, 80)}</p>
+        ) : null}
+      </div>
+      <div
+        className="skill-list-item-meta"
+        aria-label={trending.source === "skills-sh" ? "Source" : "24-hour downloads"}
+      >
+        {trending.source === "skills-sh" ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="compact" size="sm">
+                skills.sh
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="center">
+              Synced from skills.sh
+            </TooltipContent>
+          </Tooltip>
+        ) : typeof trending.metrics.trending24hDownloads === "number" ? (
+          <span className="skill-list-item-meta-item">
+            <Download size={14} aria-hidden="true" />
+            {formatCompactStat(trending.metrics.trending24hDownloads)}
+          </span>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+function ExternalSkillSearchListItem({ result }: { result: SkillSearchEntry }) {
+  const owner = result.sourceIdentity.owner ?? result.sourceIdentity.host;
+  return (
+    <a
+      href={result.canonicalUrl}
+      className="skill-list-item skill-list-item-skill skill-list-item-with-taxonomy skill-list-item-no-icon"
+      target="_blank"
+      rel="noreferrer"
+    >
+      <div className="skill-list-item-body">
+        <div className="skill-list-item-main">
+          <span className="skill-list-item-identity">
+            <span className="skill-list-item-name" title={result.displayName}>
+              {truncateText(result.displayName, 48)}
+            </span>
+            {owner ? <span className="skill-list-item-owner">@{owner}</span> : null}
+          </span>
+          <Badge variant="compact">skills.sh</Badge>
+        </div>
+        {result.summary ? (
+          <p className="skill-list-item-summary">{truncateText(result.summary, 80)}</p>
+        ) : null}
+      </div>
+      <div className="skill-list-item-taxonomy" aria-label="Source">
+        <span className="skill-list-item-category">External source</span>
+      </div>
+      <div className="skill-list-item-meta">
+        <span className="skill-list-item-meta-item is-updated">
+          Observed {timeAgo(result.updatedAt)}
+        </span>
+        {typeof result.sourceIdentity.lifetimeInstalls === "number" ? (
+          <span className="skill-list-item-meta-item" title="skills.sh lifetime installs">
+            <Download size={14} aria-hidden="true" />
+            {formatCompactStat(result.sourceIdentity.lifetimeInstalls)}
+          </span>
+        ) : null}
+        <span className="skill-list-item-meta-item">
+          <ExternalLink size={14} aria-hidden="true" /> Source
+        </span>
+      </div>
+    </a>
+  );
+}
 
 export function SkillsResults({
   isLoadingSkills,
   sorted,
-  view,
-  listDoneLoading: _listDoneLoading,
+  listDoneLoading,
   hasQuery,
   canLoadMore,
   isLoadingMore,
   canAutoLoad,
   loadMoreRef,
   loadMore,
+  listFailed,
+  retryLoad,
 }: SkillsResultsProps) {
   return (
     <>
       {isLoadingSkills ? (
-        <div className="skeleton-list">
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="skeleton-row">
-              <div className="skeleton-icon" />
-              <div className="skeleton-row-body">
-                <div className="skeleton-bar skeleton-bar-lg" />
-                <div className="skeleton-bar skeleton-bar-sm" />
-                <div className="skeleton-bar skeleton-bar-xs" />
-              </div>
-            </div>
-          ))}
+        <BrowseResultsSkeleton label="Skill" showIcon={false} />
+      ) : listFailed && sorted.length === 0 ? (
+        <div className="empty-state" role="alert">
+          <p className="empty-state-title">Skills couldn't be loaded</p>
+          <p className="empty-state-body">
+            We couldn't load this slice of the catalog. Give it another try in a moment.
+          </p>
+          <Button type="button" variant="outline" size="sm" className="mt-4" onClick={retryLoad}>
+            Try again
+          </Button>
         </div>
-      ) : sorted.length === 0 ? (
+      ) : sorted.length === 0 && listDoneLoading ? (
         <div className="empty-state">
           <p className="empty-state-title">No skills found</p>
           <p className="empty-state-body">
-            {hasQuery ? "Try a different search term or remove filters." : "No skills have been published yet."}
+            {hasQuery
+              ? "Try a different search term or remove filters."
+              : "Try another category or remove filters."}
           </p>
-        </div>
-      ) : view === "cards" ? (
-        <div className="grid">
-          {sorted.map((entry) => {
-            const skill = entry.skill;
-            const clawdis = entry.latestVersion?.parsed?.clawdis;
-            const isPlugin = Boolean(clawdis?.nix?.plugin);
-            const platforms = getPlatformLabels(clawdis?.os, clawdis?.nix?.systems);
-            const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
-            const skillHref = buildSkillHref(skill, ownerHandle);
-            return (
-              <SkillCard
-                key={skill._id}
-                skill={skill}
-                href={skillHref}
-                badge={getSkillBadges(skill)}
-                chip={isPlugin ? "Plugin bundle (nix)" : undefined}
-                platformLabels={platforms.length ? platforms : undefined}
-                summaryFallback="Agent-ready skill pack."
-                meta={
-                  <div className="skill-card-footer-rows">
-                    <UserBadge
-                      user={entry.owner}
-                      fallbackHandle={ownerHandle}
-                      prefix="by"
-                      link={false}
-                    />
-                    <div className="stat">
-                      <SkillStatsTripletLine stats={skill.stats} />
-                    </div>
-                  </div>
-                }
-              />
-            );
-          })}
+          <Button asChild size="sm" className="mt-4">
+            <Link to="/add" search={{ kind: "skill", ownerHandle: undefined, method: undefined }}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add a skill
+            </Link>
+          </Button>
         </div>
       ) : (
-        <div className="results-list">
-          {sorted.map((entry) => {
-            const skill = entry.skill;
-            const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
-            return (
-              <SkillListItem
-                key={skill._id}
-                skill={skill}
-                ownerHandle={ownerHandle}
-                owner={entry.owner}
-              />
-            );
-          })}
+        <div className="browse-list-stack">
+          <div className="browse-list-head browse-list-head-no-icon" aria-hidden="true">
+            <span className="browse-list-head-label">Skill</span>
+            <span className="browse-list-head-label browse-list-head-category">Category</span>
+            <span className="browse-list-head-label browse-list-head-stat">Downloads</span>
+          </div>
+          <div className="results-list">
+            {sorted.map((entry) => {
+              if (isTrendingSkillListEntry(entry)) {
+                return <TrendingSkillListItem key={entry.trending.id} item={entry} />;
+              }
+              if (isExternalSkillListEntry(entry)) {
+                return (
+                  <ExternalSkillSearchListItem key={entry.external.id} result={entry.external} />
+                );
+              }
+              const skill = entry.skill;
+              const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
+              return (
+                <SkillListItem
+                  key={skill._id}
+                  skill={skill}
+                  ownerHandle={ownerHandle}
+                  owner={entry.owner}
+                  showIcon={false}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {canLoadMore || isLoadingMore ? (
-        <div
-          ref={canAutoLoad ? loadMoreRef : null}
-          className="card mt-4 flex justify-center"
-        >
+      {isLoadingMore ? (
+        <div ref={canAutoLoad ? loadMoreRef : null} className="mt-4">
+          <BrowseResultsSkeleton count={2} showIcon={false} />
+        </div>
+      ) : canLoadMore ? (
+        <div ref={canAutoLoad ? loadMoreRef : null} className="card mt-4 flex justify-center">
           {canAutoLoad ? (
-            isLoadingMore ? (
-              "Loading more..."
-            ) : (
-              "Scroll to load more"
-            )
+            "Scroll to load more"
           ) : (
             <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
-              {isLoadingMore ? "Loading..." : "Load more"}
+              Load more
             </Button>
           )}
         </div>

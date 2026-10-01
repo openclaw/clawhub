@@ -4,12 +4,25 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import {
   buildDeterministicPackageZip,
+  buildLegacyPackageScanZip,
   buildDeterministicZip,
   buildSkillMeta,
   type SkillZipMeta,
+  validateExportArchivePath,
 } from "./skillZip";
 
 describe("skillZip", () => {
+  describe("validateExportArchivePath", () => {
+    it("bounds the signed UTF-8 JSON representation instead of JavaScript characters", () => {
+      const prefix = "alice/demo/";
+      const asciiPath = `${prefix}${"a".repeat(900 - prefix.length)}`;
+      const multibytePath = `${prefix}${"界".repeat(400)}`;
+
+      expect(validateExportArchivePath(asciiPath)).toBe(true);
+      expect(validateExportArchivePath(multibytePath)).toBe(false);
+    });
+  });
+
   describe("buildSkillMeta", () => {
     it("returns metadata object with all fields", () => {
       const meta: SkillZipMeta = {
@@ -156,5 +169,57 @@ describe("skillZip", () => {
       ]);
       expect(unzipped["_meta.json"]).toBeUndefined();
     });
+
+    it("rejects file/ancestor collisions before creating the legacy ZIP", () => {
+      expect(() =>
+        buildDeterministicPackageZip([
+          { path: "workspace", bytes: new TextEncoder().encode("file") },
+          { path: "workspace/SOUL.md", bytes: new TextEncoder().encode("child") },
+        ]),
+      ).toThrow("file/ancestor path collision");
+    });
+
+    it("rejects Unicode-folded hierarchy collisions before creating the legacy ZIP", () => {
+      expect(() =>
+        buildDeterministicPackageZip([
+          { path: "Straße", bytes: new TextEncoder().encode("file") },
+          { path: "STRASSE/child", bytes: new TextEncoder().encode("child") },
+        ]),
+      ).toThrow("file/ancestor path collision");
+    });
+
+    it("rejects unsafe package paths before creating the legacy ZIP", () => {
+      expect(() =>
+        buildDeterministicPackageZip([
+          { path: "workspace/a\u0085.md", bytes: new TextEncoder().encode("unsafe") },
+        ]),
+      ).toThrow("unsafe package path");
+    });
+  });
+
+  describe("buildLegacyPackageScanZip", () => {
+    it("keeps historical Linux-safe names that modern package publication rejects", () => {
+      const zip = buildLegacyPackageScanZip([
+        { path: "s2-os-core:requirements.txt", bytes: new TextEncoder().encode("legacy") },
+        {
+          path: "docs/Standard\u00e2\u0080\u0094_Unit.md",
+          bytes: new TextEncoder().encode("legacy"),
+        },
+      ]);
+
+      expect(Object.keys(unzipSync(zip)).sort()).toEqual([
+        "package/docs/Standard\u00e2\u0080\u0094_Unit.md",
+        "package/s2-os-core:requirements.txt",
+      ]);
+    });
+
+    it.each(["../escape", "dir/../escape", "/absolute", "dir\\escape", "dir//escape"])(
+      "still rejects archive traversal path %s",
+      (path) => {
+        expect(() =>
+          buildLegacyPackageScanZip([{ path, bytes: new TextEncoder().encode("unsafe") }]),
+        ).toThrow("unsafe legacy scan path");
+      },
+    );
   });
 });

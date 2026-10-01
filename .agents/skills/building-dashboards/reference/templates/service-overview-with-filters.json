@@ -1,0 +1,132 @@
+{
+  "name": "{{service}} - Service Overview (Filtered)",
+  "description": "Interactive dashboard for {{service}} with SmartFilter. Allows filtering by route and status code.",
+  "owner": "X-AXIOM-EVERYONE",
+  "datasets": ["{{dataset}}"],
+  "refreshTime": 60,
+  "schemaVersion": 2,
+  "timeWindowStart": "qr-now-1h",
+  "timeWindowEnd": "qr-now",
+  "charts": [
+    {
+      "id": "filters",
+      "name": "Filters",
+      "type": "SmartFilter",
+      "query": {"apl": ""},
+      "filters": [
+        {
+          "id": "route_filter",
+          "name": "Route",
+          "type": "select",
+          "selectType": "apl",
+          "active": true,
+          "apl": {
+            "apl": "['{{dataset}}'] | where service == '{{service}}' | distinct route | project key=route, value=route | sort by key asc",
+            "queryOptions": {"quickRange": "1h"}
+          },
+          "options": [
+            {"key": "All", "value": "", "default": true}
+          ]
+        },
+        {
+          "id": "status_filter",
+          "name": "Status",
+          "type": "select",
+          "selectType": "list",
+          "active": true,
+          "options": [
+            {"key": "All", "value": "", "default": true},
+            {"key": "2xx", "value": "2"},
+            {"key": "3xx", "value": "3"},
+            {"key": "4xx", "value": "4"},
+            {"key": "5xx", "value": "5"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "error-rate",
+      "name": "Error Rate",
+      "type": "Statistic",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}'\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize total = count(), errors = countif(status >= 500)\n| extend error_rate = iff(total > 0, round(100.0 * errors / total, 2), 0.0)\n| project ['Error Rate %'] = error_rate"
+      }
+    },
+    {
+      "id": "p95-latency",
+      "name": "p95 Latency",
+      "type": "Statistic",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}'\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize ['p95 (ms)'] = round(percentile(duration_ms, 95), 1)"
+      }
+    },
+    {
+      "id": "traffic-rps",
+      "name": "Total Requests",
+      "type": "Statistic",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}'\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize ['Total Requests'] = count()"
+      }
+    },
+    {
+      "id": "error-count",
+      "name": "Errors",
+      "type": "Statistic",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}' and status >= 500\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize Errors = count()"
+      }
+    },
+    {
+      "id": "request-rate-ts",
+      "name": "Request Rate Over Time",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}'\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize ['req/min'] = count() by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "error-rate-ts",
+      "name": "Error Rate Over Time (%)",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}'\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize total = count(), errors = countif(status >= 500) by bin_auto(_time)\n| extend ['error_rate_%'] = iff(total > 0, round(100.0 * errors / total, 2), 0.0)\n| project _time, ['error_rate_%']"
+      }
+    },
+    {
+      "id": "latency-heatmap",
+      "name": "Latency Distribution",
+      "type": "Heatmap",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}'\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize histogram(duration_ms, 15) by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "top-routes",
+      "name": "Top Routes by Traffic",
+      "type": "Table",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}'\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| summarize Requests = count(), Errors = countif(status >= 500), ['p95 (ms)'] = round(percentile(duration_ms, 95), 0) by route\n| top 10 by Requests\n| project Route = route, Requests, Errors, ['p95 (ms)']"
+      }
+    },
+    {
+      "id": "recent-errors",
+      "name": "Recent Errors",
+      "type": "LogStream",
+      "query": {
+        "apl": "declare query_parameters (route_filter:string = \"\", status_filter:string = \"\");\n['{{dataset}}']\n| where service == '{{service}}' and status >= 500\n| where isempty(route_filter) or route == route_filter\n| where isempty(status_filter) or tostring(status) startswith status_filter\n| project-keep _time, trace_id, route, status, error_message, duration_ms\n| order by _time desc\n| take 100"
+      }
+    }
+  ],
+  "layout": [
+    {"i": "filters", "x": 0, "y": 0, "w": 12, "h": 1},
+    {"i": "error-rate", "x": 0, "y": 1, "w": 3, "h": 2},
+    {"i": "p95-latency", "x": 3, "y": 1, "w": 3, "h": 2},
+    {"i": "traffic-rps", "x": 6, "y": 1, "w": 3, "h": 2},
+    {"i": "error-count", "x": 9, "y": 1, "w": 3, "h": 2},
+    {"i": "request-rate-ts", "x": 0, "y": 3, "w": 6, "h": 3},
+    {"i": "error-rate-ts", "x": 6, "y": 3, "w": 6, "h": 3},
+    {"i": "latency-heatmap", "x": 0, "y": 6, "w": 12, "h": 3},
+    {"i": "top-routes", "x": 0, "y": 9, "w": 6, "h": 4},
+    {"i": "recent-errors", "x": 6, "y": 9, "w": 6, "h": 4}
+  ]
+}

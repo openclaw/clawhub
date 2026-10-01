@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveHome } from "../homedir.js";
-import { resolveClawdbotDefaultWorkspace, resolveClawdbotSkillRoots } from "./clawdbotConfig.js";
+import { resolveClawdbotDefaultWorkspace } from "./clawdbotConfig.js";
 
 const originalEnv = { ...process.env };
 
@@ -12,65 +12,7 @@ afterEach(() => {
   process.env = { ...originalEnv };
 });
 
-describe("resolveClawdbotSkillRoots", () => {
-  it("reads JSON5 config and resolves per-agent + shared skill roots", async () => {
-    const base = await mkdtemp(join(tmpdir(), "clawhub-clawdbot-"));
-    const home = join(base, "home");
-    const stateDir = join(base, "state");
-    const configPath = join(base, "clawdbot.json");
-    const openclawStateDir = join(base, "openclaw-state");
-
-    process.env.HOME = home;
-    process.env.CLAWDBOT_STATE_DIR = stateDir;
-    process.env.CLAWDBOT_CONFIG_PATH = configPath;
-    process.env.OPENCLAW_STATE_DIR = openclawStateDir;
-    process.env.OPENCLAW_CONFIG_PATH = join(openclawStateDir, "openclaw.json");
-
-    const config = `{
-      // JSON5 comments + trailing commas supported
-      agents: {
-        defaults: { workspace: '~/clawd-main', },
-        list: [
-          { id: 'work', name: 'Work Bot', workspace: '~/clawd-work', },
-          { id: 'family', workspace: '~/clawd-family', },
-        ],
-      },
-      // legacy entries still supported
-      agent: { workspace: '~/clawd-legacy', },
-      routing: {
-        agents: {
-          work: { name: 'Work Bot', workspace: '~/clawd-work', },
-          family: { workspace: '~/clawd-family' },
-        },
-      },
-      skills: {
-        load: { extraDirs: ['~/shared/skills', '/opt/skills',], },
-      },
-    }`;
-    await writeFile(configPath, config, "utf8");
-
-    const { roots, labels } = await resolveClawdbotSkillRoots();
-
-    const expectedRoots = [
-      resolve(stateDir, "skills"),
-      resolve(openclawStateDir, "skills"),
-      resolve(home, "clawd-main", "skills"),
-      resolve(home, "clawd-work", "skills"),
-      resolve(home, "clawd-family", "skills"),
-      resolve(home, "shared", "skills"),
-      resolve("/opt/skills"),
-    ];
-
-    expect(roots).toEqual(expect.arrayContaining(expectedRoots));
-    expect(labels[resolve(stateDir, "skills")]).toBe("Shared skills");
-    expect(labels[resolve(openclawStateDir, "skills")]).toBe("OpenClaw: Shared skills");
-    expect(labels[resolve(home, "clawd-main", "skills")]).toBe("Agent: main");
-    expect(labels[resolve(home, "clawd-work", "skills")]).toBe("Agent: Work Bot");
-    expect(labels[resolve(home, "clawd-family", "skills")]).toBe("Agent: family");
-    expect(labels[resolve(home, "shared", "skills")]).toBe("Extra: skills");
-    expect(labels[resolve("/opt/skills")]).toBe("Extra: skills");
-  });
-
+describe("resolveClawdbotDefaultWorkspace", () => {
   it("resolves default workspace from agents.defaults and agents.list", async () => {
     const base = await mkdtemp(join(tmpdir(), "clawhub-clawdbot-default-"));
     const home = join(base, "home");
@@ -146,36 +88,8 @@ describe("resolveClawdbotSkillRoots", () => {
     await mkdir(join(base, "config"), { recursive: true });
     await writeFile(configPath, config, "utf8");
 
-    const { roots, labels } = await resolveClawdbotSkillRoots();
-
-    expect(roots).toEqual(
-      expect.arrayContaining([
-        resolve(stateDir, "skills"),
-        resolve(openclawStateDir, "skills"),
-        resolve(join(base, "workspace-main"), "skills"),
-      ]),
-    );
-    expect(labels[resolve(stateDir, "skills")]).toBe("Shared skills");
-    expect(labels[resolve(openclawStateDir, "skills")]).toBe("OpenClaw: Shared skills");
-    expect(labels[resolve(join(base, "workspace-main"), "skills")]).toBe("Agent: main");
-  });
-
-  it("returns shared skills root when config is missing", async () => {
-    const base = await mkdtemp(join(tmpdir(), "clawhub-clawdbot-missing-"));
-    const stateDir = join(base, "state");
-    const configPath = join(base, "missing", "clawdbot.json");
-    const openclawStateDir = join(base, "openclaw-state");
-
-    process.env.CLAWDBOT_STATE_DIR = stateDir;
-    process.env.CLAWDBOT_CONFIG_PATH = configPath;
-    process.env.OPENCLAW_STATE_DIR = openclawStateDir;
-    process.env.OPENCLAW_CONFIG_PATH = join(openclawStateDir, "openclaw.json");
-
-    const { roots, labels } = await resolveClawdbotSkillRoots();
-
-    expect(roots).toEqual([resolve(stateDir, "skills"), resolve(openclawStateDir, "skills")]);
-    expect(labels[resolve(stateDir, "skills")]).toBe("Shared skills");
-    expect(labels[resolve(openclawStateDir, "skills")]).toBe("OpenClaw: Shared skills");
+    const workspace = await resolveClawdbotDefaultWorkspace();
+    expect(workspace).toBe(resolve(join(base, "workspace-main")));
   });
 
   it("uses $HOME over os.homedir() for tilde expansion", async () => {
@@ -228,11 +142,42 @@ describe("resolveClawdbotSkillRoots", () => {
     }`;
     await writeFile(configPath, config, "utf8");
 
-    const { roots, labels } = await resolveClawdbotSkillRoots();
-    expect(roots).toEqual(
-      expect.arrayContaining([resolve(stateDir, "skills"), resolve(workspace, "skills")]),
+    const resolvedWorkspace = await resolveClawdbotDefaultWorkspace();
+    expect(resolvedWorkspace).toBe(resolve(workspace));
+  });
+
+  it("ignores malformed clawdbot values and falls back to OpenClaw", async () => {
+    const base = await mkdtemp(join(tmpdir(), "clawhub-clawdbot-malformed-"));
+    const configPath = join(base, "clawdbot.json");
+    const openclawConfigPath = join(base, "openclaw.json");
+    const workspace = join(base, "openclaw-main");
+
+    process.env.CLAWDBOT_CONFIG_PATH = configPath;
+    process.env.OPENCLAW_CONFIG_PATH = openclawConfigPath;
+
+    await writeFile(
+      configPath,
+      "{ agents: { defaults: { workspace: 123 }, list: { default: true } } }",
+      "utf8",
     );
-    expect(labels[resolve(stateDir, "skills")]).toBe("OpenClaw: Shared skills");
-    expect(labels[resolve(workspace, "skills")]).toBe("OpenClaw: Agent: main");
+    await writeFile(
+      openclawConfigPath,
+      `{ agents: { defaults: { workspace: "${workspace}" } } }`,
+      "utf8",
+    );
+
+    await expect(resolveClawdbotDefaultWorkspace()).resolves.toBe(resolve(workspace));
+  });
+
+  it("ignores malformed agent entries without throwing", async () => {
+    const base = await mkdtemp(join(tmpdir(), "clawhub-clawdbot-malformed-list-"));
+    const configPath = join(base, "clawdbot.json");
+
+    process.env.CLAWDBOT_CONFIG_PATH = configPath;
+    process.env.OPENCLAW_CONFIG_PATH = join(base, "missing-openclaw.json");
+
+    await writeFile(configPath, "{ agents: { list: [null, 123, { workspace: null }] } }", "utf8");
+
+    await expect(resolveClawdbotDefaultWorkspace()).resolves.toBeNull();
   });
 });

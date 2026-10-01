@@ -1,0 +1,25 @@
+{
+  "kind": "plugin_search_weekly",
+  "weekStart": 1788134400000,
+  "weekEnd": 1788739200000,
+  "minimumSearches": 3,
+  "dashboardUrl": "https://clawhub.ai/management?view=search-insights&endDay=1788739200000",
+  "totalSearches": 0,
+  "sourceCounts": {
+    "clawhubWeb": 0,
+    "openclawControlUi": 0
+  },
+  "classificationStatus": "unavailable",
+  "currentMetadataStatus": "unavailable",
+  "truncated": false,
+  "coverage": {
+    "dataThrough": null,
+    "collectionStartedAt": null,
+    "gapStart": null,
+    "gapEnd": null
+  },
+  "companyOpportunities": [],
+  "officialGaps": [],
+  "featuredCandidates": [],
+  "movers": []
+}

@@ -1,14 +1,40 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { toDayKey } from "./leaderboards";
+import { assertRankingMetricWritesAllowed } from "./rankingMetricsImportLock";
 
 type SkillStatDeltas = {
   downloads?: number;
   stars?: number;
-  comments?: number;
   installsCurrent?: number;
   installsAllTime?: number;
 };
+
+export type SkillStatReadable = {
+  stats: Partial<
+    Pick<Doc<"skills">["stats"], "downloads" | "stars" | "installsCurrent" | "installsAllTime">
+  >;
+  statsDownloads?: number;
+  statsStars?: number;
+  statsInstallsCurrent?: number;
+  statsInstallsAllTime?: number;
+  statsSkillsShInstalls?: number;
+  statsGithubStars?: number;
+};
+
+type ExternalSkillMetricSnapshot = {
+  skillsShInstalls?: number;
+  githubStars?: number;
+};
+
+function nonNegativeCount(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
+}
+
+function optionalNonNegativeCount(value: number | undefined): number | null {
+  return value === undefined ? null : nonNegativeCount(value);
+}
 
 /**
  * Read the canonical value of a migrated stat field from a skill document.
@@ -22,7 +48,7 @@ type SkillStatDeltas = {
  * rather than accessing `skill.stats.*` directly.
  */
 export function readCanonicalStat(
-  skill: Doc<"skills">,
+  skill: SkillStatReadable,
   field: "downloads" | "stars" | "installsCurrent" | "installsAllTime",
 ): number {
   const topLevelKey = `stats${field[0].toUpperCase()}${field.slice(1)}` as
@@ -33,16 +59,40 @@ export function readCanonicalStat(
   return typeof skill[topLevelKey] === "number" ? skill[topLevelKey]! : (skill.stats[field] ?? 0);
 }
 
+export function readSkillMetricSources(skill: SkillStatReadable) {
+  return {
+    clawHubDownloads: readCanonicalStat(skill, "downloads"),
+    skillsShInstalls: optionalNonNegativeCount(skill.statsSkillsShInstalls),
+    openClawInstallsCurrent: readCanonicalStat(skill, "installsCurrent"),
+    openClawInstallsAllTime: readCanonicalStat(skill, "installsAllTime"),
+    githubStars: optionalNonNegativeCount(skill.statsGithubStars),
+    bookmarks: readCanonicalStat(skill, "stars"),
+  };
+}
+
+export function readPublicDownloads(skill: SkillStatReadable): number {
+  return readCanonicalStat(skill, "downloads");
+}
+
+export function buildExternalSkillMetricPatch(snapshot: ExternalSkillMetricSnapshot) {
+  return {
+    ...(snapshot.skillsShInstalls === undefined
+      ? {}
+      : { statsSkillsShInstalls: nonNegativeCount(snapshot.skillsShInstalls) }),
+    ...(snapshot.githubStars === undefined
+      ? {}
+      : { statsGithubStars: nonNegativeCount(snapshot.githubStars) }),
+  };
+}
+
 export function applySkillStatDeltas(skill: Doc<"skills">, deltas: SkillStatDeltas) {
   const currentDownloads = readCanonicalStat(skill, "downloads");
   const currentStars = readCanonicalStat(skill, "stars");
   const currentInstallsCurrent = readCanonicalStat(skill, "installsCurrent");
   const currentInstallsAllTime = readCanonicalStat(skill, "installsAllTime");
 
-  const currentComments = skill.stats.comments;
   const nextDownloads = Math.max(0, currentDownloads + (deltas.downloads ?? 0));
   const nextStars = Math.max(0, currentStars + (deltas.stars ?? 0));
-  const nextComments = Math.max(0, currentComments + (deltas.comments ?? 0));
   const nextInstallsCurrent = Math.max(0, currentInstallsCurrent + (deltas.installsCurrent ?? 0));
   const nextInstallsAllTime = Math.max(0, currentInstallsAllTime + (deltas.installsAllTime ?? 0));
 
@@ -55,7 +105,6 @@ export function applySkillStatDeltas(skill: Doc<"skills">, deltas: SkillStatDelt
       ...skill.stats,
       downloads: nextDownloads,
       stars: nextStars,
-      comments: nextComments,
       installsCurrent: nextInstallsCurrent,
       installsAllTime: nextInstallsAllTime,
     },
@@ -74,6 +123,7 @@ export async function bumpDailySkillStats(
   const downloads = params.downloads ?? 0;
   const installs = params.installs ?? 0;
   if (downloads === 0 && installs === 0) return;
+  assertRankingMetricWritesAllowed();
 
   const day = toDayKey(params.now);
   const existing = await ctx.db

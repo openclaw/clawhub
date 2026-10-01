@@ -1,7 +1,21 @@
-import { expect, test } from "@playwright/test";
-import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
+import { expect, test, type Page } from "@playwright/test";
+import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 
 const navLabels = ["Skills", "Plugins"];
+
+async function headerLink(page: Page, label: string) {
+  let link = page.getByRole("link", { name: label, exact: true }).first();
+  if (await link.isVisible().catch(() => false)) return link;
+
+  const menuButton = page.getByRole("button", { name: "Open menu" });
+  if (await menuButton.isVisible().catch(() => false)) {
+    await menuButton.click();
+    link = page.getByRole("link", { name: label, exact: true }).first();
+  }
+
+  await expect(link).toBeVisible();
+  return link;
+}
 
 test("skills loads without error", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
@@ -10,20 +24,13 @@ test("skills loads without error", async ({ page }) => {
   await expectHealthyPage(page, errors);
 });
 
-test("souls loads without error", async ({ page }) => {
-  const errors = trackRuntimeErrors(page);
-  await page.goto("/souls", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1", { hasText: "SOUL.md discovery is on deck" })).toBeVisible();
-  await expectHealthyPage(page, errors);
-});
+for (const label of navLabels) {
+  test(`header menu ${label.toLowerCase()} route renders`, async ({ page }) => {
+    const errors = trackRuntimeErrors(page);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
 
-test("header menu routes render", async ({ page }) => {
-  const errors = trackRuntimeErrors(page);
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-
-  for (const label of navLabels) {
-    const link = page.getByRole("link", { name: label }).first();
-    await expect(link).toBeVisible();
+    const link = await headerLink(page, label);
     await link.click();
 
     if (label === "Skills") {
@@ -35,7 +42,7 @@ test("header menu routes render", async ({ page }) => {
       await expect(page).toHaveURL(/\/plugins(\?|$)/);
       await expect(page.locator("h1", { hasText: "Plugins" })).toBeVisible();
     }
-  }
 
-  await expectHealthyPage(page, errors);
-});
+    await expectHealthyPage(page, errors);
+  });
+}

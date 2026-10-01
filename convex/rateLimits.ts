@@ -1,85 +1,219 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./functions";
+import { components, internal } from "./_generated/api";
+import type { MutationCtx } from "./_generated/server";
+import { internalMutation } from "./functions";
+import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
-/**
- * Read-only rate limit check. Returns current status without writing anything.
- * This eliminates write conflicts for denied requests entirely.
- */
-export const getRateLimitStatusInternal = internalQuery({
+const DEFAULT_HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
+const MAX_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE = 1_000;
+const HTTP_RATE_LIMIT_KEY_METADATA_SHARDS = 64;
+const HTTP_RATE_LIMIT_KEY_METADATA_REFRESH_FRACTION = 0.5;
+const MAX_EXPIRED_HTTP_RATE_LIMIT_KEY_ROWS_PER_KEY = HTTP_RATE_LIMIT_KEY_METADATA_SHARDS * 2;
+const fixedWindowRateLimitConfigValidator = v.object({
+  kind: v.literal("fixed window"),
+  rate: v.number(),
+  period: v.number(),
+  capacity: v.optional(v.number()),
+  maxReserved: v.optional(v.number()),
+  shards: v.optional(v.number()),
+  start: v.optional(v.number()),
+});
+const rateLimitStatusValidator = v.union(
+  v.object({
+    ok: v.literal(true),
+    retryAfter: v.optional(v.number()),
+  }),
+  v.object({
+    ok: v.literal(false),
+    retryAfter: v.number(),
+  }),
+);
+
+type HttpRateLimitKeyWriteCtx = Pick<MutationCtx, "db">;
+
+function clampBatchSize(
+  requested: number | undefined,
+  defaultBatchSize: number,
+  maxBatchSize: number,
+) {
+  const requestedBatchSize = Number.isFinite(requested)
+    ? Math.floor(requested ?? defaultBatchSize)
+    : defaultBatchSize;
+  return Math.max(1, Math.min(requestedBatchSize, maxBatchSize));
+}
+
+function normalizeHttpRateLimitKeyShard(shard: number | undefined) {
+  const candidate = Number.isFinite(shard)
+    ? Math.floor(shard ?? 0)
+    : Math.floor(Math.random() * HTTP_RATE_LIMIT_KEY_METADATA_SHARDS);
+  return (
+    ((candidate % HTTP_RATE_LIMIT_KEY_METADATA_SHARDS) + HTTP_RATE_LIMIT_KEY_METADATA_SHARDS) %
+    HTTP_RATE_LIMIT_KEY_METADATA_SHARDS
+  );
+}
+
+async function touchHttpRateLimitKey(
+  ctx: HttpRateLimitKeyWriteCtx,
   args: {
-    key: v.string(),
-    limit: v.number(),
-    windowMs: v.number(),
+    name: string;
+    key: string;
+    shard?: number;
+    now?: number;
+    ttlMs?: number;
   },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const windowStart = Math.floor(now / args.windowMs) * args.windowMs;
-    const resetAt = windowStart + args.windowMs;
-    if (args.limit <= 0) {
-      return { allowed: false, remaining: 0, limit: args.limit, resetAt };
+) {
+  const now = Number.isFinite(args.now) ? (args.now ?? Date.now()) : Date.now();
+  const ttlMs =
+    Number.isFinite(args.ttlMs) && (args.ttlMs ?? 0) > 0
+      ? Math.floor(args.ttlMs ?? DEFAULT_HTTP_RATE_LIMIT_KEY_TTL_MS)
+      : DEFAULT_HTTP_RATE_LIMIT_KEY_TTL_MS;
+  const expiresAt = now + ttlMs;
+  const shard = normalizeHttpRateLimitKeyShard(args.shard);
+  const matches = await ctx.db
+    .query("httpRateLimitKeys")
+    .withIndex("by_name_and_key_and_shard", (q) =>
+      q.eq("name", args.name).eq("key", args.key).eq("shard", shard),
+    )
+    .take(10);
+  const [existing, ...duplicates] = matches;
+
+  if (existing) {
+    const refreshAfter = now + Math.floor(ttlMs * HTTP_RATE_LIMIT_KEY_METADATA_REFRESH_FRACTION);
+    if (duplicates.length === 0 && existing.expiresAt > refreshAfter) {
+      return { action: "retained" as const, expiresAt: existing.expiresAt, shard };
     }
+    await ctx.db.patch(existing._id, { lastTouchedAt: now, expiresAt });
+    for (const duplicate of duplicates) {
+      await ctx.db.delete(duplicate._id);
+    }
+    return { action: "updated" as const, expiresAt, shard };
+  }
 
-    const existing = await ctx.db
-      .query("rateLimits")
-      .withIndex("by_key_window", (q) => q.eq("key", args.key).eq("windowStart", windowStart))
-      .unique();
+  await ctx.db.insert("httpRateLimitKeys", {
+    name: args.name,
+    key: args.key,
+    shard,
+    lastTouchedAt: now,
+    expiresAt,
+  });
+  return { action: "inserted" as const, expiresAt, shard };
+}
 
-    const count = existing?.count ?? 0;
-    const allowed = count < args.limit;
-    return {
-      allowed,
-      remaining: Math.max(0, args.limit - count),
-      limit: args.limit,
-      resetAt,
-    };
+export const consumeHttpRateLimitKeyInternal = internalMutation({
+  args: {
+    name: v.string(),
+    key: v.string(),
+    config: fixedWindowRateLimitConfigValidator,
+  },
+  returns: rateLimitStatusValidator,
+  handler: async (ctx, args) => {
+    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+      name: args.name,
+      key: args.key,
+      config: args.config,
+    });
   },
 });
 
-/**
- * Consume one rate limit token. Only call this after getRateLimitStatusInternal
- * returns allowed=true. Includes a double-check to handle races between the
- * query and this mutation.
- */
-export const consumeRateLimitInternal = internalMutation({
+export const touchHttpRateLimitKeyInternal = internalMutation({
   args: {
+    name: v.string(),
     key: v.string(),
-    limit: v.number(),
-    windowMs: v.number(),
+    shard: v.optional(v.number()),
+    now: v.optional(v.number()),
+    ttlMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await touchHttpRateLimitKey(ctx, args);
+  },
+});
+
+async function hasActiveHttpRateLimitKeyMetadata(
+  ctx: HttpRateLimitKeyWriteCtx,
+  row: { name: string; key: string },
+  now: number,
+) {
+  const activeRows = await ctx.db
+    .query("httpRateLimitKeys")
+    .withIndex("by_name_and_key_and_expires_at", (q) =>
+      q.eq("name", row.name).eq("key", row.key).gte("expiresAt", now),
+    )
+    .take(1);
+  return activeRows.length > 0;
+}
+
+async function deleteExpiredHttpRateLimitKeyMetadata(
+  ctx: HttpRateLimitKeyWriteCtx,
+  row: { name: string; key: string },
+  now: number,
+  deletedRowIds: Set<string>,
+) {
+  const expiredRows = await ctx.db
+    .query("httpRateLimitKeys")
+    .withIndex("by_name_and_key_and_expires_at", (q) =>
+      q.eq("name", row.name).eq("key", row.key).lt("expiresAt", now),
+    )
+    .take(MAX_EXPIRED_HTTP_RATE_LIMIT_KEY_ROWS_PER_KEY);
+
+  let deleted = 0;
+  for (const expiredRow of expiredRows) {
+    if (deletedRowIds.has(expiredRow._id)) continue;
+    await ctx.db.delete(expiredRow._id);
+    deletedRowIds.add(expiredRow._id);
+    deleted += 1;
+  }
+  return deleted;
+}
+
+export const pruneHttpRateLimitKeysInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const windowStart = Math.floor(now / args.windowMs) * args.windowMs;
+    const batchSize = clampBatchSize(
+      args.batchSize,
+      DEFAULT_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE,
+      MAX_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE,
+    );
+    const stale = await ctx.db
+      .query("httpRateLimitKeys")
+      .withIndex("by_expires_at", (q) => q.lt("expiresAt", now))
+      .take(batchSize);
 
-    const existing = await ctx.db
-      .query("rateLimits")
-      .withIndex("by_key_window", (q) => q.eq("key", args.key).eq("windowStart", windowStart))
-      .unique();
+    const resetKeys = new Set<string>();
+    const deletedRowIds = new Set<string>();
+    let deleted = 0;
 
-    // Double-check: another request may have consumed the last token
-    // between our query and this mutation
-    if (existing && existing.count >= args.limit) {
-      return { allowed: false, remaining: 0 };
+    for (const row of stale) {
+      if (deletedRowIds.has(row._id)) continue;
+
+      const key = `${row.name}\0${row.key}`;
+      if (await hasActiveHttpRateLimitKeyMetadata(ctx, row, now)) {
+        await ctx.db.delete(row._id);
+        deletedRowIds.add(row._id);
+        deleted += 1;
+        continue;
+      }
+
+      if (!resetKeys.has(key)) {
+        await ctx.runMutation(components.rateLimiter.lib.resetRateLimit, {
+          name: row.name,
+          key: row.key,
+        });
+        resetKeys.add(key);
+      }
+      deleted += await deleteExpiredHttpRateLimitKeyMetadata(ctx, row, now, deletedRowIds);
     }
 
-    if (!existing) {
-      await ctx.db.insert("rateLimits", {
-        key: args.key,
-        windowStart,
-        count: 1,
-        limit: args.limit,
-        updatedAt: now,
+    const hasMore = stale.length === batchSize;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.rateLimits.pruneHttpRateLimitKeysInternal, {
+        batchSize,
       });
-      return { allowed: true, remaining: Math.max(0, args.limit - 1) };
     }
 
-    await ctx.db.patch(existing._id, {
-      count: existing.count + 1,
-      limit: args.limit,
-      updatedAt: now,
-    });
-    return {
-      allowed: true,
-      remaining: Math.max(0, args.limit - existing.count - 1),
-    };
+    return { deleted, hasMore };
   },
 });

@@ -3,10 +3,11 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 export const Route = createFileRoute("/upload")({
   validateSearch: (search) => ({
     updateSlug: typeof search.updateSlug === "string" ? search.updateSlug : undefined,
+    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
   }),
   beforeLoad: ({ search }) => {
     throw redirect({
-      to: "/publish-skill",
+      to: "/skills/publish",
       search,
     });
   },

@@ -1,0 +1,8 @@
+{
+  "name": "@openclaw/hosted-e2e",
+  "version": "1.0.0",
+  "type": "module",
+  "openclaw": {
+    "claw": "CLAW.md"
+  }
+}

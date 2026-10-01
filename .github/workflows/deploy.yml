@@ -12,10 +12,25 @@ on:
           - full
           - backend
           - frontend
+      allow_deleting_large_indexes:
+        description: "Allow Convex to delete large indexes"
+        required: true
+        default: false
+        type: boolean
+      active_rollout_deploy_confirm:
+        description: "For backend-only deploys with active external-skill rollouts, enter: pause-and-restore-active-rollouts"
+        required: false
+        default: ""
+        type: string
 
+# Keep the production lifecycle group aligned with skills-sh-sync.yml so rollout
+# pauses cannot interrupt a catalog sync or its rollback.
 concurrency:
   group: deploy-production
-  cancel-in-progress: true
+  queue: max
+  cancel-in-progress: false
+
+permissions: {}
 
 jobs:
   validate-deploy-request:
@@ -37,9 +52,20 @@ jobs:
 
       - name: Resolve deploy mode
         id: mode
+        env:
+          ACTIVE_ROLLOUT_DEPLOY_CONFIRM: ${{ inputs.active_rollout_deploy_confirm }}
         run: |
           set -euo pipefail
           target="${{ inputs.target }}"
+          rollout_confirmation="$ACTIVE_ROLLOUT_DEPLOY_CONFIRM"
+          if [[ -n "$rollout_confirmation" && "$target" != "backend" ]]; then
+            echo "::error::Active rollout pause/restore is supported only for backend deploys."
+            exit 1
+          fi
+          if [[ -n "$rollout_confirmation" && "$rollout_confirmation" != "pause-and-restore-active-rollouts" ]]; then
+            echo "::error::Invalid active rollout deploy confirmation."
+            exit 1
+          fi
           case "$target" in
             full)
               echo "deploy_backend=true" >> "$GITHUB_OUTPUT"
@@ -67,15 +93,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: validate-deploy-request
+    outputs:
+      deployment_url: ${{ steps.vercel.outputs.deployment_url }}
+    permissions:
+      contents: read
+      statuses: read
     environment:
       name: Production
       url: https://clawhub.ai
     env:
-      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-      PLAYWRIGHT_AUTH_STORAGE_STATE_JSON: ${{ secrets.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON }}
       PLAYWRIGHT_BASE_URL: https://clawhub.ai
     steps:
       - name: Check deploy configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           set -euo pipefail
           missing=()
@@ -90,37 +121,188 @@ jobs:
           fi
 
           echo "Deploy target: ${{ needs.validate-deploy-request.outputs.target }}"
+          echo "Allow deleting large Convex indexes: ${{ inputs.allow_deleting_large_indexes }}"
 
-          if [[ -z "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" ]]; then
-            echo "PLAYWRIGHT_AUTH_STORAGE_STATE_JSON not set; authenticated smoke will be skipped."
-          fi
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/checkout@v6
-
-      - uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: 1.3.10
 
       - name: Install
         run: bun install --frozen-lockfile
 
+      - name: Inspect external skill rollout modes
+        id: rollout
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          ACTIVE_ROLLOUT_DEPLOY_CONFIRM: ${{ inputs.active_rollout_deploy_confirm }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          names="$(bunx convex env list --names-only --prod)"
+          pause_required=false
+
+          for name in \
+            CLAWHUB_SKILLS_SH_ROLLOUT_MODE \
+            CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE
+          do
+            value=""
+            if grep -Fxq "$name" <<< "$names"; then
+              value="$(bunx convex env get "$name" --prod)"
+            fi
+            case "$value" in
+              ""|off)
+                expected_mode=off
+                restore_mode=""
+                ;;
+              test|production)
+                expected_mode="$value"
+                restore_mode="$value"
+                pause_required=true
+                ;;
+              *)
+                echo "::error::$name has unsupported rollout mode '$value'"
+                exit 1
+                ;;
+            esac
+
+            case "$name" in
+              CLAWHUB_SKILLS_SH_ROLLOUT_MODE)
+                echo "skills_sh_expected_mode=$expected_mode" >> "$GITHUB_OUTPUT"
+                echo "skills_sh_restore_mode=$restore_mode" >> "$GITHUB_OUTPUT"
+                ;;
+              CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE)
+                echo "github_skill_sync_expected_mode=$expected_mode" >> "$GITHUB_OUTPUT"
+                echo "github_skill_sync_restore_mode=$restore_mode" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
+          done
+
+          echo "pause_required=$pause_required" >> "$GITHUB_OUTPUT"
+          if [[ "$pause_required" == "true" && "$ACTIVE_ROLLOUT_DEPLOY_CONFIRM" != "pause-and-restore-active-rollouts" ]]; then
+            echo "::error::Active external-skill rollouts require a backend deploy with active_rollout_deploy_confirm=pause-and-restore-active-rollouts."
+            exit 1
+          fi
+
+      - name: Pause external skill rollouts
+        if: steps.rollout.outputs.pause_required == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          GITHUB_SKILL_SYNC_RESTORE_MODE: ${{ steps.rollout.outputs.github_skill_sync_restore_mode }}
+          SKILLS_SH_RESTORE_MODE: ${{ steps.rollout.outputs.skills_sh_restore_mode }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$SKILLS_SH_RESTORE_MODE" ]]; then
+            bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE off --prod
+          fi
+          if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]]; then
+            bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE off --prod
+          fi
+
+      - name: Stamp Convex runtime environment
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex env set CLAWHUB_ENV production --prod
+
       - name: Stamp Convex build SHA
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex env set APP_BUILD_SHA "${GITHUB_SHA}" --prod
 
       - name: Stamp Convex deploy time
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex env set APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --prod
 
       - name: Deploy Convex
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
-        run: bun run convex:deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.allow_deleting_large_indexes }}" == "true" ]]; then
+            bunx convex deploy --typecheck=disable --yes --allow-deleting-large-indexes
+          else
+            bun run convex:deploy
+          fi
+
+      - name: Publish promotions feed snapshot
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex run promotionsFeed:publishInternal --prod
 
       - name: Verify Convex contract
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bun run verify:convex-contract -- --prod
 
+      - name: Verify dark rollout capabilities
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e '
+            .environment == "production" and
+            .skillsSh.mode == "off" and
+            .skillsSh.runtimeEnabled == false and
+            .skillsSh.publicCatalogEnabled == false and
+            .skillsSh.scanPlanningEnabled == false and
+            .skillsSh.scanAdmissionEnabled == false and
+            .githubSkillSync.mode == "off" and
+            .githubSkillSync.selfServiceEnabled == false
+          ' <<< "$capabilities"
+
+      - name: Restore external skill rollouts
+        if: always() && steps.rollout.outputs.pause_required == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          GITHUB_SKILL_SYNC_RESTORE_MODE: ${{ steps.rollout.outputs.github_skill_sync_restore_mode }}
+          SKILLS_SH_RESTORE_MODE: ${{ steps.rollout.outputs.skills_sh_restore_mode }}
+        run: |
+          set -uo pipefail
+          restore_failed=0
+          if [[ -n "$SKILLS_SH_RESTORE_MODE" ]] &&
+            ! bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE "$SKILLS_SH_RESTORE_MODE" --prod
+          then
+            echo "::error::Failed to restore CLAWHUB_SKILLS_SH_ROLLOUT_MODE."
+            restore_failed=1
+          fi
+          if [[ -n "$GITHUB_SKILL_SYNC_RESTORE_MODE" ]] &&
+            ! bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE "$GITHUB_SKILL_SYNC_RESTORE_MODE" --prod
+          then
+            echo "::error::Failed to restore CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE."
+            restore_failed=1
+          fi
+          exit "$restore_failed"
+
+      - name: Verify restored external skill rollouts
+        if: always() && steps.rollout.outputs.pause_required == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          GITHUB_SKILL_SYNC_EXPECTED_MODE: ${{ steps.rollout.outputs.github_skill_sync_expected_mode }}
+          SKILLS_SH_EXPECTED_MODE: ${{ steps.rollout.outputs.skills_sh_expected_mode }}
+        run: |
+          set -euo pipefail
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e \
+            --arg skills_sh_mode "$SKILLS_SH_EXPECTED_MODE" \
+            --arg github_skill_sync_mode "$GITHUB_SKILL_SYNC_EXPECTED_MODE" \
+            '
+              .environment == "production" and
+              .skillsSh.mode == $skills_sh_mode and
+              .githubSkillSync.mode == $github_skill_sync_mode
+            ' <<< "$capabilities"
+
       - name: Wait for Vercel production deployment
+        id: vercel
         if: needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -130,17 +312,26 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in {1..90}; do
-            if ! state="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
-              --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | .state' \
+            if ! status_json="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+              --jq '.statuses[] | select(.context == env.VERCEL_STATUS_CONTEXT) | {state, target_url, description} | @base64' \
               2>/dev/null | head -n1)"; then
-              echo "GitHub status check failed for $GITHUB_SHA; retrying..."
+              echo "GitHub status check failed for $GITHUB_SHA on attempt $attempt; retrying..."
               sleep 10
               continue
+            fi
+
+            if [[ -z "$status_json" ]]; then
+              state=""
+              target_url=""
+            else
+              state="$(printf '%s' "$status_json" | base64 -d | jq -r '.state // ""')"
+              target_url="$(printf '%s' "$status_json" | base64 -d | jq -r '.target_url // ""')"
             fi
 
             case "$state" in
               success)
                 echo "Vercel production deployment ready for $GITHUB_SHA"
+                echo "deployment_url=$target_url" >> "$GITHUB_OUTPUT"
                 exit 0
                 ;;
               failure|error)
@@ -148,10 +339,10 @@ jobs:
                 exit 1
                 ;;
               pending)
-                echo "Vercel deployment pending for $GITHUB_SHA; waiting..."
+                echo "Vercel deployment pending for $GITHUB_SHA on attempt $attempt; waiting..."
                 ;;
               *)
-                echo "Vercel status for $GITHUB_SHA not published yet; waiting..."
+                echo "Vercel status for $GITHUB_SHA not published yet on attempt $attempt; waiting..."
                 ;;
             esac
 
@@ -162,15 +353,82 @@ jobs:
           exit 1
 
       - name: Install Playwright browser
-        if: needs.validate-deploy-request.outputs.run_smoke == 'true'
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
         run: bunx playwright install --with-deps chromium webkit
 
+      - name: Smoke test production HTTP
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true'
+        run: bun run test:e2e:prod-http
+
       - name: Write authenticated storage state
-        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && env.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON != ''
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
+        env:
+          PLAYWRIGHT_AUTH_STORAGE_STATE_JSON: ${{ secrets.PLAYWRIGHT_AUTH_STORAGE_STATE_JSON }}
         run: |
+          if [[ -z "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" ]]; then
+            echo "PLAYWRIGHT_AUTH_STORAGE_STATE_JSON not set; authenticated smoke will be skipped."
+            exit 0
+          fi
           echo "$PLAYWRIGHT_AUTH_STORAGE_STATE_JSON" > "$RUNNER_TEMP/playwright-auth.json"
           echo "PLAYWRIGHT_AUTH_STORAGE_STATE=$RUNNER_TEMP/playwright-auth.json" >> "$GITHUB_ENV"
 
-      - name: Smoke test production
-        if: needs.validate-deploy-request.outputs.run_smoke == 'true'
-        run: bunx playwright test e2e/menu-smoke.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
+      - name: Smoke test production UI
+        if: needs.validate-deploy-request.outputs.run_smoke == 'true' && needs.validate-deploy-request.outputs.deploy_frontend == 'true'
+        run: bunx playwright test --workers=1 e2e/menu-smoke.pw.test.ts e2e/publish-entry-workflows.pw.test.ts e2e/upload-auth-smoke.pw.test.ts
+
+  tag-production-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - validate-deploy-request
+      - deploy-production
+    if: needs.validate-deploy-request.outputs.deploy_frontend == 'true'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Tag production frontend deployment
+        env:
+          DEPLOY_TARGET: ${{ needs.validate-deploy-request.outputs.target }}
+          DEPLOYMENT_URL: ${{ needs.deploy-production.outputs.deployment_url }}
+        run: |
+          set -euo pipefail
+          deployed_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          tag_name="deploy/prod/$(date -u +"%Y%m%d-%H%M%SZ")-${GITHUB_SHA::7}"
+          version_prefix="prod/v$(date -u +"%Y.%m.%d")."
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          next_version=1
+          while IFS= read -r existing_tag; do
+            existing_tag="${existing_tag#refs/tags/}"
+            existing_tag="${existing_tag%\^\{\}}"
+            suffix="${existing_tag##*.}"
+            if [[ "$existing_tag" == "$version_prefix"* && "$suffix" =~ ^[0-9]+$ && "$suffix" -ge "$next_version" ]]; then
+              next_version=$((suffix + 1))
+            fi
+          done < <(git ls-remote --tags origin "refs/tags/${version_prefix}*" | awk '{print $2}' | sort -u)
+          version_tag="${version_prefix}${next_version}"
+
+          git tag -a "$tag_name" "$GITHUB_SHA" \
+            -m "Production frontend deploy $tag_name" \
+            -m "SHA: $GITHUB_SHA" \
+            -m "Version: $version_tag" \
+            -m "Deployed at: $deployed_at" \
+            -m "Target: $DEPLOY_TARGET" \
+            -m "Vercel: ${DEPLOYMENT_URL:-unknown}" \
+            -m "Run: $run_url"
+          git tag -a "$version_tag" "$GITHUB_SHA" \
+            -m "Production frontend deploy $version_tag" \
+            -m "SHA: $GITHUB_SHA" \
+            -m "Timestamp tag: $tag_name" \
+            -m "Deployed at: $deployed_at" \
+            -m "Target: $DEPLOY_TARGET" \
+            -m "Vercel: ${DEPLOYMENT_URL:-unknown}" \
+            -m "Run: $run_url"
+          git push origin "refs/tags/$tag_name" "refs/tags/$version_tag"

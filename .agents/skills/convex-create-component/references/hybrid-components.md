@@ -10,7 +10,8 @@ This can help when:
 
 - the user wants a local install but also shared package logic
 - the component needs extension points or override hooks
-- some logic should live in normal TypeScript code outside the component boundary
+- some logic should live in normal TypeScript code outside the component
+  boundary
 
 ## Default Advice
 

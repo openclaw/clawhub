@@ -79,6 +79,8 @@ function buildExistingSkill(overrides: Partial<SkillDoc> = {}): SkillDoc {
     },
     tags: { latest: PREV_LATEST_VERSION_ID },
     capabilityTags: ["cap-v2"],
+    categories: ["development"],
+    topics: ["typescript"],
     stats: {
       downloads: 0,
       installsCurrent: 0,
@@ -115,6 +117,8 @@ function buildPublishArgs(overrides?: Partial<Record<string, unknown>>) {
     changelogSource: "user",
     tags: [] as string[],
     capabilityTags: ["cap-v1-backport"],
+    categories: ["operations"],
+    topics: ["backport-only"],
     summary: "Summary of v1.0.1 backport",
     fingerprint: "f".repeat(64),
     files: [
@@ -152,7 +156,11 @@ type Captured = {
   allPatches: Array<{ id: string; value: Record<string, unknown> }>;
 };
 
-function buildDb(skill: SkillDoc, captured: Captured) {
+function buildDb(
+  skill: SkillDoc,
+  captured: Captured,
+  existingVersion?: Record<string, unknown> | null,
+) {
   // Trigger-driven code (syncSkillSearchDigestForSkill -> getOwnerPublisher)
   // will ask for publishers via `db.get(ownerPublisherId)`. Return null so
   // getOwnerPublisher falls back to resolving the publisher from the owner user.
@@ -206,6 +214,9 @@ function buildDb(skill: SkillDoc, captured: Captured) {
             if (name === "by_slug") {
               return { unique: async () => skill };
             }
+            if (name === "by_owner_publisher_slug" || name === "by_owner_slug") {
+              return { unique: async () => skill };
+            }
             if (name === "by_owner") {
               return { order: () => ({ take: async () => [skill] }) };
             }
@@ -216,7 +227,11 @@ function buildDb(skill: SkillDoc, captured: Captured) {
       if (table === "skillSlugAliases") {
         return {
           withIndex: (name: string) => {
-            if (name !== "by_slug") {
+            if (
+              name !== "by_slug" &&
+              name !== "by_owner_publisher_slug" &&
+              name !== "by_owner_slug"
+            ) {
               throw new Error(`unexpected skillSlugAliases index ${name}`);
             }
             return { unique: async () => null };
@@ -226,10 +241,36 @@ function buildDb(skill: SkillDoc, captured: Captured) {
       if (table === "skillVersions") {
         return {
           withIndex: (name: string) => {
-            if (name !== "by_skill_version") {
-              throw new Error(`unexpected skillVersions index ${name}`);
+            if (name === "by_skill_version") {
+              return { unique: async () => existingVersion ?? null };
             }
-            return { unique: async () => null };
+            if (name === "by_skill_active_created") {
+              return {
+                order: () => ({
+                  take: async (limit: number) => {
+                    const insertedVersion = captured.versionInserted
+                      ? {
+                          _id: NEW_VERSION_ID,
+                          skillId: SKILL_ID,
+                          softDeletedAt: undefined,
+                          ...captured.versionInserted,
+                        }
+                      : null;
+                    const previousVersion = {
+                      _id: PREV_LATEST_VERSION_ID,
+                      skillId: SKILL_ID,
+                      softDeletedAt: undefined,
+                      version: "2.0.0",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                    };
+                    return [insertedVersion, previousVersion].filter(Boolean).slice(0, limit);
+                  },
+                }),
+              };
+            }
+            throw new Error(`unexpected skillVersions index ${name}`);
           },
         };
       }
@@ -257,9 +298,7 @@ function buildDb(skill: SkillDoc, captured: Captured) {
         return {
           withIndex: (
             name: string,
-            build:
-              | ((q: { eq: (field: string, value: string) => unknown }) => unknown)
-              | undefined,
+            build: ((q: { eq: (field: string, value: string) => unknown }) => unknown) | undefined,
           ) => {
             if (name !== "by_version") {
               throw new Error(`unexpected skillEmbeddings index ${name}`);
@@ -312,6 +351,13 @@ function buildDb(skill: SkillDoc, captured: Captured) {
           }),
         };
       }
+      if (table === "skillTopicSearchDigest") {
+        return {
+          withIndex: () => ({
+            collect: async () => [],
+          }),
+        };
+      }
       if (table === "reservedSlugs") {
         return {
           withIndex: (name: string) => {
@@ -328,8 +374,7 @@ function buildDb(skill: SkillDoc, captured: Captured) {
       // convex-helpers `triggers` calls innerDb.patch(tableName, id, value)
       // for tables with registered triggers (e.g. "skills"); otherwise it
       // falls back to innerDb.patch(id, value).
-      const [id, value] =
-        arg2 !== undefined ? [arg1 as string, arg2] : [arg0 as string, arg1];
+      const [id, value] = arg2 !== undefined ? [arg1 as string, arg2] : [arg0 as string, arg1];
 
       captured.allPatches.push({
         id: id,
@@ -365,7 +410,7 @@ function buildDb(skill: SkillDoc, captured: Captured) {
       }
       // Trigger side-effect / digest tables: accept silently so the async
       // digest plumbing invoked by the skills trigger doesn't fail the test.
-      if (table === "skillSearchDigest") {
+      if (table === "skillSearchDigest" || table === "skillTopicSearchDigest") {
         return `${table}:mock`;
       }
       // Intentionally throw for publishers / publisherMembers so
@@ -380,7 +425,7 @@ function buildDb(skill: SkillDoc, captured: Captured) {
   return db;
 }
 
-function buildCtx(skill: SkillDoc) {
+function buildCtx(skill: SkillDoc, existingVersion?: Record<string, unknown> | null) {
   const captured: Captured = {
     skillPatches: [],
     embeddingInserts: [],
@@ -388,7 +433,7 @@ function buildCtx(skill: SkillDoc) {
     versionInserted: null,
     allPatches: [],
   };
-  const db = buildDb(skill, captured);
+  const db = buildDb(skill, captured, existingVersion);
   const ctx = {
     db,
     scheduler: { runAfter: vi.fn() },
@@ -397,8 +442,36 @@ function buildCtx(skill: SkillDoc) {
 }
 
 describe("skills.insertVersion latest-tag protection", () => {
-  it("promotes latest when publishing a strictly higher version", async () => {
+  it("tells authors to increment the version when publishing a duplicate skill version", async () => {
     const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill, {
+      _id: "skillVersions:existing",
+      skillId: SKILL_ID,
+      version: "1.0.1",
+      softDeletedAt: 123,
+      ownerDeletedAt: 123,
+      ownerDeletedBy: OWNER_USER_ID,
+    });
+
+    await expect(
+      insertVersionHandler(ctx as never, buildPublishArgs({ version: "1.0.1" }) as never),
+    ).rejects.toThrow("Version 1.0.1 already exists. Increment the version number and try again.");
+    expect(captured.versionInserted).toBeNull();
+  });
+
+  it("promotes latest when publishing a strictly higher version", async () => {
+    const skill = buildExistingSkill({
+      inferredCategories: ["automation"],
+      inferredTopics: ["Old inference"],
+      inferredFromVersionId: PREV_LATEST_VERSION_ID,
+      inferredCategoryConfidence: "high",
+      inferredTopicConfidence: "high",
+      inferredClassifierVersion: "taxonomy-prototype-v9",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredInputHash: "category-hash",
+      inferredTopicInputHash: "topic-hash",
+      inferredAt: 123,
+    });
     const { ctx, captured } = buildCtx(skill);
 
     const result = await insertVersionHandler(
@@ -407,7 +480,6 @@ describe("skills.insertVersion latest-tag protection", () => {
         version: "2.1.0",
         displayName: "My Skill v2.1",
         summary: "Summary of v2.1.0",
-        capabilityTags: ["cap-v2.1"],
       }) as never,
     );
 
@@ -422,12 +494,25 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(finalPatch).toMatchObject({
       latestVersionId: NEW_VERSION_ID,
       displayName: "My Skill v2.1",
-      capabilityTags: ["cap-v2.1"],
       tags: expect.objectContaining({ latest: NEW_VERSION_ID }),
     });
     expect((finalPatch as Record<string, unknown>).latestVersionSummary).toMatchObject({
       version: "2.1.0",
     });
+    for (const field of [
+      "inferredCategories",
+      "inferredTopics",
+      "inferredFromVersionId",
+      "inferredCategoryConfidence",
+      "inferredTopicConfidence",
+      "inferredClassifierVersion",
+      "inferredTopicClassifierVersion",
+      "inferredInputHash",
+      "inferredTopicInputHash",
+      "inferredAt",
+    ]) {
+      expect(finalPatch).toHaveProperty(field, undefined);
+    }
 
     // New embedding is the latest; the previous latest embedding is demoted.
     expect(captured.embeddingInserts[0]).toMatchObject({
@@ -441,8 +526,64 @@ describe("skills.insertVersion latest-tag protection", () => {
     });
   });
 
-  it("does not clobber latest when publishing an older (backport) version", async () => {
+  it("clears a stale hosted presentation icon when the new latest omits it", async () => {
+    const skill = buildExistingSkill({
+      icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
+    });
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({ version: "2.1.0", icon: undefined }) as never,
+    );
+
+    expect(captured.skillPatches.at(-1)).toHaveProperty("icon", undefined);
+  });
+
+  it("preserves a legacy publisher icon when the new latest omits presentation metadata", async () => {
+    const skill = buildExistingSkill({ icon: "lucide:Plug" });
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({ version: "2.1.0", icon: undefined }) as never,
+    );
+
+    expect(captured.skillPatches.at(-1)).toMatchObject({ icon: "lucide:Plug" });
+  });
+
+  it("publishes suspicious prepublication results as active and flagged", async () => {
     const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill);
+    const llmAnalysis = {
+      status: "completed",
+      verdict: "suspicious",
+      summary: "Review before installing.",
+      checkedAt: 123,
+    };
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "2.1.0",
+        llmAnalysis,
+      }) as never,
+    );
+
+    expect(captured.versionInserted).toMatchObject({ llmAnalysis });
+    expect(captured.skillPatches.at(-1)).toMatchObject({
+      moderationStatus: "active",
+      moderationVerdict: "clean",
+      moderationFlags: ["flagged.review"],
+    });
+  });
+
+  it("does not clobber latest when publishing an older (backport) version", async () => {
+    const skill = buildExistingSkill({
+      inferredCategories: ["automation"],
+      inferredTopics: ["Old inference"],
+      inferredFromVersionId: PREV_LATEST_VERSION_ID,
+    });
     const { ctx, captured } = buildCtx(skill);
 
     const result = await insertVersionHandler(
@@ -451,7 +592,6 @@ describe("skills.insertVersion latest-tag protection", () => {
         version: "1.0.1",
         displayName: "My Skill v1 backport",
         summary: "Summary of v1.0.1 backport",
-        capabilityTags: ["cap-v1-backport"],
       }) as never,
     );
 
@@ -471,25 +611,22 @@ describe("skills.insertVersion latest-tag protection", () => {
     // Skill card fields must keep tracking the existing latest, not the backport.
     expect(finalPatch.displayName).toBe("My Skill v2");
     expect(finalPatch.summary).toBe("Summary of v2.0.0");
-    expect(finalPatch.capabilityTags).toEqual(["cap-v2"]);
 
     // `tags.latest` still points to the previous version.
-    expect(finalPatch.tags).toEqual(
-      expect.objectContaining({ latest: PREV_LATEST_VERSION_ID }),
-    );
+    expect(finalPatch.tags).toEqual(expect.objectContaining({ latest: PREV_LATEST_VERSION_ID }));
 
     // versions counter still increments on every publish, regardless of version order.
     expect(finalPatch.stats).toMatchObject({ versions: 2 });
+    expect(finalPatch).not.toHaveProperty("inferredCategories");
+    expect(finalPatch).not.toHaveProperty("inferredTopics");
+    expect(finalPatch).not.toHaveProperty("inferredFromVersionId");
   });
 
   it("keeps the previous latest embedding untouched on backport publishes", async () => {
     const skill = buildExistingSkill();
     const { ctx, captured } = buildCtx(skill);
 
-    await insertVersionHandler(
-      ctx as never,
-      buildPublishArgs({ version: "1.0.1" }) as never,
-    );
+    await insertVersionHandler(ctx as never, buildPublishArgs({ version: "1.0.1" }) as never);
 
     // New version embedding is NOT marked latest.
     expect(captured.embeddingInserts).toHaveLength(1);
@@ -566,9 +703,7 @@ describe("skills.insertVersion latest-tag protection", () => {
 
     const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
     expect(finalPatch.latestVersionId).toBe(PREV_LATEST_VERSION_ID);
-    expect(finalPatch.tags).toEqual(
-      expect.objectContaining({ latest: PREV_LATEST_VERSION_ID }),
-    );
+    expect(finalPatch.tags).toEqual(expect.objectContaining({ latest: PREV_LATEST_VERSION_ID }));
     // The case-variant tag must not leak into the stored tag map either.
     const tags = finalPatch.tags as Record<string, string>;
     expect(tags.LaTeSt).toBeUndefined();
@@ -596,7 +731,6 @@ describe("skills.insertVersion latest-tag protection", () => {
         version: "0.0.1",
         displayName: "My Skill v0",
         summary: "Summary of v0.0.1",
-        capabilityTags: ["cap-v0"],
       }) as never,
     );
 
@@ -605,7 +739,6 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(finalPatch.latestVersionSummary).toMatchObject({ version: "0.0.1" });
     expect(finalPatch.tags).toEqual(expect.objectContaining({ latest: NEW_VERSION_ID }));
     expect(finalPatch.displayName).toBe("My Skill v0");
-    expect(finalPatch.capabilityTags).toEqual(["cap-v0"]);
     expect(captured.embeddingInserts[0]).toMatchObject({ isLatest: true });
   });
 
@@ -685,9 +818,7 @@ describe("skills.insertVersion latest-tag protection", () => {
     const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
     expect(finalPatch.latestVersionId).toBe(NEW_VERSION_ID);
     expect(finalPatch.latestVersionSummary).toMatchObject({ version: "1.0.0" });
-    expect(finalPatch.tags).toEqual(
-      expect.objectContaining({ latest: NEW_VERSION_ID }),
-    );
+    expect(finalPatch.tags).toEqual(expect.objectContaining({ latest: NEW_VERSION_ID }));
     expect(captured.embeddingInserts[0]).toMatchObject({ isLatest: true });
   });
 

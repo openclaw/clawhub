@@ -1,0 +1,231 @@
+---
+summary: "How to author, publish, and discover experimental Claw packages."
+read_when:
+  - Authoring a Claw package
+  - Publishing a Claw to an experimental ClawHub deployment
+  - Discovering published Claws through the package API
+---
+
+# Experimental Claw packages
+
+A Claw is a versioned package that describes one complete OpenClaw agent and
+the reusable resources it needs. ClawHub stores and scans the package;
+OpenClaw owns local preview, consent, apply, update, and removal.
+
+Claw publication is experimental. The ClawHub deployment must set
+`CLAWHUB_EXPERIMENTAL_CLAWS=1`; otherwise the server rejects publication.
+This registry gate is independent from OpenClaw's
+`OPENCLAW_EXPERIMENTAL_CLAWS=1` consumer gate. Hosting does not enable local
+preview or installation, and enabling the OpenClaw CLI does not enable ClawHub
+publication or hosted discovery.
+
+## Package shape
+
+A publishable Claw is a normal package directory with a `package.json` that
+points to its manifest:
+
+```json
+{
+  "name": "@acme/github-triage",
+  "version": "1.0.0",
+  "openclaw": {
+    "claw": "CLAW.md"
+  }
+}
+```
+
+`CLAW.md` starts with the grouped Claw manifest as YAML frontmatter. A non-empty
+Markdown body is the portable agent prompt; OpenClaw applies its exact UTF-8
+contents as the managed `SOUL.md` for the new agent.
+
+```markdown
+---
+schemaVersion: 1
+agent:
+  id: github-triage
+  name: GitHub Triage
+  description: Reviews incoming issues.
+workspace:
+  files:
+    - source: workspace/reference.md
+      path: reference.md
+packages:
+  - kind: skill
+    source: clawhub
+    ref: "@acme/triage"
+    version: 1.2.0
+mcpServers: {}
+cronJobs: []
+---
+
+# GitHub Triage
+
+Reviews and classifies incoming GitHub issues.
+```
+
+JSON manifests remain compatible. Set `openclaw.claw` to a package-relative
+JSON file such as `openclaw.claw.json`; JSON has no Markdown body, so declare
+`workspace.bootstrapFiles.SOUL.md` explicitly when it needs the equivalent
+prompt.
+
+Do not combine a non-empty `CLAW.md` body with an explicit workspace file whose
+portable destination is `SOUL.md`. ClawHub rejects that ambiguous dual source.
+Headings and task lists in the body are prompt text, not package-time commands.
+
+Every `workspace.*.source` must name a file in the same package. Assets such as
+schemas, templates, examples, and images are portable ordinary workspace files;
+place them under paths such as `assets/`, `schemas/`, or `templates/` and declare
+them in `workspace.files`. Package names and versions must match `package.json`,
+dependency versions must be exact, and MCP environment values must remain
+unresolved `${ENV_VAR}` references.
+
+## Bootstrap and harness profiles
+
+An optional package-root `BOOTSTRAP.md` contains first-run instructions. It is
+seeded once by a supporting harness and remains separate from the reusable
+portable prompt in the `CLAW.md` body. Do not declare root `BOOTSTRAP.md` as a
+workspace destination; that path is reserved for the package-root file. ClawHub
+includes bootstrap presence, but never its contents, in the bounded catalog
+summary.
+
+Harness-specific tuning uses conventional package paths:
+
+```text
+profiles/openclaw.yml
+profiles/hermes.yml
+profiles/codex.yml
+```
+
+The `profiles/` namespace is reserved for these lowercase, single-file `.yml`
+paths. Each profile is a JSON-compatible YAML mapping. ClawHub validates the common shape and validates `profiles/openclaw.yml` against
+the shipped OpenClaw v1 consumer contract, including registered built-in tool
+profiles and bounded tool grants; it does not interpret foreign profiles. A
+harness discovers only its own profile and ignores the others when applying the
+package. The exact published artifact and its digest still cover every profile,
+bootstrap instruction, and asset.
+
+The retired `metadata.openclaw.config` pointer is rejected. Move that file to
+`profiles/openclaw.yml` and remove the metadata entry.
+
+OpenClaw-native extension packages belong in `profiles/openclaw.yml`, while
+portable MCP servers remain in `CLAW.md`:
+
+```yaml
+schemaVersion: 1
+agent:
+  tools:
+    profile: coding
+    allow: [read]
+extensions:
+  - id: issue-tools
+    kind: plugin
+    format: openclaw
+    source: clawhub
+    ref: "@acme/issue-tools"
+    version: 2.3.4
+```
+
+Extension ids and package references must be unique, and versions must be
+exact. Other harnesses may bind the same application needs using their own
+native profile model; the portable manifest does not impose a capability-name
+registry.
+
+## Validate, build, and publish
+
+Validate the source project and build its deterministic artifact with
+OpenClaw:
+
+```bash
+openclaw claws validate .
+openclaw claws build . --out ./github-triage-1.0.0.tgz
+```
+
+Preview that exact artifact without uploading it, then publish it through the
+existing authenticated package flow:
+
+```bash
+clawhub package publish ./github-triage-1.0.0.tgz --family claw --dry-run
+clawhub package publish ./github-triage-1.0.0.tgz --family claw --wait
+```
+
+The CLI detects `family: claw` when `package.json` contains `openclaw.claw`, so
+`--family claw` is optional for a well-formed package.
+
+Experimental Claw publication accepts only an already-built npm-pack `.tgz`,
+not a source directory or GitHub checkout. The CLI sends the local artifact
+SHA-256 with the request; ClawHub verifies it against the uploaded bytes before
+publication and returns the same digest through pending and final responses.
+
+Publication rejects:
+
+- a missing, invalid, or escaping `openclaw.claw` path;
+- a source folder instead of a built `.tgz`;
+- package identity or version mismatches;
+- a missing or mismatched expected artifact SHA-256;
+- malformed `CLAW.md` frontmatter or manifest fields;
+- a non-empty `CLAW.md` body combined with an explicit `SOUL.md` destination;
+- missing workspace source files or portable path collisions;
+- invalid package-root bootstrap instructions or conventional harness profiles;
+- the retired `metadata.openclaw.config` pointer;
+- floating skill/plugin versions and resolved MCP credentials.
+
+Accepted packages continue through ClawHub's existing ownership, moderation,
+static scanning, release, and artifact storage pipeline. The stored release
+retains the exact artifact plus a non-sensitive summary for later search and
+detail surfaces; downloads return those same bytes and digest, and ClawHub does
+not duplicate the full manifest into Convex storage.
+
+## Discover published Claws
+
+Enabled deployments expose Claws through the existing package API:
+
+```bash
+curl "https://clawhub.ai/api/v1/packages?family=claw"
+curl "https://clawhub.ai/api/v1/packages/search?q=triage&family=claw"
+curl "https://clawhub.ai/api/v1/packages/@acme%2Fgithub-triage"
+```
+
+List and search results use the normal package summary fields. Package and
+version detail responses may also include `clawManifestSummary`, which reports
+the agent identity, portable resource counts, harness-profile count,
+OpenClaw-profile count, and native extension count without exposing the full
+manifest or profile contents.
+
+When `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled, explicit `family=claw` filters
+are rejected, unscoped list and search results omit Claws, and named Claw reads
+return not found. Full manifests remain in exact artifacts and are never
+projected through public release responses.
+
+## Consume the experimental feed
+
+Enabled deployments publish eligible official Claws as a separate hosted feed:
+
+```bash
+curl "https://clawhub.ai/v1/feeds/claws"
+```
+
+This uses a dedicated experimental Claw feed contract rather than extending
+the stable plugin/skill catalog feed v1 schema.
+
+Each entry provides the exact package version, artifact SHA-256, publisher
+trust, and `clawManifestSummary`. Consumers resolve and verify that artifact,
+unpack it as a normal Claw package directory, and pass the directory to
+OpenClaw for local inspection or `claws add --dry-run`. ClawHub does not bypass
+OpenClaw's preview or consent boundary.
+
+The route returns `404` while `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled and is
+not advertised in the registry discovery document until the experimental gate
+is removed.
+
+Run the repeatable registry-to-OpenClaw proof against an OpenClaw Claws
+checkout with:
+
+```bash
+OPENCLAW_CLAWS_CHECKOUT=/path/to/openclaw \
+  bunx vitest run scripts/claws-feed-openclaw-e2e.test.ts --maxWorkers=1
+```
+
+The proof serves a deterministic hosted feed and package artifact, verifies the
+feed and downloaded digests, extracts the package, and invokes the actual
+OpenClaw source CLI with `claws add --dry-run --json` in an isolated state
+directory.

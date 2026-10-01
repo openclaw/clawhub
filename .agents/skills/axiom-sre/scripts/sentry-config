@@ -1,0 +1,19 @@
+#!/bin/bash
+# Get Sentry config for a deployment (wrapper for unified config)
+# Usage: eval "$(sentry-config <deployment>)"
+# Returns: SENTRY_URL, SENTRY_TOKEN, and optional slug fields
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOYMENT="${1:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: sentry-config <deployment>" >&2
+    echo "" >&2
+    echo "Available deployments:" >&2
+    "$SCRIPT_DIR/config" --list sentry | sed 's/^/  /' >&2
+    exit 1
+fi
+
+"$SCRIPT_DIR/config" sentry "$DEPLOYMENT"

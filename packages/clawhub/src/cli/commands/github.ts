@@ -4,11 +4,23 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
 
-const GITHUB_API = "https://api.github.com";
+const GITHUB_API = resolveGitHubApi();
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 const ZIP_USER_AGENT = "clawhub/package-publish";
+const GITHUB_RETRY_DELAYS_MS = [250, 500];
+const GITHUB_MAX_RATE_LIMIT_DELAY_MS = 5_000;
 
-export type ResolvedPublishSource =
+function resolveGitHubApi() {
+  const testUrl = process.env.CLAWHUB_TEST_GITHUB_API_URL?.trim();
+  if (process.env.NODE_ENV !== "test" || !testUrl) return "https://api.github.com";
+  const url = new URL(testUrl);
+  if (url.protocol !== "http:" || (url.hostname !== "127.0.0.1" && url.hostname !== "localhost")) {
+    throw new Error("CLAWHUB_TEST_GITHUB_API_URL must use loopback HTTP");
+  }
+  return url.toString().replace(/\/$/, "");
+}
+
+type ResolvedPublishSource =
   | {
       kind: "local";
       path: string;
@@ -22,7 +34,7 @@ export type ResolvedPublishSource =
       url: string;
     };
 
-export type LocalGitInfo = {
+type LocalGitInfo = {
   root: string;
   path: string;
   repo?: string;
@@ -30,7 +42,11 @@ export type LocalGitInfo = {
   ref?: string;
 };
 
-export type FetchedGitHubSource = {
+type GitHubRetryBudget = {
+  remainingRateLimitDelayMs: number;
+};
+
+type FetchedGitHubSource = {
   dir: string;
   source: {
     kind: "github";
@@ -46,38 +62,60 @@ export type FetchedGitHubSource = {
 
 export async function resolveSourceInput(
   input: string,
-  options: { workdir: string },
+  options: {
+    workdir: string;
+    localWorkdirs?: string[];
+    retryBudget?: GitHubRetryBudget;
+  },
 ): Promise<ResolvedPublishSource> {
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Path required");
+  const localWorkdirs = normalizeLocalWorkdirs(options.workdir, options.localWorkdirs);
 
   if (trimmed.startsWith("https://")) {
-    return await parseGitHubUrl(trimmed);
+    return await parseGitHubUrl(trimmed, options.retryBudget ?? createGitHubRetryBudget());
   }
 
   const shorthand = parseGitHubShorthand(trimmed);
   if (shorthand) {
-    const localPath = resolveLocalPath(options.workdir, trimmed);
-    const localStat = await stat(localPath).catch(() => null);
-    if (localStat?.isDirectory()) {
-      return { kind: "local", path: localPath };
+    for (const workdir of localWorkdirs) {
+      const localPath = resolveLocalPath(workdir, trimmed);
+      const localStat = await stat(localPath).catch(() => null);
+      if (localStat?.isDirectory()) {
+        return { kind: "local", path: localPath };
+      }
     }
     return shorthand;
   }
 
-  return { kind: "local", path: resolveLocalPath(options.workdir, trimmed) };
+  for (const workdir of localWorkdirs) {
+    const localPath = resolveLocalPath(workdir, trimmed);
+    if (await stat(localPath).catch(() => null)) {
+      return { kind: "local", path: localPath };
+    }
+  }
+
+  return { kind: "local", path: resolveLocalPath(localWorkdirs[0] ?? options.workdir, trimmed) };
 }
 
 export async function fetchGitHubSource(
   source: Extract<ResolvedPublishSource, { kind: "github" }>,
+  retryBudget = createGitHubRetryBudget(),
 ) {
   const token = process.env.GITHUB_TOKEN?.trim() || undefined;
   const repo = `${source.owner}/${source.repo}`;
   const repoUrl = `https://github.com/${repo}`;
   const resolvedRef =
-    source.ref?.trim() || (await resolveDefaultBranch(source.owner, source.repo, token));
-  const commit = await resolveCommitSha(source.owner, source.repo, resolvedRef, token);
-  const archiveBytes = await downloadGitHubZip(source.owner, source.repo, commit, token);
+    source.ref?.trim() ||
+    (await resolveDefaultBranch(source.owner, source.repo, token, retryBudget));
+  const commit = await resolveCommitSha(source.owner, source.repo, resolvedRef, token, retryBudget);
+  const archiveBytes = await downloadGitHubZip(
+    source.owner,
+    source.repo,
+    commit,
+    token,
+    retryBudget,
+  );
   const entries = stripSingleTopLevelFolder(unzipSync(archiveBytes));
   const publishPath = normalizeRepoSubpath(source.path);
   const tempDir = await mkdtemp(join(tmpdir(), "clawhub-github-publish-"));
@@ -185,6 +223,7 @@ function parseGitHubShorthand(
 
 async function parseGitHubUrl(
   input: string,
+  retryBudget: GitHubRetryBudget,
 ): Promise<Extract<ResolvedPublishSource, { kind: "github" }>> {
   let url: URL;
   try {
@@ -211,7 +250,13 @@ async function parseGitHubUrl(
     };
   }
 
-  const { ref, path } = await resolveGitHubUrlRefAndPath(owner, repo, kind, segments.slice(3));
+  const { ref, path } = await resolveGitHubUrlRefAndPath(
+    owner,
+    repo,
+    kind,
+    segments.slice(3),
+    retryBudget,
+  );
 
   return {
     kind: "github",
@@ -239,6 +284,11 @@ function resolveLocalPath(workdir: string, input: string) {
   return resolve(workdir, input);
 }
 
+function normalizeLocalWorkdirs(workdir: string, localWorkdirs?: string[]) {
+  const values = localWorkdirs?.length ? localWorkdirs : [workdir];
+  return Array.from(new Set(values.map((value) => resolve(value))));
+}
+
 function normalizePath(pathValue: string) {
   return pathValue
     .split(/[\\/]+/)
@@ -261,54 +311,146 @@ function decodePathSegments(pathname: string) {
     });
 }
 
-async function resolveDefaultBranch(owner: string, repo: string, token?: string) {
-  const response = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
-    headers: buildGitHubHeaders(token),
-  });
-  if (!response.ok) throw new Error(`GitHub repo not found: ${owner}/${repo}`);
-  const parsed = (await response.json()) as { default_branch?: unknown };
+async function resolveDefaultBranch(
+  owner: string,
+  repo: string,
+  token: string | undefined,
+  retryBudget: GitHubRetryBudget,
+) {
+  const { response, body: parsed } = await fetchGitHub(
+    `${GITHUB_API}/repos/${owner}/${repo}`,
+    { headers: buildGitHubHeaders(token) },
+    async (githubResponse) => (await githubResponse.json()) as { default_branch?: unknown },
+    retryBudget,
+  );
+  if (!response.ok) {
+    if (response.status === 404) throw new Error(`GitHub repo not found: ${owner}/${repo}`);
+    throw new Error(`GitHub repo lookup failed (${response.status}): ${owner}/${repo}`);
+  }
   const defaultBranch =
-    typeof parsed.default_branch === "string" ? parsed.default_branch.trim() : "";
+    typeof parsed?.default_branch === "string" ? parsed.default_branch.trim() : "";
   if (!defaultBranch) throw new Error("GitHub repo default branch missing");
   return defaultBranch;
 }
 
-async function resolveCommitSha(owner: string, repo: string, ref: string, token?: string) {
-  const response = await fetch(
+async function resolveCommitSha(
+  owner: string,
+  repo: string,
+  ref: string,
+  token: string | undefined,
+  retryBudget: GitHubRetryBudget,
+) {
+  const { response, body: parsed } = await fetchGitHub(
     `${GITHUB_API}/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
-    {
-      headers: buildGitHubHeaders(token),
-    },
+    { headers: buildGitHubHeaders(token) },
+    async (githubResponse) => (await githubResponse.json()) as { sha?: unknown },
+    retryBudget,
   );
   if (!response.ok) throw new Error(`GitHub ref not found: ${owner}/${repo}@${ref}`);
-  const parsed = (await response.json()) as { sha?: unknown };
-  const sha = typeof parsed.sha === "string" ? parsed.sha.trim().toLowerCase() : "";
+  const sha = typeof parsed?.sha === "string" ? parsed.sha.trim().toLowerCase() : "";
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("GitHub commit sha missing");
   return sha;
 }
 
-async function tryResolveCommitSha(owner: string, repo: string, ref: string, token?: string) {
-  const response = await fetch(
+async function tryResolveCommitSha(
+  owner: string,
+  repo: string,
+  ref: string,
+  token: string | undefined,
+  retryBudget: GitHubRetryBudget,
+) {
+  const { response, body: parsed } = await fetchGitHub(
     `${GITHUB_API}/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
-    {
-      headers: buildGitHubHeaders(token),
-    },
+    { headers: buildGitHubHeaders(token) },
+    async (githubResponse) => (await githubResponse.json()) as { sha?: unknown },
+    retryBudget,
   );
   if (!response.ok) return null;
-  const parsed = (await response.json()) as { sha?: unknown };
-  const sha = typeof parsed.sha === "string" ? parsed.sha.trim().toLowerCase() : "";
+  const sha = typeof parsed?.sha === "string" ? parsed.sha.trim().toLowerCase() : "";
   return /^[a-f0-9]{40}$/.test(sha) ? sha : null;
 }
 
-async function downloadGitHubZip(owner: string, repo: string, ref: string, token?: string) {
-  const response = await fetch(
+async function downloadGitHubZip(
+  owner: string,
+  repo: string,
+  ref: string,
+  token: string | undefined,
+  retryBudget: GitHubRetryBudget,
+) {
+  const { response, body } = await fetchGitHub(
     `${GITHUB_API}/repos/${owner}/${repo}/zipball/${encodeURIComponent(ref)}`,
-    {
-      headers: buildGitHubHeaders(token),
-    },
+    { headers: buildGitHubHeaders(token) },
+    async (githubResponse) => new Uint8Array(await githubResponse.arrayBuffer()),
+    retryBudget,
   );
   if (!response.ok) throw new Error(`GitHub archive download failed: ${owner}/${repo}@${ref}`);
-  return new Uint8Array(await response.arrayBuffer());
+  if (!body) throw new Error("GitHub archive body missing");
+  return body;
+}
+
+async function fetchGitHub<T>(
+  input: string,
+  init: RequestInit,
+  readBody: (response: Response) => Promise<T>,
+  retryBudget: GitHubRetryBudget,
+) {
+  for (let attempt = 0; ; attempt += 1) {
+    const fallbackDelayMs = GITHUB_RETRY_DELAYS_MS[attempt];
+    try {
+      const response = await fetch(input, init);
+      if (response.ok) {
+        return { response, body: await readBody(response) };
+      }
+      if (fallbackDelayMs === undefined) return { response, body: undefined };
+      const retry = getGitHubRetry(response, fallbackDelayMs);
+      if (retry === null) return { response, body: undefined };
+      if (retry.rateLimited) {
+        if (retry.delayMs > retryBudget.remainingRateLimitDelayMs) {
+          return { response, body: undefined };
+        }
+        retryBudget.remainingRateLimitDelayMs -= retry.delayMs;
+      }
+      if (response.body) await response.body.cancel().catch(() => {});
+      await new Promise((done) => setTimeout(done, retry.delayMs));
+    } catch (error) {
+      if (fallbackDelayMs === undefined) throw error;
+      await new Promise((done) => setTimeout(done, fallbackDelayMs));
+    }
+  }
+}
+
+export function createGitHubRetryBudget(): GitHubRetryBudget {
+  return { remainingRateLimitDelayMs: GITHUB_MAX_RATE_LIMIT_DELAY_MS };
+}
+
+function getGitHubRetry(response: Response, fallbackDelayMs: number) {
+  const rateLimitDelayMs = getGitHubRateLimitDelayMs(response);
+  if (rateLimitDelayMs !== null) {
+    return { delayMs: rateLimitDelayMs, rateLimited: true };
+  }
+  if (response.status === 408 || (response.status >= 500 && response.status <= 599)) {
+    return { delayMs: fallbackDelayMs, rateLimited: false };
+  }
+  return null;
+}
+
+function getGitHubRateLimitDelayMs(response: Response) {
+  if (response.status !== 403 && response.status !== 429) return null;
+
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter !== null) {
+    const retryAfterSeconds = Number(retryAfter);
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+      return retryAfterSeconds * 1_000;
+    }
+  }
+
+  if (response.headers.get("x-ratelimit-remaining") !== "0") return null;
+  const reset = response.headers.get("x-ratelimit-reset");
+  if (reset === null) return null;
+  const resetSeconds = Number(reset);
+  if (!Number.isFinite(resetSeconds) || resetSeconds <= 0) return null;
+  return Math.max(0, resetSeconds * 1_000 - Date.now());
 }
 
 function buildGitHubHeaders(token?: string) {
@@ -368,6 +510,7 @@ async function resolveGitHubUrlRefAndPath(
   repo: string,
   kind: "tree" | "blob",
   segments: string[],
+  retryBudget: GitHubRetryBudget,
 ) {
   if (segments.length === 0) throw new Error("Missing ref in GitHub URL");
 
@@ -379,7 +522,7 @@ async function resolveGitHubUrlRefAndPath(
     const ref = segments.slice(0, refSegmentCount).join("/");
     const pathRemainder = segments.slice(refSegmentCount).join("/");
     if (kind === "blob" && !pathRemainder) continue;
-    const commit = await tryResolveCommitSha(owner, repo, ref, token);
+    const commit = await tryResolveCommitSha(owner, repo, ref, token, retryBudget);
     if (!commit) continue;
     const path =
       kind === "blob"

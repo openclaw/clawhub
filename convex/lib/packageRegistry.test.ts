@@ -1,21 +1,48 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { buildGitHubFolderContentHash } from "../../packages/clawhub/src/skills";
 import {
+  derivePluginManifestSummary,
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
+  normalizePackageName,
+  normalizePublishFiles,
   summarizePackageForSearch,
+  toConvexSafeJsonValue,
+  tryNormalizePackageName,
 } from "./packageRegistry";
+import { buildPackageInventoryDigest } from "./skills";
 
 describe("packageRegistry", () => {
-  it("extracts code plugin compatibility and capabilities", () => {
+  it("can validate package names without throwing", () => {
+    expect(tryNormalizePackageName("@OpenClaw/Discord")).toBe("@openclaw/discord");
+    expect(tryNormalizePackageName("openclaw/discord")).toBeNull();
+    expect(tryNormalizePackageName("   ")).toBeNull();
+  });
+
+  it("reserves unscoped package names that collide with plugin routes", () => {
+    expect(() => normalizePackageName("publish")).toThrow("reserved for ClawHub routes");
+    expect(normalizePackageName("@demo/publish")).toBe("@demo/publish");
+  });
+
+  it("extracts code plugin compatibility and verification metadata", () => {
     const result = extractCodePluginArtifacts({
       packageName: "@scope/demo-plugin",
       packageJson: {
         name: "@scope/demo-plugin",
         openclaw: {
           extensions: ["./dist/index.js"],
+          hostTargets: ["darwin-arm64", "linux-x64"],
+          environment: {
+            browser: true,
+            desktop: { required: true },
+            nativeDependencies: ["sharp"],
+            externalServices: [{ name: "GitHub" }],
+            osPermissions: ["screen-recording"],
+            binaries: ["ffmpeg"],
+          },
           compat: {
             pluginApi: "^1.2.0",
             minGatewayVersion: "2026.3.0",
@@ -47,10 +74,478 @@ describe("packageRegistry", () => {
     expect(result.runtimeId).toBe("demo.plugin");
     expect(result.compatibility?.pluginApiRange).toBe("^1.2.0");
     expect(result.compatibility?.minGatewayVersion).toBe("2026.3.0");
-    expect(result.capabilities.executesCode).toBe(true);
-    expect(result.capabilities.toolNames).toContain("demoTool");
+    expect(result).not.toHaveProperty("capabilities");
     expect(result.verification.tier).toBe("source-linked");
     expect(result.verification.scanStatus).toBe("not-run");
+  });
+
+  it("preserves declared capability families without inventing tools or activating loose skill files", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        contracts: {
+          tools: [" apify ", "apify", "", 42, { name: "not-a-tool" }],
+          videoGenerationProviders: ["heygen"],
+          futureFamily: ["future-provider"],
+          empty: [],
+          malformed: "not-an-array",
+          $invalid: ["ignored"],
+        },
+        providers: [" model-provider ", "model-provider"],
+        channels: ["chat"],
+        tools: ["not-declared"],
+      },
+      files: [{ path: "SKILL.md", size: 20, sha256: "a".repeat(64), text: "# Loose skill" }],
+    });
+    expect(summary).toMatchObject({
+      contracts: {
+        tools: ["apify"],
+        videoGenerationProviders: ["heygen"],
+        futureFamily: ["future-provider"],
+      },
+      providers: ["model-provider"],
+      channels: ["chat"],
+      bundledSkills: [],
+    });
+    expect(Object.keys(summary.contracts ?? {})).toEqual([
+      "futureFamily",
+      "tools",
+      "videoGenerationProviders",
+    ]);
+    expect(JSON.stringify(summary)).not.toContain("not-declared");
+    const absent = derivePluginManifestSummary({ pluginManifest: {}, files: [] });
+    expect(absent).not.toHaveProperty("contracts");
+    expect(absent).not.toHaveProperty("providers");
+    expect(absent).not.toHaveProperty("channels");
+  });
+
+  it("derives a safe bundled plugin manifest summary from dummy plugin metadata", () => {
+    const summary = derivePluginManifestSummary({
+      compatibility: { pluginApiRange: "^1.2.0" },
+      pluginManifest: {
+        name: "example-ai-plugin",
+        description: "Manifest description is diagnostic only",
+        version: "9.9.9",
+        family: "code-plugin",
+        categories: ["tools", "runtime"],
+        icon: "  https://cdn.example.test/icons/example-ai-plugin.svg  ",
+        openclaw: {
+          compat: {
+            pluginApi: "^2.0.0",
+          },
+        },
+        configSchema: {
+          type: "object",
+          required: ["EXAMPLE_PLUGIN_API_KEY"],
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              sensitive: true,
+            },
+            EXAMPLE_PLUGIN_MODEL: {
+              type: "string",
+              description: "Optional model override.",
+            },
+          },
+        },
+        mcpServers: {
+          exampleMcp: {
+            command: "node",
+            args: ["dist/mcp.js"],
+            env: { EXAMPLE_PLUGIN_API_KEY: "${EXAMPLE_PLUGIN_API_KEY}" },
+            transport: "stdio",
+          },
+        },
+        skills: [
+          "skills/research",
+          { path: "skills/write-report" },
+          "../outside",
+          "skills/missing",
+        ],
+        shared_deps: ["ignored"],
+        excluded_from_install: ["also-ignored"],
+        contracts: [{ ignored: true }],
+      },
+      files: [
+        {
+          path: "skills/research/SKILL.md",
+          size: 128,
+          sha256: "a".repeat(64),
+          text: "---\nname: research\n---\n# Research\n\nDeep research assistant.",
+        },
+        {
+          path: "skills/write-report/SKILL.md",
+          size: 256,
+          sha256: "b".repeat(64),
+          text: "---\nname: write-report\ndescription: Drafts a report.\n---\n# Write Report",
+        },
+        {
+          path: "skills/missing/README.md",
+          size: 12,
+          sha256: "c".repeat(64),
+          text: "not a skill",
+        },
+      ],
+      categories: ["tools", "runtime"],
+    });
+
+    expect(summary).toEqual({
+      schemaVersion: 1,
+      categories: ["tools", "runtime"],
+      compatibility: { pluginApiRange: "^2.0.0" },
+      manifestIdentity: {
+        name: "example-ai-plugin",
+        description: "Manifest description is diagnostic only",
+        version: "9.9.9",
+        family: "code-plugin",
+      },
+      configFields: [
+        {
+          name: "EXAMPLE_PLUGIN_API_KEY",
+          description: "API key used to connect to the example service.",
+          required: true,
+          sensitive: true,
+        },
+        {
+          name: "EXAMPLE_PLUGIN_MODEL",
+          description: "Optional model override.",
+          required: false,
+          sensitive: false,
+        },
+      ],
+      mcpServers: [{ name: "exampleMcp" }],
+      bundledSkills: [
+        {
+          name: "research",
+          rootPath: "skills/research",
+          skillMdPath: "skills/research/SKILL.md",
+          sha256: "a".repeat(64),
+          size: 128,
+        },
+        {
+          name: "write-report",
+          description: "Drafts a report.",
+          rootPath: "skills/write-report",
+          skillMdPath: "skills/write-report/SKILL.md",
+          sha256: "b".repeat(64),
+          size: 256,
+        },
+      ],
+    });
+    expect(JSON.stringify(summary)).not.toContain("command");
+    expect(JSON.stringify(summary)).not.toContain("transport");
+    expect(JSON.stringify(summary)).not.toContain("shared_deps");
+    expect(JSON.stringify(summary)).not.toContain("contracts");
+  });
+
+  it.each(["SKILL.md", "./SKILL.md"])(
+    "discovers a package-root skill without rewriting the signed %s path",
+    (filePath) => {
+      const files = normalizePublishFiles([
+        { path: filePath, storageId: "skill", size: 48, sha256: "a".repeat(64) },
+        {
+          path: "./references/config.md",
+          storageId: "reference",
+          size: 32,
+          sha256: "b".repeat(64),
+        },
+      ]);
+      const summary = derivePluginManifestSummary({
+        pluginManifest: { id: "example", skills: [".", "./"] },
+        files: files.map((file) => ({
+          ...file,
+          text:
+            file.storageId === "skill" ? "---\nname: root-guide\n---\n# Guide" : "# Configuration",
+        })),
+      });
+      expect(files.map((file) => file.path)).toEqual([filePath, "./references/config.md"]);
+      expect(summary.bundledSkills).toEqual([
+        {
+          name: "root-guide",
+          rootPath: ".",
+          skillMdPath: filePath,
+          size: 48,
+          sha256: "a".repeat(64),
+        },
+      ]);
+    },
+  );
+
+  it("preserves the scoped publisher inventory digest for leading dot paths", async () => {
+    const files = [{ path: "./SKILL.md", storageId: "skill", size: 48, sha256: "a".repeat(64) }];
+    const mintedDigest = buildGitHubFolderContentHash(files);
+    expect(await buildPackageInventoryDigest(normalizePublishFiles(files))).toBe(mintedDigest);
+  });
+
+  it("discovers nested skills from a package-root declaration without a direct entry", () => {
+    const files = ["./skills/first/SKILL.md", "skills/second/SKILL.md"].map((path, index) => ({
+      path,
+      size: 48,
+      sha256: "a".repeat(64),
+      text: `---\nname: guide-${index}\n---\n# Guide`,
+    }));
+    expect(
+      derivePluginManifestSummary({ pluginManifest: { skills: ["."] }, files }).bundledSkills,
+    ).toEqual(
+      files.map((file, index) => ({
+        name: `guide-${index}`,
+        rootPath: `skills/${index === 0 ? "first" : "second"}`,
+        skillMdPath: file.path,
+        size: file.size,
+        sha256: file.sha256,
+      })),
+    );
+  });
+
+  it("omits invalid plugin icons from the stored manifest summary", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        icon: "http://cdn.example.test/icons/example-ai-plugin.svg",
+      },
+      files: [],
+    });
+
+    expect(summary).not.toHaveProperty("icon");
+  });
+
+  it("derives bundled skills from the real bundle manifest when present", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        id: "example-ai-plugin",
+        openclaw: { compat: { pluginApi: "^2.0.0" } },
+        configSchema: {
+          type: "object",
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              sensitive: true,
+            },
+          },
+        },
+      },
+      skillManifest: {
+        name: "Example bundle manifest",
+        skills: [{ path: "skills/answer-review" }],
+      },
+      files: [
+        {
+          path: "skills/answer-review/SKILL.md",
+          size: 192,
+          sha256: "d".repeat(64),
+          text: "---\nname: answer-review\ndescription: Reviews generated answers.\n---\n# Answer Review",
+        },
+      ],
+    });
+
+    expect(summary.configFields).toEqual([
+      {
+        name: "EXAMPLE_PLUGIN_API_KEY",
+        required: false,
+        sensitive: true,
+      },
+    ]);
+    expect(summary.bundledSkills).toEqual([
+      {
+        name: "answer-review",
+        description: "Reviews generated answers.",
+        rootPath: "skills/answer-review",
+        skillMdPath: "skills/answer-review/SKILL.md",
+        sha256: "d".repeat(64),
+        size: 192,
+      },
+    ]);
+  });
+
+  it("derives config fields from direct plugin config maps", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        configSchema: {
+          EXAMPLE_DATABASE_URL: {
+            type: "string",
+            required: true,
+            description: "Database connection URL.",
+            uiHints: { sensitive: true },
+          },
+          EXAMPLE_MODEL: {
+            type: "string",
+            required: false,
+            description: "Optional model override.",
+          },
+        },
+      },
+      files: [],
+    });
+
+    expect(summary.configFields).toEqual([
+      {
+        name: "EXAMPLE_DATABASE_URL",
+        description: "Database connection URL.",
+        required: true,
+        sensitive: true,
+      },
+      {
+        name: "EXAMPLE_MODEL",
+        description: "Optional model override.",
+        required: false,
+        sensitive: false,
+      },
+    ]);
+  });
+
+  it("does not treat JSON Schema metadata as direct config fields", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        configSchema: {
+          type: "object",
+          $defs: {
+            sharedSecret: {
+              type: "string",
+              description: "Reusable schema, not a top-level config field.",
+            },
+          },
+          patternProperties: {
+            "^EXAMPLE_": { type: "string" },
+          },
+        },
+      },
+      files: [],
+    });
+
+    expect(summary.configFields).toEqual([]);
+  });
+
+  it("derives bundled skills from directory-style skill manifest roots", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        openclaw: { compat: { pluginApi: "^2.0.0" } },
+        configSchema: {
+          type: "object",
+          required: ["EXAMPLE_PLUGIN_API_KEY"],
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              sensitive: true,
+            },
+          },
+        },
+        mcpServers: {
+          exampleMcp: {
+            command: "node",
+            args: ["dist/mcp.js"],
+          },
+        },
+        customMetadata: {
+          ignored: true,
+        },
+      },
+      skillManifest: {
+        skills: ["./skills/"],
+      },
+      files: [
+        {
+          path: "skills/research/SKILL.md",
+          size: 128,
+          sha256: "a".repeat(64),
+          text: "---\nname: research\ndescription: Deep research assistant.\n---\n# Research",
+        },
+        {
+          path: "skills/write-report/SKILL.md",
+          size: 256,
+          sha256: "b".repeat(64),
+          text: "---\nname: write-report\ndescription: Drafts a concise report.\n---\n# Write Report",
+        },
+        {
+          path: "skills/code-audit/SKILL.md",
+          size: 384,
+          sha256: "c".repeat(64),
+          text: "---\nname: code-audit\ndescription: Reviews code changes.\n---\n# Code Audit",
+        },
+        {
+          path: "skills/not-a-skill/README.md",
+          size: 12,
+          sha256: "d".repeat(64),
+          text: "ignored",
+        },
+      ],
+    });
+
+    expect(summary.bundledSkills).toEqual([
+      {
+        name: "research",
+        description: "Deep research assistant.",
+        rootPath: "skills/research",
+        skillMdPath: "skills/research/SKILL.md",
+        sha256: "a".repeat(64),
+        size: 128,
+      },
+      {
+        name: "write-report",
+        description: "Drafts a concise report.",
+        rootPath: "skills/write-report",
+        skillMdPath: "skills/write-report/SKILL.md",
+        sha256: "b".repeat(64),
+        size: 256,
+      },
+      {
+        name: "code-audit",
+        description: "Reviews code changes.",
+        rootPath: "skills/code-audit",
+        skillMdPath: "skills/code-audit/SKILL.md",
+        sha256: "c".repeat(64),
+        size: 384,
+      },
+    ]);
+    expect(summary.configFields).toHaveLength(1);
+    expect(summary.mcpServers).toEqual([{ name: "exampleMcp" }]);
+    expect(JSON.stringify(summary)).not.toContain("command");
+    expect(JSON.stringify(summary)).not.toContain("customMetadata");
+  });
+
+  it("allows missing host and environment metadata for code plugins", () => {
+    const result = extractCodePluginArtifacts({
+      packageName: "demo-plugin",
+      packageJson: {
+        name: "demo-plugin",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: "^1.0.0" },
+          build: { openclawVersion: "2026.3.14" },
+          configSchema: { type: "object" },
+        },
+      },
+      pluginManifest: { id: "demo.plugin" },
+      source: {
+        kind: "github",
+        url: "https://github.com/openclaw/demo-plugin",
+        repo: "openclaw/demo-plugin",
+        ref: "refs/tags/v1.0.0",
+        commit: "abc123",
+        path: ".",
+        importedAt: Date.now(),
+      },
+    });
+
+    expect(result.runtimeId).toBe("demo.plugin");
+    expect(result.compatibility?.pluginApiRange).toBe("^1.0.0");
+    expect(result).not.toHaveProperty("capabilities");
+  });
+
+  it("ignores manifest icon URLs and paths in summaries", () => {
+    for (const icon of [
+      "https://cdn.example.test/icons/demo.svg",
+      "http://cdn.example.test/icons/demo.svg",
+      "assets/icon.png",
+      `/api/v1/skill-icons/${"a".repeat(64)}`,
+    ]) {
+      expect(
+        derivePluginManifestSummary({ pluginManifest: { icon }, files: [] }),
+      ).not.toHaveProperty("icon");
+    }
   });
 
   it("requires source metadata for code plugins", () => {
@@ -118,6 +613,7 @@ describe("packageRegistry", () => {
           },
         },
       },
+      pluginManifest: { id: "matrix-bundle" },
       bundleManifest: {
         hostTargets: ["openclaw"],
       },
@@ -128,13 +624,15 @@ describe("packageRegistry", () => {
     expect(result.compatibility?.builtWithOpenClawVersion).toBe("2026.3.13");
   });
 
-  it("requires host targets for bundle plugins", () => {
-    expect(() =>
-      extractBundlePluginArtifacts({
-        packageName: "demo-bundle",
-        packageJson: { name: "demo-bundle" },
-      }),
-    ).toThrow("host target");
+  it("allows bundle plugins without host targets", () => {
+    const result = extractBundlePluginArtifacts({
+      packageName: "demo-bundle",
+      packageJson: { name: "demo-bundle" },
+      pluginManifest: { id: "demo-bundle" },
+    });
+
+    expect(result.runtimeId).toBe("demo-bundle");
+    expect(result).not.toHaveProperty("capabilities");
   });
 
   it("validates package name consistency and summary extraction", () => {
@@ -156,5 +654,58 @@ describe("packageRegistry", () => {
         readmeText: "# Demo Plugin\n\nA longer package summary for search.\n",
       }),
     ).toBe("A longer package summary for search.");
+  });
+
+  it("normalizes JSON Schema keys for Convex metadata storage", () => {
+    expect(
+      toConvexSafeJsonValue({
+        configSchema: {
+          $defs: {
+            secret: {
+              anyOf: [{ $ref: "#/$defs/secretRef" }],
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      configSchema: {
+        dollar_defs: {
+          secret: {
+            anyOf: [{ dollar_ref: "#/$defs/secretRef" }],
+          },
+        },
+      },
+    });
+  });
+
+  it("truncates deeply nested metadata before Convex storage", () => {
+    expect(
+      toConvexSafeJsonValue(
+        {
+          channelConfigs: {
+            discord: {
+              schema: {
+                properties: {
+                  auth: {
+                    anyOf: [{ properties: { token: { type: "string" } } }],
+                  },
+                },
+              },
+            },
+          },
+        },
+        { maxDepth: 5 },
+      ),
+    ).toEqual({
+      channelConfigs: {
+        discord: {
+          schema: {
+            properties: {
+              auth: "[truncated]",
+            },
+          },
+        },
+      },
+    });
   });
 });

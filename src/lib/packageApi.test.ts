@@ -10,8 +10,10 @@ vi.mock("@tanstack/react-start/server", () => ({
 
 import {
   fetchPackageDetail,
+  fetchPackageFile,
   fetchPackageReadme,
   fetchPackageVersion,
+  fetchPackageVersions,
   fetchPluginCatalog,
   fetchPackages,
   getPackageDownloadPath,
@@ -31,7 +33,7 @@ describe("fetchPackages", () => {
     vi.unstubAllEnvs();
   });
 
-  it("preserves search filters when using /packages/search", async () => {
+  it("omits retired execution and capability filters when using /packages/search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -44,7 +46,7 @@ describe("fetchPackages", () => {
       capabilityTag: "tools",
       limit: 12,
       isOfficial: true,
-    });
+    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") {
@@ -54,8 +56,8 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/packages/search");
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("family")).toBe("code-plugin");
-    expect(url.searchParams.get("executesCode")).toBe("true");
-    expect(url.searchParams.get("capabilityTag")).toBe("tools");
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.has("capabilityTag")).toBe(false);
     expect(url.searchParams.get("limit")).toBe("12");
     expect(url.searchParams.get("isOfficial")).toBe("true");
   });
@@ -106,7 +108,7 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("limit")).toBe("12");
   });
 
-  it("preserves non-search listing filters on package listings", async () => {
+  it("omits retired execution and capability filters on package listings", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -119,7 +121,7 @@ describe("fetchPackages", () => {
       executesCode: false,
       capabilityTag: "storage",
       limit: 7,
-    });
+    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") {
@@ -128,8 +130,8 @@ describe("fetchPackages", () => {
     const url = new URL(requestUrl);
     expect(url.pathname).toBe("/api/v1/packages");
     expect(url.searchParams.get("isOfficial")).toBe("false");
-    expect(url.searchParams.get("executesCode")).toBe("false");
-    expect(url.searchParams.get("capabilityTag")).toBe("storage");
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.has("capabilityTag")).toBe(false);
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
@@ -150,6 +152,7 @@ describe("fetchPackages", () => {
     const url = new URL(requestUrl);
     expect(url.searchParams.get("path")).toBe("README.md");
     expect(url.searchParams.get("version")).toBe("1.0.0");
+    expect(url.searchParams.get("preview")).toBe("1");
   });
 
   it("returns an empty package detail payload on 404", async () => {
@@ -286,6 +289,8 @@ describe("fetchPackages", () => {
       limit: 12,
       cursor: "pkgpage:test",
       isOfficial: true,
+      category: "tools",
+      officialFirst: true,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -298,6 +303,40 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("limit")).toBe("12");
     expect(url.searchParams.get("cursor")).toBe("pkgpage:test");
     expect(url.searchParams.get("isOfficial")).toBe("true");
+    expect(url.searchParams.get("category")).toBe("tools");
+    expect(url.searchParams.get("officialFirst")).toBe("true");
+  });
+
+  it("omits viewer credentials from anonymous plugin catalog requests", async () => {
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    getRequestHeadersMock.mockReturnValue(
+      new Headers({
+        authorization: "Bearer private-token",
+        cookie: "session=private",
+        "x-forwarded-for": "203.0.113.9",
+      }),
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPluginCatalog({ limit: 12, viewerMode: "anonymous" });
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(requestInit).toEqual(
+      expect.objectContaining({
+        credentials: "omit",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+          "x-forwarded-for": "203.0.113.9",
+        }),
+      }),
+    );
+    expect(requestInit?.headers).not.toHaveProperty("authorization");
+    expect(requestInit?.headers).not.toHaveProperty("cookie");
   });
 
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {
@@ -309,7 +348,7 @@ describe("fetchPackages", () => {
     await fetchPluginCatalog({
       q: "demo",
       limit: 8,
-      executesCode: false,
+      category: "runtime",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -321,7 +360,8 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/plugins/search");
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("limit")).toBe("8");
-    expect(url.searchParams.get("executesCode")).toBe("false");
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.get("category")).toBe("runtime");
   });
 
   it("throws package detail errors for non-404 failures", async () => {
@@ -332,6 +372,39 @@ describe("fetchPackages", () => {
       message: "boom",
       status: 500,
       retryAfterSeconds: null,
+    });
+  });
+
+  it("expands generic package API auth and visibility failures", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Unauthorized", { status: 401 }),
+    );
+
+    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+      message:
+        "Sign in required. If this ClawHub account was deleted, banned, or disabled, it cannot access private packages.",
+      status: 401,
+    });
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Package not found", { status: 404 }),
+    );
+    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+      message: "Package not found or not visible to this account.",
+      status: 404,
+    });
+  });
+
+  it("keeps specific package API denial bodies", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Trusted publisher config is not set for this package", { status: 403 }),
+    );
+
+    await expect(fetchPackages({ family: "code-plugin" })).rejects.toMatchObject({
+      message: "Trusted publisher config is not set for this package",
+      status: 403,
     });
   });
 
@@ -372,6 +445,158 @@ describe("fetchPackages", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://registry.example/api/v1/packages/demo-plugin/versions/1.2.3%2Bbuild%2Fmeta",
     );
+  });
+
+  it("preserves plugin manifest summaries from package version responses", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          package: {
+            name: "example-ai-plugin",
+            displayName: "Example AI Plugin",
+            family: "code-plugin",
+          },
+          version: {
+            version: "1.2.3",
+            createdAt: 1,
+            changelog: "demo",
+            files: [],
+            pluginManifestSummary: {
+              schemaVersion: 1,
+              icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
+              compatibility: { pluginApiRange: "^2.0.0" },
+              configFields: [
+                {
+                  name: "EXAMPLE_PLUGIN_API_KEY",
+                  description: "API key used to connect to the example service.",
+                  required: true,
+                  sensitive: true,
+                },
+              ],
+              mcpServers: [{ name: "exampleMcp" }],
+              bundledSkills: [
+                {
+                  name: "research",
+                  description: "Deep research assistant.",
+                  rootPath: "skills/research",
+                  skillMdPath: "skills/research/SKILL.md",
+                  sha256: "a".repeat(64),
+                  size: 128,
+                },
+              ],
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPackageVersion("example-ai-plugin", "1.2.3");
+
+    expect(result?.version?.pluginManifestSummary).toMatchObject({
+      icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
+      compatibility: { pluginApiRange: "^2.0.0" },
+      mcpServers: [{ name: "exampleMcp" }],
+      bundledSkills: [expect.objectContaining({ skillMdPath: "skills/research/SKILL.md" })],
+    });
+  });
+
+  it("fetches arbitrary package text files with encoded paths for lazy previews", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("# Research", { status: 200 }));
+
+    await expect(
+      fetchPackageFile("example-ai-plugin", "skills/research/SKILL.md", "1.2.3"),
+    ).resolves.toBe("# Research");
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.pathname).toBe("/api/v1/packages/example-ai-plugin/file");
+    expect(url.searchParams.get("path")).toBe("skills/research/SKILL.md");
+    expect(url.searchParams.get("version")).toBe("1.2.3");
+    expect(url.searchParams.get("preview")).toBe("1");
+  });
+
+  it("returns null when a package file cannot be previewed as text", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("File cannot be previewed as text", { status: 415 }),
+    );
+
+    await expect(
+      fetchPackageFile("example-ai-plugin", "assets/payload.bin", "1.2.3"),
+    ).resolves.toBeNull();
+  });
+
+  it("fetches scoped package version history with pagination", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const response = {
+      items: [
+        {
+          version: "1.2.3",
+          createdAt: 123,
+          changelog: "Added package history",
+          distTags: ["latest"],
+        },
+      ],
+      nextCursor: "versions:next",
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
+
+    await expect(
+      fetchPackageVersions("@scope/demo-plugin", {
+        cursor: "versions:current",
+        limit: 25,
+      }),
+    ).resolves.toEqual(response);
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestUrl !== "string") {
+      throw new Error("Expected fetch to be called with a string URL");
+    }
+    const url = new URL(requestUrl);
+    expect(url.pathname).toBe("/api/v1/packages/%40scope%2Fdemo-plugin/versions");
+    expect(url.searchParams.get("cursor")).toBe("versions:current");
+    expect(url.searchParams.get("limit")).toBe("25");
+  });
+
+  it("omits unprovided package version history params and forwards the signal", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const signal = new AbortController().signal;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPackageVersions("demo-plugin", { signal });
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestUrl !== "string") {
+      throw new Error("Expected fetch to be called with a string URL");
+    }
+    const url = new URL(requestUrl);
+    expect(url.searchParams.has("cursor")).toBe(false);
+    expect(url.searchParams.has("limit")).toBe(false);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(signal);
+  });
+
+  it("omits an empty package version history cursor", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPackageVersions("demo-plugin", { cursor: "" });
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.searchParams.has("cursor")).toBe(false);
   });
 
   it("returns null when no supported README variant exists", async () => {
@@ -433,11 +658,11 @@ describe("fetchPluginCatalog", () => {
 
   it("uses the dedicated plugins endpoint for browse mode without touching the unified catalog", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(JSON.stringify({ items: [], nextCursor: "plugins:next" }), { status: 200 }),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ items: [], nextCursor: "plugins:next", totalCount: 42 }), {
+        status: 200,
+      }),
+    );
 
     const result = await fetchPluginCatalog({
       isOfficial: true,
@@ -445,10 +670,36 @@ describe("fetchPluginCatalog", () => {
     });
 
     expect(result.nextCursor).toBe("plugins:next");
+    expect(result.totalCount).toBe(42);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
     expect(url.pathname).toBe("/api/v1/plugins");
     expect(url.searchParams.get("isOfficial")).toBe("true");
+  });
+
+  it("forwards explicit valid sort values to the dedicated plugins browse endpoint", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+    });
+
+    await fetchPluginCatalog({
+      sort: "updated",
+      limit: 20,
+    });
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.pathname).toBe("/api/v1/plugins");
+    expect(url.searchParams.get("sort")).toBe("updated");
+
+    await fetchPluginCatalog({
+      sort: "downloads",
+      limit: 20,
+    });
+
+    const downloadsUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
+    expect(downloadsUrl.pathname).toBe("/api/v1/plugins");
+    expect(downloadsUrl.searchParams.get("sort")).toBe("downloads");
   });
 
   it("uses the dedicated plugins search endpoint for search mode", async () => {
@@ -489,6 +740,8 @@ describe("fetchPluginCatalog", () => {
 
     const result = await fetchPluginCatalog({
       q: "demo",
+      cursor: "cursor:plugins",
+      createdAfter: 123,
       limit: 10,
     });
 
@@ -497,5 +750,61 @@ describe("fetchPluginCatalog", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
     expect(url.pathname).toBe("/api/v1/plugins/search");
+    expect(url.searchParams.has("cursor")).toBe(false);
+    expect(url.searchParams.has("sort")).toBe(false);
+    expect(url.searchParams.get("createdAfter")).toBe("123");
+  });
+
+  it("ignores malformed plugin search entries defensively", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            null,
+            {
+              score: 4,
+              package: {
+                name: "bundle-demo",
+                displayName: "Bundle Demo",
+                family: "bundle-plugin",
+                channel: "community",
+                isOfficial: false,
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPluginCatalog({ q: "demo" });
+
+    expect(result.items.map((item) => item.name)).toEqual(["bundle-demo"]);
+  });
+
+  it("keeps relevance as the implicit plugins search sort", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [],
+          nextCursor: "ignored-for-relevance",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPluginCatalog({
+      q: "demo",
+      limit: 10,
+    });
+
+    expect(result.nextCursor).toBeNull();
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.pathname).toBe("/api/v1/plugins/search");
+    expect(url.searchParams.has("sort")).toBe(false);
   });
 });

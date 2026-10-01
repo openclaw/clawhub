@@ -3,11 +3,20 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { convexHttp } from "../convex/client";
 import type { PublicPublisher, PublicSkill } from "./publicUser";
 
+type GeneratedSkillCardFile = {
+  path: string;
+  size: number;
+  sha256: string;
+  contentType?: string;
+};
+
 export type SkillBySlugResult = {
   requestedSlug?: string | null;
   resolvedSlug?: string | null;
   skill: Doc<"skills"> | PublicSkill;
-  latestVersion: Doc<"skillVersions"> | null;
+  latestVersion:
+    | (Doc<"skillVersions"> & { generatedSkillCard?: GeneratedSkillCardFile | null })
+    | null;
   owner: PublicPublisher | null;
   pendingReview?: boolean;
   moderationInfo?: {
@@ -16,7 +25,6 @@ export type SkillBySlugResult = {
     isSuspicious: boolean;
     isHiddenByMod: boolean;
     isRemoved: boolean;
-    overrideActive?: boolean;
     verdict?: "clean" | "suspicious" | "malicious";
     reasonCodes?: string[];
     summary?: string | null;
@@ -40,6 +48,7 @@ export type SkillPageInitialData = {
   result: SkillBySlugResult;
   readme: string | null;
   readmeError: string | null;
+  lookupOwnerHandle?: string | null;
 };
 
 type SkillPageLoaderData = {
@@ -50,11 +59,61 @@ type SkillPageLoaderData = {
   initialData: SkillPageInitialData | null;
 };
 
-export async function fetchSkillPageData(slug: string): Promise<SkillPageLoaderData> {
+type SkillLookupResult = {
+  result: SkillBySlugResult;
+  lookupOwnerHandle?: string | null;
+};
+
+function normalizeOwnerLookupSegment(value: string | null | undefined) {
+  return value?.trim().replace(/^@+/, "").toLowerCase() || null;
+}
+
+function ownerMatchesLookup(
+  owner: PublicPublisher | null | undefined,
+  ownerHandle: string | undefined,
+) {
+  const requested = normalizeOwnerLookupSegment(ownerHandle);
+  if (!requested) return true;
+  const candidates = [owner?.handle, owner?._id, owner?.linkedUserId]
+    .map((candidate) => normalizeOwnerLookupSegment(candidate))
+    .filter(Boolean);
+  return candidates.includes(requested);
+}
+
+function readActionText(value: unknown) {
+  if (value && typeof value === "object" && "text" in value && typeof value.text === "string") {
+    return value.text;
+  }
+  return null;
+}
+
+async function querySkillBySlug(slug: string, ownerHandle?: string): Promise<SkillLookupResult> {
+  if (!ownerHandle) {
+    const result = (await convexHttp.query(api.skills.getBySlug, { slug })) as SkillBySlugResult;
+    return { result };
+  }
+
   try {
     const result = (await convexHttp.query(api.skills.getBySlug, {
       slug,
+      ownerHandle,
     })) as SkillBySlugResult;
+    return { result, lookupOwnerHandle: ownerHandle };
+  } catch {
+    const result = (await convexHttp.query(api.skills.getBySlug, { slug })) as SkillBySlugResult;
+    if (!result?.skill || !ownerMatchesLookup(result.owner, ownerHandle)) {
+      return { result: null, lookupOwnerHandle: null };
+    }
+    return { result, lookupOwnerHandle: null };
+  }
+}
+
+export async function fetchSkillPageData(
+  slug: string,
+  ownerHandle?: string,
+): Promise<SkillPageLoaderData> {
+  try {
+    const { result, lookupOwnerHandle } = await querySkillBySlug(slug, ownerHandle);
 
     if (!result?.skill) {
       return {
@@ -71,10 +130,10 @@ export async function fetchSkillPageData(slug: string): Promise<SkillPageLoaderD
 
     if (result.latestVersion?._id) {
       try {
-        const response = (await convexHttp.action(api.skills.getReadme, {
+        const response = await convexHttp.action(api.skills.getReadme, {
           versionId: result.latestVersion._id,
-        })) as { text: string };
-        readme = response.text;
+        });
+        readme = readActionText(response);
       } catch (error) {
         readmeError = error instanceof Error ? error.message : "Failed to load SKILL.md";
       }
@@ -93,6 +152,7 @@ export async function fetchSkillPageData(slug: string): Promise<SkillPageLoaderD
         result,
         readme,
         readmeError,
+        ...(ownerHandle ? { lookupOwnerHandle } : {}),
       },
     };
   } catch {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Doc } from "../_generated/dataModel";
-import { toPublicSkill } from "./public";
+import { toPublicPublisher, toPublicSkill } from "./public";
 
 function makeSkill(overrides: Partial<Doc<"skills">> = {}): Doc<"skills"> {
   return {
@@ -51,6 +51,8 @@ describe("public skill mapping", () => {
       statsStars: 3,
       statsInstallsCurrent: 5,
       statsInstallsAllTime: 7,
+      statsSkillsShInstalls: 8,
+      statsGithubStars: 99,
     });
 
     const mapped = toPublicSkill(legacySkill);
@@ -59,10 +61,39 @@ describe("public skill mapping", () => {
     expect(mapped?.stats).toEqual({
       downloads: 12,
       stars: 3,
-      installsCurrent: 5,
-      installsAllTime: 7,
+      installs: 7,
       versions: 0,
       comments: 0,
+    });
+  });
+
+  it("does not expose source breakdowns on the ordinary public skill shape", () => {
+    const mapped = toPublicSkill(
+      makeSkill({
+        statsDownloads: 12,
+        statsSkillsShInstalls: 8,
+        statsGithubStars: 99,
+      }),
+    );
+
+    expect(mapped?.stats.downloads).toBe(12);
+    expect(mapped).not.toHaveProperty("statsSkillsShInstalls");
+    expect(mapped).not.toHaveProperty("statsGithubStars");
+  });
+
+  it("exposes GitHub-backed skill source fields", () => {
+    const mapped = toPublicSkill(
+      makeSkill({
+        installKind: "github",
+        githubPath: "skills/demo",
+        githubCurrentCommit: "a".repeat(40),
+      }),
+    );
+
+    expect(mapped).toMatchObject({
+      installKind: "github",
+      githubPath: "skills/demo",
+      githubCurrentCommit: "a".repeat(40),
     });
   });
 
@@ -92,5 +123,55 @@ describe("public skill mapping", () => {
       moderationFlags: ["blocked.malware"],
     });
     expect(toPublicSkill(skill)).toBeNull();
+  });
+
+  it("filters out skills with a malicious moderation verdict", () => {
+    const skill = makeSkill({
+      moderationStatus: "active",
+      moderationVerdict: "malicious",
+    });
+    expect(toPublicSkill(skill)).toBeNull();
+  });
+});
+
+describe("public publisher mapping", () => {
+  it("exposes official publisher status only when supplied by the caller", () => {
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    } as Doc<"publishers">;
+
+    expect(toPublicPublisher(publisher)).not.toHaveProperty("official");
+    expect(toPublicPublisher(publisher, { official: true })?.official).toBe(true);
+  });
+
+  it("exposes a verified GitHub profile without exposing verification internals", () => {
+    const publisher = {
+      _id: "publishers:cua",
+      _creationTime: 1,
+      kind: "org",
+      handle: "cua",
+      displayName: "Cua",
+      githubHandle: "trycua",
+      githubOrgId: "42",
+      githubVerifiedAt: 123,
+      githubVerifiedByUserId: "users:admin",
+      createdAt: 1,
+      updatedAt: 1,
+    } as Doc<"publishers">;
+
+    expect(toPublicPublisher(publisher)).toEqual(
+      expect.objectContaining({
+        githubHandle: "trycua",
+        githubVerifiedAt: 123,
+      }),
+    );
+    expect(toPublicPublisher(publisher)).not.toHaveProperty("githubOrgId");
+    expect(toPublicPublisher(publisher)).not.toHaveProperty("githubVerifiedByUserId");
   });
 });

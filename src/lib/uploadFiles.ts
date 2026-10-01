@@ -1,74 +1,48 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema/textFiles";
 import { gunzipSync, unzipSync } from "fflate";
 
-const TEXT_TYPES = new Map([
-  ["md", "text/markdown"],
-  ["markdown", "text/markdown"],
-  ["txt", "text/plain"],
-  ["json", "application/json"],
-  ["yaml", "text/yaml"],
-  ["yml", "text/yaml"],
-  ["toml", "text/plain"],
-  ["js", "text/javascript"],
-  ["ts", "text/plain"],
-  ["tsx", "text/plain"],
-  ["jsx", "text/plain"],
-  ["css", "text/css"],
-  ["html", "text/html"],
-  ["svg", "image/svg+xml"],
-]);
-
-export type ExpandFilesReport = {
+type ExpandFilesReport = {
   files: File[];
-  ignoredMacJunkPaths: string[];
+  ignoredLocalMetadataPaths: string[];
 };
 
-type ExpandFilesOptions = {
-  includeBinaryArchiveFiles?: boolean;
-};
-
-export async function expandFilesWithReport(
-  selected: File[],
-  options: ExpandFilesOptions = {},
-): Promise<ExpandFilesReport> {
+export async function expandFilesWithReport(selected: File[]): Promise<ExpandFilesReport> {
   const expanded: File[] = [];
-  const ignoredMacJunkPaths: string[] = [];
+  const ignoredLocalMetadataPaths: string[] = [];
   for (const file of selected) {
     const lower = file.name.toLowerCase();
     if (lower.endsWith(".zip")) {
       const entries = unzipSync(new Uint8Array(await readArrayBuffer(file)));
       pushArchiveEntries(
         expanded,
-        ignoredMacJunkPaths,
+        ignoredLocalMetadataPaths,
         Object.entries(entries).map(([path, data]) => ({ path, data })),
-        options,
       );
       continue;
     }
     if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)));
-      pushArchiveEntries(expanded, ignoredMacJunkPaths, untar(unpacked), options);
+      pushArchiveEntries(expanded, ignoredLocalMetadataPaths, untar(unpacked));
       continue;
     }
     if (lower.endsWith(".gz")) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)));
       const name = file.name.replace(/\.gz$/i, "");
       const normalizedName = normalizePath(name);
-      if (isMacJunkPath(normalizedName)) {
-        ignoredMacJunkPaths.push(normalizedName || name);
+      if (isLocalMetadataPath(normalizedName)) {
+        ignoredLocalMetadataPaths.push(normalizedName || name);
         continue;
       }
       expanded.push(new File([toArrayBuffer(unpacked)], name, { type: guessContentType(name) }));
       continue;
     }
     const path = getFilePath(file);
-    if (path && isMacJunkPath(path)) {
-      ignoredMacJunkPaths.push(path);
+    if (path && isLocalMetadataPath(path)) {
+      ignoredLocalMetadataPaths.push(path);
       continue;
     }
     expanded.push(file);
   }
-  return { files: expanded, ignoredMacJunkPaths };
+  return { files: expanded, ignoredLocalMetadataPaths };
 }
 
 export async function expandFiles(selected: File[]) {
@@ -137,20 +111,18 @@ async function readAllEntries(reader: FileSystemDirectoryReader) {
 
 function pushArchiveEntries(
   target: File[],
-  ignoredMacJunkPaths: string[],
+  ignoredLocalMetadataPaths: string[],
   entries: Array<{ path: string; data: Uint8Array }>,
-  options: ExpandFilesOptions = {},
 ) {
   const normalized: Array<{ path: string; data: Uint8Array }> = [];
 
   for (const entry of entries) {
     const path = normalizePath(entry.path);
     if (!path || path.endsWith("/")) continue;
-    if (isMacJunkPath(path)) {
-      ignoredMacJunkPaths.push(path);
+    if (isLocalMetadataPath(path)) {
+      ignoredLocalMetadataPaths.push(path);
       continue;
     }
-    if (!options.includeBinaryArchiveFiles && !isTextPath(path)) continue;
     normalized.push({ path, data: entry.data });
   }
 
@@ -193,11 +165,7 @@ async function readArrayBuffer(file: Blob) {
 }
 
 function guessContentType(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase();
-  if (!ext) return "application/octet-stream";
-  const known = TEXT_TYPES.get(ext);
-  if (known) return known;
-  if (TEXT_FILE_EXTENSION_SET.has(ext)) return "text/plain";
+  void path;
   return "application/octet-stream";
 }
 
@@ -260,23 +228,16 @@ function unwrapSingleTopLevelFolder<T extends { path: string }>(entries: T[]) {
   }));
 }
 
-function isMacJunkPath(path: string) {
+function isLocalMetadataPath(path: string) {
   const normalized = normalizePath(path).toLowerCase();
   if (!normalized) return false;
   const segments = normalized.split("/").filter(Boolean);
+  if (segments.includes(".git")) return true;
   if (segments.includes("__macosx")) return true;
   const basename = segments.at(-1) ?? "";
   if (basename === ".ds_store") return true;
   if (basename.startsWith("._")) return true;
   return false;
-}
-
-function isTextPath(path: string) {
-  const normalized = path.trim().toLowerCase();
-  const parts = normalized.split(".");
-  const extension = parts.length > 1 ? (parts.at(-1) ?? "") : "";
-  if (!extension) return false;
-  return TEXT_FILE_EXTENSION_SET.has(extension);
 }
 
 type WebkitDataTransferItem = DataTransferItem & {

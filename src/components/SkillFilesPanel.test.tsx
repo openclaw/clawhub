@@ -1,12 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillFilesPanel } from "./SkillFilesPanel";
 
-const getFileTextMock = vi.fn();
+const getFilePreviewMock = vi.fn();
 
 vi.mock("convex/react", () => ({
-  useAction: () => getFileTextMock,
+  useAction: () => getFilePreviewMock,
 }));
 
 type SkillFile = Doc<"skillVersions">["files"][number];
@@ -17,11 +17,20 @@ function makeFile(path: string, size: number): SkillFile {
 
 describe("SkillFilesPanel", () => {
   beforeEach(() => {
-    getFileTextMock.mockReset();
+    getFilePreviewMock.mockReset();
+    getFilePreviewMock.mockResolvedValue({
+      text: "",
+      size: 0,
+      sha256: "0".repeat(64),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("caches loaded files and avoids duplicate fetches", async () => {
-    getFileTextMock.mockResolvedValue({
+    getFilePreviewMock.mockResolvedValue({
       text: "echo hello",
       size: 10,
       sha256: "a".repeat(64),
@@ -30,7 +39,9 @@ describe("SkillFilesPanel", () => {
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={[makeFile("scripts/run.sh", 10)]}
+        skillSlug="demo"
       />,
     );
 
@@ -42,19 +53,146 @@ describe("SkillFilesPanel", () => {
     fireEvent.click(fileButton);
 
     await waitFor(() => {
-      expect(getFileTextMock).toHaveBeenCalledTimes(1);
+      expect(getFilePreviewMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows a loading skeleton while fetching uncached file content", () => {
+    getFilePreviewMock.mockImplementation(
+      () =>
+        new Promise<{
+          text: string | null;
+          size: number;
+          sha256: string;
+        }>(() => {
+          /* never resolves */
+        }),
+    );
+
+    const { container } = render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
+        latestFiles={[makeFile("scripts/run.sh", 10)]}
+        skillSlug="demo"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /scripts\/run\.sh/i }));
+
+    expect(container.querySelector(".file-viewer.is-loading")).not.toBeNull();
+    expect(container.querySelector(".file-viewer-skeleton")).not.toBeNull();
+    expect(screen.getByRole("status", { name: "Loading file" })).toBeTruthy();
+  });
+
+  it("clears the loading min-height after file content resolves", async () => {
+    getFilePreviewMock.mockResolvedValue({
+      text: "echo hello",
+      size: 10,
+      sha256: "a".repeat(64),
+    });
+
+    const { container } = render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
+        latestFiles={[makeFile("scripts/run.sh", 10)]}
+        skillSlug="demo"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /scripts\/run\.sh/i }));
+    await screen.findByText("echo hello");
+
+    expect(container.querySelector(".file-viewer.is-loading")).toBeNull();
+    expect(container.querySelector(".file-viewer")?.getAttribute("style")).toBeNull();
+  });
+
+  it("renders an empty file after it loads", async () => {
+    const { container } = render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
+        latestFiles={[makeFile("empty.txt", 0)]}
+        skillSlug="demo"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /empty\.txt/i }));
+
+    await waitFor(() => {
+      expect(container.querySelector("pre.file-viewer-code")).not.toBeNull();
+    });
+    expect(container.querySelector("pre.file-viewer-code")?.textContent).toBe("");
+  });
+
+  it("offers opaque files as download-only and caches the result", async () => {
+    getFilePreviewMock.mockResolvedValue({
+      text: null,
+      size: 4,
+      sha256: "d".repeat(64),
+    });
+
+    render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        version="1.2.3"
+        latestFiles={[makeFile("assets/payload.bin", 4)]}
+        skillSlug="demo"
+        ownerHandle="acme"
+      />,
+    );
+
+    const fileButton = screen.getByRole("button", { name: /assets\/payload\.bin/i });
+    fireEvent.click(fileButton);
+
+    await screen.findByText(/available to download but cannot be previewed as text/i);
+    expect(screen.getByRole("link", { name: "Download payload.bin" }).getAttribute("href")).toBe(
+      "/api/v1/skills/demo/file?path=assets%2Fpayload.bin&ownerHandle=acme&version=1.2.3",
+    );
+
+    fireEvent.click(fileButton);
+    expect(getFilePreviewMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("encodes URL syntax in literal artifact download paths", async () => {
+    getFilePreviewMock.mockResolvedValue({
+      text: null,
+      size: 4,
+      sha256: "d".repeat(64),
+    });
+
+    render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        version="1.2.3"
+        latestFiles={[makeFile("docs/spec#draft?.bin", 4)]}
+        skillSlug="demo"
+        ownerHandle="acme"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /docs\/spec#draft\?\.bin/i }));
+
+    const downloadLink = await screen.findByRole("link", { name: "Download spec#draft?.bin" });
+    expect(downloadLink.getAttribute("href")).toBe(
+      "/api/v1/skills/demo/file?path=docs%2Fspec%23draft%3F.bin&ownerHandle=acme&version=1.2.3",
+    );
   });
 
   it("ignores stale responses when newer file selection is active", async () => {
     const resolvers: Record<
       string,
-      (value: { text: string; size: number; sha256: string }) => void
+      (value: { text: string | null; size: number; sha256: string }) => void
     > = {};
 
-    getFileTextMock.mockImplementation(
+    getFilePreviewMock.mockImplementation(
       ({ path }: { path: string }) =>
-        new Promise<{ text: string; size: number; sha256: string }>((resolve) => {
+        new Promise<{
+          text: string | null;
+          size: number;
+          sha256: string;
+        }>((resolve) => {
           resolvers[path] = resolve;
         }),
     );
@@ -62,17 +200,56 @@ describe("SkillFilesPanel", () => {
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={[makeFile("a.txt", 5), makeFile("b.txt", 6)]}
+        skillSlug="demo"
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /a\.txt/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to file list" }));
     fireEvent.click(screen.getByRole("button", { name: /b\.txt/i }));
 
-    resolvers["a.txt"]({ text: "alpha", size: 5, sha256: "b".repeat(64) });
-    resolvers["b.txt"]({ text: "beta", size: 6, sha256: "c".repeat(64) });
+    resolvers["a.txt"]({
+      text: "alpha",
+      size: 5,
+      sha256: "b".repeat(64),
+    });
+    resolvers["b.txt"]({
+      text: "beta",
+      size: 6,
+      sha256: "c".repeat(64),
+    });
 
     await screen.findByText("beta");
     expect(screen.queryByText("alpha")).toBeNull();
+  });
+
+  it("shows the complete file tree on mobile", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("max-width: 899px"),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const files = Array.from({ length: 10 }, (_, index) =>
+      makeFile(`folder/file-${index + 1}.md`, index + 1),
+    );
+    render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
+        latestFiles={files}
+        skillSlug="demo"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /folder\/file-10\.md/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "See all" })).toBeNull();
   });
 });

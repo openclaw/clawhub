@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# Tests for TOML parsing logic used across building-dashboards scripts.
+#
+# Covers extract_value (from axiom-api, dashboard-link) and
+# the grep-based deployment listing in setup.
+#
+# Usage: scripts/test-toml-parsing
+
+set -euo pipefail
+
+PASS=0
+FAIL=0
+
+assert_eq() {
+    local label="$1" expected="$2" actual="$3"
+    if [[ "$expected" == "$actual" ]]; then
+        echo "  ✓ $label"
+        PASS=$((PASS + 1))
+    else
+        echo "  ✗ $label"
+        echo "    expected: $(printf '%q' "$expected")"
+        echo "    actual:   $(printf '%q' "$actual")"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# --- extract_value (shared by axiom-api, dashboard-link) ---
+# Extracts a value from ~/.axiom.toml for a given deployment.
+# We inline the awk logic here to test it in isolation.
+run_extract_value() {
+    local config_file="$1" deployment="$2" key="$3"
+    awk -v deployment="$deployment" -v key="$key" '
+        /^[[:space:]]*\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+        in_deployment {
+            gsub(/^[[:space:]]+/, "")
+            if ($1 == key) {
+                sub(/^[^=]*=[[:space:]]*/, "")
+                if (match($0, /^"[^"]*"/)) {
+                    $0 = substr($0, RSTART+1, RLENGTH-2)
+                } else {
+                    sub(/[[:space:]]*#.*$/, "")
+                }
+                print
+                exit
+            }
+        }
+    ' "$config_file"
+}
+
+# --- setup grep logic ---
+# Count and list deployments from config.
+run_count_deployments() {
+    local config_file="$1"
+    local count
+    count=$(grep -cE '^\s*\[deployments\.' "$config_file" 2>/dev/null) || true
+    echo "${count:-0}"
+}
+
+run_list_deployments() {
+    local config_file="$1"
+    grep -E '^\s*\[deployments\.' "$config_file" | sed 's/^[[:space:]]*//' | sed 's/\[deployments\.\(.*\)\]/\1/'
+}
+
+# ========== Test fixtures ==========
+
+TMPDIR_TEST=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_TEST"' EXIT
+
+# Fixture: standard (no indentation)
+cat > "$TMPDIR_TEST/standard.toml" << 'EOF'
+[deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+
+[deployments.staging]
+url = "https://api.staging.axiom.co"
+token = "xaat-staging-token"
+org_id = "org-staging-456"
+EOF
+
+# Fixture: indented sections (the bug this PR fixes)
+cat > "$TMPDIR_TEST/indented.toml" << 'EOF'
+    [deployments.prod]
+    url = "https://api.axiom.co"
+    token = "xaat-prod-token"
+    org_id = "org-prod-123"
+
+    [deployments.staging]
+    url = "https://api.staging.axiom.co"
+    token = "xaat-staging-token"
+    org_id = "org-staging-456"
+EOF
+
+# Fixture: mixed indentation
+cat > "$TMPDIR_TEST/mixed.toml" << 'EOF'
+[deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+
+    [deployments.staging]
+    url = "https://api.staging.axiom.co"
+    token = "xaat-staging-token"
+    org_id = "org-staging-456"
+EOF
+
+# Fixture: tabs
+cat > "$TMPDIR_TEST/tabs.toml" <<- 'EOF'
+	[deployments.prod]
+	url = "https://api.axiom.co"
+	token = "xaat-prod-token"
+	org_id = "org-prod-123"
+EOF
+
+# Fixture: single deployment
+cat > "$TMPDIR_TEST/single.toml" << 'EOF'
+[deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+EOF
+
+# Fixture: unquoted values
+cat > "$TMPDIR_TEST/unquoted.toml" << 'EOF'
+[deployments.prod]
+url = https://api.axiom.co
+token = xaat-prod-token
+org_id = org-prod-123
+EOF
+
+# Fixture: values with extra spacing around =
+cat > "$TMPDIR_TEST/spacing.toml" << 'EOF'
+[deployments.prod]
+url   =   "https://api.axiom.co"
+token =    "xaat-prod-token"
+org_id =  "org-prod-123"
+EOF
+
+# Fixture: inline comments
+cat > "$TMPDIR_TEST/comments.toml" << 'EOF'
+[deployments.prod]
+url = "https://api.axiom.co" # production API
+token = "xaat-prod-token" # keep secret
+org_id = "org-prod-123"
+EOF
+
+
+# Fixture: values with hash inside quotes
+cat > "$TMPDIR_TEST/hash_in_value.toml" << 'EOF'
+[deployments.prod]
+url = "https://example.com/path#fragment"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+EOF
+
+# Fixture: values with brackets in values (e.g. IPv6)
+cat > "$TMPDIR_TEST/brackets.toml" << 'EOF'
+[deployments.prod]
+url = "http://[::1]:3000"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+EOF
+
+# Fixture: empty (no deployments)
+cat > "$TMPDIR_TEST/empty.toml" << 'EOF'
+# No deployments configured
+EOF
+
+# ========== Tests ==========
+
+echo "=== extract_value: standard config ==="
+assert_eq "url from prod"     "https://api.axiom.co"          "$(run_extract_value "$TMPDIR_TEST/standard.toml" prod url)"
+assert_eq "token from prod"   "xaat-prod-token"               "$(run_extract_value "$TMPDIR_TEST/standard.toml" prod token)"
+assert_eq "org_id from prod"  "org-prod-123"                  "$(run_extract_value "$TMPDIR_TEST/standard.toml" prod org_id)"
+assert_eq "url from staging"  "https://api.staging.axiom.co"  "$(run_extract_value "$TMPDIR_TEST/standard.toml" staging url)"
+
+echo ""
+echo "=== extract_value: indented sections ==="
+assert_eq "url from prod"     "https://api.axiom.co"          "$(run_extract_value "$TMPDIR_TEST/indented.toml" prod url)"
+assert_eq "token from prod"   "xaat-prod-token"               "$(run_extract_value "$TMPDIR_TEST/indented.toml" prod token)"
+assert_eq "org_id from prod"  "org-prod-123"                  "$(run_extract_value "$TMPDIR_TEST/indented.toml" prod org_id)"
+assert_eq "url from staging"  "https://api.staging.axiom.co"  "$(run_extract_value "$TMPDIR_TEST/indented.toml" staging url)"
+
+echo ""
+echo "=== extract_value: mixed indentation ==="
+assert_eq "url from prod (not indented)"    "https://api.axiom.co"          "$(run_extract_value "$TMPDIR_TEST/mixed.toml" prod url)"
+assert_eq "url from staging (indented)"     "https://api.staging.axiom.co"  "$(run_extract_value "$TMPDIR_TEST/mixed.toml" staging url)"
+assert_eq "token from staging (indented)"   "xaat-staging-token"            "$(run_extract_value "$TMPDIR_TEST/mixed.toml" staging token)"
+
+echo ""
+echo "=== extract_value: tab indentation ==="
+assert_eq "url from prod"    "https://api.axiom.co"  "$(run_extract_value "$TMPDIR_TEST/tabs.toml" prod url)"
+assert_eq "token from prod"  "xaat-prod-token"       "$(run_extract_value "$TMPDIR_TEST/tabs.toml" prod token)"
+
+echo ""
+echo "=== extract_value: unquoted values ==="
+assert_eq "url unquoted"    "https://api.axiom.co"  "$(run_extract_value "$TMPDIR_TEST/unquoted.toml" prod url)"
+assert_eq "token unquoted"  "xaat-prod-token"       "$(run_extract_value "$TMPDIR_TEST/unquoted.toml" prod token)"
+
+echo ""
+echo "=== extract_value: extra spacing ==="
+assert_eq "url with spacing"     "https://api.axiom.co"  "$(run_extract_value "$TMPDIR_TEST/spacing.toml" prod url)"
+assert_eq "token with spacing"   "xaat-prod-token"       "$(run_extract_value "$TMPDIR_TEST/spacing.toml" prod token)"
+assert_eq "org_id no space before ="  "org-prod-123"     "$(run_extract_value "$TMPDIR_TEST/spacing.toml" prod org_id)"
+
+echo ""
+echo "=== extract_value: inline comments ==="
+assert_eq "url with comment"    "https://api.axiom.co"  "$(run_extract_value "$TMPDIR_TEST/comments.toml" prod url)"
+assert_eq "token with comment"  "xaat-prod-token"       "$(run_extract_value "$TMPDIR_TEST/comments.toml" prod token)"
+assert_eq "org_id no comment"   "org-prod-123"          "$(run_extract_value "$TMPDIR_TEST/comments.toml" prod org_id)"
+
+
+echo ""
+echo "=== extract_value: hash inside quoted value ==="
+assert_eq "url with hash fragment"  "https://example.com/path#fragment"  "$(run_extract_value "$TMPDIR_TEST/hash_in_value.toml" prod url)"
+assert_eq "token after hash url"    "xaat-prod-token"                    "$(run_extract_value "$TMPDIR_TEST/hash_in_value.toml" prod token)"
+
+echo ""
+echo "=== extract_value: brackets inside value ==="
+assert_eq "ipv6 url"             "http://[::1]:3000"  "$(run_extract_value "$TMPDIR_TEST/brackets.toml" prod url)"
+assert_eq "token after bracket"  "xaat-prod-token"    "$(run_extract_value "$TMPDIR_TEST/brackets.toml" prod token)"
+assert_eq "org_id after bracket" "org-prod-123"       "$(run_extract_value "$TMPDIR_TEST/brackets.toml" prod org_id)"
+
+echo ""
+echo "=== extract_value: missing deployment ==="
+assert_eq "nonexistent deployment"  ""  "$(run_extract_value "$TMPDIR_TEST/standard.toml" nonexistent url)"
+
+echo ""
+echo "=== extract_value: missing key ==="
+assert_eq "nonexistent key"  ""  "$(run_extract_value "$TMPDIR_TEST/standard.toml" prod nonexistent_key)"
+
+echo ""
+echo "=== extract_value: no cross-section leaking ==="
+assert_eq "prod token stays in prod"       "xaat-prod-token"     "$(run_extract_value "$TMPDIR_TEST/standard.toml" prod token)"
+assert_eq "staging token stays in staging" "xaat-staging-token"   "$(run_extract_value "$TMPDIR_TEST/standard.toml" staging token)"
+
+echo ""
+echo "=== count deployments: standard ==="
+assert_eq "2 deployments"  "2"  "$(run_count_deployments "$TMPDIR_TEST/standard.toml")"
+
+echo ""
+echo "=== count deployments: indented ==="
+assert_eq "2 deployments (indented)"  "2"  "$(run_count_deployments "$TMPDIR_TEST/indented.toml")"
+
+echo ""
+echo "=== count deployments: mixed ==="
+assert_eq "2 deployments (mixed)"  "2"  "$(run_count_deployments "$TMPDIR_TEST/mixed.toml")"
+
+echo ""
+echo "=== count deployments: single ==="
+assert_eq "1 deployment"  "1"  "$(run_count_deployments "$TMPDIR_TEST/single.toml")"
+
+echo ""
+echo "=== count deployments: empty ==="
+assert_eq "0 deployments"  "0"  "$(run_count_deployments "$TMPDIR_TEST/empty.toml")"
+
+echo ""
+echo "=== list deployments: standard ==="
+LISTED=$(run_list_deployments "$TMPDIR_TEST/standard.toml")
+assert_eq "lists prod"     "prod"     "$(echo "$LISTED" | head -1)"
+assert_eq "lists staging"  "staging"  "$(echo "$LISTED" | tail -1)"
+
+echo ""
+echo "=== list deployments: indented ==="
+LISTED=$(run_list_deployments "$TMPDIR_TEST/indented.toml")
+assert_eq "lists prod (indented)"     "prod"     "$(echo "$LISTED" | head -1)"
+assert_eq "lists staging (indented)"  "staging"  "$(echo "$LISTED" | tail -1)"
+
+echo ""
+echo "==========================="
+echo "Results: $PASS passed, $FAIL failed"
+if [[ $FAIL -gt 0 ]]; then
+    exit 1
+fi

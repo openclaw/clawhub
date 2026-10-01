@@ -1,40 +1,151 @@
 import { Link } from "@tanstack/react-router";
-import { MarketplaceIcon } from "./MarketplaceIcon";
-import { Badge } from "./ui/badge";
-import { familyLabel } from "../lib/packageLabels";
+import { isPluginCategorySlug } from "clawhub-schema";
+import { Download } from "lucide-react";
+import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
+import { getPluginCategoryBySlug } from "../lib/categories";
+import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
+import { buildPluginDetailHref } from "../lib/pluginRoutes";
+import { presentationTitle } from "../lib/presentationTitle";
+import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
+import { CatalogTopicList } from "./CatalogTopicList";
+import { InlineMarkdownSummary } from "./InlineMarkdownSummary";
+import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 
 type PluginListItemProps = {
   item: PackageListItem;
+  variant?: "list" | "card";
+  href?: string;
+  showOfficialBadge?: boolean;
 };
 
-export function PluginListItem({ item }: PluginListItemProps) {
-  return (
-    <Link to="/plugins/$name" params={{ name: item.name }} className="skill-list-item" aria-label={`Plugin: ${item.displayName}`}>
-      <MarketplaceIcon kind="plugin" label={item.displayName} />
-      <div className="skill-list-item-body">
-        <div className="skill-list-item-main">
-          {item.ownerHandle ? (
-            <>
-              <span className="skill-list-item-owner">@{item.ownerHandle}</span>
-              <span className="skill-list-item-sep">/</span>
-            </>
-          ) : null}
-          <span className="skill-list-item-name">{item.displayName}</span>
-          <Badge variant="compact">{familyLabel(item.family)}</Badge>
-          {item.isOfficial ? <Badge variant="accent">Verified</Badge> : null}
+function getPluginTaxonomyDisplay(item: PackageListItem) {
+  const topics = (item.topics ?? []).filter((topic) => topic.trim());
+  if (topics.length > 0) return { labels: topics, ariaLabel: "Topics" };
+
+  const categories = (item.categories ?? []).flatMap((category) => {
+    return isPluginCategorySlug(category) && getPluginCategoryBySlug(category) ? [category] : [];
+  });
+  return { labels: categories, ariaLabel: "Categories" };
+}
+
+function getPluginCategories(item: PackageListItem) {
+  return (item.categories ?? []).flatMap((slug) => {
+    if (!isPluginCategorySlug(slug)) return [];
+    const category = getPluginCategoryBySlug(slug);
+    return category ? [category] : [];
+  });
+}
+
+export function PluginListItem({
+  item,
+  variant = "list",
+  href,
+  showOfficialBadge = true,
+}: PluginListItemProps) {
+  const isOfficial = item.isOfficial || item.ownerOfficial === true;
+  const downloads = formatCompactStat(item.stats?.downloads ?? 0);
+  const taxonomy = getPluginTaxonomyDisplay(item);
+  const categories = getPluginCategories(item);
+  const primaryCategory = categories[0] ?? null;
+  const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
+  const displayName = presentationTitle(item.displayName, item.name);
+
+  if (variant === "card") {
+    return (
+      <div className="card skill-card plugin-card plugin-summary-item">
+        <Link
+          to={pluginHref}
+          className="plugin-detail-link"
+          aria-label={`Plugin: ${displayName}`}
+        />
+        <div className="skill-card-header">
+          <MarketplaceIcon
+            kind="plugin"
+            label={displayName}
+            imageUrl={item.icon}
+            publisherImageUrl={item.ownerImage}
+            categorySlug={primaryCategory?.slug}
+            size="md"
+          />
+          <div className="skill-card-identity">
+            <h3 className="skill-card-title" title={displayName}>
+              {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            </h3>
+            <span className="skill-card-owner-row">
+              <span className="skill-card-owner">
+                {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
+              </span>
+              {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
+            </span>
+          </div>
         </div>
-        <p className="skill-list-item-summary">{item.summary ?? "Plugin package for agent workflows."}</p>
-        <div className="skill-list-item-meta">
-          <span className="skill-list-item-meta-item">Plugin</span>
-          {item.latestVersion ? (
-            <span className="skill-list-item-meta-item">v{item.latestVersion}</span>
-          ) : null}
-          <span className="skill-list-item-meta-item">
-            {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
-          </span>
+        <p className="skill-card-summary plugin-summary">
+          <InlineMarkdownSummary>
+            {item.summary ?? "Plugin package for agent workflows."}
+          </InlineMarkdownSummary>
+        </p>
+        <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
+        <div className="skill-card-footer">
+          <div className="skill-card-bottom-row">
+            <div className="skill-card-bottom-meta">
+              <div className="skill-list-item-meta plugin-card-meta">
+                <span className="skill-list-item-meta-item">
+                  <Download size={14} aria-hidden="true" /> {downloads}
+                </span>
+              </div>
+            </div>
+            {primaryCategory ? (
+              <span className="skill-card-category" aria-label="Category">
+                <BrowseCategoryIcon
+                  slug={primaryCategory.slug}
+                  icon={primaryCategory.icon}
+                  size={13}
+                />
+                {primaryCategory.label}
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
-    </Link>
+    );
+  }
+
+  return (
+    <div className="skill-list-item plugin-summary-item">
+      <Link to={pluginHref} className="plugin-detail-link" aria-label={`Plugin: ${displayName}`} />
+      <MarketplaceIcon
+        kind="plugin"
+        label={displayName}
+        imageUrl={item.icon}
+        publisherImageUrl={item.ownerImage}
+        categorySlug={primaryCategory?.slug}
+      />
+      <div className="skill-list-item-body">
+        <div className="skill-list-item-main">
+          <span className="skill-list-item-identity">
+            <span className="skill-list-item-name" title={displayName}>
+              {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            </span>
+            {item.ownerHandle ? (
+              <span className="skill-list-item-owner">@{item.ownerHandle}</span>
+            ) : null}
+          </span>
+          {showOfficialBadge && isOfficial ? <OfficialBadge /> : null}
+          <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
+        </div>
+        <p className="skill-list-item-summary plugin-summary">
+          <InlineMarkdownSummary>
+            {item.summary ?? "Plugin package for agent workflows."}
+          </InlineMarkdownSummary>
+        </p>
+      </div>
+      <div className="skill-list-item-meta">
+        <span className="skill-list-item-meta-item">
+          <Download size={14} aria-hidden="true" /> {downloads}
+        </span>
+      </div>
+    </div>
   );
 }

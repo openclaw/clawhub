@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Shared time utilities for Gilfoyle scripts
+# Source this file: source "$SCRIPT_DIR/lib-time"
+
+# range_to_rfc3339 converts a human range (e.g. 1h, 24h, 7d) to an RFC3339 timestamp that many seconds ago
+range_to_rfc3339() {
+  local range="$1"
+  local value="${range%[smhd]}"
+  local suffix="${range: -1}"
+
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    echo "Error: Invalid range value '$range'. Expected number + suffix (s/m/h/d)." >&2
+    return 1
+  fi
+
+  local label
+  case "$suffix" in
+    s) label="second" ;;
+    h) label="hour" ;;
+    d) label="day" ;;
+    m) label="minute" ;;
+    *)
+      echo "Error: Invalid range suffix '$suffix'. Use s (seconds), m (minutes), h (hours), or d (days)." >&2
+      return 1
+      ;;
+  esac
+
+  # Pluralize for values other than 1
+  if [[ "$value" -ne 1 ]]; then
+    label="${label}s"
+  fi
+
+  # Try GNU date first (linux, or gdate on macOS), then fall back to macOS date
+  if date -u -d "1 hour ago" +%Y-%m-%dT%H:%M:%SZ &>/dev/null; then
+    # GNU date
+    date -u -d "$value $label ago" +%Y-%m-%dT%H:%M:%SZ
+  else
+    # macOS date: -v flag with uppercase suffix
+    local date_flag
+    case "$suffix" in
+      s) date_flag="-v-${value}S" ;;
+      h) date_flag="-v-${value}H" ;;
+      d) date_flag="-v-${value}d" ;;
+      m) date_flag="-v-${value}M" ;;
+    esac
+    date -u "$date_flag" +%Y-%m-%dT%H:%M:%SZ
+  fi
+}

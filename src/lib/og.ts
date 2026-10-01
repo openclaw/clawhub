@@ -1,5 +1,7 @@
+import { buildSkillDetailHref, buildPublisherProfileHref } from "./ownerRoute";
+import { buildPluginDetailHref } from "./pluginRoutes";
 import { getRuntimeEnv } from "./runtimeEnv";
-import { getClawHubSiteUrl, getOnlyCrabsSiteUrl } from "./site";
+import { getClawHubSiteUrl, SITE_DESCRIPTION } from "./site";
 
 type SkillMetaSource = {
   slug: string;
@@ -18,36 +20,46 @@ type SkillMeta = {
   owner: string | null;
 };
 
-type SoulMetaSource = {
-  slug: string;
-  owner?: string | null;
+type PluginMetaSource = {
+  name: string;
   displayName?: string | null;
   summary?: string | null;
-  version?: string | null;
+  owner?: string | null;
+  latestVersion?: string | null;
 };
 
-type SoulMeta = {
+type PublisherMetaSource = {
+  handle: string;
+  displayName?: string | null;
+  bio?: string | null;
+  image?: string | null;
+  kind?: "user" | "org";
+  official: boolean | null;
+  affiliations: Array<{
+    publisher?: {
+      displayName?: string | null;
+      image?: string | null;
+    } | null;
+  }> | null;
+  downloads?: number | null;
+};
+
+type BasicMeta = {
   title: string;
   description: string;
   image: string;
   url: string;
-  owner: string | null;
 };
 
-const DEFAULT_DESCRIPTION = "ClawHub — a fast skill registry for agents, with vector search.";
-const DEFAULT_SOUL_DESCRIPTION = "SoulHub — the home for SOUL.md bundles and personal system lore.";
-const OG_SKILL_IMAGE_LAYOUT_VERSION = "5";
-const OG_SOUL_IMAGE_LAYOUT_VERSION = "1";
+const OG_SKILL_IMAGE_LAYOUT_VERSION = "10";
+const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "5";
+const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "8";
 
-export function getSiteUrl() {
+function getSiteUrl() {
   return getClawHubSiteUrl();
 }
 
-export function getSoulSiteUrl() {
-  return getOnlyCrabsSiteUrl();
-}
-
-export function getApiBase() {
+function getApiBase() {
   const explicit = getRuntimeEnv("VITE_CONVEX_SITE_URL");
   return explicit || getSiteUrl();
 }
@@ -75,28 +87,6 @@ export async function fetchSkillMeta(slug: string) {
   }
 }
 
-export async function fetchSoulMeta(slug: string) {
-  try {
-    const apiBase = getApiBase();
-    const url = new URL(`/api/v1/souls/${encodeURIComponent(slug)}`, apiBase);
-    const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
-    if (!response.ok) return null;
-    const payload = (await response.json()) as {
-      soul?: { displayName?: string; summary?: string | null } | null;
-      owner?: { handle?: string | null } | null;
-      latestVersion?: { version?: string | null } | null;
-    };
-    return {
-      displayName: payload.soul?.displayName ?? null,
-      summary: payload.soul?.summary ?? null,
-      owner: payload.owner?.handle ?? null,
-      version: payload.latestVersion?.version ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   const siteUrl = getSiteUrl();
   const owner = clean(source.owner);
@@ -106,9 +96,9 @@ export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   const version = clean(source.version);
   const title = `${displayName} — ClawHub`;
   const description =
-    summary || (owner ? `Agent skill by @${owner} on ClawHub.` : DEFAULT_DESCRIPTION);
+    summary || (owner ? `Agent skill by @${owner} on ClawHub.` : SITE_DESCRIPTION);
   const ownerPath = owner || ownerId || "unknown";
-  const url = `${siteUrl}/${ownerPath}/${source.slug}`;
+  const url = `${siteUrl}${buildSkillDetailHref(ownerPath, source.slug)}`;
   const imageParams = new URLSearchParams();
   imageParams.set("v", OG_SKILL_IMAGE_LAYOUT_VERSION);
   imageParams.set("slug", source.slug);
@@ -117,33 +107,67 @@ export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   return {
     title,
     description: truncate(description, 200),
-    image: `${siteUrl}/og/skill.png?${imageParams.toString()}`,
+    image: `${siteUrl}/og/skill?${imageParams.toString()}`,
     url,
     owner: owner || null,
   };
 }
 
-export function buildSoulMeta(source: SoulMetaSource): SoulMeta {
-  const siteUrl = getSoulSiteUrl();
-  const owner = clean(source.owner);
-  const displayName = clean(source.displayName) || clean(source.slug);
+export function buildPluginMeta(source: PluginMetaSource): BasicMeta {
+  const siteUrl = getSiteUrl();
+  const displayName = clean(source.displayName) || clean(source.name);
   const summary = clean(source.summary);
-  const version = clean(source.version);
-  const title = `${displayName} — SoulHub`;
-  const description =
-    summary || (owner ? `Soul by @${owner} on SoulHub.` : DEFAULT_SOUL_DESCRIPTION);
-  const url = `${siteUrl}/souls/${source.slug}`;
+  const owner = clean(source.owner);
+  const latestVersion = clean(source.latestVersion);
+  const title = `${displayName} — ClawHub Plugins`;
+  const description = summary || (owner ? `Plugin by @${owner} on ClawHub.` : SITE_DESCRIPTION);
+  const url = `${siteUrl}${buildPluginDetailHref(source.name, { ownerHandle: owner })}`;
   const imageParams = new URLSearchParams();
-  imageParams.set("v", OG_SOUL_IMAGE_LAYOUT_VERSION);
-  imageParams.set("slug", source.slug);
-  if (owner) imageParams.set("owner", owner);
-  if (version) imageParams.set("version", version);
+  imageParams.set("v", OG_PLUGIN_IMAGE_LAYOUT_VERSION);
+  imageParams.set("name", source.name);
+  if (latestVersion) imageParams.set("version", latestVersion);
   return {
     title,
     description: truncate(description, 200),
-    image: `${siteUrl}/og/soul.png?${imageParams.toString()}`,
+    image: `${siteUrl}/og/plugin?${imageParams.toString()}`,
     url,
-    owner: owner || null,
+  };
+}
+
+export function buildPublisherMeta(source: PublisherMetaSource): BasicMeta {
+  const siteUrl = getSiteUrl();
+  const handle = clean(source.handle).replace(/^@+/, "");
+  const displayName = clean(source.displayName) || `@${handle}`;
+  const bio = clean(source.bio);
+  const image = clean(source.image);
+  const title = `${displayName} — ClawHub`;
+  const description = bio || `Publisher @${handle} on ClawHub.`;
+  const imageParams = new URLSearchParams();
+  imageParams.set("v", OG_PUBLISHER_IMAGE_LAYOUT_VERSION);
+  imageParams.set("handle", handle);
+  imageParams.set("title", displayName);
+  if (source.kind === "org") imageParams.set("kind", "org");
+  imageParams.set("official", source.official ? "1" : "0");
+  const organizationCount = source.affiliations?.length ?? 0;
+  imageParams.set("orgState", organizationCount > 1 ? "many" : String(organizationCount));
+  const organizationImages =
+    source.affiliations
+      ?.map((affiliation) => clean(affiliation.publisher?.image))
+      .map((imageUrl) => imageUrl.replace(/\|/g, ""))
+      .filter(Boolean) ?? [];
+  imageParams.set(
+    "orgImages",
+    organizationImages.length > 0 ? organizationImages.slice(0, 5).join("|") : "0",
+  );
+  if (image) imageParams.set("avatar", image);
+  if (typeof source.downloads === "number" && Number.isFinite(source.downloads)) {
+    imageParams.set("downloads", String(Math.max(0, Math.trunc(source.downloads))));
+  }
+  return {
+    title,
+    description: truncate(description, 200),
+    image: `${siteUrl}/og/profile?${imageParams.toString()}`,
+    url: `${siteUrl}${buildPublisherProfileHref(handle)}`,
   };
 }
 

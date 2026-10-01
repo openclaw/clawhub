@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# eval-scaffold: Generate an eval file from a template
+#
+# Usage: eval-scaffold <type> <capability> [step] [output-file]
+#
+# Arguments:
+#   type        - Template type: minimal, classification, retrieval, structured, tool-use
+#   capability  - Capability name (e.g., support-agent, qa, summarizer)
+#   step        - Step name, optional (e.g., categorize, retrieve, respond)
+#   output-file - Output path (default: <capability>[-<step>].eval.ts)
+#
+# Examples:
+#   eval-scaffold minimal my-feature
+#   eval-scaffold classification support-agent categorize
+#   eval-scaffold retrieval qa retrieve ./src/evals/qa-retrieve.eval.ts
+#   eval-scaffold tool-use support-agent
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE_DIR="$SCRIPT_DIR/../reference/templates"
+
+usage() {
+    echo "Usage: eval-scaffold <type> <capability> [step] [output-file]" >&2
+    echo "" >&2
+    echo "Template types:" >&2
+    for f in "$TEMPLATE_DIR"/*.eval.ts; do
+        name=$(basename "$f" .eval.ts)
+        echo "  $name" >&2
+    done
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  eval-scaffold minimal my-feature" >&2
+    echo "  eval-scaffold classification support-agent categorize" >&2
+    echo "  eval-scaffold retrieval qa retrieve ./src/qa-retrieve.eval.ts" >&2
+}
+
+if [[ $# -lt 2 ]]; then
+    usage
+    exit 1
+fi
+
+TYPE="$1"
+CAPABILITY="$2"
+STEP="${3:-}"
+OUTPUT="${4:-}"
+
+# Map type to template file
+case "$TYPE" in
+    minimal)        TEMPLATE="$TEMPLATE_DIR/minimal.eval.ts" ;;
+    classification) TEMPLATE="$TEMPLATE_DIR/classification.eval.ts" ;;
+    retrieval)      TEMPLATE="$TEMPLATE_DIR/retrieval.eval.ts" ;;
+    structured)     TEMPLATE="$TEMPLATE_DIR/structured-output.eval.ts" ;;
+    tool-use)       TEMPLATE="$TEMPLATE_DIR/tool-use.eval.ts" ;;
+    *)
+        echo "Error: Unknown template type '$TYPE'" >&2
+        echo "" >&2
+        echo "Available types:" >&2
+        for f in "$TEMPLATE_DIR"/*.eval.ts; do
+            echo "  $(basename "$f" .eval.ts)" >&2
+        done
+        exit 1
+        ;;
+esac
+
+if [[ ! -f "$TEMPLATE" ]]; then
+    echo "Error: Template not found at $TEMPLATE" >&2
+    exit 1
+fi
+
+# Determine output file
+if [[ -z "$OUTPUT" ]]; then
+    if [[ -n "$STEP" ]]; then
+        OUTPUT="${CAPABILITY}-${STEP}.eval.ts"
+    else
+        OUTPUT="${CAPABILITY}.eval.ts"
+    fi
+fi
+
+# Convert capability/step to camelCase for pickFlags (e.g., support-agent -> supportAgent)
+to_camel() {
+    local result=""
+    local capitalize=false
+    local str="$1"
+    for (( i=0; i<${#str}; i++ )); do
+        local ch="${str:$i:1}"
+        if [[ "$ch" == "-" ]]; then
+            capitalize=true
+        elif $capitalize; then
+            result+=$(printf '%s' "$ch" | tr '[:lower:]' '[:upper:]')
+            capitalize=false
+        else
+            result+="$ch"
+        fi
+    done
+    echo "$result"
+}
+
+CAMEL_CAPABILITY=$(to_camel "$CAPABILITY")
+
+if [[ -n "$STEP" ]]; then
+    CAMEL_STEP=$(to_camel "$STEP")
+fi
+
+# Replace placeholders (pickFlags first with camelCase, then global replacements)
+if [[ -n "$STEP" ]]; then
+    sed -e "s/pickFlags('{{capability}}.{{step}}')/pickFlags('$CAMEL_CAPABILITY.$CAMEL_STEP')/g" \
+        -e "s/pickFlags('{{capability}}')/pickFlags('$CAMEL_CAPABILITY')/g" \
+        -e "s/{{capability}}/$CAPABILITY/g" \
+        -e "s/{{step}}/$STEP/g" \
+        -e "s/{{functionName}}/myFunction/g" \
+        -e "s/{{functionImport}}/\.\/my-function/g" \
+        "$TEMPLATE" > "$OUTPUT"
+else
+    sed -e "s/pickFlags('{{capability}}.{{step}}')/pickFlags('$CAMEL_CAPABILITY')/g" \
+        -e "s/pickFlags('{{capability}}')/pickFlags('$CAMEL_CAPABILITY')/g" \
+        -e "s/'{{capability}}-{{step}}'/'$CAPABILITY'/g" \
+        -e "s/{{capability}}/$CAPABILITY/g" \
+        -e "s/step: '{{step}}',/\/\/ step is optional/g" \
+        -e "s/{{step}}//g" \
+        -e "s/{{functionName}}/myFunction/g" \
+        -e "s/{{functionImport}}/\.\/my-function/g" \
+        "$TEMPLATE" > "$OUTPUT"
+fi
+
+echo "Created: $OUTPUT" >&2
+echo "" >&2
+echo "Next steps:" >&2
+echo "  1. Replace TODO placeholders with real test data" >&2
+echo "  2. Update the import to point to your actual function" >&2
+echo "  3. Validate: scripts/eval-validate $OUTPUT" >&2
+echo "  4. Test:     npx axiom eval $OUTPUT --debug" >&2

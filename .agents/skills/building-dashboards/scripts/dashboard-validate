@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# dashboard-validate: Validate a dashboard JSON file
+#
+# Usage: dashboard-validate <path-to-json> [--strict]
+#
+# Checks:
+#   1. Valid JSON structure
+#   2. Required fields present (name, owner, charts, layout)
+#   3. All charts have an id field
+#   4. No duplicate chart IDs
+#   5. Chart IDs match layout IDs
+#   6. LogStream queries have take limits
+#   7. Grid layout doesn't exceed 12 columns
+#   8. Per-chart-kind closed-field schema (mirrors the create API)
+#      - Source of truth: reference/chart-config.md
+#        § Fields Rejected on Create (Cross-Chart)
+#      - Verified empirically against staging create endpoint
+#        (28-cell + 3 null-value probes, 2026-05-08)
+#
+# Options:
+#   --strict  Treat warnings as errors
+#
+# Examples:
+#   dashboard-validate ./dashboard.json
+#   dashboard-validate ./dashboard.json --strict
+
+set -uo pipefail
+
+STRICT=false
+FILE=""
+
+for arg in "$@"; do
+    case $arg in
+        --strict)
+            STRICT=true
+            ;;
+        *)
+            FILE="$arg"
+            ;;
+    esac
+done
+
+if [[ -z "$FILE" ]]; then
+    echo "Usage: dashboard-validate <path-to-json> [--strict]"
+    exit 2
+fi
+
+if [[ ! -f "$FILE" ]]; then
+    echo "Error: File not found: $FILE"
+    exit 2
+fi
+
+errors=0
+warnings=0
+
+error() {
+    echo "ERROR: $1"
+    errors=$((errors + 1))
+}
+
+warn() {
+    echo "WARN: $1"
+    warnings=$((warnings + 1))
+}
+
+info() {
+    echo "INFO: $1"
+}
+
+# 1. Check valid JSON
+if ! jq empty "$FILE" 2>/dev/null; then
+    echo "ERROR: Invalid JSON"
+    exit 1
+fi
+info "Valid JSON structure"
+
+# 2. Check required fields
+for field in name owner; do
+    if [[ $(jq -r ".$field // empty" "$FILE") == "" ]]; then
+        error "Missing required field: $field"
+    fi
+done
+
+# 3. Check charts array exists
+if [[ $(jq -r '.charts // "null"' "$FILE") == "null" ]]; then
+    error "Missing charts array"
+fi
+
+# 4. Check layout array exists
+if [[ $(jq -r '.layout // "null"' "$FILE") == "null" ]]; then
+    error "Missing layout array"
+fi
+
+# 5. Check all charts have an id field
+missing_ids=$(jq -r '.charts | to_entries[] | select(.value.id == null or .value.id == "") | .key' "$FILE" 2>/dev/null || true)
+if [[ -n "$missing_ids" ]]; then
+    for idx in $missing_ids; do
+        chart_name=$(jq -r ".charts[$idx].name // \"(unnamed)\"" "$FILE")
+        error "Chart at index $idx ($chart_name) is missing required 'id' field"
+    done
+fi
+
+# 6. Check for duplicate chart IDs
+duplicate_ids=$(jq -r '[.charts[].id // empty] | group_by(.) | map(select(length > 1) | .[0]) | .[]' "$FILE" 2>/dev/null | sort -u || true)
+if [[ -n "$duplicate_ids" ]]; then
+    for dup_id in $duplicate_ids; do
+        error "Duplicate chart id: '$dup_id'"
+    done
+fi
+
+# 7. Check chart IDs match layout IDs
+chart_ids=$(jq -r '.charts[].id // empty' "$FILE" 2>/dev/null | sort)
+layout_ids=$(jq -r '.layout[].i' "$FILE" 2>/dev/null | sort)
+
+if [[ "$chart_ids" != "$layout_ids" ]]; then
+    error "Chart IDs and layout IDs don't match"
+    echo "  Charts: $(echo $chart_ids | tr '\n' ' ')"
+    echo "  Layout: $(echo $layout_ids | tr '\n' ' ')"
+fi
+
+# 8. Check LogStream queries for take limits
+logstream_without_take=$(jq -r '.charts[] | select(.type == "LogStream") | select(.query.apl != null) | select(.query.apl | test("take ") | not) | .id' "$FILE" 2>/dev/null || true)
+if [[ -n "$logstream_without_take" ]]; then
+    for id in $logstream_without_take; do
+        warn "LogStream '$id' may be missing 'take N' limit"
+    done
+fi
+
+# 9. Check grid width (should be 12 columns max)
+max_right=$(jq '[.layout[] | (.x + .w)] | max // 0' "$FILE" 2>/dev/null || echo 0)
+if [[ "$max_right" -gt 12 ]]; then
+    warn "Layout exceeds 12-column grid (max right edge = $max_right)"
+fi
+
+# 10. Check schemaVersion
+schema_version=$(jq -r '.schemaVersion // 0' "$FILE")
+if [[ "$schema_version" != "2" ]]; then
+    warn "schemaVersion is $schema_version, expected 2"
+fi
+
+# 11. Check layout entries have minH/minW
+missing_min=$(jq -r '.layout[] | select(.minH == null or .minW == null) | .i' "$FILE" 2>/dev/null || true)
+if [[ -n "$missing_min" ]]; then
+    info "$(echo "$missing_min" | wc -l | tr -d ' ') layout entries missing minH/minW (will be auto-fixed on deploy)"
+fi
+
+# 12. Per-chart-kind closed-field schema check.
+#
+# The create API rejects certain fields per chart kind with HTTP 400 and a
+# uniform error string:
+#   dashboard validation failed at [charts <i>]: Unrecognized key: "<field>"
+#
+# Rules (verified empirically; see reference/chart-config.md
+# § Fields Rejected on Create):
+#   - decimals    : rejected on every chart kind (universal)
+#   - description : rejected on every chart kind (universal; chart-level only,
+#                   the dashboard-level top-level description is fine)
+#   - options     : rejected on every chart kind (universal). Common
+#                   carry-over from Grafana text panels (options.content)
+#                   or over-generalization from Axiom's nested chart options
+#                   like tableSettings / aggChartOpts. Note `text` is a
+#                   top-level chart field, not nested under options.
+#   - unit        : rejected on TimeSeries, Heatmap, Pie, Table, LogStream, Note
+#                   (i.e. every kind except Statistic)
+#   - customUnits : rejected on Note only
+#
+# Only flag when the field is present AND non-null — the API treats null as
+# field-absent and strips the key on ingest, so null-valued rejected keys
+# create successfully. Flagging null would over-flag and block deploys for
+# payloads the API would actually accept.
+#
+# Unknown chart .type values are skipped silently — we don't have empirical
+# evidence for chart kinds the probe didn't cover, and false-flagging a valid
+# future kind is worse than missing one rejection.
+schema_violations=$(jq -r '
+  .charts | to_entries[] |
+    .key as $idx |
+    .value.type as $t |
+    .value as $c |
+    # Universal rejections
+    (if $c.decimals != null    then "\($idx)\tdecimals"    else empty end),
+    (if $c.description != null then "\($idx)\tdescription" else empty end),
+    (if $c.options != null     then "\($idx)\toptions"     else empty end),
+    # unit rejected on every kind except Statistic (only for kinds we have
+    # empirical evidence for)
+    (if (["TimeSeries","Heatmap","Pie","Table","LogStream","Note"] | index($t)) and $c.unit != null
+     then "\($idx)\tunit" else empty end),
+    # customUnits rejected on Note
+    (if $t == "Note" and $c.customUnits != null
+     then "\($idx)\tcustomUnits" else empty end)
+' "$FILE" 2>/dev/null || true)
+
+if [[ -n "$schema_violations" ]]; then
+    while IFS=$'\t' read -r idx field; do
+        [[ -z "$idx" ]] && continue
+        error "API will reject — dashboard validation failed at [charts $idx]: Unrecognized key: \"$field\""
+    done <<< "$schema_violations"
+fi
+
+# Summary
+echo ""
+echo "Validation complete: $errors errors, $warnings warnings"
+
+if [[ $errors -gt 0 ]]; then
+    exit 1
+fi
+
+if [[ "$STRICT" == "true" && $warnings -gt 0 ]]; then
+    exit 1
+fi
+
+exit 0

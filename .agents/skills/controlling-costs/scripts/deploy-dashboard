@@ -1,0 +1,125 @@
+#!/bin/bash
+# Deploy cost control dashboard to Axiom
+# Usage: deploy-dashboard -d <deployment> -a <audit-dataset> [-n <name>]
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AXIOM_API="${AXIOM_API:-$HOME/.config/agents/skills/sre/scripts/axiom-api}"
+TEMPLATE="$SCRIPT_DIR/../templates/dashboard.json"
+
+# Defaults
+DEPLOYMENT=""
+AUDIT_DATASET=""
+DASHBOARD_NAME="Org Usage & Cost Control"
+
+usage() {
+    cat << 'EOF'
+Usage: deploy-dashboard -d <deployment> -a <audit-dataset> [-n <name>]
+
+Deploy the cost control dashboard to Axiom.
+
+Required:
+  -d, --deployment NAME    Axiom deployment name
+  -a, --audit-dataset NAME Audit dataset name (e.g., axiom-audit, axiom-audit-logs-view)
+
+Optional:
+  -n, --name NAME          Dashboard name (default: "Org Usage & Cost Control")
+
+Example:
+  deploy-dashboard -d prod -a axiom-audit-logs-view
+  deploy-dashboard -d prod -a axiom-audit -n "Production Cost Dashboard"
+EOF
+    exit 1
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -d|--deployment)
+            DEPLOYMENT="$2"
+            shift 2
+            ;;
+        -a|--audit-dataset)
+            AUDIT_DATASET="$2"
+            shift 2
+            ;;
+        -n|--name)
+            DASHBOARD_NAME="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Error: Unknown option $1" >&2
+            usage
+            ;;
+    esac
+done
+
+# Validate required args
+[[ -z "$DEPLOYMENT" ]] && { echo "Error: -d/--deployment required" >&2; usage; }
+[[ -z "$AUDIT_DATASET" ]] && { echo "Error: -a/--audit-dataset required" >&2; usage; }
+
+if [[ ! -f "$TEMPLATE" ]]; then
+    echo "Error: Dashboard template not found at $TEMPLATE"
+    exit 1
+fi
+
+echo "=== Deploying Cost Control Dashboard ==="
+echo "Deployment: $DEPLOYMENT"
+echo "Audit dataset: $AUDIT_DATASET"
+echo "Dashboard: $DASHBOARD_NAME"
+echo ""
+
+# Get current user ID for owner field
+GET_USER_ID="${GET_USER_ID:-$HOME/.config/agents/skills/building-dashboards/scripts/get-user-id}"
+if [[ -x "$GET_USER_ID" ]]; then
+    OWNER_ID=$($GET_USER_ID "$DEPLOYMENT")
+else
+    echo "Error: building-dashboards skill not found. Install it first:"
+    echo "  amp skill install building-dashboards"
+    exit 1
+fi
+
+# Update the dashboard name, owner, and audit dataset
+DASHBOARD_JSON=$(cat "$TEMPLATE" | \
+    sed "s/axiom-audit/$AUDIT_DATASET/g" | \
+    jq --arg name "$DASHBOARD_NAME" --arg owner "$OWNER_ID" '.name = $name | .owner = $owner')
+
+# Create the dashboard using building-dashboards skill
+DASHBOARD_CREATE="${DASHBOARD_CREATE:-$HOME/.config/agents/skills/building-dashboards/scripts/dashboard-create}"
+
+if [[ -x "$DASHBOARD_CREATE" ]]; then
+    # Write temp file for dashboard-create
+    TMPFILE=$(mktemp)
+    echo "$DASHBOARD_JSON" > "$TMPFILE"
+    RESULT=$($DASHBOARD_CREATE "$DEPLOYMENT" "$TMPFILE" 2>&1)
+    rm -f "$TMPFILE"
+else
+    echo "Error: building-dashboards skill not found. Install it first:"
+    echo "  amp skill install building-dashboards"
+    exit 1
+fi
+
+# dashboard-create outputs the ID on success, error message on failure
+if [[ "$RESULT" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    DASHBOARD_ID="$RESULT"
+    echo "✓ Dashboard created successfully!"
+    echo ""
+    echo "Dashboard ID: $DASHBOARD_ID"
+    
+    # Get org_id for URL
+    CONFIG_FILE="$HOME/.axiom.toml"
+    ORG_ID=$(awk -v deployment="$DEPLOYMENT" '
+        /^\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+        in_deployment && $1 == "org_id" { gsub(/[" ]/, "", $3); print $3; exit }
+    ' "$CONFIG_FILE")
+    
+    echo "View at: https://app.axiom.co/${ORG_ID}/dashboards/${DASHBOARD_ID}"
+else
+    echo "Error creating dashboard:"
+    echo "$RESULT"
+    exit 1
+fi

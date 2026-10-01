@@ -3,7 +3,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillCommandLineCard, SkillInstallSurface } from "./SkillInstallSurface";
+import {
+  SkillCommandLineCard,
+  OpenClawCliInstallCommand,
+  SkillInstallSurface,
+} from "./SkillInstallSurface";
+import { TooltipProvider } from "./ui/tooltip";
 
 const writeTextMock = vi.fn();
 
@@ -11,13 +16,7 @@ vi.mock("./ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({
-    children,
-    onSelect,
-  }: {
-    children: ReactNode;
-    onSelect?: () => void;
-  }) => (
+  DropdownMenuItem: ({ children, onSelect }: { children: ReactNode; onSelect?: () => void }) => (
     <button type="button" onClick={() => onSelect?.()}>
       {children}
     </button>
@@ -58,7 +57,7 @@ describe("SkillInstallSurface", () => {
 
     expect(screen.getByRole("heading", { name: "Install with OpenClaw" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "CLI Commands" })).toBeNull();
-    expect(screen.getByText(/After install, inspect the skill metadata/i)).toBeTruthy();
+    expect(screen.getByText(/Before installing anything/i)).toBeTruthy();
     expect(screen.getAllByText("Install & Setup").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /Install Only/i }));
@@ -74,31 +73,41 @@ describe("SkillInstallSurface", () => {
 
   it("defaults to CLI install and can copy the compact prompt tab", async () => {
     render(
-      <SkillCommandLineCard
-        slug="weather"
-        displayName="Weather"
-        ownerHandle="steipete"
-        ownerId={ownerPublisherId}
-      />,
+      <TooltipProvider>
+        <SkillCommandLineCard
+          slug="weather"
+          displayName="Weather"
+          ownerHandle="steipete"
+          ownerId={ownerPublisherId}
+        />
+      </TooltipProvider>,
     );
 
-    expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
-    expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
-    expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("heading", { name: "Install" })).toBeTruthy();
+    expect(screen.getByText("openclaw skills install")).toBeTruthy();
+    expect(screen.getByText("@steipete/weather")).toBeTruthy();
+    expect(document.querySelector(".skill-install-command-verb")?.textContent).toBe(
+      "openclaw skills install",
+    );
+    expect(document.querySelector(".skill-install-command-target")?.textContent).toBe(
+      " @steipete/weather",
+    );
+    expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
+    expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
       "false",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw CLI command" }));
 
     await waitFor(() => {
-      expect(writeTextMock).toHaveBeenCalledWith("openclaw skills install weather");
+      expect(writeTextMock).toHaveBeenCalledWith("openclaw skills install @steipete/weather");
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
     expect(screen.getByText(/Install the skill "Weather"/i)).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
 
@@ -106,8 +115,15 @@ describe("SkillInstallSurface", () => {
 
     await waitFor(() => {
       expect(writeTextMock).toHaveBeenCalledWith(
-        expect.stringContaining("After install, inspect the skill metadata"),
+        expect.stringContaining("Before installing anything"),
       );
     });
+  });
+
+  it("splits plugin install commands into muted verb and highlighted target", () => {
+    render(<OpenClawCliInstallCommand command="openclaw plugins install clawhub:demo-plugin" />);
+
+    expect(screen.getByText("openclaw plugins install")).toBeTruthy();
+    expect(screen.getByText("clawhub:demo-plugin")).toBeTruthy();
   });
 });

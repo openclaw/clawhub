@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# Axiom APL query helper - reads query from stdin
+#
+# Usage: axiom-query <deployment> [options] <<< "query"
+#
+# Options:
+#   --since <duration>     Required relative window, e.g. 15m, 1h, 7d
+#   --from <timestamp>     Required with --to for absolute windows
+#   --to <timestamp>       Required with --from for absolute windows
+#   --raw     Output raw API response (columnar JSON)
+#   --ndjson  Output Newline Delimited JSON (row-oriented)
+#   --full    Do not truncate values in text output
+#   --trace   Print x-axiom-trace-id on success
+#
+# Examples:
+#   # Relative window
+#   axiom-query prod --since 1h <<< "['logs'] | take 5"
+#
+#   # JSON processing
+#   axiom-query prod --since 1h --ndjson <<< "['logs'] | take 5" | jq -c '.status'
+#
+#   # Absolute window
+#   axiom-query prod --from 2026-03-06T10:00:00Z --to 2026-03-06T10:30:00Z <<< "['logs'] | take 5"
+
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: axiom-query <deployment> [options] <<< 'query'" >&2
+  exit 1
+fi
+
+DEPLOYMENT="$1"
+shift
+
+FMT_ARGS=""
+PRINT_TRACE=false
+SINCE=""
+FROM=""
+TO=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --since)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "Error: --since requires a value (for example: --since 15m)." >&2
+        exit 1
+      fi
+      SINCE="$2"
+      shift 2
+      ;;
+    --since=*)
+      SINCE="${1#--since=}"
+      shift
+      ;;
+    --from)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "Error: --from requires a value." >&2
+        exit 1
+      fi
+      FROM="$2"
+      shift 2
+      ;;
+    --from=*)
+      FROM="${1#--from=}"
+      shift
+      ;;
+    --to)
+      if [[ $# -lt 2 || "$2" == --* ]]; then
+        echo "Error: --to requires a value." >&2
+        exit 1
+      fi
+      TO="$2"
+      shift 2
+      ;;
+    --to=*)
+      TO="${1#--to=}"
+      shift
+      ;;
+    --raw)
+      FMT_ARGS="$FMT_ARGS --raw"
+      shift
+      ;;
+    --ndjson)
+      FMT_ARGS="$FMT_ARGS --ndjson"
+      shift
+      ;;
+    --full)
+      FMT_ARGS="$FMT_ARGS --full"
+      shift
+      ;;
+    --trace)
+      PRINT_TRACE=true
+      shift
+      ;;
+    *)
+      echo "Error: Unknown argument '$1'. Queries must be passed via stdin." >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$SINCE" && ( -n "$FROM" || -n "$TO" ) ]]; then
+  echo "error: use either --since or --from/--to, not both" >&2
+  exit 1
+fi
+
+if [[ -z "$SINCE" && ( -z "$FROM" || -z "$TO" ) ]]; then
+  echo "error: axiom-query requires an explicit time window" >&2
+  echo "hint: pass --since 15m or --from 2026-03-06T10:00:00Z --to 2026-03-06T10:30:00Z" >&2
+  exit 1
+fi
+
+if [[ -n "$SINCE" ]]; then
+  START_TIME="$SINCE"
+  if [[ "$START_TIME" != now* ]]; then
+    START_TIME="now-$START_TIME"
+  fi
+  END_TIME="now"
+else
+  START_TIME="$FROM"
+  END_TIME="$TO"
+fi
+
+if [[ -t 0 ]]; then
+  echo "Error: No query provided. Pipe a query to stdin." >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  axiom-query $DEPLOYMENT --since 1h <<< \"['logs'] | take 5\"" >&2
+  exit 1
+fi
+
+APL=$(cat)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PAYLOAD=$(jq -cn \
+  --arg apl "$APL" \
+  --arg startTime "$START_TIME" \
+  --arg endTime "$END_TIME" \
+  '{apl: $apl, startTime: $startTime, endTime: $endTime}')
+
+# Load config from unified config file
+# shellcheck disable=SC1090
+eval "$("$SCRIPT_DIR/config" axiom "$DEPLOYMENT")"
+
+RESP_HEADERS=$(mktemp)
+RESP_BODY=$(mktemp)
+cleanup() {
+  rm -f "$RESP_HEADERS" "$RESP_BODY"
+}
+trap cleanup EXIT
+
+# Execute query and pipe to formatter
+HTTP_CODE=$(curl -sS -o "$RESP_BODY" -D "$RESP_HEADERS" -w "%{http_code}" \
+  -X POST "$AXIOM_URL/v1/datasets/_apl?format=tabular" \
+  -H "Authorization: Bearer $AXIOM_TOKEN" \
+  -H "X-Axiom-Org-Id: $AXIOM_ORG_ID" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD")
+
+if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+  msg=$(jq -r '.message // empty' "$RESP_BODY" 2>/dev/null)
+  trace=$(grep -i '^x-axiom-trace-id:' "$RESP_HEADERS" | tail -1 | awk '{print $2}' | tr -d '\r')
+  echo "error: ${msg:-http $HTTP_CODE}" >&2
+  if [[ -n "$trace" ]]; then
+    echo "trace_id: $trace" >&2
+  fi
+  exit 1
+fi
+
+if [[ "$PRINT_TRACE" == true ]]; then
+  trace=$(grep -i '^x-axiom-trace-id:' "$RESP_HEADERS" | tail -1 | awk '{print $2}' | tr -d '\r')
+  if [[ -n "$trace" ]]; then
+    echo "trace_id: $trace" >&2
+  fi
+fi
+
+# shellcheck disable=SC2086 # intentional flag splitting for formatter options
+cat "$RESP_BODY" | "$SCRIPT_DIR/axiom-query-fmt" $FMT_ARGS

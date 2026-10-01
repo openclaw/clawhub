@@ -1,0 +1,86 @@
+/* @vitest-environment node */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const queryMock = vi.fn();
+const clientCtorMock = vi.fn();
+
+vi.mock("convex/browser", () => ({
+  ConvexHttpClient: class ConvexHttpClientMock {
+    constructor(url: string) {
+      clientCtorMock(url);
+    }
+
+    query = queryMock;
+  },
+}));
+
+vi.mock("../../convex/_generated/api", () => ({
+  api: { publishers: { getOgMetaByHandle: "publishers.getOgMetaByHandle" } },
+}));
+
+describe("fetchPublisherOgMeta", () => {
+  beforeEach(() => {
+    queryMock.mockReset();
+    clientCtorMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.resetModules();
+  });
+
+  it("reads downloads from publisher profile stats", async () => {
+    queryMock.mockResolvedValue({
+      handle: "openclaw",
+      kind: "org",
+      displayName: "OpenClaw",
+      bio: "Build with claws.",
+      image: null,
+      official: true,
+      affiliations: [
+        {
+          publisher: {
+            handle: "github",
+            displayName: "GitHub",
+            image: "https://example.com/github.png",
+          },
+        },
+      ],
+      stats: { downloads: 99, installs: 1200 },
+    });
+
+    const { fetchPublisherOgMeta } = await import("./fetchPublisherOgMeta");
+    const meta = await fetchPublisherOgMeta("openclaw", "https://example.convex.cloud");
+
+    expect(clientCtorMock).toHaveBeenCalledWith("https://example.convex.cloud");
+    expect(queryMock).toHaveBeenCalledWith("publishers.getOgMetaByHandle", {
+      handle: "openclaw",
+    });
+    expect(meta?.stats.downloads).toBe(99);
+    expect(meta?.official).toBe(true);
+    expect(meta?.affiliations).toEqual([
+      { handle: "github", displayName: "GitHub", image: "https://example.com/github.png" },
+    ]);
+  });
+
+  it("returns null when the Convex publisher query hangs past the OG timeout", async () => {
+    vi.useFakeTimers();
+    queryMock.mockImplementation(() => new Promise(() => {}));
+
+    const { fetchPublisherOgMeta } = await import("./fetchPublisherOgMeta");
+    const { OG_FETCH_TIMEOUT_MS } = await import("./ogFetchTimeout");
+    const pending = fetchPublisherOgMeta("openclaw", "https://example.convex.cloud");
+
+    await vi.advanceTimersByTimeAsync(OG_FETCH_TIMEOUT_MS - 1);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toBeNull();
+  });
+});

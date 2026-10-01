@@ -1,0 +1,100 @@
+/* @vitest-environment node */
+import { describe, expect, it } from "vitest";
+import {
+  RETENTION_POLICIES,
+  RETENTION_STANDARD_BATCH_SIZE,
+  getRetentionPolicy,
+} from "./retentionPolicy";
+
+describe("retention policies", () => {
+  it("classifies auth session tables as indexed expiring tables", () => {
+    expect(getRetentionPolicy("authSessions")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "retention.pruneExpiredAuthSessionsInternal",
+    });
+    expect(getRetentionPolicy("authRefreshTokens")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "retention.pruneExpiredAuthRefreshTokensInternal",
+    });
+  });
+
+  it("uses one standard batch size for retention jobs", () => {
+    expect(RETENTION_STANDARD_BATCH_SIZE).toBe(500);
+    const batchSizes = Object.values(RETENTION_POLICIES)
+      .filter((policy) => policy.classification === "ephemeral")
+      .map((policy) => policy.standardBatchSize);
+
+    expect(batchSizes.length).toBeGreaterThan(0);
+    expect(new Set(batchSizes)).toEqual(new Set([RETENTION_STANDARD_BATCH_SIZE]));
+  });
+
+  it("documents active expiring operational tables", () => {
+    expect(getRetentionPolicy("httpRateLimitKeys")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "rateLimits.pruneHttpRateLimitKeysInternal",
+    });
+    expect(getRetentionPolicy("publisherInvites")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "retention.pruneExpiredPublisherInvitesInternal",
+    });
+    expect(getRetentionPolicy("skillPublishUploadTickets")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "retention.pruneExpiredSkillPublishUploadsInternal",
+    });
+  });
+
+  it("documents package daily stats as durable analytics", () => {
+    expect(getRetentionPolicy("packageDailyStats")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
+  it("keeps skills.sh scan attempts as durable exact-hash deduplication records", () => {
+    expect(getRetentionPolicy("skillsShCatalogScanAttempts")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
+  it("keeps GitHub Skill Sync candidates and verdicts as durable rollback history", () => {
+    expect(getRetentionPolicy("githubSkillCandidates")).toMatchObject({
+      classification: "permanent",
+    });
+    expect(getRetentionPolicy("githubSkillScans")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
+  it("keeps exact-version skill evaluations as durable provenance", () => {
+    expect(getRetentionPolicy("skillEvaluationRuns")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
+  it("documents publisher abuse signals as durable review evidence", () => {
+    expect(getRetentionPolicy("publisherAbuseSignals")).toMatchObject({
+      classification: "permanent",
+    });
+    expect(getRetentionPolicy("publisherAbuseSignalReviewEvents")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
+  it("documents package stat events as processed-event retention", () => {
+    expect(getRetentionPolicy("packageStatEvents")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "processedAt",
+      expirationIndex: "by_unprocessed",
+      prune: "packages.pruneProcessedPackageStatEventsInternal",
+    });
+  });
+});

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Axiom query formatter - compact, grepable, token-efficient
+# Usage: ... | axiom-query-fmt [--raw|--full|--ndjson]
+
+set -euo pipefail
+
+MODE="text"
+FULL=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --raw) MODE="raw" ;;
+    --ndjson) MODE="json" ;;
+    --full) FULL=true ;;
+  esac
+done
+
+if [[ "$MODE" == "raw" ]]; then
+  INPUT=$(cat)
+  echo "$INPUT" | jq -r '"# \(.status.rowsMatched // 0)/\(.status.rowsExamined // 0) rows, \(.status.blocksExamined // 0) blocks, \((.status.elapsedTime // 0) / 1000 | floor)ms"' >&2 2>/dev/null
+  echo "$INPUT"
+  exit 0
+fi
+
+INPUT=$(cat)
+
+if ! echo "$INPUT" | jq -e '.tables' >/dev/null 2>&1; then
+  msg=$(echo "$INPUT" | jq -r '.message // empty' 2>/dev/null)
+  echo "error: ${msg:-invalid response}" >&2
+  exit 1
+fi
+
+if [[ "$MODE" == "json" ]]; then
+  # Stats line first (to stderr so it doesn't break jq piping)
+  echo "$INPUT" | jq -r '"# \(.status.rowsMatched // 0)/\(.status.rowsExamined // 0) rows, \(.status.blocksExamined // 0) blocks, \((.status.elapsedTime // 0) / 1000 | floor)ms"' >&2
+  # Output NDJSON (New-line Delimited JSON)
+  # One object per line, perfect for 'jq' piping or 'grep'
+  echo "$INPUT" | jq -c \
+    '.tables[0] as $t |
+    ($t.fields | map(.name)) as $f |
+    ($t.columns // []) as $c |
+    (if ($c | length) > 0 then ($c[0] | length) else 0 end) as $n |
+    range($n) as $i |
+    reduce range($f | length) as $j ({}; 
+      $c[$j][$i] as $val |
+      if $val != null then . + {($f[$j]): $val} else . end
+    )
+  '
+  exit 0
+fi
+
+echo "$INPUT" | jq -r --argjson full "$FULL" '
+def fmt:
+  if . == null then empty
+  elif type == "boolean" then (if . then "true" else "false" end)
+  elif type == "number" then
+    if . == (. | floor) then tostring
+    else ((. * 100 | floor) / 100 | tostring)
+    end
+  elif type == "string" then
+    if (. | length) > 120 and ($full | not) then
+      "\"" + .[0:100] + "...[+" + ((. | length) - 100 | tostring) + " chars]\""
+    elif . | test("\\s") then "\"" + . + "\""
+    else .
+    end
+  elif type == "array" then "[" + (length | tostring) + "]"
+  elif type == "object" then "{" + (keys | length | tostring) + "}"
+  else tostring
+  end;
+
+.tables[0] as $t |
+($t.fields | map(.name)) as $f |
+($t.columns // []) as $c |
+(if ($c | length) > 0 then ($c[0] | length) else 0 end) as $n |
+
+"# \(.status.rowsMatched // 0)/\(.status.rowsExamined // 0) rows, \(.status.blocksExamined // 0) blocks, \((.status.elapsedTime // 0) / 1000 | floor)ms",
+(range($n) as $i |
+  [range($f | length) as $j |
+    $c[$j][$i] as $v |
+    if $v == null then empty
+    else "\($f[$j])=\( $v | fmt)"
+    end
+  ] | join(" ")
+)
+'

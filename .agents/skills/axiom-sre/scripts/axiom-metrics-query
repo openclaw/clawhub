@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Axiom MetricsDB MPL query helper - reads query from stdin
+#
+# Usage: axiom-metrics-query <deployment> [options] <<< "mpl query"
+#
+# Options:
+#   --start <ts>  Start time (RFC3339, e.g. 2025-01-01T00:00:00Z)
+#   --end <ts>    End time (RFC3339, e.g. 2025-01-02T00:00:00Z)
+#   --range <r>   Convenience range from now (e.g. 1h, 24h, 7d)
+#   --trace       Print x-axiom-trace-id on success
+#   --spec        Fetch MPL language specification (no query needed)
+#
+# Time: Either (--start + --end) or --range is required (not both).
+#       MPL does NOT support relative time expressions — RFC3339 only.
+#
+# Examples:
+#   axiom-metrics-query prod --range 1h <<< "dataset:metric.name | align to 5m using avg"
+#   axiom-metrics-query prod --start 2025-01-01T00:00:00Z --end 2025-01-02T00:00:00Z <<< "dataset:cpu.usage"
+#   axiom-metrics-query prod --spec
+
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: axiom-metrics-query <deployment> [options] <<< 'mpl query'" >&2
+  exit 1
+fi
+
+DEPLOYMENT="$1"
+shift
+
+PRINT_TRACE=false
+FETCH_SPEC=false
+START_TIME="${START_TIME:-}"
+END_TIME="${END_TIME:-}"
+RANGE="${RANGE:-}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --start)
+      START_TIME="$2"
+      shift 2
+      ;;
+    --end)
+      END_TIME="$2"
+      shift 2
+      ;;
+    --range)
+      RANGE="$2"
+      shift 2
+      ;;
+    --trace)
+      PRINT_TRACE=true
+      shift
+      ;;
+    --spec)
+      FETCH_SPEC=true
+      shift
+      ;;
+    *)
+      echo "Error: Unknown argument '$1'. Queries must be passed via stdin." >&2
+      exit 1
+      ;;
+  esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load config from unified config file
+# shellcheck disable=SC1090
+eval "$("$SCRIPT_DIR/config" axiom "$DEPLOYMENT")"
+
+RESP_HEADERS=$(mktemp)
+RESP_BODY=$(mktemp)
+cleanup() {
+  rm -f "$RESP_HEADERS" "$RESP_BODY"
+}
+trap cleanup EXIT
+
+# --spec: fetch MPL language specification via OPTIONS and exit
+if [[ "$FETCH_SPEC" == true ]]; then
+  HTTP_CODE=$(curl -sS -o "$RESP_BODY" -D "$RESP_HEADERS" -w "%{http_code}" \
+    -X OPTIONS "$AXIOM_URL/v1/query/_metrics" \
+    -H "Authorization: Bearer $AXIOM_TOKEN" \
+    -H "X-Axiom-Org-Id: $AXIOM_ORG_ID")
+
+  if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+    msg=$(jq -r '.message // empty' "$RESP_BODY" 2>/dev/null)
+    trace=$(grep -i '^x-axiom-trace-id:' "$RESP_HEADERS" | tail -1 | awk '{print $2}' | tr -d '\r')
+    echo "error: ${msg:-http $HTTP_CODE}" >&2
+    if [[ -n "$trace" ]]; then
+      echo "trace_id: $trace" >&2
+    fi
+    exit 1
+  fi
+
+  cat "$RESP_BODY"
+  exit 0
+fi
+
+# Require query from stdin
+if [[ -t 0 ]]; then
+  echo "Error: No query provided. Pipe a query to stdin." >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  axiom-metrics-query $DEPLOYMENT --range 1h <<< \"dataset:metric.name | align to 5m using avg\"" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-time"
+
+# Validate time arguments
+if [[ -n "$RANGE" && ( -n "$START_TIME" || -n "$END_TIME" ) ]]; then
+  echo "Error: --range cannot be combined with --start/--end." >&2
+  exit 1
+fi
+
+if [[ -n "$RANGE" ]]; then
+  START_TIME=$(range_to_rfc3339 "$RANGE") || exit 1
+  END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) || exit 1
+  if [[ -z "$START_TIME" || -z "$END_TIME" ]]; then
+    echo "Error: Failed to compute time range from '$RANGE'." >&2
+    exit 1
+  fi
+elif [[ -z "$START_TIME" || -z "$END_TIME" ]]; then
+  echo "Error: Either (--start + --end) or --range is required." >&2
+  exit 1
+fi
+
+APL=$(cat)
+APL_JSON=$(printf '%s' "$APL" | jq -Rs .)
+START_JSON=$(printf '%s' "$START_TIME" | jq -Rs .)
+END_JSON=$(printf '%s' "$END_TIME" | jq -Rs .)
+
+HTTP_CODE=$(curl -sS -o "$RESP_BODY" -D "$RESP_HEADERS" -w "%{http_code}" \
+  -X POST "$AXIOM_URL/v1/query/_metrics?format=metrics-v1" \
+  -H "Authorization: Bearer $AXIOM_TOKEN" \
+  -H "X-Axiom-Org-Id: $AXIOM_ORG_ID" \
+  -H "Content-Type: application/json" \
+  -d "{\"apl\": $APL_JSON, \"startTime\": $START_JSON, \"endTime\": $END_JSON}")
+
+if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+  msg=$(jq -r '.message // empty' "$RESP_BODY" 2>/dev/null)
+  trace=$(grep -i '^x-axiom-trace-id:' "$RESP_HEADERS" | tail -1 | awk '{print $2}' | tr -d '\r')
+  echo "error: ${msg:-http $HTTP_CODE}" >&2
+  if [[ -n "$trace" ]]; then
+    echo "trace_id: $trace" >&2
+  fi
+  exit 1
+fi
+
+if [[ "$PRINT_TRACE" == true ]]; then
+  trace=$(grep -i '^x-axiom-trace-id:' "$RESP_HEADERS" | tail -1 | awk '{print $2}' | tr -d '\r')
+  if [[ -n "$trace" ]]; then
+    echo "trace_id: $trace" >&2
+  fi
+fi
+
+cat "$RESP_BODY"

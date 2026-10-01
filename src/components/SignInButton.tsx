@@ -1,6 +1,10 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import type { ComponentProps } from "react";
-import { getUserFacingAuthError } from "../lib/authErrorMessage";
+import {
+  getUserFacingAuthError,
+  isBannedAccountAuthError,
+  routeToBannedAccountPage,
+} from "../lib/authErrorMessage";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { Button } from "./ui/button";
 
@@ -10,11 +14,7 @@ type SignInButtonProps = Omit<ButtonProps, "onClick" | "type"> & {
   redirectTo?: string;
 };
 
-export function SignInButton({
-  redirectTo,
-  children = "Sign In",
-  ...props
-}: SignInButtonProps) {
+export function SignInButton({ redirectTo, children = "Sign In", ...props }: SignInButtonProps) {
   const { signIn } = useAuthActions();
 
   return (
@@ -27,14 +27,17 @@ export function SignInButton({
         const next = redirectTo ?? getCurrentRelativeUrl();
         void signIn("github", next ? { redirectTo: next } : undefined)
           .then((result) => {
-            if (result?.signingIn === false) {
+            if (result?.signingIn === false && !result.redirect) {
               setAuthError("Sign in failed. Please try again.");
             }
           })
           .catch((error) => {
-            setAuthError(
-              getUserFacingAuthError(error, "Sign in failed. Please try again."),
-            );
+            const message = getUserFacingAuthError(error, "Sign in failed. Please try again.");
+            if (isBannedAccountAuthError(message)) {
+              routeToBannedAccountPage();
+              return;
+            }
+            setAuthError(message);
           });
       }}
     >

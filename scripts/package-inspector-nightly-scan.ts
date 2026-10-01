@@ -1,0 +1,1153 @@
+import { spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+type ClaimItem = {
+  packageId: string;
+  releaseId: string;
+  ownerUserId?: string;
+  ownerPublisherId?: string;
+  packageName: string;
+  version: string;
+  artifactKind?: string;
+  downloadUrl: string;
+};
+
+type ClaimResponse = {
+  ok: true;
+  leased: boolean;
+  dryRun?: boolean;
+  nextCursor?: string | null;
+  skippedUnchanged?: number;
+  items: ClaimItem[];
+};
+
+type NormalizedFinding = {
+  id?: string;
+  code: string;
+  level: string;
+  severity?: string;
+  issueClass?: string;
+  compatStatus?: string;
+  deprecated?: boolean;
+  message: string;
+  evidence?: string[];
+  fixture?: string;
+  decision?: string;
+  authorRemediation?: {
+    summary: string;
+    docsUrl?: string;
+  };
+};
+
+type ImpactEntry = {
+  packageId: string;
+  releaseId: string;
+  packageName: string;
+  version: string;
+  ownerUserId?: string;
+  ownerPublisherId?: string;
+  findingCount: number;
+  errorCount: number;
+  warningCount: number;
+  targetOpenClawVersion?: string;
+  findings: NormalizedFinding[];
+};
+
+type UploadResult = {
+  ok: true;
+  inserted: number;
+  shouldEmailOwner: boolean;
+};
+
+type NotificationResult = {
+  ok: true;
+  sent: boolean;
+  reason?: string;
+};
+
+type PluginInspectorModule = {
+  openClawTargets?: {
+    resolveVersion: (requestedVersion: string) => Promise<Record<string, unknown>>;
+    prepare: (resolvedTarget: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  };
+  pluginRoot?: {
+    runCheck: (options: Record<string, unknown>) => Promise<{
+      report: Record<string, unknown>;
+      paths: { jsonPath: string };
+    }>;
+  };
+  ci?: {
+    writeOutputs: (
+      report: Record<string, unknown>,
+      options: { cwd: string; outDir: string },
+    ) => Promise<unknown>;
+  };
+  reports?: {
+    sanitizeArtifact: (report: Record<string, unknown>) => unknown;
+  };
+};
+
+const siteUrl = (process.env.CLAWHUB_SITE_URL ?? "https://clawhub.ai").replace(/\/+$/, "");
+const token = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
+const batchSize = process.env.PLUGIN_INSPECTOR_BATCH_SIZE ?? "25";
+const dryRun = parseBoolean(process.env.PLUGIN_INSPECTOR_DRY_RUN);
+const notifyOwners = parseBoolean(process.env.PLUGIN_INSPECTOR_NOTIFY_OWNERS);
+const notificationOnly = parseBoolean(process.env.PLUGIN_INSPECTOR_NOTIFICATION_ONLY);
+const notificationManifestPath = process.env.PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST?.trim();
+const targetPackageNames = parsePackageNames(process.env.PLUGIN_INSPECTOR_PACKAGE_NAMES);
+const dryRunMaxBatches = Math.max(
+  1,
+  Math.min(
+    Number.parseInt(process.env.PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES ?? "20", 10) || 20,
+    100,
+  ),
+);
+const artifactRoot =
+  process.env.PLUGIN_INSPECTOR_ARTIFACT_DIR ?? "plugin-inspector-bulk-scan-reports";
+const scanRunId = resolveScanRunId(process.env);
+const legacyFileDownloadAttempts = 4;
+
+export function resolveScanRunId(env: Record<string, string | undefined>) {
+  return env.PLUGIN_INSPECTOR_RUN_ID?.trim() || env.GITHUB_RUN_ID?.trim() || randomUUID();
+}
+
+export function resolveNightlyOpenClawTarget(value: string | undefined) {
+  const requested = value?.trim() || "beta";
+  if (requested !== "beta") {
+    throw new Error("Nightly plugin scans only support the OpenClaw beta target");
+  }
+  return requested;
+}
+
+export async function prepareBulkOpenClawTarget(
+  requestedVersion: string,
+  inspectorModule?: PluginInspectorModule,
+) {
+  const inspector =
+    inspectorModule ??
+    ((await import("@openclaw/plugin-inspector")) as unknown as PluginInspectorModule);
+  if (!inspector.openClawTargets) {
+    throw new Error(
+      "The bundled Plugin Inspector does not support version-resolved OpenClaw targets",
+    );
+  }
+  const resolved = await inspector.openClawTargets.resolveVersion(requestedVersion);
+  const target = await inspector.openClawTargets.prepare(resolved);
+  const exactVersion = stringValue(target.version) ?? stringValue(resolved.version);
+  if (!exactVersion) {
+    throw new Error("Plugin Inspector did not return an exact OpenClaw target version");
+  }
+  return { exactVersion, target };
+}
+
+export async function runPackageInspectorNightlyScan() {
+  if (!token) throw new Error("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN is required");
+  if (notificationOnly && !notifyOwners) {
+    throw new Error("PLUGIN_INSPECTOR_NOTIFICATION_ONLY requires owner notifications");
+  }
+  if (notifyOwners && !notificationOnly) {
+    throw new Error("Owner notifications require notification-only mode");
+  }
+  if (notificationOnly && dryRun) {
+    throw new Error("Notification-only mode cannot run as a dry run");
+  }
+  if (notificationOnly && targetPackageNames.length > 0) {
+    throw new Error(
+      "Notification-only mode requires the reviewed scan manifest, not package names",
+    );
+  }
+
+  const inspectorVersion = getInspectorVersion();
+  const inspectorModule =
+    (await import("@openclaw/plugin-inspector")) as unknown as PluginInspectorModule;
+  const notificationManifest = notificationOnly
+    ? await loadNotificationManifest(notificationManifestPath, inspectorVersion)
+    : null;
+  const preparedTarget = notificationManifest
+    ? null
+    : await prepareBulkOpenClawTarget(
+        resolveNightlyOpenClawTarget(process.env.PLUGIN_INSPECTOR_OPENCLAW_VERSION),
+        inspectorModule,
+      );
+  const targetOpenClawVersion =
+    notificationManifest?.targetOpenClawVersion ?? preparedTarget?.exactVersion;
+  if (!targetOpenClawVersion) throw new Error("Unable to resolve an exact OpenClaw target");
+  await mkdir(artifactRoot, { recursive: true });
+  const scanStartedAt = Date.now();
+
+  let hadWorkerFailure = false;
+  const impactEntries: ImpactEntry[] = [];
+  let claimed = 0;
+  let scanned = 0;
+  let skippedUnchanged = 0;
+  let notificationAttempts = 0;
+  let notificationsSent = 0;
+  let cursor: string | null = null;
+  let batches = 0;
+  let truncated = false;
+
+  if (notificationManifest) {
+    batches = 1;
+    claimed = notificationManifest.items.length;
+    for (const item of notificationManifest.items) {
+      const result = await notifyPackageItem(item, inspectorVersion, targetOpenClawVersion);
+      if (result.failed) hadWorkerFailure = true;
+      if (result.notificationAttempted) notificationAttempts += 1;
+      if (result.notificationSent) notificationsSent += 1;
+    }
+  } else if (preparedTarget && targetPackageNames.length > 0) {
+    const items = await resolveTargetPackageItems(targetPackageNames);
+    batches = 1;
+    claimed = items.length;
+    for (const item of items) {
+      const result = await inspectPackageItem(
+        item,
+        inspectorVersion,
+        preparedTarget,
+        inspectorModule,
+      );
+      if (result.failed) hadWorkerFailure = true;
+      if (result.impactEntry) impactEntries.push(result.impactEntry);
+      if (result.scanned) scanned += 1;
+      if (result.notificationAttempted) notificationAttempts += 1;
+      if (result.notificationSent) notificationsSent += 1;
+    }
+  } else if (preparedTarget) {
+    do {
+      const claimCursor = cursor;
+      const claim = await claimBatch(cursor, inspectorVersion, targetOpenClawVersion, scanRunId);
+      if (claim.leased) {
+        throw new Error("Plugin Inspector bulk scan lease is owned by another run");
+      }
+      batches += 1;
+      const nextCursor = claim.nextCursor ?? null;
+      claimed += claim.items.length;
+      skippedUnchanged += claim.skippedUnchanged ?? 0;
+      let batchFailed = false;
+
+      for (const item of claim.items) {
+        const result = await inspectPackageItem(
+          item,
+          inspectorVersion,
+          preparedTarget,
+          inspectorModule,
+        );
+        if (result.failed) {
+          hadWorkerFailure = true;
+          batchFailed = true;
+        }
+        if (result.impactEntry) impactEntries.push(result.impactEntry);
+        if (result.scanned) scanned += 1;
+        if (result.notificationAttempted) notificationAttempts += 1;
+        if (result.notificationSent) notificationsSent += 1;
+      }
+
+      if (!dryRun) {
+        if (batchFailed) {
+          cursor = claimCursor;
+          break;
+        }
+        await acknowledgeBatch(nextCursor, scanRunId);
+      }
+      cursor = nextCursor;
+
+      if (cursor && batches >= dryRunMaxBatches) {
+        if (dryRun) {
+          truncated = true;
+          break;
+        }
+      }
+    } while (cursor);
+  } else {
+    throw new Error("The scan target was not prepared");
+  }
+
+  const scanDurationMs = Date.now() - scanStartedAt;
+  const summary = summarizeImpact({
+    claimed,
+    scanned,
+    skippedUnchanged,
+    batches,
+    truncated,
+    nextCursor: cursor,
+    inspectorVersion,
+    targetOpenClawVersion,
+    notifyOwners,
+    notificationOnly,
+    notificationAttempts,
+    notificationsSent,
+    scanStartedAt: new Date(scanStartedAt).toISOString(),
+    scanDurationMs,
+    entries: impactEntries,
+  });
+  await writeFile(
+    path.join(artifactRoot, "run-summary.json"),
+    `${JSON.stringify(summary, null, 2)}\n`,
+  );
+  await writeFile(path.join(artifactRoot, "run-summary.md"), renderImpactMarkdown(summary));
+  if (dryRun) {
+    await writeFile(
+      path.join(artifactRoot, "impact-summary.json"),
+      `${JSON.stringify(summary, null, 2)}\n`,
+    );
+    await writeFile(path.join(artifactRoot, "impact-summary.md"), renderImpactMarkdown(summary));
+  }
+  console.log(
+    notificationOnly
+      ? `Notification phase for OpenClaw ${summary.targetOpenClawVersion}: attempted=${summary.notificationAttempts}, sent=${summary.notificationsSent}, skipped=${summary.skippedUnchangedReleases}.`
+      : `Bulk scan target OpenClaw ${summary.targetOpenClawVersion}: scanned=${summary.scannedReleases}, skippedUnchanged=${summary.skippedUnchangedReleases}, errors=${summary.pluginsWithErrors}, warnings=${summary.pluginsWithWarnings}.`,
+  );
+
+  if (hadWorkerFailure) {
+    process.exitCode = 1;
+  }
+}
+
+export async function loadNotificationManifest(
+  manifestPath: string | undefined,
+  expectedInspectorVersion: string,
+) {
+  if (!manifestPath) {
+    throw new Error(
+      "PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST is required for notification-only mode",
+    );
+  }
+  const raw = JSON.parse(await readFile(manifestPath, "utf8")) as unknown;
+  if (!isPlainObject(raw)) throw new Error("Notification manifest must be a JSON object");
+  if (
+    raw.dryRun !== false ||
+    raw.notificationOnly !== false ||
+    raw.notifyOwners !== false ||
+    raw.truncated !== false ||
+    raw.nextCursor !== null
+  ) {
+    throw new Error("Notification manifest must come from a completed no-email production scan");
+  }
+  const inspectorVersion = stringValue(raw.inspectorVersion);
+  if (inspectorVersion !== expectedInspectorVersion) {
+    throw new Error(
+      `Notification manifest uses Plugin Inspector ${inspectorVersion ?? "unknown"}; expected ${expectedInspectorVersion}`,
+    );
+  }
+  const targetOpenClawVersion = stringValue(raw.targetOpenClawVersion);
+  if (!targetOpenClawVersion) {
+    throw new Error("Notification manifest is missing the exact OpenClaw target version");
+  }
+  if (!Array.isArray(raw.packages)) throw new Error("Notification manifest is missing packages");
+  const items: ClaimItem[] = [];
+  for (const entry of raw.packages) {
+    if (!isPlainObject(entry) || typeof entry.errorCount !== "number" || entry.errorCount <= 0) {
+      continue;
+    }
+    const packageId = stringValue(entry.packageId);
+    const releaseId = stringValue(entry.releaseId);
+    const packageName = stringValue(entry.packageName);
+    const version = stringValue(entry.version);
+    if (!packageId || !releaseId || !packageName || !version) {
+      throw new Error("Notification manifest contains an incomplete hard-error release");
+    }
+    items.push({ packageId, releaseId, packageName, version, downloadUrl: "" });
+  }
+  return { targetOpenClawVersion, items };
+}
+
+async function notifyPackageItem(
+  item: ClaimItem,
+  inspectorVersion: string,
+  targetOpenClawVersion: string,
+) {
+  if (dryRun) {
+    return {
+      failed: false,
+      scanned: false,
+      notificationAttempted: false,
+      notificationSent: false,
+      impactEntry: undefined,
+    };
+  }
+  const reportDir = path.resolve(
+    artifactRoot,
+    safeArtifactName(`${item.packageName}-${item.version}`),
+  );
+  await mkdir(reportDir, { recursive: true });
+  try {
+    const result = await postJson<NotificationResult>(
+      `${siteUrl}/api/v1/package-inspector/notify`,
+      {
+        packageId: item.packageId,
+        releaseId: item.releaseId,
+        inspectorVersion,
+        targetOpenClawVersion,
+      },
+    );
+    await writeFile(
+      path.join(reportDir, "notification-result.json"),
+      `${JSON.stringify(result, null, 2)}\n`,
+    );
+    console.log(
+      `Notification ${item.packageName}@${item.version}: sent=${result.sent}${result.reason ? `, reason=${result.reason}` : ""}`,
+    );
+    return {
+      failed: false,
+      scanned: false,
+      notificationAttempted: true,
+      notificationSent: result.sent,
+      impactEntry: undefined,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeFile(path.join(reportDir, "notification-error.txt"), message);
+    console.error(`Plugin owner notification failed for ${item.packageName}@${item.version}`);
+    console.error(message);
+    return {
+      failed: true,
+      scanned: false,
+      notificationAttempted: true,
+      notificationSent: false,
+      impactEntry: undefined,
+    };
+  }
+}
+
+async function inspectPackageItem(
+  item: ClaimItem,
+  inspectorVersion: string,
+  preparedTarget: { exactVersion: string; target: Record<string, unknown> },
+  inspectorModule: PluginInspectorModule,
+) {
+  const workRoot = path.join(
+    tmpdir(),
+    `clawhub-plugin-inspector-bulk-scan-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  );
+  const pluginRoot = path.join(workRoot, "plugin");
+  const reportDir = path.resolve(
+    artifactRoot,
+    safeArtifactName(`${item.packageName}-${item.version}`),
+  );
+  await mkdir(pluginRoot, { recursive: true });
+  await mkdir(reportDir, { recursive: true });
+  try {
+    const artifactKind = await downloadPackageArtifactForScan(item, workRoot, pluginRoot);
+    const scanRoot = await prepareExtractedPluginRoot(pluginRoot, artifactKind, item.packageName);
+    if (!inspectorModule.pluginRoot || !inspectorModule.ci || !inspectorModule.reports) {
+      throw new Error("The bundled Plugin Inspector bulk APIs are unavailable");
+    }
+    const scan = await inspectorModule.pluginRoot.runCheck({
+      allowExecution: false,
+      authorFacing: true,
+      capture: false,
+      configPath: resolveInspectorConfigPath(scanRoot),
+      mockSdk: true,
+      outDir: reportDir,
+      pluginRoot: scanRoot,
+      targetOpenClaw: preparedTarget.target,
+    });
+    const report = scan.report;
+    await writeFile(scan.paths.jsonPath, `${JSON.stringify(report, null, 2)}\n`);
+    await inspectorModule.ci.writeOutputs(report, {
+      cwd: path.dirname(scan.paths.jsonPath),
+      outDir: ".",
+    });
+    await writeFile(
+      path.join(reportDir, "stdout.txt"),
+      `${JSON.stringify(inspectorModule.reports.sanitizeArtifact(report), null, 2)}\n`,
+    );
+    await writeFile(path.join(reportDir, "stderr.txt"), "");
+    const findings = normalizeFindings(report);
+    const targetOpenClawVersion = extractTargetOpenClawVersion(report.targetOpenClaw);
+    if (targetOpenClawVersion !== preparedTarget.exactVersion) {
+      throw new Error(
+        `Plugin Inspector reported OpenClaw ${targetOpenClawVersion ?? "unknown"}; expected ${preparedTarget.exactVersion}`,
+      );
+    }
+    if (!dryRun) {
+      const uploadResult = await postJson<UploadResult>(
+        `${siteUrl}/api/v1/package-inspector/results`,
+        {
+          packageId: item.packageId,
+          releaseId: item.releaseId,
+          inspectorVersion,
+          targetOpenClawVersion,
+          notifyOwners,
+          findings,
+        },
+      );
+      await writeFile(
+        path.join(reportDir, "upload-result.json"),
+        `${JSON.stringify({ findingCount: findings.length, ...uploadResult }, null, 2)}\n`,
+      );
+      console.log(
+        `Uploaded ${item.packageName}@${item.version}: findings=${findings.length}, inserted=${uploadResult.inserted}, shouldEmailOwner=${uploadResult.shouldEmailOwner}`,
+      );
+    }
+    return {
+      failed: false,
+      scanned: true,
+      notificationAttempted: false,
+      notificationSent: false,
+      impactEntry: toImpactEntry(item, findings, targetOpenClawVersion),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeFile(path.join(reportDir, "error.txt"), message);
+    console.error(`Plugin Inspector bulk scan failed for ${item.packageName}@${item.version}`);
+    console.error(message);
+    return {
+      failed: true,
+      scanned: false,
+      notificationAttempted: false,
+      notificationSent: false,
+      impactEntry: undefined,
+    };
+  } finally {
+    await rm(workRoot, { recursive: true, force: true });
+  }
+}
+
+export async function downloadPackageArtifactForScan(
+  item: ClaimItem,
+  workRoot: string,
+  pluginRoot: string,
+) {
+  const artifact = await fetch(item.downloadUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!artifact.ok) {
+    const detail = await artifact.text();
+    if (artifact.status === 500 && item.artifactKind === "legacy-zip") {
+      await downloadLegacyPackageFiles(item, pluginRoot);
+      console.warn(
+        `Protected legacy archive failed for ${item.packageName}@${item.version}; reconstructed verified files instead.`,
+      );
+      return "legacy-zip" as const;
+    }
+    throw new Error(`download failed ${artifact.status}: ${detail}`);
+  }
+
+  const artifactKind = resolveArtifactKind(item.artifactKind, artifact.headers);
+  const artifactPath = path.join(
+    workRoot,
+    artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
+  );
+  await writeFile(artifactPath, Buffer.from(await artifact.arrayBuffer()));
+  if (artifactKind === "npm-pack") {
+    run("tar", ["-xzf", artifactPath, "-C", pluginRoot, "--strip-components=1"]);
+  } else {
+    run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
+  }
+  return artifactKind;
+}
+
+async function downloadLegacyPackageFiles(item: ClaimItem, pluginRoot: string) {
+  const versionUrl = new URL(
+    `/api/v1/packages/${encodeURIComponent(item.packageName)}/versions/${encodeURIComponent(item.version)}`,
+    siteUrl,
+  );
+  const detail = await fetch(versionUrl);
+  if (!detail.ok) {
+    throw new Error(`legacy package lookup failed ${detail.status}: ${await detail.text()}`);
+  }
+  const payload = (await detail.json()) as unknown;
+  if (!isPlainObject(payload) || !isPlainObject(payload.version)) {
+    throw new Error("legacy package lookup returned no version");
+  }
+  const files = payload.version.files;
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error("legacy package lookup returned no files");
+  }
+
+  const packageRoot = path.join(pluginRoot, "package");
+  for (const value of files) {
+    if (!isPlainObject(value)) throw new Error("legacy package lookup returned an invalid file");
+    const filePath = stringValue(value.path);
+    const expectedSha256 = stringValue(value.sha256);
+    const expectedSize = typeof value.size === "number" ? value.size : undefined;
+    if (!filePath || !expectedSha256 || expectedSize === undefined) {
+      throw new Error("legacy package lookup returned incomplete file metadata");
+    }
+    const destination = resolveLegacyScanFilePath(packageRoot, filePath);
+    const fileUrl = new URL(
+      `/api/v1/packages/${encodeURIComponent(item.packageName)}/file`,
+      siteUrl,
+    );
+    fileUrl.searchParams.set("path", filePath);
+    fileUrl.searchParams.set("version", item.version);
+    const response = await fetchLegacyPackageFile(fileUrl, filePath);
+    if (!response.ok) {
+      throw new Error(
+        `legacy package file download failed for ${filePath} ${response.status}: ${await response.text()}`,
+      );
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength !== expectedSize) {
+      throw new Error(
+        `legacy package file size mismatch for ${filePath}: expected ${expectedSize}, got ${bytes.byteLength}`,
+      );
+    }
+    const actualSha256 = createHash("sha256").update(bytes).digest("hex");
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(`legacy package file checksum mismatch for ${filePath}`);
+    }
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, bytes);
+  }
+}
+
+async function fetchLegacyPackageFile(fileUrl: URL, filePath: string) {
+  for (let attempt = 1; attempt <= legacyFileDownloadAttempts; attempt += 1) {
+    const response = await fetch(fileUrl);
+    const retryAfter = response.headers.get("Retry-After");
+    if (response.ok || response.status !== 503 || retryAfter === null) return response;
+    if (attempt === legacyFileDownloadAttempts) return response;
+    const delayMs = parseRetryAfterDelayMs(retryAfter);
+    if (delayMs === undefined) return response;
+    await response.body?.cancel();
+    console.warn(
+      `Legacy package file download temporarily unavailable for ${filePath}; retrying in ${delayMs}ms (attempt ${attempt + 1}/${legacyFileDownloadAttempts}).`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  throw new Error(`legacy package file retry exhausted unexpectedly for ${filePath}`);
+}
+
+function parseRetryAfterDelayMs(value: string) {
+  const seconds = Number(value);
+  if (Number.isSafeInteger(seconds) && seconds >= 0) return Math.min(seconds * 1000, 5000);
+  const retryAt = Date.parse(value);
+  if (!Number.isFinite(retryAt)) return undefined;
+  return Math.min(Math.max(0, retryAt - Date.now()), 5000);
+}
+
+function resolveLegacyScanFilePath(packageRoot: string, filePath: string) {
+  if (
+    filePath.length > 500 ||
+    filePath !== filePath.trim() ||
+    filePath.startsWith("/") ||
+    filePath.includes("\\") ||
+    filePath.includes("\0")
+  ) {
+    throw new Error(`legacy package contains unsafe file path: ${filePath}`);
+  }
+  const segments = filePath.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    throw new Error(`legacy package contains unsafe file path: ${filePath}`);
+  }
+  return path.join(packageRoot, ...segments);
+}
+
+export function resolveArtifactKind(value: string | undefined, headers: Headers) {
+  if (value === "npm-pack" || value === "legacy-zip") return value;
+  const header = headers.get("X-ClawHub-Artifact-Type")?.trim();
+  if (header === "npm-pack-tarball") return "npm-pack";
+  if (header === "legacy-plugin-zip") return "legacy-zip";
+  return "legacy-zip";
+}
+
+export async function prepareExtractedPluginRoot(
+  pluginRoot: string,
+  artifactKind: "npm-pack" | "legacy-zip",
+  packageName: string,
+) {
+  const scanRoot =
+    artifactKind === "legacy-zip" && existsSync(path.join(pluginRoot, "package"))
+      ? path.join(pluginRoot, "package")
+      : pluginRoot;
+  if (artifactKind === "legacy-zip") {
+    await removePosixArchiveMetadata(scanRoot);
+  }
+  await normalizePluginJsonManifests(scanRoot);
+  await writeSyntheticConfigIfNeeded(scanRoot, packageName);
+  return scanRoot;
+}
+
+if (import.meta.main) {
+  await runPackageInspectorNightlyScan();
+}
+
+async function claimBatch(
+  cursor: string | null,
+  inspectorVersion: string,
+  targetOpenClawVersion: string,
+  runId: string,
+) {
+  const url = new URL(`${siteUrl}/api/v1/package-inspector/claim`);
+  url.searchParams.set("batchSize", batchSize);
+  url.searchParams.set("dryRun", dryRun ? "true" : "false");
+  url.searchParams.set("inspectorVersion", inspectorVersion);
+  url.searchParams.set("targetOpenClawVersion", targetOpenClawVersion);
+  url.searchParams.set("notifyOwners", notifyOwners ? "true" : "false");
+  if (!dryRun) url.searchParams.set("runId", runId);
+  if (cursor) url.searchParams.set("cursor", cursor);
+  return await postJson<ClaimResponse>(url.toString(), {});
+}
+
+export async function acknowledgeBatch(cursor: string | null, runId: string) {
+  const url = new URL(`${siteUrl}/api/v1/package-inspector/acknowledge`);
+  url.searchParams.set("runId", runId);
+  if (cursor) url.searchParams.set("cursor", cursor);
+  return await postJson<{ ok: true; cursor: string | null; completed: boolean }>(
+    url.toString(),
+    {},
+  );
+}
+
+function resolveInspectorConfigPath(root: string) {
+  for (const filename of ["plugin-inspector.config.json", ".plugin-inspector.json"]) {
+    const candidate = path.join(root, filename);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+async function resolveTargetPackageItems(packageNames: string[]): Promise<ClaimItem[]> {
+  const items: ClaimItem[] = [];
+  for (const packageName of packageNames) {
+    const detail = await fetch(`${siteUrl}/api/v1/packages/${encodeURIComponent(packageName)}`);
+    if (!detail.ok) {
+      throw new Error(
+        `package lookup failed for ${packageName} ${detail.status}: ${await detail.text()}`,
+      );
+    }
+    const payload = (await detail.json()) as { package?: unknown };
+    const pkg = payload.package;
+    if (!isPlainObject(pkg))
+      throw new Error(`package lookup returned no package for ${packageName}`);
+    const packageRecord = pkg as Record<string, unknown>;
+    const packageId = stringValue(packageRecord._id);
+    const releaseId = stringValue(packageRecord.latestReleaseId);
+    const version = stringValue(packageRecord.latestVersion);
+    const family = stringValue(packageRecord.family);
+    const channel = stringValue(packageRecord.channel);
+    if (!packageId || !releaseId || !version) {
+      throw new Error(
+        `package lookup returned incomplete latest release metadata for ${packageName}`,
+      );
+    }
+    if (family !== "code-plugin" && family !== "bundle-plugin") {
+      throw new Error(`${packageName} is not a plugin package`);
+    }
+    if (channel === "private") {
+      throw new Error(`${packageName} is private and cannot be scanned by this workflow`);
+    }
+    items.push({
+      packageId,
+      releaseId,
+      packageName: stringValue(packageRecord.name) ?? packageName,
+      version,
+      downloadUrl: `${siteUrl}/api/v1/package-inspector/artifact?releaseId=${encodeURIComponent(releaseId)}`,
+    });
+  }
+  return items;
+}
+
+async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`POST ${url} failed ${response.status}: ${await response.text()}`);
+  }
+  return (await response.json()) as T;
+}
+
+async function writeSyntheticConfigIfNeeded(root: string, packageName: string) {
+  if (
+    existsSync(path.join(root, "plugin-inspector.config.json")) ||
+    existsSync(path.join(root, ".plugin-inspector.json"))
+  ) {
+    return;
+  }
+  const packageJson = await readJsonIfExists(path.join(root, "package.json"));
+  if (hasInspectorConfig(packageJson)) {
+    return;
+  }
+  await writeFile(
+    path.join(root, ".plugin-inspector.json"),
+    `${JSON.stringify({ version: 1, plugin: { id: safeFixtureId(packageName) } }, null, 2)}\n`,
+  );
+}
+
+async function normalizePluginJsonManifests(root: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      await normalizePluginJsonManifests(entryPath);
+      continue;
+    }
+    if (
+      entry.isFile() &&
+      (entry.name === "package.json" || entry.name === "openclaw.plugin.json")
+    ) {
+      await readJsonIfExists(entryPath);
+    }
+  }
+}
+
+async function readJsonIfExists(filePath: string) {
+  if (!existsSync(filePath)) return null;
+  const contents = await readFile(filePath, "utf8");
+  const normalizedContents = contents.startsWith("\uFEFF") ? contents.slice(1) : contents;
+  const parsed = JSON.parse(normalizedContents) as unknown;
+  if (normalizedContents !== contents) {
+    await writeFile(filePath, normalizedContents);
+  }
+  return parsed;
+}
+
+async function removePosixArchiveMetadata(root: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      await removePosixArchiveMetadata(entryPath);
+      if (entry.name === "PaxHeader" && (await readdir(entryPath)).length === 0) {
+        await rmdir(entryPath);
+      }
+      continue;
+    }
+    if (entry.isFile() && path.basename(root) === "PaxHeader") {
+      const { size } = await stat(entryPath);
+      if (size <= 64 * 1024 && isPosixExtendedHeader(await readFile(entryPath))) {
+        await rm(entryPath);
+      }
+    }
+  }
+}
+
+function isPosixExtendedHeader(contents: Uint8Array) {
+  let offset = 0;
+  let records = 0;
+  while (offset < contents.length) {
+    let space = offset;
+    while (space < contents.length && contents[space] >= 48 && contents[space] <= 57) space += 1;
+    if (space === offset || contents[space] !== 32) return false;
+    const recordLength = Number.parseInt(
+      new TextDecoder().decode(contents.subarray(offset, space)),
+      10,
+    );
+    const recordEnd = offset + recordLength;
+    if (!Number.isSafeInteger(recordLength) || recordEnd > contents.length) return false;
+    if (contents[recordEnd - 1] !== 10) return false;
+    const payload = contents.subarray(space + 1, recordEnd - 1);
+    const equals = payload.indexOf(61);
+    if (equals <= 0) return false;
+    offset = recordEnd;
+    records += 1;
+  }
+  return records > 0;
+}
+
+function hasInspectorConfig(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return isPlainObject(record.pluginInspector) || isPlainObject(record["plugin-inspector"]);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function normalizeFindings(report: Record<string, unknown>): NormalizedFinding[] {
+  const issues = Array.isArray(report.issues)
+    ? report.issues
+        .map((issue) => normalizeFinding(issue, "warning"))
+        .filter(isFinding)
+        .filter(isAuthorFacingFinding)
+    : [];
+  if (issues.length > 0) return issues;
+  return [
+    ...normalizeFindingArray(report.breakages, "breakage"),
+    ...normalizeFindingArray(report.warnings, "warning"),
+    ...normalizeFindingArray(report.suggestions, "warning"),
+  ].filter(isAuthorFacingFinding);
+}
+
+function normalizeFindingArray(value: unknown, fallbackLevel: string) {
+  return Array.isArray(value)
+    ? value.map((finding) => normalizeFinding(finding, fallbackLevel)).filter(isFinding)
+    : [];
+}
+
+function normalizeFinding(value: unknown, fallbackLevel: string): NormalizedFinding | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const message = stringValue(record.message) ?? stringValue(record.title);
+  const code = stringValue(record.code) ?? "plugin-inspector-finding";
+  if (!message) return null;
+  const level =
+    stringValue(record.level) ??
+    (record.status === "blocking" || fallbackLevel === "breakage" ? "breakage" : "warning");
+  return {
+    id: stringValue(record.id),
+    code,
+    level,
+    severity: stringValue(record.severity),
+    issueClass: stringValue(record.issueClass),
+    compatStatus: stringValue(record.compatStatus),
+    deprecated: typeof record.deprecated === "boolean" ? record.deprecated : undefined,
+    message,
+    evidence: Array.isArray(record.evidence) ? record.evidence.map(String).slice(0, 12) : undefined,
+    fixture: stringValue(record.fixture),
+    decision: stringValue(record.decision),
+    authorRemediation: normalizeAuthorRemediation(record.authorRemediation),
+  };
+}
+
+function normalizeAuthorRemediation(value: unknown) {
+  if (!isPlainObject(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const summary = stringValue(record.summary);
+  if (!summary) return undefined;
+  const docsUrl = stringValue(record.docsUrl);
+  return docsUrl ? { summary, docsUrl } : { summary };
+}
+
+function isFinding(value: NormalizedFinding | null): value is NormalizedFinding {
+  return value !== null;
+}
+
+function isAuthorFacingFinding(value: NormalizedFinding) {
+  return value.issueClass !== "inspector-gap";
+}
+
+function toImpactEntry(
+  item: ClaimItem,
+  findings: NormalizedFinding[],
+  targetOpenClawVersion: string | undefined,
+): ImpactEntry {
+  let errorCount = 0;
+  let warningCount = 0;
+  for (const finding of findings) {
+    if (isErrorFinding(finding)) errorCount += 1;
+    else warningCount += 1;
+  }
+  return {
+    packageId: item.packageId,
+    releaseId: item.releaseId,
+    packageName: item.packageName,
+    version: item.version,
+    ownerUserId: item.ownerUserId,
+    ownerPublisherId: item.ownerPublisherId,
+    findingCount: findings.length,
+    errorCount,
+    warningCount,
+    targetOpenClawVersion,
+    findings,
+  };
+}
+
+function isErrorFinding(finding: Pick<NormalizedFinding, "level" | "severity">) {
+  return finding.level === "breakage" || finding.level === "error" || finding.severity === "P0";
+}
+
+export function summarizeImpact(args: {
+  claimed: number;
+  scanned: number;
+  skippedUnchanged?: number;
+  batches: number;
+  truncated: boolean;
+  nextCursor: string | null;
+  inspectorVersion: string;
+  targetOpenClawVersion?: string;
+  notifyOwners?: boolean;
+  notificationOnly?: boolean;
+  notificationAttempts?: number;
+  notificationsSent?: number;
+  scanStartedAt?: string;
+  scanDurationMs?: number;
+  entries: ImpactEntry[];
+}) {
+  const impactedOwners = new Set<string>();
+  const frequency = new Map<
+    string,
+    { code: string; count: number; errorCount: number; warningCount: number }
+  >();
+  let pluginsWithErrors = 0;
+  let pluginsWithWarnings = 0;
+  let totalErrors = 0;
+  let totalWarnings = 0;
+  for (const entry of args.entries) {
+    if (entry.findingCount > 0 && entry.ownerUserId) impactedOwners.add(entry.ownerUserId);
+    if (entry.errorCount > 0) pluginsWithErrors += 1;
+    if (entry.warningCount > 0) pluginsWithWarnings += 1;
+    totalErrors += entry.errorCount;
+    totalWarnings += entry.warningCount;
+    for (const finding of entry.findings) {
+      const current = frequency.get(finding.code) ?? {
+        code: finding.code,
+        count: 0,
+        errorCount: 0,
+        warningCount: 0,
+      };
+      current.count += 1;
+      if (isErrorFinding(finding)) current.errorCount += 1;
+      else current.warningCount += 1;
+      frequency.set(finding.code, current);
+    }
+  }
+  return {
+    dryRun,
+    generatedAt: new Date().toISOString(),
+    siteUrl,
+    inspectorVersion: args.inspectorVersion,
+    targetOpenClawVersion: args.targetOpenClawVersion,
+    notifyOwners: args.notifyOwners ?? false,
+    notificationOnly: args.notificationOnly ?? false,
+    notificationAttempts: args.notificationAttempts ?? 0,
+    notificationsSent: args.notificationsSent ?? 0,
+    scanStartedAt: args.scanStartedAt ?? new Date().toISOString(),
+    scanDurationMs: args.scanDurationMs ?? 0,
+    scanThroughputReleasesPerSecond:
+      args.scanDurationMs && args.scanDurationMs > 0
+        ? args.scanned / (args.scanDurationMs / 1000)
+        : 0,
+    batchSize: Number.parseInt(batchSize, 10) || batchSize,
+    batches: args.batches,
+    truncated: args.truncated,
+    nextCursor: args.nextCursor,
+    claimedReleases: args.claimed,
+    scannedReleases: args.scanned,
+    skippedUnchangedReleases: args.skippedUnchanged ?? 0,
+    pluginsWithFindings: args.entries.filter((entry) => entry.findingCount > 0).length,
+    pluginsWithErrors,
+    pluginsWithWarnings,
+    impactedOwners: impactedOwners.size,
+    totalErrors,
+    totalWarnings,
+    findingFrequency: [...frequency.values()].sort((a, b) => b.count - a.count),
+    packages: args.entries.filter((entry) => entry.findingCount > 0),
+  };
+}
+
+function getInspectorVersion() {
+  return process.env.PLUGIN_INSPECTOR_VERSION ?? resolveBundledPluginInspectorVersion();
+}
+
+export function renderImpactMarkdown(summary: ReturnType<typeof summarizeImpact>) {
+  const lines = [
+    "# Plugin Inspector Bulk Scan Run",
+    "",
+    `- Generated: ${summary.generatedAt}`,
+    `- Site: ${summary.siteUrl}`,
+    `- Inspector: ${summary.inspectorVersion}`,
+    `- Target OpenClaw: ${summary.targetOpenClawVersion ?? "unknown"}`,
+    `- Mode: ${summary.notificationOnly ? "notification-only" : "scan"}`,
+    `- Scanned latest releases: ${summary.scannedReleases}`,
+    `- Notification attempts: ${summary.notificationAttempts}`,
+    `- Notifications sent: ${summary.notificationsSent}`,
+    `- Scan wall time: ${(summary.scanDurationMs / 1000).toFixed(3)} seconds`,
+    `- Scan throughput: ${summary.scanThroughputReleasesPerSecond.toFixed(3)} releases/second`,
+    `- Skipped unchanged releases: ${summary.skippedUnchangedReleases}`,
+    `- Plugins with errors: ${summary.pluginsWithErrors}`,
+    `- Plugins with warnings: ${summary.pluginsWithWarnings}`,
+    `- Impacted owners: ${summary.impactedOwners}`,
+    `- Truncated: ${summary.truncated ? "yes" : "no"}`,
+    "",
+    "## Finding Frequency",
+    "",
+  ];
+  if (summary.findingFrequency.length === 0) {
+    lines.push("No findings.");
+  } else {
+    lines.push("| Code | Count | Errors | Warnings |", "| --- | ---: | ---: | ---: |");
+    for (const finding of summary.findingFrequency) {
+      lines.push(
+        `| ${finding.code} | ${finding.count} | ${finding.errorCount} | ${finding.warningCount} |`,
+      );
+    }
+  }
+  lines.push("", "## Impacted Plugins", "");
+  if (summary.packages.length === 0) {
+    lines.push("No impacted plugins.");
+  } else {
+    lines.push(
+      "| Plugin | Version | Errors | Warnings | Target OpenClaw |",
+      "| --- | --- | ---: | ---: | --- |",
+    );
+    for (const entry of summary.packages) {
+      lines.push(
+        `| ${entry.packageName} | ${entry.version} | ${entry.errorCount} | ${entry.warningCount} | ${entry.targetOpenClawVersion ?? ""} |`,
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function extractTargetOpenClawVersion(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  return (
+    stringValue(record.version) ??
+    stringValue(record.openclawVersion) ??
+    stringValue(record.label) ??
+    stringValue(record.status)
+  );
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function safeArtifactName(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "plugin"
+  );
+}
+
+function safeFixtureId(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "plugin"
+  );
+}
+
+function parseBoolean(value: string | undefined) {
+  return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
+}
+
+export function parsePackageNames(value: string | undefined) {
+  return [
+    ...new Set(
+      (value ?? "")
+        .split(/[\s,]+/)
+        .map((name) => name.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function run(command: string, args: string[]) {
+  const result = spawnSync(command, args, { stdio: "pipe", encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+function resolveBundledPluginInspectorVersion() {
+  const require = createRequire(import.meta.url);
+  const entry = require.resolve("@openclaw/plugin-inspector");
+  const packageJsonPath = path.resolve(path.dirname(entry), "..", "package.json");
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+    version?: unknown;
+  };
+  if (typeof packageJson.version !== "string" || !packageJson.version.trim()) {
+    throw new Error("Unable to resolve bundled @openclaw/plugin-inspector version");
+  }
+  return packageJson.version.trim();
+}

@@ -1,71 +1,22 @@
-import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { isCancel, multiselect } from "@clack/prompts";
 import semver from "semver";
 import { resolveHome } from "../../homedir.js";
-import { apiRequest, downloadZip } from "../../http.js";
-import {
-  ApiCliTelemetrySyncResponseSchema,
-  ApiRoutes,
-  ApiV1SkillResolveResponseSchema,
-  ApiV1SkillResponseSchema,
-  ApiV1WhoamiResponseSchema,
-  LegacyApiRoutes,
-} from "../../schema/index.js";
-import { hashSkillZip } from "../../skills.js";
-import { getRegistry } from "../registry.js";
+import { apiRequest } from "../../http.js";
+import { ApiRoutes, ApiV1SkillResolveResponseSchema } from "../../schema/index.js";
 import { findSkillFolders, type SkillFolder } from "../scanSkills.js";
 import type { GlobalOpts } from "../types.js";
 import { fail, formatError } from "../ui.js";
 import type { Candidate, LocalSkill } from "./syncTypes.js";
 
-export async function reportTelemetryIfEnabled(params: {
-  token: string;
-  registry: string;
-  scan: { roots: string[]; skillsByRoot: Record<string, SkillFolder[]> };
-  candidates: Candidate[];
-}) {
-  if (isTelemetryDisabled()) return;
-  const versionBySlug = new Map<string, string | null>();
-  for (const candidate of params.candidates) {
-    versionBySlug.set(candidate.slug, candidate.matchVersion ?? null);
-  }
-
-  const roots = params.scan.roots.map((root) => ({
-    rootId: rootTelemetryId(root),
-    label: formatRootLabel(root),
-    skills: (params.scan.skillsByRoot[root] ?? []).map((skill) => ({
-      slug: skill.slug,
-      version: versionBySlug.get(skill.slug) ?? null,
-    })),
-  }));
-
-  try {
-    await apiRequest(
-      params.registry,
-      {
-        method: "POST",
-        path: LegacyApiRoutes.cliTelemetrySync,
-        token: params.token,
-        body: { roots },
-      },
-      ApiCliTelemetrySyncResponseSchema,
-    );
-  } catch {
-    // ignore telemetry failures
-  }
-}
-
-function isTelemetryDisabled() {
-  const raw = process.env.CLAWHUB_DISABLE_TELEMETRY ?? process.env.CLAWDHUB_DISABLE_TELEMETRY;
-  if (!raw) return false;
-  return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
-}
-
 export function buildScanRoots(opts: GlobalOpts, extraRoots: string[] | undefined) {
   const roots = [opts.workdir, opts.dir, ...(extraRoots ?? [])];
-  return Array.from(new Set(roots.map((root) => resolve(root))));
+  return Array.from(new Set(roots.map((root) => resolveScanRoot(opts, root))));
+}
+
+function resolveScanRoot(opts: GlobalOpts, root: string) {
+  return isAbsolute(root) ? resolve(root) : resolve(opts.workdir, root);
 }
 
 export function normalizeConcurrency(value: number | undefined) {
@@ -99,106 +50,54 @@ export async function mapWithConcurrency<T, R>(
 export async function checkRegistrySyncState(
   registry: string,
   skill: LocalSkill,
-  resolveSupport: { value: boolean | null },
+  ownerHandle?: string,
   token?: string,
 ): Promise<Candidate> {
-  if (resolveSupport.value !== false) {
-    try {
-      const resolved = await apiRequest(
-        registry,
-        {
-          method: "GET",
-          path: `${ApiRoutes.resolve}?slug=${encodeURIComponent(skill.slug)}&hash=${encodeURIComponent(skill.fingerprint)}`,
-          token,
-        },
-        ApiV1SkillResolveResponseSchema,
-      );
-      resolveSupport.value = true;
-      const latestVersion = resolved.latestVersion?.version ?? null;
-      const matchVersion = resolved.match?.version ?? null;
-      if (!latestVersion) {
-        return {
-          ...skill,
-          status: "new",
-          matchVersion: null,
-          latestVersion: null,
-        };
-      }
-      return {
-        ...skill,
-        status: matchVersion ? "synced" : "update",
-        matchVersion,
-        latestVersion,
-      };
-    } catch (error) {
-      const message = formatError(error);
-      if (/skill not found/i.test(message) || /HTTP 404/i.test(message)) {
-        resolveSupport.value = true;
-        return {
-          ...skill,
-          status: "new",
-          matchVersion: null,
-          latestVersion: null,
-        };
-      }
-      if (/no matching routes found/i.test(message)) {
-        resolveSupport.value = false;
-      } else {
-        throw error;
-      }
+  try {
+    const params = new URLSearchParams({
+      slug: skill.slug,
+      hash: skill.fingerprint,
+    });
+    if (ownerHandle) params.set("ownerHandle", ownerHandle);
+    const resolved = await apiRequest(
+      registry,
+      {
+        method: "GET",
+        path: `${ApiRoutes.resolve}?${params.toString()}`,
+        token,
+      },
+      ApiV1SkillResolveResponseSchema,
+    );
+    const latestVersion = resolved.latestVersion?.version ?? null;
+    const matchVersion = resolved.match?.version ?? null;
+    if (!latestVersion) {
+      return { ...skill, status: "new", matchVersion: null, latestVersion: null };
     }
-  }
-
-  const meta = await apiRequest(
-    registry,
-    { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}`, token },
-    ApiV1SkillResponseSchema,
-  ).catch(() => null);
-
-  const latestVersion = meta?.latestVersion?.version ?? null;
-  if (!latestVersion) {
     return {
       ...skill,
-      status: "new",
-      matchVersion: null,
-      latestVersion: null,
+      status: matchVersion ? "synced" : "update",
+      matchVersion,
+      latestVersion,
     };
+  } catch (error) {
+    const message = formatError(error);
+    if (/skill not found/i.test(message) || /HTTP 404/i.test(message)) {
+      return { ...skill, status: "new", matchVersion: null, latestVersion: null };
+    }
+    throw error;
   }
-
-  const zip = await downloadZip(registry, { slug: skill.slug, version: latestVersion, token });
-  const remote = hashSkillZip(zip).fingerprint;
-  const matchVersion = remote === skill.fingerprint ? latestVersion : null;
-
-  return {
-    ...skill,
-    status: matchVersion ? "synced" : "update",
-    matchVersion,
-    latestVersion,
-  };
 }
 
-export async function scanRoots(roots: string[]) {
-  const result = await scanRootsWithLabels(roots);
-  return {
-    roots: result.roots,
-    skillsByRoot: result.skillsByRoot,
-    skills: result.skills,
-    rootsWithSkills: result.rootsWithSkills,
-  };
-}
-
-export async function scanRootsWithLabels(roots: string[], labels?: Record<string, string>) {
+export async function scanRootsWithLabels(roots: string[]) {
   const all: SkillFolder[] = [];
   const rootsWithSkills: string[] = [];
   const uniqueRoots = await dedupeRoots(roots);
   const skillsByRoot: Record<string, SkillFolder[]> = {};
-  const rootLabels: Record<string, string> = {};
   for (const root of uniqueRoots) {
     const found = await findSkillFolders(root);
     skillsByRoot[root] = found;
     if (found.length > 0) rootsWithSkills.push(root);
     all.push(...found);
-    if (labels?.[root]) rootLabels[root] = labels[root] as string;
   }
   const byFolder = new Map<string, SkillFolder>();
   for (const folder of all) {
@@ -209,39 +108,7 @@ export async function scanRootsWithLabels(roots: string[], labels?: Record<strin
     skillsByRoot,
     skills: Array.from(byFolder.values()),
     rootsWithSkills,
-    rootLabels,
   };
-}
-
-export function mergeScan(
-  left: {
-    roots: string[];
-    skillsByRoot: Record<string, SkillFolder[]>;
-    skills: SkillFolder[];
-    rootsWithSkills: string[];
-    rootLabels: Record<string, string>;
-  },
-  right: {
-    roots: string[];
-    skillsByRoot: Record<string, SkillFolder[]>;
-    skills: SkillFolder[];
-    rootsWithSkills: string[];
-    rootLabels: Record<string, string>;
-  },
-) {
-  const mergedRoots = Array.from(new Set([...left.roots, ...right.roots]));
-  const skillsByRoot: Record<string, SkillFolder[]> = {};
-  for (const root of mergedRoots) {
-    skillsByRoot[root] = right.skillsByRoot[root] ?? left.skillsByRoot[root] ?? [];
-  }
-  const rootLabels: Record<string, string> = { ...left.rootLabels, ...right.rootLabels };
-  const byFolder = new Map<string, SkillFolder>();
-  for (const entry of [...left.skills, ...right.skills]) {
-    byFolder.set(entry.folder, entry);
-  }
-  const skills = Array.from(byFolder.values());
-  const rootsWithSkills = mergedRoots.filter((root) => (skillsByRoot[root]?.length ?? 0) > 0);
-  return { roots: mergedRoots, skillsByRoot, skills, rootsWithSkills, rootLabels };
 }
 
 async function dedupeRoots(roots: string[]) {
@@ -276,19 +143,18 @@ export async function selectToUpload(
   });
 
   const picked = await multiselect({
-    message: "Select skills to upload",
+    message: "Select skills to publish",
     options: choices,
     initialValues: choices.map((choice) => choice.value),
     required: false,
   });
   if (isCancel(picked)) fail("Canceled");
-  const selected = picked.map((key) => valueByKey.get(key)).filter(Boolean) as Candidate[];
-  return selected;
+  return picked.map((key) => valueByKey.get(key)).filter(Boolean) as Candidate[];
 }
 
-export async function resolvePublishMeta(
+export function resolvePublishMeta(
   skill: Candidate,
-  params: { bump: "patch" | "minor" | "major"; allowPrompt: boolean; changelogFlag?: string },
+  params: { bump: "patch" | "minor" | "major"; changelogFlag?: string },
 ) {
   if (skill.status === "new") {
     return { publishVersion: "1.0.0", changelog: "" };
@@ -300,19 +166,7 @@ export async function resolvePublishMeta(
   if (!publishVersion) fail(`Could not bump version for ${skill.slug}`);
 
   const fromFlag = params.changelogFlag?.trim();
-  if (fromFlag) return { publishVersion, changelog: fromFlag };
-
-  return { publishVersion, changelog: "" };
-}
-
-export async function getRegistryWithAuth(opts: GlobalOpts, token: string) {
-  const registry = await getRegistry(opts, { cache: true });
-  await apiRequest(
-    registry,
-    { method: "GET", path: ApiRoutes.whoami, token },
-    ApiV1WhoamiResponseSchema,
-  );
-  return registry;
+  return { publishVersion, changelog: fromFlag ?? "" };
 }
 
 export function formatList(values: string[], max: number) {
@@ -321,7 +175,7 @@ export function formatList(values: string[], max: number) {
   if (shown.length <= max) return shown.join("\n");
   const head = shown.slice(0, Math.max(1, max - 1));
   const rest = values.length - head.length;
-  return [...head, `… +${rest} more`].join("\n");
+  return [...head, `... +${rest} more`].join("\n");
 }
 
 export function printSection(title: string, body?: string) {
@@ -343,26 +197,6 @@ function abbreviatePath(value: string) {
   return value;
 }
 
-function rootTelemetryId(value: string) {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function formatRootLabel(value: string) {
-  const home = resolveHome();
-  if (value === home) return "~";
-
-  const normalized = value.replaceAll("\\", "/");
-  const normalizedHome = home.replaceAll("\\", "/");
-  const isHome = normalized === normalizedHome || normalized.startsWith(`${normalizedHome}/`);
-
-  const stripped = isHome ? normalized.slice(normalizedHome.length).replace(/^\//, "") : normalized;
-  const parts = stripped.split("/").filter(Boolean);
-  const tail = parts.slice(-2).join("/");
-
-  if (!tail) return isHome ? "~" : "…";
-  return isHome ? `~/${tail}` : `…/${tail}`;
-}
-
 export function dedupeSkillsBySlug(skills: SkillFolder[]) {
   const bySlug = new Map<string, SkillFolder[]>();
   for (const skill of skills) {
@@ -379,15 +213,12 @@ export function dedupeSkillsBySlug(skills: SkillFolder[]) {
   return { skills: unique, duplicates };
 }
 
-export function formatActionableStatus(
-  candidate: Candidate,
-  bump: "patch" | "minor" | "major",
-): string {
-  if (candidate.status === "new") return "NEW";
+function formatActionableStatus(candidate: Candidate, bump: "patch" | "minor" | "major"): string {
+  if (candidate.status === "new") return "NEW (publish 1.0.0)";
   const latest = candidate.latestVersion;
   const next = latest ? semver.inc(latest, bump) : null;
-  if (latest && next) return `UPDATE ${latest} → ${next}`;
-  return "UPDATE";
+  if (latest && next) return `LOCAL CHANGES latest ${latest}; publish ${next}`;
+  return "LOCAL CHANGES";
 }
 
 export function formatActionableLine(

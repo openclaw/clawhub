@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SkillsIndex } from "../routes/skills/index";
@@ -11,13 +11,31 @@ import {
 } from "./helpers/convexReactMocks";
 
 const navigateMock = vi.fn();
+const fetchCanonicalTrendingPageMock = vi.fn();
+const fetchCatalogDiscoveryCapabilitiesMock = vi.fn();
 let searchMock: Record<string, unknown> = {};
+
+vi.mock("../lib/trendingApi", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/trendingApi")>();
+  return {
+    ...original,
+    fetchCanonicalTrendingPage: (...args: unknown[]) => fetchCanonicalTrendingPageMock(...args),
+  };
+});
+
+vi.mock("../lib/catalogDiscoveryCapabilities", () => ({
+  fetchCatalogDiscoveryCapabilities: (...args: unknown[]) =>
+    fetchCatalogDiscoveryCapabilitiesMock(...args),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (_config: { component: unknown; validateSearch: unknown }) => ({
+    useLoaderData: () => null,
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
+  useRouterState: (options: { select: (state: unknown) => unknown }) =>
+    options.select({ location: { searchStr: "" } }),
   redirect: (options: unknown) => ({ redirect: options }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
 }));
@@ -30,6 +48,7 @@ vi.mock("convex/react", () => ({
 
 vi.mock("../../src/convex/client", () => ({
   convexHttp: {
+    action: (...args: unknown[]) => convexHttpMock.action(...args),
     query: (...args: unknown[]) => convexHttpMock.query(...args),
   },
 }));
@@ -40,73 +59,57 @@ describe("SkillsIndex load-more observer", () => {
     navigateMock.mockReset();
     searchMock = {};
     setupDefaultConvexReactMocks();
+    fetchCanonicalTrendingPageMock.mockReset();
+    fetchCatalogDiscoveryCapabilitiesMock.mockReset();
+    fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
+      apiVersion: 1,
+      canonicalTrendingEnabled: true,
+    });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("triggers one load-more fetch for repeated intersection callbacks", async () => {
-    // First call returns a page with a cursor, second call (load more) tracks calls
-    let loadMoreCallCount = 0;
+  it("loads the next catalog page only after an explicit click and preserves API order", async () => {
     convexHttpMock.query
       .mockResolvedValueOnce({
-        page: [makeListResult("skill-0", "Skill 0")],
+        page: [makeListResult("first", "First", 9)],
         hasMore: true,
-        nextCursor: "cursor-1",
+        nextCursor: "opaque cursor 2",
       })
-      .mockImplementation(() => {
-        loadMoreCallCount++;
-        // Never resolve to keep in loading state
-        return new Promise(() => {});
+      .mockResolvedValueOnce({
+        page: [makeListResult("second", "Second", 4)],
+        hasMore: false,
+        nextCursor: null,
       });
-
-    type ObserverInstance = {
-      callback: IntersectionObserverCallback;
-      observe: ReturnType<typeof vi.fn>;
-      disconnect: ReturnType<typeof vi.fn>;
-    };
-
-    const observers: ObserverInstance[] = [];
-    class IntersectionObserverMock {
-      callback: IntersectionObserverCallback;
-      observe = vi.fn();
-      disconnect = vi.fn();
-      unobserve = vi.fn();
-      takeRecords = vi.fn(() => []);
-      root = null;
-      rootMargin = "0px";
-      thresholds: number[] = [];
-
-      constructor(callback: IntersectionObserverCallback) {
-        this.callback = callback;
-        observers.push(this);
-      }
-    }
-    vi.stubGlobal(
-      "IntersectionObserver",
-      IntersectionObserverMock as unknown as typeof IntersectionObserver,
-    );
-
     render(<SkillsIndex />);
     await act(async () => {});
 
-    // Find the observer (there may be multiple from re-renders; use the last one)
-    const observer = observers[observers.length - 1];
-    const entries = [{ isIntersecting: true }] as Array<IntersectionObserverEntry>;
+    expect(screen.getByText("First")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      observer.callback(entries, observer as unknown as IntersectionObserver);
-      observer.callback(entries, observer as unknown as IntersectionObserver);
-      observer.callback(entries, observer as unknown as IntersectionObserver);
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
-    // Only one load-more fetch should have been triggered
-    expect(loadMoreCallCount).toBe(1);
+    expect(convexHttpMock.query).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        cursor: "opaque cursor 2",
+        numItems: 20,
+      }),
+    );
+    expect([
+      screen.getByTitle("First").textContent,
+      screen.getByTitle("Second").textContent,
+    ]).toEqual(["First", "Second"]);
   });
 });
 
-function makeListResult(slug: string, displayName: string) {
+function makeListResult(slug: string, displayName: string, downloads: number) {
   return {
     skill: {
       _id: `skill_${slug}`,
@@ -114,18 +117,11 @@ function makeListResult(slug: string, displayName: string) {
       displayName,
       summary: `${displayName} summary`,
       tags: {},
-      stats: {
-        downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 0,
-      updatedAt: 0,
+      stats: { downloads, stars: 0, installs: 0, versions: 1, comments: 0 },
+      createdAt: 1,
+      updatedAt: 1,
     },
     latestVersion: null,
-    ownerHandle: null,
+    ownerHandle: "owner",
   };
 }

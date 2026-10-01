@@ -5,7 +5,7 @@ import type { ActionCtx } from "../_generated/server";
 import { hashToken } from "./tokens";
 
 type TokenAuthResult = { user: Doc<"users">; userId: Doc<"users">["_id"] };
-type ApiTokenDoc = Doc<"apiTokens">;
+type TokenAuthSnapshot = { apiTokenId: Doc<"apiTokens">["_id"]; user: Doc<"users"> | null };
 type PackagePublishTokenAuthResult = {
   kind: "github-actions";
   publishToken: Doc<"packagePublishTokens">;
@@ -19,8 +19,7 @@ type UserPackagePublishAuthResult = {
 
 const internalRefs = internal as unknown as {
   tokens: {
-    getByHashInternal: unknown;
-    getUserForTokenInternal: unknown;
+    getAuthByHashInternal: unknown;
     touchInternal: unknown;
   };
   packagePublishTokens: {
@@ -29,64 +28,94 @@ const internalRefs = internal as unknown as {
   };
 };
 
+export const MISSING_API_TOKEN_MESSAGE =
+  "Unauthorized: API token is missing. Run `clawhub login` to authenticate.";
+export const INVALID_API_TOKEN_MESSAGE =
+  "Unauthorized: API token is invalid or revoked. Run `clawhub login` again.";
+export const BLOCKED_API_TOKEN_ACCOUNT_MESSAGE =
+  "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, open a GitHub issue: https://github.com/openclaw/clawhub/issues/new.";
+
+const optionalAuthByContext = new WeakMap<
+  ActionCtx,
+  WeakMap<Request, Promise<TokenAuthResult | null>>
+>();
+
+async function readTokenAuth(ctx: ActionCtx, token: string): Promise<TokenAuthSnapshot | null> {
+  return ctx.runQuery(
+    internalRefs.tokens.getAuthByHashInternal as never,
+    {
+      tokenHash: await hashToken(token),
+    } as never,
+  );
+}
+
 export async function requireApiTokenUser(
   ctx: ActionCtx,
   request: Request,
-): Promise<TokenAuthResult> {
+): Promise<TokenAuthResult & { apiTokenId: Doc<"apiTokens">["_id"] }> {
   const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
   const token = parseBearerToken(header);
-  if (!token) throw new ConvexError("Unauthorized");
+  if (!token) throw new ConvexError(MISSING_API_TOKEN_MESSAGE);
 
-  const tokenHash = await hashToken(token);
-  const apiToken = (await ctx.runQuery(
-    internalRefs.tokens.getByHashInternal as never,
-    {
-      tokenHash,
-    } as never,
-  )) as ApiTokenDoc | null;
-  if (!apiToken || apiToken.revokedAt) throw new ConvexError("Unauthorized");
+  // Required authorization revalidates after awaited work; it never consumes
+  // the optional read snapshot used by quota and viewer resolution.
+  const auth = await readTokenAuth(ctx, token);
+  if (!auth) throw new ConvexError(INVALID_API_TOKEN_MESSAGE);
+  const { user, apiTokenId } = auth;
+  if (!user || user.deletedAt || user.deactivatedAt) {
+    throw new ConvexError(BLOCKED_API_TOKEN_ACCOUNT_MESSAGE);
+  }
 
-  const user = (await ctx.runQuery(
-    internalRefs.tokens.getUserForTokenInternal as never,
-    {
-      tokenId: apiToken._id,
-    } as never,
-  )) as Doc<"users"> | null;
-  if (!user || user.deletedAt || user.deactivatedAt) throw new ConvexError("Unauthorized");
-
-  await ctx.runMutation(
-    internalRefs.tokens.touchInternal as never,
-    { tokenId: apiToken._id } as never,
-  );
-  return { user, userId: user._id };
+  try {
+    await ctx.runMutation(
+      internalRefs.tokens.touchInternal as never,
+      { tokenId: apiTokenId } as never,
+    );
+  } catch {
+    // Best-effort metadata; auth succeeded and should not fail on write contention.
+  }
+  return { user, userId: user._id, apiTokenId };
 }
 
 export async function getOptionalApiTokenUserId(
   ctx: ActionCtx,
   request: Request,
 ): Promise<Doc<"users">["_id"] | null> {
+  return (await getOptionalApiTokenUser(ctx, request))?.userId ?? null;
+}
+
+export function getOptionalApiTokenUser(
+  ctx: ActionCtx,
+  request: Request,
+): Promise<TokenAuthResult | null> {
+  let requests = optionalAuthByContext.get(ctx);
+  if (!requests) {
+    requests = new WeakMap();
+    optionalAuthByContext.set(ctx, requests);
+  }
+  let auth = requests.get(request);
+  if (!auth) {
+    // One admitted HTTP read shares its quota/viewer identity. A new request
+    // or action context always checks current revocation and account state.
+    auth = readOptionalApiTokenUser(ctx, request);
+    requests.set(request, auth);
+  }
+  return auth;
+}
+
+async function readOptionalApiTokenUser(
+  ctx: ActionCtx,
+  request: Request,
+): Promise<TokenAuthResult | null> {
   const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
   const token = parseBearerToken(header);
   if (!token) return null;
 
-  const tokenHash = await hashToken(token);
-  const apiToken = (await ctx.runQuery(
-    internalRefs.tokens.getByHashInternal as never,
-    {
-      tokenHash,
-    } as never,
-  )) as ApiTokenDoc | null;
-  if (!apiToken || apiToken.revokedAt) return null;
-
-  const user = (await ctx.runQuery(
-    internalRefs.tokens.getUserForTokenInternal as never,
-    {
-      tokenId: apiToken._id,
-    } as never,
-  )) as Doc<"users"> | null;
+  const auth = await readTokenAuth(ctx, token);
+  const user = auth?.user;
   if (!user || user.deletedAt || user.deactivatedAt) return null;
 
-  return user._id;
+  return { user, userId: user._id };
 }
 
 export async function requirePackagePublishAuth(
@@ -95,7 +124,7 @@ export async function requirePackagePublishAuth(
 ): Promise<UserPackagePublishAuthResult | PackagePublishTokenAuthResult> {
   const header = request.headers.get("authorization") ?? request.headers.get("Authorization");
   const token = parseBearerToken(header);
-  if (!token) throw new ConvexError("Unauthorized");
+  if (!token) throw new ConvexError(MISSING_API_TOKEN_MESSAGE);
 
   const tokenHash = await hashToken(token);
   const publishToken = (await ctx.runQuery(
@@ -105,12 +134,16 @@ export async function requirePackagePublishAuth(
     } as never,
   )) as PackagePublishTokenDoc | null;
   if (publishToken && !publishToken.revokedAt && publishToken.expiresAt > Date.now()) {
-    await ctx.runMutation(
-      internalRefs.packagePublishTokens.touchInternal as never,
-      {
-        tokenId: publishToken._id,
-      } as never,
-    );
+    try {
+      await ctx.runMutation(
+        internalRefs.packagePublishTokens.touchInternal as never,
+        {
+          tokenId: publishToken._id,
+        } as never,
+      );
+    } catch {
+      // Best-effort metadata; publish auth should not fail on touch contention.
+    }
     return { kind: "github-actions", publishToken };
   }
 

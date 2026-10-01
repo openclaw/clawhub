@@ -1,11 +1,13 @@
-import { lazy, Suspense } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import type { ClawdisSkillMetadata } from "clawhub-schema";
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { defaultUrlTransform } from "react-markdown";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { rehypeProxyImages } from "../lib/rehypeProxyImages";
+import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
+import { MarkdownPreview } from "./MarkdownPreview";
+import { SkillCardPreview } from "./SkillCardPreview";
+import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
-
-const REHYPE_PLUGINS = [rehypeProxyImages];
+import { Skeleton } from "./ui/skeleton";
 
 const SkillDiffCard = lazy(() =>
   import("./SkillDiffCard").then((module) => ({ default: module.SkillDiffCard })),
@@ -15,9 +17,33 @@ const SkillFilesPanel = lazy(() =>
   import("./SkillFilesPanel").then((module) => ({ default: module.SkillFilesPanel })),
 );
 
+const README_COLLAPSED_LINE_COUNT = 50;
+
+function SkillTabSkeleton() {
+  return (
+    <div className="skill-tab-skeleton" role="status" aria-label="Loading tab content">
+      <Skeleton className="skill-tab-skeleton-title" />
+      <div className="skill-tab-skeleton-copy" aria-hidden="true">
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+      </div>
+    </div>
+  );
+}
+
 type SkillFile = Doc<"skillVersions">["files"][number];
 
-export type DetailTab = "readme" | "files" | "compare" | "versions";
+export type DetailTab =
+  | "readme"
+  | "skill-card"
+  | "evaluation"
+  | "files"
+  | "compare"
+  | "versions"
+  | SkillInstallTabId;
 
 type SkillDetailTabsProps = {
   activeTab: DetailTab;
@@ -25,14 +51,23 @@ type SkillDetailTabsProps = {
   onCompareIntent: () => void;
   readmeContent: string | null;
   readmeError: string | null;
+  skillCardContent: string | null;
+  skillCardError: string | null;
+  hasSkillCard: boolean;
   latestFiles: SkillFile[];
   latestVersionId: Id<"skillVersions"> | null;
+  latestVersion?: string | null;
+  canDeleteVersions?: boolean;
   skill: Doc<"skills">;
+  ownerHandle?: string | null;
   diffVersions: Doc<"skillVersions">[] | undefined;
   versions: Doc<"skillVersions">[] | undefined;
   nixPlugin: boolean;
-  suppressVersionScanResults: boolean;
-  scanResultsSuppressedMessage: string | null;
+  showArchiveTabs?: boolean;
+  clawdis: ClawdisSkillMetadata | undefined;
+  osLabels: string[];
+  readmeHrefResolver?: (href: string) => string;
+  evaluationContent?: ReactNode;
 };
 
 export function SkillDetailTabs({
@@ -41,39 +76,119 @@ export function SkillDetailTabs({
   onCompareIntent,
   readmeContent,
   readmeError,
+  skillCardContent,
+  skillCardError,
+  hasSkillCard,
   latestFiles,
   latestVersionId,
+  latestVersion,
+  canDeleteVersions = false,
   skill,
+  ownerHandle,
   diffVersions,
   versions,
   nixPlugin,
-  suppressVersionScanResults,
-  scanResultsSuppressedMessage,
+  showArchiveTabs = true,
+  clawdis,
+  osLabels,
+  readmeHrefResolver,
+  evaluationContent,
 }: SkillDetailTabsProps) {
-  const compareEnabled = (versions?.length ?? 0) > 1;
+  const resolveReadmeHref =
+    readmeHrefResolver ?? ((href: string) => resolveSkillReadmeHref(href, skill.slug, ownerHandle));
+  const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
+  const activeInstallTab = installTabs.find((tab) => tab.id === activeTab);
+  const compareEnabled = showArchiveTabs && (versions?.length ?? 0) > 1;
+  const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
+  const readmeLineCount = useMemo(
+    () => readmeContent?.split(/\r\n|\n|\r/).length ?? 0,
+    [readmeContent],
+  );
+  const isReadmeLong = readmeLineCount > README_COLLAPSED_LINE_COUNT;
+
+  useEffect(() => {
+    setIsReadmeExpanded(false);
+  }, [readmeContent]);
+
+  const selectTab = (tab: DetailTab) => {
+    const scrollPosition =
+      typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
+    setActiveTab(tab);
+    if (typeof window === "undefined") return;
+    const hash = tab === "readme" ? "" : tab === "compare" ? "#diff" : `#${tab}`;
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}${hash}`,
+    );
+    window.requestAnimationFrame(() => {
+      if (!scrollPosition) return;
+      window.scrollTo(scrollPosition.left, scrollPosition.top);
+    });
+  };
 
   return (
-    <div className="card tab-card">
-      <div className="tab-header">
+    <div className="tab-card detail-mobile-tabs skill-detail-tabs-card">
+      <div className="tab-header" role="tablist" aria-label="Skill detail tabs">
         <button
+          id="skill-tab-readme"
           className={`tab-button${activeTab === "readme" ? " is-active" : ""}`}
           type="button"
-          onClick={() => setActiveTab("readme")}
+          role="tab"
+          aria-selected={activeTab === "readme"}
+          aria-controls="skill-tabpanel-readme"
+          onClick={() => selectTab("readme")}
         >
-          README
+          SKILL.md
         </button>
-        <button
-          className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab("files")}
-        >
-          Files
-        </button>
+        {evaluationContent ? (
+          <button
+            id="skill-tab-evaluation"
+            className={`tab-button${activeTab === "evaluation" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "evaluation"}
+            aria-controls="skill-tabpanel-evaluation"
+            onClick={() => selectTab("evaluation")}
+          >
+            Evals
+          </button>
+        ) : null}
+        {hasSkillCard ? (
+          <button
+            id="skill-tab-skill-card"
+            className={`tab-button${activeTab === "skill-card" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "skill-card"}
+            aria-controls="skill-tabpanel-skill-card"
+            onClick={() => selectTab("skill-card")}
+          >
+            Skill Card
+          </button>
+        ) : null}
+        {showArchiveTabs ? (
+          <button
+            id="skill-tab-files"
+            className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "files"}
+            aria-controls="skill-tabpanel-files"
+            onClick={() => selectTab("files")}
+          >
+            Files
+          </button>
+        ) : null}
         {compareEnabled ? (
           <button
+            id="skill-tab-compare"
             className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
             type="button"
-            onClick={() => setActiveTab("compare")}
+            role="tab"
+            aria-selected={activeTab === "compare"}
+            aria-controls="skill-tabpanel-compare"
+            onClick={() => selectTab("compare")}
             onMouseEnter={() => {
               onCompareIntent();
               void import("./SkillDiffCard");
@@ -83,66 +198,197 @@ export function SkillDetailTabs({
               void import("./SkillDiffCard");
             }}
           >
-            Compare
+            Diff
           </button>
         ) : null}
-        <button
-          className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => setActiveTab("versions")}
-        >
-          Versions
-        </button>
+        {showArchiveTabs ? (
+          <button
+            id="skill-tab-versions"
+            className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "versions"}
+            aria-controls="skill-tabpanel-versions"
+            onClick={() => selectTab("versions")}
+          >
+            Versions
+          </button>
+        ) : null}
+        {installTabs.map((tab) => (
+          <button
+            key={tab.id}
+            id={`skill-tab-${tab.id}`}
+            className={`tab-button${activeTab === tab.id ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`skill-tabpanel-${tab.id}`}
+            onClick={() => selectTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {activeTab === "readme" ? (
-        <div className="tab-body">
+        <div
+          className="tab-body skill-readme-body"
+          role="tabpanel"
+          id="skill-tabpanel-readme"
+          aria-labelledby="skill-tab-readme"
+        >
           {readmeContent ? (
-            <div className="markdown">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={REHYPE_PLUGINS}>
-                {readmeContent}
-              </ReactMarkdown>
-            </div>
+            <>
+              <div
+                className={`skill-readme-preview${
+                  isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
+                }`}
+              >
+                <MarkdownPreview
+                  highlight={false}
+                  urlTransform={(url, key) =>
+                    key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
+                  }
+                >
+                  {readmeContent}
+                </MarkdownPreview>
+              </div>
+              {isReadmeLong ? (
+                <button
+                  type="button"
+                  className="skill-readme-toggle"
+                  aria-expanded={isReadmeExpanded}
+                  onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
+                >
+                  {isReadmeExpanded ? "Show less" : "Read more"}
+                </button>
+              ) : null}
+            </>
           ) : readmeError ? (
             <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
               <p className="empty-state-title">No README available</p>
-              <p className="empty-state-body">
-                This skill doesn't have a SKILL.md file yet.
-              </p>
+              <p className="empty-state-body">This skill doesn't have a SKILL.md file yet.</p>
             </div>
           ) : (
-            <div className="stat p-4">
-              Loading README...
-            </div>
+            <SkillTabSkeleton />
           )}
         </div>
       ) : null}
 
-      {activeTab === "files" ? (
-        <Suspense fallback={<div className="tab-body stat">Loading file viewer...</div>}>
-          <SkillFilesPanel
-            versionId={latestVersionId}
-            latestFiles={latestFiles}
-          />
-        </Suspense>
+      {activeTab === "skill-card" ? (
+        <div
+          className="tab-body skill-card-tab-body"
+          role="tabpanel"
+          id="skill-tabpanel-skill-card"
+          aria-labelledby="skill-tab-skill-card"
+        >
+          {skillCardContent ? (
+            <>
+              <details className="skill-card-info-callout" open>
+                <summary>About Skill Cards</summary>
+                <p>
+                  Skill Cards follow{" "}
+                  <a
+                    href="https://docs.nvidia.com/skills/skill-cards"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    NVIDIA&apos;s trust-card pattern for agent skills
+                  </a>
+                  , giving a compact release record of what a skill does, who published it, and what
+                  risks or limits to review before use.
+                </p>
+              </details>
+              <SkillCardPreview
+                content={skillCardContent}
+                urlTransform={(url, key) =>
+                  key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
+                }
+              />
+            </>
+          ) : skillCardError ? (
+            <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
+              <p className="empty-state-title">No Skill Card available</p>
+              <p className="empty-state-body">The generated skill-card.md file is not available.</p>
+            </div>
+          ) : (
+            <SkillTabSkeleton />
+          )}
+        </div>
       ) : null}
 
-      {activeTab === "compare" ? (
-        <div className="tab-body">
-          <Suspense fallback={<div className="stat">Loading diff viewer...</div>}>
-            <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
+      {evaluationContent && activeTab === "evaluation" ? (
+        <div
+          className="tab-body skill-evaluation-tab-body"
+          role="tabpanel"
+          id="skill-tabpanel-evaluation"
+          aria-labelledby="skill-tab-evaluation"
+        >
+          {evaluationContent}
+        </div>
+      ) : null}
+
+      {showArchiveTabs && activeTab === "files" ? (
+        <div role="tabpanel" id="skill-tabpanel-files" aria-labelledby="skill-tab-files">
+          <Suspense
+            fallback={
+              <div className="tab-body">
+                <SkillTabSkeleton />
+              </div>
+            }
+          >
+            <SkillFilesPanel
+              versionId={latestVersionId}
+              version={latestVersion ?? null}
+              latestFiles={latestFiles}
+              skillSlug={skill.slug}
+              ownerHandle={ownerHandle}
+            />
           </Suspense>
         </div>
       ) : null}
 
-      {activeTab === "versions" ? (
-        <SkillVersionsPanel
-          versions={versions}
-          nixPlugin={nixPlugin}
-          skillSlug={skill.slug}
-          suppressScanResults={suppressVersionScanResults}
-          suppressedMessage={scanResultsSuppressedMessage}
-        />
+      {showArchiveTabs && activeTab === "compare" ? (
+        <div
+          className="tab-body skill-diff-tab-body"
+          role="tabpanel"
+          id="skill-tabpanel-compare"
+          aria-labelledby="skill-tab-compare"
+        >
+          {diffVersions === undefined ? (
+            <SkillTabSkeleton />
+          ) : (
+            <Suspense fallback={<SkillTabSkeleton />}>
+              <SkillDiffCard skill={skill} versions={diffVersions} variant="embedded" />
+            </Suspense>
+          )}
+        </div>
+      ) : null}
+
+      {showArchiveTabs && activeTab === "versions" ? (
+        <div role="tabpanel" id="skill-tabpanel-versions" aria-labelledby="skill-tab-versions">
+          <SkillVersionsPanel
+            skillId={skill._id}
+            versions={versions}
+            latestVersionId={latestVersionId}
+            latestTaggedVersionId={skill.tags.latest ?? null}
+            canDeleteVersions={canDeleteVersions}
+            nixPlugin={nixPlugin}
+            skillSlug={skill.slug}
+            ownerHandle={ownerHandle}
+          />
+        </div>
+      ) : null}
+
+      {activeInstallTab ? (
+        <div
+          className="tab-body skill-install-tabs"
+          role="tabpanel"
+          id={`skill-tabpanel-${activeInstallTab.id}`}
+          aria-labelledby={`skill-tab-${activeInstallTab.id}`}
+        >
+          {activeInstallTab.panel}
+        </div>
       ) : null}
     </div>
   );

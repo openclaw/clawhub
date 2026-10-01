@@ -9,13 +9,19 @@ function readProcessEnv(name: string) {
   return readString(process.env?.[name]);
 }
 
-function readClientMetaEnv(name: string) {
-  if (typeof window === "undefined") return undefined;
+function readMetaEnv(name: string) {
   return readString((import.meta.env as Record<string, unknown>)[name]);
 }
 
 export function getRuntimeEnv(name: string) {
-  return readProcessEnv(name) ?? readClientMetaEnv(name);
+  const bundledValue = readMetaEnv(name);
+  const preferBundledValue =
+    typeof window !== "undefined" ||
+    (name.startsWith("VITE_") && readMetaEnv("VITE_CLAWHUB_DEPLOY_ENV") === "preview");
+  if (preferBundledValue) {
+    return bundledValue ?? readProcessEnv(name);
+  }
+  return readProcessEnv(name) ?? bundledValue;
 }
 
 export function getRequiredRuntimeEnv(name: string) {

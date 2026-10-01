@@ -1,0 +1,170 @@
+# CI
+
+Pull requests are validated by `.github/workflows/ci.yml`.
+
+## PR Checks
+
+The `CI` workflow runs the non-browser gates as independent jobs so their wall
+times overlap and each required check reports its own failure:
+
+- `static` runs peer dependency validation, dependency audit, formatting, lint,
+  and dead-code checks.
+- `unit` runs the Vitest coverage suite. This replaces a separate `test` run
+  because coverage already executes the test suite.
+- `packages` builds `packages/schema` and verifies the ClawHub CLI package.
+- `types-build` typechecks the app, schema package, and CLI package, then builds
+  the app.
+- `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
+  GitHub-backed package publish fixtures use bounded retries for network errors,
+  HTTP 408/5xx responses, and server-declared 403/429 rate limits whose retry
+  window fits the five-second CI budget. Longer rate limits and deterministic
+  client errors such as a missing repository fail immediately.
+
+The CPU-heavy `unit` job uses one 32-vCPU Blacksmith registration and records
+the runner's actual CPU, memory, and cgroup allocation before coverage. The
+short `static`, `packages`, `types-build`, and `e2e-http` jobs run on GitHub-hosted
+Ubuntu runners, so this parallel layout keeps the same one-Blacksmith-registration
+budget as the former serial `pr-gates` job. Every non-browser gate has a
+five-minute timeout to enforce the pull-request feedback target.
+
+- `playwright-smoke` builds the app and runs a chromium browser smoke against the
+  public read backend.
+- `playwright-local-auth` uses `test:pw:local-auth` to start a local anonymous
+  Convex backend with dev auth, then runs the chromium specs under
+  `e2e/local-auth/`. Related low-risk specs are grouped so the matrix spends
+  fewer Blacksmith runner registrations while keeping publish lifecycle checks
+  isolated for easier failure triage. Every shard requests the
+  `blacksmith-16vcpu-ubuntu-2404` runner label and records actual CPU count,
+  load, cgroup CPU statistics, memory pressure, and free memory before and after
+  the test. The matrix runs at most eight shards concurrently.
+  The runner seeds the existing local skills.sh mirror fixture for the
+  profile-context shard's metadata layout checks, so those assertions do not
+  depend on the availability of a live public skill.
+
+For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
+matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
+chromium Playwright browser has already been installed.
+
+Vercel preview builds retry the full Convex deploy-and-seed pipeline up to three
+times, waiting 20 seconds and then 40 seconds. Retries use fresh suffixed preview
+names because duplicate names can resolve to an earlier, incomplete deployment.
+All Vercel-created preview names carry a `-vercel` suffix: `--preview-create`
+replaces (deletes) any same-name deployment, so a second deploy-key consumer
+using raw branch names would otherwise delete Vercel's deployment mid-push
+(observed 2026-07-17 as get_config_hashes/wait_for_schema 404s on every PR).
+
+To reproduce the local-auth browser gate locally, install the chromium
+Playwright browser once and run:
+
+```bash
+bunx playwright install chromium
+bun run test:pw:local-auth
+```
+
+To run one authenticated local browser spec through the same infra:
+
+```bash
+bun run test:pw:local-auth -- --project=chromium e2e/local-auth/<spec>.pw.test.ts
+```
+
+The local-auth runner supports Linux and macOS and uses dev auth and a local Convex deployment; it does not
+need production credentials or a ClawHub auth token. It starts its own isolated
+local Convex process and temporarily moves aside `.env.local` plus
+`.convex/local/default`, then restores them afterward. Stop any already-running
+local Convex process before running it.
+
+Long or cross-filesystem scratch paths use a short writable ancestor on the workspace filesystem. Short `TMPDIR` overrides on that filesystem are preserved. This keeps module renames on one device and leaves room for Convex's Unix socket paths on macOS.
+
+The runner starts the backend without publishing functions, configures the
+backend environment, and then publishes once. Cron definitions read deployment
+environment variables during publication, so `CLAWHUB_DISABLE_CRONS=1` must be
+set before the first push. Application readiness checks never republish code,
+and no development watcher can push again while the app builds. A persistent
+launcher retains ownership of the backend process group through cleanup.
+
+The disposable backend defaults `FUNRUN_ISOLATE_ACTIVE_THREADS` to `2` before
+bootstrap, limiting simultaneous V8 execution on small runners. Convex pauses
+the user watchdog while a request waits for an execution permit; the one-second
+UDF limit and existing system and admission limits remain unchanged. This reduces
+CPU contention without serializing whole requests or changing production
+configuration. An explicit process-environment override,
+including `0` for the upstream unlimited default, is preserved for diagnosis.
+
+The first push builds the external dependencies for Convex `"use node"` functions
+from their installed package versions. A slow cold npm install can exceed the
+backend's default 300-second HTTP timeout: its 408 response prompts a CLI retry
+while the executor keeps building, and overlapping builds corrupt the shared
+`build_deps` directory. The isolated runner sets `HTTP_SERVER_TIMEOUT_SECONDS=900`,
+above the executor's unchanged 605-second dependency-build cap, so that cap fails
+the build before a transport retry can overlap it. Before starting the backend,
+it warms npm's cache with a bounded, best-effort install; warmup and backend both
+use `npm_config_prefer_offline=true`, `npm_config_fetch_timeout=60000`, and
+`npm_config_fetch_retries=5`. CI restores and saves `~/.npm` keyed by `bun.lock`
+and `convex.json`. Action execution limits are not raised.
+
+The full `bun run test:e2e` suite includes token-backed CLI flows. Keep that for
+local or secret-backed validation; PR CI should not require a developer auth
+token or a local global ClawHub config.
+
+## Maintenance Jobs
+
+`Security Dataset Snapshot` exports live production security-review data for the
+sanitized Hugging Face dataset. Keep its default fanout small enough that a
+nightly run cannot dominate the org-level GitHub runner-registration bucket:
+12 created-at shards per source kind, at most 32 planned matrix jobs, and
+`max-parallel: 12`. Manual dispatches are also capped before shard planning, so a
+large input cannot allocate a huge matrix before the guard runs. This workflow
+publishes a complete replacement snapshot, so do not run overlapping dispatches
+as a backfill strategy; make any higher-fanout backfill a deliberate temporary
+workflow change with its own capacity plan.
+
+## Required Checks
+
+GitHub rulesets should require these status checks on `main`:
+
+- `CI / static`
+- `CI / unit`
+- `CI / packages`
+- `CI / types-build`
+- `CI / e2e-http`
+- `CI / playwright-smoke`
+- `CI / playwright-local-auth`
+- `Security Gate: Secret Scanning / Scan for Verified Secrets`
+
+`CodeQL Light` is path-filtered and skipped for draft pull requests, so it should
+not be marked required unless an always-present aggregate job is added.
+
+The full multi-browser Playwright suite is not a required PR check yet. It still
+needs stable read fixtures or a dedicated backend fixture before it can be a hard
+gate without coupling every PR to live data and mobile-browser variance.
+
+The reusable package publish workflow treats publication as a release gate. A
+real publish waits for ClawHub's exact staged attempt to become published and
+fails on blocked, failed, expired, or timed-out attempts. ClawHub dispatches the
+exact pre-publication worker immediately; the scheduled worker is a recovery
+path rather than the normal release trigger.
+
+Production-only checks stay in the manual deploy workflow:
+
+- `bun run verify:convex-contract -- --prod`
+- `bun run test:e2e:prod-http`
+- production Playwright smoke tests
+
+The default backend deploy remains fail-closed when external-skill rollouts are active. Maintainers
+can explicitly select the backend-only pause/deploy/restore path with
+`active_rollout_deploy_confirm=pause-and-restore-active-rollouts`; the workflow restores the exact
+prior modes under `always()` and verifies the restored public capability modes before smoke.
+
+Successful `full` and `frontend` production deploys create two annotated Git
+tags:
+
+- `deploy/prod/YYYYMMDD-HHMMSSZ-<sha7>`: immutable audit tag with exact deploy
+  time and commit.
+- `prod/vYYYY.MM.DD.N`: clean human rollback tag, incremented per UTC day.
+
+Both tags point to the deployed commit and record the GitHub Actions run plus the
+Vercel deployment URL when GitHub's Vercel status exposes it.
+
+Use these tags as the audit map for rollback selection. Vercel traffic rollback
+still happens through Vercel's deployment rollback/promote controls; the Git tag
+is the stable source pointer for the deployed build.

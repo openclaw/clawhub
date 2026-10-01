@@ -2,12 +2,48 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import {
+  internalMutation,
   repointPackageLatestRelease,
   scheduleOwnerPublisherDigestSync,
+  shouldScheduleOwnerPublisherDigestSyncForPublisherChange,
+  shouldScheduleOwnerUserPackageDigestSyncForUserChange,
   syncPackageSearchDigestForPackageId,
+  syncPackageSearchDigestsForOwnerPublisherId,
   syncPackageSearchDigestsForOwnerUserId,
+  syncSkillSearchDigestsForOwnerPublisherId,
 } from "./functions";
+import { computeRecommendationScore } from "./lib/recommendationScore";
+
+type WrappedHandler = {
+  _handler: (ctx: unknown, args: Record<string, never>) => Promise<unknown>;
+};
+
+function hasWrappedHandler(value: unknown): value is WrappedHandler {
+  return typeof value === "function" && "_handler" in value && typeof value._handler === "function";
+}
+
+function getWrappedHandler(value: unknown): WrappedHandler["_handler"] {
+  if (!hasWrappedHandler(value)) {
+    throw new Error("Expected a Convex function with a test-callable _handler");
+  }
+  return value._handler;
+}
+
+function testId<TableName extends TableNames>(
+  tableName: TableName,
+  value: `${TableName}:${string}`,
+): Id<TableName> {
+  if (!value.startsWith(`${tableName}:`)) {
+    throw new Error(`Expected ${value} to be a ${tableName} id`);
+  }
+  return value as Id<TableName>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 describe("package digest sync", () => {
   it("clears latestVersion when the current package release is soft-deleted", async () => {
@@ -21,8 +57,6 @@ describe("package digest sync", () => {
       isOfficial: false,
       ownerUserId: "users:owner",
       summary: "demo",
-      capabilityTags: ["tools"],
-      executesCode: true,
       runtimeId: null,
       softDeletedAt: undefined,
       createdAt: 1,
@@ -137,142 +171,163 @@ describe("package digest sync", () => {
     );
   });
 
-  it("repoints packages to the highest-version active release and restores its summary", async () => {
-    const pkg = {
-      _id: "packages:demo",
-      _creationTime: 1,
-      name: "demo-plugin",
-      normalizedName: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin",
-      channel: "community",
-      isOfficial: false,
-      ownerUserId: "users:owner",
-      summary: "latest summary",
-      tags: {
-        latest: "packageReleases:demo-2",
-        stable: "packageReleases:demo-2",
-      },
-      latestReleaseId: "packageReleases:demo-2",
-      latestVersionSummary: { version: "2.0.0" },
-      capabilityTags: ["new"],
-      executesCode: true,
-      compatibility: { openclaw: "^2.0.0" },
-      capabilities: { capabilityTags: ["new"], executesCode: true },
-      verification: { tier: "community" },
-      runtimeId: null,
-      softDeletedAt: undefined,
-      createdAt: 1,
-      updatedAt: 2,
-    };
-    const fallbackRelease = {
-      _id: "packageReleases:demo-1",
-      _creationTime: 10,
-      packageId: "packages:demo",
-      version: "1.0.0",
-      changelog: "old stable",
-      summary: "stable summary",
-      compatibility: { openclaw: "^1.0.0" },
-      capabilities: { capabilityTags: ["stable"], executesCode: false },
-      verification: { tier: "verified" },
-      distTags: ["stable"],
-      createdAt: 10,
-      softDeletedAt: undefined,
-    };
-    const legacyHotfixRelease = {
-      _id: "packageReleases:demo-legacy",
-      _creationTime: 20,
-      packageId: "packages:demo",
-      version: "0.9.9",
-      changelog: "legacy hotfix",
-      summary: "legacy summary",
-      compatibility: { openclaw: "^0.9.0" },
-      capabilities: { capabilityTags: ["legacy"], executesCode: false },
-      verification: { tier: "verified" },
-      distTags: ["legacy"],
-      createdAt: 20,
-      softDeletedAt: undefined,
-    };
-    const owner = {
-      _id: "users:owner",
-      handle: "owner",
-      deletedAt: undefined,
-      deactivatedAt: undefined,
-    };
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "packages:demo") return pkg;
-          if (id === "packageReleases:demo-1") return fallbackRelease;
-          if (id === "users:owner") return owner;
-          return null;
-        }),
-        query: vi.fn((table: string) => {
-          if (table === "packageReleases") {
-            return {
-              withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  paginate: vi.fn().mockResolvedValue({
-                    page: [legacyHotfixRelease, fallbackRelease],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                })),
-              })),
-            };
-          }
-          if (table === "packageSearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-                collect: vi.fn().mockResolvedValue([]),
-              })),
-            };
-          }
-          if (table === "packageCapabilitySearchDigest") {
-            return {
-              withIndex: vi.fn(() => ({
-                unique: vi.fn().mockResolvedValue(null),
-                collect: vi.fn().mockResolvedValue([]),
-              })),
-            };
-          }
-          throw new Error(`Unexpected table ${table}`);
-        }),
-        patch: vi.fn(),
-        insert: vi.fn(),
-        delete: vi.fn(),
-      },
-    };
-
-    await repointPackageLatestRelease(
-      ctx as never,
-      "packages:demo" as never,
-      "packageReleases:demo-2" as never,
-    );
-
-    expect(ctx.db.patch).toHaveBeenCalledWith("packageReleases:demo-1", {
-      distTags: ["stable", "latest"],
-    });
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      "packages:demo",
-      expect.objectContaining({
-        latestReleaseId: "packageReleases:demo-1",
-        tags: { latest: "packageReleases:demo-1" },
-        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
+  it.each([
+    {},
+    { publicationStatus: "pending" },
+    { publicationStatus: "blocked" },
+    { ownerDeletedAt: 0 },
+  ])(
+    "repoints packages to a published release, skipping unavailable siblings: %j",
+    async (unavailable) => {
+      const pkg = {
+        _id: "packages:demo",
+        _creationTime: 1,
+        name: "demo-plugin",
+        normalizedName: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:owner",
+        summary: "latest summary",
+        categories: ["models"],
+        tags: {
+          latest: "packageReleases:demo-2",
+          stable: "packageReleases:demo-2",
+        },
+        latestReleaseId: "packageReleases:demo-2",
+        latestVersionSummary: { version: "2.0.0" },
+        compatibility: { openclaw: "^2.0.0" },
+        verification: { tier: "community" },
+        runtimeId: null,
+        softDeletedAt: undefined,
+        createdAt: 1,
+        updatedAt: 2,
+      };
+      const fallbackRelease = {
+        _id: "packageReleases:demo-1",
+        _creationTime: 10,
+        packageId: "packages:demo",
+        version: "1.0.0",
+        changelog: "old stable",
         summary: "stable summary",
-        capabilityTags: ["stable"],
-        executesCode: false,
-      }),
-    );
-    expect(ctx.db.insert).toHaveBeenCalledWith(
-      "packageSearchDigest",
-      expect.objectContaining({
-        latestVersion: "1.0.0",
-        ownerHandle: "owner",
-      }),
-    );
-  });
+        compatibility: { openclaw: "^1.0.0" },
+        verification: { tier: "verified" },
+        distTags: ["stable"],
+        createdAt: 10,
+        softDeletedAt: undefined,
+      };
+      const legacyHotfixRelease = {
+        _id: "packageReleases:demo-legacy",
+        _creationTime: 20,
+        packageId: "packages:demo",
+        version: "0.9.9",
+        changelog: "legacy hotfix",
+        summary: "legacy summary",
+        compatibility: { openclaw: "^0.9.0" },
+        verification: { tier: "verified" },
+        distTags: ["legacy"],
+        createdAt: 20,
+        softDeletedAt: undefined,
+      };
+      const owner = {
+        _id: "users:owner",
+        handle: "owner",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+      };
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return pkg;
+            if (id === "packageReleases:demo-1") return fallbackRelease;
+            if (id === "users:owner") return owner;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReleases") {
+              return {
+                withIndex: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    paginate: vi.fn().mockResolvedValue({
+                      page: [
+                        legacyHotfixRelease,
+                        fallbackRelease,
+                        ...(Object.keys(unavailable).length
+                          ? [
+                              {
+                                ...fallbackRelease,
+                                _id: "packageReleases:unavailable",
+                                version: "9.0.0",
+                                ...unavailable,
+                              },
+                            ]
+                          : []),
+                      ],
+                      isDone: true,
+                      continueCursor: "",
+                    }),
+                  })),
+                })),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue(null),
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected table ${table}`);
+          }),
+          patch: vi.fn(),
+          insert: vi.fn(),
+          delete: vi.fn(),
+        },
+      };
+
+      await repointPackageLatestRelease(
+        ctx as never,
+        "packages:demo" as never,
+        "packageReleases:demo-2" as never,
+      );
+
+      expect(ctx.db.patch).toHaveBeenCalledWith("packageReleases:demo-1", {
+        distTags: ["stable", "latest"],
+      });
+      expect(ctx.db.patch).toHaveBeenCalledWith(
+        "packages:demo",
+        expect.objectContaining({
+          latestReleaseId: "packageReleases:demo-1",
+          tags: { latest: "packageReleases:demo-1" },
+          latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
+          summary: "stable summary",
+          categories: undefined,
+        }),
+      );
+      expect(ctx.db.insert).toHaveBeenCalledWith(
+        "packageSearchDigest",
+        expect.objectContaining({
+          latestVersion: "1.0.0",
+          categories: ["other"],
+          ownerHandle: "owner",
+        }),
+      );
+    },
+  );
 
   it("repoints bundle packages to the newest surviving release, not semver-looking versions", async () => {
     const pkg = {
@@ -286,15 +341,13 @@ describe("package digest sync", () => {
       isOfficial: false,
       ownerUserId: "users:owner",
       summary: "latest summary",
+      categories: ["models"],
       tags: {
         latest: "packageReleases:bundle-latest",
       },
       latestReleaseId: "packageReleases:bundle-latest",
       latestVersionSummary: { version: "latest" },
-      capabilityTags: ["new"],
-      executesCode: false,
       compatibility: { hosts: ["openclaw"] },
-      capabilities: { capabilityTags: ["new"], executesCode: false },
       verification: { tier: "community" },
       runtimeId: "bundle.runtime",
       softDeletedAt: undefined,
@@ -309,7 +362,6 @@ describe("package digest sync", () => {
       changelog: "older semver",
       summary: "older semver summary",
       compatibility: { hosts: ["openclaw"] },
-      capabilities: { capabilityTags: ["semver"], executesCode: false },
       verification: { tier: "verified" },
       distTags: ["legacy"],
       createdAt: 10,
@@ -322,8 +374,8 @@ describe("package digest sync", () => {
       version: "2024-12",
       changelog: "newest bundle build",
       summary: "newest bundle summary",
+      pluginManifestSummary: { categories: ["productivity"] },
       compatibility: { hosts: ["openclaw"] },
-      capabilities: { capabilityTags: ["bundle"], executesCode: false },
       verification: { tier: "verified" },
       distTags: ["release-2024-12"],
       createdAt: 20,
@@ -365,7 +417,11 @@ describe("package digest sync", () => {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),
@@ -397,12 +453,14 @@ describe("package digest sync", () => {
         tags: { latest: "packageReleases:bundle-newest" },
         latestVersionSummary: expect.objectContaining({ version: "2024-12" }),
         summary: "newest bundle summary",
+        categories: ["productivity"],
       }),
     );
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "packageSearchDigest",
       expect.objectContaining({
         latestVersion: "2024-12",
+        categories: ["productivity"],
         ownerHandle: "owner",
       }),
     );
@@ -429,8 +487,6 @@ describe("package digest sync", () => {
       tags: {},
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
-      capabilityTags: [],
-      executesCode: false,
       runtimeId: null,
       softDeletedAt: undefined,
       createdAt: 1,
@@ -464,7 +520,11 @@ describe("package digest sync", () => {
               })),
             };
           }
-          if (table === "packageCapabilitySearchDigest") {
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 unique: vi.fn().mockResolvedValue(null),
@@ -493,7 +553,92 @@ describe("package digest sync", () => {
   });
 });
 
+describe("user package digest scheduling", () => {
+  const user = {
+    _id: "users:owner",
+    handle: "owner",
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+  };
+
+  it("schedules package digest sync when an active user's handle changes", () => {
+    expect(
+      shouldScheduleOwnerUserPackageDigestSyncForUserChange({
+        id: "users:owner",
+        operation: "update",
+        oldDoc: user,
+        newDoc: { ...user, handle: "renamed" },
+      } as never),
+    ).toBe(true);
+  });
+
+  it("skips redundant package digest sync when a user becomes deactivated", () => {
+    expect(
+      shouldScheduleOwnerUserPackageDigestSyncForUserChange({
+        id: "users:owner",
+        operation: "update",
+        oldDoc: user,
+        newDoc: { ...user, handle: null, deactivatedAt: 1_700_000_000_000 },
+      } as never),
+    ).toBe(false);
+  });
+
+  it("skips unchanged user updates", () => {
+    expect(
+      shouldScheduleOwnerUserPackageDigestSyncForUserChange({
+        id: "users:owner",
+        operation: "update",
+        oldDoc: user,
+        newDoc: { ...user },
+      } as never),
+    ).toBe(false);
+  });
+});
+
 describe("publisher digest scheduling", () => {
+  const publisherChangeDoc = {
+    _id: "publishers:demo",
+    kind: "org",
+    handle: "demo",
+    displayName: "Demo",
+    image: null,
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+  };
+
+  it("schedules digest sync when an active publisher's profile changes", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "update",
+        oldDoc: publisherChangeDoc,
+        newDoc: { ...publisherChangeDoc, displayName: "Renamed Demo" },
+      } as never),
+    ).toBe(true);
+  });
+
+  it("skips redundant digest sync when a publisher becomes deactivated", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "update",
+        oldDoc: publisherChangeDoc,
+        newDoc: { ...publisherChangeDoc, handle: null, deactivatedAt: 1_700_000_000_000 },
+      } as never),
+    ).toBe(false);
+  });
+
+  it("skips unchanged publisher updates", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "update",
+        oldDoc: publisherChangeDoc,
+        newDoc: { ...publisherChangeDoc },
+      } as never),
+    ).toBe(false);
+  });
+
   it("schedules package and skill digest sync in separate background mutations", async () => {
     const ctx = {
       scheduler: {
@@ -522,5 +667,225 @@ describe("publisher digest scheduling", () => {
     await expect(
       scheduleOwnerPublisherDigestSync({} as never, "publishers:demo" as never),
     ).resolves.toBeUndefined();
+  });
+
+  it("continues owner-publisher package digest sync one page at a time", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: false,
+      continueCursor: "next-packages",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ paginate })),
+        })),
+      },
+      scheduler: {
+        runAfter: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    await syncPackageSearchDigestsForOwnerPublisherId(
+      ctx as never,
+      "publishers:demo" as never,
+      "current-packages",
+    );
+
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "current-packages", numItems: 100 });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      internal.functions.syncPackageSearchDigestsForOwnerPublisherIdInternal,
+      { ownerPublisherId: "publishers:demo", cursor: "next-packages" },
+    );
+  });
+
+  it("continues owner-publisher skill digest sync one page at a time", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: false,
+      continueCursor: "next-skills",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ paginate })),
+        })),
+      },
+      scheduler: {
+        runAfter: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    await syncSkillSearchDigestsForOwnerPublisherId(
+      ctx as never,
+      "publishers:demo" as never,
+      "current-skills",
+    );
+
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "current-skills", numItems: 100 });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      internal.functions.syncSkillSearchDigestsForOwnerPublisherIdInternal,
+      { ownerPublisherId: "publishers:demo", cursor: "next-skills" },
+    );
+  });
+
+  it("syncs recommended rank stats into the skill search digest after wrapped skill patches", async () => {
+    const skillId = testId("skills", "skills:demo");
+    const ownerUserId = testId("users", "users:owner");
+    const publisherId = testId("publishers", "publishers:owner");
+    const digestId = testId("skillSearchDigest", "skillSearchDigest:demo");
+
+    const skill = {
+      _id: skillId,
+      _creationTime: 1,
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      summary: "Demo summary",
+      ownerUserId,
+      ownerPublisherId: publisherId,
+      tags: {},
+      statsDownloads: 3,
+      statsStars: 2,
+      statsInstallsCurrent: 4,
+      statsInstallsAllTime: 5,
+      stats: {
+        downloads: 3,
+        stars: 2,
+        installsCurrent: 4,
+        installsAllTime: 5,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 10,
+      updatedAt: 20,
+    } satisfies Doc<"skills">;
+    const publisher = {
+      _id: publisherId,
+      _creationTime: 2,
+      kind: "user",
+      handle: "owner",
+      displayName: "Owner",
+      linkedUserId: ownerUserId,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 5,
+      totalDownloads: 3,
+      totalStars: 2,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 3,
+      skillTotalStars: 2,
+      createdAt: 10,
+      updatedAt: 20,
+    } satisfies Doc<"publishers">;
+    const digest = {
+      _id: digestId,
+      _creationTime: 3,
+      skillId,
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      summary: "Demo summary",
+      ownerUserId,
+      ownerPublisherId: publisherId,
+      ownerHandle: "owner",
+      ownerKind: "user",
+      ownerDisplayName: "Owner",
+      tags: {},
+      statsDownloads: 3,
+      statsStars: 2,
+      statsInstallsCurrent: 4,
+      statsInstallsAllTime: 5,
+      stats: {
+        downloads: 3,
+        stars: 2,
+        installsCurrent: 4,
+        installsAllTime: 5,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 10,
+      updatedAt: 20,
+    } satisfies Doc<"skillSearchDigest">;
+    const docs = new Map<string, unknown>([
+      [skillId, skill],
+      [publisherId, publisher],
+      [digestId, digest],
+    ]);
+    const patchSkillRankStats = internalMutation({
+      args: {},
+      handler: async (ctx) => {
+        await ctx.db.patch(skillId, {
+          statsDownloads: 13,
+          statsStars: 7,
+          statsInstallsAllTime: 11,
+          stats: {
+            downloads: 13,
+            stars: 7,
+            installsCurrent: 4,
+            installsAllTime: 11,
+            versions: 1,
+            comments: 0,
+          },
+        });
+      },
+    });
+    const handler = getWrappedHandler(patchSkillRankStats);
+    const db = {
+      system: {},
+      normalizeId: vi.fn((tableName: string, id: string) =>
+        id.startsWith(`${tableName}:`) ? id : null,
+      ),
+      get: vi.fn(async (first: string, second?: string) => docs.get(second ?? first) ?? null),
+      insert: vi.fn(async (tableName: string, value: unknown) => {
+        if (!isRecord(value))
+          throw new Error(`Expected inserted ${tableName} value to be an object`);
+        const insertedId = `${tableName}:inserted`;
+        docs.set(insertedId, { ...value, _id: insertedId, _creationTime: 0 });
+        return insertedId;
+      }),
+      patch: vi.fn(
+        async (first: string, second: string | Record<string, unknown>, third?: unknown) => {
+          const id = typeof second === "string" ? second : first;
+          const patch = typeof second === "string" ? third : second;
+          if (!isRecord(patch)) throw new Error(`Expected patch for ${id} to be an object`);
+          const existing = docs.get(id);
+          if (!isRecord(existing)) throw new Error(`Missing test doc ${id}`);
+          docs.set(id, { ...existing, ...patch });
+        },
+      ),
+      delete: vi.fn(async (first: string, second?: string) => {
+        docs.delete(second ?? first);
+      }),
+      query: vi.fn((tableName: string) => ({
+        withIndex: vi.fn(() => ({
+          unique: vi.fn(async () => {
+            if (tableName === "skillSearchDigest") return docs.get(digestId) ?? null;
+            return null;
+          }),
+          collect: vi.fn(async () => []),
+          paginate: vi.fn(async () => ({ page: [], isDone: true, continueCursor: "" })),
+          take: vi.fn(async () => []),
+        })),
+      })),
+    };
+
+    await expect(handler({ db }, {})).resolves.toBeUndefined();
+
+    expect(docs.get(digestId)).toEqual(
+      expect.objectContaining({
+        statsDownloads: 13,
+        statsStars: 7,
+        statsInstallsAllTime: 11,
+        recommendedScore: computeRecommendationScore({ downloads: 13, installs: 11, stars: 7 }),
+        stats: expect.objectContaining({
+          downloads: 13,
+          stars: 7,
+          installsAllTime: 11,
+        }),
+      }),
+    );
   });
 });

@@ -11,25 +11,38 @@ const EXPECTED_BIN_PATH = "bin/clawdhub.js";
 
 function parseArgs(argv) {
   const resolved = {};
+  const errors = [];
+  const valueFlags = new Set(["--tag", "--release-tag", "--release-sha", "--release-main-ref"]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
-    if ((arg === "--tag" || arg === "--release-tag") && next) {
+
+    if (!valueFlags.has(arg)) {
+      errors.push(`Unknown argument: ${arg}.`);
+      continue;
+    }
+
+    if (!next || valueFlags.has(next) || next.startsWith("--")) {
+      errors.push(`${arg} requires a value.`);
+      continue;
+    }
+
+    if (arg === "--tag" || arg === "--release-tag") {
       resolved.tag = next;
       index += 1;
       continue;
     }
-    if (arg === "--release-sha" && next) {
+    if (arg === "--release-sha") {
       resolved.releaseSha = next;
       index += 1;
       continue;
     }
-    if (arg === "--release-main-ref" && next) {
+    if (arg === "--release-main-ref") {
       resolved.releaseMainRef = next;
       index += 1;
     }
   }
-  return resolved;
+  return { errors, values: resolved };
 }
 
 function normalizeUrl(value) {
@@ -141,16 +154,20 @@ function collectReleaseTagErrors({ packageVersion, releaseTag, releaseSha, relea
       `Release tag ${normalizedTag} does not match packages/clawhub/package.json version ${normalizedVersion}; expected v${normalizedVersion}.`,
     );
   }
-  if (releaseSha?.trim() && releaseMainRef?.trim()) {
+  const normalizedReleaseSha = releaseSha?.trim() ?? "";
+  const normalizedReleaseMainRef = releaseMainRef?.trim() ?? "";
+  if (Boolean(normalizedReleaseSha) !== Boolean(normalizedReleaseMainRef)) {
+    errors.push("Release ancestry validation requires both --release-sha and --release-main-ref.");
+  } else if (normalizedReleaseSha && normalizedReleaseMainRef) {
     try {
       execFileSync(
         "git",
-        ["merge-base", "--is-ancestor", releaseSha.trim(), releaseMainRef.trim()],
+        ["merge-base", "--is-ancestor", normalizedReleaseSha, normalizedReleaseMainRef],
         { stdio: "ignore" },
       );
     } catch {
       errors.push(
-        `Tagged commit ${releaseSha.trim()} is not contained in ${releaseMainRef.trim()}.`,
+        `Tagged commit ${normalizedReleaseSha} is not contained in ${normalizedReleaseMainRef}.`,
       );
     }
   }
@@ -158,7 +175,15 @@ function collectReleaseTagErrors({ packageVersion, releaseTag, releaseSha, relea
   return errors;
 }
 
-const args = parseArgs(process.argv.slice(2));
+const parsedArgs = parseArgs(process.argv.slice(2));
+if (parsedArgs.errors.length > 0) {
+  for (const error of parsedArgs.errors) {
+    console.error(error);
+  }
+  process.exit(1);
+}
+
+const args = parsedArgs.values;
 const pkg = readPackageJson();
 const releaseTag = args.tag ?? process.env.RELEASE_TAG ?? "";
 const releaseSha = args.releaseSha ?? process.env.RELEASE_SHA ?? "";

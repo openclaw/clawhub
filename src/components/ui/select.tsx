@@ -4,26 +4,26 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 
 const Select = SelectPrimitive.Root;
-const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> & {
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement> & {
     size?: "sm" | "default";
+    icon?: React.ReactNode;
   }
->(({ className, children, size = "default", ...props }, ref) => (
+>(({ className, children, size = "default", icon, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
     data-slot="select-trigger"
     data-size={size}
     className={cn(
       // Matches form input token styling
-      "flex w-full min-h-[44px] items-center justify-between rounded-[var(--radius-sm)] border px-3.5 py-space-3 text-sm text-[color:var(--ink)] transition-all duration-[180ms] ease-out",
+      "flex w-full min-h-[44px] cursor-pointer items-center justify-between rounded-[var(--oc-radius-control)] border px-3.5 py-space-3 text-sm text-[color:var(--oc-text-primary)] transition-all duration-[var(--oc-duration-fast)] ease-[var(--oc-ease-out)]",
       "data-[size=sm]:min-h-8 data-[size=sm]:px-2.5 data-[size=sm]:py-1 data-[size=sm]:text-xs",
       "border-input-border bg-input-bg",
       "placeholder:text-input-placeholder",
-      "focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--input-focus-ring)]",
+      "focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--oc-input-focus-ring)]",
       "disabled:cursor-not-allowed disabled:opacity-60",
       className,
     )}
@@ -31,7 +31,7 @@ const SelectTrigger = React.forwardRef<
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50" />
+      {icon ?? <ChevronDown className="h-4 w-4 opacity-50" />}
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
@@ -74,7 +74,7 @@ const SelectContent = React.forwardRef<
       ref={ref}
       data-slot="select-content"
       className={cn(
-        "relative z-50 max-h-[var(--radix-select-content-available-height)] min-w-[8rem] origin-[var(--radix-select-content-transform-origin)] overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] shadow-[var(--shadow)]",
+        "relative z-[90] max-h-[var(--radix-select-content-available-height)] min-w-[8rem] origin-[var(--radix-select-content-transform-origin)] overflow-hidden rounded-[var(--oc-radius-surface)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-elevated)] text-[color:var(--oc-text-primary)] shadow-[var(--oc-shadow-lg)]",
         "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
         "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
@@ -102,18 +102,6 @@ const SelectContent = React.forwardRef<
 ));
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
-const SelectLabel = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Label>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.Label
-    ref={ref}
-    className={cn("px-3 py-1.5 text-xs font-semibold text-[color:var(--ink-soft)]", className)}
-    {...props}
-  />
-));
-SelectLabel.displayName = SelectPrimitive.Label.displayName;
-
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
@@ -138,27 +126,4 @@ const SelectItem = React.forwardRef<
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
-const SelectSeparator = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Separator>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.Separator
-    ref={ref}
-    className={cn("my-1 h-px bg-[color:var(--line)]", className)}
-    {...props}
-  />
-));
-SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
-
-export {
-  Select,
-  SelectGroup,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectLabel,
-  SelectItem,
-  SelectSeparator,
-  SelectScrollUpButton,
-  SelectScrollDownButton,
-};
+export { Select, SelectValue, SelectTrigger, SelectContent, SelectItem };

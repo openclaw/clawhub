@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Generate shareable Axiom query links
+# Usage: axiom-link <deployment> <apl-query> [time-range]
+# Example: axiom-link dev "['logs'] | where status >= 500 | take 10" "1h"
+#
+# Time range can be:
+#   - Quick range: "1h", "24h", "7d", "30d", "90d"
+#   - Absolute: "2024-01-01T00:00:00Z,2024-01-02T00:00:00Z"
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+APL="${2:-}"
+TIME_RANGE="${3:-1h}"
+
+if [[ -z "$DEPLOYMENT" || -z "$APL" ]]; then
+  echo "Usage: axiom-link <deployment> <apl-query> [time-range]" >&2
+  echo "" >&2
+  echo "Time range examples:" >&2
+  echo "  1h, 24h, 7d, 30d, 90d (quick range)" >&2
+  echo "  2024-01-01T00:00:00Z,2024-01-02T00:00:00Z (absolute)" >&2
+  exit 1
+fi
+
+# Load config via unified config parser
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" axiom "$DEPLOYMENT")"
+
+URL="$AXIOM_URL"
+ORG_ID="$AXIOM_ORG_ID"
+
+if [[ -z "$URL" || -z "$ORG_ID" ]]; then
+  echo "Error: Missing url or org_id for deployment '$DEPLOYMENT'" >&2
+  exit 1
+fi
+
+# Derive web UI URL from configured API URL
+# Replace "api." with "app." in the domain
+# Examples:
+#   https://api.staging.axiom.co → https://app.staging.axiom.co
+#   https://api.dev.axiom.co → https://app.dev.axiom.co
+#   https://cloud.axiom.co → https://app.axiom.co
+#   https://api.axiom.co → https://app.axiom.co
+if [[ "$URL" == *"cloud.axiom.co"* ]]; then
+  BASE_URL="https://app.axiom.co"
+elif [[ "$URL" == https://api.* ]]; then
+  # Replace api. with app.
+  BASE_URL="${URL/api./app.}"
+  # Strip any trailing path
+  BASE_URL="${BASE_URL%/}"
+else
+  # Fallback: use URL as-is, stripping /api or /v1 suffixes
+  BASE_URL="${URL%/}"
+  BASE_URL="${BASE_URL%/api}"
+  BASE_URL="${BASE_URL%/v1}"
+fi
+
+# Build query options based on time range format
+if [[ "$TIME_RANGE" == *","* ]]; then
+  # Absolute time range: "start,end"
+  START_TIME="${TIME_RANGE%%,*}"
+  END_TIME="${TIME_RANGE##*,}"
+  QUERY_OPTIONS="{\"startTime\":\"$START_TIME\",\"endTime\":\"$END_TIME\"}"
+else
+  # Quick range: "1h", "24h", etc.
+  QUERY_OPTIONS="{\"quickRange\":\"$TIME_RANGE\"}"
+fi
+
+# Build the initForm JSON structure
+INIT_FORM=$(jq -n \
+  --arg apl "$APL" \
+  --argjson opts "$QUERY_OPTIONS" \
+  '{apl: $apl, queryOptions: $opts}')
+
+# URL encode the JSON (using jq for proper encoding)
+ENCODED_FORM=$(printf '%s' "$INIT_FORM" | jq -sRr @uri)
+
+# Generate the full URL
+echo "${BASE_URL}/${ORG_ID}/query?initForm=${ENCODED_FORM}"

@@ -1,0 +1,128 @@
+name: Pre-publication Publish Checks
+
+on:
+  repository_dispatch:
+    types:
+      - clawhub-prepublication-publish
+  workflow_dispatch:
+    inputs:
+      batch-limit:
+        description: "Maximum staged publish attempts to check per worker shard"
+        required: true
+        default: "2"
+      max-jobs:
+        description: "Optional total attempts cap per worker shard"
+        required: false
+        default: ""
+      max-runtime-minutes:
+        description: "Stop claiming new attempts after this many minutes"
+        required: true
+        default: "15"
+      attempt-id:
+        description: "Optional exact publish attempt ID for targeted recovery"
+        required: false
+        default: ""
+      kind:
+        description: "Optional targeted recovery kind: skill or package"
+        required: false
+        default: ""
+      slug:
+        description: "Optional targeted recovery slug"
+        required: false
+        default: ""
+      version:
+        description: "Optional targeted recovery version"
+        required: false
+        default: ""
+      runner:
+        description: "Runner label for manual recovery dispatches"
+        required: true
+        default: "blacksmith-8vcpu-ubuntu-2404"
+        type: choice
+        options:
+          - "blacksmith-8vcpu-ubuntu-2404"
+          - "ubuntu-latest"
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}
+  cancel-in-progress: false
+
+jobs:
+  prepublication-publish-checks:
+    name: Pre-publication publish checks shard ${{ matrix.shard }}
+    runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 25
+    environment: Production
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: ${{ fromJSON((github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && '[0]' || '[0,1]') }}
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      PREPUBLICATION_CHECK_LIMIT: ${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '2' }}
+      PREPUBLICATION_CHECK_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
+      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '15' }}
+      PREPUBLICATION_CHECK_ATTEMPT_ID: ${{ github.event.client_payload.attempt_id || inputs['attempt-id'] || '' }}
+      PREPUBLICATION_CHECK_KIND: ${{ github.event.client_payload.kind || inputs.kind || '' }}
+      PREPUBLICATION_CHECK_SLUG: ${{ github.event.client_payload.slug || inputs.slug || '' }}
+      PREPUBLICATION_CHECK_VERSION: ${{ github.event.client_payload.version || inputs.version || '' }}
+      PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: ${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}
+      # The runner is disposable and installs the reviewed, hash-locked host scanners above.
+      PREPUBLICATION_CLAWSCAN_SANDBOX: "off"
+      PREPUBLICATION_TRUFFLEHOG_IMAGE: ${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}
+      PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Codex CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openai/codex@0.142.3
+          codex --version
+
+      - name: Install ClawScan CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openclaw/clawscan@0.1.8
+          clawscan --version
+
+      - name: Install SkillSpector
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/skillspector-venv"
+          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
+          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
+          skillspector --help >/dev/null
+
+      - name: Install A.I.G scanner
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
+          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.2"'
+          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
+          aig-skill-scan --help >/dev/null
+
+      - name: Run pre-publication publish worker
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.6
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+        run: |
+          bun run publish:prepublication-worker

@@ -1,0 +1,4 @@
+interface:
+  display_name: "ClawHub Rights Correspondence"
+  short_description: "Send and preserve ClawHub rights case emails."
+  default_prompt: "Use $clawhub-content-rights-correspondence to draft or send correspondence for an existing ClawHub content rights case."

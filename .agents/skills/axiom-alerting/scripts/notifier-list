@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DEPLOYMENT="${1:-}"
+FORMAT="${2:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "$DEPLOYMENT" ]]; then
+  echo "Usage: notifier-list <deployment> [--json]" >&2
+  exit 1
+fi
+OUT="$($SCRIPT_DIR/axiom-api "$DEPLOYMENT" GET "/notifiers")"
+if [[ "$FORMAT" == "--json" ]]; then
+  echo "$OUT"
+else
+  echo "$OUT" | jq -r '.[] | "\(.id)\t\(.name)\t\((.types // []) | join(","))"'
+fi

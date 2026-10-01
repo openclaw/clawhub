@@ -1,5 +1,6 @@
 {
   "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["artifacts/**"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

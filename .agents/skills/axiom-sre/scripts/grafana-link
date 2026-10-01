@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Generate shareable Grafana Explore links
+# Usage: grafana-link <deployment> <datasource-uid> <query> [time-range]
+# Example: grafana-link prod prom-prod "rate(http_requests_total[5m])" "1h"
+#
+# Time range can be:
+#   - Quick range: "1h", "6h", "24h", "7d", "30d"
+#   - Absolute: "2024-01-01T00:00:00Z,2024-01-02T00:00:00Z"
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+DATASOURCE_UID="${2:-}"
+QUERY="${3:-}"
+TIME_RANGE="${4:-1h}"
+
+if [[ -z "$DEPLOYMENT" || -z "$DATASOURCE_UID" || -z "$QUERY" ]]; then
+  echo "Usage: grafana-link <deployment> <datasource-uid> <query> [time-range]" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" grafana "$DEPLOYMENT")"
+
+URL="${GRAFANA_URL%/}"
+
+if [[ -z "$URL" ]]; then
+  echo "Error: Missing url for deployment '$DEPLOYMENT'" >&2
+  exit 1
+fi
+
+# Build time range
+if [[ "$TIME_RANGE" == *","* ]]; then
+  FROM="${TIME_RANGE%%,*}"
+  TO="${TIME_RANGE##*,}"
+else
+  FROM="now-${TIME_RANGE}"
+  TO="now"
+fi
+
+# Build the panes JSON using jq for proper encoding
+# Grafana Explore uses schemaVersion=1 with panes parameter
+PANES_JSON=$(jq -cn \
+  --arg ds "$DATASOURCE_UID" \
+  --arg expr "$QUERY" \
+  --arg from "$FROM" \
+  --arg to "$TO" \
+  '{
+    "a": {
+      "datasource": $ds,
+      "queries": [{"refId": "A", "expr": $expr, "datasource": {"uid": $ds}}],
+      "range": {"from": $from, "to": $to}
+    }
+  }')
+
+ENCODED_PANES=$(printf '%s' "$PANES_JSON" | jq -sRr @uri)
+
+echo "${URL}/explore?schemaVersion=1&panes=${ENCODED_PANES}&orgId=${GRAFANA_ORG_ID:-1}"

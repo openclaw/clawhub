@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Download file from Slack using url_private
+# Usage: slack-download <workspace> <url> [output_path]
+#
+# Use workspace names from `scripts/init` output (under "Slack Workspaces").
+# Common workspaces: default, work, corp - check init output for what's configured.
+#
+# Examples:
+#   slack-download default https://files.slack.com/files-pri/.../screenshot.png
+#   slack-download default https://files.slack.com/files-pri/.../config.yaml ./local.yaml
+#   slack-download myworkspace https://files.slack.com/files-pri/.../report.pdf /tmp/report.pdf
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ENV="${1:-}"
+URL="${2:-}"
+OUTPUT="${3:-}"
+
+if [[ -z "$ENV" || -z "$URL" ]]; then
+  echo "Usage: slack-download <env> <url> [output_path]" >&2
+  exit 1
+fi
+
+# Determine output path
+if [[ -z "$OUTPUT" ]]; then
+  FILENAME=$(basename "${URL%%\?*}" 2>/dev/null || echo "file-$$")
+  OUTPUT="/tmp/${FILENAME}"
+fi
+
+mkdir -p "$(dirname "$OUTPUT")"
+
+if ! "$SCRIPT_DIR/curl-auth" slack "$ENV" "$URL" -o "$OUTPUT"; then
+  echo "Error: Failed to download from Slack" >&2
+  exit 1
+fi
+
+echo "$OUTPUT"

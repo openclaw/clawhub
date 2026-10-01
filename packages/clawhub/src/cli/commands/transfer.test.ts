@@ -64,8 +64,27 @@ describe("transfer commands", () => {
       }),
       expect.anything(),
     );
-    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: string };
-    expect(requestArgs.body).toContain('"toUserHandle":"alice"');
+    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { body?: unknown };
+    expect(requestArgs.body).toEqual({
+      toUserHandle: "alice",
+      message: "Please take over",
+    });
+  });
+
+  it("request supports owner-qualified skill refs", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      transferId: "skillOwnershipTransfers:1",
+      toUserHandle: "alice",
+      expiresAt: Date.now() + 10_000,
+    });
+
+    await cmdTransferRequest(makeGlobalOpts(), "@OpenClaw/Demo", "@Alice", { yes: true }, false);
+
+    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string };
+    const url = new URL(String(requestArgs.url));
+    expect(url.pathname).toBe("/api/v1/skills/demo/transfer");
+    expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
   });
 
   it("list calls incoming transfers endpoint", async () => {
@@ -125,5 +144,16 @@ describe("transfer commands", () => {
       expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/transfer/cancel" }),
       expect.anything(),
     );
+  });
+
+  it("accept supports owner-qualified skill refs", async () => {
+    httpMocks.apiRequest.mockResolvedValue({ ok: true, skillSlug: "demo" });
+
+    await cmdTransferAccept(makeGlobalOpts(), "@openclaw/demo", { yes: true }, false);
+
+    const requestArgs = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string };
+    const url = new URL(String(requestArgs.url));
+    expect(url.pathname).toBe("/api/v1/skills/demo/transfer/accept");
+    expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
   });
 });

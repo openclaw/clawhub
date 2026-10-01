@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# dashboard-new: Create a new dashboard from the blank template
+#
+# Usage: dashboard-new <name> <dataset> [output-file]
+#
+# Arguments:
+#   name        - Dashboard name
+#   dataset     - Primary dataset name
+#   output-file - Output path (default: stdout)
+#
+# Examples:
+#   dashboard-new "API Gateway" "http-logs"
+#   dashboard-new "Payment Service" "payment-logs" ./payment.json
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE_DIR="$SCRIPT_DIR/../reference/templates"
+TEMPLATE="$TEMPLATE_DIR/blank.json"
+
+if [[ $# -lt 2 ]]; then
+    echo "Usage: dashboard-new <name> <dataset> [output-file]" >&2
+    exit 1
+fi
+
+NAME="$1"
+DATASET="$2"
+OUTPUT="${3:-/dev/stdout}"
+
+if [[ ! -f "$TEMPLATE" ]]; then
+    echo "Error: Template not found at $TEMPLATE" >&2
+    exit 1
+fi
+
+# Replace placeholders
+sed -e "s/{{name}}/$NAME/g" \
+    -e "s/{{description}}/Dashboard for $NAME/g" \
+    -e "s/{{dataset}}/$DATASET/g" \
+    "$TEMPLATE" > "$OUTPUT"
+
+if [[ "$OUTPUT" != "/dev/stdout" ]]; then
+    echo "Created: $OUTPUT" >&2
+fi

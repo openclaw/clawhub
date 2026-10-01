@@ -19,6 +19,10 @@ export const LockfileSchema = type({
         "[string]": {
             version: "string|null",
             installedAt: "number",
+            ownerHandle: "string?",
+            sourceRef: "string?",
+            pinned: "boolean?",
+            pinReason: "string?",
         },
     },
 });
@@ -30,6 +34,7 @@ export const ApiCliWhoamiResponseSchema = type({
 export const ApiSearchResponseSchema = type({
     results: type({
         slug: "string?",
+        ownerHandle: "string|null?",
         displayName: "string?",
         version: "string|null?",
         score: "number",
@@ -43,9 +48,20 @@ export const ApiSkillMetaResponseSchema = type({
 });
 export const ApiCliUploadUrlResponseSchema = type({
     uploadUrl: "string",
+    uploadTicket: "string",
 });
 export const ApiUploadFileResponseSchema = type({
     storageId: "string",
+});
+export const ApiV1SkillUploadUrlRequestSchema = type({
+    path: "string",
+    size: "number",
+    sha256: "string",
+    contentType: "string?",
+});
+export const ApiV1SkillUploadUrlResponseSchema = type({
+    uploadUrl: "string",
+    uploadTicket: "string",
 });
 export const CliPublishFileSchema = type({
     path: "string",
@@ -53,6 +69,7 @@ export const CliPublishFileSchema = type({
     storageId: "string",
     sha256: "string",
     contentType: "string?",
+    uploadTicket: "string?",
 });
 export const PublishSourceSchema = type({
     kind: '"github"',
@@ -66,13 +83,19 @@ export const PublishSourceSchema = type({
 export const CliPublishRequestSchema = type({
     slug: "string",
     displayName: "string",
+    ownerHandle: "string?",
+    sourceOwnerHandle: "string?",
+    migrateOwner: "boolean?",
     version: "string",
     changelog: "string",
     acceptLicenseTerms: "boolean?",
     tags: "string[]?",
+    categories: "string[]?",
+    topics: "string[]?",
     source: PublishSourceSchema.optional(),
     forkOf: type({
         slug: "string",
+        ownerHandle: "string?",
         version: "string?",
     }).optional(),
     files: CliPublishFileSchema.array(),
@@ -81,18 +104,110 @@ export const ApiCliPublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const CliSkillDeleteRequestSchema = type({
     slug: "string",
+    reason: "string?",
 });
 export const ApiCliSkillDeleteResponseSchema = type({
     ok: "true",
+    slugReservedUntil: "number?",
 });
 export const ApiSkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
     latestVersion: type({ version: "string" }).or("null"),
 });
-export const CliTelemetrySyncRequestSchema = type({
+export const ApiV1SkillInstallResolveResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    installKind: '"archive"',
+    archive: {
+        version: "string",
+        downloadUrl: "string",
+    },
+})
+    .or({
+    ok: "true",
+    slug: "string",
+    installKind: '"github"',
+    github: {
+        repo: "string",
+        path: "string",
+        commit: "string",
+        contentHash: "string",
+        sourceUrl: "string",
+    },
+})
+    .or({
+    ok: "false",
+    slug: "string",
+    reason: '"archive_version_missing"|"github_source_missing"|"github_upstream_removed"|"github_upstream_missing"|"github_upstream_unknown"|"github_verification_pending"|"github_scan_failed"',
+    message: "string",
+    status: "number",
+});
+export const ApiV1SkillsShCatalogEntrySchema = type({
+    ref: "string",
+    route: "string",
+    displayName: "string",
+    summary: "string",
+    owner: {
+        handle: "string",
+        githubUrl: "string",
+    },
+    repository: "string",
+    githubPath: "string",
+    githubCommit: "string",
+    githubContentHash: "string",
+    sourceUrl: "string",
+    installs: "number",
+    security: {
+        verdict: '"clean"|"suspicious"',
+        source: '"clawhub"',
+        attemptId: "string",
+        scannedAt: "number",
+    },
+    install: {
+        ok: "true",
+        slug: "string",
+        installKind: '"github"',
+        github: {
+            repo: "string",
+            path: "string",
+            commit: "string",
+            contentHash: "string",
+            sourceUrl: "string",
+        },
+    },
+});
+export const CliTelemetryInstallRequestSchema = type({
+    event: '"install"',
+    slug: "string",
+    ownerHandle: "string?",
+    sourceRef: "string?",
+    sourceKind: '"skills-sh"?',
+    sourceRepository: "string?",
+    sourcePath: "string?",
+    sourceUrl: "string?",
+    canonicalRef: "string?",
+    clawhubScan: '"unscanned"|"scanned"?',
+    trustLabel: "string?",
+    version: "string?",
+    // Deprecated compatibility fields accepted and ignored by the backend.
+    rootId: "string?",
+    rootLabel: "string?",
+})
+    .or({
+    event: '"plugin_install"',
+    packageName: "string",
+    version: "string?",
+})
+    .or({
+    // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
     roots: type({
         rootId: "string",
         label: "string",
@@ -102,7 +217,7 @@ export const CliTelemetrySyncRequestSchema = type({
         }).array(),
     }).array(),
 });
-export const ApiCliTelemetrySyncResponseSchema = type({
+export const ApiCliTelemetryInstallResponseSchema = type({
     ok: "true",
 });
 export const ApiV1WhoamiResponseSchema = type({
@@ -123,21 +238,76 @@ export const ApiV1UserSearchResponseSchema = type({
     }).array(),
     total: "number",
 });
+export const ApiV1PublisherCreateResponseSchema = type({
+    ok: "true",
+    publisherId: "string",
+    handle: "string",
+    created: "true",
+    trusted: "false",
+});
+export const ApiV1PublisherDeleteResponseSchema = type({
+    ok: "true",
+    publisherId: "string",
+    handle: "string",
+    dryRun: "boolean",
+    deleted: "boolean",
+    activeSkills: "number",
+    activePackages: "number",
+    memberCount: "number",
+});
+export const ApiV1PublisherReclaimResponseSchema = type({
+    ok: "true",
+    publisherId: "string",
+    handle: "string",
+    dryRun: "boolean",
+    hardDeleted: "boolean",
+    activeSkills: "number",
+    activePackages: "number",
+    memberCount: "number",
+    githubSources: "number",
+    githubSourceContents: "number",
+    officialPublisher: "boolean",
+    confirmationToken: "string",
+});
+export const ApiV1StaffEmailSendResponseSchema = type({
+    ok: "true",
+    sent: "true",
+    recipient: type({
+        email: "string",
+        "userId?": "string",
+        "handle?": "string|null",
+    }),
+    subject: "string",
+    template: "string",
+    providerId: "string|null",
+});
 export const ApiV1SearchResponseSchema = type({
     results: type({
         slug: "string?",
+        ownerHandle: "string|null?",
         displayName: "string?",
         summary: "string|null?",
         version: "string|null?",
         score: "number",
+        downloads: "number?",
         updatedAt: "number?",
+        owner: type({
+            handle: "string|null?",
+            displayName: "string|null?",
+            image: "string|null?",
+        })
+            .or("null")
+            .optional(),
     }).array(),
 });
 export const ApiV1SkillListResponseSchema = type({
     items: type({
+        ownerHandle: "string",
         slug: "string",
         displayName: "string",
         summary: "string|null?",
+        description: "string|null?",
+        topics: "string[]?",
         tags: "unknown",
         stats: "unknown",
         createdAt: "number",
@@ -147,7 +317,17 @@ export const ApiV1SkillListResponseSchema = type({
             createdAt: "number",
             changelog: "string",
             license: SkillPlatformLicenseSchema.or("null").optional(),
-        }).optional(),
+        }).or("null"),
+        metadata: type({
+            setup: type({
+                key: "string",
+                required: "boolean",
+            }).array(),
+            os: "string[]|null?",
+            systems: "string[]|null?",
+        })
+            .or("null")
+            .optional(),
     }).array(),
     nextCursor: "string|null",
 });
@@ -156,6 +336,8 @@ export const ApiV1SkillResponseSchema = type({
         slug: "string",
         displayName: "string",
         summary: "string|null?",
+        description: "string|null?",
+        topics: "string[]?",
         tags: "unknown",
         stats: "unknown",
         createdAt: "number",
@@ -167,6 +349,16 @@ export const ApiV1SkillResponseSchema = type({
         changelog: "string",
         license: SkillPlatformLicenseSchema.or("null").optional(),
     }).or("null"),
+    metadata: type({
+        setup: type({
+            key: "string",
+            required: "boolean",
+        }).array(),
+        os: "string[]|null?",
+        systems: "string[]|null?",
+    })
+        .or("null")
+        .optional(),
     owner: type({
         handle: "string|null",
         displayName: "string|null?",
@@ -204,6 +396,355 @@ export const ApiV1SkillModerationResponseSchema = type({
         }).array(),
     }).or("null"),
 });
+export const SkillVersionRevokeRequestSchema = type({
+    state: '"revoked"',
+    reason: "string",
+    ownerHandle: "string?",
+});
+export const ApiV1SkillVersionRevokeResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    versionId: "string",
+    alreadyRevoked: "boolean",
+    replacementVersion: "string|null",
+    skillHidden: "boolean",
+});
+export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
+export const SkillReportFinalActionSchema = type('"none"|"hide"');
+export const SkillReportListStatusSchema = SkillReportStatusSchema.or('"all"');
+export const SkillAppealStatusSchema = type('"open"|"accepted"|"rejected"');
+export const SkillAppealFinalActionSchema = type('"none"|"restore"');
+export const SkillAppealListStatusSchema = SkillAppealStatusSchema.or('"all"');
+export const SkillAppealRequestSchema = type({
+    version: "string?",
+    message: "string",
+});
+export const ApiV1SkillReportResponseSchema = type({
+    ok: "true",
+    reported: "boolean",
+    alreadyReported: "boolean",
+    reportId: "string",
+    skillId: "string",
+    reportCount: "number",
+});
+export const ApiV1SkillAppealResponseSchema = type({
+    ok: "true",
+    submitted: "boolean",
+    alreadyOpen: "boolean",
+    appealId: "string",
+    skillId: "string",
+    status: SkillAppealStatusSchema,
+});
+export const SkillReportTriageRequestSchema = type({
+    status: SkillReportStatusSchema,
+    note: "string?",
+    finalAction: SkillReportFinalActionSchema.optional(),
+});
+export const SkillAppealResolveRequestSchema = type({
+    status: SkillAppealStatusSchema,
+    note: "string?",
+    finalAction: SkillAppealFinalActionSchema.optional(),
+});
+export const ApiV1SkillReportListResponseSchema = type({
+    items: type({
+        reportId: "string",
+        skillId: "string",
+        skillVersionId: "string|null?",
+        slug: "string",
+        displayName: "string",
+        version: "string|null?",
+        reason: "string|null?",
+        status: SkillReportStatusSchema,
+        createdAt: "number",
+        reporter: type({
+            userId: "string",
+            handle: "string|null?",
+            displayName: "string|null?",
+        }),
+        triagedAt: "number|null?",
+        triagedBy: "string|null?",
+        triageNote: "string|null?",
+        actionTaken: SkillReportFinalActionSchema.or("null").optional(),
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
+export const ApiV1SkillReportTriageResponseSchema = type({
+    ok: "true",
+    reportId: "string",
+    skillId: "string",
+    status: SkillReportStatusSchema,
+    reportCount: "number",
+    actionTaken: SkillReportFinalActionSchema.optional(),
+});
+export const ApiV1SkillAppealListResponseSchema = type({
+    items: type({
+        appealId: "string",
+        skillId: "string",
+        skillVersionId: "string|null?",
+        slug: "string",
+        displayName: "string",
+        version: "string|null?",
+        message: "string",
+        status: SkillAppealStatusSchema,
+        createdAt: "number",
+        submitter: type({
+            userId: "string",
+            handle: "string|null?",
+            displayName: "string|null?",
+        }),
+        resolvedAt: "number|null?",
+        resolvedBy: "string|null?",
+        resolutionNote: "string|null?",
+        actionTaken: SkillAppealFinalActionSchema.or("null").optional(),
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
+export const ApiV1SkillAppealResolveResponseSchema = type({
+    ok: "true",
+    appealId: "string",
+    skillId: "string",
+    status: SkillAppealStatusSchema,
+    actionTaken: SkillAppealFinalActionSchema.optional(),
+});
+export const ApiV1SkillRescanResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    skillVersionId: "string",
+    jobId: "string",
+    alreadyQueued: "boolean",
+}).or({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    githubContentHash: "string",
+    jobId: "string?",
+    scheduled: "boolean",
+    alreadyQueued: "boolean",
+});
+export const ApiV1SkillHardDeleteRequestSchema = type({
+    ownerHandle: "string",
+    reason: "string",
+    dryRun: "boolean?",
+    confirmationToken: "string?",
+});
+export const ApiV1SkillHardDeleteResponseSchema = type({
+    ok: "true",
+    skillId: "string",
+    slug: "string",
+    ownerHandle: "string",
+    displayName: "string",
+    dryRun: "boolean",
+    scheduled: "boolean",
+    confirmationToken: "string",
+});
+export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
+export const ApiV1SkillScanSourceSchema = type({
+    kind: '"upload"',
+}).or({
+    kind: '"published"',
+    slug: "string",
+    ownerHandle: "string?",
+    version: "string?",
+});
+export const ApiV1SkillScanSubmitRequestSchema = type({
+    source: ApiV1SkillScanSourceSchema,
+    update: "boolean?",
+});
+export const ApiV1SkillScanQueueSchema = type({
+    queuedAhead: "number",
+    queuedAheadIsEstimate: "boolean?",
+    position: "number|null",
+    running: "number",
+    runningIsEstimate: "boolean?",
+    note: "string",
+});
+export const ApiV1SkillScanSubmitResponseSchema = type({
+    ok: "true",
+    scanId: "string",
+    jobId: "string?",
+    status: ApiV1SkillScanStatusSchema,
+    sourceKind: '"upload"|"published"',
+    update: "boolean",
+    alreadyQueued: "boolean?",
+    queue: ApiV1SkillScanQueueSchema.optional(),
+});
+export const ApiV1SkillScanStatusResponseSchema = type({
+    ok: "true",
+    scanId: "string",
+    jobId: "string?",
+    status: ApiV1SkillScanStatusSchema,
+    sourceKind: '"upload"|"published"',
+    update: "boolean",
+    writtenBack: "boolean?",
+    artifact: "unknown?",
+    report: "unknown?",
+    queue: ApiV1SkillScanQueueSchema.optional(),
+    lastError: "string?",
+    createdAt: "number",
+    updatedAt: "number",
+    completedAt: "number?",
+});
+export const ApiV1SkillScanDownloadManifestSchema = type({
+    scanId: "string",
+    sourceKind: '"upload"|"published"',
+    update: "boolean",
+    status: ApiV1SkillScanStatusSchema,
+    artifact: "unknown?",
+    createdAt: "number",
+    updatedAt: "number",
+    completedAt: "number?",
+    writtenBack: "boolean?",
+});
+export const ApiV1SkillBulkRescanBatchRequestSchema = type({
+    mode: '"all-active-latest"?',
+    cursor: "string|null?",
+    batchSize: "number?",
+    dryRun: "boolean?",
+    requestId: "string?",
+    expectedVersionIds: "string[]?",
+});
+export const ApiV1SkillBulkRescanBatchResponseSchema = type({
+    ok: "true",
+    mode: '"all-active-latest"',
+    queued: "number",
+    alreadyQueued: "number",
+    skipped: "number",
+    jobIds: "string[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    sampleSlugs: "string[]",
+});
+export const ApiV1SkillBulkRescanStatusRequestSchema = type({
+    jobIds: "string[]",
+});
+export const ApiV1SkillBulkRescanStatusResponseSchema = type({
+    ok: "true",
+    total: "number",
+    queued: "number",
+    running: "number",
+    succeeded: "number",
+    failed: "number",
+    missing: "number",
+    terminal: "number",
+    done: "boolean",
+    failedJobIds: "string[]",
+});
+export const ApiV1SkillScanBatchRequestSchema = type({
+    mode: '"all-active-latest"?',
+    cursor: "string|null?",
+    batchSize: "number?",
+    dryRun: "boolean?",
+    requestId: "string?",
+    expectedVersionIds: "string[]?",
+});
+export const ApiV1SkillScanBatchResponseSchema = type({
+    ok: "true",
+    mode: '"all-active-latest"',
+    queued: "number",
+    alreadyQueued: "number",
+    skipped: "number",
+    jobIds: "string[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    sampleSlugs: "string[]",
+});
+export const ApiV1SkillScanJobHistoryRequestSchema = type({
+    versionId: "string",
+    cursor: "string|null?",
+});
+export const ApiV1SkillScanJobHistoryResponseSchema = type({
+    ok: "true",
+    jobs: type({
+        jobId: "string",
+        versionId: "string",
+        source: "string",
+        status: "string",
+        createdAt: "number",
+        updatedAt: "number",
+        completedAt: "number|null",
+    }).array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
+export const ApiV1SkillScanBatchStatusRequestSchema = type({
+    jobIds: "string[]",
+});
+export const ApiV1SkillScanBatchStatusResponseSchema = type({
+    ok: "true",
+    total: "number",
+    queued: "number",
+    running: "number",
+    succeeded: "number",
+    failed: "number",
+    missing: "number",
+    terminal: "number",
+    done: "boolean",
+    failedJobIds: "string[]",
+    // Optional for clients talking to servers that predate local worker assignments.
+    queuedJobIds: "string[]?",
+});
+export const ApiV1PackageScanBatchRequestSchema = type({
+    mode: '"all-active-latest"?',
+    cursor: "string|null?",
+    batchSize: "number?",
+    dryRun: "boolean?",
+});
+export const ApiV1PackageScanBatchResponseSchema = type({
+    ok: "true",
+    mode: '"all-active-latest"',
+    queued: "number",
+    alreadyQueued: "number",
+    skipped: "number",
+    jobIds: "string[]",
+    nextCursor: "string|null",
+    done: "boolean",
+    sampleNames: "string[]",
+});
+export const ApiV1PackageScanBatchStatusRequestSchema = type({
+    jobIds: "string[]",
+});
+export const ApiV1PackageScanBatchStatusResponseSchema = type({
+    ok: "true",
+    total: "number",
+    queued: "number",
+    running: "number",
+    succeeded: "number",
+    failed: "number",
+    missing: "number",
+    terminal: "number",
+    done: "boolean",
+    failedJobIds: "string[]",
+});
+export const ApiV1SkillRepairVtPendingRequestSchema = type({
+    cursor: "string|null?",
+    batchSize: "number?",
+    concurrency: "number?",
+    dryRun: "boolean?",
+});
+export const ApiV1SkillRepairVtPendingResponseSchema = type({
+    ok: "true",
+    dryRun: "boolean",
+    total: "number",
+    wouldUpdate: "number",
+    updated: "number",
+    noResults: "number",
+    noDecisiveStats: "number",
+    errors: "number",
+    done: "boolean",
+    cursor: "string|null",
+    statusCounts: { "[string]": "number" },
+    sampleUpdated: type({
+        slug: "string",
+        status: "string",
+    }).array(),
+});
 export const ApiV1SkillVersionListResponseSchema = type({
     items: type({
         version: "string",
@@ -238,13 +779,46 @@ export const ApiV1SkillResolveResponseSchema = type({
     match: type({ version: "string" }).or("null"),
     latestVersion: type({ version: "string" }).or("null"),
 });
+export const ApiV1SkillVerifyResponseSchema = type({
+    schema: '"clawhub.skill.verify.v1"',
+    ok: "boolean",
+    decision: '"pass"|"fail"',
+    reasons: "string[]",
+    slug: "string",
+    displayName: "string",
+    pageUrl: "string",
+    publisherHandle: "string|null",
+    publisherDisplayName: "string|null",
+    publisherProfileUrl: "string|null",
+    version: "string",
+    resolvedFrom: '"latest"|"version"|"tag"',
+    tag: "string|null",
+    createdAt: "number",
+    card: "unknown",
+    artifact: "unknown",
+    provenance: "unknown",
+    security: "unknown",
+    signature: "unknown",
+});
 export const ApiV1PublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const ApiV1DeleteResponseSchema = type({
     ok: "true",
+    slugReservedUntil: "number?",
+});
+export const ApiV1SkillTagResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    tag: "string",
+    version: "string",
 });
 export const ApiV1SkillRenameResponseSchema = type({
     ok: "true",
@@ -258,9 +832,12 @@ export const ApiV1SkillMergeResponseSchema = type({
 });
 export const ApiV1TransferRequestResponseSchema = type({
     ok: "true",
-    transferId: "string",
-    toUserHandle: "string",
-    expiresAt: "number",
+    transferId: "string?",
+    toUserHandle: "string?",
+    toPublisherHandle: "string?",
+    skillSlug: "string?",
+    expiresAt: "number?",
+    transferred: "boolean?",
 });
 export const ApiV1TransferDecisionResponseSchema = type({
     ok: "true",
@@ -292,6 +869,15 @@ export const ApiV1TransferListResponseSchema = type({
 export const ApiV1SetRoleResponseSchema = type({
     ok: "true",
     role: '"admin"|"moderator"|"user"',
+});
+export const ApiV1ReclassifyBanResponseSchema = type({
+    ok: "true",
+    dryRun: "boolean",
+    userId: "string",
+    handle: "string|null",
+    previousReason: "string|null",
+    nextReason: "string",
+    changed: "boolean",
 });
 export const ApiV1StarResponseSchema = type({
     ok: "true",

@@ -1,3 +1,5 @@
-# https://www.robotstxt.org/robotstxt.html
 User-agent: *
-Disallow:
+Disallow: /api/
+Disallow: /admin/
+Allow: /v1/feeds/plugins
+Allow: /v1/feeds/skills

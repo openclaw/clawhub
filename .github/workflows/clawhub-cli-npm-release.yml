@@ -21,6 +21,8 @@ concurrency:
   group: clawhub-cli-npm-release-${{ inputs.tag }}
   cancel-in-progress: false
 
+permissions: {}
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   NODE_VERSION: "24.x"
@@ -40,19 +42,25 @@ jobs:
           exit 1
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
 
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          path: release-tools
+
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
@@ -84,13 +92,22 @@ jobs:
           EOF
           )"
 
-          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+          NPM_VIEW_ERROR="$(mktemp)"
+          trap 'rm -f "$NPM_VIEW_ERROR"' EXIT
+          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>"$NPM_VIEW_ERROR"; then
             if [[ "${PREFLIGHT_ONLY}" == "true" ]]; then
               echo "clawhub@${PACKAGE_VERSION} is already published on npm; continuing because preflight_only=true."
               exit 0
             fi
             echo "clawhub@${PACKAGE_VERSION} is already published on npm."
             exit 1
+          else
+            NPM_VIEW_STATUS=$?
+            if ! grep -Eq '(^|[[:space:]])E404([[:space:]]|$)' "$NPM_VIEW_ERROR"; then
+              echo "Unable to determine whether clawhub@${PACKAGE_VERSION} is published because npm view failed." >&2
+              cat "$NPM_VIEW_ERROR" >&2 || true
+              exit "$NPM_VIEW_STATUS"
+            fi
           fi
 
           echo "Publishing clawhub@${PACKAGE_VERSION}"
@@ -106,6 +123,11 @@ jobs:
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           node scripts/clawhub-cli-npm-release-check.mjs
 
+      - name: Validate GitHub Release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node release-tools/scripts/extract-changelog-release.mjs --tag "$RELEASE_TAG" >/tmp/clawhub-cli-release-notes.md
+
       - name: Verify CLI package
         run: bun run --cwd "$PACKAGE_DIR" verify
 
@@ -118,7 +140,7 @@ jobs:
           pushd "$PACKAGE_DIR" >/dev/null
           PACK_JSON="$(npm pack --json --ignore-scripts)"
           echo "$PACK_JSON"
-          PACK_PATH="$(printf '%s\n' "$PACK_JSON" | node --input-type=module -e 'const chunks=[]; process.stdin.on("data", (chunk) => chunks.push(chunk)); process.stdin.on("end", () => { const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); const first = Array.isArray(parsed) ? parsed[0] : null; if (!first || typeof first.filename !== "string" || !first.filename) process.exit(1); process.stdout.write(first.filename); });')"
+          PACK_PATH="$(printf '%s\n' "$PACK_JSON" | node --input-type=module -e 'const chunks=[]; process.stdin.on("data", (chunk) => chunks.push(chunk)); process.stdin.on("end", () => { const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8")); const first = Array.isArray(parsed) ? parsed[0] : (parsed && typeof parsed === "object" ? Object.values(parsed)[0] : null); if (!first || typeof first.filename !== "string" || !first.filename) process.exit(1); process.stdout.write(first.filename); });')"
           popd >/dev/null
           if [[ -z "${PACK_PATH}" || ! -f "${PACKAGE_DIR}/${PACK_PATH}" ]]; then
             echo "npm pack did not produce a tarball file." >&2
@@ -142,7 +164,7 @@ jobs:
           echo "dir=$ARTIFACT_DIR" >> "$GITHUB_OUTPUT"
 
       - name: Upload prepared npm publish bundle
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: clawhub-cli-npm-preflight-${{ inputs.tag }}
           path: ${{ steps.packed_tarball.outputs.dir }}
@@ -181,17 +203,23 @@ jobs:
     environment: npm-release
     permissions:
       actions: read
-      contents: read
+      contents: write
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0
 
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          path: release-tools
+
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: https://registry.npmjs.org
@@ -219,9 +247,18 @@ jobs:
           EOF
           )"
 
-          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+          NPM_VIEW_ERROR="$(mktemp)"
+          trap 'rm -f "$NPM_VIEW_ERROR"' EXIT
+          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>"$NPM_VIEW_ERROR"; then
             echo "clawhub@${PACKAGE_VERSION} is already published on npm."
             exit 1
+          else
+            NPM_VIEW_STATUS=$?
+            if ! grep -Eq '(^|[[:space:]])E404([[:space:]]|$)' "$NPM_VIEW_ERROR"; then
+              echo "Unable to determine whether clawhub@${PACKAGE_VERSION} is published because npm view failed." >&2
+              cat "$NPM_VIEW_ERROR" >&2 || true
+              exit "$NPM_VIEW_STATUS"
+            fi
           fi
 
           echo "Publishing clawhub@${PACKAGE_VERSION}"
@@ -233,10 +270,11 @@ jobs:
         run: |
           set -euo pipefail
           RUN_JSON="$(gh run view "$PREFLIGHT_RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,headBranch,event,conclusion,url)"
+          # shellcheck disable=SC2016
           printf '%s' "$RUN_JSON" | node --input-type=module -e 'const chunks=[]; process.stdin.on("data", (chunk) => chunks.push(chunk)); process.stdin.on("end", () => { const run = JSON.parse(Buffer.concat(chunks).toString("utf8")); const checks = [["workflowName", "ClawHub CLI NPM Release"], ["headBranch", "main"], ["event", "workflow_dispatch"], ["conclusion", "success"]]; for (const [key, expected] of checks) { if (run[key] !== expected) { console.error(`Referenced npm preflight run ${process.env.PREFLIGHT_RUN_ID} must have ${key}=${expected}, got ${run[key] ?? "<missing>"}.`); process.exit(1); } } console.log(`Using npm preflight run ${process.env.PREFLIGHT_RUN_ID}: ${run.url}`); });'
 
       - name: Download prepared npm tarball
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: clawhub-cli-npm-preflight-${{ inputs.tag }}
           path: preflight-tarball
@@ -254,6 +292,11 @@ jobs:
           export RELEASE_SHA
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
           node scripts/clawhub-cli-npm-release-check.mjs
+
+      - name: Validate GitHub Release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node release-tools/scripts/extract-changelog-release.mjs --tag "$RELEASE_TAG" >/tmp/clawhub-cli-release-notes.md
 
       - name: Verify prepared tarball provenance
         env:
@@ -312,3 +355,106 @@ jobs:
             publish_target="./${publish_target}"
           fi
           bash scripts/clawhub-cli-npm-publish.sh --publish "${publish_target}"
+
+      - name: Resolve npm release metadata
+        run: |
+          set -euo pipefail
+          PACKAGE_VERSION="$(node --input-type=module <<'EOF'
+          import { readFileSync } from "node:fs";
+
+          const pkg = JSON.parse(readFileSync(`./${process.env.PACKAGE_DIR}/package.json`, "utf8"));
+          process.stdout.write(String(pkg.version ?? "").trim());
+          EOF
+          )"
+          NPM_DIST_JSON=""
+          for attempt in {1..12}; do
+            if NPM_DIST_JSON="$(npm view "clawhub@${PACKAGE_VERSION}" dist.tarball dist.integrity --json 2>/tmp/npm-view-error)" && [[ -n "$NPM_DIST_JSON" ]]; then
+              break
+            fi
+            if [[ "$attempt" == "12" ]]; then
+              cat /tmp/npm-view-error >&2 || true
+              exit 1
+            fi
+            sleep 5
+          done
+          NPM_TARBALL="$(NPM_DIST_JSON="$NPM_DIST_JSON" node --input-type=module <<'EOF'
+          const dist = JSON.parse(process.env.NPM_DIST_JSON ?? "{}");
+          process.stdout.write(String(dist["dist.tarball"] ?? ""));
+          EOF
+          )"
+          NPM_INTEGRITY="$(NPM_DIST_JSON="$NPM_DIST_JSON" node --input-type=module <<'EOF'
+          const dist = JSON.parse(process.env.NPM_DIST_JSON ?? "{}");
+          process.stdout.write(String(dist["dist.integrity"] ?? ""));
+          EOF
+          )"
+          if [[ -z "$NPM_TARBALL" || -z "$NPM_INTEGRITY" ]]; then
+            echo "npm dist metadata for clawhub@${PACKAGE_VERSION} is incomplete." >&2
+            exit 1
+          fi
+          {
+            echo "PACKAGE_VERSION=$PACKAGE_VERSION"
+            echo "NPM_PACKAGE_URL=https://www.npmjs.com/package/clawhub/v/${PACKAGE_VERSION}"
+            echo "NPM_TARBALL_URL=$NPM_TARBALL"
+            echo "NPM_INTEGRITY=$NPM_INTEGRITY"
+            echo "RELEASE_TITLE=clawhub ${PACKAGE_VERSION}"
+          } >> "$GITHUB_ENV"
+
+      - name: Write npm publish proof artifact
+        id: publish_proof
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PUBLISH_PROOF_DIR="$RUNNER_TEMP/clawhub-cli-npm-publish-proof"
+          rm -rf "$PUBLISH_PROOF_DIR"
+          mkdir -p "$PUBLISH_PROOF_DIR"
+          printf '%s\n' "$RELEASE_TAG" > "$PUBLISH_PROOF_DIR/release-tag.txt"
+          git rev-parse HEAD > "$PUBLISH_PROOF_DIR/release-sha.txt"
+          printf '%s\n' "$PACKAGE_VERSION" > "$PUBLISH_PROOF_DIR/package-version.txt"
+          printf '%s\n' "$NPM_TARBALL_URL" > "$PUBLISH_PROOF_DIR/npm-tarball-url.txt"
+          printf '%s\n' "$NPM_INTEGRITY" > "$PUBLISH_PROOF_DIR/npm-integrity.txt"
+          printf '%s\n' "$GITHUB_RUN_ID" > "$PUBLISH_PROOF_DIR/publish-run-id.txt"
+          printf '%s\n' "false" > "$PUBLISH_PROOF_DIR/preflight-only.txt"
+          echo "dir=$PUBLISH_PROOF_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Upload npm publish proof artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clawhub-cli-npm-publish-${{ inputs.tag }}
+          path: ${{ steps.publish_proof.outputs.dir }}
+          if-no-files-found: error
+
+      - name: Build GitHub Release notes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          node release-tools/scripts/extract-changelog-release.mjs --tag "$RELEASE_TAG" > release-body.md
+          {
+            echo
+            echo "### Release Proof"
+            echo
+            echo "- npm: ${NPM_PACKAGE_URL}"
+            echo "- tarball: ${NPM_TARBALL_URL}"
+            echo "- integrity: ${NPM_INTEGRITY}"
+            echo "- npm preflight: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${{ inputs.preflight_run_id }}"
+            echo "- npm publish: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } >> release-body.md
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-body.md
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-body.md
+          fi

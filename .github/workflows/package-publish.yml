@@ -22,6 +22,16 @@ on:
         required: false
         type: boolean
         default: true
+      wait_for_publication:
+        description: Wait for definitive publication, except v2 OpenClaw publishes finalized after the parent succeeds.
+        required: false
+        type: boolean
+        default: true
+      publication_timeout_minutes:
+        description: Maximum minutes to wait for definitive publication.
+        required: false
+        type: number
+        default: 30
       registry:
         description: ClawHub registry URL.
         required: false
@@ -36,6 +46,10 @@ on:
         description: Optional owner handle override for org/shared publishing.
         required: false
         type: string
+      family:
+        description: Optional package family override for legacy package rows.
+        required: false
+        type: string
       version:
         description: Optional package version override.
         required: false
@@ -45,6 +59,28 @@ on:
         required: false
         type: string
         default: latest
+      changelog:
+        description: Optional release changelog shown on ClawHub.
+        required: false
+        type: string
+      categories:
+        description: Deprecated for plugins (ignored). Declare one category in openclaw.plugin.json or omit for automatic classification. Claws retain comma-separated categories.
+        required: false
+        type: string
+      clear_categories:
+        description: Deprecated for plugins (ignored). Remove manifest categories for automatic classification. Claws retain category clearing. Cannot be combined with categories.
+        required: false
+        type: boolean
+        default: false
+      topics:
+        description: Optional comma-separated catalog topics.
+        required: false
+        type: string
+      clear_topics:
+        description: Clear existing catalog topics. Cannot be combined with topics.
+        required: false
+        type: boolean
+        default: false
       source_repo:
         description: Optional source repo override for local-folder publishes.
         required: false
@@ -57,11 +93,33 @@ on:
         description: Optional source ref override for local-folder publishes.
         required: false
         type: string
-      clawhub_version:
-        description: Legacy npm CLI version input. Kept for compatibility; the workflow now runs the checked-out source.
+      source_path:
+        description: Optional source path inside the repository for monorepo package publishes.
         required: false
         type: string
-        default: latest
+      package_artifact_name:
+        description: Optional Actions artifact name containing a prebuilt ClawPack .tgz to publish.
+        required: false
+        type: string
+      package_artifact_path:
+        description: Optional path to the .tgz inside package_artifact_name. Defaults to the only .tgz in the artifact.
+        required: false
+        type: string
+      inspector_artifact_name:
+        description: Artifact name for plugin inspector reports. Set a unique value when calling this workflow from a matrix.
+        required: false
+        type: string
+        default: plugin-inspector-report
+      publish_json_artifact_name:
+        description: Artifact name for the package publish JSON output. Set a unique value when calling this workflow from a matrix.
+        required: false
+        type: string
+        default: clawhub-package-publish-json
+      trusted_tooling_identity_json:
+        description: Optional versioned trusted tooling and release-parent run identity; immutable authorization receipts are then required.
+        required: false
+        type: string
+        default: ""
     secrets:
       clawhub_token:
         required: false
@@ -76,22 +134,25 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+permissions: {}
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 75
     permissions:
+      actions: read
       contents: read
       id-token: write
     outputs:
       publish_json: ${{ steps.capture.outputs.publish_json }}
       release_id: ${{ steps.capture.outputs.release_id }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.sha }}
 
-      - uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: 1.3.10
 
@@ -148,7 +209,7 @@ jobs:
               fh.write(f"ref={workflow_sha}\n")
           PY
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
         with:
           repository: ${{ steps.clawhub_source.outputs.repository }}
           ref: ${{ steps.clawhub_source.outputs.ref }}
@@ -162,14 +223,46 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dry_run }}
           JSON_MODE: ${{ inputs.json }}
+          WAIT_FOR_PUBLICATION: ${{ inputs.wait_for_publication }}
+          PUBLICATION_TIMEOUT_MINUTES: ${{ inputs.publication_timeout_minutes }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_ACTOR_TYPE: ${{ github.event.sender.type }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
         run: |
+          set -euo pipefail
           if [[ "$JSON_MODE" != "true" ]]; then
             echo "::warning::This reusable workflow always emits JSON output; forcing --json for downstream parsing."
           fi
           if [[ "$DRY_RUN" == "true" ]]; then
             exit 0
+          fi
+          if [[ "$GITHUB_REPOSITORY" == "openclaw/openclaw" && -z "$CLAWHUB_TOKEN" ]]; then
+            python3 - <<'PY'
+          import json
+          import os
+
+          raw = os.environ["TRUSTED_TOOLING_IDENTITY_JSON"].strip()
+          if not raw:
+              raise SystemExit("Automated OpenClaw real publishes require trusted tooling identity v2.")
+          try:
+              identity = json.loads(raw)
+          except json.JSONDecodeError as error:
+              raise SystemExit("Automated OpenClaw real publishes require valid trusted tooling identity JSON.") from error
+          if not isinstance(identity, dict) or identity.get("version") != 2:
+              raise SystemExit("Automated OpenClaw real publishes require trusted tooling identity v2.")
+          PY
+          fi
+          actor_type="${GITHUB_ACTOR_TYPE,,}"
+          if [[ "$GITHUB_REPOSITORY" == "openclaw/openclaw" && -n "$CLAWHUB_TOKEN" && ( "${GITHUB_ACTOR,,}" == *"[bot]" || "$actor_type" == "bot" || "$actor_type" == "app" ) ]]; then
+            echo "::error::OpenClaw's non-v2 manual publish route requires a directly authenticated human actor."
+            exit 1
+          fi
+          if [[ "$WAIT_FOR_PUBLICATION" == "true" ]] && { ! [[ "$PUBLICATION_TIMEOUT_MINUTES" =~ ^[1-9][0-9]*$ ]] || (( PUBLICATION_TIMEOUT_MINUTES > 40 )); }; then
+            echo "::error::publication_timeout_minutes must be an integer from 1 through 40."
+            exit 1
           fi
           if [[ -n "$CLAWHUB_TOKEN" ]]; then
             exit 0
@@ -212,30 +305,173 @@ jobs:
           PY
           echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
 
+      - name: Download prebuilt package artifact
+        if: inputs.package_artifact_name != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.package_artifact_name }}
+          path: ${{ runner.temp }}/prebuilt-package-artifact
+
+      - name: Resolve prebuilt package artifact
+        id: resolve_artifact
+        env:
+          INPUT_PACKAGE_ARTIFACT_NAME: ${{ inputs.package_artifact_name }}
+          INPUT_PACKAGE_ARTIFACT_PATH: ${{ inputs.package_artifact_path }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          artifact_name = os.environ["INPUT_PACKAGE_ARTIFACT_NAME"].strip()
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          if not artifact_name:
+              with output_path.open("a", encoding="utf-8") as fh:
+                  fh.write("package_artifact_path=\n")
+              raise SystemExit(0)
+
+          artifact_root = Path(os.environ["RUNNER_TEMP"]) / "prebuilt-package-artifact"
+          requested_path = os.environ["INPUT_PACKAGE_ARTIFACT_PATH"].strip()
+          if requested_path:
+              candidate = (artifact_root / requested_path).resolve()
+              if artifact_root.resolve() not in candidate.parents and candidate != artifact_root.resolve():
+                  raise SystemExit(f"Prebuilt artifact path escapes downloaded artifact: {requested_path}")
+              if not candidate.is_file():
+                  raise SystemExit(f"Prebuilt package artifact path not found: {requested_path}")
+          else:
+              candidates = sorted(path for path in artifact_root.rglob("*.tgz") if path.is_file())
+              if not candidates:
+                  raise SystemExit(f"Prebuilt package artifact {artifact_name!r} did not contain a .tgz file.")
+              if len(candidates) > 1:
+                  joined = ", ".join(str(path.relative_to(artifact_root)) for path in candidates)
+                  raise SystemExit(
+                      "Prebuilt package artifact contains multiple .tgz files; set package_artifact_path. "
+                      f"Found: {joined}"
+                  )
+              candidate = candidates[0]
+
+          with output_path.open("a", encoding="utf-8") as fh:
+              fh.write(f"package_artifact_path={candidate}\n")
+          PY
+
       - name: Resolve publish command
+        id: resolve_publish
         env:
           INPUT_SOURCE: ${{ inputs.source }}
           INPUT_REF: ${{ inputs.ref }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_WAIT_FOR_PUBLICATION: ${{ inputs.wait_for_publication }}
+          INPUT_PUBLICATION_TIMEOUT_MINUTES: ${{ inputs.publication_timeout_minutes }}
           INPUT_OWNER: ${{ inputs.owner }}
+          INPUT_FAMILY: ${{ inputs.family }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+          INPUT_CATEGORIES: ${{ inputs.categories }}
+          INPUT_CLEAR_CATEGORIES: ${{ inputs.clear_categories }}
+          INPUT_TOPICS: ${{ inputs.topics }}
+          INPUT_CLEAR_TOPICS: ${{ inputs.clear_topics }}
           INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
           INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_SOURCE_PATH: ${{ inputs.source_path }}
+          PREBUILT_PACKAGE_ARTIFACT_PATH: ${{ steps.resolve_artifact.outputs.package_artifact_path }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF: ${{ github.ref }}
           GITHUB_SHA: ${{ github.sha }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
         run: |
           python3 - <<'PY'
           import json
           import os
           import shlex
+          import uuid
           from pathlib import Path
+          from urllib.error import HTTPError
+          from urllib.parse import quote, urlparse
+          from urllib.request import Request, urlopen
+
+          def quote_for_log(part):
+              # shlex.quote is shell quoting, not output escaping: it wraps a value holding a
+              # line break in single quotes and leaves the break itself intact. One newline in
+              # a caller's metadata would then open a second log line, which the runner reads
+              # as a ::workflow-command. json.dumps escapes every control character, so one
+              # publish stays one line however the caller fills changelog, categories or topics.
+              quoted = shlex.quote(part)
+              return quoted if quoted.isprintable() else json.dumps(part)
+
+          def split_ref_path(value):
+              if not value:
+                  return "", ""
+              if ":" not in value:
+                  return value, ""
+              ref, path = value.split(":", 1)
+              return ref, path.strip("/")
+
+          def github_commit_exists(repo, ref):
+              token = os.environ.get("GITHUB_TOKEN", "").strip()
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "clawhub-package-publish",
+              }
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              request = Request(
+                  f"https://api.github.com/repos/{repo}/commits/{quote(ref, safe='')}",
+                  headers=headers,
+              )
+              try:
+                  with urlopen(request, timeout=10) as response:
+                      return 200 <= response.status < 300
+              except HTTPError as error:
+                  if error.code in (404, 422):
+                      return False
+                  raise
+
+          def resolve_github_url_ref_and_path(repo, kind, segments):
+              min_path_segments = 1 if kind == "blob" else 0
+              max_ref_segments = len(segments) - min_path_segments
+              for ref_segment_count in range(max_ref_segments, 0, -1):
+                  ref = "/".join(segments[:ref_segment_count])
+                  path = "/".join(segments[ref_segment_count:]).strip("/")
+                  if kind == "blob" and not path:
+                      continue
+                  if not github_commit_exists(repo, ref):
+                      continue
+                  if kind == "blob":
+                      path = "/".join(path.split("/")[:-1]).strip("/")
+                  return ref, path
+              raise SystemExit(f"GitHub ref not found in source URL for {repo}")
+
+          def parse_github_source(value):
+              raw = value.strip()
+              if raw.startswith("github:"):
+                  raw = raw[len("github:"):]
+              if raw.startswith("https://") or raw.startswith("http://"):
+                  parsed = urlparse(raw)
+                  if parsed.netloc.lower() != "github.com":
+                      return None
+                  parts = [part for part in parsed.path.strip("/").split("/") if part]
+                  if len(parts) < 2:
+                      return None
+                  repo_name = parts[1][:-4] if parts[1].endswith(".git") else parts[1]
+                  repo = f"{parts[0]}/{repo_name}"
+                  if len(parts) >= 4 and parts[2] in {"tree", "blob"}:
+                      ref, path = resolve_github_url_ref_and_path(repo, parts[2], parts[3:])
+                      return {"repo": repo, "ref": ref, "path": path}
+                  return {"repo": repo, "ref": "", "path": ""}
+
+              source_part, at, ref_part = raw.partition("@")
+              repo_parts = source_part.split("/")
+              if len(repo_parts) != 2 or not repo_parts[0] or not repo_parts[1]:
+                  return None
+              repo_name = repo_parts[1][:-4] if repo_parts[1].endswith(".git") else repo_parts[1]
+              ref, path = split_ref_path(ref_part if at else "")
+              return {"repo": f"{repo_parts[0]}/{repo_name}", "ref": ref, "path": path}
 
           source = os.environ["INPUT_SOURCE"].strip()
           if not source:
@@ -247,6 +483,33 @@ jobs:
           is_local_source = source.startswith(".") or source.startswith("/") or Path(source).exists()
           if ref and "@" not in source and not source.startswith("http") and not is_local_source:
               source = f"{source}@{ref}"
+          source_path = os.environ["INPUT_SOURCE_PATH"].strip()
+          prebuilt_artifact_path = os.environ["PREBUILT_PACKAGE_ARTIFACT_PATH"].strip()
+          inspect_checkout_repository = ""
+          inspect_checkout_ref = ""
+          inspect_local_root = str(Path(os.environ["GITHUB_WORKSPACE"]).resolve())
+          inspect_subdir = source_path
+          if prebuilt_artifact_path:
+              inspect_local_root = str((Path(os.environ["RUNNER_TEMP"]) / "prebuilt-package-inspect").resolve())
+              inspect_subdir = ""
+          elif is_local_source:
+              inspect_local_root = str(Path(source).resolve())
+          else:
+              github_source = parse_github_source(source)
+              source_ref_differs_from_checkout = (
+                  bool(github_source and github_source["ref"])
+                  and github_source["ref"] != os.environ["GITHUB_SHA"]
+              )
+              if github_source and (
+                  github_source["repo"] != os.environ["GITHUB_REPOSITORY"]
+                  or source_ref_differs_from_checkout
+              ):
+                  inspect_checkout_repository = github_source["repo"]
+                  inspect_checkout_ref = github_source["ref"]
+                  inspect_local_root = str((Path(os.environ["GITHUB_WORKSPACE"]) / "clawhub-publish-source").resolve())
+                  inspect_subdir = source_path or github_source["path"]
+              elif github_source:
+                  inspect_subdir = source_path or github_source["path"]
 
           cli_entry = (
               Path(os.environ["GITHUB_WORKSPACE"])
@@ -259,34 +522,82 @@ jobs:
           if not cli_entry.exists():
               raise SystemExit(f"Missing ClawHub CLI entrypoint at {cli_entry}")
 
+          cmd_source = prebuilt_artifact_path or source
           cmd = [
               "bun",
               str(cli_entry),
               "package",
               "publish",
-              source,
+              cmd_source,
               "--site",
               os.environ["INPUT_SITE"],
               "--registry",
               os.environ["INPUT_REGISTRY"],
           ]
 
+          trusted_identity_raw = os.environ["TRUSTED_TOOLING_IDENTITY_JSON"].strip()
+          trusted_identity = json.loads(trusted_identity_raw) if trusted_identity_raw else {}
+          is_openclaw_v2 = (
+              trusted_identity.get("version") == 2
+              and trusted_identity.get("repository") == "openclaw/openclaw"
+          )
+
           if os.environ["INPUT_DRY_RUN"] == "true":
               cmd.append("--dry-run")
+          elif os.environ["INPUT_WAIT_FOR_PUBLICATION"] == "true" and not is_openclaw_v2:
+              timeout_minutes = int(os.environ["INPUT_PUBLICATION_TIMEOUT_MINUTES"])
+              cmd += ["--wait", "--wait-timeout", str(timeout_minutes * 60)]
           cmd.append("--json")
 
           owner = os.environ["INPUT_OWNER"].strip()
+          family = os.environ["INPUT_FAMILY"].strip()
           version = os.environ["INPUT_VERSION"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
+          changelog = os.environ["INPUT_CHANGELOG"].strip()
+          categories = os.environ["INPUT_CATEGORIES"].strip()
+          clear_categories = os.environ["INPUT_CLEAR_CATEGORIES"].strip().lower() == "true"
+          topics = os.environ["INPUT_TOPICS"].strip()
+          clear_topics = os.environ["INPUT_CLEAR_TOPICS"].strip().lower() == "true"
+          if categories and clear_categories:
+              raise SystemExit("categories and clear_categories cannot be combined")
+          if topics and clear_topics:
+              raise SystemExit("topics and clear_topics cannot be combined")
           if owner:
               cmd += ["--owner", owner]
+          if family:
+              valid_families = {"code-plugin", "bundle-plugin"}
+              if family not in valid_families:
+                  raise SystemExit(
+                      f"Invalid package family override {family!r}; expected one of {sorted(valid_families)}."
+                  )
+              cmd += ["--family", family]
           if version:
               cmd += ["--version", version]
           if tags:
               cmd += ["--tags", tags]
+          if changelog:
+              cmd += ["--changelog", changelog]
+          if categories:
+              cmd += ["--categories", categories]
+          elif clear_categories:
+              cmd += ["--categories", ""]
+          if topics:
+              cmd += ["--topics", topics]
+          elif clear_topics:
+              cmd += ["--topics", ""]
           source_repo = os.environ["INPUT_SOURCE_REPO"].strip()
           source_commit = os.environ["INPUT_SOURCE_COMMIT"].strip()
           source_ref = os.environ["INPUT_SOURCE_REF"].strip()
+          if prebuilt_artifact_path:
+              if not source_repo and not source_commit:
+                  source_repo = os.environ["GITHUB_REPOSITORY"].strip()
+                  source_commit = os.environ["GITHUB_SHA"].strip()
+              elif not source_repo or not source_commit:
+                  raise SystemExit(
+                      "Prebuilt artifact mode requires source_repo and source_commit together when overriding source attribution."
+                  )
+              if not source_ref:
+                  source_ref = os.environ["GITHUB_REF"].strip()
           if source_repo:
               cmd += ["--source-repo", source_repo]
           if source_commit:
@@ -297,6 +608,8 @@ jobs:
               github_ref = os.environ["GITHUB_REF"].strip()
               if github_ref:
                   cmd += ["--source-ref", github_ref]
+          if source_path:
+              cmd += ["--source-path", source_path]
           if os.environ["INPUT_DRY_RUN"] != "true" and os.environ["CLAWHUB_TOKEN"].strip():
               cmd += [
                   "--manual-override-reason",
@@ -307,16 +620,210 @@ jobs:
           shell_line = " ".join(shlex.quote(part) for part in cmd)
           path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + shell_line + "\n", encoding="utf-8")
           path.chmod(0o755)
-          print(shell_line)
+          # Log-only: the file above is what a maintainer re-runs, so it keeps plain shell
+          # quoting. This echo does not, because the runner parses each stdout line.
+          print(" ".join(quote_for_log(part) for part in cmd))
+
+          def write_output(fh, name, value):
+              delimiter = f"ghadelimiter_{uuid.uuid4().hex}"
+              while delimiter in value:
+                  delimiter = f"ghadelimiter_{uuid.uuid4().hex}"
+              fh.write(f"{name}<<{delimiter}\n{value}\n{delimiter}\n")
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as fh:
+              write_output(fh, "inspect_checkout_repository", inspect_checkout_repository)
+              write_output(fh, "inspect_checkout_ref", inspect_checkout_ref)
+              write_output(fh, "inspect_local_root", inspect_local_root)
+              write_output(fh, "inspect_subdir", inspect_subdir)
           PY
 
+      - name: Extract prebuilt package artifact for plugin validation
+        if: steps.resolve_artifact.outputs.package_artifact_path != ''
+        env:
+          PREBUILT_PACKAGE_ARTIFACT_PATH: ${{ steps.resolve_artifact.outputs.package_artifact_path }}
+          INSPECT_LOCAL_ROOT: ${{ steps.resolve_publish.outputs.inspect_local_root }}
+        run: |
+          set -euo pipefail
+          rm -rf -- "$INSPECT_LOCAL_ROOT"
+          mkdir -p -- "$INSPECT_LOCAL_ROOT"
+          python3 - <<'PY'
+          import copy
+          import os
+          import tarfile
+          from pathlib import Path
+          from pathlib import PurePosixPath
+
+          archive_path = Path(os.environ["PREBUILT_PACKAGE_ARTIFACT_PATH"])
+          destination = Path(os.environ["INSPECT_LOCAL_ROOT"]).resolve()
+          safe_members = []
+
+          with tarfile.open(archive_path, mode="r:gz") as archive:
+              for member in archive.getmembers():
+                  raw_parts = member.name.split("/")
+                  if (
+                      not member.name
+                      or member.name.startswith("/")
+                      or "\x00" in member.name
+                      or any(part == ".." for part in raw_parts)
+                  ):
+                      raise SystemExit(f"Unsafe prebuilt artifact member path: {member.name!r}")
+                  if member.issym() or member.islnk():
+                      raise SystemExit(f"Links are not allowed in prebuilt artifacts: {member.name!r}")
+                  if not member.isdir() and not member.isreg():
+                      raise SystemExit(f"Unsupported prebuilt artifact member: {member.name!r}")
+
+                  stripped_parts = [part for part in raw_parts[1:] if part not in ("", ".")]
+                  if not stripped_parts:
+                      continue
+                  stripped = PurePosixPath(*stripped_parts)
+                  target = (destination.joinpath(*stripped.parts)).resolve()
+                  try:
+                      target.relative_to(destination)
+                  except ValueError as exc:
+                      raise SystemExit(
+                          f"Prebuilt artifact member escapes extraction root: {member.name!r}"
+                      ) from exc
+
+                  safe_member = copy.copy(member)
+                  safe_member.name = str(stripped)
+                  safe_member.linkname = ""
+                  safe_members.append(safe_member)
+
+              archive.extractall(destination, members=safe_members)
+          PY
+
+      - name: Checkout publish source for plugin inspector
+        if: steps.resolve_publish.outputs.inspect_checkout_repository != ''
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ steps.resolve_publish.outputs.inspect_checkout_repository }}
+          ref: ${{ steps.resolve_publish.outputs.inspect_checkout_ref }}
+          path: clawhub-publish-source
+
+      - name: Run plugin validation
+        env:
+          INSPECT_LOCAL_ROOT: ${{ steps.resolve_publish.outputs.inspect_local_root }}
+          INSPECT_SUBDIR: ${{ steps.resolve_publish.outputs.inspect_subdir }}
+        run: |
+          set -euo pipefail
+          inspect_root="$(python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["INSPECT_LOCAL_ROOT"]).resolve()
+          subdir = os.environ["INSPECT_SUBDIR"].strip()
+          inspect_root = (root / subdir).resolve() if subdir else root
+          if inspect_root != root and root not in inspect_root.parents:
+              raise SystemExit(f"Inspector source path escapes publish source: {subdir}")
+          print(inspect_root)
+          PY
+          )"
+          if [ ! -f "$inspect_root/package.json" ] && [ ! -f "$inspect_root/openclaw.plugin.json" ]; then
+            echo "::warning::Plugin Inspector skipped because $inspect_root is not a plugin root."
+            exit 0
+          fi
+          bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"
+
+      - name: Upload plugin inspector reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.inspector_artifact_name }}
+          path: ${{ runner.temp }}/plugin-inspector
+          if-no-files-found: ignore
+
+      - name: Download recovery environment approval receipt
+        id: recovery_approval
+        if: inputs.trusted_tooling_identity_json != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: openclaw-clawhub-recovery-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/openclaw-clawhub-recovery-approval
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+
+      - name: Resolve release parent authorization artifact
+        id: parent_authorization
+        if: inputs.trusted_tooling_identity_json != ''
+        env:
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
+          RECOVERY_APPROVAL_RECEIPT_PATH: ${{ steps.recovery_approval.outcome == 'success' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}
+        run: |
+          node <<'NODE'
+          const { appendFileSync, lstatSync, readFileSync } = require("node:fs");
+          const { parentArtifactName, parseTrustedToolingIdentity, parseRecoveryApprovalReceipt } = require(`${process.env.GITHUB_WORKSPACE}/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs`);
+          const identity = parseTrustedToolingIdentity(process.env.TRUSTED_TOOLING_IDENTITY_JSON);
+          let child = identity;
+          const path = process.env.RECOVERY_APPROVAL_RECEIPT_PATH;
+          if (path) {
+            const stat = lstatSync(path);
+            if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8 * 1024) {
+              throw new Error("Recovery approval receipt must be a regular file of at most 8 KiB");
+            }
+            const recovery = parseRecoveryApprovalReceipt(readFileSync(path, "utf8"));
+            child = { runId: recovery.authorizedChildRunId, runAttempt: recovery.authorizedChildRunAttempt };
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `artifact_name=${parentArtifactName(identity, child)}\n`);
+          NODE
+
+      - name: Download release parent authorization receipt
+        if: inputs.trusted_tooling_identity_json != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ steps.parent_authorization.outputs.artifact_name }}
+          path: ${{ runner.temp }}/openclaw-clawhub-parent-authorization
+          github-token: ${{ github.token }}
+          repository: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRepository }}
+          run-id: ${{ fromJson(inputs.trusted_tooling_identity_json).parentRunId }}
+
+      - name: Revalidate trusted tooling identity
+        if: inputs.trusted_tooling_identity_json != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
+          PARENT_AUTHORIZATION_RECEIPT_PATH: ${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json
+          RECOVERY_APPROVAL_RECEIPT_PATH: ${{ steps.recovery_approval.outcome == 'success' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: node "$GITHUB_WORKSPACE/clawhub-source/.github/scripts/verify-trusted-tooling-identity.cjs"
+
       - name: Run package publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
+          PARENT_AUTHORIZATION_RECEIPT_PATH: ${{ runner.temp }}/openclaw-clawhub-parent-authorization/authorization.json
+          RECOVERY_APPROVAL_RECEIPT_PATH: ${{ steps.recovery_approval.outcome == 'success' && format('{0}/openclaw-clawhub-recovery-approval/approval.json', runner.temp) || '' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/clawhub-package-publish-command.sh" | tee "$RUNNER_TEMP/package-publish.json"
 
       - name: Capture workflow outputs
         id: capture
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          WAIT_FOR_PUBLICATION: ${{ inputs.wait_for_publication }}
+          TRUSTED_TOOLING_IDENTITY_JSON: ${{ inputs.trusted_tooling_identity_json }}
         run: |
           python3 - <<'PY'
           import json
@@ -326,6 +833,22 @@ jobs:
           output_path = Path(os.environ["RUNNER_TEMP"]) / "package-publish.json"
           raw = output_path.read_text(encoding="utf-8").strip()
           parsed = json.loads(raw)
+          trusted_identity_raw = os.environ["TRUSTED_TOOLING_IDENTITY_JSON"].strip()
+          trusted_identity = json.loads(trusted_identity_raw) if trusted_identity_raw else {}
+          is_openclaw_v2 = (
+              trusted_identity.get("version") == 2
+              and trusted_identity.get("repository") == "openclaw/openclaw"
+          )
+          if (
+              os.environ["DRY_RUN"] != "true"
+              and os.environ["WAIT_FOR_PUBLICATION"] == "true"
+              and not is_openclaw_v2
+              and parsed.get("publicationStatus") != "published"
+          ):
+              raise SystemExit(
+                  "ClawHub package publish did not reach definitive publication: "
+                  f"{parsed.get('publicationStatus', 'unknown')}"
+              )
 
           github_output = Path(os.environ["GITHUB_OUTPUT"])
           with github_output.open("a", encoding="utf-8") as fh:
@@ -339,6 +862,6 @@ jobs:
       - name: Upload publish JSON artifact
         uses: actions/upload-artifact@v7
         with:
-          name: clawhub-package-publish-json
+          name: ${{ inputs.publish_json_artifact_name }}
           path: ${{ runner.temp }}/package-publish.json
           if-no-files-found: error

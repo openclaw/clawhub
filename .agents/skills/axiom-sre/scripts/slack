@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# Slack API wrapper - multi-env, token-efficient output
+# Usage: slack <workspace> <method> [params...] [--raw|--full]
+#
+# Use workspace names from `scripts/init` output (under "Slack Workspaces").
+#
+# Examples:
+#   slack default conversations.list types=public_channel
+#   slack default chat.postMessage channel=C1234 text="Hello"
+#   echo "multiline msg" | slack default chat.postMessage channel=C1234 text=-
+#   slack default users.list
+#
+# Config: ~/.config/axiom-sre/config.toml
+#   [slack.workspaces.default]
+#   token = "xoxb-..."
+#
+#   [slack.workspaces.corp]
+#   token = "xoxp-..."
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ENV="${1:-}"
+METHOD="${2:-}"
+shift 2 2>/dev/null || true
+
+show_usage() {
+  echo "Usage: slack <env> <method> [params...] [--raw|--full]" >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  slack work conversations.list types=public_channel" >&2
+  echo "  slack work chat.postMessage channel=C1234 text=\"Hello\"" >&2
+  echo "  slack work users.list" >&2
+  echo "" >&2
+  echo "Available workspaces:" >&2
+  "$SCRIPT_DIR/config" --list slack 2>/dev/null | sed 's/^/  /' >&2 || echo "  (run scripts/init to configure)" >&2
+  exit 1
+}
+
+if [[ -z "$ENV" || -z "$METHOD" ]]; then
+  show_usage
+fi
+
+# Load token from unified config
+eval "$("$SCRIPT_DIR/config" slack "$ENV")"
+
+# Parse remaining args
+RAW=""
+FULL=""
+PARAMS=()
+JSON_BODY=""
+STDIN_KEY=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --raw) RAW="--raw" ;;
+    --full) FULL="--full" ;;
+    {*) JSON_BODY="$arg" ;;
+    *=-)
+      # key=- means read value from stdin
+      STDIN_KEY="${arg%=-}"
+      ;;
+    *=*) PARAMS+=("$arg") ;;
+  esac
+done
+
+# Read stdin if requested
+if [[ -n "$STDIN_KEY" ]]; then
+  STDIN_VAL=$(cat)
+  PARAMS+=("$STDIN_KEY=$STDIN_VAL")
+fi
+
+# Determine if GET or POST
+POST_METHODS="chat.postMessage chat.update chat.delete chat.postEphemeral chat.scheduleMessage chat.deleteScheduledMessage \
+  conversations.create conversations.archive conversations.unarchive conversations.rename \
+  conversations.invite conversations.kick conversations.join conversations.leave \
+  conversations.open conversations.close conversations.mark conversations.setPurpose conversations.setTopic \
+  users.profile.set users.setPresence users.setPhoto users.deletePhoto \
+  dnd.setSnooze dnd.endSnooze dnd.endDnd \
+  reactions.add reactions.remove \
+  pins.add pins.remove \
+  files.completeUploadExternal files.delete \
+  bookmarks.add bookmarks.edit bookmarks.remove \
+  stars.add stars.remove"
+
+IS_POST=false
+for pm in $POST_METHODS; do
+  if [[ "$METHOD" == "$pm" ]]; then
+    IS_POST=true
+    break
+  fi
+done
+
+URL="https://slack.com/api/$METHOD"
+
+if [[ "$IS_POST" == true ]]; then
+  # Build JSON body from params or use provided JSON
+  if [[ -n "$JSON_BODY" ]]; then
+    BODY="$JSON_BODY"
+  else
+    # Use jq to build JSON properly (handles escaping)
+    BODY="{}"
+    for param in "${PARAMS[@]}"; do
+      key="${param%%=*}"
+      val="${param#*=}"
+      # Check if value is already JSON (object, array, number, boolean)
+      if [[ "$val" =~ ^\{.*\}$ ]] || [[ "$val" =~ ^\[.*\]$ ]] || [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" == "true" ]] || [[ "$val" == "false" ]]; then
+        BODY=$(echo "$BODY" | jq --arg k "$key" --argjson v "$val" '. + {($k): $v}')
+      else
+        BODY=$(echo "$BODY" | jq --arg k "$key" --arg v "$val" '. + {($k): $v}')
+      fi
+    done
+  fi
+
+  RESPONSE=$("$SCRIPT_DIR/curl-auth" slack "$ENV" -X POST -d "$BODY" "$URL")
+else
+  # GET with query params
+  if [[ ${#PARAMS[@]} -gt 0 ]]; then
+    QUERY=$(printf "&%s" "${PARAMS[@]}")
+    URL="$URL?${QUERY:1}"
+  fi
+
+  RESPONSE=$("$SCRIPT_DIR/curl-auth" slack "$ENV" "$URL")
+fi
+
+# Auto-paginate for list methods (unless --raw or cursor already specified)
+# Map method -> array key for merging
+declare -A PAGINATE_KEYS=(
+  ["conversations.list"]="channels"
+  ["conversations.history"]="messages"
+  ["conversations.replies"]="messages"
+  ["conversations.members"]="members"
+  ["users.list"]="members"
+  ["files.list"]="files"
+  ["reactions.list"]="items"
+  ["stars.list"]="items"
+  ["search.messages"]="messages.matches"
+  ["search.files"]="files.matches"
+  ["usergroups.list"]="usergroups"
+  ["usergroups.users.list"]="users"
+)
+
+ARRAY_KEY="${PAGINATE_KEYS[$METHOD]:-}"
+HAS_CURSOR=false
+
+for param in "${PARAMS[@]}"; do
+  if [[ "$param" == cursor=* ]]; then
+    HAS_CURSOR=true
+    break
+  fi
+done
+
+if [[ -n "$ARRAY_KEY" && -z "$RAW" && "$HAS_CURSOR" == false ]]; then
+  # Check for API error before attempting pagination
+  RESP_OK=$(echo "$RESPONSE" | jq -r '.ok // "false"')
+  if [[ "$RESP_OK" != "true" ]]; then
+    echo "$RESPONSE" | "$SCRIPT_DIR/slack-fmt" $RAW $FULL
+    exit $?
+  fi
+
+  # Collect all pages
+  ALL_RESPONSES="$RESPONSE"
+  NEXT_CURSOR=$(echo "$RESPONSE" | jq -r '.response_metadata.next_cursor // empty')
+
+  while [[ -n "$NEXT_CURSOR" ]]; do
+    # Add cursor to params
+    CURSOR_URL="$URL"
+    if [[ "$CURSOR_URL" == *"?"* ]]; then
+      CURSOR_URL="$CURSOR_URL&cursor=$NEXT_CURSOR"
+    else
+      CURSOR_URL="$CURSOR_URL?cursor=$NEXT_CURSOR"
+    fi
+
+    RESPONSE=$("$SCRIPT_DIR/curl-auth" slack "$ENV" "$CURSOR_URL")
+    PAGE_OK=$(echo "$RESPONSE" | jq -r '.ok // "false"')
+    if [[ "$PAGE_OK" != "true" ]]; then
+      ERROR=$(echo "$RESPONSE" | jq -r '.error // "unknown"')
+      echo "{\"ok\": false, \"error\": \"pagination failed on cursor page: $ERROR\"}" | "$SCRIPT_DIR/slack-fmt" $RAW $FULL
+      exit 1
+    fi
+    ALL_RESPONSES=$(echo "$ALL_RESPONSES"$'\n'"$RESPONSE")
+    NEXT_CURSOR=$(echo "$RESPONSE" | jq -r '.response_metadata.next_cursor // empty')
+  done
+
+  # Merge all responses based on array key
+  if [[ "$ARRAY_KEY" == *"."* ]]; then
+    # Nested key like "messages.matches" - handle search results
+    OUTER="${ARRAY_KEY%%.*}"
+    INNER="${ARRAY_KEY#*.}"
+    MERGED=$(echo "$ALL_RESPONSES" | jq -s --arg o "$OUTER" --arg i "$INNER" '{ok: true, ($o): {($i): [.[][$o][$i][]]}}')
+  else
+    MERGED=$(echo "$ALL_RESPONSES" | jq -s --arg k "$ARRAY_KEY" '{ok: true, ($k): [.[][$k][]] | unique_by(.id // .)}')
+  fi
+
+  echo "$MERGED" | "$SCRIPT_DIR/slack-fmt" $RAW $FULL
+else
+  # Format output
+  echo "$RESPONSE" | "$SCRIPT_DIR/slack-fmt" $RAW $FULL
+fi

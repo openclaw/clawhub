@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5,13 +6,19 @@ import { fileURLToPath } from "node:url";
 type PackageJson = { version?: string };
 
 function readPackageVersion() {
-  try {
-    const path = join(dirname(fileURLToPath(import.meta.url)), "../../package.json");
-    const raw = readFileSync(path, "utf8");
-    const pkg = JSON.parse(raw) as PackageJson;
-    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
-  } catch {
-    return "0.0.0";
+  let current = dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    try {
+      const raw = readFileSync(join(current, "package.json"), "utf8");
+      const pkg = JSON.parse(raw) as PackageJson;
+      if (typeof pkg.version === "string") return pkg.version;
+    } catch {
+      // Keep walking until the package root is found.
+    }
+
+    const parent = dirname(current);
+    if (parent === current) return "0.0.0";
+    current = parent;
   }
 }
 
@@ -22,7 +29,7 @@ function shortCommit(value: string) {
   return trimmed.slice(0, 8);
 }
 
-export function getCliCommit() {
+function getCliCommit() {
   const candidates = [
     process.env.CLAWHUB_COMMIT,
     process.env.CLAWDHUB_COMMIT,
@@ -49,6 +56,9 @@ export function getCliBuildLabel() {
 }
 
 function readGitCommitFromCwd() {
+  const revParseCommit = readGitCommitFromRevParse();
+  if (revParseCommit) return revParseCommit;
+
   try {
     const gitDir = findGitDir(process.cwd());
     if (!gitDir) return null;
@@ -62,6 +72,19 @@ function readGitCommitFromCwd() {
     const refPath = join(gitDir, ref);
     if (!existsSync(refPath)) return null;
     const sha = readFileSync(refPath, "utf8").trim();
+    return shortCommit(sha);
+  } catch {
+    return null;
+  }
+}
+
+function readGitCommitFromRevParse() {
+  try {
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     return shortCommit(sha);
   } catch {
     return null;

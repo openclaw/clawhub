@@ -1,0 +1,29 @@
+#!/bin/bash
+# List available datasources in Grafana
+# Usage: grafana-datasources <deployment>
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: grafana-datasources <deployment>" >&2
+    echo "" >&2
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    "$SCRIPT_DIR/grafana-config" 2>&1 | tail -n +3
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" grafana "$DEPLOYMENT")"
+
+api_url="${GRAFANA_URL}/api/datasources"
+result=$("$SCRIPT_DIR/curl-auth" grafana "$DEPLOYMENT" "$api_url")
+
+if command -v jq &>/dev/null; then
+    echo "Datasources in $DEPLOYMENT:"
+    echo ""
+    echo "$result" | jq -r '.[] | "  \(.uid)\t\(.type)\t\(.name)"' | column -t -s $'\t'
+else
+    echo "$result"
+fi

@@ -1,11 +1,12 @@
 /* @vitest-environment jsdom */
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStatus } from "./useAuthStatus";
 
 const useConvexAuthMock = vi.fn();
 const useQueryMock = vi.fn();
+const originalDevAuth = process.env.VITE_ENABLE_DEV_AUTH;
 
 vi.mock("convex/react", () => ({
   useConvexAuth: () => useConvexAuthMock(),
@@ -26,7 +27,34 @@ function Probe() {
 }
 
 describe("useAuthStatus", () => {
-  it("does not keep auth loading true when only the profile query is unresolved", () => {
+  beforeEach(() => {
+    useConvexAuthMock.mockReset();
+    useQueryMock.mockReset();
+    delete process.env.VITE_ENABLE_DEV_AUTH;
+  });
+
+  afterAll(() => {
+    if (originalDevAuth === undefined) {
+      delete process.env.VITE_ENABLE_DEV_AUTH;
+    } else {
+      process.env.VITE_ENABLE_DEV_AUTH = originalDevAuth;
+    }
+  });
+
+  it("skips the current-user query while auth is still resolving", () => {
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+    });
+    useQueryMock.mockReturnValue(undefined);
+
+    render(<Probe />);
+
+    expect(useQueryMock.mock.calls[0]?.[1]).toBe("skip");
+    expect(screen.getByText('{"isAuthenticated":false,"isLoading":true}')).toBeTruthy();
+  });
+
+  it("returns a signed-out state after auth resolves unauthenticated", () => {
     useConvexAuthMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -35,10 +63,11 @@ describe("useAuthStatus", () => {
 
     render(<Probe />);
 
-    expect(screen.getByText('{"isAuthenticated":false,"isLoading":false}')).toBeTruthy();
+    expect(useQueryMock.mock.calls[0]?.[1]).toBe("skip");
+    expect(screen.getByText('{"isAuthenticated":false,"isLoading":false,"me":null}')).toBeTruthy();
   });
 
-  it("preserves authenticated session state before the profile query resolves", () => {
+  it("keeps loading true until the authenticated profile query resolves", () => {
     useConvexAuthMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -47,6 +76,60 @@ describe("useAuthStatus", () => {
 
     render(<Probe />);
 
-    expect(screen.getByText('{"isAuthenticated":true,"isLoading":false}')).toBeTruthy();
+    expect(useQueryMock.mock.calls[0]?.[1]).toEqual({});
+    expect(screen.getByText('{"isAuthenticated":true,"isLoading":true}')).toBeTruthy();
+  });
+
+  it("returns the resolved current user for authenticated sessions", () => {
+    const me = { _id: "users:1", handle: "local" };
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    useQueryMock.mockReturnValue(me);
+
+    render(<Probe />);
+
+    expect(
+      screen.getByText(JSON.stringify({ isAuthenticated: true, isLoading: false, me })),
+    ).toBeTruthy();
+  });
+
+  it("resolves local dev auth from the current-user query", () => {
+    const me = { _id: "users:1", handle: "local-admin" };
+    process.env.VITE_ENABLE_DEV_AUTH = "1";
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+    });
+    useQueryMock.mockReturnValue(me);
+
+    render(<Probe />);
+
+    expect(useQueryMock.mock.calls[0]?.[1]).toEqual({});
+    expect(
+      screen.getByText(JSON.stringify({ isAuthenticated: true, isLoading: false, me })),
+    ).toBeTruthy();
+  });
+
+  it("treats a resolved dev profile as an authenticated user", () => {
+    process.env.VITE_ENABLE_DEV_AUTH = "1";
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+    });
+    useQueryMock.mockReturnValue({
+      _id: "users:local-admin",
+      handle: "local-admin",
+      role: "admin",
+    });
+
+    render(<Probe />);
+
+    expect(
+      screen.getByText(
+        '{"isAuthenticated":true,"isLoading":false,"me":{"_id":"users:local-admin","handle":"local-admin","role":"admin"}}',
+      ),
+    ).toBeTruthy();
   });
 });

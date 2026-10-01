@@ -4,7 +4,7 @@ export const Route = createFileRoute("/admin")({
   beforeLoad: () => {
     throw redirect({
       to: "/management",
-      search: { skill: undefined },
+      search: { skill: undefined, plugin: undefined },
       replace: true,
     });
   },

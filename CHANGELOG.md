@@ -2,9 +2,328 @@
 
 ## Unreleased
 
+## 0.24.0 - 2026-09-30
+
+### Changes
+
+- CLI/API: publish experimental Claw packages from already-built npm tarballs, bind staged uploads to their SHA-256 digest, and preserve the exact artifact bytes through scanning and download.
+- API: expose public exact-version package publication state to distinguish staged, failed, absent, and published releases with advisory recovery eligibility.
+- CI: record dependency advisories from `bun audit` as warning annotations instead of failing `static` and blocking Deploy Test; known-malware findings still fail.
+- Workers: default Skill Cards to GPT-6 Sol with medium reasoning and fast service, and prepare semantic input reuse with stale-result fencing for separate activation after backend deployment.
+- Workers: preserve optional scanner model and reasoning settings in restricted subprocess environments without changing workflow defaults.
+- Web: organization publishers can upload durable PNG, JPEG, or WebP logos from settings instead of relying on hotlinked image URLs.
+- Web/API: make default skill and plugin discovery freshness-aware, add seven-day trending views for both catalogs, and use verified status plus usage as search tie-breakers within direct matches.
+
+### Fixes
+
+- Publishing: load only the text decoder, not the whole `clawhub-schema` barrel, in the static publish scan Node action, cutting ~140 MB from its peak so large bundled plugins such as WhatsApp no longer run it out of memory.
+- Publishing: settle retries of an exact staged package artifact before scans and Plugin Inspector run again, returning the pending or published result, and name a failed attempt with its recovery command instead of a bare "already exists".
+- CLI: read `Retry-After` and rate-limit headers from curl responses under Bun, so publishes back off for the time the server asks instead of retrying blind.
+- CLI: keep completed skill installs and updates when deleting an old backup fails, without rolling back the new files (thanks @SebTardif).
+- Publishing: prepare the Plugin Inspector OpenClaw target by streaming and verifying only its public declaration surface, so plugin publishes no longer run the Node action out of memory or fill `/tmp` with the full OpenClaw package.
+- Deploy: coalesce pending skills.sh syncs per ref before they enter the production deployment queue, while preserving active sync cleanup and queued manual deploys.
+
+- Dependencies: align brace-expansion and fast-uri overrides with their patched lockfile versions so dependency resolution cannot restore the vulnerable pins.
+
+- Workers: reserve Skill Card capacity by lease slot to avoid global queue contention, continue after partial batches, and release undelivered leases when input hydration fails.
+
+- Workers: redact quoted credentials completely in serialized JSON diagnostics while preserving adjacent non-secret context.
+- Deploy: queue production deployments and hourly skills.sh synchronization together so rollout pauses cannot interrupt synchronization or rollback; retain bounded, redacted failure receipts when synchronization fails.
+- Tests: shorten local Convex scratch paths when a deeply nested `TMPDIR` shares the workspace filesystem, while retaining short overrides and avoiding Unix socket path failures.
+- API/CLI: preserve owner-qualified skill identities in catalog listings and accept explicit null public versions consistently across API and CLI schemas (thanks @HwangBae for the report and @goutamadwant for the fix).
+- Workers: delete a newly generated Skill Card blob when attachment fails, while preserving successfully attached cards and historical bundle fingerprints (thanks @SebTardif).
+- Publishing: fall back to local changelog notes when the provider stalls for ten seconds, including while reading the response body (thanks @SebTardif).
+- Web: bound Agent Skills discovery proxy requests to ten seconds, including stalled response bodies, so installers can recover from an unresponsive upstream (thanks @SebTardif).
+- CLI: preserve literal multipart text when publishing with Bun, including semicolons in JSON metadata and values beginning with `@` or `<`, without changing uploaded file bytes.
+- Workers: scan plugin packages containing both skill and plugin manifests without ambiguous-target failures, preserving full-package scanning and bundled-skill paths.
+- CLI/API: recover failed staged plugin publications from their retained artifacts with `clawhub package recover`, fresh security checks, current publisher authorization, and preserved attempt history.
+- Tests: keep the Vitest localStorage shim working on Node 26, whose native `Storage` global has a non-configurable `length`, so `bun run ci:unit` passes on Node 24 and 26.
+- API/GitHub Actions: authorize human release recovery through v2 approval and the original child-bound parent receipt, fail automated attempts when their exact parent fails, and let admins preview or discard orphaned package publish attempts with a publisher-visible reason.
+- CI: warm and cache the npm packages for local Convex "use node" dependencies and raise the isolated backend's push transport timeout so local-auth browser lanes no longer race a 408-retried external-deps build into a deleted build directory.
+- CI: make the UI proof process-tree reaping test exercise KILL escalation deterministically and assert the reaper's signal sequence, so a TERM that lands before the grandchild ignores it can no longer mask a missing KILL.
+- CI: run the pinned Agent Skills CLI from the Bun lockfile without runtime npm access, retain subprocess failure output, and run first-party CLI coverage before third-party compatibility checks.
+- Docs: repair plugin validation remediation links to the published manifest metadata and runtime session helper sections while preserving valid CLI workflow anchors.
+- Dependencies: pin fast-uri to 3.1.6 to fix host confusion and server-side request forgery advisories in URI normalization.
+- GitHub Actions: accept complete release inventories in parent authorization receipts up to the backend's 64 KiB limit while retaining 8 KiB identity and recovery limits.
+- API: preserve inspector findings when workspace cleanup fails, report the failing stage, and keep cleanup failures publication-blocking.
+- API: bound runtime-identity checks to the owning publisher, reject collisions during personal-principal recovery, and prevent malicious-release quarantine from restoring a historical runtime identity that was administratively replaced.
+- Browser tests: use a supported manifest warning fixture and prepare local Convex fully with short scratch paths on the backend's volume before starting authenticated flows.
+- API: scope code-plugin runtime identity claims to the owning publisher so community and official packages can retain their manifest ids under distinct scoped names, while rejecting same-owner collisions during publication, transfer, restore, and administrative repair.
+- UI proof: supervise isolated loopback backend and browser proof together without writing project dotenv, preserving diagnostics and private-state cleanup on failure.
+- CI: authenticate weekly design-audit pull request mutations with the Barnacle GitHub App while retaining the workflow token for branch publication and clean-audit closure.
+- API: record skipped and failed skill evaluation outcomes without passing worker tokens to internal mutations.
+- GitHub Actions/CLI/API: require v2 authorization for every OpenClaw OIDC publish, bind large-artifact upload tickets and package mutations to the exact authorization transaction, consume scoped capabilities with non-public staging, then require an immutable successful parent attempt and atomic durable authorization revalidation before final publication.
+- GitHub Actions: revalidate versioned trusted tooling workflow identity immediately before package publication, including exact protected lightweight tags, so approval waits cannot authorize moved tooling.
+- CI: authenticate the scheduled project-skill updater's pull request mutations with the Barnacle GitHub App while retaining the workflow token for provenance lookup and branch publication.
+- Workers: materialize zero-byte directory markers without colliding with descendant files, while retaining real empty files and verifying every downloaded artifact digest.
+- Deploy: allow an explicitly confirmed backend-only deploy to pause and reliably restore active external-skill rollouts instead of requiring a manual dashboard toggle.
+- GitHub Actions/CLI: trigger exact pre-publication checks immediately and wait for package publication to finish, so a pending staged upload no longer reports a successful release.
+- API: keep publish-time Plugin Inspector target preparation inside its disposable workspace when hosted runtimes expose an unusable home directory.
+- API: keep older code-plugin and Claw backports from replacing the highest-semver `latest` release while preserving custom distribution tags.
+- Integrations: truncate publisher-controlled Discord webhook titles to the platform's 256-character embed limit.
+- Security: recover scheduled temporal publisher-abuse scans from strict Convex payload validation failures without leaving zombie running runs (thanks @jesse-merhi).
+- CI: retry transient Convex preview provisioning failures under fresh deployment names during Vercel preview builds.
+- Web: keep CLI device login codes out of the GitHub OAuth code handler — the device page no longer loses its prefilled code, bounces through a surprise GitHub redirect, or drops an active session; device links now use `user_code`.
+- API: keep successful rate-limit checks available when retention metadata writes contend, while preserving fail-closed enforcement for authoritative counter conflicts.
+- CLI: accept npm 12's package-keyed `npm pack --json` output when building ClawPacks while retaining compatibility with earlier npm array output.
+- Web/API: preserve JSON, SSR, and OG responses through the Convex proxy after the H3 response-wrapper update.
+
+## 0.23.3 - 2026-08-03
+
+### Fixes
+
+- CLI/API: stage skill files directly in Convex storage before publishing metadata, so bundles within the documented 50MB total limit no longer hit Vercel's smaller request-body limit.
+
+## 0.23.2 - 2026-08-03
+
+### Changes
+
+- CLI/API: add owner-authorized `clawhub skill tag <skill> <version> --yes` so personal owners and organization owner/admin members can safely repoint `latest` to an existing public version.
+
+### Fixes
+
+- API: reject version-bearing requests on the legacy whole-skill delete route instead of silently soft-deleting the entire skill.
+
+## 0.23.1 - 2026-06-29
+
+### Changes
+
+- CLI: update Plugin Inspector to `0.3.17` so `clawhub package validate` reports deprecated session SDK reads, writes, file helpers, and transcript helpers with remediation links.
+
+## 0.23.0 - 2026-06-23
+
+### Changes
+
+- CLI: restore `clawhub sync` for scanning local skill folders and publishing new or changed skills in batches, including dry-run, JSON, owner, version-bump, provenance, and non-interactive `--all` options.
+
+## 0.22.0 - 2026-06-15
+
+### Changes
+
+- CLI: remove the `clawhub sync` command. `clawhub skill publish <path>` now skips unchanged content, defaults new skills to `1.0.0`, defaults changed skills to the next patch version, and supports dry-run/JSON output.
+- GitHub Actions: preserve catalog publishing through the reusable `skill-publish.yml` workflow, which invokes ordinary `skill publish` once per skill folder.
+
+## 0.21.0 - 2026-06-11
+
+### Changes
+
+- CLI/API: add public `clawhub package trusted-publisher set` and `clawhub package trusted-publisher delete` commands so package managers can configure or remove GitHub Actions OIDC trusted publishing for existing packages.
+
+## 0.20.2 - 2026-06-11
+
+### Changes
+
+- CLI packages now require Node.js 22 or newer, dropping the EOL Node 20 runtime floor.
+- CLI: add `clawhub package validate <source>` for local plugin validation with author-facing Plugin Inspector findings, remediation text, and report artifacts.
+
+## 0.20.0 - 2026-06-06
+
+### Changes
+
+- CLI/API: replace local `clawhub scan` uploads with stored submitted-version scan report downloads, including owner-authorized `clawhub scan download <name> --version <version>` support for blocked skill and plugin submissions.
+
+## 0.19.2 - 2026-06-05
+
+### Fixes
+
+- CLI: accept the legacy `clawhub skill verify --json` flag as a hidden compatibility no-op while continuing to print JSON by default.
+
+## 0.19.1 - 2026-06-05
+
+### Fixes
+
+- CLI: install source-backed GitHub skills from the deployed `/api/v1/skills/:slug/install` resolver so `clawhub install` works for skills without hosted ClawHub versions.
+
+## 0.19.0 - 2026-06-03
+
+### Changes
+
+- CLI/API: add authenticated `clawhub scan` submit/poll support for ephemeral local skill bundles and owner-authorized published skill scans, including JSON output and report ZIP downloads (#2479).
+
+### Fixes
+
+- Auth/Ops: keep GitHub account-age lookups on immutable numeric IDs, retry without auth when a configured GitHub token is rejected, and add an operator backfill for missing cached account ages.
+- API/CLI: report Skill Card verification with flattened skill/version metadata, ClawScan verdict fields at `security.*`, and supporting scanner evidence under `security.signals`.
+
+## 0.18.0 - 2026-05-25
+
+### Changes
+
+- CLI/API: add Skill Card verification surfaces, including `clawhub skill verify <slug>` JSON output and `--card` Markdown retrieval (#2382).
+
+### Fixes
+
+- API: fix `GET /api/v1/skills` pagination so `cursor` advances to the next page instead of repeating the first page for supported non-trending sorts (#2275) (thanks @vyctorbrzezowski, @enerj).
+- Web: block collaborative membership on personal publishers while allowing the linked owner to clean up stale extra membership rows (thanks @vyctorbrzezowski).
+- Security/API: hide owned package/plugin catalog entries, revoke package publish tokens, and restore only matching ban-hidden packages on user unban (thanks @vyctorbrzezowski).
+- API: block public raw skill files when moderation already blocks downloads and reject skill tags that point at another skill's version (thanks @vyctorbrzezowski).
+- Web: stop stale unban restore batches from reactivating skills after the owner is banned again or deactivated (thanks @vyctorbrzezowski).
+- Security/API: reject direct skill owner transfers when the skill is hidden, suspicious, or malicious (thanks @vyctorbrzezowski).
+- Security/API: revalidate package publish actor, owner, and owner publisher active state in the final release insert (thanks @vyctorbrzezowski).
+
+## 0.17.0 - 2026-05-19
+
+- CLI/API: add self-serve org publisher creation with `clawhub publisher create <handle>` and scoped package publish errors that point to the command.
+
+## 0.16.0 - 2026-05-18
+
+### Fixes
+
+- CLI/API: make package publishes robust under parallel same-publisher release jobs by avoiding unnecessary shared publisher writes, retrying transient Convex contention, and labeling contention separately from package validation failures (#2291).
+- Security: move upload ClawScan classification to a GitHub Actions Codex worker, treat VirusTotal as telemetry-only signal, and trust verified `@openclaw/*` plugin packages by default.
+- Security: cancel pending skill ownership transfers before rejecting accept attempts when the requester is inactive or the skill is hidden, removed, or malicious (#2276, #2277) (thanks @vyctorbrzezowski).
+- API/CLI: fix package delete returning 500 for packages with capability tags when no capability search digest row existed yet (#2212) (thanks @momothemage).
+- API: return a clear 400 for `/api/v1/packages/search` without a non-empty `q` instead of treating `search` as a package name (thanks @vyctorbrzezowski).
+- Web/API: keep search results limited to items with match evidence, preserve trust and popularity as tie-breakers, and show `N+` counts without exact count queries (#2206) (thanks @vyctorbrzezowski).
+- Web: preserve `ownerHandle` through legacy skill publish redirects so org admins land in the correct new-version owner context (#2177).
+- Settings: save display name/bio changes even when a legacy personal publisher handle conflict prevents publisher profile sync (#1199).
+- Auth: show a visible error if the GitHub sign-in request fails before the provider redirect starts (#2197).
+- Schema: include `.tsv`, `.conf`, `.properties`, and `.dat` in the exported text-file allowlist and regenerate the committed schema package runtime (#2172, #874) (thanks @alexuser).
+- API: return `400` for invalid known public package filters and invalid skill list sort values, while continuing to ignore unknown query parameters (#2184).
+- API/docs: document v1 plain-text error responses and expose owner metadata in the OpenAPI search result schema (#2187) (thanks @vyctorbrzezowski).
+- Web: rank publisher card preview items by downloads instead of recent publish order (thanks @vyctorbrzezowski).
+- Web: remove the desktop Files tab height cap and make mobile truncation explicit (thanks @vyctorbrzezowski).
+- Web: keep skill/plugin detail tabs at mobile-friendly touch target height.
+
+### Changes
+
+- CLI/API: include skill owner handles in search results so duplicate/common slugs are easier to disambiguate (thanks @vyctorbrzezowski).
+- Web: let skill publishers pick a curated lucide icon for cards and listings (#2174) (thanks @momothemage).
+- Web/API: add keyword-based plugin categories plus API-backed plugin search sorting for recently updated, newest, and name (#2118) (thanks @vyctorbrzezowski).
+- Web: polish the starred skills page with grid/list controls, sorting, and optimistic unstar behavior (#2159) (thanks @vyctorbrzezowski).
+- API/docs: expand the v1 OpenAPI contract with package/plugin catalog endpoints and align documented rate limits with the server constants (#2186) (thanks @vyctorbrzezowski).
+- Admin/Ops: audit profile syncs, self-service account/profile changes, personal publisher syncs, and org trusted-publisher changes so slug and ownership investigations have a complete ledger.
+- Dependencies: update production `@clack/prompts`, `tailwind-merge`, and `yaml` dependencies (#2198).
+
+## 0.15.0 - 2026-05-12
+
+### Changes
+
+- Web: polish dashboard artifact cards, loading skeletons, skill summary/detail layout, and adoption metrics after the 0.14 release (#2150, #2153, #2156, #2157, #2158, #2160).
+- Docs/dev: clarify pre-PR validation gates for local contributors (#2161).
+
+### Fixes
+
+- Web: show plugin settings actions to package managers and preserve manager access in dashboard rows (#2163, #2168).
+- Web: refresh skill star state after mutations and keep skill tabs from causing horizontal scroll (#2154, #2155).
+- Web: show owner names when handles are hidden, and clarify editable skill summary settings copy (#2151, #2162).
+- Dashboard: add a publisher switcher so org-owned skills and plugins are visible to org admins after transfer or publish (#2132).
+- Web: let org publishers/admins republish transferred org-owned skills without the publish form treating the existing slug as taken, including legacy users with synthesized personal publishers (#2171).
+- CLI: send skill ownership command payloads as JSON objects so rename/merge operations reach the API correctly (#1300).
+- CLI: keep an install fingerprint in skill origin metadata so `clawhub update <skill>` does not report fresh installs as local changes when the server cannot resolve the current hash (#169).
+- CLI: migrate cached `registry.clawhub.ai` registries back to `clawhub.ai` so `clawhub explore` no longer talks to the retired Vercel deployment (#1098).
+- CLI: publish `.tsv`, `.conf`, `.properties`, `.dat`, and safe extensionless text files while excluding dotfiles and sampling extensionless files before full reads (#874).
+- Tests: remove obsolete rescan e2e probes that no longer match current moderation behavior (#2152).
+
+## 0.14.0 - 2026-05-11
+
+### Changes
+
+- Dev: auto-start services for Codex worktrees and add a local dev persona FAB (#2146, #2147).
+- Dev: add a local ClawScan dry-run helper script (#2143).
+
+### Fixes
+
+- API: return deterministic 403 responses for skill/package rescan and package transfer permission denials, with CI e2e coverage for protected write endpoints.
+
+## 0.13.0 - 2026-05-11
+
+### Changes
+
+- Web: redesign Settings into focused account, organization, API token, and account deletion views with responsive desktop and mobile layouts (#2134) (thanks @vyctorbrzezowski).
+- Web: replace the Users directory with a Publishers discovery surface covering builders and organizations, add `/publishers` as the canonical route, and keep `/users` compatibility (#2087) (thanks @vyctorbrzezowski).
+- Web: polish browse/listing surfaces across skills, plugins, and search, including plugin card view parity, clearer search controls, visible safety filtering, and more consistent card metadata treatment (#2084) (thanks @vyctorbrzezowski).
+- Web: allow skill owners and publisher admins to edit a skill summary from the detail page (#1411) (thanks @SylvanXiao).
+- CLI/Auth: add device-code login for remote or headless shells, backed by ClawHub device authorization endpoints (#1867) (thanks @LumenFromTheFuture).
+- CLI: add per-skill pinning so installed skills can be frozen against direct updates, bulk updates, and force reinstalls (#1806) (thanks @deepujain).
+- Web: rename the skills and plugins browse alternate view from Cards to Grid while keeping legacy `view=cards` URLs compatible (#2119) (thanks @vyctorbrzezowski).
+- Dev docs: refresh generated Convex AI guidance files (#2000).
+
+### Fixes
+
+- Moderation: stop treating VirusTotal Code Insight/Palm verdicts as a hide authority for skills; real AV-engine hits and ClawScan findings still contribute moderation verdicts.
+- Moderation: stop treating static suspicious-only findings as a verdict; keep file/line evidence for review while VT/LLM decide public suspicious status.
+- ClawScan: reduce false positives for scoped uninstall cleanup, declared provider login flows, Basic Auth/base64 handling, and user-directed provider uploads while hard-blocking stealth browser abuse patterns.
+- ClawScan: lower false positives by treating purpose-aligned notes as benign unless structured LLM findings contain a material concern, and add targeted rescan batches for suspicious skills/plugins.
+- Moderation: split visible ClawScan review guidance from hidden suspicious filtering, and add operator cleanup for stale aggregate rows and obvious test/placeholder suspicious skills.
+- Security: add an admin-only moderation hold lift path for false-positive publisher holds, with audited skill restoration that preserves independently hidden skills (#1133) (thanks @Justincredible-tech).
+- Moderation: let platform moderators and admins trigger skill/package security rescans for any owner from the CLI, without consuming the owner recovery cap.
+- ClawScan: include package `openclaw.environment` env/config declarations in package review prompts so declared plugin runtime requirements are not reported as missing (#2013).
+- Skills/Packages: let publisher admins manage owned lifecycle operations consistently, including skill rename/delete/restore, direct skill moves into org publishers they administer, package restore from the CLI/API, and direct moves back to their personal publisher.
+- Skills: repair publisher-owned skill merges, bound historical slug redirects, block protected slug namespaces, and expire owner-unpublished slug reservations after 30 days (#2115) (thanks @fuller-stack-dev).
+- Skills: allow confirmed owner migration when republishing an existing skill to another publisher, preserving versions, stats, aliases, and audit history (#1998, #2102) (thanks @momothemage).
+- Security: block owner delete/undelete paths from overriding moderator or scanner hides, and return explicit 403 authz responses for owner restore denials (#2078) (thanks @momothemage).
+- CLI/API: send skill transfer payloads as JSON objects so transfer requests reach the API correctly.
+- Packages: keep package search digests schema-safe during delete/restore so package lifecycle CLI calls do not fail after provenance updates.
+- Search: recall skill matches by non-first slug/display-name tokens while keeping multi-token queries on the direct recall path constrained to all query tokens (#2140) (thanks @momothemage).
+- Search/Web: disclose when `/search` is hiding suspicious skills and add an explicit opt-out so unified search no longer silently differs from `/skills` for the same query (#2079) (thanks @momothemage).
+- Uploads: accept PowerShell `.ps1`, `.psm1`, and `.psd1` files as text-based skill files while keeping normal scan coverage (#897) (thanks @cute-omega).
+- Packages: count package install stat events separately from package downloads and record npm tarball fetches as installs (#1712).
+- Web: keep the Publishers directory responsive for high-volume publishers by using bounded published-item previews, and abort stale unified-search plugin requests during route changes.
+- Web: point skill, plugin, and soul owner links directly at canonical `/p/:handle` publisher profiles instead of legacy redirect routes.
+- Web/API: ignore stale public skill-list cursors from older sort or safety-filter indexes instead of throwing pagination errors.
+- Web: restore dashboard skill metrics for owned skills and use pointer cursors on dropdown menu items (#2113) (thanks @fuller-stack-dev).
+- Web: show the skills browse `Hide suspicious` control only when the loaded results include suspicious skills (thanks @vyctorbrzezowski).
+- Web: align signed-in header avatar controls across desktop and mobile so the menu trigger keeps consistent sizing, truncation, and dropdown styling (#2124) (thanks @vyctorbrzezowski).
+- Web: constrain settings, profile content, skill detail, and plugin detail pages to the header content width while preserving profile hero bleed (thanks @vyctorbrzezowski).
+- Web: show publish-page validation next to the relevant fields and upload picker so invalid inputs are not buried below the form (#908) (thanks @AndyZhengyan).
+- Docs: remove README references to the inactive onlycrabs.ai domain while leaving the internal SoulHub configuration generic (#951) (thanks @muescha).
+- Docs/dev: document the local Convex site proxy URL and make worktree setup reject misconfigured local site URLs that break HTTP routes (#2060) (thanks @vyctorbrzezowski).
+- Dev setup: make local seed reset deterministic by cleaning stale seed lookup and badge rows for repeated Convex dev runs (#2057) (thanks @vyctorbrzezowski).
+
+## 0.12.3 - 2026-05-06
+
+### Fixes
+
+- CLI/API: allow skill publishes to target an org/user publisher with `--owner` / `ownerHandle`, and keep root `SKILL.md` publishable even when broad ignore rules match Markdown files (thanks @deepujain).
+- Packages: expose owned plugin/package soft-delete in the CLI and dashboard, keep moderator takedown access, and remove deleted packages from package search surfaces (thanks @Patrick-Erichsen).
+- Packages: support monorepo package publishes, infer package owners from scoped names, and keep dry-run publishes metadata-only.
+- Packages: validate code-plugin runtime entries against extracted files, allow admin plugin release publishes, and raise trusted-publish/admin API rate limits for legitimate publish bursts.
+- API/Search: return lean skill list payloads, route package search through digest indexes, decode scoped package paths, and bound fallback scans to reduce production read pressure.
+- Web: restore skill downloads and search paging, canonicalize scoped plugin paths, and improve mobile layout responsiveness.
+- Security: add scanner checks for confirmation bypasses and Python file upload exfiltration while reducing generic false-positive package tags.
+
+## 0.12.2 - 2026-05-02
+
+### Fixes
+
+- CLI: publish code plugins as clawpacks and allow legacy package downloads to keep older install flows working.
+- API: resolve scoped package routes and accept scoped npm packuments.
+- Schema: allow nullable package SHA values in package responses and refresh generated schema artifacts.
+
+## 0.12.1 - 2026-05-02
+
+### Added
+
+- Packages: add clawpack parsing, uploads, mirror artifact routes, artifact downloads, release moderation, reports, appeals, and official migration management across API, dashboard, and CLI.
+- Security: add ClawScan security surfaces, owner rescan guidance, scanner-specific report pages, security dataset snapshots, and redacted skill-content exports.
+- CLI: add unban support, moderation diagnostics in `inspect`, manual skill-directory listing, package environment filters, and package migration-status commands.
+- Web: add skills/plugins search typeahead, featured plugin curation, plugin management tools, skill upload shortcuts, and dashboard pagination.
+
+### Fixes
+
+- API: raise public read rate limits to reduce false-positive 429s from browser pages and production smoke tests (thanks @steipete).
+- CLI/moderation: allow `delete`, `hide`, `undelete`, and `unhide` to record moderation reasons in skill notes and audit logs for legal or policy reviews (thanks @steipete).
+- Packages: make package publish retries idempotent, constrain catalog queries, keep package list queries single-page, count package archive downloads, and keep beta plugin packages off `latest`.
+- Search: add soul lexical fallback, non-suspicious digest indexes, normalized skill prefix recall, and more stable relevance recall windows.
+- Security: broaden static scanner coverage for unsafe credential, subprocess, browser-file, provider-secret, and remote-recipe patterns while hardening prompt-boundary handling.
+- Deploy/CI: harden production smoke checks, expand PR validation coverage, add dead-code gates, and stabilize CodeQL light coverage.
+- Dependencies: pin `undici` on the Node 20-compatible line after reverting the incompatible v8 update.
+
+## 0.12.0 - 2026-04-28
+
+### Added
+
+- Security: add owner rescan requests, owner flagged inventory, scanner-specific security pages, and in-progress scan states.
+- UI: adopt shadcn-managed primitives and polish the rescan/security surfaces for mobile.
+
 ### Fixes
 
 - Moderation: calibrate VirusTotal Code Insight suspicious verdicts so uncorroborated AI-only findings do not keep otherwise clean skills quarantined (#1830, #1841) (thanks @deepujain).
+- Security: flag exposed secrets in skill docs and normalize VirusTotal engine stats before caching.
+- Packages: constrain plugin catalog queries and avoid catalog/package-list query limits.
+- Auth: tolerate stale auth state when reading star status.
+- CI: harden and debounce ClawSweeper dispatch workflows and fix production smoke coverage.
 
 ## 0.11.0 - 2026-04-28
 

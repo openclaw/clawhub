@@ -1,617 +1,412 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
-import { Clock, Info, MoreVertical, Plus, RotateCw, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { usePaginatedQuery, useQuery } from "convex/react";
+import { ChevronsUpDown, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
-import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
-import { Badge } from "../components/ui/badge";
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
+import { collectAttentionItems } from "../components/dashboard/dashboardAttention";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
-import { getUserFacingConvexError } from "../lib/convexError";
+  filterByAttention,
+  filterByKind,
+  mergeDashboardItems,
+  searchDashboardItems,
+  sortDashboardItems,
+} from "../components/dashboard/dashboardCatalog";
+import { DashboardCatalogView } from "../components/dashboard/DashboardCatalogView";
+import { downloadMetricQuerySelection } from "../components/dashboard/dashboardDownloadMetrics";
+import { DashboardDownloadsInsights } from "../components/dashboard/DashboardDownloadsInsights";
+import { DashboardHeader } from "../components/dashboard/DashboardHeader";
+import { DashboardImportBanner } from "../components/dashboard/DashboardImportBanner";
+import { DashboardInventorySection } from "../components/dashboard/DashboardInventorySection";
+import { DashboardNeedsAttention } from "../components/dashboard/DashboardNeedsAttention";
+import { DashboardPublisherSelect } from "../components/dashboard/DashboardPublisherSelect";
+import { DashboardToolbar } from "../components/dashboard/DashboardToolbar";
+import { DashboardWelcome } from "../components/dashboard/DashboardWelcome";
+import type {
+  DashboardKindFilter,
+  DashboardPackage,
+  DashboardPublisherEntry,
+  DashboardSkill,
+  DashboardSortKey,
+  DashboardView,
+} from "../components/dashboard/types";
+import { SignInPrompt } from "../components/SignInPrompt";
+import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
+import { Button } from "../components/ui/button";
+import { TooltipProvider } from "../components/ui/tooltip";
+import { getActivityTrendEndDay } from "../lib/activityTrend";
+import { addSearchParams } from "../lib/addRoutes";
+import {
+  dashboardSearchParams,
+  parseDashboardSearch,
+  type DashboardSearchState,
+} from "../lib/dashboardSearch";
+import { useAuthStatus } from "../lib/useAuthStatus";
 
-const emptyPluginPublishSearch = {
-  ownerHandle: undefined,
-  name: undefined,
-  displayName: undefined,
-  family: undefined,
-  nextVersion: undefined,
-  sourceRepo: undefined,
+/** Matches `packages.list` server cap; plugins are not paginated on the dashboard yet. */
+const DASHBOARD_PACKAGES_LIMIT = 100;
+const DASHBOARD_LOAD_TIMEOUT_MS = 20_000;
+const DASHBOARD_VIEW_STORAGE_KEY = "clawhub.dashboard.view";
+const DEFAULT_SORT_DIR = {
+  name: "asc",
+  downloads: "desc",
+  updated: "desc",
 } as const;
 
-type DashboardSkill = Pick<
-  Doc<"skills">,
-  | "_id"
-  | "_creationTime"
-  | "slug"
-  | "displayName"
-  | "summary"
-  | "ownerUserId"
-  | "ownerPublisherId"
-  | "canonicalSkillId"
-  | "forkOf"
-  | "latestVersionId"
-  | "tags"
-  | "capabilityTags"
-  | "badges"
-  | "stats"
-  | "moderationStatus"
-  | "moderationReason"
-  | "moderationVerdict"
-  | "moderationFlags"
-  | "isSuspicious"
-  | "createdAt"
-  | "updatedAt"
-> & {
-  pendingReview?: boolean;
-  qualityDecision?: "pass" | "quarantine" | "reject";
-  latestVersion: {
-    version: string;
-    createdAt: number;
-    vtStatus: string | null;
-    llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
-  } | null;
-  rescanState?: DashboardRescanState | null;
-};
-
-type DashboardPackage = {
-  _id: string;
-  name: string;
-  displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
-  channel: "official" | "community" | "private";
-  isOfficial: boolean;
-  runtimeId?: string | null;
-  sourceRepo?: string | null;
-  summary?: string | null;
-  latestVersion?: string | null;
-  stats: {
-    downloads: number;
-    installs: number;
-    stars: number;
-    versions: number;
-  };
-  verification?: {
-    tier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
-  } | null;
-  scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
-  pendingReview?: boolean;
-  latestRelease: {
-    version: string;
-    createdAt: number;
-    vtStatus: string | null;
-    llmStatus: string | null;
-    staticScanStatus: "clean" | "suspicious" | "malicious" | null;
-  } | null;
-  rescanState?: DashboardRescanState | null;
-};
-
-type DashboardRescanState = {
-  maxRequests: number;
-  requestCount: number;
-  remainingRequests: number;
-  canRequest: boolean;
-  inProgressRequest: DashboardRescanRequest | null;
-  latestRequest: DashboardRescanRequest | null;
-};
-
-type DashboardRescanRequest = {
-  _id: string;
-  targetKind: "skill" | "plugin";
-  targetVersion: string;
-  requestedByUserId: string;
-  status: "in_progress" | "completed" | "failed";
-  error?: string;
-  createdAt: number;
-  updatedAt: number;
-  completedAt?: number;
-};
-
 export const Route = createFileRoute("/dashboard")({
+  validateSearch: (search) => parseDashboardSearch(search),
   component: Dashboard,
 });
 
 export function Dashboard() {
-  const me = useQuery(api.users.me) as Doc<"users"> | null | undefined;
-  const publishers = useQuery(api.publishers.listMine) as
-    | Array<{
-        publisher: {
-          _id: string;
-          handle: string;
-          displayName: string;
-          kind: "user" | "org";
-        };
-        role: "owner" | "admin" | "publisher";
-      }>
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+
+  const kindFilter: DashboardKindFilter = search.kind ?? "all";
+  const query = search.q ?? "";
+  const sort: DashboardSortKey = search.sort ?? "updated";
+  const view: DashboardView = search.view ?? "list";
+
+  const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
+    | DashboardPublisherEntry[]
     | undefined;
   const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
-  const selectedPublisher =
-    publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null;
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
 
-  const mySkills = useQuery(
-    api.skills.list,
-    selectedPublisher?.publisher.kind === "user" && me?._id
-      ? { ownerUserId: me._id, limit: 100 }
-      : selectedPublisherId
-        ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"], limit: 100 }
-        : me?._id
-          ? { ownerUserId: me._id, limit: 100 }
-          : "skip",
-  ) as DashboardSkill[] | undefined;
+  const patchSearch = (patch: Partial<DashboardSearchState>) => {
+    void navigate({
+      to: "/dashboard",
+      search: dashboardSearchParams({ ...search, ...patch }),
+      resetScroll: false,
+    });
+  };
+
+  const defaultPublisher =
+    publishers?.find((entry) => entry.publisher?.kind === "user") ??
+    publishers?.find((entry) => entry.publisher) ??
+    null;
+  const selectedPublisherFromState = selectedPublisherId
+    ? (publishers?.find((entry) => entry.publisher?._id === selectedPublisherId) ?? null)
+    : null;
+  const selectedPublisher = selectedPublisherFromState ?? defaultPublisher ?? null;
+  const activePublisherId = selectedPublisher?.publisher?._id ?? "";
+  const canManage = selectedPublisher?.role !== "publisher";
+
+  const skillsQueryArgs =
+    publishers === undefined || !activePublisherId
+      ? "skip"
+      : { ownerPublisherId: activePublisherId as Doc<"publishers">["_id"] };
+  const {
+    results: paginatedSkills,
+    status: skillsStatus,
+    loadMore,
+  } = usePaginatedQuery(api.skills.listDashboardPaginated, skillsQueryArgs, {
+    initialNumItems: 50,
+  });
+  const mySkills = paginatedSkills as DashboardSkill[] | undefined;
   const myPackages = useQuery(
     api.packages.list,
-    selectedPublisherId
-      ? { ownerPublisherId: selectedPublisherId as Doc<"publishers">["_id"], limit: 100 }
+    activePublisherId
+      ? {
+          ownerPublisherId: activePublisherId as Doc<"publishers">["_id"],
+          limit: DASHBOARD_PACKAGES_LIMIT,
+        }
       : me?._id
-        ? { ownerUserId: me._id, limit: 100 }
+        ? { ownerUserId: me._id, limit: DASHBOARD_PACKAGES_LIMIT }
         : "skip",
   ) as DashboardPackage[] | undefined;
-
-  useEffect(() => {
-    if (selectedPublisherId) return;
-    const personal =
-      publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
-    if (personal?.publisher._id) {
-      setSelectedPublisherId(personal.publisher._id);
-    }
-  }, [publishers, selectedPublisherId]);
-
-  if (me === undefined) {
-    return <DashboardSkeleton />;
-  }
-
-  if (me === null) {
-    return (
-      <main className="section">
-        <Card>Sign in to access your dashboard.</Card>
-      </main>
-    );
-  }
+  const downloadMetrics = useQuery(
+    api.dashboard.getDownloadMetrics,
+    activePublisherId
+      ? {
+          publisherId: activePublisherId as Doc<"publishers">["_id"],
+          endDay: getActivityTrendEndDay(),
+          selection: downloadMetricQuerySelection(search.insight),
+        }
+      : "skip",
+  );
 
   const skills = mySkills ?? [];
   const packages = myPackages ?? [];
-  const isLoading = mySkills === undefined;
   const ownerHandle =
-    selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
+    selectedPublisher?.publisher?.handle ??
+    me?.handle ??
+    me?.name ??
+    me?.displayName ??
+    me?._id ??
+    "publisher";
+  const attentionItems = useMemo(
+    () => collectAttentionItems(skills, packages, ownerHandle),
+    [skills, packages, ownerHandle],
+  );
+  const catalogItems = useMemo(() => {
+    const merged = mergeDashboardItems(skills, packages);
+    const byKind = filterByKind(merged, kindFilter);
+    const afterAttention =
+      kindFilter === "attention" ? filterByAttention(byKind, attentionItems) : byKind;
+    const bySearch = searchDashboardItems(afterAttention, query);
+    const sorted = sortDashboardItems(bySearch, sort, sort ? DEFAULT_SORT_DIR[sort] : undefined);
+    return sorted;
+  }, [skills, packages, kindFilter, query, sort, attentionItems]);
 
-  // Welcome state for new users with no content
-  if (!isLoading && skills.length === 0 && packages.length === 0) {
+  const skillsQuerySkipped = skillsQueryArgs === "skip";
+  const packagesQuerySkipped = !activePublisherId && !me?._id;
+  const isLoading =
+    (!skillsQuerySkipped && skillsStatus === "LoadingFirstPage") ||
+    (!packagesQuerySkipped && myPackages === undefined);
+  const resolvedPublishers = publishers ?? [];
+  const isDashboardEmpty = !isLoading && skills.length === 0 && packages.length === 0;
+  const hasQuery = query.trim().length > 0;
+  const showLoadMore =
+    kindFilter !== "plugin" &&
+    kindFilter !== "attention" &&
+    skills.length > 0 &&
+    skillsStatus === "CanLoadMore";
+  const showAttentionStrip = kindFilter !== "attention" && attentionItems.length > 0;
+  const skillDownloadsTotal = skills.reduce((sum, skill) => sum + (skill.stats?.downloads ?? 0), 0);
+  const pluginDownloadsTotal = packages.reduce((sum, pkg) => sum + (pkg.stats.downloads ?? 0), 0);
+  const showDownloadInsights =
+    skillDownloadsTotal + pluginDownloadsTotal > 0 && downloadMetrics !== undefined;
+
+  useEffect(() => {
+    if (!search.view) {
+      const savedView = window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
+      if (savedView === "list" || savedView === "grid") patchSearch({ view: savedView });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadTimedOut(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setLoadTimedOut(true), DASHBOARD_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!skillsQuerySkipped && skills.length === 0 && skillsStatus === "CanLoadMore") {
+      loadMore(50);
+    }
+  }, [loadMore, skills.length, skillsQuerySkipped, skillsStatus]);
+
+  if (isAuthLoading) {
+    return <DashboardSkeleton />;
+  }
+
+  if (!isAuthenticated || !me) {
+    return <SignInPrompt title="Sign in to access your dashboard." />;
+  }
+
+  const publisherSelector =
+    resolvedPublishers.length > 1 ? (
+      <div className="dashboard-welcome-publisher-control">
+        <span className="dashboard-welcome-publisher-label">Viewing as</span>
+        <DashboardPublisherSelect
+          publishers={resolvedPublishers}
+          value={activePublisherId}
+          onValueChange={setSelectedPublisherId}
+          triggerClassName="dashboard-welcome-publisher-trigger"
+          triggerIcon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
+        />
+      </div>
+    ) : null;
+
+  if (isLoading && !loadTimedOut) {
+    return <DashboardSkeleton />;
+  }
+
+  if (loadTimedOut && isLoading) {
     return (
-      <main className="section">
-        <div className="empty-state">
-          <h1 className="empty-state-title text-[1.4rem] font-[family-name:var(--font-display)]">
-            Welcome to ClawHub
-          </h1>
-          <p className="empty-state-body">
-            You're signed in as @{ownerHandle}. Get started by publishing your first skill or
-            plugin.
-          </p>
-          <div className="flex gap-3 justify-center">
-            <Button asChild variant="primary">
-              <Link to="/publish-skill" search={{ updateSlug: undefined }}>
-                Publish a Skill
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link
-                to="/skills"
-                search={{
-                  q: undefined,
-                  sort: undefined,
-                  dir: undefined,
-                  highlighted: undefined,
-                  nonSuspicious: true,
-                  view: undefined,
-                  focus: undefined,
-                }}
-              >
-                Browse Skills
-              </Link>
-            </Button>
-          </div>
-        </div>
+      <main className="browse-page browse-page-borderless-header dashboard-route">
+        <DashboardLoadError onRetry={() => window.location.reload()} />
       </main>
     );
   }
 
-  return (
-    <main className="section">
-      <div className="dashboard-header">
-        <div>
-          <h1 className="section-title m-0">Dashboard</h1>
-          <p className="section-subtitle m-0">
-            View your published skills and plugins.
-          </p>
-        </div>
-      </div>
-
-      <div className="dashboard-owner-grid">
-        <Card className="dashboard-owner-panel">
-          <section className="dashboard-collection-block">
-            <div className="dashboard-section-header">
-              <h2 className="dashboard-collection-title">Skills</h2>
-              <Button asChild size="sm" className="dashboard-section-action">
-                <Link to="/publish-skill" search={{ updateSlug: undefined }}>
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  New Skill
-                </Link>
-              </Button>
-            </div>
-            {skills.length === 0 ? (
-              <div className="dashboard-inline-empty">
-                <div className="dashboard-inline-empty-copy">
-                  <strong>No skills yet.</strong> Publish your first skill to share it with the
-                  community.
-                </div>
-              </div>
-            ) : (
-              <div className="dashboard-list">
-                {skills.map((skill) => (
-                  <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
-                ))}
-              </div>
-            )}
-          </section>
-        </Card>
-
-        <Card className="dashboard-owner-panel">
-          <section className="dashboard-collection-block">
-            <div className="dashboard-section-header">
-              <h2 className="dashboard-collection-title">Plugins</h2>
-              <Button asChild size="sm" className="dashboard-section-action">
-                <Link to="/publish-plugin" search={{ ...emptyPluginPublishSearch, ownerHandle }}>
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  New Plugin
-                </Link>
-              </Button>
-            </div>
-            {packages.length === 0 ? (
-              <div className="dashboard-inline-empty">
-                <div className="dashboard-inline-empty-copy">
-                  <strong>No plugins yet.</strong> Publish your first plugin release to validate and
-                  distribute it.
-                </div>
-              </div>
-            ) : (
-              <div className="dashboard-list">
-                {packages.map((pkg) => (
-                  <PackageRow key={pkg._id} pkg={pkg} ownerHandle={ownerHandle} />
-                ))}
-              </div>
-            )}
-          </section>
-        </Card>
-      </div>
-    </main>
-  );
-}
-
-function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string | null }) {
-  const status = skillDashboardStatus(skill);
-  const detailParams = { owner: ownerHandle ?? "unknown", slug: skill.slug };
-  const settingsHref = `/${encodeURIComponent(detailParams.owner)}/${encodeURIComponent(
-    skill.slug,
-  )}/settings`;
+  if (isDashboardEmpty) {
+    return <DashboardWelcome ownerHandle={ownerHandle} publisherSelector={publisherSelector} />;
+  }
 
   return (
-    <div className="dashboard-list-row">
-      <div className="dashboard-list-primary">
-        <div className="dashboard-list-title">
-          <Link
-            to="/$owner/$slug"
-            params={detailParams}
-            className="dashboard-skill-name"
-          >
-            {skill.displayName}
-          </Link>
-        </div>
-      </div>
-      <div className="dashboard-list-summary">{skill.summary ?? "No summary provided."}</div>
-      <div className="dashboard-list-status">
-        <StatusChipWithTooltip status={status} />
-      </div>
-      <RowMenu
-        kind="skill"
-        targetId={skill._id}
-        targetLabel={skill.displayName}
-        settingsHref={settingsHref}
-        statusLabel={status.label}
-        rescanState={skill.rescanState ?? null}
-      />
-    </div>
-  );
-}
+    <TooltipProvider>
+      <main className="browse-page browse-page-borderless-header dashboard-route dashboard-final">
+        <DashboardHeader
+          publishers={resolvedPublishers}
+          activePublisherId={activePublisherId}
+          onPublisherChange={setSelectedPublisherId}
+          ownerHandle={ownerHandle}
+        />
 
-function StatusChipWithTooltip({
-  status,
-}: {
-  status: {
-    key?: string;
-    label: string;
-    description: string;
-    variant: "default" | "pending" | "warning" | "destructive" | "success";
-  };
-}) {
-  const showInfo = status.label !== "Visible";
+        <div className="dashboard-workspace">
+          <div className="dashboard-workspace-main">
+            <DashboardImportBanner ownerHandle={ownerHandle} />
 
-  return (
-    <Badge variant={status.variant} className="dashboard-status-chip">
-      {status.key === "pending" ? <Clock className="h-3 w-3" aria-hidden="true" /> : null}
-      {status.label}
-      {showInfo ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="dashboard-status-info"
-              aria-label={`${status.label} status reason`}
+            {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
+
+            <DashboardInventorySection
+              count={catalogItems.length}
+              toolbar={
+                <DashboardToolbar
+                  kind={kindFilter}
+                  query={query}
+                  sort={sort}
+                  view={view}
+                  onKindChange={(kind) => patchSearch({ kind })}
+                  onQueryChange={(q) => patchSearch({ q: q.trim() ? q : undefined })}
+                  onSortChange={(nextSort) => patchSearch({ sort: nextSort })}
+                  onViewChange={(nextView) => {
+                    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, nextView);
+                    patchSearch({ view: nextView });
+                  }}
+                />
+              }
             >
-              <Info className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="end">
-            {status.description}
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-    </Badge>
+              {catalogItems.length > 0 ? (
+                <>
+                  <DashboardCatalogView
+                    items={catalogItems}
+                    view={view}
+                    ownerHandle={ownerHandle}
+                    canManage={canManage}
+                  />
+                  {showLoadMore ? (
+                    <div className="dashboard-footer-row">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => loadMore(50)}
+                      >
+                        Load more
+                      </Button>
+                    </div>
+                  ) : null}
+                  {skillsStatus === "LoadingMore" ? (
+                    <div className="dashboard-footer-row flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      <span>Loading more…</span>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <CatalogEmpty
+                  hasQuery={hasQuery}
+                  kind={kindFilter}
+                  query={query}
+                  ownerHandle={ownerHandle}
+                  attentionCount={attentionItems.length}
+                />
+              )}
+            </DashboardInventorySection>
+
+            {showDownloadInsights && downloadMetrics ? (
+              <div className="dashboard-downloads-mobile-slot">
+                <DashboardDownloadsInsights
+                  skills={skills}
+                  packages={packages}
+                  metrics={downloadMetrics}
+                  insight={search.insight}
+                  onInsightChange={(insight) => patchSearch({ insight })}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {showDownloadInsights && downloadMetrics ? (
+          <div className="dashboard-downloads-desktop-slot">
+            <DashboardDownloadsInsights
+              skills={skills}
+              packages={packages}
+              metrics={downloadMetrics}
+              insight={search.insight}
+              onInsightChange={(insight) => patchSearch({ insight })}
+            />
+          </div>
+        ) : null}
+      </main>
+    </TooltipProvider>
   );
 }
 
-function packageDashboardStatus(pkg: DashboardPackage): {
-  label: string;
-  description: string;
-  variant: "default" | "pending" | "warning" | "destructive" | "success";
-} {
-  const releaseStatuses = new Set([
-    pkg.latestRelease?.vtStatus,
-    pkg.latestRelease?.llmStatus,
-    pkg.latestRelease?.staticScanStatus,
-  ]);
-  if (pkg.scanStatus === "malicious" || releaseStatuses.has("malicious")) {
-    return {
-      label: "Blocked",
-      description: "Security checks found malicious content.",
-      variant: "destructive",
-    };
-  }
-  if (pkg.scanStatus === "suspicious" || releaseStatuses.has("suspicious")) {
-    return {
-      label: "Suspicious",
-      description: "Security checks flagged this plugin for review.",
-      variant: "warning",
-    };
-  }
-  if (pkg.scanStatus === "pending" || pkg.pendingReview) {
-    return {
-      label: "Pending checks",
-      description: "Security verification is still running.",
-      variant: "pending",
-    };
-  }
-  if (pkg.scanStatus === "clean") {
-    return {
-      label: "Visible",
-      description: "Available on public catalog surfaces.",
-      variant: "success",
-    };
-  }
-  return {
-    label: "Unknown",
-    description: "Open the plugin for the latest release and security details.",
-    variant: "default",
-  };
-}
-
-function PackageRow({ pkg }: { pkg: DashboardPackage; ownerHandle: string }) {
-  const status = packageDashboardStatus(pkg);
-
+function DashboardLoadError({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="dashboard-list-row">
-      <div className="dashboard-list-primary">
-        <div className="dashboard-list-title">
-          <Link to="/plugins/$name" params={{ name: pkg.name }} className="dashboard-skill-name">
-            {pkg.displayName}
-          </Link>
-        </div>
-      </div>
-      <div className="dashboard-list-summary">{pkg.summary ?? "No summary provided."}</div>
-      <div className="dashboard-list-status">
-        <StatusChipWithTooltip status={status} />
-      </div>
-      <RowMenu
-        kind="plugin"
-        targetId={pkg._id}
-        targetLabel={pkg.displayName}
-        settingsHref={`/plugins/${encodeURIComponent(pkg.name)}`}
-        statusLabel={status.label}
-        rescanState={pkg.rescanState ?? null}
-      />
+    <div className="empty-state">
+      <p className="empty-state-title">Couldn't load your dashboard</p>
+      <p className="empty-state-body">Check your connection and try again.</p>
+      <Button type="button" size="sm" className="mt-4" onClick={onRetry}>
+        Retry
+      </Button>
     </div>
   );
 }
 
-function canShowDashboardRescan(statusLabel: string, state: DashboardRescanState | null) {
-  if (statusLabel === "Visible") return false;
-  if (!state) return true;
-  return state.canRequest && !state.inProgressRequest && state.remainingRequests > 0;
-}
-
-function RowMenu({
+function CatalogEmpty({
+  hasQuery,
   kind,
-  targetId,
-  targetLabel,
-  settingsHref,
-  statusLabel,
-  rescanState,
+  query,
+  ownerHandle,
+  attentionCount,
 }: {
-  kind: "skill" | "plugin";
-  targetId: string;
-  targetLabel: string;
-  settingsHref: string;
-  statusLabel: string;
-  rescanState: DashboardRescanState | null;
+  hasQuery: boolean;
+  kind: DashboardKindFilter;
+  query: string;
+  ownerHandle: string;
+  attentionCount: number;
 }) {
-  const requestSkillRescan = useMutation(api.skills.requestRescan);
-  const requestPluginRescan = useMutation(api.packages.requestRescan);
-  const [isRequesting, setIsRequesting] = useState(false);
-  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
-  const showRescan = canShowDashboardRescan(statusLabel, rescanState);
-  const showRescanItem = showRescan || isScanInProgress;
-  const rescanLabel = isScanInProgress
-    ? "Scan in progress"
-    : isRequesting
-      ? "Requesting..."
-      : "Request rescan";
-
-  async function requestRescan() {
-    if (!showRescan || isRequesting) return;
-    setIsRequesting(true);
-    try {
-      if (kind === "skill") {
-        await requestSkillRescan({ skillId: targetId as Doc<"skills">["_id"] });
-      } else {
-        await requestPluginRescan({ packageId: targetId as Doc<"packages">["_id"] });
-      }
-      toast.success(`Rescan requested for ${targetLabel}.`);
-    } catch (error) {
-      toast.error(getUserFacingConvexError(error, "Could not request a rescan."));
-    } finally {
-      setIsRequesting(false);
-    }
+  if (hasQuery) {
+    return (
+      <div className="empty-state">
+        <p className="empty-state-title">No matches for “{query.trim()}”</p>
+        <p className="empty-state-body">Try a different name, or clear the search.</p>
+      </div>
+    );
   }
 
-  return (
-    <div className="dashboard-row-menu">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Open actions for ${targetLabel}`}
-          >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+  if (kind === "attention") {
+    return (
+      <div className="empty-state">
+        <p className="empty-state-title">
+          {attentionCount === 0 ? "Nothing needs attention" : "No attention items match"}
+        </p>
+        <p className="empty-state-body">
+          {attentionCount === 0
+            ? "Skills and plugins with security, visibility, or validation issues appear here."
+            : "Clear filters or switch tabs to see the full catalog."}
+        </p>
+        {attentionCount === 0 ? (
+          <Button asChild size="sm" className="mt-4" variant="outline">
+            <Link to="/dashboard" search={dashboardSearchParams({ kind: "all" })}>
+              View all items
+            </Link>
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="dashboard-row-menu-content">
-          <DropdownMenuItem asChild>
-            <a href={settingsHref}>
-              <Settings className="h-4 w-4" aria-hidden="true" />
-              Settings
-            </a>
-          </DropdownMenuItem>
-          {showRescanItem ? (
-            <DropdownMenuItem
-              disabled={isRequesting || isScanInProgress}
-              onSelect={() => void requestRescan()}
-            >
-              <RotateCw
-                className={
-                  isRequesting || isScanInProgress
-                    ? "h-4 w-4 animate-spin [animation-duration:2.4s]"
-                    : "h-4 w-4"
-                }
-                aria-hidden="true"
-              />
-              {rescanLabel}
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        ) : null}
+      </div>
+    );
+  }
+
+  const isPlugin = kind === "plugin";
+  return (
+    <div className="empty-state">
+      <p className="empty-state-title">{isPlugin ? "No plugins yet" : "No skills yet"}</p>
+      <p className="empty-state-body">
+        {isPlugin
+          ? "Publish your first plugin release to validate and distribute it."
+          : "Publish your first skill to share it with the community."}
+      </p>
+      <Button asChild size="sm" className="mt-4">
+        <Link
+          to="/add"
+          search={addSearchParams({
+            kind: isPlugin ? "plugin" : "skill",
+            ownerHandle,
+          })}
+        >
+          {isPlugin ? "Add plugin" : "Add skill"}
+        </Link>
+      </Button>
     </div>
   );
-}
-
-function skillDashboardStatus(skill: DashboardSkill): {
-  key: "visible" | "pending" | "suspicious" | "blocked" | "hidden" | "removed" | "quality";
-  label: string;
-  description: string;
-  variant: "default" | "pending" | "warning" | "destructive" | "success";
-} {
-  const flags = skill.moderationFlags ?? [];
-  const reason = skill.moderationReason ?? "";
-  const versionStatuses = new Set([
-    skill.latestVersion?.vtStatus,
-    skill.latestVersion?.llmStatus,
-    skill.latestVersion?.staticScanStatus,
-  ]);
-  if (skill.moderationStatus === "removed") {
-    return {
-      key: "removed",
-      label: "Removed",
-      description: "Removed from public inventory by moderation.",
-      variant: "destructive",
-    };
-  }
-  if (
-    flags.includes("blocked.malware") ||
-    skill.moderationVerdict === "malicious" ||
-    versionStatuses.has("malicious")
-  ) {
-    return {
-      key: "blocked",
-      label: "Blocked",
-      description:
-        "Unavailable publicly because automated security checks found malicious content.",
-      variant: "destructive",
-    };
-  }
-  if (skill.pendingReview || reason === "pending.scan" || reason === "pending.scan.stale") {
-    return {
-      key: "pending",
-      label: "Pending checks",
-      description: "Hidden until security verification checks finish.",
-      variant: "pending",
-    };
-  }
-  if (
-    skill.qualityDecision === "quarantine" ||
-    skill.qualityDecision === "reject" ||
-    reason === "quality.low"
-  ) {
-    return {
-      key: "quality",
-      label: "Quality held",
-      description: "Unavailable while quality review is holding this release.",
-      variant: "warning",
-    };
-  }
-  if (
-    skill.isSuspicious ||
-    flags.includes("flagged.suspicious") ||
-    skill.moderationVerdict === "suspicious" ||
-    versionStatuses.has("suspicious")
-  ) {
-    return {
-      key: "suspicious",
-      label: "Suspicious",
-      description:
-        "Visible to you, but public surfaces warn or suppress it because it was flagged.",
-      variant: "warning",
-    };
-  }
-  if (skill.moderationStatus === "hidden") {
-    return {
-      key: "hidden",
-      label: "Hidden",
-      description: "Hidden from public catalog surfaces.",
-      variant: "warning",
-    };
-  }
-  return {
-    key: "visible",
-    label: "Visible",
-    description: "Available on public catalog surfaces.",
-    variant: "success",
-  };
 }

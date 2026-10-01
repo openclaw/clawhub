@@ -4,14 +4,23 @@ import {
 } from "clawhub-schema";
 import type {
   BundlePublishMetadata,
-  PackageCapabilitySummary,
   PackageCompatibility,
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import type { ActionCtx } from "../_generated/server";
+import {
+  formatReservedUnscopedPackageNameMessage,
+  isReservedUnscopedPackageName,
+} from "./publicRouteReservations";
 import { getFrontmatterValue, parseFrontmatter, sanitizePath } from "./skills";
+
+export const REAL_BUNDLE_MANIFESTS = [
+  { path: ".codex-plugin/plugin.json", format: "codex" },
+  { path: ".claude-plugin/plugin.json", format: "claude" },
+  { path: ".cursor-plugin/plugin.json", format: "cursor" },
+] as const;
 
 const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
@@ -35,6 +44,13 @@ type SourceInfo = {
 
 type JsonRecord = Record<string, unknown>;
 
+type PluginManifestSummaryFile = {
+  path: string;
+  size: number;
+  sha256: string;
+  text?: string;
+};
+
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -53,29 +69,314 @@ function normalizeStringList(input: unknown): string[] {
 }
 
 function normalizeNamedList(input: unknown): string[] {
-  if (!Array.isArray(input)) return normalizeStringList(input);
+  if (!Array.isArray(input)) return [];
   return input
-    .map((value) => {
-      if (typeof value === "string") return value.trim();
-      if (isRecord(value) && typeof value.name === "string") return value.name.trim();
-      return "";
-    })
-    .filter(Boolean);
+    .map((value) =>
+      typeof value === "string"
+        ? value.trim()
+        : isRecord(value)
+          ? optionalString(value.name)
+          : undefined,
+    )
+    .filter(Boolean) as string[];
 }
 
 function uniq(items: Array<string | undefined | null>) {
   return [...new Set(items.map((item) => item?.trim()).filter(Boolean) as string[])];
 }
 
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function pathDerivedName(path: string) {
+  const segment = path.split("/").filter(Boolean).at(-1) ?? path;
+  return segment.trim() || path;
+}
+
+function normalizeSkillRootPath(value: unknown) {
+  const raw =
+    typeof value === "string"
+      ? value
+      : isRecord(value)
+        ? (optionalString(value.path) ??
+          optionalString(value.root) ??
+          optionalString(value.rootPath))
+        : undefined;
+  if (!raw) return null;
+  const normalized = sanitizePath(raw)
+    ?.replace(/^(?:\.\/)+/, "")
+    .replace(/\/+$/, "");
+  return normalized === "" ? "." : (normalized ?? null);
+}
+
+function normalizeSkillRootPaths(input: unknown) {
+  const values = Array.isArray(input) ? input : input ? [input] : [];
+  return uniq(values.map(normalizeSkillRootPath));
+}
+
+function findSkillMarkdownFile(files: PluginManifestSummaryFile[], rootPath: string) {
+  const expected = rootPath === "." ? "SKILL.md" : `${rootPath}/SKILL.md`;
+  const expectedLower = expected.toLowerCase();
+  return (
+    files.find((file) => file.path.replace(/^(?:\.\/)+/, "") === expected) ??
+    files.find((file) => file.path.replace(/^(?:\.\/)+/, "").toLowerCase() === expectedLower) ??
+    null
+  );
+}
+
+function skillRootPathFromMarkdownFile(filePath: string) {
+  return (
+    filePath
+      .replace(/^(?:\.\/)+/, "")
+      .split("/")
+      .slice(0, -1)
+      .join("/") || "."
+  );
+}
+
+function findSkillMarkdownFiles(files: PluginManifestSummaryFile[], rootPath: string) {
+  const exact = findSkillMarkdownFile(files, rootPath);
+  if (exact) return [{ rootPath, file: exact }];
+
+  const directoryPrefix = rootPath === "." ? "" : `${rootPath.toLowerCase()}/`;
+  const seen = new Set<string>();
+  return files
+    .filter((file) => {
+      const lowerPath = file.path.replace(/^(?:\.\/)+/, "").toLowerCase();
+      return lowerPath.startsWith(directoryPrefix) && lowerPath.endsWith("/skill.md");
+    })
+    .map((file) => ({
+      rootPath: skillRootPathFromMarkdownFile(file.path),
+      file,
+    }))
+    .filter((entry) => {
+      const key = entry.file.path.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function extractCompatibilityFromManifest(
+  manifest: JsonRecord,
+  fallback?: PackageCompatibility,
+): PackageCompatibility | undefined {
+  const normalized = normalizeOpenClawExternalPluginCompatibility({ openclaw: manifest.openclaw });
+  const compatibility = {
+    pluginApiRange: normalized?.pluginApiRange ?? fallback?.pluginApiRange,
+    builtWithOpenClawVersion:
+      normalized?.builtWithOpenClawVersion ?? fallback?.builtWithOpenClawVersion,
+    pluginSdkVersion: normalized?.pluginSdkVersion ?? fallback?.pluginSdkVersion,
+    minGatewayVersion: normalized?.minGatewayVersion ?? fallback?.minGatewayVersion,
+  };
+  const entries = Object.entries(compatibility).filter(
+    (entry): entry is [keyof PackageCompatibility, string] =>
+      typeof entry[1] === "string" && entry[1].trim().length > 0,
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function extractManifestIdentity(manifest: JsonRecord) {
+  const identity = {
+    name: optionalString(manifest.name),
+    description: optionalString(manifest.description),
+    version: optionalString(manifest.version),
+    family: optionalString(manifest.family),
+  };
+  const entries = Object.entries(identity).filter(
+    (entry): entry is [keyof typeof identity, string] => Boolean(entry[1]),
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function isSensitiveConfigProperty(name: string, property: JsonRecord) {
+  if (property.sensitive === true || property.secret === true || property["x-sensitive"] === true) {
+    return true;
+  }
+  if (isRecord(property.uiHints) && property.uiHints.sensitive === true) {
+    return true;
+  }
+  const loweredName = name.toLowerCase();
+  if (/(secret|token|api[_-]?key|password|credential)/.test(loweredName)) return true;
+  const format = optionalString(property.format)?.toLowerCase();
+  return format === "password" || format === "secret";
+}
+
+const CONFIG_SCHEMA_META_KEYS = new Set([
+  "$schema",
+  "$defs",
+  "additionalProperties",
+  "definitions",
+  "description",
+  "dependentSchemas",
+  "patternProperties",
+  "properties",
+  "required",
+  "title",
+  "type",
+  "uiHints",
+]);
+
+function isLikelyDirectConfigFieldProperty(value: JsonRecord) {
+  return (
+    optionalString(value.type) !== undefined ||
+    optionalString(value.description) !== undefined ||
+    optionalString(value.format) !== undefined ||
+    value.required === true ||
+    value.required === false ||
+    value.sensitive === true ||
+    value.secret === true ||
+    value["x-sensitive"] === true ||
+    isRecord(value.uiHints)
+  );
+}
+
+function extractConfigFields(manifest: JsonRecord) {
+  const openclaw = isRecord(manifest.openclaw) ? manifest.openclaw : undefined;
+  const schema = isRecord(manifest.configSchema)
+    ? manifest.configSchema
+    : isRecord(openclaw?.configSchema)
+      ? openclaw.configSchema
+      : undefined;
+  if (!schema) return [];
+  const required = new Set(normalizeStringList(schema.required));
+  const shouldReadDirectMap =
+    !isRecord(schema.properties) &&
+    optionalString(schema.type) === undefined &&
+    optionalString(schema["$schema"]) === undefined;
+  const properties = isRecord(schema.properties)
+    ? schema.properties
+    : shouldReadDirectMap
+      ? Object.fromEntries(
+          Object.entries(schema).filter(
+            ([name, value]) =>
+              !CONFIG_SCHEMA_META_KEYS.has(name) &&
+              isRecord(value) &&
+              isLikelyDirectConfigFieldProperty(value),
+          ),
+        )
+      : {};
+  return Object.entries(properties)
+    .filter((entry): entry is [string, JsonRecord] => isRecord(entry[1]))
+    .map(([name, property]) => ({
+      name,
+      ...(optionalString(property.description)
+        ? { description: optionalString(property.description) }
+        : {}),
+      required: required.has(name) || property.required === true,
+      sensitive: isSensitiveConfigProperty(name, property),
+    }));
+}
+
+function extractMcpServerNames(manifest: JsonRecord) {
+  const raw = manifest.mcpServers ?? manifest.mcp;
+  if (Array.isArray(raw)) return uniq(normalizeNamedList(raw));
+  if (isRecord(raw))
+    return Object.keys(raw)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .sort();
+  return [];
+}
+
+function parseSkillMarkdownMetadata(text: string | undefined) {
+  if (!text) return {};
+  const frontmatter = parseFrontmatter(text);
+  return {
+    name: optionalString(getFrontmatterValue(frontmatter, "name")),
+    description: optionalString(getFrontmatterValue(frontmatter, "description")),
+  };
+}
+
+function declaredCapabilityNames(value: unknown): string[] {
+  return Array.isArray(value)
+    ? uniq(value.filter((entry): entry is string => typeof entry === "string")).sort()
+    : [];
+}
+
+export function derivePluginManifestSummary(params: {
+  pluginManifest: JsonRecord;
+  skillManifest?: JsonRecord;
+  files: PluginManifestSummaryFile[];
+  compatibility?: PackageCompatibility;
+  categories?: readonly string[];
+}) {
+  const compatibility = extractCompatibilityFromManifest(
+    params.pluginManifest,
+    params.compatibility,
+  );
+  const manifestIdentity = extractManifestIdentity(params.pluginManifest);
+  const contracts = Object.fromEntries(
+    Object.entries(isRecord(params.pluginManifest.contracts) ? params.pluginManifest.contracts : {})
+      // Convex record keys cannot be reserved, empty, non-ASCII, or longer than 1024 characters.
+      .filter(([key]) => /^(?![$_])[ -~]{1,1024}$/.test(key))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [key, declaredCapabilityNames(value)] as const)
+      .filter(([, names]) => names.length > 0),
+  );
+  const providers = declaredCapabilityNames(params.pluginManifest.providers);
+  const channels = declaredCapabilityNames(params.pluginManifest.channels);
+  const skillManifest = params.skillManifest ?? params.pluginManifest;
+  const skillRoots = uniq([
+    ...normalizeSkillRootPaths(skillManifest.skills),
+    ...normalizeSkillRootPaths(skillManifest.bundledSkills),
+  ]);
+  const bundledSkills = skillRoots
+    .flatMap((rootPath) => findSkillMarkdownFiles(params.files, rootPath))
+    .map(({ rootPath, file }) => {
+      const metadata = parseSkillMarkdownMetadata(file.text);
+      return {
+        name: metadata.name ?? pathDerivedName(rootPath),
+        ...(metadata.description ? { description: metadata.description } : {}),
+        rootPath,
+        // Preserve the signed inventory path for exact file reads.
+        skillMdPath: file.path,
+        sha256: file.sha256,
+        size: file.size,
+      };
+    })
+    .filter((entry, index, entries) => {
+      const firstIndex = entries.findIndex(
+        (candidate) => candidate.skillMdPath.toLowerCase() === entry.skillMdPath.toLowerCase(),
+      );
+      return firstIndex === index;
+    });
+
+  return {
+    schemaVersion: 1 as const,
+    ...(params.categories ? { categories: [...params.categories] } : {}),
+    ...(compatibility ? { compatibility } : {}),
+    ...(manifestIdentity ? { manifestIdentity } : {}),
+    ...(Object.keys(contracts).length ? { contracts } : {}),
+    ...(providers.length ? { providers } : {}),
+    ...(channels.length ? { channels } : {}),
+    configFields: extractConfigFields(params.pluginManifest),
+    mcpServers: extractMcpServerNames(params.pluginManifest).map((name) => ({ name })),
+    bundledSkills,
+  };
+}
+
 export function normalizePackageName(name: string) {
   const trimmed = name.trim();
   if (!trimmed) throw new ConvexError("Package name required");
-  const normalized = trimmed.toLowerCase();
-  if (!PACKAGE_NAME_PATTERN.test(normalized)) {
+  const normalized = tryNormalizePackageName(trimmed);
+  if (!normalized) {
     throw new ConvexError(
       "Package name must be lowercase and npm-safe (example: @scope/name or plugin-name)",
     );
   }
+  if (!normalized.startsWith("@") && isReservedUnscopedPackageName(normalized)) {
+    throw new ConvexError(formatReservedUnscopedPackageNameMessage(normalized));
+  }
+  return normalized;
+}
+
+export function tryNormalizePackageName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.toLowerCase();
+  if (!PACKAGE_NAME_PATTERN.test(normalized)) return null;
   return normalized;
 }
 
@@ -89,13 +390,17 @@ export function normalizePublishFiles(files: PublishFile[]) {
 }
 
 export function assertPackageVersion(
-  family: "code-plugin" | "bundle-plugin" | "skill",
+  family: "code-plugin" | "bundle-plugin" | "skill" | "claw",
   version: string,
 ) {
   const trimmed = version.trim();
   if (!trimmed) throw new ConvexError("Version required");
-  if (family === "code-plugin" && !semver.valid(trimmed)) {
-    throw new ConvexError("Code plugin versions must be valid semver");
+  if ((family === "code-plugin" || family === "claw") && !semver.valid(trimmed)) {
+    throw new ConvexError(
+      family === "claw"
+        ? "Claw versions must be valid semver"
+        : "Code plugin versions must be valid semver",
+    );
   }
   return trimmed;
 }
@@ -103,22 +408,39 @@ export function assertPackageVersion(
 export async function readStorageText(
   ctx: Pick<ActionCtx, "storage">,
   storageId: string,
+  options: { maxBytes?: number; label?: string; strictUtf8?: boolean } = {},
 ): Promise<string> {
   const blob = await ctx.storage.get(storageId as never);
   if (!blob) throw new ConvexError("Uploaded file no longer exists");
-  return await blob.text();
+  if (options.maxBytes !== undefined && blob.size > options.maxBytes) {
+    throw new ConvexError(`${options.label ?? "Uploaded text file"} exceeds byte limit`);
+  }
+  if (!options.strictUtf8) return await blob.text();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(await blob.arrayBuffer());
+  } catch {
+    throw new ConvexError(`${options.label ?? "Uploaded text file"} must be valid UTF-8`);
+  }
 }
 
 export async function readOptionalTextFile(
   ctx: Pick<ActionCtx, "storage">,
   files: PublishFile[],
   pathMatch: (path: string) => boolean,
+  options: {
+    exactPath?: boolean;
+    maxBytes?: number;
+    label?: string;
+    strictUtf8?: boolean;
+  } = {},
 ) {
-  const file = files.find((entry) => pathMatch(entry.path.toLowerCase()));
+  const file = files.find((entry) =>
+    pathMatch(options.exactPath ? entry.path : entry.path.toLowerCase()),
+  );
   if (!file) return null;
   return {
     file,
-    text: await readStorageText(ctx, file.storageId),
+    text: await readStorageText(ctx, file.storageId, options),
   };
 }
 
@@ -166,6 +488,15 @@ function buildVerification(source: SourceInfo | undefined): PackageVerificationS
       scanStatus: "not-run",
     };
   }
+  // `source.path` is the package directory inside the source repo (e.g.
+  // "examples/openclaw-plugin"). When the package lives at the repo root the
+  // CLI sends "." (or empty), and there's nothing useful to serialize. Only
+  // promote real subpaths into `verification.sourcePath` so consumers can
+  // build a `raw.githubusercontent.com/<repo>/<sha>/<path>/` base URL for
+  // resolving relative README asset references.
+  const rawPath = typeof source.path === "string" ? source.path.trim() : "";
+  const sourcePath =
+    rawPath && rawPath !== "." ? rawPath.replace(/^\/+/, "").replace(/\/+$/, "") : undefined;
   return {
     tier: "source-linked",
     scope: "artifact-only",
@@ -173,6 +504,7 @@ function buildVerification(source: SourceInfo | undefined): PackageVerificationS
     sourceRepo: source.repo || source.url,
     sourceCommit: source.commit,
     sourceTag: source.ref,
+    sourcePath: sourcePath || undefined,
     hasProvenance: false,
     scanStatus: "not-run",
   };
@@ -210,33 +542,6 @@ export function extractCodePluginArtifacts(params: {
     throw new ConvexError(`package.json ${missingOpenClawFields[0]} is required`);
   }
 
-  const channels = uniq([
-    ...normalizeStringList(params.pluginManifest.channels),
-    ...normalizeStringList(openclaw?.channels),
-  ]);
-  const providers = uniq([
-    ...normalizeStringList(params.pluginManifest.providers),
-    ...normalizeStringList(openclaw?.providers),
-  ]);
-  const hooks = uniq([
-    ...normalizeNamedList(params.pluginManifest.hooks),
-    ...normalizeNamedList(params.pluginManifest.typedHooks),
-    ...normalizeNamedList(params.pluginManifest.customHooks),
-    ...normalizeNamedList(params.pluginManifest.events),
-  ]);
-  const toolNames = uniq([
-    ...normalizeNamedList(params.pluginManifest.tools),
-    ...normalizeNamedList(openclaw?.tools),
-  ]);
-  const commandNames = uniq(normalizeNamedList(params.pluginManifest.commands));
-  const serviceNames = uniq(normalizeNamedList(params.pluginManifest.services));
-  const bundledSkills = uniq(normalizeNamedList(params.pluginManifest.bundledSkills));
-
-  const httpRouteCount = Array.isArray(params.pluginManifest.httpRoutes)
-    ? params.pluginManifest.httpRoutes.length
-    : Array.isArray(params.pluginManifest.routes)
-      ? params.pluginManifest.routes.length
-      : 0;
   const hasConfigSchema =
     typeof params.pluginManifest.configSchema === "string" ||
     isRecord(params.pluginManifest.configSchema) ||
@@ -245,43 +550,9 @@ export function extractCodePluginArtifacts(params: {
     throw new ConvexError("Code plugins must declare a config schema");
   }
 
-  const capabilities: PackageCapabilitySummary = {
-    executesCode: true,
-    runtimeId,
-    pluginKind:
-      typeof params.pluginManifest.kind === "string"
-        ? params.pluginManifest.kind.trim()
-        : undefined,
-    channels,
-    providers,
-    hooks,
-    bundledSkills,
-    setupEntry:
-      typeof params.pluginManifest.setupEntry === "string" ||
-      typeof openclaw?.setupEntry === "string",
-    configSchema: hasConfigSchema,
-    configUiHints:
-      isRecord(params.pluginManifest.configUiHints) || isRecord(openclaw?.configUiHints),
-    materializesDependencies: Boolean(openclaw?.materializesDependencies),
-    toolNames,
-    commandNames,
-    serviceNames,
-    httpRouteCount,
-  };
-
-  capabilities.capabilityTags = uniq([
-    "executes-code",
-    capabilities.pluginKind ? `kind:${capabilities.pluginKind}` : null,
-    ...channels.map((entry) => `channel:${entry}`),
-    ...providers.map((entry) => `provider:${entry}`),
-    ...(capabilities.setupEntry ? ["setup"] : []),
-    ...(toolNames.length > 0 ? ["tools"] : []),
-  ]);
-
   return {
     runtimeId,
     compatibility,
-    capabilities,
     verification: buildVerification(params.source),
   };
 }
@@ -289,46 +560,19 @@ export function extractCodePluginArtifacts(params: {
 export function extractBundlePluginArtifacts(params: {
   packageName: string;
   packageJson?: JsonRecord;
+  pluginManifest: JsonRecord;
   bundleManifest?: JsonRecord;
   bundleMetadata?: BundlePublishMetadata;
   source?: SourceInfo;
 }) {
-  const openclaw = isRecord(params.packageJson?.openclaw) ? params.packageJson.openclaw : undefined;
-  const manifest = params.bundleManifest;
   const runtimeId =
-    (typeof manifest?.id === "string" && manifest.id.trim()) ||
+    (typeof params.pluginManifest.id === "string" && params.pluginManifest.id.trim()) ||
     params.bundleMetadata?.id?.trim() ||
     params.packageName;
-  const hostTargets = uniq([
-    ...normalizeStringList(manifest?.hostTargets),
-    ...normalizeStringList(openclaw?.hostTargets),
-    ...(params.bundleMetadata?.hostTargets ?? []),
-  ]);
-  const bundleFormat =
-    (typeof manifest?.format === "string" && manifest.format.trim()) ||
-    (typeof openclaw?.bundleFormat === "string" && openclaw.bundleFormat.trim()) ||
-    params.bundleMetadata?.format?.trim() ||
-    "generic";
-  if (hostTargets.length === 0) {
-    throw new ConvexError("Bundle plugins must declare at least one host target");
-  }
-
-  const capabilities: PackageCapabilitySummary = {
-    executesCode: false,
-    runtimeId,
-    bundleFormat,
-    hostTargets,
-    capabilityTags: uniq([
-      "bundle-only",
-      bundleFormat ? `format:${bundleFormat}` : null,
-      ...hostTargets.map((entry) => `host:${entry}`),
-    ]),
-  };
 
   return {
     runtimeId,
     compatibility: extractCompatibility(params.packageJson),
-    capabilities,
     verification: buildVerification(params.source),
   };
 }
@@ -358,4 +602,27 @@ export function maybeParseJson(text: string | null | undefined) {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   return parseJsonFile(trimmed, "JSON file");
+}
+
+export function toConvexSafeJsonValue(
+  value: unknown,
+  options: { maxDepth?: number } = {},
+  depth = 0,
+): unknown {
+  const maxDepth = options.maxDepth ?? Number.POSITIVE_INFINITY;
+  if (depth >= maxDepth) return "[truncated]";
+  if (Array.isArray(value)) {
+    return value.map((item) => toConvexSafeJsonValue(item, options, depth + 1));
+  }
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key.startsWith("$")
+        ? `dollar_${key.slice(1)}`
+        : key.startsWith("_")
+          ? `underscore_${key.slice(1)}`
+          : key,
+      toConvexSafeJsonValue(nested, options, depth + 1),
+    ]),
+  );
 }

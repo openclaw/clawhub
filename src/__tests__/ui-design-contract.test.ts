@@ -1,0 +1,640 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const root = process.cwd();
+
+function read(path: string) {
+  return readFileSync(join(root, path), "utf8");
+}
+
+function cssRule(css: string, selector: string) {
+  const start = css.indexOf(`${selector} {`);
+  expect(start, `Missing CSS rule for ${selector}`).toBeGreaterThanOrEqual(0);
+  const end = css.indexOf("\n}", start);
+  expect(end, `Unclosed CSS rule for ${selector}`).toBeGreaterThan(start);
+  return css.slice(start, end + 2);
+}
+
+function cssMediaContaining(css: string, query: string, required: readonly string[]) {
+  let start = css.indexOf(`@media ${query}`);
+  while (start >= 0) {
+    const block = balancedCssBlock(css, start, `@media ${query}`);
+    if (required.every((snippet) => block.includes(snippet))) return block;
+    start = css.indexOf(`@media ${query}`, start + 1);
+  }
+
+  throw new Error(`Missing media query ${query} containing ${required.join(", ")}`);
+}
+
+function cssBlock(css: string, selector: string) {
+  const start = css.indexOf(`${selector} {`);
+  expect(start, `Missing CSS block for ${selector}`).toBeGreaterThanOrEqual(0);
+  const end = css.indexOf("\n}", start);
+  expect(end, `Unclosed CSS block for ${selector}`).toBeGreaterThan(start);
+  return css.slice(start, end + 2);
+}
+
+function balancedCssBlock(css: string, start: number, label: string) {
+  const open = css.indexOf("{", start);
+  expect(open, `Missing opening brace for ${label}`).toBeGreaterThanOrEqual(0);
+
+  let depth = 0;
+  for (let index = open; index < css.length; index += 1) {
+    if (css[index] === "{") depth += 1;
+    if (css[index] !== "}") continue;
+
+    depth -= 1;
+    if (depth === 0) return css.slice(start, index + 1);
+  }
+
+  throw new Error(`Unclosed CSS block for ${label}`);
+}
+
+function tokenValue(css: string, selector: string, token: string) {
+  const block = cssBlock(css, selector);
+  const match = block.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})`));
+  expect(match, `Missing ${token} in ${selector}`).toBeTruthy();
+  return match![1];
+}
+
+function relativeLuminance(hex: string) {
+  const channels = [1, 3, 5].map((index) => {
+    const channel = Number.parseInt(hex.slice(index, index + 2), 16) / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastRatio(foreground: string, background: string) {
+  const fg = relativeLuminance(foreground);
+  const bg = relativeLuminance(background);
+  const lighter = Math.max(fg, bg);
+  const darker = Math.min(fg, bg);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+describe("restored UI design contract", () => {
+  const rootRoute = () => read("src/routes/__root.tsx");
+  const header = () => read("src/components/Header.tsx");
+  const footer = () => read("src/components/Footer.tsx");
+  const home = () => read("src/routes/index.tsx");
+  const navItems = () => read("src/lib/nav-items.ts");
+  const publicRegistry = () => read("src/lib/publicRegistry.ts");
+  const settings = () => read("src/routes/settings.tsx");
+  const styles = () => read("src/styles.css");
+  const designSystemStyles = () => read("src/design-system.css");
+  const theme = () => read("src/lib/theme.ts");
+
+  it("loads the shared OpenClaw token adapter after the legacy application stylesheet", () => {
+    const rootSource = rootRoute();
+    const sharedCss = designSystemStyles();
+
+    expect(sharedCss).toContain('@import "@openclaw/carapace/tokens.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/typography.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/themes/product.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/components.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/compat/clawhub.css";');
+    expect(sharedCss).toContain(".home-v2-main.oc-app-surface");
+    expect(sharedCss).toContain("--hv2-bg: var(--oc-bg-page)");
+    expect(sharedCss).toContain("--hv2-text: var(--oc-text-primary)");
+    expect(sharedCss).toContain("--hv2-accent: var(--oc-accent-primary)");
+    expect(sharedCss).toContain("--hv2-radius-md: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-control)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-inset)");
+    expect(sharedCss).toContain("@media (max-width: 760px)");
+    expect(sharedCss).toContain(
+      ".home-v2-main .home-v2-popular-publishers-header.oc-section-header",
+    );
+    expect(sharedCss).toContain('[data-theme-family="claw"][data-theme-resolved="light"]');
+    expect(sharedCss).toContain("--accent: var(--oc-accent-primary)");
+    expect(sharedCss).toContain('[data-theme-family="claw"][data-theme-mode="system"]');
+    expect(rootSource.indexOf("href: designSystemCss")).toBeGreaterThan(
+      rootSource.indexOf("href: appCss"),
+    );
+  });
+
+  it("uses semantic design-system geometry across landing controls and surfaces", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".promotion-bar-icon")).toContain("border-radius: var(--oc-radius-inset)");
+    expect(cssRule(css, ".home-v2-apps-workflow-tile")).toContain(
+      "border-radius: var(--oc-radius-surface)",
+    );
+    expect(cssRule(css, ".home-v2-apps-tile-icon")).toContain(
+      "border-radius: var(--oc-radius-inset)",
+    );
+    for (const selector of [
+      "\n.marketplace-icon",
+      ".browse-page .browse-results-grid .skill-card-header .marketplace-icon",
+      ".home-v2-listing-card-icon .marketplace-icon",
+      ".home-v2-listing-row-icon .marketplace-icon",
+      ".home-v2-popular-publisher-card .marketplace-icon",
+      ".navbar-search-typeahead-icon .marketplace-icon",
+      ".browse-page .dashboard-catalog-row-icon .marketplace-icon",
+    ]) {
+      expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-inset)");
+    }
+    expect(cssRule(css, ".marketplace-icon-user")).toContain(
+      "border-radius: var(--oc-radius-round)",
+    );
+  });
+
+  it("removes discovery icon columns on mobile while preserving plugin icons on desktop", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".home-v2-listing-row-with-icon")).toContain("grid-template-columns: auto");
+    expect(cssRule(css, ".browse-page .browse-results-grid .skill-card-header")).toContain(
+      "grid-template-columns: auto",
+    );
+
+    const homeMobile = cssMediaContaining(css, "(max-width: 768px)", [
+      ".home-v2-listing-row.home-v2-listing-row-with-icon",
+      ".home-v2-listing .browse-results-skeleton-icon",
+    ]);
+    expect(homeMobile).toContain(
+      "grid-template-columns: minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;",
+    );
+    expect(homeMobile).toMatch(
+      /\.home-v2-listing-head-with-icon \.home-v2-listing-head-icon-spacer,\s*\.home-v2-listing-row-with-icon \.home-v2-listing-row-icon,\s*\.home-v2-listing \.browse-list-head-icon-spacer,\s*\.home-v2-listing \.browse-results-skeleton-icon\s*\{\s*display:\s*none;/,
+    );
+
+    const browseMobile = cssMediaContaining(css, "(max-width: 760px)", [
+      ".plugins-browse-page .browse-results-grid .skill-card-header > .marketplace-icon",
+      ".browse-page .browse-results-skeleton-icon",
+    ]);
+    expect(browseMobile).toMatch(
+      /\.browse-page \.skill-list-item > \.marketplace-icon,\s*\.skills-browse-page \.browse-results-grid \.skill-card-header > \.marketplace-icon,\s*\.plugins-browse-page \.browse-results-grid \.skill-card-header > \.marketplace-icon,\s*\.browse-page \.browse-results-skeleton-icon\s*\{\s*display:\s*none;/,
+    );
+    expect(browseMobile).toMatch(
+      /\.skills-browse-page \.browse-results-grid \.skill-card-header,\s*\.plugins-browse-page \.browse-results-grid \.skill-card-header\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+  });
+
+  it("keeps metric headers visible when responsive category columns collapse", () => {
+    const css = styles();
+
+    for (const query of ["(max-width: 960px)", "(max-width: 760px)"]) {
+      const responsive = cssMediaContaining(css, query, [
+        ".browse-page .browse-list-head-category",
+      ]);
+      expect(responsive).not.toContain(".browse-page .browse-list-head-label:nth-of-type(3)");
+    }
+  });
+
+  it("keeps dashboard package names inside their rows and attention cards", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".dashboard-catalog-row .skill-list-item-name")).toContain(
+      "max-width: min(48ch, 100%)",
+    );
+    expect(
+      cssRule(css, ".dashboard-final .dashboard-attention-row .skill-list-item-name"),
+    ).toContain("max-width: 100%");
+  });
+
+  it("keeps the homepage CLI band full bleed after design-system styles load", () => {
+    const css = styles();
+    const cliBand = cssRule(css, ".home-v2-byos.oc-section");
+
+    expect(cliBand).toContain("width: 100vw");
+    expect(cliBand).toContain("max-width: none");
+  });
+
+  it("uses a dedicated hero image in light mode", () => {
+    const css = styles();
+
+    expect(existsSync(join(root, "public/home-hero-claw-light.webp"))).toBe(true);
+    expect(cssRule(css, '[data-theme-resolved="light"] .home-v2-hero-bg')).toContain("opacity: 1");
+    expect(cssRule(css, '[data-theme-resolved="light"] .home-v2-hero-bg::before')).toContain(
+      'background-image: url("/home-hero-claw-light.webp")',
+    );
+    expect(cssRule(css, '[data-theme-resolved="light"] .home-v2-hero-bg::before')).toContain(
+      "filter: none",
+    );
+  });
+
+  it("keeps browse segmented labels stable across active state changes", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".browse-tab")).toContain("font-weight: 600");
+    expect(cssRule(css, ".browse-tab.is-active")).not.toContain("font-weight");
+  });
+
+  it("keeps shared segmented controls visually quiet across homepage variants", () => {
+    const css = styles();
+
+    expect(css).toContain("--clawhub-segmented-border: color-mix(in srgb, var(--line) 58%");
+    expect(css).toContain("--clawhub-segmented-border: color-mix(in srgb, var(--hv2-border) 72%");
+    expect(css).not.toContain("--clawhub-segmented-border: var(--hv2-border-strong)");
+    expect(cssRule(css, ".clawhub-segmented")).toContain(
+      "border: 1px solid var(--clawhub-segmented-border)",
+    );
+    expect(cssRule(css, ".clawhub-segmented")).toContain("border-radius: var(--oc-radius-control)");
+    expect(
+      cssRule(
+        css,
+        ".clawhub-segmented-btn,\n.home-v2-listing-kind-btn,\n.home-v2-listing-view-btn,\n.browse-view-btn",
+      ),
+    ).toContain("border-radius: var(--oc-radius-inset)");
+    expect(cssRule(css, ".clawhub-segmented-btn.browse-view-btn")).toContain(
+      "width: var(--clawhub-segmented-seg-h)",
+    );
+  });
+
+  it("makes global toasts dismissible", () => {
+    const rootSource = rootRoute();
+    const css = styles();
+
+    expect(rootSource).toContain("<Toaster");
+    expect(rootSource).toContain("closeButton");
+    expect(rootSource).toContain('closeButton: "clawhub-toast-close"');
+    expect(rootSource).toContain('paddingRight: "48px"');
+    expect(cssRule(css, '[data-sonner-toast][data-styled="true"] .clawhub-toast-close')).toContain(
+      "right: 14px !important",
+    );
+    expect(cssRule(css, '[data-sonner-toast][data-styled="true"] .clawhub-toast-close')).toContain(
+      "background: transparent !important",
+    );
+  });
+
+  it("keeps migrated application surfaces on canonical semantic tokens", () => {
+    const css = styles();
+    const sharedCss = designSystemStyles();
+
+    for (const legacyReference of [
+      "var(--danger)",
+      "var(--font-sans)",
+      "var(--ink-faint)",
+      "var(--surface-raised)",
+      "var(--transition-fast)",
+      "var(--card-border)",
+      "var(--color-muted)",
+      "var(--color-text)",
+    ]) {
+      expect(css).not.toContain(legacyReference);
+    }
+
+    expect(cssRule(css, ".dashboard-route")).toContain("--hv2-bg: var(--oc-bg-page)");
+    expect(cssRule(css, ".dashboard-route")).toContain("--hv2-radius-md: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("--status-pending-bg: var(--oc-surface-interactive)");
+    expect(sharedCss).toContain("--status-pending-fg: var(--oc-text-muted)");
+
+    for (const sourcePath of [
+      "src/components/SignInPrompt.tsx",
+      "src/components/SkillOwnershipPanel.tsx",
+      "src/routes/import.tsx",
+      "src/routes/settings.tsx",
+      "src/routes/skills/publish.tsx",
+    ]) {
+      expect(read(sourcePath)).not.toMatch(
+        /(?:text|bg|border)-(?:red|amber|emerald)-(?:\d+|\[[^\]]+\])/,
+      );
+    }
+  });
+
+  it("keeps Vercel browser instrumentation mounted outside local dev", () => {
+    const rootSource = rootRoute();
+
+    expect(rootSource).toContain('import { Analytics } from "@vercel/analytics/react";');
+    expect(rootSource).toContain('import { SpeedInsights } from "@vercel/speed-insights/react";');
+    expect(rootSource).toContain('!["localhost", "127.0.0.1", "::1"].includes');
+    expect(rootSource).toContain("{showAnalytics ? (");
+    expect(rootSource).toContain("<Analytics />");
+    expect(rootSource).toContain("<SpeedInsights />");
+  });
+
+  it("requires the responsive header rail, search overlay, and theme controls", () => {
+    const headerSource = header();
+    const navSource = navItems();
+    const publicRegistrySource = publicRegistry();
+    const css = styles();
+
+    expect(headerSource).toContain('className="navbar-top"');
+    expect(headerSource).toContain('className="navbar-calm-start"');
+    expect(headerSource).toContain('className="navbar-calm-center"');
+    expect(headerSource).toContain('className="navbar-calm-actions nav-actions"');
+    expect(headerSource).toContain('className="navbar-calm-rail"');
+    expect(headerSource).toContain('className="navbar-calm-more-trigger"');
+    expect(headerSource).toContain('className="navbar-search-wrap"');
+    expect(headerSource).toContain('className="navbar-search-mobile-trigger"');
+    expect(headerSource).toContain('className="navbar-search-mobile-overlay"');
+    expect(headerSource).toContain('className="navbar-search-mobile-wrap"');
+    expect(headerSource).toContain('className="navbar-search-mobile-clear"');
+    expect(headerSource).toContain('className="mobile-nav-section mobile-nav-appearance-section"');
+    expect(headerSource).toContain('className="user-dropdown-theme-row"');
+    expect(headerSource).toContain('className="user-dropdown-theme-button"');
+    expect(headerSource).toContain('className="navbar-theme-switcher"');
+    expect(headerSource).toContain('className="navbar-theme-switcher-skeleton"');
+    expect(headerSource).not.toContain('className="theme-mode-toggle"');
+    expect(headerSource).toContain('className="github-sign-in-button"');
+    expect(headerSource).toContain('className="sign-in-full-copy"');
+    expect(headerSource).toContain('className="sign-in-compact-copy"');
+    expect(headerSource).toContain("Search skills, plugins, and creators");
+    expect(headerSource).not.toContain('className="navbar-tabs-primary"');
+    expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
+
+    expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
+    expect(navSource).toContain('label: "Official"');
+    expect(navSource).toContain('label: "Docs"');
+    expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
+    expect(publicRegistrySource).toContain(
+      'export const CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/"',
+    );
+    expect(navSource).not.toContain('icon: "wrench"');
+    expect(navSource).not.toContain('icon: "plug"');
+    expect(navSource).not.toContain('label: "About"');
+    expect(navSource).not.toContain('label: "Stars"');
+    expect(navSource).not.toContain('label: "Management"');
+
+    const headerShell = cssRule(css, ".navbar-inner");
+    expect(headerShell).toContain("max-width: var(--page-max)");
+    expect(headerShell).toContain("padding: 0 var(--space-5)");
+
+    const topRow = cssRule(css, ".navbar-calm .navbar-top");
+    expect(topRow).toContain(
+      "grid-template-columns: minmax(0, 1fr) minmax(240px, 360px) minmax(0, 1fr)",
+    );
+    const rail = cssRule(css, ".navbar-calm .navbar-calm-rail");
+    expect(rail).toContain("display: flex");
+    const moreTrigger = cssRule(css, ".navbar-calm-more-trigger");
+    expect(moreTrigger).toContain("cursor: pointer");
+    expect(moreTrigger).toContain("border: 0");
+    const moreMenu = cssRule(css, ".navbar-calm-more-menu");
+    expect(moreMenu).toContain("border-radius: var(--r-md)");
+    expect(css).toContain(".navbar-theme-switcher {\n  --navbar-theme-ease");
+    expect(css).toContain("--navbar-theme-pad: 3px");
+    expect(css).toContain("--navbar-theme-outer-r: var(--oc-radius-control)");
+    expect(css).toContain("--navbar-theme-inner-r: var(--oc-radius-inset)");
+    expect(css).toContain("--navbar-theme-seg: 26px");
+    expect(css).toContain("height: var(--navbar-theme-collapsed-w)");
+    const mobileDrawerTheme = cssRule(css, ".mobile-nav-appearance-section .navbar-theme-switcher");
+    expect(mobileDrawerTheme).toContain("width: var(--navbar-theme-expanded-w)");
+    const userDropdown = cssRule(css, ".user-dropdown-content");
+    expect(userDropdown).toContain("border-radius: var(--r-md)");
+    expect(userDropdown).toContain("overflow: hidden");
+    const themeRow = cssRule(css, ".user-dropdown-theme-row");
+    expect(themeRow).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
+    const themeButton = cssRule(css, ".user-dropdown-theme-button");
+    expect(themeButton).toContain("justify-content: center");
+    expect(css).toContain("--r-btn: var(--r-sm)");
+
+    cssMediaContaining(css, "(max-width: 1100px)", [
+      ".navbar-calm-rail-link-secondary {\n    display: none;",
+      ".navbar-calm-more-trigger {\n    display: inline-flex;",
+    ]);
+    cssMediaContaining(css, "(max-width: 920px)", [
+      ".navbar-calm .navbar-calm-rail {\n    display: none;",
+      ".navbar-calm-center .navbar-search-wrap {\n    position: static;",
+      ".navbar-calm-center .navbar-search-typeahead {\n    top: calc(100% + 4px);",
+      "width: auto;",
+    ]);
+    cssMediaContaining(css, "(max-width: 760px)", [
+      "grid-template-columns: minmax(0, 1fr) auto",
+      ".navbar-calm-center {\n    display: none;",
+      ".navbar-calm .navbar-search-mobile-wrap {\n    display: block;",
+      ".navbar-calm .navbar-search-mobile-overlay {\n    all: unset;",
+      ".navbar-search-mobile-wrap .navbar-search-typeahead {\n    right: 0;",
+      ".navbar-calm-actions > .navbar-theme-switcher,\n  .navbar-calm-actions > .navbar-theme-switcher-skeleton {\n    display: none;",
+    ]);
+    const compactMobileTrigger = cssRule(css, ".navbar-calm .nav-mobile");
+    expect(compactMobileTrigger).toContain("display: inline-flex");
+    const compact = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
+    expect(compact).not.toContain(".navbar-search {\n    display: none;");
+  });
+
+  it("requires the static hero and canonical home catalog without later sections", () => {
+    const homeSource = home();
+    const listingSource = read("src/components/HomeListingSection.tsx");
+    const appsSource = read("src/components/HomeAppsSection.tsx");
+    const publishersSource = read("src/components/HomePopularPublishersSection.tsx");
+    const css = styles();
+
+    expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
+    expect(homeSource).toContain("home-v2-headline oc-hero-title");
+    expect(homeSource).toContain('<span className="home-v2-action-word home-v2-static-headline">');
+    expect(cssRule(css, ".home-v2-headline")).not.toMatch(/(?:cursor: default|user-select: none)/);
+    expect(cssRule(css, ".home-v2-static-headline")).toContain("color: var(--oc-accent-primary)");
+    expect(css.lastIndexOf(".home-v2-static-headline")).toBeGreaterThan(
+      css.lastIndexOf(".home-v2-action-word"),
+    );
+    expect(listingSource).toContain('className="home-v2-listing-list"');
+    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented oc-segmented");
+    expect(listingSource).toContain(
+      "home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item",
+    );
+    expect(listingSource).not.toContain("home-v2-listing-view");
+    expect(listingSource).not.toContain("HomeListingCategorySelect");
+    expect(listingSource).toContain("BrowseSearchTrigger");
+    expect(listingSource).toContain("BrowseCategorySelect");
+    expect(listingSource).toContain('label="Search catalog"');
+    expect(listingSource).not.toContain("BrowseSort");
+    expect(listingSource.indexOf('className="home-v2-listing-kind')).toBeLessThan(
+      listingSource.indexOf('className="home-v2-listing-sort"'),
+    );
+    expect(listingSource.indexOf('className="home-v2-listing-sort"')).toBeLessThan(
+      listingSource.indexOf('className="home-v2-listing-actions"'),
+    );
+    expect(appsSource).toContain('className="home-v2-apps-tile"');
+    expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
+    expect(appsSource).not.toContain('className="home-v2-apps-workflow-header oc-card"');
+    expect(publishersSource).toContain(
+      "home-v2-popular-publisher-card oc-card oc-card-interactive",
+    );
+    expect(publishersSource).toContain("Official creators");
+    expect(publishersSource).toContain("Explore skills and plugins from official creators.");
+    expect(cssRule(css, ".home-v2-popular-publishers-track")).toContain(
+      "grid-template-columns: repeat(6, minmax(0, 1fr))",
+    );
+    expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
+    expect(homeSource).not.toContain("Unleash.");
+    expect(homeSource).not.toContain("Ship.");
+    expect(homeSource).not.toContain("Build.");
+    expect(homeSource).not.toContain("Create.");
+    expect(homeSource).toContain("Discover skills and plugins from top creators");
+    expect(homeSource).not.toContain("home-v2-sub-stat");
+    expect(homeSource).toContain("HomeListingSection");
+    expect(homeSource).not.toContain("What are you looking for?");
+    expect(homeSource).not.toContain("Featured skills");
+    expect(homeSource).not.toContain("Trending Now");
+    expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
+    expect(cssRule(css, ".home-v2-listing-primary")).toContain("display: flex");
+    expect(cssRule(css, ".browse-controls-divider")).toContain("width: 1px");
+    expect(cssRule(css, ".browse-controls-divider")).toContain("height: 18px");
+    expect(cssRule(css, ".browse-controls-divider")).toContain("background: var(--line)");
+    expect(cssRule(css, ".home-v2-listing-actions")).toContain("margin-left: auto");
+    expect(cssRule(css, ".home-v2-listing-sort-tabs")).toContain("overflow-x: auto");
+    const mobileCatalog = cssMediaContaining(css, "(max-width: 768px)", [
+      ".home-v2-listing-toolbar {",
+      ".home-v2-listing-primary {",
+      ".home-v2-listing-actions {",
+    ]);
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-toolbar \{[^}]*display:\s*grid/s);
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-toolbar \{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/s,
+    );
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-primary \{[^}]*display:\s*contents/s);
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-primary > \.browse-controls-divider \{[^}]*display:\s*none/s,
+    );
+    expect(mobileCatalog).toMatch(/\.home-v2-listing-actions \{[^}]*display:\s*contents/s);
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-actions \.browse-search-trigger \{[^}]*grid-column:\s*3[^}]*grid-row:\s*1/s,
+    );
+    expect(mobileCatalog).toMatch(
+      /\.home-v2-listing-sort \{[^}]*grid-column:\s*1\s*\/\s*-1[^}]*grid-row:\s*2/s,
+    );
+    expect(cssRule(css, ".home-v2-listing-row::before")).toContain("border-radius: 0");
+  });
+
+  it("keeps the mobile app-category scroller within the page width", () => {
+    const mobileBlock = cssMediaContaining(styles(), "(max-width: 760px)", [
+      ".home-v2-apps-categories {",
+    ]);
+    const scroller = mobileBlock.match(/\.home-v2-apps-categories \{([^}]*)\}/)?.[1];
+
+    expect(scroller, "Missing .home-v2-apps-categories rule").toBeTruthy();
+    expect(scroller).toMatch(/width:\s*100%/);
+    expect(scroller).toMatch(/min-width:\s*0/);
+    expect(scroller).toMatch(/overflow-x:\s*auto/);
+  });
+
+  it("requires the restored footer columns and mobile section toggles", () => {
+    const footerSource = footer();
+    const navSource = navItems();
+    const css = styles();
+
+    expect(navSource).toContain('title: "Browse"');
+    expect(navSource).toContain('title: "Publish"');
+    expect(navSource).toContain('title: "Ecosystem"');
+    expect(navSource).toContain('title: "Community"');
+    expect(navSource).toContain('label: "Publish Skill"');
+    expect(navSource).toContain('label: "Publish Plugin"');
+    expect(navSource).toContain('label: "GitHub"');
+    expect(navSource).toContain('label: "OpenClaw"');
+    expect(navSource).toContain('label: "Status"');
+    expect(navSource).toContain('label: "Deployed on Vercel"');
+    expect(navSource).toContain('label: "Powered by Convex"');
+
+    expect(footerSource).toContain('className="footer-col-toggle"');
+    expect(footerSource).toContain("const ariaExpanded = isMobile ? isOpen : true");
+    expect(footerSource).toContain("aria-expanded={ariaExpanded}");
+    expect(footerSource).toContain("data-open={isOpen}");
+    expect(footerSource).toContain("toggleSection(section.title)");
+
+    cssMediaContaining(css, "(max-width: 760px)", [
+      ".footer-grid {\n    grid-template-columns: 1fr;",
+      ".footer-col-links {\n    display: none;",
+      '.footer-col-links[data-open="true"] {\n    display: flex;',
+    ]);
+  });
+
+  it("prevents reintroducing tweakcn overlays, custom visual preferences, or density controls", () => {
+    expect(existsSync(join(root, "src/lib/customTheme.ts"))).toBe(false);
+    expect(existsSync(join(root, "src/lib/preferences.ts"))).toBe(false);
+
+    const settingsSource = settings();
+    expect(settingsSource).not.toMatch(/tweakcn|custom theme|overlay/i);
+    expect(settingsSource).not.toMatch(/density|relaxed|high contrast|code font size/i);
+    expect(settingsSource).not.toMatch(/default view|experimental features/i);
+
+    const themeSource = theme();
+    expect(themeSource).toContain("cleanupLegacyVisualSettings");
+    expect(themeSource).toContain("LEGACY_CUSTOM_THEME_KEY");
+    expect(themeSource).toContain("LEGACY_PREFERENCES_KEY");
+    expect(themeSource).toContain("DEFAULT_THEME_SELECTION");
+    expect(themeSource).toContain("clearLegacyVisualCookies");
+  });
+
+  it("keeps runtime requirement text high contrast in both themes", () => {
+    const css = styles();
+    const designTokens = read("node_modules/@openclaw/carapace/styles/tokens.css");
+    const installCardSource = read("src/components/SkillInstallCard.tsx");
+
+    expect(installCardSource).toContain("requirements-env-row");
+    expect(cssRule(css, ".tab-body.skill-install-tabs")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-env-main code")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-token,\n.requirements-badge")).toContain(
+      "color: var(--ink)",
+    );
+
+    const darkRatio = contrastRatio(
+      tokenValue(designTokens, ":root", "--oc-palette-ink-50"),
+      tokenValue(designTokens, ":root", "--oc-palette-ink-900"),
+    );
+    const lightRatio = contrastRatio(
+      tokenValue(designTokens, ":root", "--oc-palette-paper-950"),
+      tokenValue(designTokens, ":root", "--oc-palette-paper-200"),
+    );
+
+    expect(darkRatio).toBeGreaterThanOrEqual(7);
+    expect(lightRatio).toBeGreaterThanOrEqual(7);
+  });
+
+  it("uses Carapace semantic tokens for metric trend lines", () => {
+    const css = styles();
+    const rootRule = cssRule(css, ":root");
+
+    expect(rootRule).toContain("--metric-trend-line: var(--oc-status-info-fg)");
+    expect(rootRule).toContain(
+      "--metric-trend-area: color-mix(in srgb, var(--oc-status-info-fg) 18%, transparent)",
+    );
+    expect(rootRule).toContain("--metric-trend-marker: var(--oc-chart-line)");
+    expect(cssRule(css, ".metric-trend-chart")).toContain("color: var(--metric-trend-line)");
+    expect(cssRule(css, ".metric-trend-marker-line")).toContain(
+      "stroke: var(--metric-trend-marker)",
+    );
+    expect(css).not.toMatch(/#(?:8eb8e8|4a7fd0|6b9fd4)/i);
+  });
+
+  it("keeps detail heroes full width unless an explicit sidebar is present", () => {
+    const shellSource = read("src/components/DetailPageShell.tsx");
+    const css = styles();
+
+    expect(shellSource).toContain('"skill-hero-layout has-sidebar"');
+    expect(cssRule(css, ".skill-hero-layout")).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(cssRule(css, ".skill-hero-lower.has-sidebar")).toContain(
+      "grid-template-columns: minmax(0, 1fr) minmax(300px, 360px)",
+    );
+    expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow-x: clip");
+    expect(cssRule(css, ".skill-install-command-shell")).toContain("max-width: 100%");
+    expect(cssRule(css, ".skill-hero-action-grid")).toContain(
+      "grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
+    );
+  });
+
+  it("keeps the promotion bar thin and horizontally bounded", () => {
+    const rootSource = rootRoute();
+    const css = styles();
+
+    expect(rootSource.indexOf("<PromotionsBar />")).toBeLessThan(rootSource.indexOf("<Header />"));
+    expect(cssRule(css, ".promotion-bar-track")).toContain("min-height: 36px");
+    expect(cssRule(css, ".promotion-bar-track")).toContain("overflow-x: auto");
+    expect(cssRule(css, ".promotion-bar-item")).toContain("min-width: min(100%, 520px)");
+    expect(css).toContain("min-width: 100%");
+  });
+
+  it("keeps typeahead creator avatars round for users and square for orgs", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user")).toContain(
+      "border-radius: var(--oc-radius-round)",
+    );
+    expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org")).toContain(
+      "border-radius: var(--oc-radius-inset)",
+    );
+    expect(
+      cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image"),
+    ).toContain("filter: none");
+    expect(
+      cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org .marketplace-icon-image"),
+    ).toContain("filter: grayscale(1)");
+    expect(
+      cssRule(
+        css,
+        ".navbar-search-typeahead-icon .marketplace-icon-user:has(.marketplace-icon-image)",
+      ),
+    ).toContain("background: transparent");
+  });
+});

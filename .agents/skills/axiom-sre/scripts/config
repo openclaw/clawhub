@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# Unified config reader for axiom-sre
+# Usage: eval "$(config <tool> <deployment>)"
+#        config --list <tool>
+#        config --list-tools
+#
+# Config file: ~/.config/axiom-sre/config.toml
+#
+# Returns environment variables based on tool:
+#   axiom:    AXIOM_URL, AXIOM_TOKEN, AXIOM_ORG_ID
+#   grafana:  GRAFANA_URL, GRAFANA_TOKEN, GRAFANA_ORG_ID, GRAFANA_ACCESS_CMD, GRAFANA_USERNAME, GRAFANA_PASSWORD,
+#             GRAFANA_CF_ACCESS_CLIENT_ID, GRAFANA_CF_ACCESS_CLIENT_SECRET
+#   pyroscope: PYROSCOPE_URL, PYROSCOPE_TOKEN, PYROSCOPE_ACCESS_CMD, PYROSCOPE_USERNAME, PYROSCOPE_PASSWORD,
+#             PYROSCOPE_CF_ACCESS_CLIENT_ID, PYROSCOPE_CF_ACCESS_CLIENT_SECRET
+#   sentry:   SENTRY_URL, SENTRY_TOKEN, SENTRY_ORG_SLUG, SENTRY_PROJECT_SLUG
+#   slack:    SLACK_TOKEN
+#
+# Auth priority: access_command > CF Access headers > token > username/password > none
+#
+# WARNING: This script outputs secrets. NEVER run it directly - always use eval:
+#   eval "$(scripts/config grafana prod)"
+# For authenticated requests, use scripts/curl-auth instead.
+
+set -euo pipefail
+
+# Abort if stdout is a terminal (someone ran this directly instead of via eval)
+if [[ -t 1 ]] && [[ "${1:-}" != "--list" ]] && [[ "${1:-}" != "--list-tools" ]]; then
+    echo "ERROR: This script outputs secrets and must not be run directly." >&2
+    echo "" >&2
+    echo "Use: eval \"\$(scripts/config <tool> <deployment>)\"" >&2
+    echo "Or for HTTP requests: scripts/curl-auth <tool> <deployment> <url>" >&2
+    exit 1
+fi
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+CONFIG_FILE="${SRE_CONFIG:-$CONFIG_DIR/config.toml}"
+
+show_usage() {
+    echo "Usage: config <tool> <deployment>" >&2
+    echo "       config --list <tool>" >&2
+    echo "       config --list-tools" >&2
+    echo "" >&2
+    echo "Tools: axiom, grafana, pyroscope, sentry, slack" >&2
+    exit 1
+}
+
+# List available tools
+list_tools() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "Config file not found: $CONFIG_FILE" >&2
+        exit 1
+    fi
+    grep -E '^\s*\[' "$CONFIG_FILE" | sed 's/^[[:space:]]*//' | sed 's/\[//' | sed 's/\..*//' | sort -u
+}
+
+# List deployments for a tool
+list_deployments() {
+    local tool="$1"
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "Config file not found: $CONFIG_FILE" >&2
+        exit 1
+    fi
+    
+    local section_pattern
+    if [[ "$tool" == "slack" ]]; then
+        section_pattern="^\s*\[slack\.workspaces\."
+    else
+        section_pattern="^\s*\[${tool}\.deployments\."
+    fi
+
+    grep -E "$section_pattern" "$CONFIG_FILE" 2>/dev/null | \
+        sed 's/^[[:space:]]*//' | \
+        sed "s/^\[${tool}\.deployments\.//" | \
+        sed "s/^\[${tool}\.workspaces\.//" | \
+        sed 's/\]$//' || echo "(none configured)"
+}
+
+# Extract a value from the config file for a given section
+extract_value() {
+    local section="$1"
+    local key="$2"
+    
+    awk -v section="$section" -v key="$key" '
+        /^[[:space:]]*\[/ {
+            line = $0
+            gsub(/^[[:space:]]+/, "", line)
+            in_section = (line == "[" section "]")
+        }
+        in_section {
+            gsub(/^[[:space:]]+/, "")
+            if ($1 == key) {
+                sub(/^[^=]*=[[:space:]]*/, "")
+                if (match($0, /^"[^"]*"/)) {
+                    $0 = substr($0, RSTART+1, RLENGTH-2)
+                } else {
+                    sub(/[[:space:]]*#.*$/, "")
+                }
+                print
+                exit
+            }
+        }
+    ' "$CONFIG_FILE"
+}
+
+# Main
+if [[ $# -lt 1 ]]; then
+    show_usage
+fi
+
+case "$1" in
+    --list-tools)
+        list_tools
+        exit 0
+        ;;
+    --list)
+        if [[ -z "${2:-}" ]]; then
+            show_usage
+        fi
+        list_deployments "$2"
+        exit 0
+        ;;
+esac
+
+TOOL="${1:-}"
+DEPLOYMENT="${2:-}"
+
+if [[ -z "$TOOL" || -z "$DEPLOYMENT" ]]; then
+    show_usage
+fi
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: Config file not found: $CONFIG_FILE" >&2
+    echo "" >&2
+    echo "Run 'scripts/init' to create configuration." >&2
+    exit 1
+fi
+
+# Build section name based on tool
+if [[ "$TOOL" == "slack" ]]; then
+    SECTION="slack.workspaces.$DEPLOYMENT"
+else
+    SECTION="${TOOL}.deployments.$DEPLOYMENT"
+fi
+
+# Extract common fields
+URL=$(extract_value "$SECTION" "url")
+TOKEN=$(extract_value "$SECTION" "token")
+ACCESS_CMD=$(extract_value "$SECTION" "access_command")
+CF_ACCESS_CLIENT_ID=$(extract_value "$SECTION" "cf_access_client_id")
+CF_ACCESS_CLIENT_SECRET=$(extract_value "$SECTION" "cf_access_client_secret")
+USERNAME=$(extract_value "$SECTION" "username")
+PASSWORD=$(extract_value "$SECTION" "password")
+
+# Tool-specific handling
+case "$TOOL" in
+    axiom)
+        ORG_ID=$(extract_value "$SECTION" "org_id")
+        if [[ -z "$URL" ]]; then
+            echo "Error: Deployment '$DEPLOYMENT' not found in [axiom.deployments.$DEPLOYMENT]" >&2
+            echo "" >&2
+            echo "Available deployments:" >&2
+            list_deployments axiom >&2
+            echo "" >&2
+            echo "Hint: Run scripts/init to discover available resources." >&2
+            exit 1
+        fi
+        echo "AXIOM_URL=\"$URL\""
+        echo "AXIOM_TOKEN=\"$TOKEN\""
+        echo "AXIOM_ORG_ID=\"$ORG_ID\""
+        ;;
+    
+    grafana)
+        ORG_ID=$(extract_value "$SECTION" "org_id")
+        if [[ -z "$URL" ]]; then
+            echo "Error: Deployment '$DEPLOYMENT' not found in [grafana.deployments.$DEPLOYMENT]" >&2
+            echo "" >&2
+            echo "Available deployments:" >&2
+            list_deployments grafana >&2
+            echo "" >&2
+            echo "Hint: Run scripts/init to discover available resources." >&2
+            exit 1
+        fi
+        echo "GRAFANA_URL=\"$URL\""
+        [[ -n "$TOKEN" ]] && echo "GRAFANA_TOKEN=\"$TOKEN\"" || true
+        [[ -n "$ORG_ID" ]] && echo "GRAFANA_ORG_ID=\"$ORG_ID\"" || true
+        [[ -n "$ACCESS_CMD" ]] && echo "GRAFANA_ACCESS_CMD=\"$ACCESS_CMD\"" || true
+        [[ -n "$CF_ACCESS_CLIENT_ID" ]] && echo "GRAFANA_CF_ACCESS_CLIENT_ID=\"$CF_ACCESS_CLIENT_ID\"" || true
+        [[ -n "$CF_ACCESS_CLIENT_SECRET" ]] && echo "GRAFANA_CF_ACCESS_CLIENT_SECRET=\"$CF_ACCESS_CLIENT_SECRET\"" || true
+        [[ -n "$USERNAME" ]] && echo "GRAFANA_USERNAME=\"$USERNAME\"" || true
+        [[ -n "$PASSWORD" ]] && echo "GRAFANA_PASSWORD=\"$PASSWORD\"" || true
+        ;;
+    
+    pyroscope)
+        if [[ -z "$URL" ]]; then
+            echo "Error: Deployment '$DEPLOYMENT' not found in [pyroscope.deployments.$DEPLOYMENT]" >&2
+            echo "" >&2
+            echo "Available deployments:" >&2
+            list_deployments pyroscope >&2
+            echo "" >&2
+            echo "Hint: Run scripts/init to discover available resources." >&2
+            exit 1
+        fi
+        echo "PYROSCOPE_URL=\"$URL\""
+        [[ -n "$TOKEN" ]] && echo "PYROSCOPE_TOKEN=\"$TOKEN\"" || true
+        [[ -n "$ACCESS_CMD" ]] && echo "PYROSCOPE_ACCESS_CMD=\"$ACCESS_CMD\"" || true
+        [[ -n "$CF_ACCESS_CLIENT_ID" ]] && echo "PYROSCOPE_CF_ACCESS_CLIENT_ID=\"$CF_ACCESS_CLIENT_ID\"" || true
+        [[ -n "$CF_ACCESS_CLIENT_SECRET" ]] && echo "PYROSCOPE_CF_ACCESS_CLIENT_SECRET=\"$CF_ACCESS_CLIENT_SECRET\"" || true
+        [[ -n "$USERNAME" ]] && echo "PYROSCOPE_USERNAME=\"$USERNAME\"" || true
+        [[ -n "$PASSWORD" ]] && echo "PYROSCOPE_PASSWORD=\"$PASSWORD\"" || true
+        ;;
+
+    sentry)
+        SENTRY_ORG_SLUG=$(extract_value "$SECTION" "organization_slug")
+        SENTRY_PROJECT_SLUG=$(extract_value "$SECTION" "project_slug")
+        if [[ -z "$URL" && -z "$TOKEN" && -z "$SENTRY_ORG_SLUG" && -z "$SENTRY_PROJECT_SLUG" ]]; then
+            echo "Error: Deployment '$DEPLOYMENT' not found in [sentry.deployments.$DEPLOYMENT]" >&2
+            echo "" >&2
+            echo "Available deployments:" >&2
+            list_deployments sentry >&2
+            echo "" >&2
+            echo "Hint: Run scripts/init to discover available resources." >&2
+            exit 1
+        fi
+        if [[ -z "$URL" ]]; then
+            URL="https://sentry.io"
+        fi
+        echo "SENTRY_URL=\"$URL\""
+        [[ -n "$TOKEN" ]] && echo "SENTRY_TOKEN=\"$TOKEN\"" || true
+        [[ -n "$SENTRY_ORG_SLUG" ]] && echo "SENTRY_ORG_SLUG=\"$SENTRY_ORG_SLUG\"" || true
+        [[ -n "$SENTRY_PROJECT_SLUG" ]] && echo "SENTRY_PROJECT_SLUG=\"$SENTRY_PROJECT_SLUG\"" || true
+        ;;
+    
+    slack)
+        if [[ -z "$TOKEN" ]]; then
+            echo "Error: Workspace '$DEPLOYMENT' not found in [slack.workspaces.$DEPLOYMENT]" >&2
+            echo "" >&2
+            echo "Available workspaces:" >&2
+            list_deployments slack >&2
+            echo "" >&2
+            echo "Hint: Run scripts/init to discover available resources." >&2
+            exit 1
+        fi
+        echo "SLACK_TOKEN=\"$TOKEN\""
+        ;;
+    
+    *)
+        echo "Error: Unknown tool '$TOOL'" >&2
+        echo "Available tools: axiom, grafana, pyroscope, sentry, slack" >&2
+        exit 1
+        ;;
+esac

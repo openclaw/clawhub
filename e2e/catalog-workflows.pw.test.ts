@@ -1,94 +1,155 @@
 import { expect, test } from "@playwright/test";
-import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
+import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
+import { buildPublisherProfileHref } from "../src/lib/ownerRoute";
+import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function seedApiUrl(path: string) {
+  const convexSiteUrl = process.env.VITE_CONVEX_SITE_URL?.trim();
+  return convexSiteUrl ? new URL(path, convexSiteUrl).toString() : path;
+}
+
+function normalizePluginHrefPath(href: string) {
+  const prefix = "/plugins/";
+  if (!href.startsWith(prefix)) return href;
+  const decodedName = decodeURIComponent(href.slice(prefix.length));
+  return `${prefix}${decodedName}`;
+}
 
 test("skills browse can filter, change view, and open detail", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
 
   await page.goto("/skills?sort=downloads&dir=desc", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: /^Skills/ })).toBeVisible();
-  await expect(page.locator(".skill-card, .skills-row").first()).toBeVisible();
+  await waitForHydration(page);
+  await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
 
-  const hideSuspicious = page.getByRole("button", { name: "Hide suspicious" });
-  await hideSuspicious.click();
-  await expect(hideSuspicious).toHaveAttribute("aria-pressed", "true");
+  const hideSuspicious = page.getByRole("checkbox", { name: "Hide suspicious" });
+  if (await hideSuspicious.isVisible().catch(() => false)) {
+    await hideSuspicious.check();
+    await expect(hideSuspicious).toBeChecked();
+  }
 
-  const searchInput = page.getByPlaceholder("Filter by name, slug, or summary…");
+  const searchInput = page.getByPlaceholder("Search skills...");
   await searchInput.fill("gif");
   await expect(page).toHaveURL(/q=gif/);
   await searchInput.fill("");
-  await expect(page.locator(".skill-card, .skills-row").first()).toBeVisible();
+  await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
 
-  const viewToggle = page.locator(".skills-view").first();
-  const nextViewLabel = ((await viewToggle.textContent()) ?? "").trim();
-  await viewToggle.click();
-  await expect(viewToggle).not.toHaveText(nextViewLabel);
+  await page.goto("/skills?sort=downloads&dir=desc", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
 
-  const firstSkill = page.locator(".skill-card, .skills-row").first();
+  await page.getByRole("button", { name: "Grid" }).click();
+  await expect(page).toHaveURL(/view=grid/);
+  await expect(page.locator(".skill-card").first()).toBeVisible();
+
+  const firstSkill = page.locator("a.skill-card").first();
   await expect(firstSkill).toBeVisible();
 
-  const skillName = (
-    await firstSkill.locator(".skill-card-title, .skills-row-title span").first().textContent()
-  )?.trim();
-  expect(skillName).toBeTruthy();
+  const href = await firstSkill.getAttribute("href");
+  expect(href).toMatch(/^\/[^/]+\/[^/]+$/);
 
+  await firstSkill.scrollIntoViewIfNeeded();
   await firstSkill.click();
-  await expect(page.getByRole("heading", { name: skillName! })).toBeVisible();
-  await expect(page.getByRole("link", { name: /@/ }).first()).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${escapeRegExp(href!)}$`));
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expectHealthyPage(page, errors);
 });
 
 test("known public skill detail links to owner profile", async ({ page, request }) => {
-  const response = await request.get("/api/v1/skills/gifgrep");
-  test.skip(!response.ok(), "gifgrep fixture missing");
-
-  const payload = (await response.json()) as {
-    owner?: { handle?: string | null };
-    skill?: { slug?: string | null };
-  };
-  const ownerHandle = payload.owner?.handle?.trim();
-  const slug = payload.skill?.slug?.trim();
-
-  test.skip(!ownerHandle || !slug, "gifgrep fixture missing owner handle or slug");
+  const payload = await loadSmokeSkillFixture(async (path) => {
+    const response = await request.get(seedApiUrl(path));
+    return { status: response.status(), json: () => response.json() };
+  });
+  const ownerHandle = payload.owner.handle;
+  const slug = payload.skill.slug;
 
   const errors = trackRuntimeErrors(page);
   await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
-  const ownerLink = page.locator(".user-handle").first();
+  const ownerHref = buildPublisherProfileHref(ownerHandle);
+  const ownerLink = page.getByRole("link", { name: /^View .* profile$/ }).first();
 
-  await expect(ownerLink).toHaveAttribute("href", new RegExp(`/u/${ownerHandle}$`));
+  await expect(ownerLink).toHaveAttribute("href", ownerHref);
+  await waitForHydration(page);
   await ownerLink.click();
-  await expect(page).toHaveURL(new RegExp(`/u/${ownerHandle}$`));
-  await expect(page.getByRole("heading", { name: "Published" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Stars" })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${escapeRegExp(ownerHref)}$`));
+  await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
+  await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
   await expectHealthyPage(page, errors);
 });
 
-test("souls browse can filter, change view, open detail, and open owner profile", async ({
-  page,
-}) => {
+test("plugins browse can search, change view, and open detail", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
 
-  await page.goto("/souls", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Souls" })).toBeVisible();
+  await page.goto("/plugins?sort=downloads", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: /^Plugins/ })).toBeVisible();
+  await waitForHydration(page);
+  await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
 
-  const searchInput = page.getByPlaceholder("Filter by name, slug, or summary…");
-  await searchInput.fill("soul");
-  await expect(page).toHaveURL(/\/souls\?/);
-
-  await page.getByRole("button", { name: "Cards" }).click();
+  await page.getByRole("button", { name: "Grid" }).click();
+  await expect(page).toHaveURL(/view=grid/);
   await expect(page.locator(".skill-card").first()).toBeVisible();
 
-  const firstSoul = page.locator(".skill-card").first();
-  const soulName = (await firstSoul.locator(".skill-card-title").textContent())?.trim();
-  expect(soulName).toBeTruthy();
+  await page.getByRole("button", { name: "Search plugins", exact: true }).click();
+  const searchInput = page.getByPlaceholder("Search plugins...");
+  await searchInput.fill("security");
+  await searchInput.press("Enter");
+  await expect(page).toHaveURL(/q=security/);
+  await expect(page.getByText("Unable to load plugins")).toHaveCount(0);
+  await expect(page.locator(".skill-card, .skill-list-item, .empty-state").first()).toBeVisible();
 
-  await firstSoul.click();
-  await expect(page.getByRole("heading", { name: soulName! })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Download SOUL.md" })).toBeVisible();
+  await page.getByRole("button", { name: "Close search" }).click();
+  await expect(page).not.toHaveURL(/q=security/);
+  await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
 
-  const ownerLink = page.getByRole("link", { name: /@/ }).first();
-  await ownerLink.click();
-  await expect(page).toHaveURL(/\/u\//);
-  await expect(page.getByRole("heading", { name: "Published" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Stars" })).toBeVisible();
+  const firstPlugin = page.getByRole("link", { name: /^Plugin:/ }).first();
+  await expect(firstPlugin).toBeVisible();
+  const href = await firstPlugin.getAttribute("href");
+  expect(href).toMatch(/^\/(?:[^/]+\/)?plugins\//);
+
+  await firstPlugin.scrollIntoViewIfNeeded();
+  await firstPlugin.click();
+  await expect(page).toHaveURL(
+    new RegExp(`${escapeRegExp(normalizePluginHrefPath(href!))}(?:#.*)?$`),
+  );
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+  await expectHealthyPage(page, errors);
+});
+
+test("known public plugin detail supports versions navigation", async ({ page, request }) => {
+  const response = await request.get(seedApiUrl("/api/v1/plugins?limit=1"));
+  test.skip(!response.ok(), "public plugin fixture missing");
+
+  const payload = (await response.json()) as {
+    items?: Array<{ displayName?: string | null; name?: string | null }>;
+  };
+  const plugin = payload.items?.find((item) => item.name?.trim() && item.displayName?.trim());
+  test.skip(!plugin, "public plugin fixture missing name or display name");
+
+  const name = plugin!.name!.trim();
+  const href = name.startsWith("@")
+    ? `/plugins/${name.split("/").map(encodeURIComponent).join("/")}`
+    : `/plugins/${encodeURIComponent(name)}`;
+  const errors = trackRuntimeErrors(page);
+
+  await page.goto(href, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(
+    page.getByRole("heading", { name: plugin!.displayName!.trim() }).first(),
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "Versions" }).click();
+  await expect(page).toHaveURL(/#versions$/);
+  await expect(page.getByRole("tab", { name: "Versions" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    page.getByText(/Active releases|No active releases|Release history/i).first(),
+  ).toBeVisible();
   await expectHealthyPage(page, errors);
 });

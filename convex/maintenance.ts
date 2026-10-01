@@ -1,30 +1,420 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx } from "./_generated/server";
-import { action, internalAction, internalMutation, internalQuery } from "./functions";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  syncPackageSearchDigestForPackageId,
+} from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { assertFeaturedCapacity } from "./lib/featuredPolicy";
+import { resolvePackageIcon } from "./lib/packageIcons";
+import { extractPackageDigestFields } from "./lib/packageSearchDigest";
+import {
+  derivePersonalPublisherHandle,
+  ensurePersonalPublisherForUser,
+  getPersonalPublisherForUser,
+  getPublisherByHandle,
+  getUserByHandleOrPersonalPublisher,
+  isPublisherActive,
+} from "./lib/publishers";
+import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
-import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
+import { isSkillCardPath } from "./lib/skillCards";
+import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   computeQualitySignals,
   evaluateQuality,
   getTrustTier,
   type TrustTier,
 } from "./lib/skillQuality";
-import { hashSkillFiles, isTextFile } from "./lib/skills";
+import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
-import { extractDigestFields } from "./lib/skillSearchDigest";
+import { getFirstSearchToken, getMirrorFirstSearchToken } from "./lib/skillSearchDigest";
 import { generateSkillSummary } from "./lib/skillSummary";
+import { ACTIVE_PUBLISH_ATTEMPT_STATUSES } from "./publishAttempts";
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
+
+type PluginIconCandidate = {
+  packageId: Id<"packages">;
+  name: string;
+  ownerPublisherId?: Id<"publishers">;
+  release: Doc<"packageReleases">;
+  icon?: string;
+  trustedSource: boolean;
+};
+
+export const listPluginIconRepairCandidatesInternal = internalQuery({
+  args: {
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
+    cursor: v.union(v.string(), v.null()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", args.family),
+      )
+      .paginate({ cursor: args.cursor, numItems: clampInt(args.limit, 1, 25) });
+    const candidates: PluginIconCandidate[] = [];
+    for (const pkg of page.page) {
+      if (isHostedSkillPresentationIconPath(pkg.icon) || !pkg.latestReleaseId) continue;
+      const release = await ctx.db.get(pkg.latestReleaseId);
+      if (
+        !release ||
+        release.softDeletedAt !== undefined ||
+        (release.publicationStatus && release.publicationStatus !== "published")
+      )
+        continue;
+      const owner = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+      candidates.push({
+        packageId: pkg._id,
+        name: pkg.normalizedName,
+        ownerPublisherId: pkg.ownerPublisherId,
+        release,
+        icon: pkg.icon,
+        trustedSource:
+          pkg.normalizedName.startsWith("@openclaw/") &&
+          owner?.handle === "openclaw" &&
+          isPublisherActive(owner),
+      });
+    }
+    return {
+      candidates,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const applyPluginIconRepairInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    releaseId: v.id("packageReleases"),
+    ownerPublisherId: v.optional(v.id("publishers")),
+    icon: v.string(),
+    expectedIcon: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!isHostedSkillPresentationIconPath(args.icon)) throw new ConvexError("Invalid plugin icon");
+    const pkg = await ctx.db.get(args.packageId);
+    const release = await ctx.db.get(args.releaseId);
+    // A concurrent publish, ownership change, or deletion invalidates the prepared repair.
+    if (
+      !pkg ||
+      isHostedSkillPresentationIconPath(pkg.icon) ||
+      pkg.icon !== args.expectedIcon ||
+      pkg.softDeletedAt !== undefined ||
+      pkg.latestReleaseId !== args.releaseId ||
+      pkg.ownerPublisherId !== args.ownerPublisherId ||
+      !release ||
+      release.packageId !== pkg._id ||
+      release.softDeletedAt !== undefined ||
+      (release.publicationStatus && release.publicationStatus !== "published")
+    )
+      return false;
+    await ctx.db.patch(release._id, {
+      icon: args.icon,
+      ...(release.pluginManifestSummary
+        ? { pluginManifestSummary: { ...release.pluginManifestSummary, icon: args.icon } }
+        : {}),
+    });
+    await ctx.db.patch(pkg._id, {
+      icon: args.icon,
+      ...(pkg.latestVersionSummary
+        ? { latestVersionSummary: { ...pkg.latestVersionSummary, icon: args.icon } }
+        : {}),
+    });
+    return true;
+  },
+});
+
+// Storage reads, GitHub fetches and raster decoding require an action. Keep this repair
+// bounded and cursor-resumable instead of scheduling untracked actions from migrateOne.
+export const repairPluginIconsInternal = internalAction({
+  args: {
+    family: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    scanned: number;
+    matched: number;
+    patched: number;
+    cursor: string;
+    isDone: boolean;
+    dryRun: boolean;
+    samples: Array<{ name: string; icon: string }>;
+  }> => {
+    const dryRun = args.dryRun !== false;
+    const page = await ctx.runQuery(internal.maintenance.listPluginIconRepairCandidatesInternal, {
+      family: args.family ?? "code-plugin",
+      cursor: args.cursor ?? null,
+      limit: args.limit ?? 10,
+    });
+    const samples: Array<{ name: string; icon: string }> = [];
+    let patched = 0;
+    for (const candidate of page.candidates) {
+      const icon = isHostedSkillPresentationIconPath(candidate.release.icon)
+        ? candidate.release.icon
+        : await resolvePackageIcon(ctx, {
+            files: candidate.release.files,
+            ...(candidate.trustedSource ? { trustedSource: candidate.release.verification } : {}),
+            dryRun,
+          });
+      if (!icon) continue;
+      samples.push({ name: candidate.name, icon });
+      if (
+        !dryRun &&
+        (await ctx.runMutation(internal.maintenance.applyPluginIconRepairInternal, {
+          packageId: candidate.packageId,
+          releaseId: candidate.release._id,
+          ownerPublisherId: candidate.ownerPublisherId,
+          expectedIcon: candidate.icon,
+          icon,
+        }))
+      )
+        patched += 1;
+    }
+    return {
+      scanned: page.scanned,
+      matched: samples.length,
+      patched,
+      cursor: page.cursor,
+      isDone: page.isDone,
+      dryRun,
+      samples,
+    };
+  },
+});
+
+type StalePackagePublishAttempt = {
+  attemptId: Id<"publishAttempts">;
+  slug: string;
+  version: string;
+  status: Doc<"publishAttempts">["status"];
+  packageId: Id<"packages">;
+  releaseId: Id<"packageReleases">;
+  createdNewParent: boolean;
+  createdAt: number;
+  lastError: string | null;
+  releasePublicationStatus: Doc<"packageReleases">["publicationStatus"] | null;
+};
+
+export const listStalePackagePublishAttemptsInternal = internalQuery({
+  args: {
+    version: v.string(),
+    slugPrefix: v.optional(v.string()),
+    limit: v.optional(v.number()),
+    attemptIds: v.optional(v.array(v.id("publishAttempts"))),
+  },
+  handler: async (ctx, args): Promise<StalePackagePublishAttempt[]> => {
+    // Large attempt rows exhausted 16 MiB at ~600 reads. Share a 200-row default
+    // budget across statuses; point reads let operators target attempts beyond it.
+    const limit = clampInt(args.limit ?? 200, 1, 500);
+    const attempts: Doc<"publishAttempts">[] = [];
+    if (args.attemptIds) {
+      const ids = [...new Set(args.attemptIds)];
+      if (ids.length > limit) throw new ConvexError(`At most ${limit} attemptIds are allowed`);
+      for (const id of ids) {
+        const attempt = await ctx.db.get(id);
+        if (attempt) attempts.push(attempt);
+      }
+    } else {
+      for (const status of ACTIVE_PUBLISH_ATTEMPT_STATUSES) {
+        if (attempts.length === limit) break;
+        attempts.push(
+          ...(await ctx.db
+            .query("publishAttempts")
+            .withIndex("by_status_and_created", (q) => q.eq("status", status))
+            .take(limit - attempts.length)),
+        );
+      }
+    }
+    const candidates: StalePackagePublishAttempt[] = [];
+    for (const attempt of attempts) {
+      if (
+        attempt.kind !== "package" ||
+        attempt.version !== args.version ||
+        !attempt.packageId ||
+        !attempt.packageReleaseId ||
+        !ACTIVE_PUBLISH_ATTEMPT_STATUSES.some((status) => status === attempt.status) ||
+        (args.slugPrefix !== undefined && !attempt.slug.startsWith(args.slugPrefix))
+      )
+        continue;
+      const release = await ctx.db.get(attempt.packageReleaseId);
+      candidates.push({
+        attemptId: attempt._id,
+        slug: attempt.slug,
+        version: attempt.version,
+        status: attempt.status,
+        packageId: attempt.packageId,
+        releaseId: attempt.packageReleaseId,
+        createdNewParent: attempt.createdNewParent ?? false,
+        createdAt: attempt.createdAt,
+        lastError: attempt.finalizationLastError ?? attempt.checkClaimLastError ?? null,
+        releasePublicationStatus: release?.publicationStatus ?? null,
+      });
+    }
+    return candidates;
+  },
+});
+
+const discardStalePackagePublishAttemptsArgs = {
+  version: v.string(),
+  slugPrefix: v.optional(v.string()),
+  attemptIds: v.optional(v.array(v.id("publishAttempts"))),
+  reason: v.string(),
+  dryRun: v.optional(v.boolean()),
+};
+type DiscardStalePackagePublishAttemptsResult = {
+  dryRun: boolean;
+  candidates: StalePackagePublishAttempt[];
+  discarded: Array<{
+    attemptId: Id<"publishAttempts">;
+    releaseDeleted: boolean;
+    parentDeleted: boolean;
+  }>;
+};
+
+export const discardStalePackagePublishAttemptsInternal = internalAction({
+  args: discardStalePackagePublishAttemptsArgs,
+  handler: async (ctx, args): Promise<DiscardStalePackagePublishAttemptsResult> => {
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+    const dryRun = args.dryRun !== false;
+    const candidates: StalePackagePublishAttempt[] = await ctx.runQuery(
+      internal.maintenance.listStalePackagePublishAttemptsInternal,
+      { version: args.version, slugPrefix: args.slugPrefix, attemptIds: args.attemptIds },
+    );
+    const discarded: DiscardStalePackagePublishAttemptsResult["discarded"] = [];
+    if (!dryRun) {
+      for (const candidate of candidates) {
+        const result = await ctx.runMutation(
+          internal.packages.discardPendingPackagePublicationInternal,
+          {
+            packageId: candidate.packageId,
+            releaseId: candidate.releaseId,
+            createdNewParent: candidate.createdNewParent,
+            reason,
+            attemptId: candidate.attemptId,
+          },
+        );
+        if (result.retiredAttemptIds.includes(candidate.attemptId)) {
+          discarded.push({
+            attemptId: candidate.attemptId,
+            releaseDeleted: result.deleted,
+            parentDeleted: result.parentDeleted ?? false,
+          });
+        }
+      }
+    }
+    return { dryRun, candidates, discarded };
+  },
+});
+
+export const discardStalePackagePublishAttempts = action({
+  args: discardStalePackagePublishAttemptsArgs,
+  handler: async (ctx, args): Promise<DiscardStalePackagePublishAttemptsResult> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return ctx.runAction(internal.maintenance.discardStalePackagePublishAttemptsInternal, args);
+  },
+});
+
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
-const DEFAULT_CAPABILITY_BACKFILL_DELAY_MS = 500;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM = "repair-legacy-plugin-skillspector";
+const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+const SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM = "repair-skill-lineage-cycles-2026-07-23" as const;
+const HEARTFLOW_DUPLICATE_REPAIR_CONFIRM = "merge-heartflow-duplicate-skills-2026-08-04" as const;
+const HEARTFLOW_DUPLICATE_PAIRS = [
+  {
+    slug: "heartflow",
+    sourceSkillId: "kd7d384mr4pc7ezmf0apvwmqtn8992b6" as Id<"skills">,
+    targetSkillId: "kd7dmapx3bfr9j5capz3s3errh87hytn" as Id<"skills">,
+    expectedSourceVersionId: "k97bfwtwqvs304xbwz4fb400a58a00fq" as Id<"skillVersions">,
+    expectedTargetVersionId: "k97deresd77zj06xkvk5xxxh1h8bf900" as Id<"skillVersions">,
+    expectedTargetVersion: "6.4.1",
+  },
+  {
+    slug: "mark-heartflow-skill",
+    sourceSkillId: "kd7bhw61fc55a9jd2yb4yfrsg588wmnx" as Id<"skills">,
+    targetSkillId: "kd70mrrjtpgs0cw8vpf0vc0g558a5365" as Id<"skills">,
+    expectedSourceVersionId: "k974gwc5wdwe6mh20veqk4j8e58a2w2m" as Id<"skillVersions">,
+    expectedTargetVersionId: "k976jhrj92aa7fns2j39cm9q1s8b4t7r" as Id<"skillVersions">,
+    expectedTargetVersion: "6.0.66",
+  },
+  {
+    slug: "heartflow-engine",
+    sourceSkillId: "kd78tjvftk71c2xcce7djd2znd88v17h" as Id<"skills">,
+    targetSkillId: "kd72yfs8takacq1d8kefnmsv7h8aq1dg" as Id<"skills">,
+    expectedSourceVersionId: "k970ak5ecrkqya71zf1tj6e1nd89xngx" as Id<"skillVersions">,
+    expectedTargetVersionId: "k975bysehhqb3mzyjcp9s3mxys8arpkj" as Id<"skillVersions">,
+    expectedTargetVersion: "6.0.22",
+  },
+] as const;
+const activePublisherSlugScanRowValidator = v.object({
+  skillId: v.id("skills"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  slug: v.string(),
+  active: v.boolean(),
+  latestVersionId: v.optional(v.id("skillVersions")),
+  latestVersion: v.optional(v.string()),
+  moderationStatus: v.string(),
+  canonicalSkillId: v.optional(v.id("skills")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+type ActivePublisherSlugScanRow = {
+  skillId: Id<"skills">;
+  ownerPublisherId?: Id<"publishers">;
+  slug: string;
+  active: boolean;
+  latestVersionId?: Id<"skillVersions">;
+  latestVersion?: string;
+  moderationStatus: string;
+  canonicalSkillId?: Id<"skills">;
+  createdAt: number;
+  updatedAt: number;
+};
+type HeartflowDuplicateInspection = {
+  slug: string;
+  sourceSkillId: Id<"skills">;
+  targetSkillId: Id<"skills">;
+  expectedSourceVersionId: Id<"skillVersions">;
+  expectedTargetVersionId: Id<"skillVersions">;
+  expectedTargetVersion: string;
+  status: "ready" | "already_repaired" | "blocked";
+  source: unknown;
+  target: unknown;
+};
+type HeartflowDuplicateRepairResult = {
+  ok: true;
+  dryRun: boolean;
+  writesApplied: number;
+  confirmRequired?: typeof HEARTFLOW_DUPLICATE_REPAIR_CONFIRM;
+  pairs: HeartflowDuplicateInspection[];
+};
+const legacyPluginSkillSpectorRepairFamilyValidator = v.union(
+  v.literal("code-plugin"),
+  v.literal("bundle-plugin"),
+);
 
 type BackfillStats = {
   skillsScanned: number;
@@ -39,6 +429,11 @@ type BackfillStats = {
 type UserStatsBackfillStats = {
   usersScanned: number;
   usersPatched: number;
+};
+
+type PublisherStatsBackfillStats = {
+  publishersScanned: number;
+  publishersPatched: number;
 };
 
 type BackfillPageItem =
@@ -68,10 +463,157 @@ type UserStatsBackfillPageResult = {
   isDone: boolean;
 };
 
+type PublisherStatsBackfillPageResult = {
+  items: Array<Pick<Doc<"publishers">, "_id">>;
+  cursor: string | null;
+  isDone: boolean;
+};
+
 type UserOwnedSkillsBackfillPageResult = {
   items: Array<Pick<Doc<"skills">, "stats" | "softDeletedAt">>;
   cursor: string | null;
   isDone: boolean;
+};
+
+type LegacyPublisherOwnershipTargetPhase = "skills" | "packages";
+
+type LegacyPublisherOwnershipForUserRepairResult = {
+  phase: LegacyPublisherOwnershipTargetPhase;
+  dryRun: boolean;
+  userId: Id<"users">;
+  handle?: string;
+  publisherId: Id<"publishers"> | null;
+  scanned: number;
+  repaired: number;
+  skipped: number;
+  errors: string[];
+  cursor: string | null;
+  isDone: boolean;
+  nextPhase?: LegacyPublisherOwnershipTargetPhase;
+};
+
+type LegacyPluginSkillSpectorRepairFamily =
+  (typeof LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES)[number];
+
+type LegacyPluginSkillSpectorRepairPageItem = {
+  packageId: Id<"packages">;
+  packageName: string;
+  releaseId: Id<"packageReleases">;
+  version: string;
+  bundledSkillCount: number;
+};
+
+type LegacyPluginSkillSpectorRepairPageResult = {
+  items: LegacyPluginSkillSpectorRepairPageItem[];
+  scanned: number;
+  cursor: string | null;
+  isDone: boolean;
+};
+
+type LegacyPluginSkillSpectorRepairStats = {
+  packagesScanned: number;
+  staleReleases: number;
+  staleReleasesWithoutBundledSkills: number;
+  bundledSkillReleases: number;
+  releasesCleared: number;
+  rescansQueued: number;
+  rescansAlreadyQueued: number;
+};
+
+type LegacyPluginSkillSpectorRepairActionResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: typeof LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM;
+  family: LegacyPluginSkillSpectorRepairFamily | null;
+  cursor: string | null;
+  isDone: boolean;
+  stats: LegacyPluginSkillSpectorRepairStats;
+  samples: Array<{
+    packageName: string;
+    version: string;
+    releaseId: Id<"packageReleases">;
+    bundledSkillCount: number;
+    action: "clear" | "rescan";
+  }>;
+};
+
+type SkillLineageCycleRepairPageResult = {
+  items: Array<{
+    skillId: Id<"skills">;
+    slug: string;
+  }>;
+  scanned: number;
+  cursor: string | null;
+  isDone: boolean;
+};
+
+type SkillLineageCycleInspection =
+  | {
+      status: "repairable";
+      skillId: Id<"skills">;
+      slug: string;
+      sourceSkillId: Id<"skills">;
+      sourceSlug: string;
+    }
+  | {
+      status: "paired_source";
+      skillId: Id<"skills">;
+      slug: string;
+      finalSkillId: Id<"skills">;
+      finalSlug: string;
+    }
+  | {
+      status: "uncertain";
+      skillId: Id<"skills">;
+      slug: string;
+      reason:
+        | "missing_skill"
+        | "no_self_reference"
+        | "unexpected_self_reference_shape"
+        | "missing_linked_skill"
+        | "pair_shape_mismatch"
+        | "missing_matching_merge_audit";
+      linkedSkillId?: Id<"skills">;
+      linkedSlug?: string;
+    };
+
+type SkillLineageCycleRepairStats = {
+  skillsScanned: number;
+  selfReferencesFound: number;
+  repairable: number;
+  pairedSources: number;
+  uncertain: number;
+  repaired: number;
+  changedBeforeApply: number;
+};
+
+export type SkillLineageCycleRepairArgs = {
+  cursor?: string;
+  dryRun?: boolean;
+  confirm?: string;
+  batchSize?: number;
+  maxBatches?: number;
+};
+
+export type SkillLineageCycleRepairResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: typeof SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM;
+  cursor: string | null;
+  isDone: boolean;
+  stats: SkillLineageCycleRepairStats;
+  samples: Array<{
+    status: SkillLineageCycleInspection["status"] | "repaired" | "changed_before_apply";
+    skillId: Id<"skills">;
+    slug: string;
+    sourceSkillId?: Id<"skills">;
+    sourceSlug?: string;
+    finalSkillId?: Id<"skills">;
+    finalSlug?: string;
+    linkedSkillId?: Id<"skills">;
+    linkedSlug?: string;
+    reason?: Extract<SkillLineageCycleInspection, { status: "uncertain" }>["reason"];
+  }>;
 };
 
 export const getSkillBackfillPageInternal = internalQuery({
@@ -172,6 +714,25 @@ export const getUserStatsBackfillPageInternal = internalQuery({
   },
 });
 
+export const getPublisherStatsBackfillPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<PublisherStatsBackfillPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("publishers")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    return {
+      items: page.map((publisher) => ({ _id: publisher._id })),
+      cursor: continueCursor,
+      isDone,
+    };
+  },
+});
+
 export const getUserOwnedSkillsBackfillPageInternal = internalQuery({
   args: {
     ownerUserId: v.id("users"),
@@ -212,6 +773,20 @@ export const applyUserStatsBackfillPatchInternal = internalMutation({
   },
 });
 
+export const recomputePublisherStatsInternal = internalMutation({
+  args: {
+    publisherId: v.id("publishers"),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const stats = await recomputePublisherStats(ctx, args.publisherId);
+    if (!args.dryRun) {
+      await ctx.db.patch(args.publisherId, stats);
+    }
+    return { ok: true as const, stats };
+  },
+});
+
 export type BackfillActionArgs = {
   dryRun?: boolean;
   batchSize?: number;
@@ -237,6 +812,20 @@ export type UserStatsBackfillActionArgs = {
 export type UserStatsBackfillActionResult = {
   ok: true;
   stats: UserStatsBackfillStats;
+  isDone: boolean;
+  cursor: string | null;
+};
+
+export type PublisherStatsBackfillActionArgs = {
+  dryRun?: boolean;
+  batchSize?: number;
+  maxBatches?: number;
+  cursor?: string;
+};
+
+export type PublisherStatsBackfillActionResult = {
+  ok: true;
+  stats: PublisherStatsBackfillStats;
   isDone: boolean;
   cursor: string | null;
 };
@@ -403,6 +992,45 @@ export async function backfillUserStatsInternalHandler(
   return { ok: true as const, stats: totals, isDone, cursor };
 }
 
+export async function backfillPublisherStatsInternalHandler(
+  ctx: ActionCtx,
+  args: PublisherStatsBackfillActionArgs,
+): Promise<PublisherStatsBackfillActionResult> {
+  const dryRun = Boolean(args.dryRun);
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const totals: PublisherStatsBackfillStats = {
+    publishersScanned: 0,
+    publishersPatched: 0,
+  };
+
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
+
+  for (let i = 0; i < maxBatches; i++) {
+    const page = (await ctx.runQuery(internal.maintenance.getPublisherStatsBackfillPageInternal, {
+      cursor: cursor ?? undefined,
+      batchSize,
+    })) as PublisherStatsBackfillPageResult;
+
+    cursor = page.cursor;
+    isDone = page.isDone;
+
+    for (const publisher of page.items) {
+      totals.publishersScanned++;
+      await ctx.runMutation(internal.maintenance.recomputePublisherStatsInternal, {
+        publisherId: publisher._id,
+        dryRun,
+      });
+      if (!dryRun) totals.publishersPatched++;
+    }
+
+    if (isDone) break;
+  }
+
+  return { ok: true as const, stats: totals, isDone, cursor };
+}
+
 export const backfillSkillSummariesInternal = internalAction({
   args: {
     dryRun: v.optional(v.boolean()),
@@ -424,6 +1052,16 @@ export const backfillUserStatsInternal = internalAction({
   handler: backfillUserStatsInternalHandler,
 });
 
+export const backfillPublisherStatsInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: backfillPublisherStatsInternalHandler,
+});
+
 export const backfillSkillSummaries: ReturnType<typeof action> = action({
   args: {
     dryRun: v.optional(v.boolean()),
@@ -439,6 +1077,37 @@ export const backfillSkillSummaries: ReturnType<typeof action> = action({
       internal.maintenance.backfillSkillSummariesInternal,
       args,
     ) as Promise<BackfillActionResult>;
+  },
+});
+
+export const backfillPublisherStats: ReturnType<typeof action> = action({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<PublisherStatsBackfillActionResult> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return ctx.runAction(
+      internal.maintenance.backfillPublisherStatsInternal,
+      args,
+    ) as Promise<PublisherStatsBackfillActionResult>;
+  },
+});
+
+export const scheduleBackfillPublisherStats: ReturnType<typeof action> = action({
+  args: { dryRun: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    await ctx.scheduler.runAfter(0, internal.maintenance.backfillPublisherStatsInternal, {
+      dryRun: Boolean(args.dryRun),
+      batchSize: DEFAULT_BATCH_SIZE,
+      maxBatches: DEFAULT_MAX_BATCHES,
+    });
+    return { ok: true as const };
   },
 });
 
@@ -488,208 +1157,412 @@ export const continueSkillSummaryBackfillJobInternal = internalAction({
   },
 });
 
-type CapabilityBackfillStats = {
-  skillsScanned: number;
-  skillsPatched: number;
-  versionsPatched: number;
-  missingVersions: number;
-  missingStorageBlob: number;
-};
-
-type CapabilityBackfillResult = {
-  ok: true;
-  stats: CapabilityBackfillStats;
-  cursor: string | null;
-  isDone: boolean;
-};
-
-export const applySkillCapabilityTagsInternal = internalMutation({
+export const getLegacyPluginSkillSpectorRepairPageInternal = internalQuery({
   args: {
-    skillId: v.id("skills"),
-    versionId: v.id("skillVersions"),
-    capabilityTags: v.array(v.string()),
+    family: legacyPluginSkillSpectorRepairFamilyValidator,
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version) return { ok: false as const, reason: "missing_version" as const };
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) return { ok: false as const, reason: "missing_skill" as const };
+  handler: async (ctx, args): Promise<LegacyPluginSkillSpectorRepairPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_family_updated", (q) => q.eq("family", args.family))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
-    const normalizedTags = [...new Set(args.capabilityTags)];
-    let versionPatched = false;
-    let skillPatched = false;
-
-    if (JSON.stringify(version.capabilityTags ?? []) !== JSON.stringify(normalizedTags)) {
-      await ctx.db.patch(version._id, {
-        capabilityTags: normalizedTags.length ? normalizedTags : undefined,
+    const items: LegacyPluginSkillSpectorRepairPageItem[] = [];
+    for (const pkg of page.page) {
+      if (pkg.softDeletedAt !== undefined || !pkg.latestReleaseId) continue;
+      const release = await ctx.db.get(pkg.latestReleaseId);
+      if (
+        !release ||
+        release.softDeletedAt !== undefined ||
+        release.skillSpectorAnalysis === undefined
+      ) {
+        continue;
+      }
+      items.push({
+        packageId: pkg._id,
+        packageName: pkg.name,
+        releaseId: release._id,
+        version: release.version,
+        bundledSkillCount: Array.isArray(release.pluginManifestSummary?.bundledSkills)
+          ? release.pluginManifestSummary.bundledSkills.length
+          : 0,
       });
-      versionPatched = true;
     }
 
-    if (
-      skill.latestVersionId === version._id &&
-      JSON.stringify(skill.capabilityTags ?? []) !== JSON.stringify(normalizedTags)
-    ) {
-      await ctx.db.patch(skill._id, {
-        capabilityTags: normalizedTags.length ? normalizedTags : undefined,
-        updatedAt: Date.now(),
-      });
-      skillPatched = true;
-    }
-
-    return { ok: true as const, versionPatched, skillPatched };
+    return {
+      items,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });
 
-export async function backfillSkillCapabilityTagsInternalHandler(
-  ctx: ActionCtx,
-  args: {
-    dryRun?: boolean;
-    cursor?: string;
-    batchSize?: number;
-    maxBatches?: number;
-    delayMs?: number;
-  },
-): Promise<CapabilityBackfillResult> {
-  const dryRun = Boolean(args.dryRun);
-  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
-  const maxBatches = dryRun
-    ? clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
-    : 1;
-
-  const stats: CapabilityBackfillStats = {
-    skillsScanned: 0,
-    skillsPatched: 0,
-    versionsPatched: 0,
-    missingVersions: 0,
-    missingStorageBlob: 0,
+function emptyLegacyPluginSkillSpectorRepairStats(): LegacyPluginSkillSpectorRepairStats {
+  return {
+    packagesScanned: 0,
+    staleReleases: 0,
+    staleReleasesWithoutBundledSkills: 0,
+    bundledSkillReleases: 0,
+    releasesCleared: 0,
+    rescansQueued: 0,
+    rescansAlreadyQueued: 0,
   };
-
-  let cursor = args.cursor ?? null;
-  let isDone = false;
-
-  for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
-    const page = await ctx.runQuery(internal.maintenance.getSkillBackfillPageInternal, {
-      cursor: cursor ?? undefined,
-      batchSize,
-    });
-
-    cursor = page.cursor;
-    isDone = page.isDone;
-
-    for (const item of page.items) {
-      if (item.kind !== "ok") {
-        if (item.kind === "missingVersionDoc" || item.kind === "missingLatestVersion") {
-          stats.missingVersions += 1;
-        }
-        continue;
-      }
-
-      stats.skillsScanned += 1;
-
-      const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-        versionId: item.versionId,
-      })) as Doc<"skillVersions"> | null;
-      if (!version) {
-        stats.missingVersions += 1;
-        continue;
-      }
-
-      const readmeBlob = await ctx.storage.get(item.readmeStorageId);
-      if (!readmeBlob) {
-        stats.missingStorageBlob += 1;
-        continue;
-      }
-
-      const readmeText = await readmeBlob.text();
-      const fileContents: Array<{ path: string; content: string }> = [];
-      let hasMissingTextBlob = false;
-      for (const file of version.files) {
-        const lower = file.path.toLowerCase();
-        if (lower === "skill.md" || lower === "skills.md") continue;
-        if (!isTextFile(file.path, file.contentType ?? undefined)) continue;
-        const blob = await ctx.storage.get(file.storageId);
-        if (!blob) {
-          stats.missingStorageBlob += 1;
-          hasMissingTextBlob = true;
-          break;
-        }
-        fileContents.push({ path: file.path, content: await blob.text() });
-      }
-
-      if (hasMissingTextBlob) continue;
-
-      const capabilityTags = deriveSkillCapabilityTags({
-        slug: item.skillSlug,
-        displayName: item.skillDisplayName,
-        summary: item.skillSummary ?? undefined,
-        frontmatter: item.versionParsed?.frontmatter,
-        readmeText,
-        fileContents,
-      });
-
-      if (dryRun) continue;
-
-      const result = await ctx.runMutation(internal.maintenance.applySkillCapabilityTagsInternal, {
-        skillId: item.skillId,
-        versionId: item.versionId,
-        capabilityTags,
-      });
-
-      if (result.ok) {
-        if (result.skillPatched) stats.skillsPatched += 1;
-        if (result.versionPatched) stats.versionsPatched += 1;
-      }
-    }
-
-    if (isDone) break;
-  }
-
-  return { ok: true, stats, cursor, isDone };
 }
 
-export const backfillSkillCapabilityTagsInternal = internalAction({
+type LegacyPluginSkillSpectorRepairBatchArgs = {
+  dryRun?: boolean;
+  confirm?: string;
+  family: LegacyPluginSkillSpectorRepairFamily;
+  cursor?: string;
+  batchSize?: number;
+};
+
+export async function repairLegacyPluginSkillSpectorBatchInternalHandler(
+  ctx: Pick<MutationCtx, "runQuery" | "runMutation">,
+  args: LegacyPluginSkillSpectorRepairBatchArgs,
+): Promise<LegacyPluginSkillSpectorRepairActionResult> {
+  const dryRun = args.dryRun !== false;
+  if (!dryRun && args.confirm !== LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM) {
+    throw new ConvexError(`Pass confirm="${LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM}" to apply.`);
+  }
+
+  const page = (await ctx.runQuery(
+    internal.maintenance.getLegacyPluginSkillSpectorRepairPageInternal,
+    {
+      family: args.family,
+      cursor: args.cursor,
+      batchSize: args.batchSize,
+    },
+  )) as LegacyPluginSkillSpectorRepairPageResult;
+  const stats = emptyLegacyPluginSkillSpectorRepairStats();
+  stats.packagesScanned = page.scanned;
+  stats.staleReleases = page.items.length;
+  const samples: LegacyPluginSkillSpectorRepairActionResult["samples"] = [];
+
+  for (const item of page.items) {
+    const repairAction = item.bundledSkillCount > 0 ? "rescan" : "clear";
+    if (item.bundledSkillCount > 0) {
+      stats.bundledSkillReleases += 1;
+    } else {
+      stats.staleReleasesWithoutBundledSkills += 1;
+    }
+    if (samples.length < 20) {
+      samples.push({
+        packageName: item.packageName,
+        version: item.version,
+        releaseId: item.releaseId,
+        bundledSkillCount: item.bundledSkillCount,
+        action: repairAction,
+      });
+    }
+    if (dryRun) continue;
+
+    if (item.bundledSkillCount > 0) {
+      const queued = (await ctx.runMutation(
+        internal.securityScan.enqueuePackageReleaseScanInternal,
+        {
+          releaseId: item.releaseId,
+          source: "backfill",
+          priority: 40,
+          waitForVtMs: 0,
+        },
+      )) as { alreadyQueued?: boolean; jobId?: Id<"securityScanJobs"> };
+      if (queued.alreadyQueued) {
+        stats.rescansAlreadyQueued += 1;
+      } else if (queued.jobId) {
+        stats.rescansQueued += 1;
+      }
+    }
+
+    await ctx.runMutation(internal.packages.updateReleaseSkillSpectorAnalysisInternal, {
+      releaseId: item.releaseId,
+    });
+    stats.releasesCleared += 1;
+  }
+
+  return {
+    ok: true as const,
+    dryRun,
+    confirmRequired: dryRun ? LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM : undefined,
+    family: args.family,
+    cursor: page.cursor,
+    isDone: page.isDone,
+    stats,
+    samples,
+  };
+}
+
+export const repairLegacyPluginSkillSpectorBatchInternal = internalMutation({
   args: {
     dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    family: legacyPluginSkillSpectorRepairFamilyValidator,
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: repairLegacyPluginSkillSpectorBatchInternalHandler,
+});
+
+export const repairLegacyPluginSkillSpectorInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    family: v.optional(legacyPluginSkillSpectorRepairFamilyValidator),
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<CapabilityBackfillResult> => {
-    const result = await backfillSkillCapabilityTagsInternalHandler(ctx, args);
+  handler: async (ctx, args): Promise<LegacyPluginSkillSpectorRepairActionResult> => {
+    const dryRun = args.dryRun !== false;
+    const maxBatches = clampInt(args.maxBatches ?? 1, 1, MAX_MAX_BATCHES);
+    let family: LegacyPluginSkillSpectorRepairFamily | null = args.family ?? "code-plugin";
+    let cursor: string | null = args.cursor ?? null;
+    const stats = emptyLegacyPluginSkillSpectorRepairStats();
+    const samples: LegacyPluginSkillSpectorRepairActionResult["samples"] = [];
 
-    if (!args.dryRun && !result.isDone && result.cursor) {
-      const delayMs = clampInt(args.delayMs ?? DEFAULT_CAPABILITY_BACKFILL_DELAY_MS, 0, 60_000);
-      await ctx.scheduler.runAfter(
-        delayMs,
-        internal.maintenance.backfillSkillCapabilityTagsInternal,
+    for (let batchIndex = 0; family && batchIndex < maxBatches; batchIndex += 1) {
+      const result = (await ctx.runMutation(
+        internal.maintenance.repairLegacyPluginSkillSpectorBatchInternal,
         {
-          dryRun: false,
-          cursor: result.cursor,
+          dryRun,
+          confirm: args.confirm,
+          family,
+          cursor: cursor ?? undefined,
           batchSize: args.batchSize,
-          maxBatches: 1,
-          delayMs,
         },
-      );
+      )) as LegacyPluginSkillSpectorRepairActionResult;
+
+      stats.packagesScanned += result.stats.packagesScanned;
+      stats.staleReleases += result.stats.staleReleases;
+      stats.staleReleasesWithoutBundledSkills += result.stats.staleReleasesWithoutBundledSkills;
+      stats.bundledSkillReleases += result.stats.bundledSkillReleases;
+      stats.releasesCleared += result.stats.releasesCleared;
+      stats.rescansQueued += result.stats.rescansQueued;
+      stats.rescansAlreadyQueued += result.stats.rescansAlreadyQueued;
+      samples.push(...result.samples.slice(0, 20 - samples.length));
+
+      if (!result.isDone) {
+        cursor = result.cursor;
+        break;
+      }
+      family =
+        LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES[
+          LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES.indexOf(family) + 1
+        ] ?? null;
+      cursor = null;
     }
 
-    return result;
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM : undefined,
+      family,
+      cursor,
+      isDone: family === null,
+      stats,
+      samples,
+    };
   },
 });
 
-export const backfillSkillCapabilityTags: ReturnType<typeof action> = action({
+const PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM =
+  "resync-plugin-catalog-metadata-digests" as const;
+const PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+type PluginCatalogMetadataDigestResyncFamily =
+  (typeof PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES)[number];
+
+const pluginCatalogMetadataDigestResyncFamilyValidator = v.union(
+  v.literal("code-plugin"),
+  v.literal("bundle-plugin"),
+);
+
+type PluginCatalogMetadataDigestResyncStats = Record<
+  PluginCatalogMetadataDigestResyncFamily,
+  { scanned: number; matched: number; mutated: number }
+>;
+
+type PluginCatalogMetadataDigestResyncBatchResult = {
+  family: PluginCatalogMetadataDigestResyncFamily;
+  cursor: string | null;
+  isDone: boolean;
+  scanned: number;
+  matched: number;
+  mutated: number;
+};
+
+type PluginCatalogMetadataDigestResyncActionResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: typeof PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM;
+  family: PluginCatalogMetadataDigestResyncFamily | null;
+  cursor: string | null;
+  isDone: boolean;
+  stats: PluginCatalogMetadataDigestResyncStats;
+};
+
+function emptyPluginCatalogMetadataDigestResyncStats(): PluginCatalogMetadataDigestResyncStats {
+  return {
+    "code-plugin": { scanned: 0, matched: 0, mutated: 0 },
+    "bundle-plugin": { scanned: 0, matched: 0, mutated: 0 },
+  };
+}
+
+function nextPluginCatalogMetadataDigestResyncFamily(
+  family: PluginCatalogMetadataDigestResyncFamily,
+) {
+  const index = PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES.indexOf(family);
+  return PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES[index + 1] ?? null;
+}
+
+function equalStringSets(left: string[] | undefined, right: string[] | undefined) {
+  const leftSet = new Set(left ?? []);
+  const rightSet = new Set(right ?? []);
+  return (
+    leftSet.size === rightSet.size && Array.from(leftSet).every((value) => rightSet.has(value))
+  );
+}
+
+async function pluginCatalogMetadataDigestIsStale(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+) {
+  const expectedCategories = extractPackageDigestFields(pkg).pluginCategoryTags ?? [];
+  const digest = await ctx.db
+    .query("packageSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .unique();
+  if (!digest || !equalStringSets(digest.pluginCategoryTags, expectedCategories)) return true;
+
+  const categoryDigests = await ctx.db
+    .query("packagePluginCategorySearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  if (
+    !equalStringSets(
+      categoryDigests.map((row) => row.pluginCategory),
+      expectedCategories,
+    )
+  ) {
+    return true;
+  }
+  return categoryDigests.some(
+    (row) => !equalStringSets(row.pluginCategoryTags, expectedCategories),
+  );
+}
+
+export const resyncPluginCatalogMetadataDigestsBatchInternal = internalMutation({
+  args: {
+    family: pluginCatalogMetadataDigestResyncFamilyValidator,
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<PluginCatalogMetadataDigestResyncBatchResult> => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM}" to apply.`,
+      );
+    }
+    const numItems = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_family_updated", (q) => q.eq("family", args.family))
+      .paginate({ cursor: args.cursor ?? null, numItems });
+    let matched = 0;
+    let mutated = 0;
+
+    for (const pkg of page.page) {
+      if (!(await pluginCatalogMetadataDigestIsStale(ctx, pkg))) continue;
+      matched += 1;
+      if (!dryRun) {
+        await syncPackageSearchDigestForPackageId(ctx, pkg._id);
+        mutated += 1;
+      }
+    }
+
+    return {
+      family: args.family,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+      scanned: page.page.length,
+      matched,
+      mutated,
+    };
+  },
+});
+
+export const resyncPluginCatalogMetadataDigestsInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      dryRun: v.optional(v.boolean()),
+      confirm: v.optional(v.string()),
+      family: v.optional(pluginCatalogMetadataDigestResyncFamilyValidator),
+      cursor: v.optional(v.string()),
+      batchSize: v.optional(v.number()),
+      maxBatches: v.optional(v.number()),
+    },
+    handler: async (ctx, args): Promise<PluginCatalogMetadataDigestResyncActionResult> => {
+      const dryRun = args.dryRun !== false;
+      const maxBatches = dryRun
+        ? clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
+        : clampInt(args.maxBatches ?? 1, 1, MAX_MAX_BATCHES);
+      const stats = emptyPluginCatalogMetadataDigestResyncStats();
+      let family: PluginCatalogMetadataDigestResyncFamily | null = args.family ?? "code-plugin";
+      let cursor: string | null = args.cursor ?? null;
+
+      for (let batchIndex = 0; family && batchIndex < maxBatches; batchIndex += 1) {
+        const result = (await ctx.runMutation(
+          internal.maintenance.resyncPluginCatalogMetadataDigestsBatchInternal,
+          {
+            family,
+            cursor: cursor ?? undefined,
+            batchSize: args.batchSize,
+            dryRun,
+            confirm: args.confirm,
+          },
+        )) as PluginCatalogMetadataDigestResyncBatchResult;
+        stats[family].scanned += result.scanned;
+        stats[family].matched += result.matched;
+        stats[family].mutated += result.mutated;
+        if (!result.isDone) {
+          cursor = result.cursor;
+          break;
+        }
+        family = nextPluginCatalogMetadataDigestResyncFamily(family);
+        cursor = null;
+      }
+
+      return {
+        ok: true as const,
+        dryRun,
+        confirmRequired: dryRun ? PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM : undefined,
+        family,
+        cursor,
+        isDone: family === null,
+        stats,
+      };
+    },
+  });
+
+export const resyncPluginCatalogMetadataDigests: ReturnType<typeof action> = action({
   args: {
     dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    family: v.optional(pluginCatalogMetadataDigestResyncFamilyValidator),
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<CapabilityBackfillResult> => {
+  handler: async (ctx, args) => {
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
-    return ctx.runAction(internal.maintenance.backfillSkillCapabilityTagsInternal, args);
+    return ctx.runAction(internal.maintenance.resyncPluginCatalogMetadataDigestsInternal, args);
   },
 });
 
@@ -705,7 +1578,12 @@ type FingerprintBackfillPageItem = {
   versionId: Id<"skillVersions">;
   versionFingerprint?: string;
   files: Array<{ path: string; sha256: string }>;
-  existingEntries: Array<{ id: Id<"skillVersionFingerprints">; fingerprint: string }>;
+  hasGeneratedBundleFingerprint?: boolean;
+  existingEntries: Array<{
+    id: Id<"skillVersionFingerprints">;
+    fingerprint: string;
+    kind?: "source" | "generated-bundle";
+  }>;
 };
 
 type FingerprintBackfillPageResult = {
@@ -761,13 +1639,21 @@ export const getSkillFingerprintBackfillPageInternal = internalQuery({
         .withIndex("by_version", (q) => q.eq("versionId", version._id))
         .take(20);
 
-      const normalizedFiles = version.files.map((file) => ({
-        path: file.path,
-        sha256: file.sha256,
-      }));
+      const hasGeneratedBundleFingerprint = existingEntries.some(
+        (entry) => entry.kind === "generated-bundle",
+      );
+      const normalizedFiles = version.files
+        .filter((file) => !hasGeneratedBundleFingerprint || !isSkillCardPath(file.path))
+        .map((file) => ({
+          path: file.path,
+          sha256: file.sha256,
+        }));
+      const sourceFingerprintEntries = existingEntries.filter(
+        (entry) => entry.kind !== "generated-bundle",
+      );
 
-      const hasAnyEntry = existingEntries.length > 0;
-      const entryFingerprints = new Set(existingEntries.map((entry) => entry.fingerprint));
+      const hasAnyEntry = sourceFingerprintEntries.length > 0;
+      const entryFingerprints = new Set(sourceFingerprintEntries.map((entry) => entry.fingerprint));
       const hasFingerprintMismatch =
         typeof version.fingerprint === "string" &&
         hasAnyEntry &&
@@ -782,9 +1668,11 @@ export const getSkillFingerprintBackfillPageInternal = internalQuery({
         versionId: version._id,
         versionFingerprint: version.fingerprint ?? undefined,
         files: normalizedFiles,
-        existingEntries: existingEntries.map((entry) => ({
+        hasGeneratedBundleFingerprint,
+        existingEntries: sourceFingerprintEntries.map((entry) => ({
           id: entry._id,
           fingerprint: entry.fingerprint,
+          kind: entry.kind === "source" ? "source" : undefined,
         })),
       });
     }
@@ -821,6 +1709,7 @@ export const applySkillFingerprintBackfillPatchInternal = internalMutation({
         skillId: version.skillId,
         versionId: version._id,
         fingerprint: args.fingerprint,
+        kind: "source",
         createdAt: now,
       });
     }
@@ -867,10 +1756,17 @@ export async function backfillSkillFingerprintsInternalHandler(
     for (const item of page.items) {
       totals.versionsScanned++;
 
-      const fingerprint = await hashSkillFiles(item.files);
+      const fingerprint = await hashSkillFiles(
+        item.files.filter(
+          (file) => !item.hasGeneratedBundleFingerprint || !isSkillCardPath(file.path),
+        ),
+      );
 
-      const existingFingerprints = new Set(item.existingEntries.map((entry) => entry.fingerprint));
-      const hasAnyEntry = item.existingEntries.length > 0;
+      const sourceEntries = item.existingEntries.filter(
+        (entry) => entry.kind !== "generated-bundle",
+      );
+      const existingFingerprints = new Set(sourceEntries.map((entry) => entry.fingerprint));
+      const hasAnyEntry = sourceEntries.length > 0;
       const entryIsCorrect =
         hasAnyEntry && existingFingerprints.size === 1 && existingFingerprints.has(fingerprint);
       const versionFingerprintIsCorrect = item.versionFingerprint === fingerprint;
@@ -891,7 +1787,7 @@ export async function backfillSkillFingerprintsInternalHandler(
         fingerprint,
         patchVersion: shouldPatchVersion,
         replaceEntries: shouldReplaceEntries,
-        existingEntryIds: shouldReplaceEntries ? item.existingEntries.map((entry) => entry.id) : [],
+        existingEntryIds: shouldReplaceEntries ? sourceEntries.map((entry) => entry.id) : [],
       });
     }
 
@@ -1020,8 +1916,8 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
     at: v.number(),
   },
   handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
     const syncDenormalizedBadge = async () => {
-      const skill = await ctx.db.get(args.skillId);
       if (!skill) return;
       await ctx.db.patch(args.skillId, {
         badges: {
@@ -1038,6 +1934,15 @@ export const upsertSkillBadgeRecordInternal = internalMutation({
     if (existing) {
       await syncDenormalizedBadge();
       return { inserted: false as const };
+    }
+    // Restore persisted legacy membership even above the cap. Only a new
+    // selection consumes capacity; an upgrade must not silently drop selections.
+    if (
+      args.kind === "highlighted" &&
+      !skill?.badges?.highlighted &&
+      skill?.batch !== "highlighted"
+    ) {
+      await assertFeaturedCapacity(ctx, "skill");
     }
     await ctx.db.insert("skillBadges", {
       skillId: args.skillId,
@@ -1804,46 +2709,6 @@ export const nominateEmptySkillSpammers: ReturnType<typeof action> = action({
   },
 });
 
-// Backfill embeddingSkillMap from existing skillEmbeddings.
-// Run once after deploying the schema change:
-//   npx convex run maintenance:backfillEmbeddingSkillMapInternal --prod
-export const backfillEmbeddingSkillMapInternal = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillEmbeddings")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let inserted = 0;
-    for (const embedding of page) {
-      const existing = await ctx.db
-        .query("embeddingSkillMap")
-        .withIndex("by_embedding", (q) => q.eq("embeddingId", embedding._id))
-        .unique();
-      if (!existing) {
-        await ctx.db.insert("embeddingSkillMap", {
-          embeddingId: embedding._id,
-          skillId: embedding.skillId,
-        });
-        inserted++;
-      }
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.maintenance.backfillEmbeddingSkillMapInternal, {
-        cursor: continueCursor,
-        batchSize: args.batchSize,
-      });
-    }
-
-    return { inserted, isDone, scanned: page.length };
-  },
-});
-
 // Sync skillBadges table → denormalized skill.badges field.
 // Run after deploying the badge-read removal to ensure all skills
 // have up-to-date badges on the skill doc itself.
@@ -1934,6 +2799,9 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource,
+        description: version.parsed?.frontmatter
+          ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim() || undefined
+          : undefined,
         clawdis: version.parsed?.clawdis,
       };
 
@@ -1945,6 +2813,7 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         existing.createdAt === expected.createdAt &&
         existing.changelog === expected.changelog &&
         existing.changelogSource === expected.changelogSource &&
+        existing.description === expected.description &&
         JSON.stringify(existing.clawdis ?? null) === JSON.stringify(expected.clawdis ?? null)
       ) {
         continue;
@@ -1965,12 +2834,286 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
   },
 });
 
+export const backfillSkillSearchDigestModerationVerdictsInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    const dryRun = args.dryRun ?? false;
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    let missingSkills = 0;
+    for (const digest of page) {
+      const skill = await ctx.db.get(digest.skillId);
+      if (!skill) {
+        missingSkills++;
+        continue;
+      }
+      if (digest.moderationVerdict === skill.moderationVerdict) continue;
+
+      patched++;
+      if (!dryRun) {
+        await ctx.db.patch(digest._id, {
+          moderationVerdict: skill.moderationVerdict,
+          updatedAt: skill.updatedAt,
+        });
+      }
+    }
+
+    if (!dryRun && !isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          dryRun,
+        },
+      );
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      missingSkills,
+      cursor: continueCursor,
+      isDone,
+      dryRun,
+    };
+  },
+});
+
+export const backfillSkillSearchDigestModerationVerdicts: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+      args,
+    );
+  },
+});
+
+const SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM =
+  "backfill-skill-search-digest-first-tokens" as const;
+const SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM =
+  "backfill-skills-sh-mirror-digest-first-tokens" as const;
+
+// Recompute the stored first-token fields on skillSearchDigest rows. Those values are
+// produced by the search tokenizer, so a tokenizer change leaves already-written rows
+// holding tokens the current search no longer looks for. Run once after deploying such a
+// change, preview first:
+//   npx convex run maintenance:backfillSkillSearchDigestFirstTokens --prod
+//   npx convex run maintenance:backfillSkillSearchDigestFirstTokens \
+//     '{"dryRun": false, "confirm": "backfill-skill-search-digest-first-tokens"}' --prod
+export const backfillSkillSearchDigestFirstTokensInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    // Catalog search subscribes to skillSearchDigest, so batches are spaced out to keep the
+    // backfill from driving reactive re-reads back to back.
+    const delayMs = clampInt(args.delayMs ?? 500, 0, 60_000);
+    // Preview unless the caller opts into applying, matching the catalog-digest resync
+    // contract: an omitted argument must never start a table-wide write.
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+      );
+    }
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    let missingSkills = 0;
+    for (const digest of page) {
+      const skill = await ctx.db.get(digest.skillId);
+      if (!skill) {
+        missingSkills++;
+        continue;
+      }
+
+      const normalizedSlugFirstToken = getFirstSearchToken(skill.slug);
+      const normalizedDisplayNameFirstToken = getFirstSearchToken(skill.displayName);
+      if (
+        digest.normalizedSlugFirstToken === normalizedSlugFirstToken &&
+        digest.normalizedDisplayNameFirstToken === normalizedDisplayNameFirstToken
+      ) {
+        continue;
+      }
+
+      patched++;
+      if (!dryRun) {
+        await ctx.db.patch(digest._id, {
+          normalizedSlugFirstToken,
+          normalizedDisplayNameFirstToken,
+        });
+      }
+    }
+
+    if (!dryRun && !isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+          dryRun,
+          // Continuations re-enter the same guard, so the token has to travel with them.
+          confirm: args.confirm,
+        },
+      );
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      missingSkills,
+      cursor: continueCursor,
+      isDone,
+      dryRun,
+      confirmRequired: dryRun ? SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM : undefined,
+    };
+  },
+});
+
+export const backfillSkillSearchDigestFirstTokens: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      args,
+    );
+  },
+});
+
+// Recompute the stored first-token fields on skillsShMirrorDigests rows. The skills.sh
+// mirror derives them through the same tokenizer as the native digest above, and external
+// candidate search range-scans them, so a tokenizer change strands mirrored rows the same
+// way. Run once after deploying such a change, preview first:
+//   npx convex run maintenance:backfillSkillsShMirrorDigestFirstTokens --prod
+//   npx convex run maintenance:backfillSkillsShMirrorDigestFirstTokens \
+//     '{"dryRun": false, "confirm": "backfill-skills-sh-mirror-digest-first-tokens"}' --prod
+export const backfillSkillsShMirrorDigestFirstTokensInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
+    // The catalog subscribes to mirrored rows too, so pages are spaced apart here as well.
+    const delayMs = clampInt(args.delayMs ?? 500, 0, 60_000);
+    // Same preview-then-confirm contract as the native backfill above.
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+      );
+    }
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skillsShMirrorDigests")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const digest of page) {
+      const normalizedSlugFirstToken = getMirrorFirstSearchToken(digest.slug);
+      const normalizedDisplayNameFirstToken = getMirrorFirstSearchToken(digest.displayName);
+      if (
+        digest.normalizedSlugFirstToken === normalizedSlugFirstToken &&
+        digest.normalizedDisplayNameFirstToken === normalizedDisplayNameFirstToken
+      ) {
+        continue;
+      }
+
+      patched++;
+      if (!dryRun) {
+        await ctx.db.patch(digest._id, {
+          normalizedSlugFirstToken,
+          normalizedDisplayNameFirstToken,
+        });
+      }
+    }
+
+    if (!dryRun && !isDone) {
+      await ctx.scheduler.runAfter(
+        delayMs,
+        internal.maintenance.backfillSkillsShMirrorDigestFirstTokensInternal,
+        {
+          cursor: continueCursor,
+          batchSize: args.batchSize,
+          delayMs: args.delayMs,
+          dryRun,
+          confirm: args.confirm,
+        },
+      );
+    }
+
+    return {
+      scanned: page.length,
+      patched,
+      cursor: continueCursor,
+      isDone,
+      dryRun,
+      confirmRequired: dryRun ? SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM : undefined,
+    };
+  },
+});
+
+export const backfillSkillsShMirrorDigestFirstTokens: ReturnType<typeof action> = action({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await ctx.runMutation(
+      internal.maintenance.backfillSkillsShMirrorDigestFirstTokensInternal,
+      args,
+    );
+  },
+});
+
 // Repair stale skill-level moderation that was sourced from a non-latest version.
 // Run once after deploying the latest-version moderation fix:
 //   npx convex run maintenance:backfillLatestSkillModeration --prod
 export const backfillLatestSkillModeration: ReturnType<typeof action> = action({
   args: {
     batchSize: v.optional(v.number()),
+    force: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const { user } = await requireUserFromAction(ctx);
@@ -2014,241 +3157,783 @@ export const backfillIsSuspiciousInternal = internalMutation({
   },
 });
 
-// Backfill skillSearchDigest from existing skills.
-// Run once after deploying the schema change:
-//   npx convex run maintenance:backfillSkillSearchDigestInternal --prod
-export const backfillSkillSearchDigestInternal = internalMutation({
+export const getSkillLineageCycleRepairPageInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
+  handler: async (ctx, args): Promise<SkillLineageCycleRepairPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
     const { page, continueCursor, isDone } = await ctx.db
       .query("skills")
+      .order("asc")
       .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
-    let inserted = 0;
-    for (const skill of page) {
-      const existing = await ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .unique();
-      if (!existing) {
-        await ctx.db.insert("skillSearchDigest", extractDigestFields(skill));
-        inserted++;
+    return {
+      items: page
+        .filter(
+          (skill) => skill.canonicalSkillId === skill._id || skill.forkOf?.skillId === skill._id,
+        )
+        .map((skill) => ({ skillId: skill._id, slug: skill.slug })),
+      scanned: page.length,
+      cursor: continueCursor,
+      isDone,
+    };
+  },
+});
+
+function parseSkillMergeTargetId(metadata: unknown): string | null {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const targetSkillId = (metadata as Record<string, unknown>).targetSkillId;
+  return typeof targetSkillId === "string" ? targetSkillId : null;
+}
+
+export async function inspectSkillLineageCycleInternalHandler(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  skillId: Id<"skills">,
+): Promise<SkillLineageCycleInspection> {
+  const skill = await ctx.db.get(skillId);
+  if (!skill) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: "<missing>",
+      reason: "missing_skill",
+    };
+  }
+
+  const hasSelfReference =
+    skill.canonicalSkillId === skill._id || skill.forkOf?.skillId === skill._id;
+  if (!hasSelfReference) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "no_self_reference",
+    };
+  }
+
+  const isFinalShape =
+    skill.softDeletedAt === undefined &&
+    skill.canonicalSkillId !== undefined &&
+    skill.canonicalSkillId !== skill._id &&
+    skill.forkOf?.skillId === skill._id &&
+    skill.forkOf.kind === "duplicate";
+  const isSourceShape =
+    skill.softDeletedAt !== undefined &&
+    skill.moderationStatus === "hidden" &&
+    skill.moderationReason === "owner.merged" &&
+    skill.canonicalSkillId === skill._id &&
+    skill.forkOf !== undefined &&
+    skill.forkOf.skillId !== skill._id &&
+    skill.forkOf.kind === "duplicate";
+  if (!isFinalShape && !isSourceShape) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "unexpected_self_reference_shape",
+    };
+  }
+
+  const linkedSkillId: Id<"skills"> | undefined = isFinalShape
+    ? skill.canonicalSkillId
+    : skill.forkOf?.skillId;
+  if (!linkedSkillId || linkedSkillId === skill._id) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "unexpected_self_reference_shape",
+    };
+  }
+  const linkedSkill: Doc<"skills"> | null = await ctx.db.get(linkedSkillId);
+  if (linkedSkill === null) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "missing_linked_skill",
+      linkedSkillId,
+    };
+  }
+
+  const finalSkill: Doc<"skills"> = isFinalShape ? skill : linkedSkill;
+  const sourceSkill: Doc<"skills"> = isSourceShape ? skill : linkedSkill;
+  const pairMatches =
+    finalSkill.softDeletedAt === undefined &&
+    finalSkill.canonicalSkillId === sourceSkill._id &&
+    finalSkill.forkOf?.skillId === finalSkill._id &&
+    finalSkill.forkOf.kind === "duplicate" &&
+    sourceSkill.softDeletedAt !== undefined &&
+    sourceSkill.moderationStatus === "hidden" &&
+    sourceSkill.moderationReason === "owner.merged" &&
+    sourceSkill.canonicalSkillId === sourceSkill._id &&
+    sourceSkill.forkOf?.skillId === finalSkill._id &&
+    sourceSkill.forkOf.kind === "duplicate";
+  if (!pairMatches) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "pair_shape_mismatch",
+      linkedSkillId: linkedSkill._id,
+      linkedSlug: linkedSkill.slug,
+    };
+  }
+
+  const mergeAuditLogs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target_action", (q) =>
+      q.eq("targetType", "skill").eq("targetId", sourceSkill._id).eq("action", "skill.merge"),
+    )
+    .order("desc")
+    .take(10);
+  const matchingAudit = mergeAuditLogs.some(
+    (log) =>
+      log.createdAt === sourceSkill.forkOf?.at &&
+      parseSkillMergeTargetId(log.metadata) === finalSkill._id,
+  );
+  if (!matchingAudit) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "missing_matching_merge_audit",
+      linkedSkillId: linkedSkill._id,
+      linkedSlug: linkedSkill.slug,
+    };
+  }
+
+  if (isSourceShape) {
+    return {
+      status: "paired_source",
+      skillId: sourceSkill._id,
+      slug: sourceSkill.slug,
+      finalSkillId: finalSkill._id,
+      finalSlug: finalSkill.slug,
+    };
+  }
+
+  return {
+    status: "repairable",
+    skillId: finalSkill._id,
+    slug: finalSkill.slug,
+    sourceSkillId: sourceSkill._id,
+    sourceSlug: sourceSkill.slug,
+  };
+}
+
+export const inspectSkillLineageCycleInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args): Promise<SkillLineageCycleInspection> =>
+    inspectSkillLineageCycleInternalHandler(ctx, args.skillId),
+});
+
+export async function applySkillLineageCycleRepairInternalHandler(
+  ctx: MutationCtx,
+  args: {
+    skillId: Id<"skills">;
+    sourceSkillId: Id<"skills">;
+  },
+): Promise<{ repaired: true } | { repaired: false; reason: "changed_before_apply" }> {
+  const inspection = await inspectSkillLineageCycleInternalHandler(ctx, args.skillId);
+  if (inspection.status !== "repairable" || inspection.sourceSkillId !== args.sourceSkillId) {
+    return {
+      repaired: false as const,
+      reason: "changed_before_apply" as const,
+    };
+  }
+
+  const [finalSkill, sourceSkill] = await Promise.all([
+    ctx.db.get(args.skillId),
+    ctx.db.get(args.sourceSkillId),
+  ]);
+  if (!finalSkill || !sourceSkill || !sourceSkill.forkOf) {
+    return {
+      repaired: false as const,
+      reason: "changed_before_apply" as const,
+    };
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(finalSkill._id, {
+    canonicalSkillId: undefined,
+    forkOf: undefined,
+    updatedAt: now,
+  });
+  await ctx.db.patch(sourceSkill._id, {
+    canonicalSkillId: finalSkill._id,
+    forkOf: {
+      ...sourceSkill.forkOf,
+      skillId: finalSkill._id,
+    },
+    updatedAt: now,
+  });
+  await ctx.db.insert("auditLogs", {
+    action: "skill.lineage_cycle.repair",
+    targetType: "skill",
+    targetId: finalSkill._id,
+    metadata: {
+      repairVersion: "skill-lineage-cycle-2026-07-23",
+      slug: finalSkill.slug,
+      sourceSkillId: inspection.sourceSkillId,
+      sourceSlug: inspection.sourceSlug,
+      previousFinalCanonicalSkillId: finalSkill.canonicalSkillId,
+      previousFinalForkOf: finalSkill.forkOf,
+      previousSourceCanonicalSkillId: sourceSkill.canonicalSkillId,
+      previousSourceForkOf: sourceSkill.forkOf,
+    },
+    createdAt: now,
+  });
+
+  return { repaired: true as const };
+}
+
+export const applySkillLineageCycleRepairInternal = internalMutation({
+  args: {
+    skillId: v.id("skills"),
+    sourceSkillId: v.id("skills"),
+  },
+  handler: applySkillLineageCycleRepairInternalHandler,
+});
+
+// This is a paired relationship repair, not a table-wide shape migration. It stays in
+// maintenance.ts so every write can revalidate both skill records and the merge audit.
+export async function repairSkillLineageCyclesInternalHandler(
+  ctx: ActionCtx,
+  args: SkillLineageCycleRepairArgs,
+): Promise<SkillLineageCycleRepairResult> {
+  const dryRun = args.dryRun !== false;
+  if (!dryRun && args.confirm !== SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM) {
+    throw new ConvexError(`Pass confirm="${SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM}" to apply.`);
+  }
+
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const stats: SkillLineageCycleRepairStats = {
+    skillsScanned: 0,
+    selfReferencesFound: 0,
+    repairable: 0,
+    pairedSources: 0,
+    uncertain: 0,
+    repaired: 0,
+    changedBeforeApply: 0,
+  };
+  const samples: SkillLineageCycleRepairResult["samples"] = [];
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
+
+  for (let batch = 0; batch < maxBatches; batch++) {
+    const page = (await ctx.runQuery(internal.maintenance.getSkillLineageCycleRepairPageInternal, {
+      cursor: cursor ?? undefined,
+      batchSize,
+    })) as SkillLineageCycleRepairPageResult;
+    cursor = page.cursor;
+    isDone = page.isDone;
+    stats.skillsScanned += page.scanned;
+    stats.selfReferencesFound += page.items.length;
+
+    for (const item of page.items) {
+      const inspection = (await ctx.runQuery(
+        internal.maintenance.inspectSkillLineageCycleInternal,
+        { skillId: item.skillId },
+      )) as SkillLineageCycleInspection;
+
+      if (inspection.status === "uncertain") {
+        stats.uncertain++;
+        if (samples.length < 200) samples.push(inspection);
+        continue;
+      }
+      if (inspection.status === "paired_source") {
+        stats.pairedSources++;
+        if (samples.length < 200) samples.push(inspection);
+        continue;
+      }
+
+      stats.repairable++;
+      if (dryRun) {
+        if (samples.length < 200) samples.push(inspection);
+        continue;
+      }
+
+      const result = (await ctx.runMutation(
+        internal.maintenance.applySkillLineageCycleRepairInternal,
+        {
+          skillId: inspection.skillId,
+          sourceSkillId: inspection.sourceSkillId,
+        },
+      )) as { repaired: true } | { repaired: false; reason: "changed_before_apply" };
+      if (result.repaired) {
+        stats.repaired++;
+        if (samples.length < 200) {
+          samples.push({
+            status: "repaired",
+            skillId: inspection.skillId,
+            slug: inspection.slug,
+            sourceSkillId: inspection.sourceSkillId,
+            sourceSlug: inspection.sourceSlug,
+          });
+        }
+      } else {
+        stats.changedBeforeApply++;
+        if (samples.length < 200) {
+          samples.push({
+            status: "changed_before_apply",
+            skillId: inspection.skillId,
+            slug: inspection.slug,
+            sourceSkillId: inspection.sourceSkillId,
+            sourceSlug: inspection.sourceSlug,
+          });
+        }
       }
     }
 
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.maintenance.backfillSkillSearchDigestInternal, {
-        cursor: continueCursor,
-        batchSize: args.batchSize,
-      });
-    }
+    if (isDone) break;
+  }
 
-    return { inserted, isDone, scanned: page.length };
+  return {
+    ok: true,
+    dryRun,
+    ...(dryRun ? { confirmRequired: SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM } : {}),
+    cursor,
+    isDone,
+    stats,
+    samples,
+  };
+}
+
+export const repairSkillLineageCyclesInternal = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: repairSkillLineageCyclesInternalHandler,
+});
+
+export const getActivePublisherSlugInvariantPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_slug")
+      .paginate({ cursor: args.cursor ?? null, numItems: clampInt(args.batchSize, 1, 200) });
+    return {
+      items: page.page.map((skill): ActivePublisherSlugScanRow => ({
+        skillId: skill._id,
+        ownerPublisherId: skill.ownerPublisherId,
+        slug: skill.slug,
+        active: !skill.softDeletedAt,
+        latestVersionId: skill.latestVersionId,
+        latestVersion: skill.latestVersionSummary?.version,
+        moderationStatus: skill.moderationStatus ?? "unknown",
+        canonicalSkillId: skill.canonicalSkillId,
+        createdAt: skill.createdAt,
+        updatedAt: skill.updatedAt,
+      })),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });
 
-const DIGEST_OWNER_BACKFILL_KEY = "digest-owner-backfill";
+function activePublisherSlugGroupKey(row: ActivePublisherSlugScanRow) {
+  return row.ownerPublisherId ? `${row.ownerPublisherId}\u0000${row.slug}` : null;
+}
 
-// Start/resume backfill:
-//   npx convex run maintenance:backfillDigestOwnerFields '{"batchSize":50,"delayMs":5000}' --prod
-// Stop:
-//   npx convex run maintenance:stopBackfillDigestOwnerFields --prod
-// Check status:
-//   npx convex run maintenance:backfillDigestOwnerFieldsStatus --prod
-export const backfillDigestOwnerFields = internalMutation({
+function formatActivePublisherSlugDuplicateGroup(rows: ActivePublisherSlugScanRow[]) {
+  const activeRows = rows.filter((row) => row.active);
+  if (activeRows.length < 2 || !activeRows[0]?.ownerPublisherId) return null;
+  return {
+    ownerPublisherId: activeRows[0].ownerPublisherId,
+    slug: activeRows[0].slug,
+    activeSkillIds: activeRows.map((row) => row.skillId),
+    skills: activeRows.map(({ active: _active, ...row }) => row),
+  };
+}
+
+export const scanActivePublisherSlugDuplicatesInternal = internalAction({
   args: {
+    cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    continuation: v.optional(
+      v.object({
+        key: v.string(),
+        rows: v.array(activePublisherSlugScanRowValidator),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
-    // Clear any previous stop flag and store config
-    const existing = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        cursor: undefined,
-        doneAt: undefined,
-        updatedAt: Date.now(),
-      });
-    } else {
-      await ctx.db.insert("skillStatBackfillState", {
-        key: DIGEST_OWNER_BACKFILL_KEY,
-        updatedAt: Date.now(),
-      });
+    const batchSize = clampInt(args.batchSize ?? 200, 1, 200);
+    const maxBatches = clampInt(args.maxBatches ?? 200, 1, 200);
+    const findings: NonNullable<ReturnType<typeof formatActivePublisherSlugDuplicateGroup>>[] = [];
+    let cursor: string | null = args.cursor ?? null;
+    let currentKey = args.continuation?.key ?? null;
+    let currentRows = (args.continuation?.rows ?? []) as ActivePublisherSlugScanRow[];
+    let rowsScanned = 0;
+    let isDone = false;
+
+    const finishCurrentGroup = () => {
+      const finding = formatActivePublisherSlugDuplicateGroup(currentRows);
+      if (finding) findings.push(finding);
+      currentRows = [];
+    };
+
+    for (let batch = 0; batch < maxBatches; batch++) {
+      const page = (await ctx.runQuery(
+        internal.maintenance.getActivePublisherSlugInvariantPageInternal,
+        { cursor: cursor ?? undefined, batchSize },
+      )) as {
+        items: ActivePublisherSlugScanRow[];
+        cursor: string | null;
+        isDone: boolean;
+      };
+      cursor = page.cursor;
+      isDone = page.isDone;
+      rowsScanned += page.items.length;
+
+      for (const row of page.items) {
+        const key = activePublisherSlugGroupKey(row);
+        if (key !== currentKey) {
+          finishCurrentGroup();
+          currentKey = key;
+        }
+        if (key && row.active) currentRows.push(row);
+      }
+      if (isDone) break;
     }
-    // Kick off first batch
-    await ctx.scheduler.runAfter(0, internal.maintenance.backfillDigestOwnerFieldsInternal, {
-      batchSize: args.batchSize,
-      delayMs: args.delayMs,
+
+    if (isDone) finishCurrentGroup();
+    return {
+      ok: true as const,
+      invariant: "one active skill per ownerPublisherId and slug",
+      rowsScanned,
+      duplicateGroupsFound: findings.length,
+      findings,
+      cursor,
+      isDone,
+      ...(!isDone && currentKey ? { continuation: { key: currentKey, rows: currentRows } } : {}),
+    };
+  },
+});
+
+export const inspectHeartflowDuplicateSkillsInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await Promise.all(
+      HEARTFLOW_DUPLICATE_PAIRS.map(async (pair) => {
+        const [source, target] = await Promise.all([
+          ctx.db.get(pair.sourceSkillId),
+          ctx.db.get(pair.targetSkillId),
+        ]);
+        const [sourceVersion, targetVersion] = await Promise.all([
+          source?.latestVersionId ? ctx.db.get(source.latestVersionId) : null,
+          target?.latestVersionId ? ctx.db.get(target.latestVersionId) : null,
+        ]);
+        const alreadyRepaired = Boolean(
+          source?.softDeletedAt &&
+          source.canonicalSkillId === target?._id &&
+          source.forkOf?.skillId === target?._id,
+        );
+        const ready = Boolean(
+          source &&
+          target &&
+          !source.softDeletedAt &&
+          !target.softDeletedAt &&
+          source.ownerPublisherId &&
+          source.ownerPublisherId === target.ownerPublisherId &&
+          source.slug === pair.slug &&
+          target.slug === pair.slug &&
+          source.latestVersionId === pair.expectedSourceVersionId &&
+          target.latestVersionId === pair.expectedTargetVersionId &&
+          targetVersion?.version === pair.expectedTargetVersion,
+        );
+        return {
+          ...pair,
+          status: alreadyRepaired
+            ? ("already_repaired" as const)
+            : ready
+              ? ("ready" as const)
+              : ("blocked" as const),
+          source: source
+            ? {
+                skillId: source._id,
+                ownerUserId: source.ownerUserId,
+                ownerPublisherId: source.ownerPublisherId ?? null,
+                slug: source.slug,
+                version: sourceVersion?.version ?? null,
+                softDeletedAt: source.softDeletedAt ?? null,
+                canonicalSkillId: source.canonicalSkillId ?? null,
+                stats: source.stats,
+                statsInstallsAllTime: source.statsInstallsAllTime ?? null,
+                createdAt: source.createdAt,
+                updatedAt: source.updatedAt,
+              }
+            : null,
+          target: target
+            ? {
+                skillId: target._id,
+                ownerUserId: target.ownerUserId,
+                ownerPublisherId: target.ownerPublisherId ?? null,
+                slug: target.slug,
+                version: targetVersion?.version ?? null,
+                softDeletedAt: target.softDeletedAt ?? null,
+                canonicalSkillId: target.canonicalSkillId ?? null,
+                stats: target.stats,
+                statsInstallsAllTime: target.statsInstallsAllTime ?? null,
+                createdAt: target.createdAt,
+                updatedAt: target.updatedAt,
+              }
+            : null,
+        };
+      }),
+    );
+  },
+});
+
+// Incident-specific and temporary: dry-run first, then apply only with the exact token.
+// npx convex run maintenance:repairHeartflowDuplicateSkillsInternal '{}' --prod
+export async function repairHeartflowDuplicateSkillsInternalHandler(
+  ctx: ActionCtx,
+  args: { dryRun?: boolean; confirm?: string },
+): Promise<HeartflowDuplicateRepairResult> {
+  const dryRun = args.dryRun !== false;
+  if (!dryRun && args.confirm !== HEARTFLOW_DUPLICATE_REPAIR_CONFIRM) {
+    throw new ConvexError(`Pass confirm="${HEARTFLOW_DUPLICATE_REPAIR_CONFIRM}" to apply.`);
+  }
+  const pairs = (await ctx.runQuery(
+    internal.maintenance.inspectHeartflowDuplicateSkillsInternal,
+    {},
+  )) as HeartflowDuplicateInspection[];
+  const blocked = pairs.filter((pair) => pair.status === "blocked");
+  if (blocked.length > 0) {
+    throw new ConvexError(`HeartFlow repair preflight blocked for ${blocked.length} pair(s).`);
+  }
+  if (dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      writesApplied: 0,
+      confirmRequired: HEARTFLOW_DUPLICATE_REPAIR_CONFIRM,
+      pairs,
+    };
+  }
+
+  let writesApplied = 0;
+  for (const pair of pairs) {
+    if (pair.status === "already_repaired") continue;
+    await ctx.runMutation(internal.skills.mergeSamePublisherDuplicateSkillByIdInternal, {
+      sourceSkillId: pair.sourceSkillId,
+      targetSkillId: pair.targetSkillId,
+      expectedSlug: pair.slug,
+      expectedSourceVersionId: pair.expectedSourceVersionId,
+      expectedTargetVersionId: pair.expectedTargetVersionId,
+      expectedTargetVersion: pair.expectedTargetVersion,
     });
-    return { started: true };
-  },
-});
+    writesApplied++;
+  }
+  return { ok: true, dryRun: false, writesApplied, pairs };
+}
 
-export const stopBackfillDigestOwnerFields = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const state = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (state) {
-      await ctx.db.patch(state._id, { doneAt: Date.now(), updatedAt: Date.now() });
-    }
-    return { stopped: true };
-  },
-});
-
-export const backfillDigestOwnerFieldsStatus = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const state = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (!state) return { status: "never_started" };
-    if (state.doneAt) return { status: "stopped", cursor: state.cursor, stoppedAt: state.doneAt };
-    return { status: "running", cursor: state.cursor };
-  },
-});
-
-export const backfillDigestOwnerFieldsInternal = internalMutation({
+export const repairHeartflowDuplicateSkillsInternal = internalAction({
   args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    // Check stop flag
-    const state = await ctx.db
-      .query("skillStatBackfillState")
-      .withIndex("by_key", (q) => q.eq("key", DIGEST_OWNER_BACKFILL_KEY))
-      .unique();
-    if (state?.doneAt) {
-      return { patched: 0, isDone: false, scanned: 0, stopped: true };
-    }
-
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const delayMs = clampInt(args.delayMs ?? 0, 0, 60_000);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillSearchDigest")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let patched = 0;
-    for (const digest of page) {
-      if (digest.ownerHandle !== undefined) continue;
-      const owner = await ctx.db.get(digest.ownerUserId);
-      const isOwnerVisible = owner && !owner.deletedAt && !owner.deactivatedAt;
-      await ctx.db.patch(digest._id, {
-        ownerHandle: isOwnerVisible ? (owner.handle ?? "") : "",
-        ownerName: isOwnerVisible ? owner.name : undefined,
-        ownerDisplayName: isOwnerVisible ? owner.displayName : undefined,
-        ownerImage: isOwnerVisible ? owner.image : undefined,
-      });
-      patched++;
-    }
-
-    // Save cursor progress
-    if (state) {
-      await ctx.db.patch(state._id, {
-        cursor: continueCursor,
-        doneAt: isDone ? Date.now() : undefined,
-        updatedAt: Date.now(),
-      });
-    }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(
-        delayMs,
-        internal.maintenance.backfillDigestOwnerFieldsInternal,
-        {
-          cursor: continueCursor,
-          batchSize: args.batchSize,
-          delayMs: args.delayMs,
-        },
-      );
-    }
-
-    return { patched, isDone, scanned: page.length, stopped: false };
-  },
+  handler: repairHeartflowDuplicateSkillsInternalHandler,
 });
 
-// Backfill latestVersionSummary from skills into existing skillSearchDigest rows.
-// Run:
-//   npx convex run maintenance:backfillDigestVersionSummary '{"batchSize":100}' --prod
-export const backfillDigestVersionSummary = internalMutation({
+function isActiveLegacyPublisherRepairUser(
+  user: Doc<"users"> | null | undefined,
+): user is Doc<"users"> {
+  return Boolean(user && !user.deletedAt && !user.deactivatedAt && !user.purgedAt);
+}
+
+function nextLegacyPublisherOwnershipTargetPhase(
+  phase: LegacyPublisherOwnershipTargetPhase,
+): LegacyPublisherOwnershipTargetPhase | undefined {
+  return phase === "skills" ? "packages" : undefined;
+}
+
+async function getExistingActivePersonalPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  user: Doc<"users">,
+) {
+  if (user.personalPublisherId) {
+    const publisher = await ctx.db.get(user.personalPublisherId);
+    if (isPublisherActive(publisher)) return publisher;
+  }
+  const publisher = await getPersonalPublisherForUser(ctx, user._id);
+  return isPublisherActive(publisher) ? publisher : null;
+}
+
+async function resolvePersonalPublisherForOwnershipRepair(
+  ctx: Pick<MutationCtx, "db">,
+  user: Doc<"users">,
+  dryRun: boolean,
+) {
+  if (dryRun) {
+    const existing = await getExistingActivePersonalPublisher(ctx, user);
+    if (existing) return existing;
+    const handle = derivePersonalPublisherHandle(user);
+    const conflict = await getPublisherByHandle(ctx, handle);
+    if (conflict && conflict.linkedUserId !== user._id) {
+      throw new ConvexError(`Publisher handle "@${handle}" is already claimed`);
+    }
+    return null;
+  }
+  return await ensurePersonalPublisherForUser(ctx, user, {
+    source: "maintenance.legacy_publisher_ownership",
+  });
+}
+
+async function resolveLegacyPublisherOwnershipTargetUser(
+  ctx: Pick<MutationCtx, "db">,
+  args: { userId?: Id<"users">; handle?: string },
+) {
+  const user = args.userId
+    ? await ctx.db.get(args.userId)
+    : await getUserByHandleOrPersonalPublisher(ctx, args.handle);
+  if (!user) throw new ConvexError("Target user not found");
+  if (!isActiveLegacyPublisherRepairUser(user)) throw new ConvexError("Target user is inactive");
+  return user;
+}
+
+async function patchLegacySkillOwnerPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills">,
+  publisherId: Id<"publishers">,
+) {
+  await ctx.db.patch(skill._id, { ownerPublisherId: publisherId });
+
+  const aliases = await ctx.db
+    .query("skillSlugAliases")
+    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+    .collect();
+  for (const alias of aliases) {
+    if (alias.ownerPublisherId === publisherId) continue;
+    await ctx.db.patch(alias._id, { ownerPublisherId: publisherId });
+  }
+}
+
+async function patchLegacyPackageOwnerPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+  publisherId: Id<"publishers">,
+) {
+  await ctx.db.patch(pkg._id, { ownerPublisherId: publisherId });
+}
+
+export async function repairLegacyPublisherOwnershipForUserHandler(
+  ctx: MutationCtx,
   args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
+    userId?: Id<"users">;
+    handle?: string;
+    phase?: LegacyPublisherOwnershipTargetPhase;
+    cursor?: string;
+    batchSize?: number;
+    delayMs?: number;
+    dryRun?: boolean;
+    scheduleNext?: boolean;
   },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 10, 500);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillSearchDigest")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+): Promise<LegacyPublisherOwnershipForUserRepairResult> {
+  const phase = args.phase ?? "skills";
+  const dryRun = args.dryRun === true;
+  const batchSize = clampInt(args.batchSize ?? 50, 1, 200);
+  const delayMs = clampInt(args.delayMs ?? 500, 0, 60_000);
+  const user = await resolveLegacyPublisherOwnershipTargetUser(ctx, args);
+  const publisher = await resolvePersonalPublisherForOwnershipRepair(ctx, user, dryRun);
+  if (!dryRun && !isPublisherActive(publisher)) {
+    throw new ConvexError("Target personal publisher could not be repaired");
+  }
 
-    let patched = 0;
-    for (const digest of page) {
-      if (digest.latestVersionSummary !== undefined) continue;
-      const skill = await ctx.db.get(digest.skillId);
-      if (!skill?.latestVersionSummary) continue;
-      await ctx.db.patch(digest._id, {
-        latestVersionSummary: skill.latestVersionSummary,
-      });
-      patched++;
+  let scanned = 0;
+  let repaired = 0;
+  let skipped = 0;
+
+  const page =
+    phase === "skills"
+      ? await ctx.db
+          .query("skills")
+          .withIndex("by_owner", (q) => q.eq("ownerUserId", user._id))
+          .paginate({ cursor: args.cursor ?? null, numItems: batchSize })
+      : await ctx.db
+          .query("packages")
+          .withIndex("by_owner", (q) => q.eq("ownerUserId", user._id))
+          .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+  for (const item of page.page) {
+    scanned++;
+    if (item.ownerPublisherId) {
+      skipped++;
+      continue;
     }
-
-    if (!isDone) {
-      await ctx.scheduler.runAfter(0, internal.maintenance.backfillDigestVersionSummary, {
-        cursor: continueCursor,
-        batchSize: args.batchSize,
-      });
+    if (dryRun) {
+      repaired++;
+      continue;
     }
-
-    return { patched, isDone, scanned: page.length };
-  },
-});
-
-// Backfill isSuspicious on skillSearchDigest rows where it's undefined.
-// Computes from digest's own moderationFlags/moderationReason — no skills table read.
-// Run: npx convex run maintenance:backfillDigestIsSuspicious --prod
-export const backfillDigestIsSuspicious = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-    batchSize: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 100, 10, 200);
-    const delayMs = args.delayMs ?? 500;
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skillSearchDigest")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let patched = 0;
-    for (const digest of page) {
-      if (digest.isSuspicious !== undefined) continue;
-      const isSuspicious = computeIsSuspicious(digest);
-      await ctx.db.patch(digest._id, { isSuspicious });
-      patched++;
+    if (phase === "skills") {
+      await patchLegacySkillOwnerPublisher(ctx, item as Doc<"skills">, publisher!._id);
+    } else {
+      await patchLegacyPackageOwnerPublisher(ctx, item as Doc<"packages">, publisher!._id);
     }
+    repaired++;
+  }
 
-    if (!isDone) {
-      await ctx.scheduler.runAfter(delayMs, internal.maintenance.backfillDigestIsSuspicious, {
-        cursor: continueCursor,
+  const nextPhase = page.isDone ? nextLegacyPublisherOwnershipTargetPhase(phase) : phase;
+  if (!dryRun && args.scheduleNext !== false && nextPhase) {
+    await ctx.scheduler.runAfter(
+      delayMs,
+      internal.maintenance.repairLegacyPublisherOwnershipForUser,
+      {
+        userId: user._id,
+        phase: nextPhase,
+        cursor: page.isDone ? undefined : (page.continueCursor ?? undefined),
         batchSize: args.batchSize,
         delayMs: args.delayMs,
-      });
-    }
+        scheduleNext: args.scheduleNext,
+      },
+    );
+  }
 
-    return { patched, isDone, scanned: page.length };
+  return {
+    phase,
+    dryRun,
+    userId: user._id,
+    handle: user.handle,
+    publisherId: publisher?._id ?? null,
+    scanned,
+    repaired,
+    skipped,
+    errors: [],
+    cursor: page.continueCursor,
+    isDone: page.isDone,
+    ...(nextPhase ? { nextPhase } : {}),
+  };
+}
+
+// Targeted variant for production canaries and one-off account repair.
+// Example:
+//   npx convex run maintenance:repairLegacyPublisherOwnershipForUser '{"handle":"harrylabsj","dryRun":true,"scheduleNext":false}' --prod
+export const repairLegacyPublisherOwnershipForUser = internalMutation({
+  args: {
+    userId: v.optional(v.id("users")),
+    handle: v.optional(v.string()),
+    phase: v.optional(v.union(v.literal("skills"), v.literal("packages"))),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    scheduleNext: v.optional(v.boolean()),
   },
+  handler: repairLegacyPublisherOwnershipForUserHandler,
 });
 
 function clampInt(value: number, min: number, max: number) {

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 
+export const DETAIL_HERO_TOPIC_LIMIT = 4;
+
 type DetailPageShellProps = {
   children: ReactNode;
   className?: string;
@@ -38,13 +40,15 @@ export function DetailHero({
   return (
     <div className={cn("skill-hero", className)}>
       <div className={cn("skill-hero-top", topClassName)}>
-        <div className="skill-hero-layout">
-          <div className={cn("skill-hero-main", mainClassName)}>
-            {main}
-            {children ? <div className="skill-hero-main-extra">{children}</div> : null}
-          </div>
-          {sidebar ? (
-            <aside className={cn("skill-hero-sidebar", sidebarClassName)}>{sidebar}</aside>
+        <div className={cn(sidebar ? "skill-hero-layout has-sidebar" : "skill-hero-layout")}>
+          <div className={cn("skill-hero-main", mainClassName)}>{main}</div>
+          {children || sidebar ? (
+            <div className={cn("skill-hero-lower", sidebar && "has-sidebar")}>
+              {children ? <div className="skill-hero-main-extra">{children}</div> : null}
+              {sidebar ? (
+                <aside className={cn("skill-hero-sidebar", sidebarClassName)}>{sidebar}</aside>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>

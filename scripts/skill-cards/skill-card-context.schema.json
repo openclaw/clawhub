@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "skill_name",
+    "skill_kind",
+    "description_sentence",
+    "usage_posture",
+    "owner",
+    "use_case",
+    "deployment_geography",
+    "references",
+    "output",
+    "skill_version"
+  ],
+  "properties": {
+    "skill_name": { "type": "string" },
+    "skill_kind": { "type": "string" },
+    "description_sentence": { "type": "string" },
+    "usage_posture": { "enum": ["commercial", "research_dev", "demonstration"] },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["nvidia", "third_party"] },
+        "name": { "type": "string" },
+        "card_link": { "type": "string" },
+        "verify": { "type": "boolean" },
+        "verify_reason": { "type": "string" }
+      }
+    },
+    "license_identifier": { "type": ["string", "null"] },
+    "license_verify": { "type": "boolean" },
+    "license_verify_reason": { "type": "string" },
+    "use_case": { "type": "string" },
+    "deployment_geography": { "type": "string" },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "url"],
+        "properties": {
+          "label": { "type": "string" },
+          "url": { "type": "string" }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["types", "format", "parameters", "other_properties"],
+      "properties": {
+        "types": { "type": "array", "items": { "type": "string" } },
+        "format": { "type": "string" },
+        "parameters": { "type": "string" },
+        "other_properties": { "type": "string" }
+      }
+    },
+    "skill_version": { "type": "string" }
+  }
+}

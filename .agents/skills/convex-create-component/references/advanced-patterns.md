@@ -1,10 +1,13 @@
 # Advanced Component Patterns
 
-Additional patterns for Convex components that go beyond the basics covered in the main skill file.
+Additional patterns for Convex components that go beyond the basics covered in
+the main skill file.
 
 ## Function Handles for callbacks
 
-When the app needs to pass a callback function to the component, use function handles. This is common for components that run app-defined logic on a schedule or in a workflow.
+When the app needs to pass a callback function to the component, use function
+handles. This is common for components that run app-defined logic on a schedule
+or in a workflow.
 
 ```ts
 // App side: create a handle and pass it to the component
@@ -37,29 +40,44 @@ export const enqueue = mutation({
 
 ## Deriving validators from schema
 
-Instead of manually repeating field types in return validators, extend the schema validator:
+Instead of manually repeating field types in return validators, extend the
+schema validator. This example renames the notification's opaque parent-app
+user ID without reading any parent-app tables:
+
+<!-- Local correction for https://github.com/openclaw/clawhub/pull/3516, based on
+get-convex/agent-skills@0aa10576821c6928f6a0f498c087af4ee231536e. The installed
+upstream SHA remains recorded in ai-files.state.json. `convex ai-files update`
+reinstalls skills even when that SHA is unchanged; recheck this correction after
+updating until upstream incorporates it. -->
 
 ```ts
 import { v } from "convex/values";
+import { internalQuery } from "./_generated/server.js";
 import schema from "./schema.js";
 
-const notificationDoc = schema.tables.notifications.validator.extend({
-  _id: v.id("notifications"),
-  _creationTime: v.number(),
+const vNotification = schema.doc("notifications").omit("userId").extend({
+  recipientId: v.string(),
 });
 
-export const getLatest = query({
-  args: {},
-  returns: v.nullable(notificationDoc),
-  handler: async (ctx) => {
-    return await ctx.db.query("notifications").order("desc").first();
+export const getNotification = internalQuery({
+  args: { id: schema.id("notifications") },
+  returns: v.nullable(vNotification),
+  handler: async (ctx, args) => {
+    const notification = await ctx.db.get("notifications", args.id);
+    if (!notification) return null;
+    const { userId, ...rest } = notification;
+    return {
+      ...rest,
+      recipientId: userId,
+    };
   },
 });
 ```
 
 ## Static configuration with a globals table
 
-A common pattern for component configuration is a single-document "globals" table:
+A common pattern for component configuration is a single-document "globals"
+table:
 
 ```ts
 // schema.ts
@@ -91,7 +109,8 @@ export const configure = mutation({
 
 ## Class-based client wrappers
 
-For components with many functions or configuration options, a class-based client provides a cleaner API. This pattern is common in published components.
+For components with many functions or configuration options, a class-based
+client provides a cleaner API. This pattern is common in published components.
 
 ```ts
 // src/client/index.ts

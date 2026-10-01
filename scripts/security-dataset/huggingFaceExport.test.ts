@@ -1,0 +1,176 @@
+import { describe, expect, it } from "vitest";
+import { buildHuggingFaceSecuritySignalRows } from "./huggingFaceExport";
+import { hashString, type NormalizedDatasetRows } from "./normalize";
+
+describe("Hugging Face security dataset export", () => {
+  it("builds flat researcher rows from normalized security dataset sidecars", () => {
+    const artifactId = `skill:${"a".repeat(64)}`;
+    const normalized: NormalizedDatasetRows = {
+      artifacts: [
+        {
+          artifact_id: artifactId,
+          source_kind: "skill",
+          source_table: "skillVersions",
+          source_doc_id_hash: hashString("skillVersions:1"),
+          parent_doc_id_hash: hashString("skills:1"),
+          public_name: "Demo Skill",
+          public_owner_handle: "openclaw",
+          public_slug: "demo-skill",
+          public_qualified_slug: "openclaw/demo-skill",
+          version: "1.0.0",
+          artifact_sha256: "a".repeat(64),
+          skill_md_content_redacted: "Use this skill with [REDACTED_SECRET]",
+          bundle_files_redacted: [
+            {
+              path: "scripts/run.sh",
+              content: "echo [REDACTED_SECRET]\n",
+              sha256: "bundle-content-sha",
+              size_bytes: 23,
+            },
+          ],
+          created_at: Date.UTC(2026, 5, 23),
+          created_month: "2026-06",
+          soft_deleted: false,
+          is_public: true,
+          file_count: 2,
+          total_bytes: 42,
+          file_ext_counts: { ".md": 1, ".sh": 1 },
+          package_family: null,
+          package_channel: null,
+          source_repo_host: null,
+          has_vt_scan: true,
+          has_skillspector_scan: true,
+          has_static_scan: true,
+          has_llm_scan: true,
+        },
+      ],
+      scanResults: [
+        {
+          artifact_id: artifactId,
+          scanner: "static",
+          scanner_version: "static-v1",
+          model: null,
+          status: "clean",
+          verdict: "clean",
+          confidence: null,
+          checked_at: Date.UTC(2026, 5, 23),
+          reason_codes: [],
+          engine_stats: null,
+          summary_redacted: "No suspicious patterns detected.",
+          raw_status_family: "clean",
+        },
+        {
+          artifact_id: artifactId,
+          scanner: "virustotal",
+          scanner_version: "vt-v3",
+          model: null,
+          status: "clean",
+          verdict: "clean",
+          confidence: null,
+          checked_at: Date.UTC(2026, 5, 23),
+          reason_codes: [],
+          engine_stats: { malicious: 0, suspicious: 0, harmless: 1, undetected: 65 },
+          summary_redacted: null,
+          raw_status_family: "clean",
+        },
+        {
+          artifact_id: artifactId,
+          scanner: "skillspector",
+          scanner_version: "2.0.0",
+          model: null,
+          status: "suspicious",
+          verdict: "CAUTION",
+          confidence: null,
+          checked_at: Date.UTC(2026, 5, 23),
+          score: 35,
+          severity: "MEDIUM",
+          reason_codes: ["SQP-1"],
+          issues: [
+            {
+              code: "SQP-1",
+              category: "Skill Quality",
+              severity: "MEDIUM",
+              confidence: 0.9,
+              explanation_redacted: "Broad trigger scope.",
+            },
+          ],
+          engine_stats: null,
+          summary_redacted: "Found broad trigger scope.",
+          raw_status_family: "suspicious",
+        },
+        {
+          artifact_id: artifactId,
+          scanner: "llm",
+          scanner_version: null,
+          model: "gpt-test",
+          status: "completed",
+          verdict: "suspicious",
+          confidence: "medium",
+          checked_at: Date.UTC(2026, 5, 23),
+          reason_codes: [],
+          engine_stats: null,
+          summary_redacted: "Review before trusting.",
+          raw_status_family: "suspicious",
+        },
+      ],
+      staticFindings: [
+        {
+          artifact_id: artifactId,
+          finding_id: "finding-1",
+          code: "suspicious.env_credential_access",
+          severity: "warn",
+          file_path_hash: hashString("scripts/run.sh"),
+          file_ext: ".sh",
+          line_bucket: "1-20",
+          message: "Reads credentials",
+          evidence_redacted: "[REDACTED_SECRET]",
+        },
+      ],
+      clawScanFindings: [],
+      labels: [
+        {
+          artifact_id: artifactId,
+          label: "suspicious",
+          label_source: "moderation_consensus",
+          label_confidence: "derived_consensus",
+          reason_codes: ["suspicious.env_credential_access"],
+          scanner_agreement: 1,
+          notes_redacted: null,
+        },
+      ],
+      splits: [
+        {
+          artifact_id: artifactId,
+          split: "train",
+          split_version: "sha256-v1",
+          split_key: hashString("a".repeat(64)),
+        },
+      ],
+    };
+
+    expect(buildHuggingFaceSecuritySignalRows(normalized)).toEqual([
+      expect.objectContaining({
+        id: "a".repeat(64),
+        skill_slug: "openclaw/demo-skill",
+        skill_version: "1.0.0",
+        skill_md_content: "Use this skill with [REDACTED_SECRET]",
+        skill_bundle_content: [
+          {
+            path: "scripts/run.sh",
+            content: "echo [REDACTED_SECRET]\n",
+            sha256: "bundle-content-sha",
+            sizeBytes: 23,
+          },
+        ],
+        clawscan_verdict: "suspicious",
+        clawscan_confidence: "medium",
+        clawscan_model: "gpt-test",
+        static_status: "clean",
+        static_finding_count: 1,
+        virustotal_malicious_count: 0,
+        skillspector_issue_categories: ["Skill Quality"],
+        split: "train",
+      }),
+    ]);
+  });
+});

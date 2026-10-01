@@ -1,16 +1,12 @@
-function toHeaderRecord(init?: HeadersInit): Record<string, string> {
-  if (!init) return {};
-  if (init instanceof Headers) return Object.fromEntries(init.entries());
-  if (Array.isArray(init)) return Object.fromEntries(init);
-  return { ...(init as Record<string, string>) };
-}
-
 export function mergeHeaders(...inits: Array<HeadersInit | undefined>): Record<string, string> {
-  const out: Record<string, string> = {};
+  const out = new Headers();
   for (const init of inits) {
-    Object.assign(out, toHeaderRecord(init));
+    if (!init) continue;
+    for (const [key, value] of new Headers(init)) {
+      out.set(key, value);
+    }
   }
-  return out;
+  return Object.fromEntries(out.entries());
 }
 
 export function corsHeaders(origin: string = "*"): Record<string, string> {

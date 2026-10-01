@@ -1,20 +1,39 @@
-import { Package, Star, Download } from "lucide-react";
+import { Bookmark, Download, Package } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { convexHttp } from "../convex/client";
 import { hasOwnProperty } from "../lib/hasOwnProperty";
 import { formatCompactStat } from "../lib/numberFormat";
-import type { PublicPublisher, PublicUser } from "../lib/publicUser";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { buildPublisherProfileHref } from "../lib/ownerRoute";
+import { OfficialBadge } from "./OfficialBadge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+
+type UserBadgeUser = {
+  _id?: string;
+  kind?: "user" | "org";
+  linkedUserId?: string;
+  handle?: string | null;
+  name?: string | null;
+  displayName?: string | null;
+  image?: string | null;
+  official?: boolean;
+};
 
 type UserBadgeProps = {
-  user: PublicUser | PublicPublisher | null | undefined;
+  user: UserBadgeUser | null | undefined;
   fallbackHandle?: string | null;
   prefix?: string;
   size?: "sm" | "md";
   link?: boolean;
   showName?: boolean;
+  showHandle?: boolean;
+  /** Sidebar creator row: `Display Name / @handle` with muted handle suffix. */
+  showMutedHandle?: boolean;
+  /** Hero creator row: stack `@handle` below the display name. */
+  stackMutedHandleBelowName?: boolean;
+  disableTooltip?: boolean;
+  profileHref?: string | null;
 };
 
 export function UserBadge({
@@ -24,38 +43,50 @@ export function UserBadge({
   size = "sm",
   link = true,
   showName = false,
+  showHandle = true,
+  showMutedHandle = false,
+  stackMutedHandleBelowName = false,
+  disableTooltip = false,
+  profileHref,
 }: UserBadgeProps) {
-  const userName = hasOwnProperty(user, "name") && typeof user.name === "string"
-    ? user.name.trim()
-    : undefined;
+  const userName =
+    hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
   const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
   const href =
-    user?.handle && hasOwnProperty(user, "kind")
-      ? user.kind === "org"
-        ? `/orgs/${encodeURIComponent(user.handle)}`
-        : `/u/${encodeURIComponent(user.handle)}`
-      : user?.handle
-        ? `/u/${encodeURIComponent(user.handle)}`
-        : null;
+    profileHref === undefined ? (handle ? buildPublisherProfileHref(handle) : null) : profileHref;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
+  const showStackedMutedHandle =
+    stackMutedHandleBelowName && showMutedHandle && Boolean(handle) && Boolean(displayName);
+  const showInlineMutedHandle =
+    !stackMutedHandleBelowName && showMutedHandle && Boolean(handle) && Boolean(displayName);
+  const resolvedShowHandle = showMutedHandle ? !displayName && Boolean(handle) : showHandle;
   const hasUsefulName =
     showName &&
     Boolean(displayName) &&
-    Boolean(handle) &&
-    displayName!.toLowerCase() !== handle!.toLowerCase();
+    (showMutedHandle ||
+      !resolvedShowHandle ||
+      !handle ||
+      displayName!.toLowerCase() !== handle.toLowerCase());
   const initial = (displayName ?? handle ?? "u").charAt(0).toUpperCase();
+  const isOfficial = user && hasOwnProperty(user, "official") && user.official === true;
 
   // Resolve userId for stats query — PublicUser has _id directly,
   // PublicPublisher has linkedUserId
   const userId =
-    user && hasOwnProperty(user, "kind")
-      ? (user as PublicPublisher).linkedUserId ?? null
-      : user?._id ?? null;
+    user && hasOwnProperty(user, "kind") ? (user.linkedUserId ?? null) : (user?._id ?? null);
 
-  const badge = (
-    <span className={`user-badge user-badge-${size}`}>
+  const officialBadge = isOfficial ? (
+    <OfficialBadge
+      className="user-name-official-badge"
+      iconOnly={stackMutedHandleBelowName}
+      size={stackMutedHandleBelowName ? 14 : 12}
+    />
+  ) : null;
+
+  const badgeContent = (
+    <>
       {prefix ? <span className="user-badge-prefix">{prefix}</span> : null}
       <span className="user-avatar" aria-hidden="true">
         {image ? (
@@ -66,33 +97,73 @@ export function UserBadge({
       </span>
       {hasUsefulName ? (
         <>
-          <span className="user-name">{displayName}</span>
-          <span className="user-name-sep" aria-hidden="true">
-            ·
+          <span className="user-name-row">
+            <span className="user-name">{displayName}</span>
+            {officialBadge}
           </span>
+          {showInlineMutedHandle ? (
+            <>
+              <span className="user-name-sep" aria-hidden="true">
+                {" / "}
+              </span>
+              <span className="user-handle user-handle-muted">{label}</span>
+            </>
+          ) : resolvedShowHandle ? (
+            <span className="user-name-sep" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
         </>
       ) : null}
-      {link && href ? (
-        <a className="user-handle" href={href}>
-          {label}
-        </a>
-      ) : (
-        <span className="user-handle">{label}</span>
-      )}
-    </span>
+      {showStackedMutedHandle ? (
+        <span className="user-handle user-handle-muted">{label}</span>
+      ) : null}
+      {resolvedShowHandle ? <span className="user-handle">{label}</span> : null}
+      {isOfficial && !hasUsefulName ? officialBadge : null}
+    </>
   );
 
-  if (!userId) return badge;
+  const profileLabel = hasUsefulName
+    ? `View ${displayName} profile`
+    : handle
+      ? `View @${handle} profile`
+      : "View profile";
+
+  const badge =
+    link && href ? (
+      <a
+        className={`user-badge user-badge-${size} user-badge-link`}
+        href={href}
+        aria-label={profileLabel}
+      >
+        {badgeContent}
+      </a>
+    ) : (
+      <span className={`user-badge user-badge-${size}`}>{badgeContent}</span>
+    );
+
+  if (!userId || disableTooltip) return badge;
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
-      <UserStatsTooltipContent userId={userId} displayName={displayName} handle={handle} />
-    </Tooltip>
+    <TooltipProvider delayDuration={400}>
+      <Tooltip>
+        <TooltipTrigger asChild>{badge}</TooltipTrigger>
+        <UserStatsTooltipContent userId={userId} displayName={displayName} handle={handle} />
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
-type HoverStats = { publishedSkills: number; totalStars: number; totalDownloads: number };
+type HoverStats = {
+  publishedSkills: number;
+  totalStars: number;
+  totalInstalls?: number;
+  totalDownloads?: number;
+};
+
+export function getHoverTotalDownloads(stats: HoverStats) {
+  return stats.totalDownloads ?? stats.totalInstalls ?? 0;
+}
 
 function UserStatsTooltipContent({
   userId,
@@ -128,26 +199,33 @@ function UserStatsTooltipContent({
             {displayName}
           </span>
         )}
-        {handle && (
-          <span className="text-fs-xs text-ink-soft">@{handle}</span>
-        )}
+        {handle && <span className="text-fs-xs text-ink-soft">@{handle}</span>}
       </div>
       <div className="border-t border-line flex items-center gap-space-3 px-3 py-2">
         {stats === null ? (
           <span className="text-fs-xs text-ink-soft">Loading...</span>
         ) : (
           <>
-            <span className="flex items-center gap-1 text-fs-xs text-ink-soft" title="Published skills">
+            <span
+              className="flex items-center gap-1 text-fs-xs text-ink-soft"
+              title="Published skills"
+            >
               <Package size={12} />
               {formatCompactStat(stats.publishedSkills)}
             </span>
-            <span className="flex items-center gap-1 text-fs-xs text-ink-soft" title="Stars received">
-              <Star size={12} />
+            <span
+              className="flex items-center gap-1 text-fs-xs text-ink-soft"
+              title="Bookmarks received"
+            >
+              <Bookmark size={12} />
               {formatCompactStat(stats.totalStars)}
             </span>
-            <span className="flex items-center gap-1 text-fs-xs text-ink-soft" title="Total downloads">
+            <span
+              className="flex items-center gap-1 text-fs-xs text-ink-soft"
+              title="Total downloads"
+            >
               <Download size={12} />
-              {formatCompactStat(stats.totalDownloads)}
+              {formatCompactStat(getHoverTotalDownloads(stats))}
             </span>
           </>
         )}

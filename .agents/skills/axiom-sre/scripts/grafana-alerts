@@ -1,0 +1,57 @@
+#!/bin/bash
+# List alerts from Grafana
+# Usage: grafana-alerts <deployment> [state]
+#
+# Examples:
+#   grafana-alerts prod
+#   grafana-alerts prod firing
+#   grafana-alerts prod pending
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+state="${2:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: grafana-alerts <deployment> [state]" >&2
+    echo "" >&2
+    echo "Arguments:" >&2
+    echo "  deployment  - Environment (prod, staging, dev, prod-eu)" >&2
+    echo "  state       - Filter: firing, pending, inactive (optional)" >&2
+    echo "" >&2
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    "$SCRIPT_DIR/grafana-config" 2>&1 | tail -n +3
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" grafana "$DEPLOYMENT")"
+
+api_url="${GRAFANA_URL}/api/alertmanager/grafana/api/v2/alerts"
+result=$("$SCRIPT_DIR/curl-auth" grafana "$DEPLOYMENT" "$api_url")
+
+if command -v jq &>/dev/null; then
+    echo "Deployment: $DEPLOYMENT"
+    if [[ -n "$state" ]]; then
+        echo "Filter: $state"
+    fi
+    echo ""
+    
+    # Filter by state if specified
+    if [[ -n "$state" ]]; then
+        alerts=$(echo "$result" | jq --arg state "$state" '[.[] | select(.status.state == $state)]')
+    else
+        alerts="$result"
+    fi
+    
+    num_alerts=$(echo "$alerts" | jq 'length')
+    echo "Alerts: $num_alerts"
+    echo ""
+    
+    if [[ "$num_alerts" -gt 0 ]]; then
+        echo "$alerts" | jq -r '.[] | 
+            "[\(.status.state | ascii_upcase)] \(.labels.alertname // "unknown")\n  Severity: \(.labels.severity // "N/A")\n  Summary: \(.annotations.summary // .annotations.description // "N/A")\n  Started: \(.startsAt // "N/A")\n"' || true
+    fi
+else
+    echo "$result"
+fi

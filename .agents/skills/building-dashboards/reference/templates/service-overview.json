@@ -1,0 +1,113 @@
+{
+  "name": "{{service}} - Service Overview",
+  "description": "Oncall dashboard for {{service}} service. Shows traffic, errors, latency, and recent error logs.",
+  "owner": "X-AXIOM-EVERYONE",
+  "datasets": ["{{dataset}}"],
+  "refreshTime": 60,
+  "schemaVersion": 2,
+  "timeWindowStart": "qr-now-1h",
+  "timeWindowEnd": "qr-now",
+  "charts": [
+    {
+      "id": "error-rate",
+      "name": "Error Rate",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize total = count(), errors = countif(status >= 500) | extend error_rate = iff(total > 0, round(100.0 * errors / total, 2), 0.0) | project ['Error Rate %'] = error_rate"
+      }
+    },
+    {
+      "id": "p95-latency",
+      "name": "p95 Latency",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize ['p95 (ms)'] = round(percentile(duration_ms, 95), 1)"
+      }
+    },
+    {
+      "id": "traffic-rps",
+      "name": "Total Requests",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize ['Total Requests'] = count()"
+      }
+    },
+    {
+      "id": "error-count",
+      "name": "Errors",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' and status >= 500 | summarize Errors = count()"
+      }
+    },
+    {
+      "id": "request-rate-ts",
+      "name": "Request Rate Over Time",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize ['req/min'] = count() by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "error-rate-ts",
+      "name": "Error Rate Over Time (%)",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize total = count(), errors = countif(status >= 500) by bin_auto(_time) | extend ['error_rate_%'] = iff(total > 0, round(100.0 * errors / total, 2), 0.0) | project _time, ['error_rate_%']"
+      }
+    },
+    {
+      "id": "latency-ts",
+      "name": "Latency Percentiles (ms)",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize percentiles_array(duration_ms, 50, 95, 99) by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "latency-heatmap",
+      "name": "Latency Distribution",
+      "type": "Heatmap",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize histogram(duration_ms, 15) by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "status-distribution",
+      "name": "Status Codes",
+      "type": "Pie",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | extend status_class = case(status < 300, '2xx', status < 400, '3xx', status < 500, '4xx', '5xx') | summarize count() by status_class"
+      }
+    },
+    {
+      "id": "top-routes",
+      "name": "Top Routes by Traffic",
+      "type": "Table",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' | summarize Requests = count(), Errors = countif(status >= 500), ['p95 (ms)'] = round(percentile(duration_ms, 95), 0) by route | top 10 by Requests | project Route = route, Requests, Errors, ['p95 (ms)']"
+      }
+    },
+    {
+      "id": "recent-errors",
+      "name": "Recent Errors",
+      "type": "LogStream",
+      "query": {
+        "apl": "['{{dataset}}'] | where service == '{{service}}' and status >= 500 | project-keep _time, trace_id, route, status, error_message, duration_ms | order by _time desc | take 100"
+      }
+    }
+  ],
+  "layout": [
+    {"i": "error-rate", "x": 0, "y": 0, "w": 3, "h": 2},
+    {"i": "p95-latency", "x": 3, "y": 0, "w": 3, "h": 2},
+    {"i": "traffic-rps", "x": 6, "y": 0, "w": 3, "h": 2},
+    {"i": "error-count", "x": 9, "y": 0, "w": 3, "h": 2},
+    {"i": "request-rate-ts", "x": 0, "y": 2, "w": 6, "h": 3},
+    {"i": "error-rate-ts", "x": 6, "y": 2, "w": 6, "h": 3},
+    {"i": "latency-ts", "x": 0, "y": 5, "w": 6, "h": 3},
+    {"i": "latency-heatmap", "x": 6, "y": 5, "w": 6, "h": 3},
+    {"i": "status-distribution", "x": 0, "y": 8, "w": 4, "h": 3},
+    {"i": "top-routes", "x": 4, "y": 8, "w": 8, "h": 3},
+    {"i": "recent-errors", "x": 0, "y": 11, "w": 12, "h": 4}
+  ]
+}

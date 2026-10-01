@@ -1,0 +1,64 @@
+name: Skill Evaluation Worker
+
+on:
+  repository_dispatch:
+    types: [clawhub-skill-evaluation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    name: NVIDIA SkillEvaluator Tier 3
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    timeout-minutes: 180
+    environment: Production
+    concurrency:
+      group: clawhub-skill-evaluation-worker
+      cancel-in-progress: false
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      SKILL_EVALUATION_WORKER_ID: github-actions:${{ github.run_id }}:${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.10.11"
+
+      - name: Install pinned SkillEvaluator release
+        env:
+          SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
+        run: |
+          set -euo pipefail
+          git clone --quiet --filter=blob:none --branch v0.1.0 --depth 1 \
+            https://github.com/NVIDIA/SkillEvaluator.git "$SKILL_EVALUATOR_DIR"
+          test "$(git -C "$SKILL_EVALUATOR_DIR" rev-parse HEAD)" = \
+            "4975c97d49e3623eeab739248e52d83c4aa8f582"
+          uv sync --project "$SKILL_EVALUATOR_DIR" --extra tier3 --frozen
+          uv run --project "$SKILL_EVALUATOR_DIR" skillevaluator --version
+
+      - name: Install pinned Codex CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openai/codex@0.148.0
+          codex --version
+
+      - name: Verify Docker runtime
+        run: docker info >/dev/null
+
+      - name: Run skill evaluation worker
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          SKILL_EVALUATOR_DIR: ${{ runner.temp }}/SkillEvaluator
+        run: bun scripts/evaluations/run-skill-evaluation-worker.ts

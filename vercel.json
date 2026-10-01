@@ -1,5 +1,38 @@
 {
+  "buildCommand": "bun run build:vercel",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        },
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+        { "key": "X-XSS-Protection", "value": "0" }
+      ]
+    }
+  ],
   "redirects": [
+    {
+      "source": "/feeds/plugins",
+      "destination": "/v1/feeds/plugins",
+      "statusCode": 308
+    },
+    {
+      "source": "/feeds/skills",
+      "destination": "/v1/feeds/skills",
+      "statusCode": 308
+    },
+    {
+      "source": "/feeds/promotions",
+      "destination": "/v1/feeds/promotions",
+      "statusCode": 308
+    },
     {
       "source": "/",
       "has": [
@@ -23,12 +56,6 @@
       ],
       "destination": "https://cn.clawhub-mirror.com/:path*",
       "statusCode": 302
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://wry-manatee-359.convex.site/api/:path*"
     }
   ],
   "images": {

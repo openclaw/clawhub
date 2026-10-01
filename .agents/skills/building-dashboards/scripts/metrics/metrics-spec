@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# metrics-spec: Fetch the MPL metrics query specification from Axiom
+#
+# Usage: metrics-spec
+#
+# Retrieves the complete MPL query spec with syntax, operators, and examples.
+# Read this before composing queries.
+
+set -euo pipefail
+
+SPEC_URL="https://us-east-1.aws.edge.axiom.co/v1/query/_mpl"
+
+# Match the timeout convention used by axiom-api so a stalled edge can't hang
+# the caller indefinitely. Override via AXIOM_CONNECT_TIMEOUT / AXIOM_MAX_TIME.
+curl -sS -X OPTIONS -H "Accept: text/markdown" \
+    --connect-timeout "${AXIOM_CONNECT_TIMEOUT:-10}" \
+    --max-time "${AXIOM_MAX_TIME:-120}" \
+    "$SPEC_URL"

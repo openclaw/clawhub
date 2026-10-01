@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { readCanonicalStat } from "./skillStats";
 
 function getSkillContribution(skill: Doc<"skills">) {
   if (skill.softDeletedAt) {
@@ -8,8 +9,8 @@ function getSkillContribution(skill: Doc<"skills">) {
 
   return {
     publishedSkills: 1,
-    totalStars: skill.stats?.stars ?? 0,
-    totalDownloads: skill.stats?.downloads ?? 0,
+    totalStars: readCanonicalStat(skill, "stars"),
+    totalDownloads: readCanonicalStat(skill, "downloads"),
   };
 }
 
@@ -42,9 +43,11 @@ export async function adjustUserSkillStatsForSkillChange(
 
   if (prevOwnerId && prevOwnerId === nextOwnerId) {
     await patchUserStats(ctx, prevOwnerId, {
-      publishedSkills: (nextContribution?.publishedSkills ?? 0) - (prevContribution?.publishedSkills ?? 0),
+      publishedSkills:
+        (nextContribution?.publishedSkills ?? 0) - (prevContribution?.publishedSkills ?? 0),
       totalStars: (nextContribution?.totalStars ?? 0) - (prevContribution?.totalStars ?? 0),
-      totalDownloads: (nextContribution?.totalDownloads ?? 0) - (prevContribution?.totalDownloads ?? 0),
+      totalDownloads:
+        (nextContribution?.totalDownloads ?? 0) - (prevContribution?.totalDownloads ?? 0),
     });
     return;
   }

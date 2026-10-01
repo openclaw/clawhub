@@ -1,7 +1,9 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { AriaAttributes, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type HeaderAuthStatus = {
@@ -10,9 +12,10 @@ type HeaderAuthStatus = {
   me: Record<string, unknown> | null;
 };
 
-const siteModeMock = vi.fn(() => "souls");
 const navigateMock = vi.fn();
-const { useUnifiedSearchMock } = vi.hoisted(() => ({
+const { profileHandleMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+  profileHandleMock: vi.fn(),
+  signInMock: vi.fn(),
   useUnifiedSearchMock: vi.fn(),
 }));
 
@@ -27,11 +30,13 @@ const defaultUnifiedSearchResult = {
         _id: "skills:weather",
         slug: "weather",
         displayName: "Weather Skill",
+        categories: ["development"],
         ownerUserId: "users:local",
         stats: { downloads: 1, stars: 2 },
         createdAt: 1,
         updatedAt: 2,
       },
+      owner: null,
     },
   ],
   pluginResults: [
@@ -44,6 +49,7 @@ const defaultUnifiedSearchResult = {
         channel: "community",
         isOfficial: false,
         summary: "Plugin weather tools.",
+        categories: ["channels"],
         ownerHandle: "local",
         createdAt: 1,
         updatedAt: 2,
@@ -54,26 +60,70 @@ const defaultUnifiedSearchResult = {
       },
     },
   ],
+  creatorResults: [
+    {
+      type: "creator",
+      creator: {
+        _id: "publishers:local",
+        _creationTime: 1,
+        kind: "org",
+        handle: "local",
+        displayName: "Local Creator",
+        image: undefined,
+        bio: "Creator weather tools.",
+        linkedUserId: undefined,
+        official: true,
+        stats: {
+          skills: 1,
+          packages: 1,
+          installs: 0,
+          downloads: 3,
+          stars: 0,
+        },
+        publishedItems: [],
+      },
+    },
+  ],
   skillCount: 1,
   pluginCount: 1,
+  creatorCount: 1,
+  skillHasMore: false,
+  pluginHasMore: false,
+  creatorHasMore: false,
   isSearching: false,
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { children: ReactNode; className?: string; hash?: string; to?: string }) => (
-    <a href={`${props.to ?? "/"}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
-      {props.children}
-    </a>
-  ),
+  Link: (props: {
+    children: ReactNode;
+    className?: string;
+    hash?: string;
+    params?: { handle?: string; slug?: string };
+    to?: string;
+  }) => {
+    const to =
+      props.to
+        ?.replace("$handle", props.params?.handle ?? "$handle")
+        .replace("$slug", props.params?.slug ?? "$slug") ?? "/";
+    return (
+      <a href={`${to}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
+        {props.children}
+      </a>
+    );
+  },
   useLocation: () => ({ pathname: "/" }),
   useNavigate: () => navigateMock,
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({
-    signIn: vi.fn(),
+    signIn: signInMock,
     signOut: vi.fn(),
   }),
+}));
+
+vi.mock("convex/react", () => ({
+  useQuery: () => profileHandleMock(),
 }));
 
 const authStatusMock = vi.fn<() => HeaderAuthStatus>(() => ({
@@ -86,19 +136,13 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => authStatusMock(),
 }));
 
-const setThemeMock = vi.fn();
 const setModeMock = vi.fn();
 
 vi.mock("../lib/theme", () => ({
   applyTheme: vi.fn(),
-  THEME_OPTIONS: [
-    { value: "claw", label: "Claw", description: "" },
-    { value: "hub", label: "Hub", description: "" },
-  ],
   useThemeMode: () => ({
-    theme: "hub",
+    theme: "claw",
     mode: "system",
-    setTheme: setThemeMock,
     setMode: setModeMock,
   }),
 }));
@@ -114,21 +158,12 @@ vi.mock("../lib/theme-transition", () => ({
 }));
 
 vi.mock("../lib/useAuthError", () => ({
+  clearAuthError: vi.fn(),
   setAuthError: vi.fn(),
-  useAuthError: () => ({
-    error: null,
-    clear: vi.fn(),
-  }),
-}));
-
-vi.mock("../lib/roles", () => ({
-  isModerator: () => false,
 }));
 
 vi.mock("../lib/site", () => ({
-  getClawHubSiteUrl: () => "https://clawhub.ai",
-  getSiteMode: () => siteModeMock(),
-  getSiteName: () => "OnlyCrabs",
+  SITE_NAME: "ClawHub",
 }));
 
 vi.mock("../lib/gravatar", () => ({
@@ -136,87 +171,351 @@ vi.mock("../lib/gravatar", () => ({
 }));
 
 vi.mock("../lib/useUnifiedSearch", () => ({
-  useUnifiedSearch: () => useUnifiedSearchMock(),
+  isUnifiedNativeSkillResult: (result: { type: string }) => result.type === "skill",
+  useUnifiedSearch: (...args: unknown[]) => useUnifiedSearchMock(...args),
 }));
 
 vi.mock("../components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    className,
+    onClick,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    onClick?: () => void;
+    "aria-current"?: AriaAttributes["aria-current"];
+    "aria-label"?: string;
+    "data-status"?: string;
+    title?: string;
+  }) => (
+    <div
+      aria-current={props["aria-current"]}
+      aria-label={props["aria-label"]}
+      className={className}
+      data-status={props["data-status"]}
+      onClick={onClick}
+      title={props.title}
+    >
+      {children}
+    </div>
+  ),
   DropdownMenuSeparator: () => <hr />,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock("../components/ui/toggle-group", () => ({
-  ToggleGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ToggleGroupItem: ({ children }: { children: ReactNode }) => (
-    <button type="button">{children}</button>
+  ToggleGroup: ({
+    children,
+    className,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    "aria-label"?: string;
+  }) => (
+    <div className={className} aria-label={props["aria-label"]}>
+      {children}
+    </div>
+  ),
+  ToggleGroupItem: ({
+    children,
+    value,
+    ...props
+  }: {
+    children: ReactNode;
+    value?: string;
+    "aria-label"?: string;
+  }) => (
+    <button type="button" aria-label={props["aria-label"]} data-value={value}>
+      {children}
+    </button>
   ),
 }));
 
 import Header from "../components/Header";
 
+function stylesCss() {
+  return readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+}
+
+function compactHeaderCss() {
+  const css = stylesCss();
+  let start = css.indexOf("@media (max-width: 760px)");
+  while (start >= 0) {
+    const nextMedia = css.indexOf("@media ", start + 1);
+    const block = css.slice(start, nextMedia === -1 ? undefined : nextMedia);
+    if (block.includes(".navbar-search-wrap") && block.includes(".nav-mobile")) {
+      return block;
+    }
+    start = css.indexOf("@media (max-width: 760px)", start + 1);
+  }
+  throw new Error("Missing compact header media query");
+}
+
+const scrollIntoViewMock = vi.fn();
+
 describe("Header", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
     authStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
       me: null,
     });
-    siteModeMock.mockReturnValue("souls");
+    profileHandleMock.mockReturnValue(null);
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
+    signInMock.mockReset();
+    signInMock.mockResolvedValue({ signingIn: true });
   });
 
-  it("hides Packages navigation in soul mode on mobile and desktop", () => {
-    siteModeMock.mockReturnValue("souls");
-
-    render(<Header />);
-
-    expect(screen.queryByText("Packages")).toBeNull();
-  });
-
-  it("renders simplified desktop nav and theme toggle", () => {
-    siteModeMock.mockReturnValue("skills");
-    setThemeMock.mockClear();
+  it("renders calm text-only content links in the top navbar", () => {
     setModeMock.mockClear();
 
     render(<Header />);
 
-    expect(screen.getByRole("button", { name: /Toggle theme\. Current: system/i })).toBeTruthy();
+    const topNav = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(document.querySelector(".navbar-calm")).toBeTruthy();
+    expect(document.querySelector(".navbar-calm-rail")).toBeTruthy();
+    expect(document.querySelector(".navbar-top-links")).toBeNull();
+    expect(document.querySelector(".navbar-tabs")).toBeNull();
+    expect(document.querySelector(".theme-mode-toggle")).toBeNull();
+    expect(document.querySelector('.brand-mark-image[src="/logo-transparent.png"]')).toBeTruthy();
+    expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
+    expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
+    expect(
+      topNav.querySelector(
+        '.navbar-calm-rail-link-secondary[href="https://docs.openclaw.ai/clawhub/"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      topNav.querySelector('.navbar-calm-more-link[href="https://docs.openclaw.ai/clawhub/"]'),
+    ).toBeTruthy();
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
-    expect(screen.queryByText("Users")).toBeNull();
+    expect(screen.getAllByText("Official")).toHaveLength(1);
+    expect(screen.getAllByText("Docs")).toHaveLength(2);
+    expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
-    expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: /Toggle theme\. Current: system/i }));
-    expect(setModeMock).toHaveBeenCalledWith("dark");
+    expect(screen.getByPlaceholderText("Search skills, plugins, and creators")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
+    expect(screen.getAllByText("Official")).toHaveLength(2);
+    expect(screen.getAllByText("Docs")).toHaveLength(3);
+    expect(screen.queryByText("About")).toBeNull();
   });
 
-  it("shows grouped skills and plugins typeahead without users", () => {
-    siteModeMock.mockReturnValue("skills");
+  it("renders theme mode controls as a compact row between Settings and Sign out", () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+
+    render(<Header />);
+
+    expect(document.querySelector(".theme-mode-toggle")).toBeNull();
+    expect(screen.queryByText("Theme")).toBeNull();
+
+    const themeRow = document.querySelector(".user-dropdown-theme-row");
+    const settings = screen.getByText("Settings");
+    const signOut = screen.getByText("Sign out");
+
+    expect(themeRow).toBeTruthy();
+    expect(themeRow?.children).toHaveLength(3);
+    expect(settings.compareDocumentPosition(themeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(themeRow!.compareDocumentPosition(signOut) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(themeRow?.previousElementSibling?.tagName).toBe("HR");
+    expect(signOut.previousElementSibling?.tagName).toBe("HR");
+
+    expect(screen.getByLabelText("System theme").getAttribute("aria-current")).toBe("true");
+    expect(screen.getByLabelText("System theme").getAttribute("data-status")).toBe("active");
+    expect(screen.getByLabelText("Light theme").getAttribute("aria-current")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Light theme"));
+    expect(setModeMock).toHaveBeenCalledWith("light");
+    fireEvent.click(screen.getByLabelText("Dark theme"));
+    expect(setModeMock).toHaveBeenCalledWith("dark");
+  });
+
+  it("renders the GitHub sign-in button with desktop and compact labels", () => {
+    render(<Header />);
+
+    const signInButton = screen.getByRole("button", { name: "Sign in with GitHub" });
+    expect(signInButton.className).toContain("github-sign-in-button");
+    const fullCopy = signInButton.querySelector(".sign-in-full-copy");
+    expect(fullCopy?.textContent).toBe("Sign in with GitHub");
+    expect(fullCopy?.childNodes).toHaveLength(1);
+    expect(signInButton.querySelector(".sign-in-with")).toBeNull();
+    expect(signInButton.querySelector(".sign-in-compact-copy")?.textContent).toBe("Sign in");
+  });
+
+  it("shows an auth error when the GitHub sign-in request does not start", async () => {
+    const { setAuthError } = await import("../lib/useAuthError");
+    signInMock.mockResolvedValue({ signingIn: false });
+
+    render(<Header />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with GitHub" }));
+
+    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/dashboard" });
+    await waitFor(() => {
+      expect(setAuthError).toHaveBeenCalledWith("Sign in failed. Please try again.");
+    });
+  });
+
+  it("does not show an auth error when GitHub sign-in starts a redirect", async () => {
+    const { setAuthError } = await import("../lib/useAuthError");
+    signInMock.mockResolvedValue({
+      signingIn: false,
+      redirect: new URL("https://github.com/login/oauth/authorize"),
+    });
+
+    render(<Header />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with GitHub" }));
+
+    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/dashboard" });
+    await Promise.resolve();
+    expect(setAuthError).not.toHaveBeenCalled();
+  });
+
+  it("keeps inline search and moves content nav into the compact menu", () => {
+    const css = compactHeaderCss();
+
+    expect(css).toContain(".navbar-search-wrap");
+    expect(css).toContain("grid-template-columns");
+    expect(css).toContain(".navbar-search {");
+    expect(css).toContain("display: flex;");
+    expect(css).toContain(".navbar-search-mobile-trigger");
+    expect(css).toContain("display: none;");
+    expect(css).toContain(".navbar-tabs {");
+    expect(css).toContain("display: none;");
+    expect(css).toContain(".nav-mobile {");
+    expect(css).toContain("display: inline-flex;");
+    expect(css).not.toContain(".navbar-search {\n    display: none;");
+  });
+
+  it("aligns the restored header shell to the browse page width", () => {
+    const css = stylesCss();
+    const compactCss = compactHeaderCss();
+
+    expect(css).toContain(".navbar-inner {\n  width: 100%;\n  max-width: var(--page-max);");
+    expect(css).toContain("margin: 0 auto;\n  padding: 0 var(--space-5);");
+    expect(compactCss).toContain("padding: 8px 10px;");
+    expect(compactCss).toContain(".navbar-tabs {\n    display: none;");
+    expect(css).not.toContain(".navbar-inner,\n  .section.detail-page-section");
+  });
+
+  it("routes plain search-form submits to the search page", () => {
     navigateMock.mockReset();
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.submit(screen.getByRole("search", { name: "Site search" }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "weather", type: undefined },
+    });
+  });
+
+  it("opens the empty typeahead state from the global search shortcut", () => {
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    expect(document.activeElement).toBe(input);
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
+    expect(screen.getByText("Start typing to search skills, plugins, and creators")).toBeTruthy();
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
+      "",
+      "all",
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("preserves caret navigation and moves through the unified results with vertical arrows", () => {
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather plugin" } });
+
+    expect(fireEvent.keyDown(input, { key: "ArrowLeft" })).toBe(true);
+    const firstActiveId = input.getAttribute("aria-activedescendant");
+    const initialScrollCount = scrollIntoViewMock.mock.calls.length;
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.getAttribute("aria-activedescendant")).not.toBe(firstActiveId);
+    expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(initialScrollCount);
+    expect(scrollIntoViewMock).toHaveBeenLastCalledWith({ block: "nearest" });
+  });
+
+  it("shows skills, plugins, and creators together in grouped typeahead sections", () => {
+    navigateMock.mockReset();
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
     const typeahead = screen.getByRole("listbox");
-    expect(within(typeahead).getByText("Skills")).toBeTruthy();
+    const skillGroup = within(typeahead).getByRole("group", { name: "Skills" });
+    const pluginGroup = within(typeahead).getByRole("group", { name: "Plugins" });
+    const creatorGroup = within(typeahead).getByRole("group", { name: "Creators" });
     expect(screen.getByText("Weather Skill")).toBeTruthy();
-    expect(within(typeahead).getByText("Plugins")).toBeTruthy();
     expect(screen.getByText("Weather Plugin")).toBeTruthy();
-    expect(within(typeahead).queryByText("Users")).toBeNull();
+    expect(screen.getByText("Local Creator")).toBeTruthy();
+    expect(
+      screen.getByText("Weather Skill").closest(".navbar-search-typeahead-row")?.textContent,
+    ).toContain("@local / weather");
+    expect(
+      screen.getByText("Weather Plugin").closest(".navbar-search-typeahead-row")?.textContent,
+    ).toContain("@local / weather-plugin");
+    const creatorRowText = screen
+      .getByText("Local Creator")
+      .closest(".navbar-search-typeahead-row")?.textContent;
+    expect(creatorRowText).toContain("@local");
+    expect(creatorRowText).not.toContain("/ Org");
+    expect(skillGroup.querySelector("svg.lucide-wrench")).not.toBeNull();
+    expect(pluginGroup.querySelector("svg.lucide-message-circle")).not.toBeNull();
+    expect(creatorGroup.querySelector("svg.lucide-building-2")).not.toBeNull();
+    expect(typeahead.querySelector("svg.lucide-package")).toBeNull();
+    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
+    expect(input.getAttribute("role")).toBe("combobox");
+    expect(input.getAttribute("aria-autocomplete")).toBe("list");
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    const activeDescendant = input.getAttribute("aria-activedescendant");
+    expect(activeDescendant).toBeTruthy();
+    expect(document.getElementById(activeDescendant ?? "")).toBeTruthy();
+    expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
+    expect(within(typeahead).getByText('See creator results for "weather"')).toBeTruthy();
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -227,8 +526,125 @@ describe("Header", () => {
     });
   });
 
+  it("opens external skill typeahead results on their stored catalog route", () => {
+    navigateMock.mockReset();
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      skillResults: [
+        {
+          type: "skills-sh",
+          score: 5000,
+          result: {
+            source: "skills.sh",
+            externalId: "patrick-erichsen/skills/html",
+            route: "/skills-sh/patrick-erichsen/skills/html",
+            reference: "skills-sh:patrick-erichsen/skills/html",
+            owner: "patrick-erichsen",
+            repo: "skills",
+            slug: "html",
+            displayName: "HTML Artifact Chooser",
+            upstreamInstalls: 100,
+            lastObservedAt: 1,
+          },
+        },
+      ],
+      skillCount: 1,
+      pluginResults: [],
+      pluginCount: 0,
+      creatorResults: [],
+      creatorCount: 0,
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "html" } });
+    const option = screen.getByRole("option", { name: /HTML Artifact Chooser/i });
+    expect(option.textContent).toContain("patrick-erichsen/skills / html");
+    fireEvent.click(option);
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/skills-sh/patrick-erichsen/skills/html",
+    });
+  });
+
+  it("navigates creator typeahead rows to profiles and creator footers to scoped search", () => {
+    navigateMock.mockReset();
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.click(screen.getByRole("option", { name: /Local Creator/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/local",
+    });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.click(screen.getByRole("option", { name: /See creator results/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "weather", type: "creators" },
+    });
+  });
+
+  it.each([true, false])(
+    "uses publisher status for community plugin badges (%s)",
+    (ownerOfficial) => {
+      useUnifiedSearchMock.mockReturnValue({
+        ...defaultUnifiedSearchResult,
+        pluginResults: [
+          {
+            ...defaultUnifiedSearchResult.pluginResults[0],
+            plugin: { ...defaultUnifiedSearchResult.pluginResults[0].plugin, ownerOfficial },
+          },
+        ],
+      });
+      render(<Header />);
+      const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "weather" } });
+      const group = screen.getByRole("group", { name: "Plugins" });
+      expect(within(group).queryByLabelText("Official") !== null).toBe(ownerOfficial);
+    },
+  );
+
+  it("omits scoped package prefixes from plugin typeahead metadata", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      pluginResults: [
+        {
+          ...defaultUnifiedSearchResult.pluginResults[0],
+          plugin: {
+            ...defaultUnifiedSearchResult.pluginResults[0].plugin,
+            name: "@openclaw/firecrawl-plugin",
+            displayName: "OpenClaw Firecrawl Plugin",
+            ownerHandle: "openclaw",
+          },
+        },
+      ],
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "firecrawl" } });
+
+    expect(screen.getByText("OpenClaw Firecrawl Plugin")).toBeTruthy();
+    const pluginRow = screen
+      .getByText("OpenClaw Firecrawl Plugin")
+      .closest(".navbar-search-typeahead-row");
+    expect(pluginRow?.textContent).toContain("@openclaw / firecrawl-plugin");
+    expect(pluginRow?.textContent).not.toContain("@openclaw / @openclaw/firecrawl-plugin");
+  });
+
   it("falls back to typed skill search when a typeahead skill has no owner handle", () => {
-    siteModeMock.mockReturnValue("skills");
     navigateMock.mockReset();
     useUnifiedSearchMock.mockReturnValue({
       ...defaultUnifiedSearchResult,
@@ -249,7 +665,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
     fireEvent.click(screen.getByRole("option", { name: /Weather Skill/i }));
@@ -266,48 +682,53 @@ describe("Header", () => {
   });
 
   it("shows a single no-results state without section footers", () => {
-    siteModeMock.mockReturnValue("skills");
     useUnifiedSearchMock.mockReturnValue({
       results: [],
       skillResults: [],
       pluginResults: [],
+      creatorResults: [],
       skillCount: 0,
       pluginCount: 0,
+      creatorCount: 0,
+      skillHasMore: false,
+      pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "zzzz" } });
 
-    const typeahead = screen.getByRole("listbox");
-    expect(within(typeahead).getByText('No skills or plugins found for "zzzz"')).toBeTruthy();
-    expect(within(typeahead).queryByText("Skills")).toBeNull();
-    expect(within(typeahead).queryByText("Plugins")).toBeNull();
-    expect(within(typeahead).queryByText('See skill results for "zzzz"')).toBeNull();
-    expect(within(typeahead).queryByText('See plugin results for "zzzz"')).toBeNull();
+    expect(screen.getByText('No skills, plugins, or creators found for "zzzz"')).toBeTruthy();
+    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
+    expect(screen.queryByText('See skill results for "zzzz"')).toBeNull();
+    expect(screen.queryByText('See plugin results for "zzzz"')).toBeNull();
+    expect(screen.queryByText('See creator results for "zzzz"')).toBeNull();
   });
 
   it("shows Home above Skills in the mobile menu", () => {
-    siteModeMock.mockReturnValue("skills");
-
     render(<Header />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
-    expect(document.querySelector(".mobile-nav-brand-mark-image")).toBeTruthy();
+    expect(
+      document.querySelector('.mobile-nav-brand-mark-image[src="/logo-transparent.png"]'),
+    ).toBeTruthy();
 
     const labels = Array.from(document.querySelectorAll(".mobile-nav-section .mobile-nav-link"))
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
+    expect(labels.slice(0, 5)).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
+    expect(
+      document.querySelector(".mobile-nav-appearance-section .navbar-theme-switcher"),
+    ).toBeTruthy();
   });
 
-  it("keeps Stars out of signed-in header navigation", () => {
-    siteModeMock.mockReturnValue("skills");
+  it("keeps signed-in account links out of the mobile menu", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -322,31 +743,100 @@ describe("Header", () => {
 
     render(<Header />);
 
-    expect(screen.queryByText("Stars")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+
+    const labels = Array.from(document.querySelectorAll(".mobile-nav-section .mobile-nav-link"))
+      .map((element) => element.textContent?.trim())
+      .filter((label): label is string => Boolean(label));
+
+    expect(labels).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
+  });
+
+  it("links profile and bookmarks from the signed-in avatar menu", () => {
+    profileHandleMock.mockReturnValue("patrick-profile");
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+
+    render(<Header />);
+
+    const profile = screen.getByText("Profile");
+    const dashboard = screen.getAllByText("Dashboard").at(-1)!;
+
+    expect(profile.closest("a")?.getAttribute("href")).toBe("/patrick-profile");
+    expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    const bookmarksLink = screen.getByText("Bookmarks").closest("a");
+    expect(bookmarksLink?.getAttribute("href")).toBe("/stars");
+    expect(bookmarksLink?.querySelector(".lucide-bookmark")).toBeTruthy();
+    expect(bookmarksLink?.querySelector(".lucide-star")).toBeNull();
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
   });
 
-  it("routes soul-mode header searches to the souls browse page", () => {
-    siteModeMock.mockReturnValue("souls");
-    navigateMock.mockReset();
+  it("shows compact official badges beside official typeahead publishers", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      skillResults: [
+        {
+          ...defaultUnifiedSearchResult.skillResults[0],
+          owner: {
+            _id: "publishers:local",
+            _creationTime: 1,
+            kind: "org",
+            handle: "local",
+            displayName: "Local",
+            image: undefined,
+            bio: undefined,
+            linkedUserId: undefined,
+            official: true,
+          },
+        },
+      ],
+      pluginResults: [
+        {
+          ...defaultUnifiedSearchResult.pluginResults[0],
+          plugin: {
+            ...defaultUnifiedSearchResult.pluginResults[0].plugin,
+            isOfficial: true,
+          },
+        },
+      ],
+    });
 
     render(<Header />);
 
-    fireEvent.change(screen.getByPlaceholderText("Search souls..."), {
-      target: { value: "angler" },
-    });
-    fireEvent.submit(screen.getByRole("search", { name: "Site search" }));
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
 
-    expect(navigateMock).toHaveBeenCalledWith({
-      to: "/souls",
-      search: {
-        q: "angler",
-        sort: undefined,
-        dir: undefined,
-        view: undefined,
-        focus: undefined,
-      },
-    });
+    const skillRow = screen.getByText("Weather Skill").closest(".navbar-search-typeahead-row");
+    const pluginRow = screen.getByText("Weather Plugin").closest(".navbar-search-typeahead-row");
+    const creatorRow = screen.getByText("Local Creator").closest(".navbar-search-typeahead-row");
+
+    expect(skillRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
+      "@local / weather",
+    );
+    expect(pluginRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
+      "@local / weather-plugin",
+    );
+    expect(creatorRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
+      "@local",
+    );
+    expect(creatorRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).not.toContain(
+      "/ Org",
+    );
+    expect(skillRow?.querySelector(".official-badge")).toBeTruthy();
+    expect(pluginRow?.querySelector(".official-badge")).toBeTruthy();
+    expect(creatorRow?.querySelector(".official-badge")).toBeTruthy();
   });
 });

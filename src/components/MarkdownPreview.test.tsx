@@ -11,16 +11,16 @@ function renderMarkdown(source: string) {
 }
 
 describe("MarkdownPreview — raw HTML passthrough", () => {
-  it("renders an <h1 align=\"center\"> block as a real <h1>", () => {
+  it('renders an <h1 align="center"> block as a real <h1>', () => {
     const container = renderMarkdown(`<h1 align="center">Hello logo</h1>`);
     const h1 = container.querySelector("h1");
     expect(h1).not.toBeNull();
     expect(h1?.textContent).toBe("Hello logo");
   });
 
-  it("renders a <div align=\"center\"> block as a real <div>", () => {
+  it('renders a <div align="center"> block as a real <div>', () => {
     const container = renderMarkdown(`<div align="center">centered</div>`);
-    const div = container.querySelector("div[align=\"center\"]");
+    const div = container.querySelector('div[align="center"]');
     expect(div).not.toBeNull();
     expect(div?.textContent).toBe("centered");
   });
@@ -62,6 +62,71 @@ describe("MarkdownPreview — raw HTML passthrough", () => {
     expect(img?.getAttribute("src")).toBe(
       "/_vercel/image?url=https%3A%2F%2Fimg.shields.io%2Fbadge%2Fx-y-blue.svg&w=1024&q=75",
     );
+  });
+
+  it("leaves relative <img src> alone when no assetBaseUrl is provided", () => {
+    const { container } = render(
+      <MarkdownPreview highlight={false}>{`![diagram](./images/foo.png)`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    // Falls back to the legacy pass-through behavior — relative path stays as-is.
+    expect(img?.getAttribute("src")).toBe("./images/foo.png");
+  });
+
+  it("resolves relative ![](./path) images against assetBaseUrl and proxies them", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/sub/"
+      >{`![diagram](./images/foo.png)`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fsub%2Fimages%2Ffoo.png&w=1024&q=75",
+    );
+  });
+
+  it("resolves relative <img src> in raw HTML against assetBaseUrl", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/"
+      >{`<img src="images/foo.png" alt="d"/>`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fimages%2Ffoo.png&w=1024&q=75",
+    );
+  });
+
+  it("resolves relative <source srcset> in raw HTML picture markup against assetBaseUrl", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/docs/"
+      >{`<picture><source media="(prefers-color-scheme: dark)" srcset="./dark.png 1x, ./dark@2x.png 2x"/><img alt="Logo" src="./light.png"/></picture>`}</MarkdownPreview>,
+    );
+    const source = container.querySelector("picture source");
+    const img = container.querySelector("picture img");
+    expect(source?.getAttribute("srcset")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Fdark.png&w=1024&q=75 1x, /_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Fdark%402x.png&w=1024&q=75 2x",
+    );
+    expect(img?.getAttribute("src")).toBe(
+      "/_vercel/image?url=https%3A%2F%2Fraw.githubusercontent.com%2Fowner%2Frepo%2Fabc123%2Fdocs%2Flight.png&w=1024&q=75",
+    );
+  });
+
+  it("does not rewrite root-absolute paths even when assetBaseUrl is set", () => {
+    const { container } = render(
+      <MarkdownPreview
+        highlight={false}
+        assetBaseUrl="https://raw.githubusercontent.com/owner/repo/abc123/"
+      >{`![x](/foo.png)`}</MarkdownPreview>,
+    );
+    const img = container.querySelector("img");
+    // Root-absolute paths are intentionally left alone — they typically point
+    // at the ClawHub site itself, not at a package asset.
+    expect(img?.getAttribute("src")).toBe("/foo.png");
   });
 
   it("renders <br/> as a real line break", () => {
@@ -118,12 +183,7 @@ describe("MarkdownPreview — standard markdown still renders", () => {
 
   it("renders GFM tables", () => {
     const container = renderMarkdown(
-      [
-        "| Key | Value |",
-        "| --- | ----- |",
-        "| a   | 1     |",
-        "| b   | 2     |",
-      ].join("\n"),
+      ["| Key | Value |", "| --- | ----- |", "| a   | 1     |", "| b   | 2     |"].join("\n"),
     );
     expect(container.querySelector("table")).not.toBeNull();
     expect(container.querySelectorAll("tbody tr").length).toBe(2);
@@ -134,6 +194,31 @@ describe("MarkdownPreview — standard markdown still renders", () => {
     const code = container.querySelector("pre code");
     expect(code).not.toBeNull();
     expect(code?.textContent).toContain("const x = 1;");
+  });
+
+  it("renders mermaid fenced code blocks as diagrams instead of plain code", () => {
+    const container = renderMarkdown("```mermaid\ngraph TD\n  A --> B\n```");
+
+    expect(container.querySelector("[data-mermaid-diagram]")).not.toBeNull();
+    expect(container.querySelector("pre code.language-mermaid")).toBeNull();
+  });
+
+  it("cleans up temporary Mermaid nodes when rendering falls back", async () => {
+    const { container } = render(
+      <MarkdownPreview highlight={false}>{"```mermaid\nnot a diagram\n```"}</MarkdownPreview>,
+    );
+
+    await waitFor(
+      () => {
+        expect(container.querySelector(".mermaid-diagram-error")).not.toBeNull();
+      },
+      { timeout: 8000 },
+    );
+    expect(
+      document.body.querySelector(
+        '[id^="clawhub-mermaid-"], [id^="dclawhub-mermaid-"], [id^="iclawhub-mermaid-"]',
+      ),
+    ).toBeNull();
   });
 });
 
@@ -155,8 +240,42 @@ describe("MarkdownPreview — syntax highlighting", () => {
       { timeout: 8000 },
     );
 
+    expect(container.querySelector("code")?.className).toContain("language-ts");
+    expect(container.querySelector(".markdown-code-block-language")?.textContent).toBe("ts");
     // Raw code text must still be present after highlighting
     expect(container.querySelector("pre")?.textContent).toContain("const x");
+  });
+
+  it("uses github-light tokens when data-theme-resolved is light", async () => {
+    document.documentElement.dataset.themeResolved = "light";
+
+    const { container } = render(
+      <MarkdownPreview>{"```ts\nconst x: number = 1;\n```"}</MarkdownPreview>,
+    );
+
+    await waitFor(
+      () => {
+        const pre = container.querySelector("pre.shiki");
+        expect(pre?.className ?? "").toMatch(/github-light/);
+      },
+      { timeout: 8000 },
+    );
+  });
+
+  it("uses github-dark tokens when data-theme-resolved is dark", async () => {
+    document.documentElement.dataset.themeResolved = "dark";
+
+    const { container } = render(
+      <MarkdownPreview>{"```ts\nconst x: number = 1;\n```"}</MarkdownPreview>,
+    );
+
+    await waitFor(
+      () => {
+        const pre = container.querySelector("pre.shiki");
+        expect(pre?.className ?? "").toMatch(/github-dark/);
+      },
+      { timeout: 8000 },
+    );
   });
 
   it("leaves the highlight prop honored — highlight={false} renders plain <pre><code>", () => {
@@ -185,11 +304,16 @@ describe("MarkdownPreview — sanitization of malicious HTML", () => {
     expect(img?.getAttribute("onerror")).toBeNull();
   });
 
-  it("strips javascript: hrefs on anchors", () => {
-    const container = renderMarkdown(`<a href="javascript:alert(1)">click</a>`);
+  it.each([
+    "javascript:alert(1)",
+    "JaVaScRiPt:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "vbscript:msgbox(1)",
+  ])("strips unsafe hrefs on anchors: %s", (unsafeHref) => {
+    const container = renderMarkdown(`<a href="${unsafeHref}">click</a>`);
     const a = container.querySelector("a");
-    // Either the href is removed entirely or rewritten — it must not start with javascript:
+    // Either the href is removed entirely or rewritten; it must not keep an executable scheme.
     const href = a?.getAttribute("href") ?? "";
-    expect(href.toLowerCase().startsWith("javascript:")).toBe(false);
+    expect(href).not.toMatch(/^\s*(javascript|data|vbscript):/i);
   });
 });

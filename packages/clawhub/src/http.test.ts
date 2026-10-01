@@ -1,7 +1,14 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import { createHttpClient, detectHttpRuntime, registryUrl, shouldUseProxyFromEnv } from "./http.js";
+import {
+  createHttpClient,
+  detectHttpRuntime,
+  getHttpErrorStatus,
+  isRetryableHttpError,
+  registryUrl,
+  shouldUseProxyFromEnv,
+} from "./http.js";
 import { ApiV1WhoamiResponseSchema } from "./schema/index.js";
 
 function createNodeClient(options?: {
@@ -139,6 +146,29 @@ describe("node http client", () => {
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });
 
+  it("parses explicitly accepted non-2xx json responses", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        ok: false,
+        message: "GitHub-backed skill changed upstream; waiting for scan.",
+      }),
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://example.com", {
+        method: "GET",
+        path: "/api/v1/skills/demo/install",
+        acceptedStatuses: [409],
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      message: "GitHub-backed skill changed upstream; waiting for scan.",
+    });
+  });
+
   it("includes rate-limit guidance from response headers on 429", async () => {
     const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
     const fetchImpl = vi.fn().mockResolvedValue({
@@ -163,6 +193,54 @@ describe("node http client", () => {
     ).rejects.toThrow(/retry in 34s.*remaining: 0\/20.*reset in 34s/i);
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(clearTimeoutImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("formats ambiguous skill slug errors with install choices", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      text: async () =>
+        JSON.stringify({
+          code: "AMBIGUOUS_SKILL_SLUG",
+          message:
+            'Found multiple skills with the slug "discrawl"; specify which one you want to install:',
+          slug: "discrawl",
+          matches: [
+            {
+              ownerHandle: "openclaw",
+              slug: "discrawl",
+              ref: "@openclaw/discrawl",
+              url: "https://clawhub.ai/openclaw/skills/discrawl",
+            },
+            {
+              ownerHandle: "patrick",
+              slug: "discrawl",
+              ref: "@patrick/discrawl",
+              url: "https://clawhub.ai/patrick/skills/discrawl",
+            },
+          ],
+        }),
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://clawhub.ai", { method: "GET", path: "/api/v1/skills/discrawl" }),
+    ).rejects.toThrow(
+      [
+        'Found multiple skills with the slug "discrawl"; specify which one you want to install:',
+        "",
+        "  1.",
+        "     Skill: openclaw/discrawl",
+        "     Page:  https://clawhub.ai/openclaw/skills/discrawl",
+        "     Run:   clawhub install @openclaw/discrawl",
+        "",
+        "  2.",
+        "     Skill: patrick/discrawl",
+        "     Page:  https://clawhub.ai/patrick/skills/discrawl",
+        "     Run:   clawhub install @patrick/discrawl",
+      ].join("\n"),
+    );
   });
 
   it("interprets legacy epoch Retry-After values as reset delays", async () => {
@@ -208,6 +286,139 @@ describe("node http client", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("retries and labels transient Convex write contention", async () => {
+    const contention =
+      'Documents read from or written to the "publishers" table changed while this mutation was being run';
+    const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => contention,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => contention,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
+    const client = createNodeClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+
+    await expect(
+      client.apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
+        form: new FormData(),
+        retryCount: 5,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+
+    const failingFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => contention,
+    });
+    const failingClient = createNodeClient({
+      fetchImpl: failingFetch as unknown as typeof fetch,
+      setTimeoutImpl: setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl,
+    });
+    await expect(
+      failingClient.apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
+        form: new FormData(),
+        retryCount: 0,
+      }),
+    ).rejects.toThrow(/Transient ClawHub write contention.*package artifact passed/i);
+  });
+
+  it("expands generic auth and visibility failures into actionable messages", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: new Headers(),
+        text: async () => "Unauthorized",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        headers: new Headers(),
+        text: async () => "Forbidden",
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        text: async () => "Package not found",
+      });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/auth" }),
+    ).rejects.toThrow(/clawhub login.*deleted, banned, or disabled/i);
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/forbidden" }),
+    ).rejects.toThrow(/account does not have access.*not in good standing/i);
+    await expect(
+      client.apiRequest("https://example.com", { method: "GET", path: "/missing" }),
+    ).rejects.toThrow(/Package not found or not visible to this account/i);
+  });
+
+  it("preserves HTTP status and classifies transient request failures", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => "Unauthorized",
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const error = await client
+      .apiRequest("https://example.com", {
+        method: "GET",
+        path: "/auth",
+        retryCount: 0,
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(getHttpErrorStatus(error)).toBe(401);
+    expect(isRetryableHttpError(error)).toBe(false);
+    expect(isRetryableHttpError(Object.assign(new Error("busy"), { status: 408 }))).toBe(true);
+    expect(isRetryableHttpError(Object.assign(new Error("busy"), { status: 429 }))).toBe(true);
+    expect(isRetryableHttpError(Object.assign(new Error("down"), { status: 503 }))).toBe(true);
+    expect(isRetryableHttpError(new TypeError("fetch failed"))).toBe(true);
+  });
+
+  it("strips Convex transport wrappers from HTTP error bodies", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      headers: new Headers(),
+      text: async () =>
+        "[CONVEX A] [Request ID: abc] Server Error Called by client Uncaught ConvexError: Missing runtime",
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://example.com", { method: "POST", path: "/publish" }),
+    ).rejects.toThrow("Missing runtime");
+    await expect(
+      client.apiRequest("https://example.com", { method: "POST", path: "/publish" }),
+    ).rejects.not.toThrow(/ConvexError|Request ID|Server Error/i);
+  });
+
   it("downloads zip bytes and does not retry non-retryable errors", async () => {
     const fetchImpl = vi
       .fn()
@@ -233,6 +444,27 @@ describe("node http client", () => {
       "nope",
     );
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("includes ownerHandle when downloading owner-qualified skills", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await client.downloadZip("https://example.com", {
+      slug: "demo",
+      ownerHandle: "openclaw",
+      version: "1.0.0",
+    });
+
+    const [url] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/api/v1/download");
+    expect(parsed.searchParams.get("slug")).toBe("demo");
+    expect(parsed.searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(parsed.searchParams.get("version")).toBe("1.0.0");
   });
 
   it("retries request and text timeouts using injected timeout helpers", async () => {
@@ -318,5 +550,21 @@ describe("node http client", () => {
       }),
     ).rejects.toThrow(/timed out after 120s/i);
     expect(setTimeoutImpl.mock.calls[0]?.[1]).toBe(120_000);
+
+    const longTimeouts = createImmediateTimeouts();
+    const longTimeoutClient = createNodeClient({
+      fetchImpl: createAbortingFetchMock() as unknown as typeof fetch,
+      setTimeoutImpl: longTimeouts.setTimeoutImpl as unknown as typeof setTimeout,
+      clearTimeoutImpl: longTimeouts.clearTimeoutImpl,
+    });
+    await expect(
+      longTimeoutClient.apiRequestForm("https://example.com", {
+        method: "POST",
+        path: "/upload",
+        form: new FormData(),
+        timeoutMs: 300_000,
+      }),
+    ).rejects.toThrow(/timed out after 300s/i);
+    expect(longTimeouts.setTimeoutImpl.mock.calls[0]?.[1]).toBe(300_000);
   });
 });

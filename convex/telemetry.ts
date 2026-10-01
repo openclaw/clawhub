@@ -1,53 +1,162 @@
-import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, mutation, query } from "./functions";
+import type { MutationCtx } from "./_generated/server";
+import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
+import { normalizePackageName } from "./lib/packageRegistry";
+import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
+import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
+import {
+  getSkillBySlugForPublisher,
+  getSkillSlugAliasBySlugForPublisher,
+  resolvePublisherByOwnerHandle,
+} from "./lib/skills/slugResolution";
 import { insertStatEvent } from "./skillStatEvents";
 
-const TELEMETRY_STALE_MS = 120 * 24 * 60 * 60 * 1000;
+const DAY_MS = 86_400_000;
+const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
+const PRUNE_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
+const CLEAR_INSTALLS_BATCH_SIZE = 5_000;
+const CLEAR_DEDUPES_BATCH_SIZE = 10_000;
+const INSTALL_TELEMETRY_SLUG_MATCH_LIMIT = 25;
 
-type RootPayload = {
-  rootId: string;
-  label: string;
-  skills: Array<{ slug: string; version?: string | null }>;
-};
-
-export const reportCliSyncInternal = internalMutation({
+export const reportCliInstallInternal = internalMutation({
   args: {
     userId: v.id("users"),
-    roots: v.array(
+    slug: v.string(),
+    ownerHandle: v.optional(v.string()),
+    sourceRef: v.optional(v.string()),
+    sourceKind: v.optional(v.literal("skills-sh")),
+    sourceRepository: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    canonicalRef: v.optional(v.string()),
+    clawhubScan: v.optional(v.union(v.literal("unscanned"), v.literal("scanned"))),
+    trustLabel: v.optional(v.string()),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Unclaimed catalog installs have no native skill row yet. Keep the source
+    // identity in the request without guessing from a same-slug native skill.
+    const sourceRef = args.sourceRef?.trim().toLowerCase();
+    if (
+      args.sourceKind === "skills-sh" ||
+      sourceRef?.startsWith("skills-sh:") ||
+      sourceRef?.startsWith("skills-sh/")
+    ) {
+      return;
+    }
+    await upsertUserSkillInstall(ctx, args);
+  },
+});
+
+export const reportCliLegacyInstallBatchInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    skills: v.array(
       v.object({
-        rootId: v.string(),
-        label: v.string(),
-        skills: v.array(
-          v.object({
-            slug: v.string(),
-            version: v.optional(v.string()),
-          }),
-        ),
+        slug: v.string(),
+        version: v.optional(v.string()),
       }),
     ),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-    const stalenessCutoff = now - TELEMETRY_STALE_MS;
-
-    await expireStaleRoots(ctx, { userId: args.userId, stalenessCutoff, now });
-
-    const roots = normalizeRoots(args.roots);
-    const skillsBySlug = await resolveSkillsBySlug(ctx, roots);
-
-    for (const root of roots) {
-      await upsertRoot(ctx, { userId: args.userId, rootId: root.rootId, now, label: root.label });
-      await applyRootReport(ctx, {
+    const seen = new Set<string>();
+    for (const entry of args.skills) {
+      const slug = entry.slug.trim().toLowerCase();
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      await upsertUserSkillInstall(ctx, {
         userId: args.userId,
-        root,
-        skillsBySlug,
-        now,
+        slug,
+        version: entry.version,
       });
     }
+  },
+});
+
+export const reportCliPluginInstallInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    packageName: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const packageName = normalizePackageName(args.packageName);
+    if (!packageName) return;
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", packageName))
+      .unique();
+    if (!pkg || pkg.softDeletedAt) return;
+
+    const now = Date.now();
+    const version = args.version?.trim() || undefined;
+    const existing = await ctx.db
+      .query("userPackageInstalls")
+      .withIndex("by_user_package", (q) => q.eq("userId", args.userId).eq("packageId", pkg._id))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        lastSeenAt: now,
+        lastVersion: version ?? existing.lastVersion,
+      });
+      if (existing.metricRecordedAt === undefined) {
+        try {
+          await insertPackageInstallStatEvent(ctx, {
+            packageId: pkg._id,
+            occurredAt: now,
+          });
+        } catch {
+          // A later successful report retries the aggregate metric.
+          return;
+        }
+        await ctx.db.patch(existing._id, { metricRecordedAt: now });
+      }
+      return;
+    }
+
+    const installId = await ctx.db.insert("userPackageInstalls", {
+      userId: args.userId,
+      packageId: pkg._id,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      lastVersion: version,
+    });
+    try {
+      await insertPackageInstallStatEvent(ctx, {
+        packageId: pkg._id,
+        occurredAt: now,
+      });
+    } catch {
+      // The durable install relationship is authoritative; aggregate metric
+      // processing is best-effort and will retry on a later successful report.
+      return;
+    }
+    await ctx.db.patch(installId, { metricRecordedAt: now });
+  },
+});
+
+export const pruneInstallTelemetryDedupesInternal = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoffDayStart = getDayStart(Date.now() - INSTALL_TELEMETRY_DEDUPE_RETENTION_MS);
+    const stale = await ctx.db
+      .query("installTelemetryDedupes")
+      .withIndex("by_day", (q) => q.lt("dayStart", cutoffDayStart))
+      .take(PRUNE_BATCH_SIZE);
+
+    for (const entry of stale) {
+      await ctx.db.delete(entry._id);
+    }
+
+    const hasMore = stale.length === PRUNE_BATCH_SIZE;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.telemetry.pruneInstallTelemetryDedupesInternal, {});
+    }
+
+    return { deleted: stale.length, hasMore };
   },
 });
 
@@ -55,115 +164,101 @@ export const clearMyTelemetry = mutation({
   args: {},
   handler: async (ctx) => {
     const { userId } = await requireUser(ctx);
-    await clearTelemetryForUser(ctx, { userId });
+    await clearTelemetryForUser(ctx, { userId, clearStartedAt: Date.now() });
   },
 });
 
 export const clearUserTelemetryInternal = internalMutation({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), clearStartedAt: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await clearTelemetryForUser(ctx, { userId: args.userId });
+    await clearTelemetryForUser(ctx, {
+      userId: args.userId,
+      clearStartedAt: args.clearStartedAt ?? Date.now(),
+    });
   },
 });
 
-export const getMyInstalled = query({
-  args: {
-    includeRemoved: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return null;
+async function upsertUserSkillInstall(
+  ctx: MutationCtx,
+  params: { userId: Id<"users">; slug: string; ownerHandle?: string; version?: string },
+) {
+  const slug = params.slug.trim().toLowerCase();
+  if (!slug) return;
 
-    const roots = await ctx.db
-      .query("userSyncRoots")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .order("desc")
-      .take(200);
+  const skill = await resolveInstallTelemetrySkill(ctx, {
+    slug,
+    ownerHandle: params.ownerHandle,
+  });
+  if (!skill) return;
 
-    const includeRemoved = Boolean(args.includeRemoved);
-    const resultRoots: Array<{
-      rootId: string;
-      label: string;
-      firstSeenAt: number;
-      lastSeenAt: number;
-      expiredAt?: number;
-      skills: Array<{
-        skill: {
-          slug: string;
-          displayName: string;
-          summary?: string;
-          stats: unknown;
-          ownerUserId: Id<"users">;
-        };
-        firstSeenAt: number;
-        lastSeenAt: number;
-        lastVersion?: string;
-        removedAt?: number;
-      }>;
-    }> = [];
+  const now = Date.now();
+  const duplicate = await markInstallTelemetrySeen(ctx, {
+    userId: params.userId,
+    skillId: skill._id,
+    now,
+  });
+  if (duplicate) return;
 
-    for (const root of roots) {
-      const installs = await ctx.db
-        .query("userSkillRootInstalls")
-        .withIndex("by_user_root", (q) => q.eq("userId", userId).eq("rootId", root.rootId))
-        .order("desc")
-        .take(2000);
+  const version = params.version?.trim() || undefined;
+  const existing = await ctx.db
+    .query("userSkillInstalls")
+    .withIndex("by_user_skill", (q) => q.eq("userId", params.userId).eq("skillId", skill._id))
+    .unique();
 
-      const filtered = includeRemoved ? installs : installs.filter((entry) => !entry.removedAt);
-      const skills: Array<{
-        skill: {
-          slug: string;
-          displayName: string;
-          summary?: string;
-          stats: unknown;
-          ownerUserId: Id<"users">;
-        };
-        firstSeenAt: number;
-        lastSeenAt: number;
-        lastVersion?: string;
-        removedAt?: number;
-      }> = [];
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      lastSeenAt: now,
+      lastVersion: version ?? existing.lastVersion,
+    });
+    return;
+  }
 
-      for (const entry of filtered) {
-        const skill = await ctx.db.get(entry.skillId);
-        if (!skill) continue;
-        skills.push({
-          skill: {
-            slug: skill.slug,
-            displayName: skill.displayName,
-            summary: skill.summary,
-            stats: skill.stats,
-            ownerUserId: skill.ownerUserId,
-          },
-          firstSeenAt: entry.firstSeenAt,
-          lastSeenAt: entry.lastSeenAt,
-          lastVersion: entry.lastVersion,
-          removedAt: entry.removedAt,
-        });
-      }
+  await ctx.db.insert("userSkillInstalls", {
+    userId: params.userId,
+    skillId: skill._id,
+    firstSeenAt: now,
+    lastSeenAt: now,
+    lastVersion: version,
+  });
+  await insertStatEvent(ctx, { skillId: skill._id, kind: "install_new" });
+}
 
-      resultRoots.push({
-        rootId: root.rootId,
-        label: root.label,
-        firstSeenAt: root.firstSeenAt,
-        lastSeenAt: root.lastSeenAt,
-        expiredAt: root.expiredAt,
-        skills,
-      });
+async function resolveInstallTelemetrySkill(
+  ctx: MutationCtx,
+  params: { slug: string; ownerHandle?: string },
+) {
+  if (params.ownerHandle) {
+    const { publisher } = await resolvePublisherByOwnerHandle(ctx, params.ownerHandle);
+    if (!publisher) return null;
+    let skill = await getSkillBySlugForPublisher(ctx, params.slug, publisher);
+    if (!skill) {
+      const alias = await getSkillSlugAliasBySlugForPublisher(ctx, params.slug, publisher);
+      skill = alias ? await ctx.db.get(alias.skillId) : null;
     }
+    return skill && !skill.softDeletedAt ? skill : null;
+  }
 
-    return {
-      roots: resultRoots,
-      cutoffDays: 120,
-    };
-  },
-});
+  // Older clients only report a bare slug. Once slugs are owner-scoped,
+  // telemetry must not guess which publisher should receive the install.
+  const candidates = await ctx.db
+    .query("skills")
+    .withIndex("by_slug", (q) => q.eq("slug", params.slug))
+    .take(INSTALL_TELEMETRY_SLUG_MATCH_LIMIT + 1);
+  if (candidates.length > INSTALL_TELEMETRY_SLUG_MATCH_LIMIT) return null;
+  const activeSkills = candidates.filter((candidate) => !candidate.softDeletedAt);
+  return activeSkills.length === 1 ? activeSkills[0] : null;
+}
 
-async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"users"> }) {
+async function clearTelemetryForUser(
+  ctx: MutationCtx,
+  params: { userId: Id<"users">; clearStartedAt: number },
+) {
   const installs = await ctx.db
     .query("userSkillInstalls")
-    .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(5000);
+    .withIndex("by_user_lastSeenAt", (q) =>
+      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
+    )
+    .take(CLEAR_INSTALLS_BATCH_SIZE);
 
   for (const entry of installs) {
     const skill = await ctx.db.get(entry.skillId);
@@ -176,267 +271,88 @@ async function clearTelemetryForUser(ctx: MutationCtx, params: { userId: Id<"use
       kind: "install_clear",
       delta: {
         allTime: -1,
-        current: entry.activeRoots > 0 ? -1 : 0,
+        current: -1,
       },
     });
     await ctx.db.delete(entry._id);
   }
-
-  const roots = await ctx.db
-    .query("userSyncRoots")
-    .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(5000);
-  for (const root of roots) {
-    await ctx.db.delete(root._id);
+  if (installs.length === CLEAR_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
+    return;
   }
 
-  const rootInstalls = await ctx.db
-    .query("userSkillRootInstalls")
-    .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(10000);
-  for (const entry of rootInstalls) {
+  const packageInstalls = await ctx.db
+    .query("userPackageInstalls")
+    .withIndex("by_user_lastSeenAt", (q) =>
+      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
+    )
+    .take(CLEAR_INSTALLS_BATCH_SIZE);
+  for (const entry of packageInstalls) {
+    if (entry.metricRecordedAt !== undefined) {
+      await insertPackageInstallStatEvent(ctx, {
+        packageId: entry.packageId,
+        kind: "install_clear",
+        occurredAt: entry.metricRecordedAt,
+      });
+    }
     await ctx.db.delete(entry._id);
   }
-}
-
-function normalizeRoots(roots: RootPayload[]): RootPayload[] {
-  const seen = new Set<string>();
-  const unique: RootPayload[] = [];
-  for (const root of roots) {
-    const id = root.rootId.trim();
-    if (!id) continue;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push({
-      rootId: id,
-      label: root.label.trim() || "Unknown",
-      skills: root.skills
-        .map((skill) => ({
-          slug: skill.slug.trim().toLowerCase(),
-          version: skill.version ?? null,
-        }))
-        .filter((skill) => Boolean(skill.slug)),
-    });
-  }
-  return unique;
-}
-
-async function upsertRoot(
-  ctx: MutationCtx,
-  params: { userId: Id<"users">; rootId: string; now: number; label: string },
-) {
-  const existing = await ctx.db
-    .query("userSyncRoots")
-    .withIndex("by_user_root", (q) => q.eq("userId", params.userId).eq("rootId", params.rootId))
-    .unique();
-  if (existing) {
-    await ctx.db.patch(existing._id, {
-      label: params.label,
-      lastSeenAt: params.now,
-      expiredAt: undefined,
-    });
+  if (packageInstalls.length === CLEAR_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
     return;
   }
-  await ctx.db.insert("userSyncRoots", {
-    userId: params.userId,
-    rootId: params.rootId,
-    label: params.label,
-    firstSeenAt: params.now,
-    lastSeenAt: params.now,
-    expiredAt: undefined,
-  });
-}
 
-async function applyRootReport(
-  ctx: MutationCtx,
-  params: {
-    userId: Id<"users">;
-    root: RootPayload;
-    skillsBySlug: Map<string, { skillId: Id<"skills"> }>;
-    now: number;
-  },
-) {
-  const expected = new Set<Id<"skills">>();
-  const versionsBySkill = new Map<Id<"skills">, string | undefined>();
-  for (const entry of params.root.skills) {
-    const resolved = params.skillsBySlug.get(entry.slug);
-    if (!resolved) continue;
-    expected.add(resolved.skillId);
-    const version = entry.version?.trim() || undefined;
-    if (version) versionsBySkill.set(resolved.skillId, version);
-  }
-
-  const previous = await ctx.db
-    .query("userSkillRootInstalls")
-    .withIndex("by_user_root", (q) =>
-      q.eq("userId", params.userId).eq("rootId", params.root.rootId),
+  const dedupes = await ctx.db
+    .query("installTelemetryDedupes")
+    .withIndex("by_user_createdAt", (q) =>
+      q.eq("userId", params.userId).lte("createdAt", params.clearStartedAt),
     )
-    .take(5000);
-
-  const active = previous.filter((entry) => !entry.removedAt);
-
-  for (const skillId of expected) {
-    const existing = await ctx.db
-      .query("userSkillRootInstalls")
-      .withIndex("by_user_root_skill", (q) =>
-        q.eq("userId", params.userId).eq("rootId", params.root.rootId).eq("skillId", skillId),
-      )
-      .unique();
-
-    const reportedVersion = versionsBySkill.get(skillId);
-
-    if (existing) {
-      const wasRemoved = Boolean(existing.removedAt);
-      await ctx.db.patch(existing._id, {
-        lastSeenAt: params.now,
-        lastVersion: reportedVersion ?? existing.lastVersion,
-        removedAt: undefined,
-      });
-      if (wasRemoved) {
-        await incrementActiveRoots(ctx, {
-          userId: params.userId,
-          skillId,
-          now: params.now,
-          version: reportedVersion,
-        });
-      }
-      continue;
-    }
-
-    await ctx.db.insert("userSkillRootInstalls", {
-      userId: params.userId,
-      rootId: params.root.rootId,
-      skillId,
-      firstSeenAt: params.now,
-      lastSeenAt: params.now,
-      lastVersion: reportedVersion,
-    });
-    await incrementActiveRoots(ctx, {
-      userId: params.userId,
-      skillId,
-      now: params.now,
-      version: reportedVersion,
-    });
+    .take(CLEAR_DEDUPES_BATCH_SIZE);
+  for (const entry of dedupes) {
+    await ctx.db.delete(entry._id);
   }
-
-  for (const entry of active) {
-    if (expected.has(entry.skillId)) continue;
-    await ctx.db.patch(entry._id, { removedAt: params.now });
-    await decrementActiveRoots(ctx, { userId: params.userId, skillId: entry.skillId });
+  if (dedupes.length === CLEAR_DEDUPES_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
   }
 }
 
-async function incrementActiveRoots(
+async function scheduleClearUserTelemetry(
   ctx: MutationCtx,
-  params: { userId: Id<"users">; skillId: Id<"skills">; now: number; version?: string },
+  userId: Id<"users">,
+  clearStartedAt: number,
 ) {
-  const existing = await ctx.db
-    .query("userSkillInstalls")
-    .withIndex("by_user_skill", (q) => q.eq("userId", params.userId).eq("skillId", params.skillId))
-    .unique();
-
-  if (!existing) {
-    await ctx.db.insert("userSkillInstalls", {
-      userId: params.userId,
-      skillId: params.skillId,
-      firstSeenAt: params.now,
-      lastSeenAt: params.now,
-      activeRoots: 1,
-      lastVersion: params.version,
-    });
-    await bumpSkillInstallCounts(ctx, {
-      skillId: params.skillId,
-      deltaAllTime: 1,
-      deltaCurrent: 1,
-    });
-    return;
-  }
-
-  const nextActive = Math.max(0, (existing.activeRoots ?? 0) + 1);
-  await ctx.db.patch(existing._id, {
-    activeRoots: nextActive,
-    lastSeenAt: params.now,
-    lastVersion: params.version ?? existing.lastVersion,
+  await ctx.scheduler.runAfter(0, internal.telemetry.clearUserTelemetryInternal, {
+    userId,
+    clearStartedAt,
   });
-  if ((existing.activeRoots ?? 0) === 0 && nextActive > 0) {
-    await bumpSkillInstallCounts(ctx, {
-      skillId: params.skillId,
-      deltaAllTime: 0,
-      deltaCurrent: 1,
-    });
-  }
 }
 
-async function decrementActiveRoots(
+async function markInstallTelemetrySeen(
   ctx: MutationCtx,
-  params: { userId: Id<"users">; skillId: Id<"skills"> },
+  params: { userId: Id<"users">; skillId: Id<"skills">; now: number },
 ) {
+  const dayStart = getDayStart(params.now);
   const existing = await ctx.db
-    .query("userSkillInstalls")
-    .withIndex("by_user_skill", (q) => q.eq("userId", params.userId).eq("skillId", params.skillId))
+    .query("installTelemetryDedupes")
+    .withIndex("by_user_skill_day", (q) =>
+      q.eq("userId", params.userId).eq("skillId", params.skillId).eq("dayStart", dayStart),
+    )
     .unique();
-  if (!existing) return;
+  if (existing) return true;
 
-  const nextActive = Math.max(0, (existing.activeRoots ?? 0) - 1);
-  await ctx.db.patch(existing._id, { activeRoots: nextActive });
-  if ((existing.activeRoots ?? 0) > 0 && nextActive === 0) {
-    await bumpSkillInstallCounts(ctx, {
-      skillId: params.skillId,
-      deltaAllTime: 0,
-      deltaCurrent: -1,
-    });
-  }
+  await ctx.db.insert("installTelemetryDedupes", {
+    userId: params.userId,
+    skillId: params.skillId,
+    dayStart,
+    createdAt: params.now,
+  });
+  return false;
 }
 
-async function bumpSkillInstallCounts(
-  ctx: MutationCtx,
-  params: { skillId: Id<"skills">; deltaAllTime: number; deltaCurrent: number },
-) {
-  if (params.deltaAllTime === 1 && params.deltaCurrent === 1) {
-    await insertStatEvent(ctx, { skillId: params.skillId, kind: "install_new" });
-  } else if (params.deltaAllTime === 0 && params.deltaCurrent === 1) {
-    await insertStatEvent(ctx, { skillId: params.skillId, kind: "install_reactivate" });
-  } else if (params.deltaAllTime === 0 && params.deltaCurrent === -1) {
-    await insertStatEvent(ctx, { skillId: params.skillId, kind: "install_deactivate" });
-  }
+function getDayStart(timestamp: number) {
+  return Math.floor(timestamp / DAY_MS) * DAY_MS;
 }
 
-async function expireStaleRoots(
-  ctx: MutationCtx,
-  params: { userId: Id<"users">; stalenessCutoff: number; now: number },
-) {
-  const roots = await ctx.db
-    .query("userSyncRoots")
-    .withIndex("by_user", (q) => q.eq("userId", params.userId))
-    .take(5000);
-
-  const stale = roots.filter((root) => !root.expiredAt && root.lastSeenAt < params.stalenessCutoff);
-  for (const root of stale) {
-    await ctx.db.patch(root._id, { expiredAt: params.now });
-    const installs = await ctx.db
-      .query("userSkillRootInstalls")
-      .withIndex("by_user_root", (q) => q.eq("userId", params.userId).eq("rootId", root.rootId))
-      .take(5000);
-    for (const entry of installs) {
-      if (entry.removedAt) continue;
-      await ctx.db.patch(entry._id, { removedAt: params.now });
-      await decrementActiveRoots(ctx, { userId: params.userId, skillId: entry.skillId });
-    }
-  }
-}
-
-async function resolveSkillsBySlug(ctx: QueryCtx | MutationCtx, roots: RootPayload[]) {
-  const slugs = new Set<string>();
-  for (const root of roots) {
-    for (const entry of root.skills) slugs.add(entry.slug);
-  }
-  const map = new Map<string, { skillId: Id<"skills"> }>();
-  for (const slug of slugs) {
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
-    if (skill && !skill.softDeletedAt) map.set(slug, { skillId: skill._id });
-  }
-  return map;
-}
+export const __test = {
+  getDayStart,
+};

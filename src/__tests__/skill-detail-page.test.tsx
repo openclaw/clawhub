@@ -1,9 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
+import type { ReactNode } from "react";
+import { toast } from "sonner";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SkillDetailPage } from "../components/SkillDetailPage";
+import type { SkillPageInitialData } from "../lib/skillPage";
 
 const navigateMock = vi.fn();
+const routerInvalidateMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 
 process.env.VITE_CONVEX_URL = process.env.VITE_CONVEX_URL ?? "https://example.convex.cloud";
@@ -18,26 +23,66 @@ vi.mock("../convex/client", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: unknown }) => children,
+  Link: ({ children }: { children: ReactNode }) => children,
   useNavigate: () => navigateMock,
+  useRouter: () => ({ invalidate: routerInvalidateMock }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { searchStr: string } }) => string;
+  }) => select({ location: { searchStr: "" } }),
+}));
+
+vi.mock("@convex-dev/auth/react", () => ({
+  useAuthActions: () => ({ signIn: vi.fn() }),
 }));
 
 const useQueryMock = vi.fn();
+const useQueriesMock = vi.fn((queries: Record<string, { query: unknown; args: unknown }>) =>
+  Object.fromEntries(
+    Object.entries(queries).map(([key, value]) => [key, useQueryMock(value.query, value.args)]),
+  ),
+);
+const useMutationMock = vi.fn();
+const convexQueryMock = vi.fn();
+const convexClientMock = { query: convexQueryMock };
 const getReadmeMock = vi.fn();
+
+function getDesktopSkillTabs() {
+  return within(screen.getByRole("tablist", { name: "Skill detail tabs", hidden: true }));
+}
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
+  useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
-  useMutation: () => vi.fn(),
+  useQueries: (queries: Record<string, { query: unknown; args: unknown }>) =>
+    useQueriesMock(queries),
+  useMutation: (...args: unknown[]) => useMutationMock(...args),
+  usePaginatedQuery: () => ({
+    results: [],
+    status: "Exhausted",
+    loadMore: vi.fn(),
+  }),
   useAction: () => getReadmeMock,
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-vi.mock("../components/SkillCommentsPanel", () => ({
-  SkillCommentsPanel: () => <div data-testid="skill-comments-panel" />,
+vi.mock("../components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
 }));
 
 describe("SkillDetailPage", () => {
@@ -47,12 +92,60 @@ describe("SkillDetailPage", () => {
   const versionId = "skillVersions:1" as Id<"skillVersions">;
   const storageId = "storage:1" as Id<"_storage">;
 
+  function makeInitialData(githubBacked = false): SkillPageInitialData {
+    return {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: githubBacked ? "github-skill" : "weather",
+          displayName: githubBacked ? "GitHub Skill" : "Weather",
+          summary: githubBacked ? "Loaded from GitHub." : "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          ...(githubBacked ? { installKind: "github" as const } : {}),
+          tags: {},
+          badges: {},
+          stats: { stars: 0, downloads: 0, installs: 0, versions: 2, comments: 0 },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: null,
+        latestVersion: githubBacked
+          ? null
+          : {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "2.0.0",
+              fingerprint: "abc",
+              changelog: "Current release",
+              parsed: { frontmatter: {} },
+              files: [],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: githubBacked ? null : "# Weather",
+      readmeError: null,
+    };
+  }
+
   beforeEach(() => {
+    window.location.hash = "";
     useQueryMock.mockReset();
+    useQueriesMock.mockClear();
+    useMutationMock.mockReset();
+    convexQueryMock.mockReset();
     getReadmeMock.mockReset();
     navigateMock.mockReset();
+    routerInvalidateMock.mockReset();
     useAuthStatusMock.mockReset();
     getReadmeMock.mockResolvedValue({ text: "" });
+    useMutationMock.mockReturnValue(vi.fn());
+    vi.mocked(toast.success).mockReset();
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -62,6 +155,11 @@ describe("SkillDetailPage", () => {
       if (args === "skip") return undefined;
       return undefined;
     });
+    convexQueryMock.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("shows a loading indicator while loading", () => {
@@ -99,8 +197,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -147,8 +244,1139 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Files" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
+  });
+
+  it("bounds version eligibility reads and loads full history only in Versions", async () => {
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        getFunctionName(query as never) === "skills:listVersions" &&
+        args &&
+        typeof args === "object" &&
+        "limit" in args &&
+        args.limit === 2
+      ) {
+        return [
+          { _id: "skillVersions:1", version: "2.0.0", files: [] },
+          { _id: "skillVersions:2", version: "1.0.0", files: [] },
+        ];
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query as never) === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 2,
+      ),
+    ).toBe(true);
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query as never) === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 50,
+      ),
+    ).toBe(false);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+
+    await waitFor(() =>
+      expect(
+        useQueryMock.mock.calls.some(
+          ([query, args]) =>
+            getFunctionName(query as never) === "skills:listVersions" &&
+            args &&
+            typeof args === "object" &&
+            "limit" in args &&
+            args.limit === 50,
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("skips archive version reads for GitHub-backed skills", () => {
+    render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
+
+    const versionCalls = useQueryMock.mock.calls.filter(
+      ([query]) => getFunctionName(query as never) === "skills:listVersions",
+    );
+    expect(versionCalls.length).toBeGreaterThan(0);
+    expect(versionCalls.every(([, args]) => args === "skip")).toBe(true);
+  });
+
+  it("shows Evals only for a completed result on the current NVIDIA version", () => {
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (getFunctionName(query as never) === "skillEvaluations:getCurrentForSkill") {
+        return {
+          source: {
+            repository: "nvidia/skills",
+            commit: "0a78f333a1d67c837fbf4288efe6488169dc7140",
+            path: "skills/doca-dpa",
+            contentHash: "content-hash",
+          },
+          evaluator: {
+            repository: "NVIDIA/SkillEvaluator",
+            release: "v0.1.0",
+            commit: "4975c97d49e3623eeab739248e52d83c4aa8f582",
+            agent: "codex",
+            agentModel: "gpt-5.4-mini",
+            judgeProvider: "openai",
+            judgeModel: "gpt-5.4",
+            environment: "docker",
+            attempts: 2,
+          },
+          metrics: {
+            sampleCount: 8,
+            overall: { withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+            cases: {
+              withSkillPassed: 4,
+              withSkillTotal: 4,
+              withoutSkillPassed: 2,
+              withoutSkillTotal: 4,
+            },
+            dimensions: [
+              { id: "security", withSkill: 1, withoutSkill: 1, delta: 0 },
+              { id: "correctness", withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+            ],
+          },
+          completedAt: Date.parse("2026-08-18T00:00:00Z"),
+        };
+      }
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: skillId,
+            _creationTime: 0,
+            slug: "doca-dpa",
+            displayName: "DOCA DPA",
+            summary: "Build NVIDIA DOCA DPA applications.",
+            ownerUserId: ownerId,
+            ownerPublisherId,
+            installKind: "github",
+            githubCurrentRepo: "NVIDIA/skills",
+            githubCurrentCommit: "0a78f333a1d67c837fbf4288efe6488169dc7140",
+            githubPath: "skills/doca-dpa",
+            tags: {},
+            badges: {},
+            stats: { stars: 0, downloads: 0, installs: 0, versions: 0, comments: 0 },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: ownerPublisherId,
+            _creationTime: 0,
+            kind: "user",
+            handle: "nvidia",
+            displayName: "NVIDIA",
+            linkedUserId: ownerId,
+          },
+          latestVersion: null,
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="doca-dpa" canonicalOwner="nvidia" />);
+
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
+  });
+
+  it("looks up Evals from the canonical skill when detail data uses a projected id", () => {
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (getFunctionName(query as never) === "skillEvaluations:getCurrentForSkill") {
+        return {
+          source: {
+            repository: "nvidia/skills",
+            commit: "0a78f333a1d67c837fbf4288efe6488169dc7140",
+            path: "skills/doca-dpa",
+            contentHash: "content-hash",
+          },
+          evaluator: {
+            repository: "NVIDIA/SkillEvaluator",
+            release: "v0.1.0",
+            commit: "4975c97d49e3623eeab739248e52d83c4aa8f582",
+            agent: "codex",
+            agentModel: "gpt-5.4-mini",
+            judgeProvider: "openai",
+            judgeModel: "gpt-5.4",
+            environment: "docker",
+            attempts: 2,
+          },
+          metrics: {
+            sampleCount: 8,
+            overall: { withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+            cases: {
+              withSkillPassed: 4,
+              withSkillTotal: 4,
+              withoutSkillPassed: 2,
+              withoutSkillTotal: 4,
+            },
+            dimensions: [],
+          },
+          completedAt: Date.parse("2026-08-18T00:00:00Z"),
+        };
+      }
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="doca-dpa"
+        canonicalOwner="nvidia"
+        initialData={{
+          result: {
+            skill: {
+              _id: "canonicalTrendingNativePools:doca-dpa" as Id<"skills">,
+              _creationTime: 0,
+              slug: "doca-dpa",
+              displayName: "DOCA DPA",
+              summary: "Build NVIDIA DOCA DPA applications.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubSourceRepo: "NVIDIA/skills",
+              githubPath: "skills/doca-dpa",
+              tags: {},
+              badges: {},
+              stats: { stars: 0, downloads: 0, installs: 0, versions: 0, comments: 0 },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: null,
+            latestVersion: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(useQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "canonicalTrendingNativePools:doca-dpa",
+        sourceRepo: "NVIDIA/skills",
+        sourcePath: "skills/doca-dpa",
+      }),
+    );
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "Evals" })).toBeTruthy();
+  });
+
+  it("hides Evals when the current skill version has no completed result", () => {
+    render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
+
+    expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+  });
+
+  it("hides Evals when the optional evaluation query fails", () => {
+    useQueriesMock.mockReturnValueOnce({ skillEvaluation: new Error("evaluation unavailable") });
+
+    render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
+
+    expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+    expect(screen.queryByText("Something went wrong")).toBeNull();
+  });
+
+  it("opens an evaluation deep link after its result finishes loading", async () => {
+    window.location.hash = "#evaluation";
+    let evaluationResult: Record<string, unknown> | undefined;
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (getFunctionName(query as never) === "skillEvaluations:getCurrentForSkill") {
+        return evaluationResult;
+      }
+      return undefined;
+    });
+    const page = <SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />;
+    const { rerender } = render(page);
+
+    expect(getDesktopSkillTabs().queryByRole("tab", { name: "Evals" })).toBeNull();
+
+    evaluationResult = {
+      source: {
+        repository: "nvidia/skills",
+        commit: "0a78f333a1d67c837fbf4288efe6488169dc7140",
+        path: "skills/doca-dpa",
+        contentHash: "content-hash",
+      },
+      evaluator: {
+        repository: "NVIDIA/SkillEvaluator",
+        release: "v0.1.0",
+        commit: "4975c97d49e3623eeab739248e52d83c4aa8f582",
+        agent: "codex",
+        agentModel: "gpt-5.4-mini",
+        judgeProvider: "openai",
+        judgeModel: "gpt-5.4",
+        environment: "docker",
+        attempts: 2,
+      },
+      metrics: {
+        sampleCount: 8,
+        overall: { withSkill: 0.9, withoutSkill: 0.6, delta: 0.3 },
+        cases: {
+          withSkillPassed: 4,
+          withSkillTotal: 4,
+          withoutSkillPassed: 2,
+          withoutSkillTotal: 4,
+        },
+        dimensions: [],
+      },
+      completedAt: Date.parse("2026-08-18T00:00:00Z"),
+    };
+    rerender(page);
+
+    await waitFor(() =>
+      expect(
+        getDesktopSkillTabs().getByRole("tab", { name: "Evals" }).getAttribute("aria-selected"),
+      ).toBe("true"),
+    );
+    expect(screen.getByRole("tabpanel", { name: "Evals" })).toBeTruthy();
+  });
+
+  it("keeps loader-backed skill content visible while staff live query resolves", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:staff", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="github"
+        canonicalOwner="steipete"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "github",
+              displayName: "Github",
+              summary: "Interact with GitHub using the `gh` CLI.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installs: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# GitHub Skill",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("status", { name: /Loading skill details/i })).toBeNull();
+    expect(screen.getAllByRole("heading", { name: "Github" }).length).toBeGreaterThan(0);
+    const summary = document.querySelector(".skill-summary-line");
+    expect(summary?.textContent).toBe("Interact with GitHub using the gh CLI.");
+    expect(summary?.querySelector("code.skill-summary-inline-code")?.textContent).toBe("gh");
+  });
+
+  it("loads skill activity graphs through a deferred one-shot query", async () => {
+    const activityTrend = {
+      installs: {
+        range: "daily" as const,
+        days: 30,
+        total: 5,
+        points: [
+          { day: 20_451, value: 1 },
+          { day: 20_452, value: 0 },
+          { day: 20_453, value: 2 },
+          { day: 20_454, value: 1 },
+          { day: 20_455, value: 1 },
+        ],
+      },
+      downloads: {
+        range: "daily" as const,
+        days: 30,
+        total: 12,
+        points: [
+          { day: 20_451, value: 1 },
+          { day: 20_452, value: 0 },
+          { day: 20_453, value: 4 },
+          { day: 20_454, value: 3 },
+          { day: 20_455, value: 4 },
+        ],
+      },
+    };
+    const initialData = {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          badges: {},
+          stats: {
+            stars: 12,
+            downloads: 34,
+            installs: 8,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: {
+          _id: ownerPublisherId,
+          _creationTime: 0,
+          kind: "user" as const,
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: ownerId,
+        },
+        latestVersion: {
+          _id: versionId,
+          _creationTime: 0,
+          skillId,
+          version: "1.0.0",
+          fingerprint: "abc",
+          changelog: "Initial release",
+          parsed: { license: "MIT-0" as const, frontmatter: {} },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 10,
+              storageId,
+              sha256: "abc",
+              contentType: "text/markdown",
+            },
+          ],
+          createdBy: ownerId,
+          createdAt: 0,
+        },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: "# Weather",
+      readmeError: null,
+    };
+    convexQueryMock.mockResolvedValueOnce(activityTrend);
+
+    const { container, rerender } = render(
+      <SkillDetailPage slug="weather" initialData={initialData} />,
+    );
+
+    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
+    expect(screen.queryByText("30-day Installs")).toBeNull();
+    expect(
+      container.querySelectorAll(".detail-sidebar-stats .metric-trend-card-skeleton"),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query]) => getFunctionName(query as never) === "skills:getActivityTrendForSlug",
+      ),
+    ).toBe(false);
+
+    await waitFor(() => expect(convexQueryMock).toHaveBeenCalled());
+    rerender(<SkillDetailPage slug="weather" initialData={initialData} />);
+
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
+    expect(
+      convexQueryMock.mock.calls.some((call) => {
+        const query = call[0];
+        const args = call[1];
+        return (
+          getFunctionName(query as never) === "skills:getActivityTrendForSlug" &&
+          typeof args === "object" &&
+          args !== null &&
+          "slug" in args &&
+          args.slug === "weather" &&
+          "endDay" in args &&
+          typeof args.endDay === "number" &&
+          "ownerHandle" in args &&
+          args.ownerHandle === "steipete"
+        );
+      }),
+    ).toBe(true);
+  });
+
+  it("passes the loader owner id to deferred activity trends when no public owner handle is available", async () => {
+    const initialData = {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          badges: {},
+          stats: {
+            stars: 12,
+            downloads: 34,
+            installs: 8,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: null,
+        latestVersion: {
+          _id: versionId,
+          _creationTime: 0,
+          skillId,
+          version: "1.0.0",
+          fingerprint: "abc",
+          changelog: "Initial release",
+          parsed: { license: "MIT-0" as const, frontmatter: {} },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 10,
+              storageId,
+              sha256: "abc",
+              contentType: "text/markdown",
+            },
+          ],
+          createdBy: ownerId,
+          createdAt: 0,
+        },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: "# Weather",
+      readmeError: null,
+      lookupOwnerHandle: "users:1",
+    };
+
+    render(<SkillDetailPage slug="weather" canonicalOwner="users:1" initialData={initialData} />);
+
+    await waitFor(() => expect(convexQueryMock).toHaveBeenCalled());
+
+    expect(
+      convexQueryMock.mock.calls.some((call) => {
+        const query = call[0];
+        const args = call[1];
+        return (
+          getFunctionName(query as never) === "skills:getActivityTrendForSlug" &&
+          typeof args === "object" &&
+          args !== null &&
+          "slug" in args &&
+          args.slug === "weather" &&
+          "endDay" in args &&
+          typeof args.endDay === "number" &&
+          "ownerHandle" in args &&
+          args.ownerHandle === "users:1"
+        );
+      }),
+    ).toBe(true);
+  });
+
+  it("does not spin forever when a source-backed skill has no stored version", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "kind" in args) return null;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubScanStatus: "pending",
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installs: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect((await screen.findAllByText("Pending")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Loading README...")).toBeNull();
+  });
+
+  it("clears stale README content when navigating to a skill with no stored version", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    const { rerender } = render(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installs: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Weather\n\nOnly old body.",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Only old body.")).toBeTruthy();
+
+    rerender(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installs: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("No README available")).toBeTruthy();
+    expect(screen.queryByText("Only old body.")).toBeNull();
+  });
+
+  it("renders GitHub-backed SKILL.md and skill-card.md from cached source content", async () => {
+    getReadmeMock.mockResolvedValue({ text: "unexpected archive read" });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: unknown }).kind === "readme"
+      ) {
+        return { path: "skills/aiq-deploy/SKILL.md", text: "# AIQ Deploy\n\nDeploy it." };
+      }
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: unknown }).kind === "skill-card"
+      ) {
+        return { path: "skills/aiq-deploy/skill-card.md", text: "# AIQ Card\n\nRisk details." };
+      }
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubHasSkillCard: true,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installs: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Deploy it.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
+    expect(await screen.findByText("Risk details.")).toBeTruthy();
+    expect(getReadmeMock).not.toHaveBeenCalled();
+  });
+
+  it("does not show a Skill Card tab for publisher-supplied card files", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installs: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+                {
+                  path: "skill-card.md",
+                  size: 10,
+                  storageId,
+                  sha256: "def",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Weather",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Skill Card" })).toBeNull();
+  });
+
+  it("restores the hash-selected Skill Card tab once the generated card is available", async () => {
+    window.history.replaceState(null, "", "/steipete/weather#skill-card");
+    getReadmeMock.mockResolvedValue({ text: "# Skill Card\n\nGenerated from worker." });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    const baseInitialData = {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          badges: {},
+          stats: {
+            stars: 12,
+            downloads: 34,
+            installs: 8,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: {
+          _id: ownerPublisherId,
+          _creationTime: 0,
+          kind: "user" as const,
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: ownerId,
+        },
+        latestVersion: {
+          _id: versionId,
+          _creationTime: 0,
+          skillId,
+          version: "1.0.0",
+          fingerprint: "abc",
+          changelog: "Initial release",
+          parsed: { license: "MIT-0" as const, frontmatter: {} },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 10,
+              storageId,
+              sha256: "abc",
+              contentType: "text/markdown",
+            },
+          ],
+          createdBy: ownerId,
+          createdAt: 0,
+        },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: "# Weather",
+      readmeError: null,
+    };
+
+    const { rerender } = render(<SkillDetailPage slug="weather" initialData={baseInitialData} />);
+
+    expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(
+      getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected"),
+    ).toBe("true");
+
+    rerender(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          ...baseInitialData,
+          result: {
+            ...baseInitialData.result,
+            latestVersion: {
+              ...baseInitialData.result.latestVersion,
+              files: [
+                ...baseInitialData.result.latestVersion.files,
+                {
+                  path: "skill-card.md",
+                  size: 32,
+                  storageId,
+                  sha256: "def",
+                  contentType: "text/markdown",
+                },
+              ],
+              generatedSkillCard: {
+                path: "skill-card.md",
+                size: 32,
+                sha256: "def",
+                contentType: "text/markdown",
+              },
+            },
+          },
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Skill Card" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+    });
+    expect(await screen.findByText("Generated from worker.")).toBeTruthy();
+  });
+
+  it("renders related skills from the stored category with a browse link", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "keywords" in args &&
+        Array.isArray((args as { keywords?: unknown }).keywords)
+      ) {
+        return {
+          items: [
+            {
+              skill: {
+                _id: "skills:2" as Id<"skills">,
+                _creationTime: 0,
+                slug: "pipeline-builder",
+                displayName: "Pipeline Builder",
+                summary: "Compose agent workflow pipelines.",
+                ownerUserId: ownerId,
+                ownerPublisherId,
+                tags: {},
+                badges: {},
+                stats: {
+                  stars: 4,
+                  downloads: 12,
+                  installs: 3,
+                  versions: 1,
+                  comments: 0,
+                },
+                createdAt: 0,
+                updatedAt: 0,
+              },
+              latestVersion: null,
+              ownerHandle: "steipete",
+              owner: null,
+            },
+          ],
+        };
+      }
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="workflow-runner"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "workflow-runner",
+              displayName: "Workflow Runner",
+              summary: "Build repeatable agent workflow pipelines.",
+              categories: ["automation"],
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installs: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Workflow Runner",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Related skills" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View Automation skills" }).getAttribute("href")).toBe(
+      "/skills?category=automation",
+    );
+    expect(screen.getByRole("link", { name: "More in Automation" }).getAttribute("href")).toBe(
+      "/skills?category=automation",
+    );
+    expect(screen.getByRole("link", { name: /Pipeline Builder/i })).toBeTruthy();
+    expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
   });
 
   it("renders the install surface above the security scan with visible prompts and commands", async () => {
@@ -175,8 +1403,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -223,24 +1450,163 @@ describe("SkillDetailPage", () => {
     );
 
     await screen.findByRole("heading", { name: "Install" });
-    const securityHeading = screen.getByRole("heading", { name: "Security Scans" });
+    const sidebarMetadata = document.querySelector(
+      '.detail-sidebar-stats dl[aria-label="Skill metadata"]',
+    );
+    expect(sidebarMetadata).toBeTruthy();
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
-    expect(screen.getByText("openclaw skills install weather")).toBeTruthy();
-    expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
+    expect(screen.getAllByText("openclaw skills install").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("@steipete/weather").length).toBeGreaterThan(0);
+    expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
-    expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+    const skillsCliButton = screen.getByRole("button", { name: "npx skills" });
+    expect(skillsCliButton).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
+    fireEvent.click(skillsCliButton);
+    expect(
+      screen.getByText("npx skills add https://clawhub.ai/steipete/skills/weather"),
+    ).toBeTruthy();
+    expect(skillsCliButton.getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
-    expect(securityHeading).toBeTruthy();
-    expect(screen.getByRole("link", { name: /VirusTotal.*Pending/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /ClawScan.*Pending/i })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Static analysis.*Pending/i })).toBeTruthy();
+    expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
+      "/steipete/skills/weather/security-audit",
+    );
+    const sidebarLabels = Array.from(
+      sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
+      (label) => label.textContent?.trim(),
+    );
+    const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
+      label?.startsWith("Security audit"),
+    );
+    expect(sidebarLabels).not.toContain("Creator");
+    expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
+    const heroCreator = document.querySelector(".skill-hero-creator");
+    expect(heroCreator).toBeTruthy();
+    const summary = document.querySelector(".skill-summary-block");
+    expect(
+      summary &&
+        heroCreator &&
+        summary.compareDocumentPosition(heroCreator) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "Security checks for vulnerabilities and agentic risk",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("No risk analysis has been recorded yet.")).toBeNull();
     expect(screen.queryByText(/Like a lobster shell, security has layers/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+
+    const installHeading = screen.getAllByRole("heading", { name: "Install" })[0];
+    const filesTab = screen.getByRole("tab", { name: "Files" });
+    expect(
+      installHeading.compareDocumentPosition(filesTab) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
-  it("shows an owner rescan action in the security summary for owned skills", async () => {
+  it("shows the version scanner verdict even with legacy clean moderation metadata", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="kmind-markdown-to-mindmap"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "kmind-markdown-to-mindmap",
+              displayName: "KMind Markdown to Mindmap",
+              summary: "Convert markdown to mindmaps.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installs: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "suka233",
+              displayName: "suka233",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "0.1.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [],
+              sha256hash: "abc123",
+              vtAnalysis: { status: "suspicious", verdict: "suspicious", checkedAt: 1 },
+              llmAnalysis: { status: "suspicious", verdict: "suspicious", checkedAt: 1 },
+              staticScan: {
+                status: "suspicious",
+                reasonCodes: ["suspicious.dynamic_code_execution"],
+                findings: [
+                  {
+                    code: "suspicious.dynamic_code_execution",
+                    severity: "critical",
+                    file: "SKILL.md",
+                    line: 1,
+                    message: "dynamic execution",
+                    evidence: "exec",
+                  },
+                ],
+                summary: "Suspicious dynamic execution.",
+                engineVersion: "v2.4.5",
+                checkedAt: 1,
+              },
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            moderationInfo: {
+              isPendingScan: false,
+              isMalwareBlocked: false,
+              isSuspicious: false,
+              isHiddenByMod: false,
+              isRemoved: false,
+              verdict: "clean",
+              reasonCodes: ["suspicious.dynamic_code_execution"],
+              summary: "Security findings were reviewed by staff and cleared for public use.",
+              engineVersion: "v2.4.5",
+              updatedAt: 1,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# KMind",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect((await screen.findAllByText("Security audit")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "View Security Audit" })).toBeTruthy();
+    expect(screen.queryByText(/reviewed by staff and cleared/i)).toBeNull();
+    expect(screen.queryByText("Cleared")).toBeNull();
+  });
+
+  it("does not show a scanner rerun action on the settings page for owned skills", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -248,16 +1614,6 @@ describe("SkillDetailPage", () => {
     });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (args && typeof args === "object" && "skillId" in args && !("limit" in args)) {
-        return {
-          maxRequests: 3,
-          requestCount: 1,
-          remainingRequests: 2,
-          canRequest: true,
-          inProgressRequest: null,
-          latestRequest: null,
-        };
-      }
       if (args && typeof args === "object" && "limit" in args) return [];
       return undefined;
     });
@@ -265,6 +1621,7 @@ describe("SkillDetailPage", () => {
     render(
       <SkillDetailPage
         slug="weather"
+        mode="settings"
         initialData={{
           result: {
             skill: {
@@ -280,8 +1637,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -318,9 +1674,13 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(await screen.findByRole("button", { name: "Rescan" })).toBeTruthy();
-    expect(screen.queryByText("Owner rescan")).toBeNull();
-    expect(screen.queryByText("2/3 rescans left")).toBeNull();
+    await screen.findByText("Short summary");
+    expect(screen.getByRole("link", { name: "New Version" }).getAttribute("href")).toBe(
+      "/publish-skill?updateSlug=weather&ownerHandle=steipete",
+    );
+    expect(screen.queryByText(/request security/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+    expect(screen.queryByText(/rescans/i)).toBeNull();
   });
 
   it("does not refetch readme when SSR data already matches the latest version", async () => {
@@ -348,8 +1708,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -405,7 +1764,9 @@ describe("SkillDetailPage", () => {
     });
 
     render(<SkillDetailPage slug="missing-skill" />);
-    expect(await screen.findByText(/Skill not found/i)).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: /We couldn't find that page/i }),
+    ).toBeTruthy();
   });
 
   it("redirects legacy routes to canonical owner/slug", async () => {
@@ -442,7 +1803,63 @@ describe("SkillDetailPage", () => {
       expect(navigateMock).toHaveBeenCalled();
     });
     expect(navigateMock).toHaveBeenCalledWith({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
+      params: { owner: "steipete", slug: "weather" },
+      replace: true,
+    });
+  });
+
+  it("redirects merged source slugs to the resolved canonical slug", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          requestedSlug: "old-weather",
+          resolvedSlug: "weather",
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            badges: {},
+            stats: {
+              stars: 0,
+              downloads: 0,
+              installs: 0,
+              versions: 1,
+              comments: 0,
+            },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="old-weather" canonicalOwner="steipete" />);
+    expect(screen.getByRole("status", { name: /Loading skill details/i })).toBeTruthy();
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalled();
+    });
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/$owner/skills/$slug",
       params: { owner: "steipete", slug: "weather" },
       replace: true,
     });
@@ -504,8 +1921,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -543,14 +1959,168 @@ describe("SkillDetailPage", () => {
 
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect(screen.getAllByText("Weather").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /settings/i }).getAttribute("href")).toBe(
+      "/SteiPete/skills/weather/settings",
+    );
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("invalidates route data and updates the star button while the live skill query is stale", async () => {
+    const toggleStarMock = vi
+      .fn()
+      .mockResolvedValueOnce({ starred: true })
+      .mockResolvedValueOnce({ starred: false });
+    useMutationMock.mockReturnValue(toggleStarMock);
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:viewer", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args && "limit" in args) return [];
+      if (args && typeof args === "object" && "skillId" in args) return false;
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: skillId,
+            _creationTime: 0,
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: ownerId,
+            ownerPublisherId,
+            tags: {},
+            badges: {},
+            stats: {
+              stars: 8,
+              downloads: 34,
+              installs: 8,
+              versions: 1,
+              comments: 0,
+            },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: ownerPublisherId,
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: ownerId,
+          },
+          latestVersion: {
+            _id: versionId,
+            _creationTime: 0,
+            skillId,
+            version: "1.0.0",
+            fingerprint: "abc",
+            changelog: "Initial release",
+            parsed: { license: "MIT-0", frontmatter: {} },
+            files: [],
+            createdBy: ownerId,
+            createdAt: 0,
+          },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" />);
+
+    const starButton = await screen.findByRole("button", { name: "Bookmark skill" });
+    expect(starButton.textContent).toContain("8");
+
+    fireEvent.click(starButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Unbookmark skill" }).textContent).toContain("9");
+    });
+    expect(toggleStarMock).toHaveBeenCalledWith({ skillId });
+
+    fireEvent.click(screen.getByRole("button", { name: "Unbookmark skill" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Bookmark skill" }).textContent).toContain("8");
+    });
+    expect(toggleStarMock).toHaveBeenCalledTimes(2);
+    expect(routerInvalidateMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders refreshed starred server state with the synchronized star count", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:viewer", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args && "limit" in args) return [];
+      if (args && typeof args === "object" && "skillId" in args) return true;
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: skillId,
+            _creationTime: 0,
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: ownerId,
+            ownerPublisherId,
+            tags: {},
+            badges: {},
+            stats: {
+              stars: 1,
+              downloads: 34,
+              installs: 8,
+              versions: 1,
+              comments: 0,
+            },
+            createdAt: 0,
+            updatedAt: 0,
+          },
+          owner: {
+            _id: ownerPublisherId,
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: ownerId,
+          },
+          latestVersion: {
+            _id: versionId,
+            _creationTime: 0,
+            skillId,
+            version: "1.0.0",
+            fingerprint: "abc",
+            changelog: "Initial release",
+            parsed: { license: "MIT-0", frontmatter: {} },
+            files: [],
+            createdBy: ownerId,
+            createdAt: 0,
+          },
+          forkOf: null,
+          canonical: null,
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" />);
+
+    expect((await screen.findByRole("button", { name: "Unbookmark skill" })).textContent).toContain(
+      "1",
+    );
   });
 
   it("opens report dialog for authenticated users", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
-      me: { _id: "users:1", role: "user" },
+      me: { _id: "users:reporter", role: "user" },
     });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
@@ -641,18 +2211,420 @@ describe("SkillDetailPage", () => {
     const { unmount } = render(<SkillDetailPage slug="weather" />);
 
     const settingsLink = await screen.findByRole("link", { name: /settings/i });
-    expect(settingsLink.getAttribute("href")).toBe("/steipete/weather/settings");
+    expect(settingsLink.getAttribute("href")).toBe("/steipete/skills/weather/settings");
     expect(screen.queryByText(/Owner tools/i)).toBeNull();
     unmount();
 
     render(<SkillDetailPage slug="weather" mode="settings" />);
 
-    expect(await screen.findByText(/Owner tools/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Rename and redirect/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Merge into target/i })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    const newVersionLink = screen.getByRole("link", { name: /Update skill files/i });
+    expect(newVersionLink.getAttribute("href")).toBe(
+      "/skills/publish?updateSlug=weather&ownerHandle=steipete",
+    );
+    expect(screen.getByText("Rename slug")).toBeTruthy();
+    expect(screen.getByText("Merge listing")).toBeTruthy();
   });
 
-  it("shows only latest-version tags in public tag surfaces", async () => {
+  it("lets owners confirm skill deletion from settings", async () => {
+    const deleteSkill = vi.fn().mockResolvedValue({
+      ok: true,
+      slugReservedUntil: Date.UTC(2026, 6, 7),
+    });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "skills:setOwnedSkillSoftDeleted" ? deleteSkill : vi.fn(),
+    );
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        ("ownerUserId" in args || "ownerPublisherId" in args)
+      ) {
+        return [{ _id: "skills:1", slug: "weather", displayName: "Weather" }];
+      }
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete skill" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete skill" }));
+
+    expect(deleteSkill).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Delete skill" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete skill" }));
+
+    await waitFor(() => {
+      expect(deleteSkill).toHaveBeenCalledWith({ skillId });
+    });
+    expect(toast.success).toHaveBeenCalledWith("Deleted weather.");
+    expect(navigateMock).toHaveBeenCalledWith({ to: "/", replace: true });
+  });
+
+  it("does not show the owner delete action to staff-only settings viewers", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:moderator", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    expect(screen.getByText("Rename slug")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete skill" })).toBeNull();
+  });
+
+  it.each([
+    {
+      label: "active",
+      availability: {},
+      moderationInfo: null,
+      shouldShowDelete: true,
+    },
+    {
+      label: "soft-deleted",
+      availability: { softDeletedAt: 123 },
+      moderationInfo: null,
+      shouldShowDelete: false,
+    },
+    {
+      label: "hidden by moderation",
+      availability: { moderationStatus: "hidden" as const },
+      moderationInfo: null,
+      shouldShowDelete: false,
+    },
+    {
+      label: "removed by moderation",
+      availability: { moderationStatus: "removed" as const },
+      moderationInfo: null,
+      shouldShowDelete: false,
+    },
+    {
+      label: "legacy hiddenAt-only",
+      availability: { hiddenAt: 123 },
+      moderationInfo: null,
+      shouldShowDelete: true,
+    },
+    {
+      label: "owner-visible hidden public result",
+      availability: {},
+      moderationInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isSuspicious: false,
+        isHiddenByMod: true,
+        isRemoved: false,
+      },
+      shouldShowDelete: false,
+    },
+  ])(
+    "$label skill aligns version Delete visibility with mutation availability",
+    async ({ availability, moderationInfo, shouldShowDelete }) => {
+      useAuthStatusMock.mockReturnValue({
+        isAuthenticated: true,
+        isLoading: false,
+        me: { _id: "users:1", role: "user" },
+      });
+      useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+        if (args === "skip") return undefined;
+        const name = getFunctionName(query as never);
+        if (name === "skills:getBySlug") {
+          return {
+            skill: {
+              _id: "skills:1",
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: "users:1",
+              ownerPublisherId: "publishers:steipete",
+              tags: {},
+              stats: { stars: 0, downloads: 0 },
+              ...availability,
+            },
+            owner: {
+              _id: "publishers:steipete",
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: "users:1",
+            },
+            latestVersion: {
+              _id: "skillVersions:latest",
+              version: "2.0.0",
+              parsed: {},
+              files: [],
+            },
+            moderationInfo,
+          };
+        }
+        if (
+          name === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 50
+        ) {
+          return [
+            {
+              _id: "skillVersions:latest",
+              version: "2.0.0",
+              createdAt: 2,
+              changelog: "Current skill release",
+              parsed: {},
+              files: [],
+            },
+            {
+              _id: "skillVersions:older",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "Older skill release",
+              parsed: {},
+              files: [],
+            },
+          ];
+        }
+        if (name === "publishers:listMine") return [];
+        return undefined;
+      });
+
+      render(<SkillDetailPage slug="weather" />);
+      fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+
+      expect(screen.getByText("Latest")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Delete version 2.0.0" })).toBeNull();
+      const deleteAction = screen.queryByRole("button", { name: "Delete version 1.0.0" });
+      if (shouldShowDelete) {
+        expect(deleteAction).toBeTruthy();
+      } else {
+        expect(deleteAction).toBeNull();
+      }
+    },
+  );
+
+  it("keeps version Delete hidden from staff-only skill viewers", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:moderator", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query as never);
+      if (name === "skills:getBySlugForStaff") {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: {
+            _id: "skillVersions:latest",
+            version: "2.0.0",
+            parsed: {},
+            files: [],
+          },
+        };
+      }
+      if (
+        name === "skills:listVersions" &&
+        args &&
+        typeof args === "object" &&
+        "limit" in args &&
+        args.limit === 50
+      ) {
+        return [
+          {
+            _id: "skillVersions:latest",
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Current skill release",
+            parsed: {},
+            files: [],
+          },
+          {
+            _id: "skillVersions:older",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Older skill release",
+            parsed: {},
+            files: [],
+          },
+        ];
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByText("Latest")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
+  });
+
+  it("does not show the owner delete action to org skill creators without org admin access", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:creator", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:creator",
+            ownerPublisherId: "publishers:org",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:org",
+            _creationTime: 0,
+            kind: "org",
+            handle: "weather-org",
+            displayName: "Weather Org",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    expect(screen.getByText("Rename slug")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete skill" })).toBeNull();
+  });
+
+  it("does not expose settings to publisher members without admin access", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:publisher-member", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args === undefined) {
+        return [{ publisher: { _id: "publishers:steipete" }, role: "publisher" }];
+      }
+      if (args && typeof args === "object" && "skillId" in args) return false;
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "org",
+            handle: "steipete",
+            displayName: "Peter",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    const { unmount } = render(<SkillDetailPage slug="weather" />);
+    expect(await screen.findByText("Weather")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
+    unmount();
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+    expect(await screen.findByRole("heading", { name: /Settings unavailable/i })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /Update skill files/i })).toBeNull();
+  });
+
+  it("does not render version tag cards on the simplified public detail surface", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (args && typeof args === "object" && "skillId" in args) {
@@ -701,13 +2673,14 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="ip-publisher" />);
 
-    expect((await screen.findAllByText("ip-publisher")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("knowledge-base").length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("IP Publisher")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Version tags")).toBeNull();
+    expect(screen.queryByText("knowledge-base")).toBeNull();
     expect(screen.queryByText("content-rewrite")).toBeNull();
     expect(screen.queryByText("Historical tags")).toBeNull();
   });
 
-  it("separates historical tags for managers", async () => {
+  it("does not render historical tag controls for managers on the simplified detail surface", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -764,12 +2737,14 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="ip-publisher" />);
 
-    expect(await screen.findByText("Historical tags")).toBeTruthy();
-    expect(screen.getByText("content-rewrite")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Delete tag content-rewrite" })).toBeTruthy();
+    expect((await screen.findAllByText("IP Publisher")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Version tags")).toBeNull();
+    expect(screen.queryByText("Historical tags")).toBeNull();
+    expect(screen.queryByText("content-rewrite")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete tag content-rewrite" })).toBeNull();
   });
 
-  it("defers compare version query until compare tab is requested", async () => {
+  it("does not request compare versions for the simplified detail tabs", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (
@@ -818,7 +2793,9 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
     expect(await screen.findByText("Weather")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /compare/i })).toBeTruthy();
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /diff/i })).toBeNull();
 
     expect(
       useQueryMock.mock.calls.some((call) => {
@@ -831,21 +2808,5 @@ describe("SkillDetailPage", () => {
         );
       }),
     ).toBe(false);
-
-    fireEvent.click(screen.getByRole("button", { name: /compare/i }));
-
-    await waitFor(() => {
-      expect(
-        useQueryMock.mock.calls.some((call) => {
-          const args = call[1];
-          return (
-            typeof args === "object" &&
-            args !== null &&
-            "limit" in args &&
-            (args as { limit: number }).limit === 200
-          );
-        }),
-      ).toBe(true);
-    });
   });
 });

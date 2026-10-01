@@ -1,4 +1,3 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
 import { zipSync } from "fflate";
 import semver from "semver";
 import { parseFrontmatter } from "./skills";
@@ -37,18 +36,19 @@ export type GitHubImportFileEntry = {
 const MAX_REDIRECTS = 6;
 const GITHUB_HOST = "github.com";
 const CODELOAD_HOST = "codeload.github.com";
-const SKILL_FILENAMES = ["skill.md", "skills.md"];
+const SKILL_FILENAMES = new Set(["skill.md", "skills.md"]);
 
 export function parseGitHubImportUrl(input: string): GitHubImportUrl {
-  const originalUrl = input.trim();
+  const rawUrl = input.trim();
   let url: URL;
   try {
-    url = new URL(originalUrl);
+    url = new URL(rawUrl);
   } catch {
     throw new Error("Invalid URL");
   }
   if (url.protocol !== "https:") throw new Error("Only https:// URLs are supported");
   if (url.hostname !== GITHUB_HOST) throw new Error("Only github.com URLs are supported");
+  const originalUrl = canonicalGitHubImportUrl(url);
 
   const segments = url.pathname
     .split("/")
@@ -81,12 +81,19 @@ export function parseGitHubImportUrl(input: string): GitHubImportUrl {
   if (kind === "blob") {
     if (!rest) throw new Error("Missing path in GitHub URL");
     if (!normalizedRest) throw new Error("Invalid path in GitHub URL");
+    if (!isGitHubSkillFilePath(normalizedRest)) {
+      throw new Error("GitHub file URL must point to SKILL.md or skills.md");
+    }
     const dir = normalizedRest.split("/").slice(0, -1).join("/");
     return { owner, repo, ref, path: dir || undefined, originalUrl };
   }
 
   if (rest && !normalizedRest) throw new Error("Invalid path in GitHub URL");
   return { owner, repo, ref, path: normalizedRest || undefined, originalUrl };
+}
+
+function canonicalGitHubImportUrl(url: URL) {
+  return `https://${url.hostname}${url.pathname}`;
 }
 
 export async function resolveGitHubCommit(
@@ -116,10 +123,7 @@ export async function resolveGitHubCommit(
 async function resolveRefCommit(parsed: GitHubImportUrl, ref: string, fetcher: typeof fetch) {
   const apiUrl = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/commits/${encodeURIComponent(ref)}`;
   const response = await fetcher(apiUrl, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "clawhub/github-import",
-    },
+    headers: buildGitHubImportHeaders(),
   });
   if (!response.ok) throw new Error("GitHub ref not found");
   const body = (await response.json()) as { sha?: unknown };
@@ -131,7 +135,10 @@ async function resolveRefCommit(parsed: GitHubImportUrl, ref: string, fetcher: t
 async function resolveHeadCommit(parsed: GitHubImportUrl, fetcher: typeof fetch) {
   let url = `https://${GITHUB_HOST}/${parsed.owner}/${parsed.repo}/archive/HEAD.zip`;
   for (let i = 0; i < MAX_REDIRECTS; i += 1) {
-    const response = await fetcher(url, { redirect: "manual" });
+    const response = await fetcher(url, {
+      headers: buildGitHubImportHeaders(),
+      redirect: "manual",
+    });
     const location = response.headers.get("location");
     if (!location) break;
     const next = new URL(location, url);
@@ -156,7 +163,7 @@ export async function fetchGitHubZipBytes(
   const maxZipBytes = limits?.maxZipBytes ?? 25 * 1024 * 1024;
   const url = `https://${CODELOAD_HOST}/${resolved.owner}/${resolved.repo}/zip/${resolved.commit}`;
   const response = await fetcher(url, {
-    headers: { "User-Agent": "clawhub/github-import" },
+    headers: buildGitHubImportHeaders(),
   });
   if (!response.ok) throw new Error("GitHub archive download failed");
 
@@ -195,6 +202,16 @@ export async function fetchGitHubZipBytes(
   return out;
 }
 
+function buildGitHubImportHeaders() {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "clawhub/github-import",
+  };
+  const token = process.env.GITHUB_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
 export type ZipEntryMap = Record<string, Uint8Array>;
 
 export function buildGitHubZipForTests(entries: Record<string, string>) {
@@ -225,9 +242,7 @@ export function detectGitHubImportCandidates(entries: ZipEntryMap): GitHubImport
   const candidates: GitHubImportCandidate[] = [];
   for (const path of Object.keys(entries)) {
     const normalized = normalizeRepoPath(path);
-    const lower = normalized.toLowerCase();
-    const isSkill = SKILL_FILENAMES.some((name) => lower === name || lower.endsWith(`/${name}`));
-    if (!isSkill) continue;
+    if (!isGitHubSkillFilePath(normalized)) continue;
     const dir = normalized.split("/").slice(0, -1).join("/");
     const readmePath = normalized;
     const raw = new TextDecoder().decode(entries[path] ?? new Uint8Array());
@@ -245,6 +260,12 @@ export function detectGitHubImportCandidates(entries: ZipEntryMap): GitHubImport
   return uniqCandidates(candidates);
 }
 
+export function isGitHubSkillFilePath(path: string) {
+  const normalized = normalizeRepoPath(path);
+  const filename = normalized.split("/").at(-1)?.toLowerCase() ?? "";
+  return SKILL_FILENAMES.has(filename);
+}
+
 function uniqCandidates(candidates: GitHubImportCandidate[]) {
   const seen = new Set<string>();
   const out: GitHubImportCandidate[] = [];
@@ -257,7 +278,7 @@ function uniqCandidates(candidates: GitHubImportCandidate[]) {
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function listTextFilesUnderCandidate(
+export function listFilesUnderCandidate(
   entries: ZipEntryMap,
   candidatePath: string,
 ): Array<{ path: string; bytes: Uint8Array }> {
@@ -266,7 +287,6 @@ export function listTextFilesUnderCandidate(
   for (const [path, bytes] of Object.entries(entries)) {
     const normalized = normalizeRepoPath(path);
     if (!isUnderRoot(normalized, root)) continue;
-    if (!isTextPath(normalized)) continue;
     out.push({ path: normalized, bytes });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
@@ -275,59 +295,12 @@ export function listTextFilesUnderCandidate(
 export function computeDefaultSelectedPaths(params: {
   candidate: GitHubImportCandidate;
   files: Array<{ path: string; bytes: Uint8Array }>;
-  maxDepth?: number;
-  maxAdds?: number;
 }) {
-  const maxDepth = params.maxDepth ?? 4;
-  const maxAdds = params.maxAdds ?? 200;
-  const byPath = new Map(params.files.map((file) => [file.path, file.bytes]));
   const candidateRoot = normalizeCandidateRoot(params.candidate.path);
-  const selected = new Set<string>();
-  let added = 0;
-
-  const add = (path: string) => {
-    const normalized = normalizeRepoPath(path);
-    if (!isUnderRoot(normalized, candidateRoot)) return;
-    if (!byPath.has(normalized)) return;
-    if (!selected.has(normalized)) {
-      selected.add(normalized);
-      added += 1;
-    }
-  };
-
-  add(params.candidate.readmePath);
-
-  const visited = new Set<string>();
-  const queue: Array<{ path: string; depth: number }> = [
-    { path: params.candidate.readmePath, depth: 0 },
-  ];
-
-  while (queue.length > 0) {
-    const item = queue.shift();
-    if (!item) break;
-    if (item.depth >= maxDepth) continue;
-    if (visited.has(item.path)) continue;
-    visited.add(item.path);
-
-    const bytes = byPath.get(item.path);
-    if (!bytes) continue;
-    if (!item.path.toLowerCase().endsWith(".md")) continue;
-
-    const text = new TextDecoder().decode(bytes);
-    const refs = extractMarkdownRelativeTargets(text);
-    for (const ref of refs) {
-      if (added >= maxAdds) break;
-      const resolved = resolveMarkdownTarget(item.path, ref);
-      if (!resolved) continue;
-      add(resolved);
-      if (resolved.toLowerCase().endsWith(".md") && byPath.has(resolved)) {
-        queue.push({ path: resolved, depth: item.depth + 1 });
-      }
-    }
-    if (added >= maxAdds) break;
-  }
-
-  return Array.from(selected).sort();
+  return params.files
+    .map((file) => normalizeRepoPath(file.path))
+    .filter((path) => path && isUnderRoot(path, candidateRoot))
+    .sort();
 }
 
 export function buildGitHubImportFileList(params: {
@@ -359,13 +332,6 @@ export function normalizeCandidateRoot(candidatePath: string) {
 function isUnderRoot(path: string, rootWithSlash: string) {
   if (!rootWithSlash) return true;
   return path === rootWithSlash.slice(0, -1) || path.startsWith(rootWithSlash);
-}
-
-function isTextPath(path: string) {
-  const lower = path.toLowerCase();
-  const ext = lower.split(".").at(-1) ?? "";
-  if (!ext) return false;
-  return TEXT_FILE_EXTENSION_SET.has(ext);
 }
 
 export function suggestDisplayName(candidate: GitHubImportCandidate, fallbackBase: string) {

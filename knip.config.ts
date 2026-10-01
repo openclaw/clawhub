@@ -1,0 +1,141 @@
+const convexRegisteredFunctionEntries = [
+  "convex/*.{ts,tsx}!",
+  "convex/httpApiV1/*.{ts,tsx}!",
+] as const;
+
+const includeTests = process.env.KNIP_INCLUDE_TESTS === "1";
+
+const config = {
+  ignore: [
+    ".artifacts/**",
+    ".nitro/**",
+    ".output/**",
+    ".tanstack/**",
+    ".vercel/**",
+    "coverage/**",
+    "dist/**",
+    "src/routeTree.gen.ts",
+    "convex/_generated/**",
+    "packages/*/dist/**",
+    "packages/clawhub/test-artifact/**",
+  ],
+  ...(includeTests
+    ? {}
+    : {
+        ignoreFiles: [
+          "**/*.test.{ts,tsx,mjs,js}",
+          "**/__tests__/**",
+          "src/__tests__/helpers/**",
+          "packages/clawhub/test/**",
+          "vitest.setup.ts",
+        ],
+      }),
+  workspaces: {
+    ".": {
+      entry: [
+        "src/router.tsx!",
+        "src/server.ts!",
+        "src/routes/**/*.{ts,tsx}!",
+        "src/styles.css!",
+        "server/**/*.{ts,tsx}!",
+        "emails/**/*.{ts,tsx}!",
+        "scripts/**/*.{ts,mjs,js}!",
+        "*.{config,setup}.{ts,mjs,js}!",
+        ...convexRegisteredFunctionEntries,
+        ...(includeTests
+          ? [
+              "src/**/*.test.{ts,tsx}!",
+              "src/__tests__/**/*.{ts,tsx}!",
+              "convex/**/*.test.{ts,tsx}!",
+              "emails/**/*.test.{ts,tsx}!",
+              "server/**/*.test.{ts,tsx}!",
+            ]
+          : []),
+      ],
+      ignoreDependencies: [
+        // Production email rendering imports the React Email TSX templates from Convex;
+        // Knip's production dependency pass does not trace that cross-root preview tree.
+        "@react-email/components",
+        "@fontsource/bricolage-grotesque",
+        "@fontsource/ibm-plex-mono",
+        "@fontsource/noto-sans-sc",
+        "tailwindcss",
+        "tw-animate-css",
+        // The Convex skill frontmatter parser imports this through the
+        // convex/lib/skills directory index, which Knip's production pass does not trace.
+        "yaml",
+      ],
+      project: [
+        "src/**/*.{ts,tsx}!",
+        "src/**/*.css!",
+        "convex/**/*.{ts,tsx}!",
+        "emails/**/*.{ts,tsx}!",
+        "server/**/*.{ts,tsx}!",
+        "scripts/**/*.{ts,mjs,js}!",
+        "*.{config,setup}.{ts,mjs,js}!",
+      ],
+    },
+    "packages/clawhub": {
+      entry: [
+        "bin/clawdhub.js!",
+        "scripts/build.mjs!",
+        "src/cli.ts!",
+        "src/http.ts!",
+        "src/schema/**/*.ts!",
+        "vitest*.ts!",
+        ...(includeTests ? ["src/**/*.test.ts!", "test/**/*.ts!", "test-artifact/**/*.ts!"] : []),
+      ],
+      project: [
+        "bin/**/*.js!",
+        "scripts/**/*.{mjs,js,ts}!",
+        "src/**/*.ts!",
+        "test/**/*.ts!",
+        "vitest*.ts!",
+      ],
+    },
+    "packages/clawhub-admin": {
+      entry: [
+        "bin/clawhub-admin.js!",
+        "scripts/build.mjs!",
+        "scripts/typecheck.mjs!",
+        "src/cli.ts!",
+        "../clawhub/src/cli/commands/auth.ts!",
+        "../clawhub/src/cli/commands/packages.ts!",
+        "../clawhub/src/cli/commands/skills.ts!",
+        "vitest*.ts!",
+        ...(includeTests ? ["src/**/*.test.ts!"] : []),
+      ],
+      project: [
+        "bin/**/*.js!",
+        "scripts/**/*.{mjs,js,ts}!",
+        "src/**/*.ts!",
+        "../clawhub/src/**/*.ts!",
+        "vitest*.ts!",
+      ],
+      // The admin build emits selected public CLI helpers into its own dist.
+      ignoreDependencies: [
+        "arktype",
+        "fflate",
+        "ignore",
+        "json5",
+        "mime",
+        "ora",
+        "p-retry",
+        "semver",
+        "undici",
+      ],
+    },
+    "packages/schema": {
+      entry: [
+        "src/index.ts!",
+        "src/licenseConstants.ts!",
+        "src/routes.ts!",
+        "src/textFiles.ts!",
+        ...(includeTests ? ["src/**/*.test.ts!"] : []),
+      ],
+      project: ["src/**/*.ts!"],
+    },
+  },
+} as const;
+
+export default config;

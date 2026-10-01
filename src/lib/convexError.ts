@@ -19,7 +19,20 @@ function cleanupConvexMessage(message: string) {
     .replace(/\[Request ID:[^\]]*\]\s*/g, "")
     .replace(/^Server Error Called by client\s*/i, "")
     .replace(/^ConvexError:\s*/i, "")
+    .replace(/^Uncaught ConvexError:\s*/i, "")
+    .replace(/:\s*Uncaught ConvexError:\s*/i, ": ")
+    .replace(/\s+at\s+[A-Za-z_$./(][\s\S]*$/i, "")
     .trim();
+}
+
+function normalizeGenericDenialMessage(message: string) {
+  if (/^unauthorized$/i.test(message)) {
+    return "Sign in required. If this ClawHub account was deleted, banned, or disabled, it cannot perform this action.";
+  }
+  if (/^forbidden$/i.test(message)) {
+    return "This ClawHub account does not have permission to perform this action, or the account is not in good standing.";
+  }
+  return message;
 }
 
 export function getUserFacingConvexError(error: unknown, fallback: string) {
@@ -28,10 +41,7 @@ export function getUserFacingConvexError(error: unknown, fallback: string) {
 
   if (hasOwnProperty(maybe, "data")) {
     if (typeof maybe.data === "string") candidates.push(maybe.data);
-    if (
-      hasOwnProperty(maybe.data, "message") &&
-      typeof maybe.data.message === "string"
-    ) {
+    if (hasOwnProperty(maybe.data, "message") && typeof maybe.data.message === "string") {
       candidates.push(maybe.data.message);
     }
   }
@@ -47,7 +57,7 @@ export function getUserFacingConvexError(error: unknown, fallback: string) {
     if (!cleaned) continue;
     if (/^server error$/i.test(cleaned)) continue;
     if (/^internal server error$/i.test(cleaned)) continue;
-    return cleaned;
+    return normalizeGenericDenialMessage(cleaned);
   }
 
   return fallback;

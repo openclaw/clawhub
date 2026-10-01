@@ -1,0 +1,131 @@
+/* @vitest-environment jsdom */
+
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  loadPluginSecurityAudit,
+  PluginSecurityAuditPage,
+} from "../routes/plugins/$name/security-audit";
+
+const { fetchPackageDetailMock, fetchPackageVersionMock } = vi.hoisted(() => ({
+  fetchPackageDetailMock: vi.fn(),
+  fetchPackageVersionMock: vi.fn(),
+}));
+
+const useQueryMock = vi.fn();
+const useMutationMock = vi.fn();
+
+vi.mock("@tanstack/react-router", () => ({
+  createFileRoute:
+    () =>
+    (config: { component?: unknown; beforeLoad?: unknown; loader?: unknown; head?: unknown }) => ({
+      __config: config,
+      useParams: () => ({ name: "demo-plugin" }),
+      useLoaderData: () => ({}),
+    }),
+  redirect: (options: unknown) => ({ redirect: options }),
+}));
+
+vi.mock("convex/react", () => ({
+  useMutation: (...args: unknown[]) => useMutationMock(...args),
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
+}));
+
+vi.mock("../lib/packageApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/packageApi")>()),
+  fetchPackageDetail: fetchPackageDetailMock,
+  fetchPackageVersion: fetchPackageVersionMock,
+}));
+
+function makeLoaderData() {
+  return {
+    detail: {
+      package: {
+        _id: "packages:1",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+      },
+      owner: null,
+    },
+    version: {
+      version: {
+        _id: "packageReleases:1",
+        version: "1.0.0",
+      },
+    },
+    resolvedName: "demo-plugin",
+    rateLimited: false,
+  };
+}
+
+describe("plugin security audit route", () => {
+  beforeEach(() => {
+    useQueryMock.mockReset();
+    useQueryMock.mockReturnValue({
+      package: { _id: "packages:1" },
+      latestRelease: { _id: "packageReleases:1" },
+    });
+    useMutationMock.mockReset();
+    useMutationMock.mockReturnValue(vi.fn().mockResolvedValue({ ok: true }));
+    fetchPackageDetailMock.mockReset();
+    fetchPackageVersionMock.mockReset();
+  });
+
+  it("loads the requested historical release instead of the latest release", async () => {
+    fetchPackageDetailMock.mockResolvedValue({
+      package: {
+        name: "@demo/demo-plugin",
+        latestVersion: "2.0.0",
+      },
+      owner: { handle: "demo" },
+    });
+    fetchPackageVersionMock.mockResolvedValue({ version: { version: "1.0.0" } });
+
+    const result = await loadPluginSecurityAudit("@demo/demo-plugin", "1.0.0");
+
+    expect(fetchPackageVersionMock).toHaveBeenCalledWith("@demo/demo-plugin", "1.0.0");
+    expect(result.version?.version?.version).toBe("1.0.0");
+  });
+
+  it("wires authorized plugin rescans to the package rescan mutation", async () => {
+    const requestRescan = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockReturnValue(requestRescan);
+
+    render(<PluginSecurityAuditPage name="demo-plugin" loaderData={makeLoaderData() as never} />);
+
+    expect(screen.getByRole("button", { name: "Download security audit" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
+
+    await waitFor(() =>
+      expect(requestRescan).toHaveBeenCalledWith({
+        packageId: "packages:1",
+        version: "1.0.0",
+      }),
+    );
+  });
+
+  it("hides plugin rescans when manage settings are unavailable", () => {
+    useQueryMock.mockReturnValue(null);
+
+    render(<PluginSecurityAuditPage name="demo-plugin" loaderData={makeLoaderData() as never} />);
+
+    expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Download security audit" })).toBeNull();
+  });
+
+  it("omits VirusTotal links even when the canonical npm-pack artifact hash exists", () => {
+    const loaderData = makeLoaderData();
+    loaderData.version.version = {
+      ...loaderData.version.version,
+      sha256hash: "legacy-zip-sha",
+      artifact: {
+        kind: "npm-pack",
+        sha256: "tgz-sha",
+      },
+    } as never;
+
+    render(<PluginSecurityAuditPage name="demo-plugin" loaderData={loaderData as never} />);
+
+    expect(screen.queryByRole("link", { name: /VirusTotal/i })).toBeNull();
+  });
+});

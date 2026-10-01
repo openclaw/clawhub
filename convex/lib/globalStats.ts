@@ -1,19 +1,28 @@
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { isPackageBlockedFromPublic } from "./packageSecurity";
 
 export const GLOBAL_STATS_KEY = "default";
 
 type SkillVisibilityFields = Pick<
   Doc<"skills">,
   "softDeletedAt" | "moderationStatus" | "moderationFlags"
+> &
+  Partial<Pick<Doc<"skills">, "moderationVerdict">>;
+type PackageVisibilityFields = Pick<
+  Doc<"packageSearchDigest">,
+  "softDeletedAt" | "family" | "channel" | "scanStatus" | "latestVersion"
 >;
 
 type GlobalStatsReadCtx = Pick<MutationCtx | QueryCtx, "db">;
 type GlobalStatsWriteCtx = Pick<MutationCtx, "db">;
 
-export function isPublicSkillDoc(skill: SkillVisibilityFields | null | undefined) {
+export function isPublicSkillDoc<T extends SkillVisibilityFields>(
+  skill: T | null | undefined,
+): skill is T {
   if (!skill || skill.softDeletedAt) return false;
   if (skill.moderationStatus && skill.moderationStatus !== "active") return false;
+  if (skill.moderationVerdict === "malicious") return false;
   if (skill.moderationFlags?.includes("blocked.malware")) return false;
   return true;
 }
@@ -24,6 +33,26 @@ export function getPublicSkillVisibilityDelta(
 ) {
   const beforePublic = isPublicSkillDoc(before);
   const afterPublic = isPublicSkillDoc(after);
+  if (beforePublic === afterPublic) return 0;
+  return afterPublic ? 1 : -1;
+}
+
+export function isPublicPluginDoc<T extends PackageVisibilityFields>(
+  pkg: T | null | undefined,
+): pkg is T {
+  if (!pkg || pkg.softDeletedAt || !pkg.latestVersion) return false;
+  if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") return false;
+  if (pkg.channel === "private") return false;
+  if (isPackageBlockedFromPublic(pkg.scanStatus)) return false;
+  return true;
+}
+
+export function getPublicPluginVisibilityDelta(
+  before: PackageVisibilityFields | null | undefined,
+  after: PackageVisibilityFields | null | undefined,
+) {
+  const beforePublic = isPublicPluginDoc(before);
+  const afterPublic = isPublicPluginDoc(after);
   if (beforePublic === afterPublic) return 0;
   return afterPublic ? 1 : -1;
 }
@@ -50,18 +79,6 @@ export function isGlobalStatsStorageNotReadyError(error: unknown) {
     message.includes("does not exist") ||
     message.includes("unknown")
   );
-}
-
-export async function countPublicSkillsForGlobalStats(ctx: GlobalStatsReadCtx) {
-  const digests = await ctx.db
-    .query("skillSearchDigest")
-    .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-    .collect();
-  let count = 0;
-  for (const digest of digests) {
-    if (isPublicSkillDoc(digest)) count += 1;
-  }
-  return count;
 }
 
 export async function setGlobalPublicSkillsCount(
@@ -91,6 +108,59 @@ export async function setGlobalPublicSkillsCount(
   }
 }
 
+export async function setGlobalPublicPluginsCount(
+  ctx: GlobalStatsWriteCtx,
+  count: number,
+  now = Date.now(),
+) {
+  const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0));
+  try {
+    const existing = await ctx.db
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, { activePluginsCount: normalizedCount, updatedAt: now });
+    } else {
+      await ctx.db.insert("globalStats", {
+        key: GLOBAL_STATS_KEY,
+        activeSkillsCount: 0,
+        activePluginsCount: normalizedCount,
+        updatedAt: now,
+      });
+    }
+  } catch (error) {
+    if (isGlobalStatsStorageNotReadyError(error)) return;
+    throw error;
+  }
+}
+
+export async function setGlobalPublicExternalSkillsCount(
+  ctx: GlobalStatsWriteCtx,
+  count: number,
+  now = Date.now(),
+) {
+  const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0));
+  const existing = await ctx.db
+    .query("globalStats")
+    .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      activeExternalSkillsCount: normalizedCount,
+      updatedAt: now,
+    });
+    return;
+  }
+  await ctx.db.insert("globalStats", {
+    key: GLOBAL_STATS_KEY,
+    activeSkillsCount: 0,
+    activeExternalSkillsCount: normalizedCount,
+    updatedAt: now,
+  });
+}
+
 export async function adjustGlobalPublicSkillsCount(
   ctx: GlobalStatsWriteCtx,
   delta: number,
@@ -117,14 +187,44 @@ export async function adjustGlobalPublicSkillsCount(
   }
 
   if (!existing) {
-    // No baseline yet (e.g. fresh deploy). Initialize via full recount once.
-    const count = await countPublicSkillsForGlobalStats(ctx);
-    await setGlobalPublicSkillsCount(ctx, count, now);
+    // No baseline yet. The paginated stats maintenance action reconciles the full count.
+    await setGlobalPublicSkillsCount(ctx, Math.max(0, normalizedDelta), now);
     return;
   }
 
   const nextCount = Math.max(0, existing.activeSkillsCount + normalizedDelta);
   await ctx.db.patch(existing._id, { activeSkillsCount: nextCount, updatedAt: now });
+}
+
+export async function adjustGlobalPublicPluginsCount(
+  ctx: GlobalStatsWriteCtx,
+  delta: number,
+  now = Date.now(),
+) {
+  const normalizedDelta = Math.trunc(Number.isFinite(delta) ? delta : 0);
+  if (normalizedDelta === 0) return;
+
+  let existing:
+    | {
+        _id: Doc<"globalStats">["_id"];
+        activePluginsCount?: number;
+      }
+    | null
+    | undefined;
+  try {
+    existing = await ctx.db
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
+  } catch (error) {
+    if (isGlobalStatsStorageNotReadyError(error)) return;
+    throw error;
+  }
+
+  if (!existing || existing.activePluginsCount === undefined) return;
+
+  const nextCount = Math.max(0, existing.activePluginsCount + normalizedDelta);
+  await ctx.db.patch(existing._id, { activePluginsCount: nextCount, updatedAt: now });
 }
 
 export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
@@ -133,7 +233,20 @@ export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
       .query("globalStats")
       .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
       .unique();
-    return stats?.activeSkillsCount ?? null;
+    return stats ? stats.activeSkillsCount + (stats.activeExternalSkillsCount ?? 0) : null;
+  } catch (error) {
+    if (isGlobalStatsStorageNotReadyError(error)) return null;
+    throw error;
+  }
+}
+
+export async function readGlobalPublicPluginsCount(ctx: GlobalStatsReadCtx) {
+  try {
+    const stats = await ctx.db
+      .query("globalStats")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+      .unique();
+    return stats?.activePluginsCount ?? null;
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return null;
     throw error;

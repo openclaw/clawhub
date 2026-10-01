@@ -1,0 +1,63 @@
+export { aggregateAuditVerdict } from "clawhub-schema";
+import {
+  type AigAnalysis,
+  type LlmAnalysis,
+  type SkillSpectorAnalysis,
+  type VtAnalysis,
+} from "./SkillSecurityScanResults";
+
+export type AuditScannerKind = "aig" | "static" | "skillspector";
+
+export const SECURITY_AUDIT_SUBTEXT = "Security checks for vulnerabilities and agentic risk";
+
+type SecurityAuditSignals = {
+  vtAnalysis?: VtAnalysis | null;
+  aigAnalysis?: AigAnalysis | null;
+  llmAnalysis?: LlmAnalysis | null;
+  skillSpectorAnalysis?: SkillSpectorAnalysis | null;
+  staticScan?: {
+    status?: string | null;
+    summary?: string | null;
+    findings?: unknown[] | null;
+    checkedAt?: number | null;
+  } | null;
+};
+
+export const AUDIT_SCANNER_LABELS: Record<AuditScannerKind, string> = {
+  aig: "A.I.G",
+  skillspector: "SkillSpector",
+  static: "Static analysis",
+};
+
+const DEFAULT_AUDIT_SCANNER_ORDER: AuditScannerKind[] = ["skillspector", "static"];
+
+const SUPPORTING_AUDIT_SCANNER_ORDER: AuditScannerKind[] = DEFAULT_AUDIT_SCANNER_ORDER.filter(
+  (kind) => kind !== "skillspector",
+);
+
+export function getAuditScannerOrder(signals?: SecurityAuditSignals): AuditScannerKind[] {
+  const hasStaticScanReview = Boolean(
+    signals?.staticScan?.summary?.trim() || signals?.staticScan?.findings?.length,
+  );
+  let order: AuditScannerKind[];
+  if (signals?.skillSpectorAnalysis) {
+    order = hasStaticScanReview
+      ? ["skillspector", ...SUPPORTING_AUDIT_SCANNER_ORDER]
+      : ["skillspector"];
+  } else if (hasStaticScanReview) {
+    order = ["static"];
+  } else {
+    order = ["skillspector"];
+  }
+  return signals?.aigAnalysis ? ["aig", ...order] : order;
+}
+
+export function getLatestAuditCheckedAt(signals: SecurityAuditSignals) {
+  const values = [
+    signals.aigAnalysis?.checkedAt,
+    signals.llmAnalysis?.checkedAt,
+    signals.skillSpectorAnalysis?.checkedAt,
+    signals.staticScan?.checkedAt,
+  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return values.length ? Math.max(...values) : null;
+}

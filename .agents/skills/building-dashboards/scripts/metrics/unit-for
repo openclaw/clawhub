@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# unit-for: Map a metric's UCUM/OTel unit string to an Axiom chart unit config.
+#
+# Usage:
+#   unit-for <unit-string>
+#
+# Emits a JSON object on stdout suitable for splicing into a Statistic chart
+# config alongside `name` and `query`. Two output shapes:
+#
+#   {"unit":"<enum>"}                          # mapped to an Axiom unit enum
+#   {"unit":"Auto","customUnits":"<verbatim>"} # not in the enum; pass through
+#                                              # the raw unit as a suffix
+#
+# Empty input, missing input, and "1" (OTel dimensionless) all return
+# {"unit":"Auto"} with no customUnits.
+#
+# By design, the following UCUM codes are NOT auto-mapped because they are
+# ambiguous or context-dependent. They fall through to customUnits verbatim;
+# the dashboard author can override if they know the intent:
+#   - "m"  : could be metres or minutes
+#   - "B"  : could be Bel or shorthand-bytes (use "By" for bytes)
+#   - "1"  : OTel "dimensionless"; could be a 0-1 ratio or a unitless count.
+#            Defaults to Auto with no suffix. NOTE: if it IS a 0-1 ratio, do
+#            NOT use the `Percent` enum -- it does not auto-multiply by 100
+#            and 1.0 renders as bare "1". Multiply by 100 in MPL
+#            (`| map * 100`) and set `unit: "Percent100"` on the chart.
+#            See reference/metrics-mpl.md § Percentages and ratios.
+#
+# This script is intended for Statistic charts. TimeSeries / Heatmap / Pie /
+# Table / LogStream reject the `unit` enum on create; they accept
+# `customUnits` at the API level. Always also encode the unit in the chart
+# name (e.g. "Latency (ms)") so the header is self-describing.
+# See reference/chart-config.md § Unit Configuration.
+#
+# Examples:
+#   unit-for "s"       # -> {"unit":"TimeSec"}
+#   unit-for "ms"      # -> {"unit":"TimeMS"}
+#   unit-for "By"      # -> {"unit":"Byte"}
+#   unit-for "%"       # -> {"unit":"Percent100","customUnits":"%"}
+#   unit-for "EUR"     # -> {"unit":"CurrencyEUR"}
+#   unit-for "Cel"     # -> {"unit":"Auto","customUnits":"Cel"}
+#   unit-for "kW.h"    # -> {"unit":"Auto","customUnits":"kW.h"}
+#   unit-for ""        # -> {"unit":"Auto"}
+#   unit-for "1"       # -> {"unit":"Auto"}
+#
+# Note: "%" emits BOTH `unit: "Percent100"` and `customUnits: "%"`.
+# `Percent100` alone scales the value to 0-100 but does not paint the percent
+# sign; `customUnits: "%"` is what produces the "%" suffix. The same pairing
+# applies if you've written your MPL to multiply a 0-1 ratio by 100 and want
+# a percent display.
+
+set -euo pipefail
+
+UNIT="${1-}"
+
+# Mapping table: UCUM/OTel unit code -> Axiom chart unit enum value.
+# Keep additions in sync with the available units listed in
+# reference/chart-config.md ("Available Units").
+jq -n --arg u "$UNIT" '
+  {
+    # Time
+    "s": "TimeSec", "seconds": "TimeSec", "sec": "TimeSec",
+    "ms": "TimeMS", "milliseconds": "TimeMS",
+    "us": "TimeUS", "microseconds": "TimeUS", "µs": "TimeUS",
+    "ns": "TimeNS", "nanoseconds": "TimeNS",
+    "min": "TimeMin",
+    "h": "TimeHour", "hour": "TimeHour", "hours": "TimeHour",
+    "d": "TimeDay", "day": "TimeDay", "days": "TimeDay",
+    # Data sizes (UCUM uses By for byte; B is Bel and is intentionally NOT mapped)
+    "By": "Byte", "bytes": "Byte",
+    "KBy": "Kilobyte", "KiBy": "Kilobyte",
+    "MBy": "Megabyte", "MiBy": "Megabyte",
+    "GBy": "Gigabyte", "GiBy": "Gigabyte",
+    # Data rates
+    "By/s": "BytesSec", "bytes/s": "BytesSec",
+    "bit/s": "BitsSec",
+    # Percent (0-100). For OTel 0-1 ratio metrics, multiply by 100 in MPL
+    # (`| map * 100`) and use Percent100 -- the `Percent` enum does NOT
+    # auto-multiply and renders 1.0 as bare "1".
+    # Note: "%" gets special handling below to emit both `unit: "Percent100"`
+    # AND `customUnits: "%"` because Percent100 alone does not paint the suffix.
+    "%": "Percent100",
+    # Currency (ISO 4217 codes)
+    "USD": "CurrencyUSD",
+    "EUR": "CurrencyEUR",
+    "GBP": "CurrencyGBP",
+    "JPY": "CurrencyJPY",
+    "INR": "CurrencyINR",
+    "CAD": "CurrencyCAD",
+    "AUD": "CurrencyAUD",
+    "CZK": "CurrencyCZK",
+    "PLN": "CurrencyPLN"
+  } as $table
+  | $table[$u] as $enum
+  | if ($u == "" or $u == null or $u == "1") then {unit: "Auto"}
+    elif $u == "%" then {unit: "Percent100", customUnits: "%"}
+    elif $enum then {unit: $enum}
+    else {unit: "Auto", customUnits: $u}
+    end
+'

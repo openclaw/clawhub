@@ -1,0 +1,545 @@
+#!/bin/bash
+# Analyze query coverage to score and rank unused data opportunities
+#
+# Outputs ranked opportunities with scores based on:
+#   - Ingest volume (high = more savings potential)
+#   - Query frequency (low = safer to drop)
+#   - Coverage ratio (% of queries that use this data)
+
+set -euo pipefail
+
+AXIOM_API="${AXIOM_API:-$HOME/.config/agents/skills/sre/scripts/axiom-api}"
+AXIOM_QUERY="${AXIOM_QUERY:-$HOME/.config/agents/skills/sre/scripts/axiom-query}"
+
+# Defaults
+DEPLOYMENT=""
+DATASET=""
+FIELD=""
+QUERY_DAYS="30"    # Query history lookback (axiom-history, cheap)
+INGEST_DAYS="1"    # Ingest volume lookback (actual dataset, expensive)
+AUDIT_DATASET="axiom-audit"  # Audit dataset for volume estimates
+
+usage() {
+    cat << 'EOF'
+Usage: analyze-query-coverage -d <deployment> -D <dataset> [options]
+
+Scores data by query coverage to find optimization opportunities.
+
+Required:
+  -d, --deployment NAME    Axiom deployment name
+  -D, --dataset NAME       Dataset to analyze
+
+Options:
+  -f, --field NAME         Specific field to analyze values for
+  -q, --query-days N       Query history lookback in days (default: 30, cheap)
+  -i, --ingest-days N      Ingest volume lookback in days (default: 1, expensive)
+  -a, --audit-dataset NAME Audit dataset name (default: axiom-audit)
+  -h, --help               Show this help
+
+Without --field: Ranks columns by query frequency (find rarely-used columns)
+With --field:    Ranks field values by query coverage (find rarely-queried subsets)
+
+Examples:
+  analyze-query-coverage -d prod -D k8s-logs
+  analyze-query-coverage -d prod -D k8s-logs -f app
+  analyze-query-coverage -d prod -D k8s-logs -f app -q 90 -i 7
+EOF
+    exit "${1:-0}"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d|--deployment)
+            DEPLOYMENT="$2"; shift 2 ;;
+        -D|--dataset)
+            DATASET="$2"; shift 2 ;;
+        -f|--field)
+            FIELD="$2"; shift 2 ;;
+        -q|--query-days)
+            QUERY_DAYS="$2"; shift 2 ;;
+        -i|--ingest-days)
+            INGEST_DAYS="$2"; shift 2 ;;
+        -a|--audit-dataset)
+            AUDIT_DATASET="$2"; shift 2 ;;
+        -h|--help)
+            usage 0 ;;
+        -*)
+            echo "Unknown option: $1" >&2; usage 1 ;;
+        *)
+            echo "Unexpected argument: $1" >&2; usage 1 ;;
+    esac
+done
+
+if [[ -z "$DEPLOYMENT" || -z "$DATASET" ]]; then
+    echo "Error: --deployment and --dataset are required" >&2
+    usage 1
+fi
+
+[[ -x "$AXIOM_API" ]] || { echo "Error: axiom-api not found" >&2; exit 1; }
+[[ -x "$AXIOM_QUERY" ]] || { echo "Error: axiom-query not found" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "Error: jq required" >&2; exit 1; }
+
+echo "=== Query Coverage Analysis ==="
+echo "Deployment: $DEPLOYMENT"
+echo "Dataset: $DATASET"
+echo ""
+
+# Preflight: Use audit dataset for volume estimate (no scan of actual dataset)
+echo "--- Preflight: Checking volume via $AUDIT_DATASET ---"
+VOLUME_JSON=$($AXIOM_API "$DEPLOYMENT" POST "/v1/datasets/_apl?format=tabular" "{
+  \"apl\": \"['$AUDIT_DATASET'] | where action == 'usageCalculated' | where ['properties.dataset'] == '$DATASET' | where _time > ago(24h) | summarize total_bytes = sum(toreal(['properties.hourly_ingest_bytes'])), hours = dcount(bin(_time, 1h)) | extend gb_per_day = round(total_bytes / hours * 24 / 1000000000, 1) | project gb_per_day\"
+}" 2>&1)
+
+GB_PER_DAY=$(echo "$VOLUME_JSON" | jq -r '.tables[0].columns[0][0] // 0')
+
+echo "Dataset: ~${GB_PER_DAY} GB/day"
+
+# Estimate scan size for ingest query
+if [[ "$GB_PER_DAY" != "0" && "$GB_PER_DAY" != "null" ]]; then
+    ESTIMATED_GB=$(jq -n "$GB_PER_DAY * $INGEST_DAYS | floor")
+    echo "Ingest query will scan: ~${ESTIMATED_GB} GB (${INGEST_DAYS}d)"
+    
+    if [[ "$ESTIMATED_GB" -gt 500 ]]; then
+        echo "⚠️  Large scan! Consider reducing ingest_days"
+    fi
+else
+    echo "No volume data in $AUDIT_DATASET - dataset may be new or name incorrect"
+fi
+
+echo "Query history: ${QUERY_DAYS}d (axiom-history, cheap)"
+echo ""
+
+# AST parser library
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AST_PARSER="$SCRIPT_DIR/lib/ast-parser.jq"
+[[ -f "$AST_PARSER" ]] || { echo "Error: ast-parser.jq not found at $AST_PARSER" >&2; exit 1; }
+
+# Fetch and parse queries - deduplicate first to reduce volume, then parse unique queries
+echo "Fetching query history from axiom-history..."
+PARSED_QUERIES=$($AXIOM_API "$DEPLOYMENT" POST "/v1/datasets/_apl?format=tabular" "{
+  \"apl\": \"['axiom-history'] | where _time > ago(${QUERY_DAYS}d) | where kind == 'apl' | where dataset == '$DATASET' | summarize count = count() by query_text = ['query.apl'] | extend parsed = parse_apl(query_text) | project parsed, count\",
+  \"limit\": 10000
+}" 2>&1)
+
+UNIQUE_QUERIES=$(echo "$PARSED_QUERIES" | jq -r '.tables[0].columns[0] | length // 0')
+TOTAL_EXECUTIONS=$(echo "$PARSED_QUERIES" | jq -r '[.tables[0].columns[1][]] | add // 0')
+echo "Found $UNIQUE_QUERIES unique queries ($TOTAL_EXECUTIONS total executions)"
+QUERY_COUNT="$UNIQUE_QUERIES"
+
+if [[ "$QUERY_COUNT" -eq 0 ]]; then
+    echo ""
+    echo "No queries found. Either:"
+    echo "  - Dataset '$DATASET' hasn't been queried in ${QUERY_DAYS} days"
+    echo "  - Dataset name is incorrect"
+    echo ""
+    echo "This means ALL data in this dataset is potentially unused!"
+    exit 0
+fi
+
+# Extract structured info from each query (column 0 = parsed AST)
+echo "Parsing AST and extracting usage patterns..."
+QUERY_SUMMARIES=$(echo "$PARSED_QUERIES" | jq -r '.tables[0].columns[0][]' | jq -L "$SCRIPT_DIR/lib" 'include "ast-parser"; extract_query_info' -c 2>/dev/null | jq -s '.')
+
+# Aggregate column usage across all queries
+COLUMN_USAGE=$(echo "$QUERY_SUMMARIES" | jq '
+  . as $queries |
+  ($queries | length) as $total |
+  [
+    $queries[].all_columns[]
+  ] | group_by(.) | map({
+    column: .[0],
+    query_count: length,
+    coverage_pct: (100 * length / $total | floor)
+  }) | sort_by(-.query_count)
+')
+
+WILDCARD_COUNT=$(echo "$QUERY_SUMMARIES" | jq '[.[] | select(.has_wildcard)] | length')
+
+# If no field specified, show column usage ranking with pruning analysis
+if [[ -z "$FIELD" ]]; then
+    echo ""
+    echo "--- Column Usage Ranking ---"
+    echo "Total queries: $QUERY_COUNT | Queries with wildcards: $WILDCARD_COUNT"
+    echo ""
+    
+    # Phase 4: Column Pruning - Fetch schema via random sample (captures varied record shapes)
+    echo "Fetching dataset schema..."
+    SCHEMA_JSON=$($AXIOM_API "$DEPLOYMENT" POST "/v1/datasets/_apl?format=tabular" "{
+      \"apl\": \"['$DATASET'] | where _time > ago(${INGEST_DAYS}d) | sample 0.01 | getschema | project ColumnName\",
+      \"limit\": 50000
+    }" 2>&1)
+    
+    # Compare schema columns against used columns in jq
+    COLUMN_COMPARISON=$(echo "$SCHEMA_JSON" | jq --argjson used "$COLUMN_USAGE" '
+      [.tables[0].columns[0][]] as $schema |
+      [$used[].column] as $used_list |
+      {
+        schema_count: ($schema | length),
+        used_count: ($used_list | length),
+        unused: [$schema[] | select(. as $c | $used_list | index($c) | not)],
+        unused_count: ([$schema[] | select(. as $c | $used_list | index($c) | not)] | length)
+      }
+    ')
+    
+    SCHEMA_COUNT=$(echo "$COLUMN_COMPARISON" | jq -r '.schema_count')
+    USED_COUNT=$(echo "$COLUMN_COMPARISON" | jq -r '.used_count')
+    UNUSED_COUNT=$(echo "$COLUMN_COMPARISON" | jq -r '.unused_count')
+    
+    echo "Schema columns: $SCHEMA_COUNT | Used in queries: $USED_COUNT | Unused: $UNUSED_COUNT"
+    echo ""
+    
+    if [[ "$WILDCARD_COUNT" -gt 0 ]]; then
+        echo "⚠️  WARNING: $WILDCARD_COUNT queries use wildcards (project * or implicit all)."
+        echo "   Cannot guarantee columns are unused - showing frequency for prioritization."
+        echo ""
+    fi
+    
+    # Phase 5: Scoring - Add opportunity score
+    echo "--- Column Opportunity Scores ---"
+    echo "(Score = 1 - coverage_ratio; higher = less queried = better candidate)"
+    echo ""
+    
+    echo "$COLUMN_USAGE" | jq -r --argjson total "$QUERY_COUNT" '
+      "Column                                            Queries   Coverage    Score",
+      "------                                            -------   --------    -----",
+      (.[:30][] |
+        (.query_count / $total) as $cov |
+        ((1 - $cov) * 100 | floor / 100) as $score |
+        "\(.column | .[0:50] | . + " " * (50 - length)) \(.query_count | tostring | " " * (7 - length) + .)   \(.coverage_pct)%\(" " * (6 - (.coverage_pct | tostring | length)))  \($score)"
+      )
+    '
+    
+    echo ""
+    echo "--- Unused Columns (Never Referenced in ${QUERY_DAYS}d) ---"
+    if [[ "$UNUSED_COUNT" -eq 0 ]]; then
+        echo "✅ All schema columns have been referenced in queries."
+    else
+        LIMIT=50
+        [[ "$UNUSED_COUNT" -le 100 ]] && LIMIT="$UNUSED_COUNT"
+        echo "Found $UNUSED_COUNT unused columns. Showing first $LIMIT:"
+        echo ""
+        echo "$COLUMN_COMPARISON" | jq -r ".unused[:$LIMIT][]"
+        [[ "$UNUSED_COUNT" -gt "$LIMIT" ]] && echo "... and $((UNUSED_COUNT - LIMIT)) more"
+    fi
+    
+    # Identify cardinality fields (used in filters/group-by) for value analysis
+    CARDINALITY_FIELDS=$(echo "$QUERY_SUMMARIES" | jq -r '
+      [
+        (.[] | .where_predicates[]?.field),
+        (.[] | .summarize_groups[]?)
+      ] | map(select(. != null and . != "")) | group_by(.) | 
+      map({field: .[0], count: length}) | 
+      sort_by(-.count) | 
+      # Filter to fields with significant usage (>5% of queries)
+      map(select(.count > ('"$QUERY_COUNT"' * 0.05))) |
+      .[0:10]
+    ')
+    
+    echo ""
+    echo "--- Recommendations ---"
+    if [[ "$WILDCARD_COUNT" -gt 0 ]]; then
+        echo "📊 Review wildcard queries before pruning columns."
+        echo "   $WILDCARD_COUNT queries may access any column."
+    fi
+    
+    if [[ "$UNUSED_COUNT" -gt 0 ]]; then
+        echo "🎯 $UNUSED_COUNT columns were never referenced in ${QUERY_DAYS}d of query history."
+        echo "   These are strong candidates for column pruning."
+    fi
+    
+    # Suggest cardinality fields for value analysis
+    FIELD_COUNT=$(echo "$CARDINALITY_FIELDS" | jq 'length')
+    if [[ "$FIELD_COUNT" -gt 0 ]]; then
+        echo ""
+        echo "🔍 Suggested fields for value analysis (frequently filtered/grouped):"
+        echo "$CARDINALITY_FIELDS" | jq -r '.[] | "   \(.field) (\(.count) queries)"'
+        echo ""
+        echo "   Run: $0 -d $DEPLOYMENT -D $DATASET -a $AUDIT_DATASET -f <field>"
+    fi
+    exit 0
+fi
+
+echo "Analyzing field: $FIELD"
+echo ""
+
+# For specific field analysis: check how queries reference this field
+FIELD_ANALYSIS=$(echo "$QUERY_SUMMARIES" | jq --arg f "$FIELD" '
+  . as $queries |
+  ($queries | length) as $total |
+  
+  # Queries that reference this field anywhere (in any column list)
+  [$queries[] | select(.all_columns | index($f))] as $refs |
+  ($refs | length) as $references_field |
+  
+  # Queries that have a where predicate on this field
+  [$queries[] | select([.where_predicates[]? | select(.field == $f)] | length > 0)] as $filtered |
+  ($filtered | length) as $filters_with_field |
+  
+  # Queries that group by this field
+  [$queries[] | select(.summarize_groups | index($f))] as $grouped |
+  ($grouped | length) as $groups_by_field |
+  
+  # Queries that reference field but dont have specific filter predicates
+  # (means ALL values of this field are potentially accessed)
+  ([$refs[] | select([.where_predicates[]? | select(.field == $f)] | length == 0)] | length) as $unfiltered_refs |
+  
+  # Extract all filtered values across all queries
+  [
+    $queries[].where_predicates[]? | 
+    select(.field == $f) |
+    if .values then .values[] else .value end
+  ] | map(select(. != null)) | unique as $filtered_values |
+  
+  {
+    total_queries: $total,
+    references_field: $references_field,
+    queries_with_filter: $filters_with_field,
+    groups_by_field: $groups_by_field,
+    unfiltered_references: $unfiltered_refs,
+    filtered_values: $filtered_values,
+    distinct_values_filtered: ($filtered_values | length),
+    field_coverage_pct: (if $total > 0 then (100 * $references_field / $total | floor) else 0 end)
+  }
+')
+
+echo "--- Query Pattern Analysis for '$FIELD' ---"
+echo "$FIELD_ANALYSIS" | jq -r '
+  "Total queries:              \(.total_queries)",
+  "Queries referencing field:  \(.references_field) (\(.field_coverage_pct)%)",
+  "  - With value filters:     \(.queries_with_filter) queries (\(.distinct_values_filtered) distinct values)",
+  "  - Group by (summarize):   \(.groups_by_field)", 
+  "  - No filter (all values): \(.unfiltered_references)"
+'
+
+UNFILTERED=$(echo "$FIELD_ANALYSIS" | jq -r '.unfiltered_references // 0' | head -1)
+FILTERED_VALUES=$(echo "$FIELD_ANALYSIS" | jq -r '.filtered_values[]' 2>/dev/null | sort -u)
+FILTERED_COUNT=$(echo "$FILTERED_VALUES" | wc -l | tr -d ' ')
+
+echo ""
+
+if [[ "$UNFILTERED" -gt 0 ]]; then
+    echo "⚠️  WARNING: $UNFILTERED queries reference '$FIELD' without filtering."
+    echo "   This means ALL values of this field are technically 'used'."
+    echo "   However, these may be exploratory queries. Review before deciding."
+    echo ""
+fi
+
+# Only show if there are actually filtered values (not just empty lines)
+if [[ -n "$FILTERED_VALUES" ]] && [[ "$FILTERED_COUNT" -gt 0 ]]; then
+    echo "--- Values explicitly filtered in queries ---"
+    echo "$FILTERED_VALUES" | head -30
+    if [[ "$FILTERED_COUNT" -gt 30 ]]; then
+        echo "... and $((FILTERED_COUNT - 30)) more"
+    fi
+    echo ""
+fi
+
+# Phase 5: Get top values by volume and compute opportunity scores
+# Use strided sampling: multiple 1-minute windows spread across 24h via union.
+# Each subquery has explicit time bounds so Axiom uses time partitioning efficiently.
+TARGET_SCAN_GB=100
+SAMPLE_WINDOW_MINUTES=1
+LOOKBACK_HOURS=24
+MIN_SAMPLES=8
+MAX_SAMPLES=24
+
+if [[ "$GB_PER_DAY" != "0" && "$GB_PER_DAY" != "null" ]]; then
+    GB_PER_MINUTE=$(jq -n "$GB_PER_DAY / 1440")
+    GB_PER_SAMPLE=$(jq -n "$GB_PER_MINUTE * $SAMPLE_WINDOW_MINUTES")
+    # How many samples fit in target scan? Clamp to min/max.
+    NUM_SAMPLES=$(jq -n "$TARGET_SCAN_GB / $GB_PER_SAMPLE | floor | if . < $MIN_SAMPLES then $MIN_SAMPLES elif . > $MAX_SAMPLES then $MAX_SAMPLES else . end")
+    # Stride between samples (in hours)
+    STRIDE_HOURS=$(jq -n "$LOOKBACK_HOURS / $NUM_SAMPLES | floor | if . < 1 then 1 else . end")
+    # Total minutes sampled
+    TOTAL_SAMPLED_MINUTES=$(jq -n "$NUM_SAMPLES * $SAMPLE_WINDOW_MINUTES")
+    # Multiplier to extrapolate to daily
+    DAILY_MULTIPLIER=$(jq -n "1440 / $TOTAL_SAMPLED_MINUTES | floor")
+    SCAN_GB=$(jq -n "$GB_PER_SAMPLE * $NUM_SAMPLES | floor")
+else
+    # No volume data - use reasonable defaults
+    NUM_SAMPLES=8
+    STRIDE_HOURS=3
+    TOTAL_SAMPLED_MINUTES=$((NUM_SAMPLES * SAMPLE_WINDOW_MINUTES))
+    DAILY_MULTIPLIER=$((1440 / TOTAL_SAMPLED_MINUTES))
+    SCAN_GB="unknown"
+fi
+
+echo "--- Value Opportunity Scores ---"
+echo "Query coverage: last ${QUERY_DAYS} days of query history (from axiom-history)"
+echo "Volume samples: ${NUM_SAMPLES}x ${SAMPLE_WINDOW_MINUTES}m windows over last ${LOOKBACK_HOURS}h (strided every ${STRIDE_HOURS}h, ~${SCAN_GB}GB scan)"
+echo ""
+
+# Run multiple queries concurrently and merge results
+# (Union of disjoint time ranges not supported by API)
+SAMPLE_DIR=$(mktemp -d)
+
+# Build list of time ranges
+for i in $(seq 0 "$((NUM_SAMPLES - 1))"); do
+    OFFSET_HOURS=$((i * STRIDE_HOURS))
+    END_MINUTES=$((OFFSET_HOURS * 60 + 5))  # Start 5 min ago to avoid ingest lag
+    START_MINUTES=$((END_MINUTES + SAMPLE_WINDOW_MINUTES))
+    echo "${START_MINUTES} ${END_MINUTES} ${i}"
+done > "$SAMPLE_DIR/ranges.txt"
+
+# Run queries in parallel (up to 4 concurrent)
+run_sample_query() {
+    START_MINUTES=$1
+    END_MINUTES=$2
+    SAMPLE_ID=$3
+    $AXIOM_API "$DEPLOYMENT" POST "/v1/datasets/_apl?format=tabular" "{
+      \"apl\": \"['$DATASET'] | where _time > ago(${START_MINUTES}m) and _time <= ago(${END_MINUTES}m) | summarize count = count() by value = tostring(['$FIELD']) | take 500\"
+    }" 2>/dev/null > "$SAMPLE_DIR/sample_${SAMPLE_ID}.json"
+}
+export -f run_sample_query
+export AXIOM_API DEPLOYMENT DATASET FIELD SAMPLE_DIR
+
+cat "$SAMPLE_DIR/ranges.txt" | xargs -P 4 -L 1 bash -c 'run_sample_query $0 $1 $2'
+
+# Merge all sample results
+VOLUME_JSON=$(cat "$SAMPLE_DIR"/sample_*.json 2>/dev/null | jq -s --argjson mult "$DAILY_MULTIPLIER" '
+  reduce .[] as $resp ({};
+    $resp.tables[0] as $t |
+    if $t == null then .
+    else
+      ($t.fields | to_entries | map({(.value.name): .key}) | add) as $idx |
+      reduce range($t.columns[$idx.value] | length) as $i (
+        .;
+        ($t.columns[$idx.value][$i] // "(empty)") as $v |
+        ($t.columns[$idx["count"]][$i] // 0) as $c |
+        .[$v] = ((.[$v] // 0) + $c)
+      )
+    end
+  ) |
+  to_entries |
+  map({value: .key, est_events: (.value * $mult)}) |
+  sort_by(-.est_events) |
+  {tables: [{columns: [[.[].value], [.[].est_events]], fields: [{name: "value"}, {name: "est_events"}]}]}
+')
+rm -rf "$SAMPLE_DIR"
+
+# Build filtered values as JSON array for jq
+FILTERED_JSON=$(echo "$FILTERED_VALUES" | jq -R -s 'split("\n") | map(select(length > 0))')
+
+# Cross-reference, score, and compute statistics in jq
+VOLUME_ANALYSIS=$(echo "$VOLUME_JSON" | jq --argjson filtered "$FILTERED_JSON" '
+  .tables[0] as $t |
+  ($t.fields | to_entries | map({(.value.name): .key}) | add) as $idx |
+  $t.columns[$idx.value] as $values |
+  $t.columns[$idx.est_events] as $events |
+  
+  # Calculate totals
+  ($events | add) as $total_events |
+  
+  # Build enriched rows
+  [range($values | length) | . as $i |
+    {
+      value: (($values[$i] // "") | if . == "" then "(empty)" else . end),
+      events: ($events[$i] // 0),
+      queried: (if ($filtered | index($values[$i])) then true else false end)
+    }
+  ] |
+  
+  # Add percentages and cumulative stats
+  . as $rows |
+  ($rows | map(select(.queried == false)) | map(.events) | add // 0) as $unqueried_total |
+  reduce range(length) as $i (
+    {rows: [], cumulative: 0, cumulative_unqueried: 0};
+    .cumulative += $rows[$i].events |
+    .cumulative_unqueried += (if $rows[$i].queried then 0 else $rows[$i].events end) |
+    .rows += [$rows[$i] + {
+      pct: (100 * $rows[$i].events / $total_events),
+      cumulative_pct: (100 * .cumulative / $total_events),
+      cumulative_unqueried_pct: (100 * .cumulative_unqueried / $total_events)
+    }]
+  ) |
+  {
+    rows: .rows,
+    total_events: $total_events,
+    unqueried_events: $unqueried_total,
+    unqueried_pct: (100 * $unqueried_total / $total_events)
+  }
+')
+
+# Display summary stats with potential savings breakdown
+STATS_SUMMARY=$(echo "$VOLUME_ANALYSIS" | jq '
+  .total_events as $total |
+  [.rows[] | select(.queried == false)] as $unqueried |
+  ($unqueried | map(.events) | add // 0) as $unqueried_total |
+  
+  # Calculate cumulative savings at different thresholds
+  ($unqueried[:5] | map(.events) | add // 0) as $top5 |
+  ($unqueried[:10] | map(.events) | add // 0) as $top10 |
+  ($unqueried[:20] | map(.events) | add // 0) as $top20 |
+  
+  {
+    total: $total,
+    unqueried_total: $unqueried_total,
+    unqueried_pct: (100 * $unqueried_total / $total | . * 10 | floor / 10),
+    unqueried_count: ($unqueried | length),
+    top5_events: $top5,
+    top5_pct: (100 * $top5 / $total | . * 10 | floor / 10),
+    top10_events: $top10,
+    top10_pct: (100 * $top10 / $total | . * 10 | floor / 10),
+    top20_events: $top20,
+    top20_pct: (100 * $top20 / $total | . * 10 | floor / 10)
+  }
+')
+
+echo "$STATS_SUMMARY" | jq -r '
+  "Total est. events/day (top 50 values): \(.total)",
+  "Unqueried events/day: \(.unqueried_total) (\(.unqueried_pct)% of volume)",
+  "",
+  "📉 Potential reduction if unqueried values are cut:",
+  "   Top 5 unqueried:  \(.top5_pct)% reduction",
+  "   Top 10 unqueried: \(.top10_pct)% reduction", 
+  "   Top 20 unqueried: \(.top20_pct)% reduction",
+  "   All unqueried:    \(.unqueried_pct)% reduction (\(.unqueried_count) values)",
+  "",
+  "⚠️  Note: Query coverage is from query history; volume is from recent samples.",
+  "   Values may have been queried outside the history window or volume may vary.",
+  ""
+'
+
+# Display table with percentages
+echo "$VOLUME_ANALYSIS" | jq -r '
+  "Value                                   Est Events/day      %   Cum%  Queried?",
+  "-----                                   --------------   ----   ----  --------",
+  (.rows[:50][] |
+    (.value | .[0:38] | . + " " * (38 - length)) as $v |
+    (.events | tostring | " " * (16 - length) + .) as $e |
+    (.pct | . * 10 | floor / 10 | tostring | " " * (5 - length) + .) as $p |
+    (.cumulative_pct | floor | tostring | " " * (5 - length) + .) as $c |
+    (if .queried then "Yes" else "No ⚠️" end) as $q |
+    "\($v) \($e)  \($p)  \($c)  \($q)"
+  )
+'
+
+# Flag significant empty values for follow-up analysis
+EMPTY_PCT=$(echo "$VOLUME_ANALYSIS" | jq -r '.rows[] | select(.value == "(empty)") | .pct // 0')
+EMPTY_EVENTS=$(echo "$VOLUME_ANALYSIS" | jq -r '.rows[] | select(.value == "(empty)") | .events // 0')
+if [[ -n "$EMPTY_PCT" ]] && (( $(echo "$EMPTY_PCT > 5" | bc -l) )); then
+    echo ""
+    echo "⚠️  DRILL-DOWN NEEDED: ${EMPTY_PCT}% of volume (~${EMPTY_EVENTS} events/day) has empty '$FIELD'"
+    echo "   To identify these events, group by other low-cardinality fields."
+    echo "   Suggested query:"
+    echo "   ['$DATASET'] | where _time > ago(5m) | where isempty(['$FIELD']) | summarize count() by <field1>, <field2> | order by count_ desc"
+fi
+
+echo ""
+echo "--- Recommendations ---"
+if [[ "$UNFILTERED" -eq 0 && "$FILTERED_COUNT" -gt 0 ]]; then
+    echo "✅ All queries that reference '$FIELD' use specific filters."
+    echo "   Values NOT in the filter list above are candidates for dropping."
+    echo ""
+    echo "   To find high-volume values not in filter list, cross-reference:"
+    echo "   - Top values by volume (above)"
+    echo "   - Values in query filters"
+else
+    echo "📊 $UNFILTERED queries reference '$FIELD' without filtering."
+    echo "   This doesn't mean you can't optimize - review those queries:"
+    echo "   - Are they exploratory/ad-hoc? (may be acceptable to ignore)"
+    echo "   - Are they dashboards/alerts? (need the data)"
+    echo ""
+    echo "   Consider: even if some queries are unfiltered, high-volume values"
+    echo "   that are RARELY queried are still optimization candidates."
+fi

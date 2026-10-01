@@ -20,7 +20,7 @@ Guidelines:
 - Use public read endpoints such as `GET /api/v1/skills`, `GET /api/v1/search`, and `GET /api/v1/skills/{slug}` for catalog listings.
 - Cache responses and respect `429`, `Retry-After`, and rate-limit headers instead of polling aggressively.
 - Link back to the canonical ClawHub skill URL when displaying listings so users can inspect the source registry record.
-- Use canonical page URLs in the form `https://clawhub.ai/<owner>/<slug>`.
+- Use canonical page URLs in the form `https://clawhub.ai/<owner>/skills/<slug>`.
 - Do not imply that ClawHub endorses, verifies, or operates the third-party site.
 - Do not mirror hidden, private, or moderation-blocked content by bypassing public API filters or auth boundaries.
 
@@ -37,15 +37,20 @@ Auth-aware enforcement:
 - Authenticated requests (valid Bearer token): per user bucket.
 - Missing/invalid token falls back to IP enforcement.
 
-- Read: 180/min per IP, 900/min per key
-- Write: 45/min per IP, 180/min per key
+- Read: 3000/min per IP, 12000/min per key
+- Write: 300/min per IP, 3000/min per key
+- Download: 1200/min per IP, 6000/min per key
 
-Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `Retry-After` (on 429).
+Headers: `X-RateLimit-Limit`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Reset`;
+`X-RateLimit-Remaining`, `RateLimit-Remaining`, and `Retry-After` are included on `429`.
 
 Semantics:
 
 - `X-RateLimit-Reset`: Unix epoch seconds (absolute reset time)
 - `RateLimit-Reset`: delay seconds until reset
+- `X-RateLimit-Remaining` / `RateLimit-Remaining`: exact remaining budget when
+  present; sharded successful requests omit it rather than returning an approximate
+  global value
 - `Retry-After`: delay seconds to wait on `429`
 
 Example `429`:
@@ -67,19 +72,31 @@ Client handling:
 - Otherwise use `RateLimit-Reset` or derive delay from `X-RateLimit-Reset`.
 - Add jitter to retries.
 
+## Errors
+
+- v1 errors are plain text (`text/plain; charset=utf-8`), including `400`,
+  `401`, `403`, `404`, `429`, and blocked-download responses.
+- Unknown query parameters are ignored for compatibility.
+- Known query parameters with invalid values return `400`.
+
 ## Endpoints
 
 Public read:
 
 - `GET /api/v1/search?q=...`
   - Optional filters: `highlightedOnly=true`, `nonSuspiciousOnly=true`
+  - Optional mode: `mode=exact` for deterministic exact-slug matches
+  - Invalid `mode` values return `400 Invalid search mode`
   - Legacy alias: `nonSuspicious=true`
 - `GET /api/v1/skills?limit=&cursor=&sort=`
-  - `sort`: `updated` (default), `downloads`, `stars` (`rating`), `installsCurrent` (`installs`), `installsAllTime`, `trending`
+  - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `downloads`, `stars` (`rating`), `name`, legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
+  - `prefix`: deterministic slug-prefix listing in ascending slug order; continue with `nextCursor`
+  - Invalid `sort` values return `400`
   - `cursor` applies to non-`trending` sorts
   - Optional filter: `nonSuspiciousOnly=true`
   - Legacy alias: `nonSuspicious=true`
   - With `nonSuspiciousOnly=true`, cursor-based pages may contain fewer than `limit` items; use `nextCursor` to continue.
+  - `recommended` uses engagement and recency signals.
 - `GET /api/v1/skills/{slug}`
 - `GET /api/v1/skills/{slug}/moderation`
 - `GET /api/v1/skills/{slug}/versions?limit=&cursor=`
@@ -88,21 +105,56 @@ Public read:
 - `GET /api/v1/skills/{slug}/file?path=&version=&tag=`
 - `GET /api/v1/resolve?slug=&hash=`
 - `GET /api/v1/download?slug=&version=&tag=`
+  - Hosted skills return deterministic ZIP bytes.
+  - Current GitHub-backed skills with a `clean` or `suspicious` scan return a
+    JSON `public-github` handoff descriptor instead of ClawHub bytes.
+- `GET /api/v1/skills/export?startDate=&endDate=&limit=&cursor=`
+  - Hosted skills are exported as stored files.
+  - Current GitHub-backed skills with a `clean` or `suspicious` scan are exported
+    as `public-github` handoff descriptors.
+- `GET /api/v1/packages?limit=&cursor=&sort=`
+  - `sort`: `updated` (default), `recommended`, `downloads`, legacy alias `installs`
+  - Invalid `sort` values return `400`
+- `GET /api/v1/plugins?limit=&cursor=&sort=`
+  - `sort`: `recommended` (default), `downloads`, `updated`, legacy alias `installs`
+- `GET /api/v1/plugins?category=memory&curated=true&sort=downloads`
+  - Complete category browse: curated package pins first, then downloads descending and package name ascending. All listing languages remain available.
+  - Returns cursor pagination and category metadata with ordered `pinnedPackages`; unavailable pins are skipped.
+  - Search and ordinary catalog reads retain listings in every language.
+- `GET /api/v1/plugins/overview`
+  - Cacheable bounded marketplace shelves and category metadata with `pinnedPackages`. Other is omitted.
+- `GET /api/v1/plugins/categories`
+  - Complete plugin taxonomy, including Computer use, and the current per-category pin policy.
+- `GET /api/v1/plugins/search?q=...`
+- `GET /api/v1/packages/{name}/versions/{version}/artifact`
+- `GET /api/v1/packages/{name}/versions/{version}/security`
+- `GET /api/v1/packages/{name}/versions/{version}/artifact/download`
+- `GET /api/npm/{package}`
+- `GET /api/npm/{package}/-/{tarball}.tgz`
 
 Auth required:
 
 - `POST /api/v1/skills` (publish, multipart preferred)
 - `DELETE /api/v1/skills/{slug}`
+- `DELETE /api/v1/packages/{name}`
 - `POST /api/v1/skills/{slug}/undelete`
+- `POST /api/v1/packages/{name}/undelete`
 - `POST /api/v1/skills/{slug}/rename`
 - `POST /api/v1/skills/{slug}/merge`
 - `POST /api/v1/skills/{slug}/transfer`
+- `POST /api/v1/packages/{name}/transfer`
 - `POST /api/v1/skills/{slug}/transfer/accept`
 - `POST /api/v1/skills/{slug}/transfer/reject`
 - `POST /api/v1/skills/{slug}/transfer/cancel`
+- `GET /api/v1/skills/export?startDate=&endDate=&limit=&cursor=`
+- `GET /api/v1/plugins/export?startDate=&endDate=&limit=&cursor=&family=`
 - `GET /api/v1/transfers/incoming`
 - `GET /api/v1/transfers/outgoing`
 - `GET /api/v1/whoami`
+
+Admin only:
+
+- `POST /api/v1/users/reserve` reserves root slugs and private no-release package placeholders for an owner handle.
 
 ## Legacy
 

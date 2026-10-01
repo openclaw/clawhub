@@ -4,10 +4,17 @@ import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
-  countPublicSkillsForGlobalStats,
+  isPublicPluginDoc,
   isPublicSkillDoc,
+  setGlobalPublicExternalSkillsCount,
+  setGlobalPublicPluginsCount,
   setGlobalPublicSkillsCount,
 } from "./lib/globalStats";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
+import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 1000;
@@ -181,6 +188,176 @@ export const runSkillStatBackfillInternal: ReturnType<typeof internalAction> = i
   handler: runSkillStatBackfillInternalHandler,
 });
 
+export const backfillSkillDigestRecommendationScoresInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skillSearchDigest")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const digest of page) {
+      const recommendedScore = computeSkillDigestRecommendationScore(digest);
+      if (
+        digest.recommendedScore === recommendedScore &&
+        digest.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
+      ) {
+        continue;
+      }
+      patched += 1;
+      if (!args.dryRun) {
+        await ctx.db.patch(digest._id, {
+          recommendedScore,
+          recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+        });
+      }
+    }
+
+    return {
+      ok: true as const,
+      dryRun: args.dryRun === true,
+      scanned: page.length,
+      patched,
+      cursor: isDone ? null : continueCursor,
+      isDone,
+    };
+  },
+});
+
+export const backfillPackageRecommendationScoresInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("packages")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let patched = 0;
+    for (const pkg of page) {
+      const recommendedScore = computePackageRecommendationScore(pkg);
+      if (
+        pkg.recommendedScore === recommendedScore &&
+        pkg.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
+      ) {
+        continue;
+      }
+      patched += 1;
+      if (!args.dryRun) {
+        await ctx.db.patch(pkg._id, {
+          recommendedScore,
+          recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+        });
+      }
+    }
+
+    return {
+      ok: true as const,
+      dryRun: args.dryRun === true,
+      scanned: page.length,
+      patched,
+      cursor: isDone ? null : continueCursor,
+      isDone,
+    };
+  },
+});
+
+type RecommendationScoreBackfillArgs = {
+  skillCursor?: string;
+  packageCursor?: string;
+  skillsDone?: boolean;
+  packagesDone?: boolean;
+  batchSize?: number;
+  maxBatches?: number;
+  dryRun?: boolean;
+};
+
+type RecommendationScoreBackfillTotals = {
+  scanned: number;
+  patched: number;
+  batches: number;
+};
+
+export const runRecommendationScoreBackfillInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      skillCursor: v.optional(v.string()),
+      packageCursor: v.optional(v.string()),
+      skillsDone: v.optional(v.boolean()),
+      packagesDone: v.optional(v.boolean()),
+      batchSize: v.optional(v.number()),
+      maxBatches: v.optional(v.number()),
+      dryRun: v.optional(v.boolean()),
+    },
+    handler: async (ctx, args: RecommendationScoreBackfillArgs) => {
+      const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+      const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+      const dryRun = args.dryRun === true;
+      let skillsDone = args.skillsDone === true;
+      let packagesDone = args.packagesDone === true;
+      let skillCursor: string | null = skillsDone ? null : (args.skillCursor ?? null);
+      let packageCursor: string | null = packagesDone ? null : (args.packageCursor ?? null);
+      const skills: RecommendationScoreBackfillTotals = { scanned: 0, patched: 0, batches: 0 };
+      const packages: RecommendationScoreBackfillTotals = { scanned: 0, patched: 0, batches: 0 };
+
+      for (let i = 0; i < maxBatches && (!skillsDone || !packagesDone); i += 1) {
+        if (!skillsDone) {
+          const result = (await ctx.runMutation(
+            internal.statsMaintenance.backfillSkillDigestRecommendationScoresInternal,
+            {
+              cursor: skillCursor ?? undefined,
+              batchSize,
+              dryRun,
+            },
+          )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean };
+          skills.scanned += result.scanned;
+          skills.patched += result.patched;
+          skills.batches += 1;
+          skillCursor = result.cursor;
+          skillsDone = result.isDone;
+        }
+
+        if (!packagesDone) {
+          const result = (await ctx.runMutation(
+            internal.statsMaintenance.backfillPackageRecommendationScoresInternal,
+            {
+              cursor: packageCursor ?? undefined,
+              batchSize,
+              dryRun,
+            },
+          )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean };
+          packages.scanned += result.scanned;
+          packages.patched += result.patched;
+          packages.batches += 1;
+          packageCursor = result.cursor;
+          packagesDone = result.isDone;
+        }
+      }
+
+      return {
+        ok: true as const,
+        dryRun,
+        scoreVersion: RECOMMENDATION_SCORE_VERSION,
+        isDone: skillsDone && packagesDone,
+        skillsDone,
+        packagesDone,
+        skillCursor,
+        packageCursor,
+        stats: { skills, packages },
+      };
+    },
+  });
+
 function buildSkillStatPatch(skill: Doc<"skills">) {
   const stats = skill.stats;
 
@@ -189,8 +366,7 @@ function buildSkillStatPatch(skill: Doc<"skills">) {
   // nested `stats` object only for documents that pre-date the migration.
   const nextDownloads =
     typeof skill.statsDownloads === "number" ? skill.statsDownloads : stats.downloads;
-  const nextStars =
-    typeof skill.statsStars === "number" ? skill.statsStars : stats.stars;
+  const nextStars = typeof skill.statsStars === "number" ? skill.statsStars : stats.stars;
   const nextInstallsCurrent =
     typeof skill.statsInstallsCurrent === "number"
       ? skill.statsInstallsCurrent
@@ -233,13 +409,40 @@ function buildSkillStatPatch(skill: Doc<"skills">) {
   };
 }
 
+function computeSkillDigestRecommendationScore(digest: Doc<"skillSearchDigest">) {
+  return computeRecommendationScore(
+    {
+      downloads: digest.statsDownloads ?? digest.stats.downloads,
+      installs: digest.statsInstallsAllTime ?? digest.stats.installsAllTime ?? 0,
+      stars: digest.statsStars ?? digest.stats.stars,
+    },
+    {
+      createdAt: digest.createdAt,
+      updatedAt: digest.updatedAt,
+    },
+  );
+}
+
+function computePackageRecommendationScore(pkg: Doc<"packages">) {
+  return computeRecommendationScore(
+    {
+      downloads: pkg.stats.downloads,
+      installs: pkg.stats.installs,
+      stars: pkg.stats.stars,
+    },
+    {
+      createdAt: pkg.createdAt ?? pkg._creationTime,
+      updatedAt: pkg.updatedAt,
+    },
+  );
+}
+
 /**
  * Reconcile skill stats by counting actual records in source-of-truth tables.
  *
  * This fixes stats that got out of sync due to missed events, cursor issues,
  * or bugs in the event processing pipeline. It counts:
  * - stars: actual records in the `stars` table for each skill
- * - comments: actual records in the `comments` table for each skill
  *
  * Downloads and installs are event-sourced only (no separate table to count from),
  * so they cannot be reconciled this way.
@@ -273,24 +476,15 @@ export async function reconcileSkillStarCountsHandler(
       .collect();
     const actualStars = starRecords.length;
 
-    // Count actual comment records for this skill
-    const commentRecords = await ctx.db
-      .query("comments")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .withIndex("by_skill", (q: any) => q.eq("skillId", skill._id))
-      .collect();
-    const actualComments = commentRecords.filter((c: { softDeletedAt?: unknown }) => !c.softDeletedAt).length;
-
     // Check if stats are out of sync (compare against the canonical value
     // used by toPublicSkill: prefer top-level field, fall back to nested).
     const currentStars =
       typeof skill.statsStars === "number" ? skill.statsStars : skill.stats.stars;
 
-    if (currentStars !== actualStars || skill.stats.comments !== actualComments) {
+    if (currentStars !== actualStars) {
       const updatedStats = {
         ...skill.stats,
         stars: actualStars,
-        comments: actualComments,
       };
       // Keep both the top-level index field and the legacy nested field in sync.
       await ctx.db.patch(skill._id, {
@@ -355,6 +549,8 @@ function clampInt(value: number, min: number, max: number) {
 // Exported for unit testing only — not part of the public API.
 export const __test = {
   buildSkillStatPatch,
+  computeSkillDigestRecommendationScore,
+  computePackageRecommendationScore,
 };
 
 /**
@@ -373,8 +569,77 @@ export const countPublicDigestPageInternal = internalQuery({
       .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
 
     let count = 0;
+    const nativeSkillIds: string[] = [];
     for (const digest of page) {
-      if (isPublicSkillDoc(digest)) count++;
+      if (isPublicSkillDoc(digest) && !digest.canonicalSkillId) {
+        count++;
+        nativeSkillIds.push(digest.skillId);
+      }
+    }
+    return { count, nativeSkillIds, isDone, cursor: continueCursor };
+  },
+});
+
+export const listPublicExternalSkillIdsPageInternal = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const pageSize = clampInt(args.pageSize ?? 500, 100, 1000);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_visible_installable_fresh_slug", (q) =>
+        q
+          .eq("active", true)
+          .eq("publicVisible", true)
+          .eq("installable", true)
+          .eq("sourceFreshnessStatus", "observed-only"),
+      )
+      .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
+    return {
+      externalIds: page
+        .filter((digest) => isPublicSkillsShMirrorDigest(digest))
+        .map((digest) => digest.externalId),
+      isDone,
+      cursor: continueCursor,
+    };
+  },
+});
+
+export const listExactNativeExternalIdsPageInternal = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const pageSize = clampInt(args.pageSize ?? 500, 100, 1000);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skillsShCatalogEntries")
+      .withIndex("by_external_id")
+      .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
+    return {
+      matches: page.flatMap((entry) =>
+        entry.reconciliation?.kind === "exact-native" && entry.reconciliation.nativeSkillId
+          ? [
+              {
+                externalId: entry.externalId,
+                nativeSkillId: entry.reconciliation.nativeSkillId,
+              },
+            ]
+          : [],
+      ),
+      isDone,
+      cursor: continueCursor,
+    };
+  },
+});
+
+export const countPublicPackageDigestPageInternal = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const pageSize = clampInt(args.pageSize ?? 1000, 100, 2000);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("packageSearchDigest")
+      .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
+
+    let count = 0;
+    for (const digest of page) {
+      if (isPublicPluginDoc(digest)) count++;
     }
     return { count, isDone, cursor: continueCursor };
   },
@@ -382,9 +647,24 @@ export const countPublicDigestPageInternal = internalQuery({
 
 /** Write the reconciled global stats count. */
 export const writeGlobalStatsInternal = internalMutation({
-  args: { count: v.number() },
+  args: {
+    count: v.optional(v.number()),
+    activeSkillsCount: v.optional(v.number()),
+    activeExternalSkillsCount: v.optional(v.number()),
+    activePluginsCount: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
-    await setGlobalPublicSkillsCount(ctx, args.count);
+    if (args.activeSkillsCount !== undefined) {
+      await setGlobalPublicSkillsCount(ctx, args.activeSkillsCount);
+    } else if (args.count !== undefined) {
+      await setGlobalPublicSkillsCount(ctx, args.count);
+    }
+    if (args.activeExternalSkillsCount !== undefined) {
+      await setGlobalPublicExternalSkillsCount(ctx, args.activeExternalSkillsCount);
+    }
+    if (args.activePluginsCount !== undefined) {
+      await setGlobalPublicPluginsCount(ctx, args.activePluginsCount);
+    }
   },
 });
 
@@ -396,34 +676,88 @@ export const writeGlobalStatsInternal = internalMutation({
 export const updateGlobalStatsAction = internalAction({
   args: {},
   handler: async (ctx) => {
-    let total = 0;
-    let cursor: string | undefined;
+    let activeSkillsCount = 0;
+    const countedNativeSkillIds = new Set<string>();
+    let skillCursor: string | undefined;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const result = (await ctx.runQuery(internal.statsMaintenance.countPublicDigestPageInternal, {
-        cursor,
+        cursor: skillCursor,
         pageSize: 1000,
-      })) as { count: number; isDone: boolean; cursor: string };
+      })) as { count: number; nativeSkillIds: string[]; isDone: boolean; cursor: string };
 
-      total += result.count;
+      activeSkillsCount += result.count;
+      for (const skillId of result.nativeSkillIds) countedNativeSkillIds.add(skillId);
       if (result.isDone) break;
-      cursor = result.cursor;
+      skillCursor = result.cursor;
     }
 
-    await ctx.runMutation(internal.statsMaintenance.writeGlobalStatsInternal, { count: total });
-    return { count: total };
-  },
-});
+    const exactNativeExternalIds = new Set<string>();
+    let reconciliationCursor: string | undefined;
+    // Load the persisted reconciliation boundary in pages so mirror rows that
+    // resolve to a native skill are counted only once without per-row lookups.
+    // A route collision remains a distinct public skills.sh identity and is not
+    // a duplicate; exact-native is the only reconciliation that aliases a row.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = (await ctx.runQuery(
+        internal.statsMaintenance.listExactNativeExternalIdsPageInternal,
+        { cursor: reconciliationCursor, pageSize: 500 },
+      )) as {
+        matches: Array<{ externalId: string; nativeSkillId: string }>;
+        isDone: boolean;
+        cursor: string;
+      };
+      for (const match of result.matches) {
+        if (countedNativeSkillIds.has(match.nativeSkillId)) {
+          exactNativeExternalIds.add(match.externalId);
+        }
+      }
+      if (result.isDone) break;
+      reconciliationCursor = result.cursor;
+    }
 
-/**
- * @deprecated Use updateGlobalStatsAction instead.
- * Kept as a manual emergency fallback only — do not re-add to crons.
- */
-export const updateGlobalStatsInternal = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const count = await countPublicSkillsForGlobalStats(ctx);
-    await setGlobalPublicSkillsCount(ctx, count);
+    const publicExternalSkillIds = new Set<string>();
+    let externalSkillCursor: string | undefined;
+    // Deduplicate by the permanent skills.sh identity, not by page position.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = (await ctx.runQuery(
+        internal.statsMaintenance.listPublicExternalSkillIdsPageInternal,
+        { cursor: externalSkillCursor, pageSize: 500 },
+      )) as { externalIds: string[]; isDone: boolean; cursor: string };
+      for (const externalId of result.externalIds) {
+        if (!exactNativeExternalIds.has(externalId)) publicExternalSkillIds.add(externalId);
+      }
+      if (result.isDone) break;
+      externalSkillCursor = result.cursor;
+    }
+    const activeExternalSkillsCount = publicExternalSkillIds.size;
+
+    let activePluginsCount = 0;
+    let pluginCursor: string | undefined;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = (await ctx.runQuery(
+        internal.statsMaintenance.countPublicPackageDigestPageInternal,
+        {
+          cursor: pluginCursor,
+          pageSize: 1000,
+        },
+      )) as { count: number; isDone: boolean; cursor: string };
+
+      activePluginsCount += result.count;
+      if (result.isDone) break;
+      pluginCursor = result.cursor;
+    }
+
+    await ctx.runMutation(internal.statsMaintenance.writeGlobalStatsInternal, {
+      activeSkillsCount,
+      activeExternalSkillsCount,
+      activePluginsCount,
+    });
+    return { activeSkillsCount, activeExternalSkillsCount, activePluginsCount };
   },
 });

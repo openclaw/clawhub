@@ -1,0 +1,117 @@
+name: Org / Namespace Claim
+description: Request review for an org, brand, package scope, or namespace ownership dispute.
+title: "Org claim: "
+labels:
+  - "area: moderation"
+  - "area: security"
+  - "status: review"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when you believe a ClawHub org, owner handle, package scope, skill slug, plugin package, or related namespace should be reserved, transferred, renamed, hidden, quarantined, aliased, or reviewed because of real-world project, brand, or organizational ownership.
+
+        Public GitHub issues must not include secrets, private documents, private legal files, personal identity documents, API tokens, DNS control tokens, or other sensitive material. Share public, non-sensitive proof here and tell us below if staff needs to arrange a private channel for sensitive evidence.
+
+        This is not the ban/account appeal flow. If your ClawHub account was banned, disabled, or cannot sign in because of account standing, use the ClawHub appeal form instead: https://appeals.openclaw.ai/
+
+        Related policy discussion: https://github.com/openclaw/clawhub/issues/2320
+  - type: input
+    id: claimed_namespace
+    attributes:
+      label: Claimed owner, org, scope, or namespace
+      description: Which ClawHub owner handle, org handle, package scope, skill slug, or package namespace are you claiming?
+      placeholder: "@example-org, example-org, @example-org/example-plugin, or example-skill"
+    validations:
+      required: true
+  - type: textarea
+    id: disputed_resources
+    attributes:
+      label: Disputed ClawHub resources
+      description: Link every relevant ClawHub URL, package name, skill slug, owner page, or related GitHub issue.
+      placeholder: |
+        - https://clawhub.ai/example-org/example-skill
+        - https://clawhub.ai/plugins/@example-org/example-plugin
+        - Package or skill names involved:
+    validations:
+      required: true
+  - type: textarea
+    id: claimant_relationship
+    attributes:
+      label: Claimant identity and relationship
+      description: Explain who is making the request and how they are connected to the org, project, package, or brand. Keep it public-safe.
+      placeholder: |
+        I maintain the upstream project at...
+        I am an admin/owner/member of...
+        Public profile or docs showing that relationship:
+    validations:
+      required: true
+  - type: dropdown
+    id: requested_outcome
+    attributes:
+      label: Requested outcome
+      description: Pick every outcome that would resolve the claim.
+      multiple: true
+      options:
+        - Reserve namespace or package
+        - Transfer ownership
+        - Rename existing resource
+        - Hide or quarantine current resource
+        - Add alias or redirect
+        - Review only / need staff guidance
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: public_proof
+    attributes:
+      label: Public proof links and explanation
+      description: Add public links and explain what each proves. Useful proof includes GitHub org/repo control, domain or official email-domain proof, package-registry scope control, trademark or brand evidence, source repo history, package history, and public project docs. Do not paste secrets, tokens, private documents, or private legal files.
+      placeholder: |
+        - https://github.com/example-org/example-project proves...
+        - https://example.org/docs/clawhub proves...
+        - https://www.npmjs.com/org/example-org proves...
+    validations:
+      required: true
+  - type: textarea
+    id: current_owner_context
+    attributes:
+      label: Current owner, history, or context
+      description: Share what you know about the current ClawHub owner, prior transfers, project rename history, or attempted contact.
+      placeholder: |
+        The current listing appears to be owned by...
+        We contacted...
+        The project was renamed from...
+  - type: textarea
+    id: urgency_context
+    attributes:
+      label: User harm or urgency
+      description: Explain impact, affected users, install paths, or other facts that should affect triage priority. Say "No urgent user harm known" if this is not urgent.
+      placeholder: |
+        Users are being directed from...
+        The package is referenced by...
+        We believe this is urgent because...
+    validations:
+      required: true
+  - type: textarea
+    id: sensitive_evidence
+    attributes:
+      label: Sensitive evidence or private staff channel
+      description: Say whether public evidence is enough or whether staff needs to arrange a private channel. Summarize the kind of private evidence without including the sensitive material itself.
+      placeholder: |
+        Public evidence is enough.
+
+        Or:
+
+        We need a private staff channel for DNS challenge proof, private legal documents, or other sensitive evidence.
+    validations:
+      required: true
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Acknowledgements
+      options:
+        - label: I have not included secrets, API tokens, private documents, private legal files, personal identity documents, or other sensitive material in this public issue.
+          required: true
+        - label: I understand this public issue may be linked from ClawHub moderation or namespace policy discussions.
+          required: true

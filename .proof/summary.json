@@ -1,0 +1,30 @@
+{
+  "baseline": "production",
+  "candidate": "production-before-fix",
+  "generatedAt": "2026-06-23T02:50:00.000Z",
+  "mode": "feature",
+  "status": "pass",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "https://clawhub.ai",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "publishers?q=vyctorbrzezowski returns no publishers (prod before deploy)",
+          "screenshot": "screenshots/vyctorbrzezowski-empty.png",
+          "slug": "vyctorbrzezowski-empty",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "publishers?q=vincent shows vincentchan but not vincentkoc (prod before deploy)",
+          "screenshot": "screenshots/vincent-missing-vincentkoc.png",
+          "slug": "vincent-missing-vincentkoc",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}

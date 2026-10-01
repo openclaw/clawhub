@@ -1,20 +1,39 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
+import { getFunctionName } from "convex/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { tokenize } from "./lib/searchText";
-import { __test, hydrateResults, lexicalFallbackSkills, searchSkills } from "./search";
+import {
+  __test,
+  directPrefixSkillMatches,
+  getExternalSkillSearchCandidates,
+  getExactSkillSlugMatch,
+  getOwnerQualifiedSkillMatch,
+  getRollingSkillSearchUsage,
+  hydrateResults,
+  lexicalFallbackSkills,
+  lexicalFallbackSkillsBatchInternal,
+  searchSkills as canonicalSearchSkills,
+  searchNativeSkills,
+  searchPublicDiscoveryBatchInternal,
+} from "./search";
 
-const { generateEmbeddingMock } = vi.hoisted(() => ({
+const { generateEmbeddingMock, generateEmbeddingsMock } = vi.hoisted(() => ({
   generateEmbeddingMock: vi.fn(),
+  generateEmbeddingsMock: vi.fn(),
 }));
+
+afterEach(() => vi.unstubAllEnvs());
 
 vi.mock("./lib/embeddings", () => ({
   generateEmbedding: generateEmbeddingMock,
+  generateEmbeddings: generateEmbeddingsMock,
 }));
 
 vi.mock("./lib/badges", () => ({
   isSkillHighlighted: (skill: { badges?: Record<string, unknown> }) =>
     Boolean(skill.badges?.highlighted),
+  isSkillOfficial: (skill: { badges?: Record<string, unknown> }) => Boolean(skill.badges?.official),
 }));
 
 type WrappedHandler<Result = { skill: { slug: string; _id: string } }> = {
@@ -22,12 +41,55 @@ type WrappedHandler<Result = { skill: { slug: string; _id: string } }> = {
 };
 
 const searchSkillsHandler = (
-  searchSkills as unknown as WrappedHandler<{
+  searchNativeSkills as unknown as WrappedHandler<{
     skill: { slug: string; _id: string };
     score: number;
+    semanticScore: number;
   }>
 )._handler;
+const canonicalSearchSkillsHandler = (
+  canonicalSearchSkills as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<Array<Record<string, unknown>>>;
+  }
+)._handler;
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
+const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
+  ._handler;
+const getExactSkillSlugMatchHandler = (
+  getExactSkillSlugMatch as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<
+      Array<{
+        skill: { slug: string; _id: string };
+        ownerHandle: string | null;
+        owner: { official?: boolean } | null;
+      }>
+    >;
+  }
+)._handler;
+const getOwnerQualifiedSkillMatchHandler = (
+  getOwnerQualifiedSkillMatch as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<Array<{ skill: { slug: string }; ownerHandle: string | null }>>;
+  }
+)._handler;
+const getExternalSkillSearchCandidatesHandler = (
+  getExternalSkillSearchCandidates as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<Array<{ externalId: string }>>;
+  }
+)._handler;
+const getRollingSkillSearchUsageHandler = (
+  getRollingSkillSearchUsage as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<Array<{ skillId: string; installs: number; bookmarks: number }>>;
+  }
+)._handler;
 const hydrateResultsHandler = (
   hydrateResults as unknown as {
     _handler: (
@@ -38,6 +100,49 @@ const hydrateResultsHandler = (
 )._handler;
 
 describe("search helpers", () => {
+  it.each([{ highlightedOnly: true }, { officialOnly: true }, { createdAfter: 0 }])(
+    "records completed native shelf results once with authoritative counts (%j)",
+    async (filter) => {
+      const rows = [false, true, true].map((official, index) => ({
+        skill: makePublicSkill({
+          id: `skills:${index}`,
+          slug: "local-proof",
+          displayName: `Skill ${index}`,
+          official,
+          featured: true,
+        }),
+        version: null,
+        ownerHandle: "author",
+        owner: { official: index === 0 },
+      }));
+      const runMutation = vi.fn().mockResolvedValue(null);
+      const ctx = { runQuery: vi.fn().mockResolvedValue(rows), runMutation };
+      const args = { query: "local-proof", mode: "exact", limit: 2, ...filter };
+      const before = await searchSkillsHandler(ctx, args);
+      expect(runMutation).not.toHaveBeenCalled();
+      const after = await searchSkillsHandler(ctx, { ...args, searchSource: "clawhub-web" });
+      expect(after).toEqual(before);
+      expect(runMutation).toHaveBeenCalledOnce();
+      expect(runMutation.mock.calls[0][1]).toEqual({
+        source: "clawhub-web",
+        artifactKind: "skill",
+        scope: "shelf",
+        normalizedQuery: "local-proof",
+        category: undefined,
+        topic: undefined,
+        resultCount: 2,
+        officialResultCount: 2,
+      });
+      runMutation.mockClear();
+      await searchSkillsHandler(ctx, {
+        query: "local-proof",
+        mode: "exact",
+        searchSource: "clawhub-web",
+      });
+      expect(runMutation).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns fallback results when vector candidates are empty", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const fallback = [
@@ -49,7 +154,11 @@ describe("search helpers", () => {
       },
     ];
     // Slug-like queries now do an indexed exact-slug lookup before lexical fallback.
-    const runQuery = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(fallback);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
       {
@@ -63,7 +172,7 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("orf");
     expect(runQuery).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ query: "orf", queryTokens: ["orf"] }),
+      expect.objectContaining({ query: "orf", queryTokens: ["orf"], limit: 200 }),
     );
   });
 
@@ -81,6 +190,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
 
     const result = await searchSkillsHandler(
@@ -98,6 +208,613 @@ describe("search helpers", () => {
       expect.anything(),
       expect.objectContaining({ query: "orf", queryTokens: ["orf"] }),
     );
+  });
+
+  it("applies normalized author topics before slicing search results", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const directMatches = [
+      {
+        skill: makePublicSkill({
+          id: "skills:calendar",
+          slug: "calendar-workflow",
+          displayName: "Calendar Workflow",
+          topics: ["google-calendar"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:legacy",
+          slug: "calendar-workflow-legacy",
+          displayName: "Calendar Workflow Legacy",
+          topics: ["legacy"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+    ];
+    const runQuery = vi.fn().mockResolvedValueOnce(directMatches).mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn(),
+        runQuery,
+      },
+      { query: "calendar workflow", topic: "Google Calendar", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["calendar-workflow"]);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ topic: "google-calendar" }),
+    );
+  });
+
+  it("passes normalized selected categories through every skill recall path", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const development = {
+      embeddingId: "skillEmbeddings:development",
+      skill: makePublicSkill({
+        id: "skills:development",
+        slug: "development-helper",
+        displayName: "Development Helper",
+        categories: ["development"],
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const automation = {
+      embeddingId: "skillEmbeddings:automation",
+      skill: makePublicSkill({
+        id: "skills:automation",
+        slug: "automation-helper",
+        displayName: "Automation Helper",
+        categories: ["automation"],
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([development, automation]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([development, automation]) // hydrateResults
+      .mockResolvedValueOnce([development, automation]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:development", _score: 0.8 },
+          { _id: "skillEmbeddings:automation", _score: 0.9 },
+        ]),
+        runQuery,
+      },
+      { query: "helper", categorySlug: "Development", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-helper"]);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(expect.objectContaining({ categorySlug: "development" }));
+    }
+  });
+
+  it("uses stored categories as skill search evidence", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const fallback = [
+      {
+        skill: makePublicSkill({
+          id: "skills:category-match",
+          slug: "focused-helper",
+          displayName: "Focused Helper",
+          summary: "Keeps projects tidy.",
+          categories: ["development"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+    ];
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn(),
+        runQuery,
+      },
+      { query: "dev", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["focused-helper"]);
+  });
+
+  it("uses normalized prefix matches so lowercase name queries do not depend on vector recall", async () => {
+    const scienceClawSkills = [
+      "ScienceClaw: Query (Dry Run)",
+      "ScienceClaw: Multi-Agent Investigation",
+      "ScienceClaw: Agent Status",
+      "ScienceClaw: Local File Investigation",
+      "ScienceClaw: Post to Infinite",
+      "ScienceClaw: Watch (Live Collaboration)",
+    ].map((displayName, index) =>
+      makeSkillDoc({
+        id: `skills:scienceclaw-${index}`,
+        slug: displayName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+        displayName,
+      }),
+    );
+    const ctx = makeDirectPrefixCtx(scienceClawSkills);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "scienceclaw",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(
+      scienceClawSkills.map((skill) => skill.slug),
+    );
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining([
+        "by_active_normalized_slug",
+        "by_active_normalized_display_name",
+        "by_active_normalized_slug_first_token",
+        "by_active_normalized_display_name_first_token",
+      ]),
+    );
+  });
+
+  it("reads a shared publisher's official status once per query, preserving every skill", async () => {
+    const skills = Array.from({ length: 40 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:calendar-${index}`,
+        slug: `calendar-${index}`,
+        displayName: `Calendar ${index}`,
+        ownerPublisherId: "publishers:shared",
+      }),
+    );
+    const ctx = makeDirectPrefixCtx(skills);
+    for (let request = 1; request <= 2; request++) {
+      const results = await directPrefixSkillMatchesHandler(ctx, { query: "calendar" });
+      expect(results.map((entry) => entry.skill._id)).toEqual(skills.map((skill) => skill._id));
+      expect(
+        ctx.db.query.mock.calls.filter(([table]) => table === "officialPublishers"),
+      ).toHaveLength(request);
+    }
+  });
+
+  it("recalls matching curated skills before the display limit is applied", async () => {
+    const community = makeSkillDoc({
+      id: "skills:email",
+      slug: "email",
+      displayName: "Email",
+      summary: "Mailbox tools.",
+    });
+    const official = makeSkillDoc({
+      id: "skills:agentmail",
+      slug: "agentmail",
+      displayName: "AgentMail",
+      summary: "Official email inboxes for agents.",
+      official: true,
+    });
+    const unrelatedOfficial = makeSkillDoc({
+      id: "skills:nostr",
+      slug: "nostr",
+      displayName: "Nostr",
+      summary: "Protocol integration.",
+      official: true,
+    });
+    const ctx = makeDirectPrefixCtx([community, official, unrelatedOfficial]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, { query: "email" });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["agentmail", "email"]);
+  });
+
+  it("exact mode bypasses vector and fallback recall", async () => {
+    const exactEntry = {
+      skill: makePublicSkill({
+        id: "skills:exact",
+        slug: "exact-skill",
+        displayName: "Exact Skill",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce([exactEntry]);
+    const vectorSearch = vi.fn();
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch,
+        runQuery,
+      },
+      { query: "exact-skill", mode: "exact", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["exact-skill"]);
+    expect(vectorSearch).not.toHaveBeenCalled();
+    expect(runQuery).toHaveBeenCalledOnce();
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ slug: "exact-skill" }),
+    );
+  });
+
+  it("recalls non-first-token slug matches via the full-text search index (Bug 1)", async () => {
+    // Repro of the original bug: searching "yijian" against a skill whose
+    // slug is "baidu-yijian-vision" returned zero results because all four
+    // prefix indexes only match the *first* token. The new search index
+    // should match any token at any position.
+    const skill = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+    expect(ctx.usedSearchIndexes).toEqual(
+      expect.arrayContaining(["search_by_display_name", "search_by_slug"]),
+    );
+  });
+
+  it("recalls non-first-token displayName matches via the full-text search index", async () => {
+    // Companion case to the slug repro above: a query that only matches
+    // the displayName (not the slug) at a non-first position must still
+    // surface the skill.
+    const skill = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "Vision",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("recalls exact author topics through the indexed topic digest", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:gpu-helper",
+      slug: "accelerated-helper",
+      displayName: "Accelerated Helper",
+      topics: ["GPU development"],
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "gpu development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["accelerated-helper"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
+    );
+  });
+
+  it("recalls author topics by normalized prefix through the indexed topic digest", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:gpu-helper",
+      slug: "accelerated-helper",
+      displayName: "Accelerated Helper",
+      topics: ["GPU development"],
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "gpu",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["accelerated-helper"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
+    );
+  });
+
+  it("prioritizes exact author-topic recall ahead of prefix expansion", async () => {
+    const prefixSkill = makeSkillDoc({
+      id: "skills:react-native-helper",
+      slug: "mobile-helper",
+      displayName: "Mobile Helper",
+      topics: ["React Native"],
+    });
+    const exactSkill = makeSkillDoc({
+      id: "skills:react-helper",
+      slug: "web-helper",
+      displayName: "Web Helper",
+      topics: ["React"],
+    });
+    const ctx = makeDirectPrefixCtx([prefixSkill, exactSkill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "react",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["web-helper", "mobile-helper"]);
+  });
+
+  it("recalls text matches from the selected topic digest", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:calendar-helper",
+      slug: "temporal-helper",
+      displayName: "Temporal Helper",
+      summary: "Coordinates calendar events.",
+      topics: ["Scheduling"],
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "calendar",
+      topic: "scheduling",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["temporal-helper"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
+    );
+  });
+
+  it("continues topic recall past globally capped rows before category filtering", async () => {
+    const distractors = Array.from({ length: 100 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:scheduling-${index}`,
+        slug: `temporal-${index}`,
+        displayName: `Temporal ${index}`,
+        summary: "Coordinates events.",
+        categories: ["automation"],
+        topics: ["scheduling"],
+      }),
+    );
+    const development = makeSkillDoc({
+      id: "skills:calendar-helper",
+      slug: "temporal-helper",
+      displayName: "Temporal Helper",
+      summary: "Coordinates calendar events.",
+      categories: ["development"],
+      topics: ["scheduling"],
+    });
+    const ctx = makeDirectPrefixCtx([...distractors, development]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "calendar",
+      categorySlug: "development",
+      topic: "scheduling",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["temporal-helper"]);
+  });
+
+  it("filters direct prefix matches by the selected category", async () => {
+    const development = makeSkillDoc({
+      id: "skills:development-helper",
+      slug: "development-helper",
+      displayName: "Development Helper",
+      categories: ["development"],
+    });
+    const automation = makeSkillDoc({
+      id: "skills:automation-helper",
+      slug: "automation-helper",
+      displayName: "Automation Helper",
+      categories: ["automation"],
+    });
+    const ctx = makeDirectPrefixCtx([development, automation]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "helper",
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-helper"]);
+  });
+
+  it("continues direct recall past globally capped matches for the selected category", async () => {
+    const distractors = Array.from({ length: 150 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:automation-${index}`,
+        slug: `helper-automation-${index}`,
+        displayName: `Helper Automation ${index}`,
+        categories: ["automation"],
+      }),
+    );
+    const development = makeSkillDoc({
+      id: "skills:development-helper",
+      slug: "helper-development",
+      displayName: "Helper Development",
+      categories: ["development"],
+    });
+    const ctx = makeDirectPrefixCtx([...distractors, development]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "helper",
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-development"]);
+    expect(ctx.paginateCalls).toBe(0);
+    expect(Math.max(...ctx.takeLimits)).toBeLessThanOrEqual(250);
+    expect(ctx.takeLimits.reduce((total, limit) => total + limit, 0)).toBeLessThanOrEqual(2_500);
+  });
+
+  it("does not let unhighlighted scoped matches consume featured recall", async () => {
+    const distractors = Array.from({ length: 150 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:development-${index}`,
+        slug: `helper-development-${index}`,
+        displayName: `Helper Development ${index}`,
+        categories: ["development"],
+      }),
+    );
+    const highlighted = {
+      ...makeSkillDoc({
+        id: "skills:highlighted-development",
+        slug: "helper-highlighted-development",
+        displayName: "Helper Highlighted Development",
+        categories: ["development"],
+      }),
+      badges: { highlighted: { byUserId: "users:mod", at: 1 } },
+    };
+    const ctx = makeDirectPrefixCtx([...distractors, highlighted]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "helper",
+      categorySlug: "development",
+      highlightedOnly: true,
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-highlighted-development"]);
+  });
+
+  it("does not return suspicious skills via full-text search when nonSuspiciousOnly is set", async () => {
+    // Even though the full-text search would token-match the suspicious
+    // skill, the filterField `isSuspicious=false` plus the post-hydration
+    // `isSkillSuspicious` guard must keep it out of the results.
+    const clean = makeSkillDoc({
+      id: "skills:clean",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const flagged = makeSkillDoc({
+      id: "skills:flagged",
+      slug: "shady-yijian-trick",
+      displayName: "Shady Yijian Trick",
+      moderationFlags: ["flagged.suspicious"],
+    });
+    const ctx = makeDirectPrefixCtx([clean, flagged]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian",
+      nonSuspiciousOnly: true,
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("does not return soft-deleted skills via full-text search", async () => {
+    const active = makeSkillDoc({
+      id: "skills:active",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const softDeleted = makeSkillDoc({
+      id: "skills:deleted",
+      slug: "deleted-yijian-tool",
+      displayName: "Deleted Yijian Tool",
+      softDeletedAt: 123,
+    });
+    const ctx = makeDirectPrefixCtx([active, softDeleted]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("dedupes skills matched by both legacy prefix indexes and the new full-text index", async () => {
+    // First-token queries hit *all six* recall paths (4 prefix + 2 full-text).
+    // The skillId-based filter inside `directPrefixSkillMatches` must prevent
+    // the same skill from being emitted multiple times in the final list.
+    const skill = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "baidu",
+      limit: 10,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("baidu-yijian-vision");
+    // Sanity: both legacy prefix indexes and the new full-text indexes were
+    // queried, so the dedup is doing real work, not just a no-op pass-through.
+    expect(ctx.usedIndexes.length).toBeGreaterThanOrEqual(4);
+    expect(ctx.usedSearchIndexes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("rejects multi-token full-text candidates when only some tokens match (AND semantics)", async () => {
+    // Convex `withSearchIndex(...).search(field, q)` is OR-disjunctive over
+    // tokens: a query like "yijian vision" can return rows that contain
+    // *either* token. Without an application-layer AND gate, a `vision`-only
+    // distractor would surface as a "direct prefix match" alongside the
+    // genuine all-tokens hit. The handler must filter the full-text path
+    // through `matchesExactTokens` so only skills whose text contains every
+    // query token survive.
+    const distractor = makeSkillDoc({
+      id: "skills:cv-expert",
+      slug: "computer-vision-expert",
+      displayName: "Computer Vision Expert",
+    });
+    const target = makeSkillDoc({
+      id: "skills:baidu-yijian-vision",
+      slug: "baidu-yijian-vision",
+      displayName: "Baidu Yijian Vision",
+    });
+    const ctx = makeDirectPrefixCtx([distractor, target]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian vision",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("returns nothing when no single skill contains all query tokens", async () => {
+    // Each skill matches exactly one token of the multi-token query. The
+    // disjunctive search index would yield both, but the AND gate must drop
+    // them — no skill in the corpus contains *both* `yijian` and `vision`.
+    const onlyVision = makeSkillDoc({
+      id: "skills:cv-expert",
+      slug: "computer-vision-expert",
+      displayName: "Computer Vision Expert",
+    });
+    const onlyYijian = makeSkillDoc({
+      id: "skills:yijian-misc",
+      slug: "yijian-misc-tool",
+      displayName: "Yijian Misc Tool",
+    });
+    const ctx = makeDirectPrefixCtx([onlyVision, onlyYijian]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "yijian vision",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
   });
 
   it("applies highlightedOnly filtering in lexical fallback", async () => {
@@ -132,16 +849,124 @@ describe("search helpers", () => {
     });
     const clean = makeSkillDoc({ id: "skills:clean", slug: "orf-clean", displayName: "ORF Clean" });
 
-    const result = await lexicalFallbackSkillsHandler(
-      makeLexicalCtx({
-        exactSlugSkill: null,
-        recentSkills: [suspicious, clean],
-      }),
-      { query: "orf", queryTokens: ["orf"], nonSuspiciousOnly: true, limit: 10 },
-    );
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [suspicious, clean],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "orf",
+      queryTokens: ["orf"],
+      nonSuspiciousOnly: true,
+      limit: 10,
+    });
 
     expect(result).toHaveLength(1);
     expect(result[0].skill.slug).toBe("orf-clean");
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_nonsuspicious_updated", "by_nonsuspicious_created"]),
+    );
+  });
+
+  it("excludes suspicious lexical fallback results from public search", async () => {
+    const clean = makeSkillDoc({ id: "skills:clean", slug: "orf-clean", displayName: "ORF Clean" });
+    const suspicious = makeSkillDoc({
+      id: "skills:suspicious",
+      slug: "orf-suspicious",
+      displayName: "ORF Suspicious",
+      moderationFlags: ["flagged.suspicious"],
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [clean, suspicious],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "orf",
+      queryTokens: ["orf"],
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["orf-clean"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_updated", "by_active_created"]),
+    );
+  });
+
+  it("uses the requested fallback limit as the digest scan budget", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [
+        makeSkillDoc({ id: "skills:updated", slug: "orf-updated", displayName: "ORF Updated" }),
+      ],
+      recentByCreated: [
+        makeSkillDoc({ id: "skills:created", slug: "orf-created", displayName: "ORF Created" }),
+      ],
+    });
+
+    await lexicalFallbackSkillsHandler(ctx, {
+      query: "orf",
+      queryTokens: ["orf"],
+      limit: 25,
+      skipExactSlugLookup: true,
+    });
+
+    expect(ctx.takeLimits).toEqual([25, 25]);
+  });
+
+  it("uses the digest public version without reading version history", async () => {
+    const pending = makeSkillDoc({
+      id: "skills:pending-update",
+      slug: "pending-update",
+      displayName: "Pending Update",
+      moderationReason: "pending.scan",
+      moderationSourceVersionId: "skillVersions:pending",
+      latestVersionId: "skillVersions:pending",
+      statsVersions: 2,
+      publicVersion: {
+        status: "available",
+        versionId: "skillVersions:approved",
+      },
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [pending],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "pending",
+      queryTokens: ["pending"],
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["pending-update"]);
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skillVersions");
+  });
+
+  it("fails closed from the digest without reading version history", async () => {
+    const pending = makeSkillDoc({
+      id: "skills:unavailable-update",
+      slug: "unavailable-update",
+      displayName: "Unavailable Update",
+      moderationReason: "pending.scan",
+      moderationSourceVersionId: "skillVersions:pending",
+      latestVersionId: "skillVersions:pending",
+      statsVersions: 2,
+      publicVersion: { status: "unavailable" },
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [pending],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "unavailable",
+      queryTokens: ["unavailable"],
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skillVersions");
   });
 
   it("includes exact slug match from by_slug even when recent scan is empty", async () => {
@@ -161,6 +986,959 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("orf");
     expect(ctx.db.query).toHaveBeenCalledWith("skills");
     expect(ctx.db.query).toHaveBeenCalledWith("skillSearchDigest");
+  });
+
+  it("includes review-only first-publish skills in exact slug search", async () => {
+    const exactSlugSkill = makeSkillDoc({
+      id: "skills:wechatpay",
+      slug: "wechatpay-payment-integration",
+      displayName: "WeChat Pay Integration",
+      moderationFlags: ["flagged.review"],
+      moderationReason: "scanner.llm.review",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill,
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "wechatpay-payment-integration",
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["wechatpay-payment-integration"]);
+  });
+
+  it("still excludes first-publish pending scan skills from exact slug search", async () => {
+    const exactSlugSkill = makeSkillDoc({
+      id: "skills:pending",
+      slug: "pending-payment-integration",
+      displayName: "Pending Payment Integration",
+      moderationReason: "pending.scan",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill,
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "pending-payment-integration",
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("excludes unfeatured skills from featured-only exact slug search", async () => {
+    const exactSlugSkill = makeSkillDoc({
+      id: "skills:unfeatured",
+      slug: "unfeatured",
+      displayName: "Unfeatured",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill,
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "unfeatured",
+      highlightedOnly: true,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("returns duplicate exact slug matches without requiring global slug uniqueness", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, { slug: "demo" });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual([
+      "skills:alice-demo",
+      "skills:org-demo",
+    ]);
+    expect(result.map((entry) => entry.ownerHandle)).toEqual(["alice", "org"]);
+  });
+
+  it("includes official publisher status on skill search owners", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+        }),
+      ],
+      officialPublisherIds: ["publishers:org"],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, { slug: "demo" });
+
+    expect(result[0]?.ownerHandle).toBe("org");
+    expect(result[0]?.owner?.official).toBe(true);
+  });
+
+  it("resolves an owner-qualified skill through indexed publisher and skill lookups", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:org-demo",
+      slug: "demo",
+      displayName: "Org Demo",
+      ownerPublisherId: "publishers:org",
+    });
+    const usedIndexes: string[] = [];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: (index: string) => {
+            usedIndexes.push(`${table}.${index}`);
+            return {
+              unique: vi.fn(async () => {
+                if (table === "publishers") {
+                  return {
+                    _id: "publishers:org",
+                    _creationTime: 1,
+                    kind: "org",
+                    handle: "org",
+                    displayName: "Org",
+                    createdAt: 1,
+                    updatedAt: 1,
+                  };
+                }
+                if (table === "skills") return skill;
+                return null;
+              }),
+            };
+          },
+        })),
+        get: vi.fn(async (id: string) =>
+          id === "skillVersions:1"
+            ? { _id: id, skillId: skill._id, softDeletedAt: undefined }
+            : null,
+        ),
+      },
+    };
+
+    const result = await getOwnerQualifiedSkillMatchHandler(ctx, {
+      owner: "@ORG",
+      slug: "demo",
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["demo"]);
+    expect(usedIndexes).toEqual([
+      "publishers.by_handle",
+      "skills.by_owner_publisher_slug",
+      "officialPublishers.by_publisher",
+    ]);
+    await expect(
+      getOwnerQualifiedSkillMatchHandler(ctx, {
+        owner: "@ORG",
+        slug: "demo",
+        highlightedOnly: true,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it("resolves an owner-qualified legacy user-owned skill", async () => {
+    const user = {
+      _id: "users:owner",
+      _creationTime: 1,
+      handle: "legacy",
+      displayName: "Legacy User",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const skill = makeSkillDoc({
+      id: "skills:legacy-demo",
+      slug: "demo",
+      displayName: "Legacy Demo",
+      ownerPublisherId: undefined,
+    });
+    const usedIndexes: string[] = [];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: (index: string) => {
+            usedIndexes.push(`${table}.${index}`);
+            return {
+              unique: vi.fn(async () => {
+                if (table === "publishers") return null;
+                if (table === "users" && index === "handle") return user;
+                if (table === "skills" && index === "by_owner_slug") return skill;
+                if (table === "officialPublishers") return null;
+                return null;
+              }),
+            };
+          },
+        })),
+        get: vi.fn(async (id: string) => {
+          if (id === user._id) return user;
+          if (id === "skillVersions:1") {
+            return { _id: id, skillId: skill._id, softDeletedAt: undefined };
+          }
+          return null;
+        }),
+      },
+    };
+
+    const result = await getOwnerQualifiedSkillMatchHandler(ctx, {
+      owner: "@LEGACY",
+      slug: "demo",
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["demo"]);
+    expect(result[0]?.ownerHandle).toBe("legacy");
+    expect(usedIndexes).toEqual([
+      "publishers.by_handle",
+      "users.handle",
+      "skills.by_owner_slug",
+      "publishers.by_linked_user",
+      "officialPublishers.by_publisher",
+    ]);
+  });
+
+  it("fails owner-qualified lookup closed when no installable public version resolves", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:org-demo",
+      slug: "demo",
+      displayName: "Org Demo",
+      ownerPublisherId: "publishers:org",
+      moderationReason: "pending.scan",
+      statsVersions: 2,
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: () =>
+            table === "skillVersions"
+              ? { order: () => ({ take: vi.fn().mockResolvedValue([]) }) }
+              : {
+                  unique: vi.fn(async () => {
+                    if (table === "publishers") {
+                      return {
+                        _id: "publishers:org",
+                        _creationTime: 1,
+                        kind: "org",
+                        handle: "org",
+                        displayName: "Org",
+                        createdAt: 1,
+                        updatedAt: 1,
+                      };
+                    }
+                    if (table === "skills") return skill;
+                    return null;
+                  }),
+                },
+        })),
+        get: vi.fn().mockResolvedValue(null),
+      },
+    };
+
+    await expect(
+      getOwnerQualifiedSkillMatchHandler(ctx, { owner: "org", slug: "demo" }),
+    ).resolves.toEqual([]);
+  });
+
+  it("filters external candidates by visibility and installability and bounds every recall index", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
+    const visible = {
+      ...makeExternalSearchDigest({ externalId: "acme/skills/calendar" }),
+      searchText: "index-only content ".repeat(10_000),
+      searchSummary: "Calendar tools",
+      owner: "acme",
+      repo: "skills",
+      sourceHost: "github.com",
+    };
+    const hidden = makeExternalSearchDigest({
+      externalId: "acme/skills/hidden",
+      publicVisible: false,
+    });
+    const blocked = makeExternalSearchDigest({
+      externalId: "acme/skills/blocked",
+      installable: false,
+    });
+    const takeLimits: number[] = [];
+    const usedIndexes: string[] = [];
+    const equalityFields: string[] = [];
+    const makeRange = (rows: unknown[]) => ({
+      take: vi.fn(async (limit: number) => {
+        takeLimits.push(limit);
+        return rows;
+      }),
+    });
+    const queryBuilder = {
+      eq: (field: string) => {
+        equalityFields.push(field);
+        return queryBuilder;
+      },
+      gte: () => queryBuilder,
+      lt: () => queryBuilder,
+      search: () => queryBuilder,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: (index: string, build: (q: typeof queryBuilder) => unknown) => {
+            usedIndexes.push(index);
+            build(queryBuilder);
+            if (table === "featuredSelections") return { unique: vi.fn(async () => null) };
+            if (table === "skillsShCatalogControls") {
+              return {
+                unique: vi.fn(async () => ({
+                  mode: "staging-live",
+                  paused: false,
+                  discoveryEnabled: true,
+                  publicVisibilityEnabled: true,
+                  mirrorPublicVisibilityEnabled: true,
+                })),
+              };
+            }
+            if (index === "by_external_id") {
+              return { unique: vi.fn(async () => visible) };
+            }
+            return makeRange([visible, hidden, blocked]);
+          },
+          withSearchIndex: (index: string, build: (q: typeof queryBuilder) => unknown) => {
+            usedIndexes.push(index);
+            build(queryBuilder);
+            return makeRange([visible, hidden, blocked]);
+          },
+        })),
+      },
+    };
+
+    const result = await getExternalSkillSearchCandidatesHandler(ctx, {
+      query: "acme/skills/calendar",
+      exactExternalId: "acme/skills/calendar",
+    });
+
+    expect(result.map((row) => row.externalId)).toEqual([visible.externalId]);
+    expect(result[0]).toMatchObject({
+      searchSummary: visible.searchSummary,
+      owner: visible.owner,
+      repo: visible.repo,
+      sourceHost: visible.sourceHost,
+      upstreamInstalls: visible.upstreamInstalls,
+      upstreamScanners: visible.upstreamScanners,
+    });
+    expect(result[0]).not.toHaveProperty("searchText");
+    expect(result[0]).not.toHaveProperty("normalizedSlug");
+    expect(result[0]).not.toHaveProperty("_id");
+    expect(JSON.stringify(result).length).toBeLessThan(1_000);
+    expect(takeLimits).toEqual([50, 50, 50, 50, 50]);
+    expect(usedIndexes).toEqual([
+      "by_key",
+      "by_artifact_kind",
+      "by_external_id",
+      "by_active_visible_installable_fresh_slug",
+      "by_active_visible_installable_fresh_display",
+      "by_active_visible_installable_fresh_slug_token",
+      "by_active_visible_installable_fresh_display_token",
+      "search_by_search_text",
+    ]);
+    expect(equalityFields).toEqual(
+      expect.arrayContaining(["active", "publicVisible", "installable", "sourceFreshnessStatus"]),
+    );
+  });
+
+  it("returns no external candidates while the atomic public catalog gate is off", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
+    const unique = vi.fn(async () => ({
+      mode: "staging-live",
+      paused: false,
+      discoveryEnabled: true,
+      publicVisibilityEnabled: false,
+      mirrorPublicVisibilityEnabled: false,
+    }));
+    const withIndex = vi.fn((_index: string, build: (q: { eq: () => unknown }) => unknown) => {
+      build({ eq: () => undefined });
+      return { unique };
+    });
+
+    await expect(
+      getExternalSkillSearchCandidatesHandler(
+        { db: { query: vi.fn(() => ({ withIndex })) } },
+        { query: "calendar" },
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it("aggregates only the bounded 60-day install and bookmark window", async () => {
+    const take = vi.fn().mockResolvedValue([
+      { installs: 4, bookmarks: 2 },
+      { installs: 5, bookmarks: 3 },
+    ]);
+    const queryBuilder = {
+      eq: () => queryBuilder,
+      gte: () => queryBuilder,
+      lte: () => queryBuilder,
+    };
+    const withIndex = vi.fn((_index: string, build: (q: typeof queryBuilder) => unknown) => {
+      build(queryBuilder);
+      return { take };
+    });
+
+    const result = await getRollingSkillSearchUsageHandler(
+      { db: { query: vi.fn(() => ({ withIndex })) } },
+      { skillIds: ["skills:demo"], startDay: 100, endDay: 159 },
+    );
+
+    expect(result).toEqual([{ skillId: "skills:demo", installs: 9, bookmarks: 5 }]);
+    expect(withIndex).toHaveBeenCalledWith("by_skill_day", expect.any(Function));
+    expect(take).toHaveBeenCalledWith(60);
+  });
+
+  it("rejects rolling usage batches that could exceed one query transaction budget", async () => {
+    await expect(
+      getRollingSkillSearchUsageHandler(
+        { db: { query: vi.fn() } },
+        {
+          skillIds: Array.from({ length: 21 }, (_, index) => `skills:${index}`),
+          startDay: 100,
+          endDay: 159,
+        },
+      ),
+    ).rejects.toThrow("skillIds exceeds 20");
+  });
+
+  it("returns one ordered native and external contract with canonical routes and install refs", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const native = {
+      skill: makePublicSkill({
+        id: "skills:calendar",
+        slug: "calendar",
+        displayName: "Calendar",
+        icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
+        downloads: 1_000_000,
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: {
+        _id: "publishers:openclaw",
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+      },
+    };
+    const external = {
+      ...makeExternalSearchDigest({ externalId: "acme/skills/calendar" }),
+      owner: "acme",
+      repo: "skills",
+      upstreamInstalls: 10_000_000,
+    };
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:getExactSkillSlugMatch":
+        case "search:directPrefixSkillMatches":
+          return [native];
+        case "search:lexicalFallbackSkills":
+          return [];
+        case "search:getExternalSkillSearchCandidates":
+          return [external];
+        case "search:getRollingSkillSearchUsage":
+          return [{ skillId: native.skill._id, installs: 12, bookmarks: 3 }];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "calendar", limit: 10 },
+    );
+
+    expect(result.map((row) => row.source)).toEqual(["clawhub", "skills-sh"]);
+    expect(result[0]).toMatchObject({
+      canonicalUrl: "/openclaw/skills/calendar",
+      install: { reference: "openclaw/calendar" },
+      icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
+      metrics: { rolling60DayInstalls: 12, bookmarks: 3 },
+    });
+    expect((result[0]?.native as { owner?: unknown })?.owner).not.toHaveProperty("bio");
+    expect(result[1]).toMatchObject({
+      canonicalUrl: "/skills-sh/acme/skills/calendar",
+      links: {
+        canonical: "/skills-sh/acme/skills/calendar",
+        source: "https://skills.sh/acme/skills/calendar",
+      },
+      install: { reference: "skills-sh:acme/skills/calendar" },
+      icon: null,
+      sourceIdentity: { lifetimeInstalls: 10_000_000 },
+      downloads: 10_000_000,
+    });
+  });
+
+  it("preserves rolling adoption ranking when usage reads require smaller transactions", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const native = Array.from({ length: 100 }, (_, index) => ({
+      skill: makePublicSkill({
+        id: `skills:calendar-${index}`,
+        slug: `calendar-${index}`,
+        displayName: `Calendar ${index}`,
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: null,
+    }));
+    const runQuery = vi.fn(
+      async (ref: Parameters<typeof getFunctionName>[0], args?: { skillIds?: string[] }) => {
+        switch (getFunctionName(ref)) {
+          case "search:getExactSkillSlugMatch":
+          case "search:lexicalFallbackSkills":
+          case "search:getExternalSkillSearchCandidates":
+            return [];
+          case "search:directPrefixSkillMatches":
+            return native;
+          case "search:getRollingSkillSearchUsage": {
+            const skillIds = args?.skillIds ?? [];
+            if (skillIds.length > 20) {
+              throw new Error("Function execution timed out (maximum duration: 1s)");
+            }
+            return skillIds.map((skillId) => ({
+              skillId,
+              installs: skillId === "skills:calendar-99" ? 10_000 : 1,
+              bookmarks: 0,
+            }));
+          }
+          default:
+            throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+        }
+      },
+    );
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "calendar", limit: 100 },
+    );
+
+    expect(result).toHaveLength(100);
+    expect(result[0]).toMatchObject({
+      id: "clawhub:skills:calendar-99",
+      metrics: { rolling60DayInstalls: 10_000 },
+    });
+  });
+
+  it("keeps exact mode deterministic across canonical sources", async () => {
+    const native = {
+      skill: makePublicSkill({
+        id: "skills:calendar",
+        slug: "calendar",
+        displayName: "Calendar",
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: null,
+    };
+    const exactExternal = makeExternalSearchDigest({ externalId: "acme/skills/calendar" });
+    const prefixExternal = makeExternalSearchDigest({
+      externalId: "acme/skills/calendar-tools",
+    });
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:getExactSkillSlugMatch":
+          return [native];
+        case "search:getExternalSkillSearchCandidates":
+          return [exactExternal, prefixExternal];
+        case "search:getRollingSkillSearchUsage":
+          return [{ skillId: native.skill._id, installs: 12, bookmarks: 3 }];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "calendar", mode: "exact", limit: 10 },
+    );
+
+    expect(result.map((row) => `${String(row.source)}:${String(row.slug)}`)).toEqual([
+      "clawhub:calendar",
+      "skills-sh:calendar",
+    ]);
+  });
+
+  it("excludes pending owner-qualified matches when pending scans are disabled", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const pending = {
+      skill: makePublicSkill({
+        id: "skills:pending-calendar",
+        slug: "calendar",
+        displayName: "Calendar",
+        ownerPublisherId: "publishers:openclaw",
+        githubScanStatus: "pending",
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: {
+        _id: "publishers:openclaw",
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+      },
+    };
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:directPrefixSkillMatches":
+        case "search:lexicalFallbackSkills":
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:getOwnerQualifiedSkillMatch":
+          return [pending];
+        case "search:getRollingSkillSearchUsage":
+          return [{ skillId: pending.skill._id, installs: 0, bookmarks: 0 }];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "openclaw/calendar", limit: 10, excludePendingScan: true },
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("excludes unfeatured owner-qualified matches from featured-only search", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:directPrefixSkillMatches":
+        case "search:lexicalFallbackSkills":
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:getOwnerQualifiedSkillMatch":
+          return [];
+        case "search:getRollingSkillSearchUsage":
+          return [];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "openclaw/calendar", limit: 10, highlightedOnly: true },
+    );
+
+    expect(result).toEqual([]);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        owner: "openclaw",
+        slug: "calendar",
+        highlightedOnly: true,
+      }),
+    );
+  });
+
+  it("keeps exact-token native recall ahead of semantic prefix hits at the candidate bound", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const exact = {
+      skill: makePublicSkill({
+        id: "skills:exact-calendar-sync",
+        slug: "sync-tool-exact",
+        displayName: "Calendar",
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: null,
+    };
+    const prefixes = Array.from({ length: 100 }, (_, index) => ({
+      embeddingId: `skillEmbeddings:prefix-${index}`,
+      skill: makePublicSkill({
+        id: `skills:prefix-${index}`,
+        slug: `calendars-synchronizer-${index}`,
+        displayName: `Calendars Synchronizer ${index}`,
+      }),
+      version: null,
+      ownerHandle: "community",
+      owner: null,
+    }));
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:directPrefixSkillMatches":
+          return [exact, ...prefixes.map(({ embeddingId: _embeddingId, ...entry }) => entry)];
+        case "search:hydrateResults":
+          return prefixes;
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:getRollingSkillSearchUsage":
+          return [];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      {
+        runQuery,
+        vectorSearch: vi.fn().mockResolvedValue(
+          prefixes.map((entry) => ({
+            _id: entry.embeddingId,
+            _score: 0.99,
+          })),
+        ),
+      },
+      { query: "calendar sync", limit: 10 },
+    );
+
+    expect(result[0]).toMatchObject({ id: "clawhub:skills:exact-calendar-sync" });
+  });
+
+  it("filters duplicate exact slug matches by topic", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+          topics: ["scheduling", "Official"],
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+          topics: ["monitoring"],
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "demo",
+      topic: "Scheduling",
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual(["skills:alice-demo"]);
+  });
+
+  it("filters duplicate exact slug matches by category", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:development-demo",
+          slug: "demo",
+          displayName: "Development Demo",
+          ownerPublisherId: "publishers:development",
+          categories: ["development"],
+        }),
+        makeSkillDoc({
+          id: "skills:automation-demo",
+          slug: "demo",
+          displayName: "Automation Demo",
+          ownerPublisherId: "publishers:automation",
+          categories: ["automation"],
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "demo",
+      categorySlug: "development",
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual(["skills:development-demo"]);
+  });
+
+  it("preserves resolved inferred categories on exact slug results", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:development-demo",
+          slug: "demo",
+          displayName: "Development Demo",
+          inferredCategories: ["development"],
+          inferredFromVersionId: "skillVersions:1",
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "demo",
+      categorySlug: "development",
+    });
+
+    const [entry] = result;
+    if (!entry) throw new Error("Expected an exact slug result");
+    expect((entry.skill as { categories?: string[] }).categories).toEqual(["development"]);
+  });
+
+  it("includes duplicate exact slug matches from by_slug when recent scan is empty", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "demo",
+      queryTokens: ["demo"],
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual([
+      "skills:alice-demo",
+      "skills:org-demo",
+    ]);
+  });
+
+  it("filters duplicate exact slug fallback matches by topic", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+          topics: ["scheduling"],
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+          topics: ["monitoring"],
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "demo",
+      queryTokens: ["demo"],
+      limit: 10,
+      topic: "Scheduling",
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual(["skills:alice-demo"]);
+  });
+
+  it("filters lexical fallback matches by the selected category", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [
+        makeSkillDoc({
+          id: "skills:development",
+          slug: "development-helper",
+          displayName: "Development Helper",
+          categories: ["development"],
+        }),
+        makeSkillDoc({
+          id: "skills:automation",
+          slug: "automation-helper",
+          displayName: "Automation Helper",
+          categories: ["automation"],
+        }),
+      ],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-helper"]);
+  });
+
+  it("continues fallback recall past global rows for the selected category", async () => {
+    const distractors = Array.from({ length: 25 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:automation-${index}`,
+        slug: `automation-${index}`,
+        displayName: `Automation ${index}`,
+        summary: "Helper workflow",
+        categories: ["automation"],
+      }),
+    );
+    const development = makeSkillDoc({
+      id: "skills:development",
+      slug: "development-tool",
+      displayName: "Development Tool",
+      summary: "Helper workflow",
+      categories: ["development"],
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [...distractors, development],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-tool"]);
+    expect(ctx.paginateCalls).toBe(0);
+  });
+
+  it("does not let unrelated scoped rows consume fallback recall", async () => {
+    const distractors = Array.from({ length: 25 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:development-${index}`,
+        slug: `development-${index}`,
+        displayName: `Development ${index}`,
+        summary: "Unrelated workflow",
+        categories: ["development"],
+      }),
+    );
+    const target = makeSkillDoc({
+      id: "skills:development-target",
+      slug: "development-target",
+      displayName: "Development Target",
+      summary: "Helper workflow",
+      categories: ["development"],
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [...distractors, target],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-target"]);
   });
 
   it("dedupes overlap and enforces rank + limit across vector and fallback", async () => {
@@ -219,6 +1997,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce(vectorEntries) // hydrateResults
       .mockResolvedValueOnce(fallbackEntries); // lexicalFallbackSkills
 
@@ -234,10 +2013,151 @@ describe("search helpers", () => {
     );
 
     expect(result).toHaveLength(2);
-    expect(result[0].skill.slug).toBe("foo-b");
+    expect(result[0].skill.slug).toBe("foo-a");
     expect(new Set(result.map((entry: { skill: { _id: string } }) => entry.skill._id)).size).toBe(
       2,
     );
+  });
+
+  it("uses a stable recall pool without lifetime popularity changing the first page", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const vectorEntries = Array.from({ length: 25 }, (_, index) => ({
+      embeddingId: `skillEmbeddings:${index}`,
+      skill: makePublicSkill({
+        id: `skills:${index}`,
+        slug: `image-vector-${index}`,
+        displayName: `Image Vector ${index}`,
+        downloads: 10,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    }));
+    const fallbackEntries = [
+      {
+        skill: makePublicSkill({
+          id: "skills:fallback",
+          slug: "antigravity-image-generator",
+          displayName: "Antigravity Image Generator",
+          downloads: 1_000_000_000,
+          installs: 1_000,
+          stars: 100,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce(vectorEntries) // hydrateResults
+      .mockResolvedValueOnce(fallbackEntries); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue(
+          vectorEntries.map((entry, index) => ({
+            _id: entry.embeddingId,
+            _score: 0.05 - index * 0.001,
+          })),
+        ),
+        runQuery,
+      },
+      { query: "image", limit: 25 },
+    );
+
+    expect(runQuery).toHaveBeenCalledTimes(4);
+    expect(runQuery.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ query: "image", limit: 200 }),
+    );
+    expect(result).toHaveLength(25);
+    expect(result.some((entry) => entry.skill.slug === "antigravity-image-generator")).toBe(false);
+  });
+
+  it("orders lexical name matches above summary-only matches before popularity", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const exactName = {
+      skill: makePublicSkill({
+        id: "skills:postgres",
+        slug: "postgres",
+        displayName: "Postgres",
+        downloads: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const summaryOnly = {
+      skill: {
+        ...makePublicSkill({
+          id: "skills:database-tools",
+          slug: "database-tools",
+          displayName: "Database Tools",
+          downloads: 1_000_000_000,
+        }),
+        summary: "Postgres database helper.",
+      },
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([summaryOnly, exactName]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "postgres", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["postgres", "database-tools"]);
+    expect(result[0]).not.toHaveProperty("rankTier");
+    expect(result[0]).not.toHaveProperty("matchReason");
+  });
+
+  it("admits strong semantic recall without promoting it above lexical tiers", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const summaryOnly = {
+      embeddingId: "skillEmbeddings:ai",
+      skill: {
+        ...makePublicSkill({
+          id: "skills:ai-summary",
+          slug: "general-helper",
+          displayName: "General Helper",
+          downloads: 1_000,
+        }),
+        summary: "AI helper for teams.",
+      },
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([summaryOnly]) // hydrateResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([{ _id: "skillEmbeddings:ai", _score: 0.99 }]),
+        runQuery,
+      },
+      { query: "ai", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["general-helper"]);
+    expect(result[0]?.semanticScore).toBe(0.99);
   });
 
   it("always includes an exact slug match even when vector exact matches already fill the limit", async () => {
@@ -271,7 +2191,9 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(exactSlugEntry)
-      .mockResolvedValueOnce(vectorEntries);
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(vectorEntries)
+      .mockResolvedValueOnce([]);
 
     const result = await searchSkillsHandler(
       {
@@ -288,7 +2210,7 @@ describe("search helpers", () => {
 
     expect(result).toHaveLength(10);
     expect(result[0].skill.slug).toBe("skill-downloader");
-    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(runQuery).toHaveBeenCalledTimes(4);
   });
 
   it("omits exact slug injection when nonSuspiciousOnly excludes it", async () => {
@@ -312,6 +2234,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(vectorEntries)
       .mockResolvedValueOnce([]);
 
@@ -363,6 +2286,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(exactSlugEntry)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(vectorEntries)
       .mockResolvedValueOnce([]);
 
@@ -376,55 +2300,6 @@ describe("search helpers", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].skill.slug).toBe("downloader-1");
-  });
-
-  it("filters vector search results by capability tag", async () => {
-    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
-
-    const runQuery = vi
-      .fn()
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce([
-        {
-          embeddingId: "skillEmbeddings:crypto",
-          skill: makePublicSkill({
-            id: "skills:crypto",
-            slug: "wallet-helper",
-            displayName: "Wallet Helper",
-            capabilityTags: ["crypto", "requires-wallet"],
-          }),
-          version: null,
-          ownerHandle: "owner",
-          owner: null,
-        },
-        {
-          embeddingId: "skillEmbeddings:oauth",
-          skill: makePublicSkill({
-            id: "skills:oauth",
-            slug: "x-poster",
-            displayName: "X Poster",
-            capabilityTags: ["requires-oauth-token", "posts-externally"],
-          }),
-          version: null,
-          ownerHandle: "owner",
-          owner: null,
-        },
-      ])
-      .mockResolvedValueOnce([]);
-
-    const result = await searchSkillsHandler(
-      {
-        vectorSearch: vi.fn().mockResolvedValue([
-          { _id: "skillEmbeddings:crypto", _score: 0.9 },
-          { _id: "skillEmbeddings:oauth", _score: 0.8 },
-        ]),
-        runQuery,
-      },
-      { query: "helper", limit: 10, capabilityTag: "crypto" },
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0].skill.slug).toBe("wallet-helper");
   });
 
   it("deduplicates exact slug injection against vector exact matches", async () => {
@@ -467,6 +2342,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(exactSlugEntry)
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(vectorEntries)
       .mockResolvedValueOnce([]);
 
@@ -504,6 +2380,7 @@ describe("search helpers", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce([])
       .mockImplementationOnce(async (_ref: unknown, args: { skipExactSlugLookup?: boolean }) => {
         expect(args.skipExactSlugLookup).toBe(true);
         return fallbackEntries;
@@ -551,6 +2428,40 @@ describe("search helpers", () => {
         },
       },
       { embeddingIds: ["skillEmbeddings:1"], nonSuspiciousOnly: true },
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it("filters vector results by the selected category", async () => {
+    const result = await hydrateResultsHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "skillEmbeddings:1") {
+              return {
+                _id: "skillEmbeddings:1",
+                skillId: "skills:1",
+                versionId: "skillVersions:1",
+              };
+            }
+            if (id === "skills:1") {
+              return makeSkillDoc({
+                id: "skills:1",
+                slug: "automation-helper",
+                displayName: "Automation Helper",
+                categories: ["automation"],
+              });
+            }
+            if (id === "users:owner") return { _id: "users:owner", handle: "owner" };
+            return null;
+          }),
+          query: vi.fn(() => ({
+            withIndex: () => ({ unique: vi.fn().mockResolvedValue(null) }),
+          })),
+        },
+      },
+      { embeddingIds: ["skillEmbeddings:1"], categorySlug: "development" },
     );
 
     expect(result).toHaveLength(0);
@@ -713,10 +2624,29 @@ describe("search helpers", () => {
     expect(__test.getNextCandidateLimit(1000, 1000)).toBeNull();
   });
 
+  it("normalizes native owner-qualified and skills.sh install identities", () => {
+    expect(__test.parseQualifiedSearchIdentity("@OpenClaw/Calendar")).toEqual({
+      native: { owner: "openclaw", slug: "calendar" },
+      external: "openclaw/calendar",
+    });
+    expect(__test.parseQualifiedSearchIdentity("skills-sh/Vercel-Labs/Skills/Find-Skills")).toEqual(
+      {
+        native: null,
+        external: "vercel-labs/skills/find-skills",
+      },
+    );
+    expect(__test.parseQualifiedSearchIdentity("skills-sh:Vercel-Labs/Skills/Find-Skills")).toEqual(
+      {
+        native: null,
+        external: "vercel-labs/skills/find-skills",
+      },
+    );
+  });
+
   it("boosts exact slug/name matches over loose matches", () => {
     const queryTokens = tokenize("notion");
-    const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync", 5);
-    const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync", 500);
+    const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync");
+    const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync");
     expect(exactScore).toBeGreaterThan(looseScore);
   });
 
@@ -727,35 +2657,185 @@ describe("search helpers", () => {
       0.5,
       "Self Improving Agent",
       "self-improving-agent",
-      10,
     );
     const containingScore = __test.scoreSkillResult(
       queryTokens,
       0.6,
       "Self Improving Agent",
       "xiucheng-self-improving-agent",
-      100,
     );
     expect(exactScore).toBeGreaterThan(containingScore);
   });
 
-  it("adds a popularity prior for equally relevant matches", () => {
+  it("keeps extreme popularity below direct lexical relevance", () => {
+    const queryTokens = tokenize("needle");
+    const exactScore = __test.scoreSkillResult(queryTokens, 0, "Unrelated Name", "needle");
+    const popularLooseScore = __test.scoreSkillResult(
+      queryTokens,
+      0.9,
+      "Different Tool",
+      "different-tool",
+    );
+    expect(exactScore).toBeGreaterThan(popularLooseScore);
+  });
+
+  it("keeps popularity from flipping a strong name match", () => {
     const queryTokens = tokenize("notion");
-    const lowDownloads = __test.scoreSkillResult(
+    const nameMatchScore = __test.scoreSkillResult(queryTokens, 0, "Notion Helper", "helper");
+    const popularVectorScore = __test.scoreSkillResult(
       queryTokens,
-      0.5,
-      "Notion Helper",
-      "notion-helper",
-      0,
+      1,
+      "Different Tool",
+      "different-tool",
     );
-    const highDownloads = __test.scoreSkillResult(
-      queryTokens,
-      0.5,
-      "Notion Helper",
-      "notion-helper",
-      1000,
+    expect(nameMatchScore).toBeGreaterThan(popularVectorScore);
+  });
+
+  it("keeps lifetime stars and installs out of native candidate scoring", () => {
+    const queryTokens = tokenize("notion");
+    const score = __test.scoreSkillResult(queryTokens, 0.5, "Notion Helper", "notion-helper");
+    expect(score).toBe(__test.getLexicalBoost(queryTokens, "Notion Helper", "notion-helper") + 0.5);
+  });
+
+  it("does not use lifetime installs or downloads in native candidate scoring", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const installed = {
+      embeddingId: "skillEmbeddings:installed",
+      skill: makePublicSkill({
+        id: "skills:installed",
+        slug: "tool-installed",
+        displayName: "Tool",
+        downloads: 0,
+        installs: 1_000,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const downloaded = {
+      embeddingId: "skillEmbeddings:downloaded",
+      skill: makePublicSkill({
+        id: "skills:downloaded",
+        slug: "tool-downloaded",
+        displayName: "Tool",
+        downloads: 1_000_000_000,
+        installs: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([installed, downloaded]) // hydrateResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:installed", _score: 0.5 },
+          { _id: "skillEmbeddings:downloaded", _score: 0.52 },
+        ]),
+        runQuery,
+      },
+      { query: "tool", limit: 2 },
     );
-    expect(highDownloads).toBeGreaterThan(lowDownloads);
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
+  });
+
+  it("does not use lifetime stars, installs, or downloads as a native tie-breaker", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const installedOnly = {
+      skill: makePublicSkill({
+        id: "skills:installed",
+        slug: "tool-installed",
+        displayName: "Tool",
+        downloads: 0,
+        installs: 1_000,
+        stars: 1_000,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const downloadedOnly = {
+      skill: makePublicSkill({
+        id: "skills:downloaded",
+        slug: "tool-downloaded",
+        displayName: "Tool",
+        downloads: 1_000_000_000,
+        installs: 0,
+        stars: 1_000,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([installedOnly, downloadedOnly]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "tool", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
+  });
+
+  it("keeps native and combined lifetime downloads out of native tie-breakers", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const indexed = {
+      skill: makePublicSkill({
+        id: "skills:indexed",
+        slug: "tool-indexed",
+        displayName: "Tool",
+        downloads: 10_010,
+        installs: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const native = {
+      skill: makePublicSkill({
+        id: "skills:native",
+        slug: "tool-native",
+        displayName: "Tool",
+        downloads: 20,
+        installs: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([indexed, native]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "tool", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-indexed", "tool-native"]);
   });
 
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {
@@ -785,8 +2865,8 @@ describe("search helpers", () => {
       stats: skillDoc.stats,
       statsDownloads: skillDoc.stats.downloads,
       statsStars: skillDoc.stats.stars,
-      statsInstallsCurrent: skillDoc.stats.installsCurrent,
-      statsInstallsAllTime: skillDoc.stats.installsAllTime,
+      statsInstallsCurrent: skillDoc.stats.installsCurrent ?? 0,
+      statsInstallsAllTime: skillDoc.stats.installsAllTime ?? 0,
       softDeletedAt: skillDoc.softDeletedAt,
       moderationStatus: skillDoc.moderationStatus,
       moderationFlags: skillDoc.moderationFlags,
@@ -879,29 +2959,18 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("fallback-skill");
   });
 
-  it("only hydrates new embedding IDs on subsequent iterations (incremental)", async () => {
+  it("hydrates a bounded vector window for ordinary load-more searches", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
-    // limit=50 -> candidateLimit starts at 200, maxCandidate=256.
-    // First iteration must return exactly candidateLimit (200) to trigger expansion.
-    const firstBatch = Array.from({ length: 200 }, (_, i) => ({
+    const batch = Array.from({ length: 128 }, (_, i) => ({
       _id: `skillEmbeddings:e${i}`,
       _score: 0.5 - i * 0.001,
     }));
-    // Second iteration returns 210 results (200 old + 10 new).
-    // 210 < next candidateLimit (256), so the loop breaks.
-    const secondBatch = [
-      ...firstBatch,
-      ...Array.from({ length: 10 }, (_, i) => ({
-        _id: `skillEmbeddings:n${i}`,
-        _score: 0.3 - i * 0.001,
-      })),
-    ];
 
-    const vectorSearchMock = vi
-      .fn()
-      .mockResolvedValueOnce(firstBatch)
-      .mockResolvedValueOnce(secondBatch);
+    const vectorSearchMock = vi.fn(
+      async (_table: unknown, _index: unknown, opts: { limit: number }) =>
+        batch.slice(0, opts.limit),
+    );
 
     const hydrateCalls: string[][] = [];
     const runQuery = vi.fn(
@@ -932,14 +3001,10 @@ describe("search helpers", () => {
       { query: "test", limit: 50 },
     );
 
-    // Should have been called twice, but second call should only have new IDs
+    expect(vectorSearchMock).toHaveBeenCalledTimes(2);
     expect(hydrateCalls).toHaveLength(2);
-    expect(hydrateCalls[0]).toHaveLength(200);
-    expect(hydrateCalls[1]).toHaveLength(10);
-    // Verify no overlap between the two hydrate calls
-    const firstSet = new Set(hydrateCalls[0]);
-    const overlap = hydrateCalls[1].filter((id) => firstSet.has(id));
-    expect(overlap).toHaveLength(0);
+    expect(hydrateCalls[0]).toHaveLength(100);
+    expect(hydrateCalls[1]).toHaveLength(28);
   });
 
   it("merges fallback matches without duplicate skill ids", () => {
@@ -963,20 +3028,7 @@ describe("search helpers", () => {
     expect(merged.map((entry) => entry.skill._id)).toEqual(["skills:1", "skills:2"]);
   });
 
-  it("preserves vector scores across candidate expansion iterations", async () => {
-    // Regression test for scoreById overwrite bug.
-    //
-    // Setup:
-    //   limit=50  ->  candidateLimit starts at 200, maxCandidate=256
-    //   Iteration 1: vectorSearch returns exactly 200 results (= candidateLimit)
-    //                → results.length < candidateLimit is false → loop continues
-    //   Iteration 2: vectorSearch returns 2 results (< 256) → loop exits
-    //
-    // skillA appears ONLY in iteration 1 (score 0.95).
-    // skillB appears ONLY in iteration 2 (score 0.5).
-    //
-    // With the BUG:  scoreById = new Map(iter2_results) → skillA missing → vectorScore=0
-    // With the FIX:  scoreById.set() merges → skillA retains 0.95
+  it("preserves vector scores for hydrated candidates", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
     const skillA = makePublicSkill({
@@ -992,23 +3044,14 @@ describe("search helpers", () => {
       downloads: 50,
     });
 
-    // Iteration 1: exactly 200 entries so the loop does NOT exit early.
-    // skillA is entry 0; entries 1-199 are fillers filtered out by hydrateResults.
-    const iter1Results = Array.from({ length: 200 }, (_, i) => ({
-      _id: i === 0 ? "skillEmbeddings:a" : `skillEmbeddings:filler${i}`,
-      _score: i === 0 ? 0.95 : 0.1,
-    }));
-
-    // Iteration 2: 2 entries, both new IDs (skillA is absent from this batch).
-    // results.length (2) < candidateLimit (256) → loop exits.
-    const iter2Results = [
+    const vectorResults = [
+      { _id: "skillEmbeddings:a", _score: 0.95 },
       { _id: "skillEmbeddings:b", _score: 0.5 },
-      { _id: "skillEmbeddings:filler50", _score: 0.08 },
     ];
 
     const runQuery = vi
       .fn()
-      // hydrateResults iteration 1: 50 new IDs → only skillA survives hydration
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
       .mockResolvedValueOnce([
         {
           embeddingId: "skillEmbeddings:a",
@@ -1017,9 +3060,6 @@ describe("search helpers", () => {
           ownerHandle: "owner",
           owner: null,
         },
-      ])
-      // hydrateResults iteration 2: 2 new IDs → only skillB survives hydration
-      .mockResolvedValueOnce([
         {
           embeddingId: "skillEmbeddings:b",
           skill: skillB,
@@ -1033,10 +3073,7 @@ describe("search helpers", () => {
 
     const result = await searchSkillsHandler(
       {
-        vectorSearch: vi
-          .fn()
-          .mockResolvedValueOnce(iter1Results) // iteration 1: 50 results, loop continues
-          .mockResolvedValueOnce(iter2Results), // iteration 2: 2 results, loop exits
+        vectorSearch: vi.fn().mockResolvedValueOnce(vectorResults),
         runQuery,
       },
       { query: "baidu yijian", limit: 50 },
@@ -1046,11 +3083,181 @@ describe("search helpers", () => {
       (r: { skill: { slug: string } }) => r.skill.slug === "baidu-yijian-vision",
     );
     expect(resultA).toBeDefined();
-    // With scoreById correctly merged: skillA retains vectorScore=0.95.
-    // With the bug (overwrite): skillA.embeddingId absent from iter2 map → vectorScore=0.
-    // Lexical boost for "baidu-yijian-vision" slug matching "baidu yijian" ≈ 0.8 (prefix).
-    // Fix: score ≈ 0.95 + 0.8 + popularity > 1.5; Bug: score ≈ 0 + 0.8 + popularity < 0.9.
     expect(resultA!.score).toBeGreaterThan(1.0);
+  });
+
+  it("preserves vector scores when a direct lexical match shadows the hydrated candidate", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const lexicalEntry = {
+      skill: makePublicSkill({
+        id: "skills:the-news",
+        slug: "the-news",
+        displayName: "The News",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const vectorEntry = {
+      ...lexicalEntry,
+      embeddingId: "skillEmbeddings:the-news",
+    };
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([lexicalEntry]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([vectorEntry]) // hydrateResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi
+          .fn()
+          .mockResolvedValueOnce([{ _id: "skillEmbeddings:the-news", _score: 0.33 }]),
+        runQuery,
+      },
+      { query: "news", limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("the-news");
+    expect(result[0].score).toBeGreaterThan(2.8);
+  });
+
+  it("filters pending scans before applying the search result limit", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const pending = {
+      skill: makePublicSkill({
+        id: "skills:pending",
+        slug: "search-term-pending",
+        displayName: "Search Term Pending",
+        githubScanStatus: "pending",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const clean = {
+      skill: makePublicSkill({
+        id: "skills:clean",
+        slug: "search-term-clean",
+        displayName: "Search Term Clean",
+        githubScanStatus: "clean",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce([pending, clean]).mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "search term", limit: 1, excludePendingScan: true },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["search-term-clean"]);
+  });
+
+  it("keeps a later official hit when higher-ranked hits are ineligible", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const matches = [
+      {
+        skill: makePublicSkill({
+          id: "skills:exact-community",
+          slug: "helper",
+          displayName: "Helper",
+        }),
+        version: null,
+        ownerHandle: "community",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:community",
+          slug: "helper-community",
+          displayName: "Helper Community",
+        }),
+        version: null,
+        ownerHandle: "community",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:official",
+          slug: "helper-official",
+          displayName: "Helper Official",
+          official: true,
+        }),
+        version: null,
+        ownerHandle: "official",
+        owner: null,
+      },
+    ];
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(matches)
+      .mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "helper", limit: 1, officialOnly: true },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-official"]);
+  });
+
+  it("keeps a later new hit when higher-ranked hits predate the window", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const matches = [
+      {
+        skill: makePublicSkill({
+          id: "skills:exact-old",
+          slug: "helper",
+          displayName: "Helper",
+          createdAt: 10,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:older",
+          slug: "helper-older",
+          displayName: "Helper Older",
+          createdAt: 20,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:new",
+          slug: "helper-new",
+          displayName: "Helper New",
+          createdAt: 200,
+        }),
+        version: null,
+        ownerHandle: "owner",
+        owner: null,
+      },
+    ];
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(matches)
+      .mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "helper", limit: 1, createdAfter: 100 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-new"]);
   });
 });
 
@@ -1058,31 +3265,47 @@ function makePublicSkill(params: {
   id: string;
   slug: string;
   displayName: string;
+  summary?: string;
+  icon?: string;
   downloads?: number;
-  capabilityTags?: string[];
+  ownerPublisherId?: string;
+  installs?: number;
+  stars?: number;
+  categories?: string[];
+  topics?: string[];
+  official?: boolean;
+  featured?: boolean;
+  createdAt?: number;
+  githubScanStatus?: "pending" | "clean" | "suspicious" | "malicious" | "not-run";
 }) {
+  const badges: Record<string, { byUserId: string; at: number }> = {};
+  if (params.official) badges.official = { byUserId: "users:curator", at: 1 };
+  if (params.featured) badges.highlighted = { byUserId: "users:curator", at: 1 };
   return {
     _id: params.id,
     _creationTime: 1,
     slug: params.slug,
     displayName: params.displayName,
-    summary: `${params.displayName} summary`,
+    summary: params.summary ?? `${params.displayName} summary`,
+    icon: params.icon,
     ownerUserId: "users:owner",
+    ownerPublisherId: params.ownerPublisherId,
     canonicalSkillId: undefined,
     forkOf: undefined,
     latestVersionId: "skillVersions:1",
     tags: {},
-    capabilityTags: params.capabilityTags,
-    badges: {},
+    categories: params.categories,
+    topics: params.topics,
+    githubScanStatus: params.githubScanStatus,
+    badges,
     stats: {
       downloads: params.downloads ?? 0,
-      installsCurrent: 0,
-      installsAllTime: 0,
-      stars: 0,
+      installs: params.installs ?? 0,
+      stars: params.stars ?? 0,
       versions: 1,
       comments: 0,
     },
-    createdAt: 1,
+    createdAt: params.createdAt ?? 1,
     updatedAt: 1,
   };
 }
@@ -1091,25 +3314,102 @@ function makeSkillDoc(params: {
   id: string;
   slug: string;
   displayName: string;
+  summary?: string;
+  ownerPublisherId?: string;
   moderationFlags?: string[];
   moderationReason?: string;
   softDeletedAt?: number;
+  downloads?: number;
+  installs?: number;
+  stars?: number;
+  categories?: string[];
+  topics?: string[];
+  official?: boolean;
+  featured?: boolean;
+  inferredCategories?: string[];
+  inferredFromVersionId?: string;
+  latestVersionId?: string;
+  moderationSourceVersionId?: string;
+  statsVersions?: number;
+  publicVersion?: { status: "available"; versionId: string } | { status: "unavailable" };
 }) {
   return {
     ...makePublicSkill(params),
+    latestVersionId: params.latestVersionId ?? "skillVersions:1",
+    stats: {
+      downloads: params.downloads ?? 0,
+      installsCurrent: 0,
+      installsAllTime: params.installs ?? 0,
+      stars: params.stars ?? 0,
+      versions: params.statsVersions ?? 1,
+      comments: 0,
+    },
     _creationTime: 1,
     moderationStatus: "active",
     moderationFlags: params.moderationFlags ?? [],
     moderationReason: params.moderationReason,
+    moderationSourceVersionId: params.moderationSourceVersionId,
     softDeletedAt: params.softDeletedAt as number | undefined,
+    inferredCategories: params.inferredCategories,
+    inferredFromVersionId: params.inferredFromVersionId,
+    publicVersion: params.publicVersion,
   };
 }
 
+function makeExternalSearchDigest(params: {
+  externalId: string;
+  publicVisible?: boolean;
+  installable?: boolean;
+}) {
+  const [, , slug = "skill"] = params.externalId.split("/");
+  return {
+    _id: `skillsShMirrorDigests:${params.externalId}`,
+    _creationTime: 1,
+    externalId: params.externalId,
+    slug,
+    displayName: slug,
+    normalizedSlug: slug,
+    normalizedSlugFirstToken: slug,
+    normalizedDisplayName: slug,
+    normalizedDisplayNameFirstToken: slug,
+    searchText: slug,
+    sourceUrl: `https://skills.sh/${params.externalId}`,
+    upstreamInstalls: 10,
+    upstreamScanners: {},
+    inferredCategories: [],
+    inferredTopics: [],
+    sourceFreshnessStatus: "observed-only",
+    active: true,
+    publicVisible: params.publicVisible ?? true,
+    installable: params.installable ?? true,
+    lastObservedAt: 1,
+  };
+}
+
+function makePaginatedRows<T>(rows: T[], onPaginate?: () => void) {
+  return vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+    onPaginate?.();
+    const start = cursor ? Number(cursor) : 0;
+    const page = rows.slice(start, start + numItems);
+    const next = start + page.length;
+    return {
+      page,
+      isDone: next >= rows.length,
+      continueCursor: String(next),
+    };
+  });
+}
+
 function makeLexicalCtx(params: {
-  exactSlugSkill: ReturnType<typeof makeSkillDoc> | null;
+  exactSlugSkill?: ReturnType<typeof makeSkillDoc> | null;
+  exactSlugSkills?: Array<ReturnType<typeof makeSkillDoc>>;
+  officialPublisherIds?: string[];
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>;
   recentByCreated?: Array<ReturnType<typeof makeSkillDoc>>;
 }) {
+  const exactSlugSkills =
+    params.exactSlugSkills ?? (params.exactSlugSkill ? [params.exactSlugSkill] : []);
+  const officialPublisherIds = new Set(params.officialPublisherIds ?? []);
   // Convert skill docs to digest-shaped rows (add skillId + owner fields).
   const toDigestRows = (skills: Array<ReturnType<typeof makeSkillDoc>>) =>
     skills.map((skill) => ({
@@ -1122,15 +3422,53 @@ function makeLexicalCtx(params: {
     }));
   const digestByUpdated = toDigestRows(params.recentSkills);
   const digestByCreated = toDigestRows(params.recentByCreated ?? []);
+  const usedIndexes: string[] = [];
+  const takeLimits: number[] = [];
+  let paginateCalls = 0;
   return {
+    usedIndexes,
+    takeLimits,
+    get paginateCalls() {
+      return paginateCalls;
+    },
     db: {
       query: vi.fn((table: string) => {
+        if (table === "officialPublishers") {
+          return {
+            withIndex: (
+              index: string,
+              builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              usedIndexes.push(index);
+              let publisherId = "";
+              const q = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "publisherId") publisherId = String(value);
+                  return q;
+                },
+              };
+              builder(q);
+              return {
+                unique: vi.fn(async () =>
+                  officialPublisherIds.has(publisherId) ? { publisherId } : null,
+                ),
+              };
+            },
+          };
+        }
         if (table === "skills") {
           return {
             withIndex: (index: string) => {
+              usedIndexes.push(index);
               if (index === "by_slug") {
                 return {
-                  unique: vi.fn().mockResolvedValue(params.exactSlugSkill),
+                  unique: vi.fn(async () => {
+                    if (exactSlugSkills.length > 1) {
+                      throw new Error("unique should not be used for duplicate exact slug matches");
+                    }
+                    return exactSlugSkills[0] ?? null;
+                  }),
+                  take: vi.fn(async (limit: number) => exactSlugSkills.slice(0, limit)),
                 };
               }
               throw new Error(`Unexpected skills index ${index}`);
@@ -1140,17 +3478,30 @@ function makeLexicalCtx(params: {
         if (table === "skillSearchDigest") {
           return {
             withIndex: (index: string) => {
-              if (index === "by_active_updated") {
+              usedIndexes.push(index);
+              if (index === "by_active_updated" || index === "by_nonsuspicious_updated") {
                 return {
                   order: () => ({
-                    take: vi.fn().mockResolvedValue(digestByUpdated),
+                    take: vi.fn((limit: number) => {
+                      takeLimits.push(limit);
+                      return Promise.resolve(digestByUpdated);
+                    }),
+                    paginate: makePaginatedRows(digestByUpdated, () => {
+                      paginateCalls += 1;
+                    }),
                   }),
                 };
               }
-              if (index === "by_active_created") {
+              if (index === "by_active_created" || index === "by_nonsuspicious_created") {
                 return {
                   order: () => ({
-                    take: vi.fn().mockResolvedValue(digestByCreated),
+                    take: vi.fn((limit: number) => {
+                      takeLimits.push(limit);
+                      return Promise.resolve(digestByCreated);
+                    }),
+                    paginate: makePaginatedRows(digestByCreated, () => {
+                      paginateCalls += 1;
+                    }),
                   }),
                 };
               }
@@ -1161,6 +3512,21 @@ function makeLexicalCtx(params: {
         throw new Error(`Unexpected table ${table}`);
       }),
       get: vi.fn(async (id: string) => {
+        if (id.startsWith("publishers:")) {
+          const handle = id.split(":")[1] ?? "owner";
+          return {
+            _id: id,
+            _creationTime: 1,
+            kind: "org",
+            handle,
+            displayName: handle,
+            image: undefined,
+            bio: undefined,
+            linkedUserId: undefined,
+            createdAt: 1,
+            updatedAt: 1,
+          };
+        }
         if (id.startsWith("users:")) return { _id: id, handle: "owner" };
         if (id.startsWith("skillVersions:")) return { _id: id, version: "1.0.0" };
         return null;
@@ -1168,3 +3534,680 @@ function makeLexicalCtx(params: {
     },
   };
 }
+
+function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
+  const firstToken = (value: string) => value.toLowerCase().match(/[a-z0-9]+/)?.[0];
+  // Token-level splitter that mirrors Convex full-text inverted index behavior:
+  // any alphanumeric run of length >= 1 becomes a token, regardless of position.
+  const tokensOf = (value: string): string[] =>
+    (value.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter(Boolean);
+  const digestRows = skills.map((skill) => ({
+    ...skill,
+    skillId: skill._id,
+    normalizedSlug: skill.slug.toLowerCase(),
+    normalizedSlugFirstToken: firstToken(skill.slug),
+    normalizedDisplayName: skill.displayName.toLowerCase(),
+    normalizedDisplayNameFirstToken: firstToken(skill.displayName),
+    isSuspicious: (skill.moderationFlags ?? []).includes("flagged.suspicious"),
+    ownerHandle: "owner",
+    ownerName: "Owner",
+    ownerDisplayName: "Owner",
+    ownerImage: undefined,
+  }));
+  const usedIndexes: string[] = [];
+  const usedSearchIndexes: string[] = [];
+  const takeLimits: number[] = [];
+  let paginateCalls = 0;
+  return {
+    usedIndexes,
+    usedSearchIndexes,
+    takeLimits,
+    get paginateCalls() {
+      return paginateCalls;
+    },
+    db: {
+      query: vi.fn((table: string) => {
+        if (table === "curatedSkillSearchDigest") {
+          const curated = digestRows.filter(
+            (digest) => digest.badges.official || digest.badges.highlighted,
+          );
+          return {
+            withIndex: () => ({
+              order: () => ({
+                take: vi.fn(async (limit: number) => curated.slice(0, limit)),
+              }),
+            }),
+          };
+        }
+        if (table === "skillTopicSearchDigest") {
+          return {
+            withIndex: (
+              index: string,
+              builder: (q: {
+                eq: (field: string, value: unknown) => unknown;
+                gte: (field: string, value: unknown) => unknown;
+                lt: (field: string, value: unknown) => unknown;
+              }) => unknown,
+            ) => {
+              usedIndexes.push(index);
+              let topic = "";
+              let topicPrefix = "";
+              const q = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "topic") topic = String(value);
+                  return q;
+                },
+                gte: (field: string, value: unknown) => {
+                  if (field === "topic") topicPrefix = String(value);
+                  return q;
+                },
+                lt: () => q,
+              };
+              builder(q);
+              const rows = digestRows
+                .filter((digest) =>
+                  digest.topics?.some((value) => {
+                    const topicSlug = tokenize(value).join("-");
+                    return topic ? topicSlug === topic : topicSlug.startsWith(topicPrefix);
+                  }),
+                )
+                .map((digest) => ({
+                  skillId: digest.skillId,
+                  topic: topic || topicPrefix,
+                }));
+              return {
+                order: () => ({
+                  take: vi.fn(async (limit: number) => {
+                    takeLimits.push(limit);
+                    return rows.slice(0, limit);
+                  }),
+                  paginate: makePaginatedRows(rows, () => {
+                    paginateCalls += 1;
+                  }),
+                }),
+              };
+            },
+          };
+        }
+        if (table === "officialPublishers") {
+          return {
+            withIndex: () => ({
+              unique: vi.fn(async () => null),
+            }),
+          };
+        }
+        if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);
+        return {
+          withIndex: (index: string, builder: (q: unknown) => unknown) => {
+            usedIndexes.push(index);
+            const range: Record<string, string> = {};
+            const equality: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                equality[field] = value;
+                return q;
+              },
+              gte: (field: string, value: string) => {
+                range[field] = value;
+                return q;
+              },
+              lt: () => q,
+            };
+            builder(q);
+            if (index === "by_skill") {
+              return {
+                unique: vi.fn(
+                  async () =>
+                    digestRows.find((digest) => digest.skillId === equality.skillId) ?? null,
+                ),
+              };
+            }
+            const rows = digestRows.filter((digest) => {
+              const field = index.includes("first_token")
+                ? index.includes("slug")
+                  ? "normalizedSlugFirstToken"
+                  : "normalizedDisplayNameFirstToken"
+                : index.includes("slug")
+                  ? "normalizedSlug"
+                  : "normalizedDisplayName";
+              const prefix = range[field] ?? "";
+              return (digest[field] ?? "").startsWith(prefix);
+            });
+            return {
+              take: vi.fn(async (limit: number) => {
+                takeLimits.push(limit);
+                return rows.slice(0, limit);
+              }),
+              paginate: makePaginatedRows(rows, () => {
+                paginateCalls += 1;
+              }),
+            };
+          },
+          // Mock for the new `searchIndex`-backed full-text queries added to
+          // `directPrefixSkillMatches`. Mirrors Convex's documented semantics:
+          // tokenize on alphanumeric runs (case-insensitive) and match a row
+          // when *any* token in the search field equals *any* token of the
+          // user query — i.e. position-independent, unlike `withIndex` which
+          // only does string-prefix matches against a normalized field.
+          withSearchIndex: (
+            indexName: string,
+            builder: (q: {
+              search: (field: string, query: string) => unknown;
+              eq: (field: string, value: unknown) => unknown;
+            }) => unknown,
+          ) => {
+            usedSearchIndexes.push(indexName);
+            let searchField = "";
+            let searchQuery = "";
+            const filters: Array<{ field: string; value: unknown }> = [];
+            const q = {
+              search: (field: string, query: string) => {
+                searchField = field;
+                searchQuery = query;
+                return q;
+              },
+              eq: (field: string, value: unknown) => {
+                filters.push({ field, value });
+                return q;
+              },
+            };
+            builder(q);
+            const queryTokens = new Set(tokensOf(searchQuery));
+            const rows =
+              queryTokens.size === 0
+                ? []
+                : digestRows.filter((digest) => {
+                    for (const filter of filters) {
+                      if ((digest as Record<string, unknown>)[filter.field] !== filter.value) {
+                        return false;
+                      }
+                    }
+                    const fieldValue =
+                      (digest as unknown as Record<string, string | undefined>)[searchField] ?? "";
+                    const fieldTokens = new Set(tokensOf(fieldValue));
+                    for (const token of queryTokens) {
+                      if (fieldTokens.has(token)) return true;
+                    }
+                    return false;
+                  });
+            return {
+              take: vi.fn(async (limit: number) => {
+                takeLimits.push(limit);
+                return rows.slice(0, limit);
+              }),
+              paginate: makePaginatedRows(rows, () => {
+                paginateCalls += 1;
+              }),
+            };
+          },
+        };
+      }),
+      get: vi.fn(async (id: string) => {
+        if (id.startsWith("users:")) return { _id: id, handle: "owner" };
+        if (id.startsWith("skillVersions:")) return { _id: id, version: "1.0.0" };
+        return null;
+      }),
+    },
+  };
+}
+
+describe("batched canonical search for intelligence", () => {
+  const batchHandler = (
+    searchPublicDiscoveryBatchInternal as unknown as {
+      _handler: (
+        ctx: unknown,
+        args: { queries: string[] },
+      ) => Promise<Array<{ query: string; identities: string[] }>>;
+    }
+  )?._handler;
+  it("shares recent windows across concurrently needed searches", async () => {
+    const queryContext = makeLexicalCtx({ recentSkills: [] });
+    const fallbackQueries: string[] = [];
+    const runQuery = vi.fn(async (ref, args) => {
+      switch (getFunctionName(ref)) {
+        case "search:lexicalFallbackSkills":
+          fallbackQueries.push(args.query);
+          return lexicalFallbackSkillsHandler(queryContext, args);
+        case "search:lexicalFallbackSkillsBatchInternal": {
+          fallbackQueries.push(...args.queries);
+          return (
+            lexicalFallbackSkillsBatchInternal as unknown as {
+              _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+            }
+          )._handler(queryContext, args);
+        }
+        case "search:getExactSkillSlugMatch":
+        case "search:directPrefixSkillMatches":
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+    generateEmbeddingsMock.mockResolvedValue(null);
+    const queries = Array.from({ length: 16 }, (_, index) => `unmatched-${index}`);
+    await expect(batchHandler({ runQuery }, { queries })).resolves.toEqual(
+      queries.map((query) => ({ query, identities: [] })),
+    );
+    expect(fallbackQueries.sort()).toEqual([...queries].sort());
+    expect(queryContext.takeLimits).toEqual([200, 200, 200, 200]);
+  });
+
+  it("preserves standalone fallback results while sharing public eligibility resolution", async () => {
+    const calendar = makeSkillDoc({
+      id: "skills:calendar",
+      ownerPublisherId: "publishers:calendar",
+      slug: "calendar-tools",
+      displayName: "Calendar Tools",
+    });
+    const pending = makeSkillDoc({
+      id: "skills:pending",
+      ownerPublisherId: "publishers:pending",
+      slug: "calendar-pending",
+      displayName: "Calendar Pending",
+      statsVersions: 2,
+      moderationReason: "pending.scan",
+      publicVersion: { status: "unavailable" },
+    });
+    const created = makeSkillDoc({
+      id: "skills:created",
+      ownerPublisherId: "publishers:created",
+      slug: "tools-created",
+      displayName: "Tools Created",
+    });
+    const fixture = { recentSkills: [calendar, pending], recentByCreated: [calendar, created] };
+    const queries = [
+      "calendar",
+      "tools",
+      "calendar tools",
+      "pending",
+      "created",
+      "nothing",
+      "calendar",
+      "tools",
+    ];
+    const expected = [];
+    for (const query of queries)
+      expected.push(
+        await lexicalFallbackSkillsHandler(makeLexicalCtx(fixture), {
+          query,
+          queryTokens: tokenize(query),
+          limit: 200,
+          skipExactSlugLookup: true,
+        }),
+      );
+    const ctx = makeLexicalCtx(fixture);
+    const handler = (
+      lexicalFallbackSkillsBatchInternal as unknown as {
+        _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+      }
+    )._handler;
+    await expect(handler(ctx, { queries })).resolves.toEqual(expected);
+    expect(ctx.takeLimits).toEqual([200, 200]);
+    expect(
+      ctx.db.query.mock.calls.filter(([table]) => table === "officialPublishers"),
+    ).toHaveLength(3);
+    await expect(handler(ctx, { queries: [...queries, "extra"] })).rejects.toThrow("Maximum 8");
+  });
+
+  it("rejects queued fallback when another primary fails without dispatching it", async () => {
+    let failPrimary!: (error: Error) => void;
+    const held = new Promise<never>((_, reject) => {
+      failPrimary = reject;
+    });
+    const error = new Error("primary failed before fallback dispatch");
+    const runQuery = vi.fn(async (ref, args) => {
+      if (getFunctionName(ref) === "search:directPrefixSkillMatches" && args.query === "broken")
+        return held;
+      if (getFunctionName(ref) === "search:lexicalFallbackSkillsBatchInternal")
+        throw new Error("queued fallback dispatched");
+      return [];
+    });
+    generateEmbeddingsMock.mockResolvedValue(null);
+    const report = batchHandler(
+      { runQuery },
+      { queries: [...Array.from({ length: 7 }, (_, index) => `queued-${index}`), "broken"] },
+    );
+    const rejection = expect(report).rejects.toBe(error);
+    // Every other RPC is already resolved; drain its promise continuations.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(
+      runQuery.mock.calls.filter(
+        ([ref]) => getFunctionName(ref) === "search:lexicalFallbackSkillsBatchInternal",
+      ),
+    ).toHaveLength(0);
+    failPrimary(error);
+    await rejection;
+    expect(
+      runQuery.mock.calls.filter(
+        ([ref]) => getFunctionName(ref) === "search:lexicalFallbackSkillsBatchInternal",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("drains a dispatched fallback batch after a later primary fails", async () => {
+    let entered!: () => void;
+    const batchEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let completeBatch!: (rows: unknown[][]) => void;
+    const heldBatch = new Promise<unknown[][]>((resolve) => {
+      completeBatch = resolve;
+    });
+    let failed!: () => void;
+    const primaryFailed = new Promise<void>((resolve) => {
+      failed = resolve;
+    });
+    const error = new Error("later primary failed");
+    const rich = Array.from({ length: 100 }, (_, index) => ({
+      skill: makePublicSkill({
+        id: `skills:rich-${index}`,
+        slug: `rich-${index}`,
+        displayName: `Rich ${index}`,
+      }),
+      version: null,
+      owner: null,
+      ownerHandle: "owner",
+    }));
+    const batched: string[][] = [];
+    const runQuery = vi.fn(async (ref, args) => {
+      if (getFunctionName(ref) === "search:lexicalFallbackSkillsBatchInternal") {
+        batched.push(args.queries);
+        entered();
+        return heldBatch;
+      }
+      if (getFunctionName(ref) === "search:directPrefixSkillMatches") {
+        if (args.query === "rich") return rich;
+        if (args.query === "broken") {
+          await batchEntered;
+          failed();
+          throw error;
+        }
+        if (args.query === "never") throw new Error("new work admitted after failure");
+      }
+      return [];
+    });
+    generateEmbeddingsMock.mockResolvedValue(null);
+    const queries = [
+      ...Array.from({ length: 7 }, (_, index) => `queued-${index}`),
+      "rich",
+      "broken",
+      "never",
+    ];
+    let terminal = false;
+    const report = batchHandler({ runQuery }, { queries });
+    void report.then(
+      () => {
+        terminal = true;
+      },
+      () => {
+        terminal = true;
+      },
+    );
+    const rejection = expect(report).rejects.toBe(error);
+    await primaryFailed;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(terminal).toBe(false);
+    expect(batched.flat().sort()).toEqual(queries.slice(0, 7).sort());
+    expect(batched.every((batch) => batch.length <= 8)).toBe(true);
+    completeBatch(batched[0].map(() => []));
+    await rejection;
+    expect(
+      runQuery.mock.calls.some(
+        ([ref, args]) =>
+          getFunctionName(ref) === "search:directPrefixSkillMatches" && args.query === "never",
+      ),
+    ).toBe(false);
+  });
+
+  it("reads adoption only for candidates that can enter the top three, including the entire cutoff tie", async () => {
+    const native = Array.from({ length: 100 }, (_, index) => ({
+      skill: makePublicSkill({
+        id: `skills:calendar-${index}`,
+        slug: `calendar-${index}`,
+        displayName: `Calendar ${index}`,
+        featured: index < 2,
+      }),
+      version: null,
+      ownerHandle: "acme",
+      owner: null,
+    }));
+    // Two curated results consume two slots; four exact-name matches compete
+    // for the third. All remaining prefix matches lose before adoption is read.
+    for (const index of [2, 3, 4, 5]) native[index].skill.displayName = "Calendar";
+    const usageIds: string[] = [];
+    const runQuery = vi.fn(async (ref, args) => {
+      switch (getFunctionName(ref)) {
+        case "search:getExactSkillSlugMatch":
+        case "search:lexicalFallbackSkills":
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:directPrefixSkillMatches":
+          return native;
+        case "search:getRollingSkillSearchUsage":
+          usageIds.push(...args.skillIds);
+          return args.skillIds.map((skillId: string) => ({
+            skillId,
+            installs: skillId === "skills:calendar-5" ? 100 : 0,
+            bookmarks: 0,
+          }));
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+    generateEmbeddingMock.mockResolvedValue([1, 0]);
+    generateEmbeddingsMock.mockResolvedValue([[1, 0]]);
+    const ctx = { runQuery, vectorSearch: vi.fn(async () => []) };
+    const expected = [
+      "clawhub:skills:calendar-0",
+      "clawhub:skills:calendar-1",
+      "clawhub:skills:calendar-5",
+    ];
+    const ordinary = await canonicalSearchSkillsHandler(ctx, { query: "calendar", limit: 3 });
+    expect(ordinary.map((row) => row.id)).toEqual(expected);
+    expect(ordinary[2]).toMatchObject({ metrics: { rolling60DayInstalls: 100, bookmarks: 0 } });
+    expect(usageIds.sort()).toEqual(
+      native
+        .slice(0, 6)
+        .map((row) => row.skill._id)
+        .sort(),
+    );
+    usageIds.length = 0;
+    await expect(
+      batchHandler(ctx, { queries: Array.from({ length: 100 }, () => "calendar") }),
+    ).resolves.toEqual(
+      Array.from({ length: 100 }, () => ({ query: "calendar", identities: expected })),
+    );
+    expect(usageIds.sort()).toEqual(
+      native
+        .slice(0, 6)
+        .map((row) => row.skill._id)
+        .sort(),
+    );
+  });
+  it.each([
+    {
+      slug: "calendar-tools",
+      installs: 100,
+      expected: [
+        "skills-sh:a/skills/calendar",
+        "skills-sh:b/skills/calendar",
+        "skills-sh:c/skills/calendar",
+      ],
+      readsUsage: false,
+    },
+    {
+      slug: "calendar-native",
+      installs: 100,
+      expected: [
+        "clawhub:skills:calendar",
+        "skills-sh:a/skills/calendar",
+        "skills-sh:b/skills/calendar",
+      ],
+      readsUsage: true,
+    },
+    {
+      slug: "calendar-native",
+      installs: 0,
+      expected: [
+        "skills-sh:a/skills/calendar",
+        "skills-sh:b/skills/calendar",
+        "skills-sh:c/skills/calendar",
+      ],
+      readsUsage: true,
+    },
+  ])(
+    "preserves mixed-source ranking for $slug with $installs installs",
+    async ({ slug, installs, expected, readsUsage }) => {
+      const native = {
+        skill: makePublicSkill({
+          id: "skills:calendar",
+          slug,
+          displayName: slug === "calendar-native" ? "Calendar" : slug,
+        }),
+        version: null,
+        ownerHandle: "acme",
+        owner: null,
+      };
+      const external = ["a", "b", "c"].map((owner) => ({
+        ...makeExternalSearchDigest({ externalId: `${owner}/skills/calendar` }),
+        lastObservedAt: 2,
+      }));
+      const usage = vi.fn(async () => [{ skillId: native.skill._id, installs, bookmarks: 0 }]);
+      const runQuery = vi.fn(async (ref, args) => {
+        switch (getFunctionName(ref)) {
+          case "search:lexicalFallbackSkillsBatchInternal":
+            return args.queries.map(() => []);
+          case "search:getExactSkillSlugMatch":
+          case "search:lexicalFallbackSkills":
+            return [];
+          case "search:directPrefixSkillMatches":
+            return [native];
+          case "search:getExternalSkillSearchCandidates":
+            return external;
+          case "search:getRollingSkillSearchUsage":
+            return usage();
+          default:
+            throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+        }
+      });
+      generateEmbeddingMock.mockResolvedValue([1, 0]);
+      generateEmbeddingsMock.mockResolvedValue([[1, 0]]);
+      const ctx = { runQuery, vectorSearch: vi.fn(async () => []) };
+      expect(
+        (await canonicalSearchSkillsHandler(ctx, { query: "calendar", limit: 3 })).map(
+          (row) => row.id,
+        ),
+      ).toEqual(expected);
+      expect(usage).toHaveBeenCalledTimes(Number(readsUsage));
+      usage.mockClear();
+      await expect(batchHandler(ctx, { queries: ["calendar"] })).resolves.toEqual([
+        { query: "calendar", identities: expected },
+      ]);
+      expect(usage).toHaveBeenCalledTimes(Number(readsUsage));
+      if (readsUsage) {
+        usage.mockRejectedValueOnce(new Error("adoption unavailable"));
+        await expect(batchHandler(ctx, { queries: ["calendar"] })).rejects.toThrow(
+          "adoption unavailable",
+        );
+      }
+    },
+  );
+  it("matches single-search ranking with one vector batch and one usage read per distinct skill", async () => {
+    const native = {
+      skill: makePublicSkill({
+        id: "skills:calendar",
+        slug: "calendar",
+        displayName: "Calendar Tools",
+        downloads: 1,
+      }),
+      version: null,
+      ownerHandle: "acme",
+      owner: { _id: "publishers:acme", kind: "org", handle: "acme", displayName: "Acme" },
+    };
+    const external = makeExternalSearchDigest({ externalId: "acme/skills/calendar" });
+    const usage = vi.fn(async () => [{ skillId: native.skill._id, installs: 12, bookmarks: 3 }]);
+    const runQuery = vi.fn(async (ref, args) => {
+      switch (getFunctionName(ref)) {
+        case "search:getExactSkillSlugMatch":
+        case "search:directPrefixSkillMatches":
+          return [native];
+        case "search:lexicalFallbackSkillsBatchInternal":
+          return args.queries.map(() => []);
+        case "search:lexicalFallbackSkills":
+          return [];
+        case "search:getExternalSkillSearchCandidates":
+          return [external];
+        case "search:getRollingSkillSearchUsage":
+          return usage();
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+    const vectorSearch = vi.fn(
+      async (_table: string, _index: string, _args: { vector: number[] }) => [],
+    );
+    const ctx = { runQuery, vectorSearch };
+    const queries = Array.from({ length: 100 }, (_, index) =>
+      index % 2 === 0 ? "calendar" : "calendar tools",
+    );
+    generateEmbeddingMock.mockResolvedValue([1, 0]);
+    const expected = [];
+    for (const query of queries)
+      expected.push({
+        query,
+        identities: (await canonicalSearchSkillsHandler(ctx, { query, limit: 3 })).map(
+          (result) => result.id,
+        ),
+      });
+    usage.mockClear();
+    vectorSearch.mockClear();
+    generateEmbeddingMock.mockClear();
+    generateEmbeddingsMock.mockResolvedValueOnce([
+      [1, 0],
+      [0, 1],
+    ]);
+    await expect(batchHandler(ctx, { queries })).resolves.toEqual(expected);
+    expect(usage).toHaveBeenCalledTimes(1);
+    expect(generateEmbeddingMock).not.toHaveBeenCalled();
+    expect(generateEmbeddingsMock).toHaveBeenLastCalledWith(["calendar", "calendar tools"]);
+    expect(vectorSearch.mock.calls.map((call) => call[2].vector)).toEqual(
+      expect.arrayContaining([
+        [1, 0],
+        [0, 1],
+      ]),
+    );
+    expect(vectorSearch).toHaveBeenCalledTimes(100);
+  });
+  it("keeps lexical fallback for embedding failures and rejects database failures without partial results", async () => {
+    generateEmbeddingsMock.mockRejectedValue(new Error("embedding unavailable"));
+    const runQuery = vi.fn(async (ref, args) =>
+      getFunctionName(ref) === "search:lexicalFallbackSkillsBatchInternal"
+        ? args.queries.map(() => [])
+        : [],
+    );
+    const vectorSearch = vi.fn();
+    await expect(
+      batchHandler({ runQuery, vectorSearch }, { queries: ["calendar", "tools"] }),
+    ).resolves.toEqual([
+      { query: "calendar", identities: [] },
+      { query: "tools", identities: [] },
+    ]);
+    expect(vectorSearch).not.toHaveBeenCalled();
+    runQuery.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(
+      batchHandler({ runQuery, vectorSearch }, { queries: ["calendar", "tools"] }),
+    ).rejects.toThrow("database unavailable");
+  });
+  it("bounds report work and preserves empty-query results without external recall", async () => {
+    generateEmbeddingsMock.mockResolvedValueOnce([]);
+    const runQuery = vi.fn();
+    await expect(batchHandler({ runQuery }, { queries: [" "] })).resolves.toEqual([
+      { query: " ", identities: [] },
+    ]);
+    expect(runQuery).not.toHaveBeenCalled();
+    await expect(
+      batchHandler({ runQuery }, { queries: Array.from({ length: 101 }, () => "calendar") }),
+    ).rejects.toThrow("Maximum 100 bounded queries");
+  });
+});

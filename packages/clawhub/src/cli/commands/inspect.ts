@@ -1,16 +1,24 @@
-import { apiRequest, fetchText, registryUrl } from "../../http.js";
+import { apiRequest, fetchBinary, fetchText, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
+  ApiV1SkillModerationResponseSchema,
   ApiV1SkillResponseSchema,
+  ApiV1SkillVerifyResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
+  decodeUtf8Text,
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import {
+  parseSkillsShCliReference,
+  SKILLS_SH_SCANNED_LABEL,
+  SKILLS_SH_UNSCANNED_LABEL,
+} from "../skillReference.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail, formatError, styleText } from "../ui.js";
 
 type InspectOptions = {
   version?: string;
@@ -20,6 +28,12 @@ type InspectOptions = {
   files?: boolean;
   file?: string;
   json?: boolean;
+};
+
+type VerifySkillOptions = {
+  version?: string;
+  tag?: string;
+  card?: boolean;
 };
 
 type FileEntry = {
@@ -36,25 +50,74 @@ type SecurityStatus = {
   model: string | null;
 };
 
+type ModerationStatus = {
+  isSuspicious: boolean;
+  isMalwareBlocked: boolean;
+  verdict?: "clean" | "suspicious" | "malicious";
+  reasonCodes?: string[];
+  updatedAt?: number | null;
+  engineVersion?: string | null;
+  summary?: string | null;
+  legacyReason?: string | null;
+};
+
+type ModerationDiagnostics = {
+  moderation: unknown;
+} | null;
+
 export async function cmdInspect(opts: GlobalOpts, slug: string, options: InspectOptions = {}) {
-  const trimmed = slug.trim();
-  if (!trimmed) fail("Slug required");
+  const requested = parseSkillRef(slug);
+  const trimmed = requested.slug;
+  if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching skill");
+  const spinner = createCrabLoader("Fetching skill");
   try {
-    const skillResult = await apiRequest(
-      registry,
-      { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}`, token },
-      ApiV1SkillResponseSchema,
-    );
+    let skillResult: Awaited<ReturnType<typeof fetchSkillDetail>> | null = null;
+    let moderationDiagnostics: ModerationDiagnostics = null;
+    try {
+      skillResult = await fetchSkillDetail(registry, trimmed, requested.ownerHandle, token);
+    } catch (error) {
+      moderationDiagnostics = await fetchModerationDiagnostics(
+        registry,
+        trimmed,
+        requested.ownerHandle,
+        token,
+      );
+      if (moderationDiagnostics?.moderation) {
+        spinner.stop();
+        const output = {
+          skill: null,
+          latestVersion: null,
+          owner: null,
+          moderation: moderationDiagnostics.moderation,
+          version: null,
+          versions: null,
+          file: null,
+        };
+        if (options.json) {
+          console.log(JSON.stringify(output, null, 2));
+          return;
+        }
+        printHiddenSkillModeration(trimmed, moderationDiagnostics.moderation, formatError(error));
+        return;
+      }
+      throw error;
+    }
 
     if (!skillResult.skill) {
       spinner.fail("Skill not found");
       return;
     }
+
+    moderationDiagnostics = await fetchModerationDiagnostics(
+      registry,
+      trimmed,
+      requested.ownerHandle,
+      token,
+    );
 
     const skill = skillResult.skill;
     const tags = normalizeTags(skill.tags);
@@ -75,9 +138,13 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         registry,
         {
           method: "GET",
-          path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
-            targetVersion,
-          )}`,
+          url: ownerScopedUrl(
+            registry,
+            `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
+              targetVersion,
+            )}`,
+            requested.ownerHandle,
+          ),
           token,
         },
         ApiV1SkillVersionResponseSchema,
@@ -91,6 +158,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions`,
         registry,
       );
+      if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
       url.searchParams.set("limit", String(limit));
       spinner.text = `Fetching versions (${limit})`;
       versionsList = await apiRequest(
@@ -100,9 +168,10 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       );
     }
 
-    let fileContent: string | null = null;
+    let fileBytes: Uint8Array | null = null;
     if (options.file) {
       const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/file`, registry);
+      if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
       url.searchParams.set("path", options.file);
       if (options.version) {
         url.searchParams.set("version", options.version);
@@ -112,7 +181,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         url.searchParams.set("version", latestVersion);
       }
       spinner.text = `Fetching ${options.file}`;
-      fileContent = await fetchText(registry, { url: url.toString(), token });
+      fileBytes = await fetchBinary(registry, { url: url.toString(), token });
     }
 
     spinner.stop();
@@ -121,9 +190,17 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       skill: skillResult.skill,
       latestVersion: skillResult.latestVersion,
       owner: skillResult.owner,
+      moderation: moderationDiagnostics?.moderation ?? skillResult.moderation ?? null,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
-      file: options.file ? { path: options.file, content: fileContent } : null,
+      file:
+        options.file && fileBytes
+          ? {
+              path: options.file,
+              content: decodeUtf8Text(fileBytes),
+              contentBase64: Buffer.from(fileBytes).toString("base64"),
+            }
+          : null,
     };
 
     if (options.json) {
@@ -140,12 +217,14 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
           (versionResult?.version as { license?: string | null } | undefined)?.license ?? null,
         owner: skillResult.owner,
       });
+      printModerationSummary(moderationDiagnostics?.moderation ?? skillResult.moderation ?? null);
     }
 
     if (shouldPrintMeta && versionResult?.version) {
       printVersionSummary(versionResult.version);
       printSecuritySummary(versionResult.version);
     }
+    if (shouldPrintMeta) printInspectFooter();
 
     if (versionsList?.items && Array.isArray(versionsList.items)) {
       if (versionsList.items.length === 0) {
@@ -172,15 +251,204 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       }
     }
 
-    if (options.file && fileContent !== null) {
+    if (options.file && fileBytes !== null) {
       if (shouldPrintMeta) console.log(`\n${options.file}:\n`);
-      process.stdout.write(fileContent);
-      if (!fileContent.endsWith("\n")) process.stdout.write("\n");
+      process.stdout.write(fileBytes);
     }
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+export async function cmdVerifySkill(
+  opts: GlobalOpts,
+  slug: string,
+  options: VerifySkillOptions = {},
+) {
+  const skillsShRef = parseSkillsShCatalogRef(slug);
+  if (skillsShRef && (options.version || options.tag || options.card)) {
+    fail("skills.sh verification does not support --version, --tag, or --card");
+  }
+  const requested = skillsShRef ? { slug: skillsShRef.slug } : parseSkillRef(slug);
+  const trimmed = requested.slug;
+  if (!trimmed) fail("Skill required");
+  if (options.version && options.tag) fail("Use either --version or --tag");
+
+  const token = await getOptionalAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createCrabLoader("Fetching skill verification");
+  try {
+    const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
+    if (skillsShRef) {
+      url.searchParams.set("reference", skillsShRef.sourceRef);
+    } else if (requested.ownerHandle) {
+      url.searchParams.set("ownerHandle", requested.ownerHandle);
+    }
+    if (options.version) {
+      url.searchParams.set("version", options.version);
+    } else if (options.tag) {
+      url.searchParams.set("tag", options.tag);
+    }
+
+    const result = await apiRequest(
+      registry,
+      { method: "GET", url: url.toString(), token },
+      ApiV1SkillVerifyResponseSchema,
+    );
+    if (skillsShRef) validateSkillsShVerification(result, skillsShRef.sourceRef);
+
+    if (options.card) {
+      const cardUrl = readSkillCardUrl(result);
+      if (!cardUrl) fail("Skill Card is not available");
+      spinner.text = "Fetching Skill Card";
+      const card = await fetchText(registry, { url: cardUrl, token });
+      spinner.stop();
+      process.stdout.write(card);
+      if (!card.endsWith("\n")) process.stdout.write("\n");
+      if (!readBoolean(result, "ok")) process.exitCode = 1;
+      return;
+    }
+
+    spinner.stop();
+
+    console.log(JSON.stringify(result, null, 2));
+    if (!readBoolean(result, "ok")) process.exitCode = 1;
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+function parseSkillsShCatalogRef(raw: string) {
+  return parseSkillsShCliReference(raw);
+}
+
+function validateSkillsShVerification(result: unknown, requestedRef: string) {
+  const record = asRecord(result);
+  const provenance = asRecord(record.provenance);
+  const security = asRecord(record.security);
+  if (provenance.source !== "skills.sh" || provenance.reference !== requestedRef) {
+    fail("skills.sh verification did not preserve the requested external provenance");
+  }
+  const scanState = security.clawhubScan;
+  const label = typeof security.label === "string" ? security.label.trim() : "";
+  if (scanState !== "unscanned" && scanState !== "scanned") {
+    fail("skills.sh verification did not return a ClawHub scan state");
+  }
+  if (!label) fail("skills.sh verification did not return a trust label");
+  if (scanState === "unscanned") {
+    const reasons = Array.isArray(record.reasons) ? record.reasons : [];
+    if (
+      record.ok !== false ||
+      record.decision !== "fail" ||
+      label !== SKILLS_SH_UNSCANNED_LABEL ||
+      !reasons.includes(SKILLS_SH_UNSCANNED_LABEL)
+    ) {
+      fail(`skills.sh verification must report "${SKILLS_SH_UNSCANNED_LABEL}" rather than pass`);
+    }
+  } else {
+    if (label !== SKILLS_SH_SCANNED_LABEL) {
+      fail(`scanned skills.sh verification must report "${SKILLS_SH_SCANNED_LABEL}"`);
+    }
+    if (!isCanonicalNativeSkillRef(record.canonicalRef)) {
+      fail("scanned skills.sh verification must return a canonical native reference");
+    }
+  }
+}
+
+function isCanonicalNativeSkillRef(value: unknown) {
+  if (typeof value !== "string") return false;
+  const canonicalRef = value.trim();
+  if (!canonicalRef.startsWith("@")) return false;
+  try {
+    const parsed = parseSkillRef(canonicalRef);
+    return Boolean(
+      parsed.ownerHandle &&
+      isSafeNativeSkillSegment(parsed.ownerHandle) &&
+      isSafeNativeSkillSegment(parsed.slug) &&
+      canonicalRef === `@${parsed.ownerHandle}/${parsed.slug}`,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isSafeNativeSkillSegment(value: string) {
+  return Boolean(value) && !value.includes("/") && !value.includes("\\") && !value.includes("..");
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function parseSkillRef(raw: string) {
+  const value = raw.trim();
+  if (!value) fail("Skill required");
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) return { slug: value };
+  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill: ${value}`);
+  const ownerHandle = value.slice(0, slashIndex).trim().replace(/^@+/, "");
+  const slug = value.slice(slashIndex + 1).trim();
+  if (!ownerHandle || !slug) fail(`Invalid skill: ${value}`);
+  return { slug, ownerHandle };
+}
+
+function ownerScopedUrl(registry: string, path: string, ownerHandle: string | undefined) {
+  const url = registryUrl(path, registry);
+  if (ownerHandle) url.searchParams.set("ownerHandle", ownerHandle);
+  return url.toString();
+}
+
+function fetchSkillDetail(
+  registry: string,
+  slug: string,
+  ownerHandle: string | undefined,
+  token: string | undefined,
+) {
+  return apiRequest(
+    registry,
+    {
+      method: "GET",
+      url: ownerScopedUrl(registry, `${ApiRoutes.skills}/${encodeURIComponent(slug)}`, ownerHandle),
+      token,
+    },
+    ApiV1SkillResponseSchema,
+  );
+}
+
+async function fetchModerationDiagnostics(
+  registry: string,
+  slug: string,
+  ownerHandle: string | undefined,
+  token: string | undefined,
+): Promise<ModerationDiagnostics> {
+  if (!token) return null;
+  try {
+    return await apiRequest(
+      registry,
+      {
+        method: "GET",
+        url: ownerScopedUrl(
+          registry,
+          `${ApiRoutes.skills}/${encodeURIComponent(slug)}/moderation`,
+          ownerHandle,
+        ),
+        token,
+      },
+      ApiV1SkillModerationResponseSchema,
+    );
+  } catch {
+    return null;
+  }
+}
+
+function printHiddenSkillModeration(slug: string, moderation: unknown, detailError: string) {
+  console.log(`${slug} is not publicly visible.`);
+  console.log(`Detail: ${detailError}`);
+  printModerationSummary(moderation);
 }
 
 function printSkillSummary(result: {
@@ -203,23 +471,61 @@ function printSkillSummary(result: {
   owner?: { handle?: string | null; displayName?: string | null; image?: string | null } | null;
 }) {
   const { skill } = result;
-  console.log(`${skill.slug}  ${skill.displayName}`);
-  if (skill.summary) console.log(`Summary: ${skill.summary}`);
-  const owner = result.owner?.handle || result.owner?.displayName;
-  if (owner) console.log(`Owner: ${owner}`);
-  console.log(`Created: ${formatTimestamp(skill.createdAt)}`);
-  console.log(`Updated: ${formatTimestamp(skill.updatedAt)}`);
-  if (result.latestVersion?.version) {
-    console.log(`Latest: ${result.latestVersion.version}`);
-  }
+  console.log("");
   console.log(
-    `License: ${result.versionLicense ?? result.latestVersion?.license ?? PLATFORM_SKILL_LICENSE} (${PLATFORM_SKILL_LICENSE_SUMMARY})`,
+    `${inspectRail("┌─")} ${styleText("inspect", "brand")} ${styleText("─".repeat(43), "muted")}`,
   );
+  console.log(
+    `${inspectRail("│")} ${styleText(skill.slug, "brand")}  ${styleText(
+      skill.displayName,
+      "strong",
+    )}`,
+  );
+  const owner = formatOwner(result.owner);
   const tags = normalizeTags(skill.tags);
   const tagEntries = Object.entries(tags);
-  if (tagEntries.length > 0) {
-    console.log(`Tags: ${tagEntries.map(([tag, version]) => `${tag}=${version}`).join(", ")}`);
+  const compactMeta = [
+    owner,
+    result.latestVersion?.version ? `v${result.latestVersion.version}` : null,
+    tagEntries.map(([tag, version]) => `${tag}=${version}`).join(", "),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  if (compactMeta) console.log(`${inspectRail("│")} ${styleText(compactMeta, "muted")}`);
+  console.log(inspectRail("│"));
+  if (skill.summary) printInspectRow("Summary", skill.summary);
+  if (owner) printInspectRow("Owner", owner);
+  if (result.latestVersion?.version) {
+    printInspectRow("Latest", result.latestVersion.version);
   }
+  printInspectRow(
+    "License",
+    `${result.versionLicense ?? result.latestVersion?.license ?? PLATFORM_SKILL_LICENSE} (${PLATFORM_SKILL_LICENSE_SUMMARY})`,
+  );
+  printInspectRow("Updated", formatTimestamp(skill.updatedAt));
+  printInspectRow("Created", formatTimestamp(skill.createdAt));
+  if (tagEntries.length > 0) {
+    printInspectRow("Tags", tagEntries.map(([tag, version]) => `${tag}=${version}`).join(", "));
+  }
+}
+
+function printInspectRow(label: string, value: string) {
+  console.log(`${inspectRail("│")} ${styleText(label.padEnd(8), "brand")} ${value}`);
+}
+
+function printInspectFooter() {
+  console.log(`${inspectRail("└")}${styleText("─".repeat(54), "muted")}`);
+}
+
+function inspectRail(value: string) {
+  return styleText(value, "brand");
+}
+
+function formatOwner(
+  owner?: { handle?: string | null; displayName?: string | null; image?: string | null } | null,
+) {
+  if (owner?.handle) return `@${owner.handle}`;
+  return owner?.displayName ?? null;
 }
 
 function printVersionSummary(version: unknown) {
@@ -227,13 +533,78 @@ function printVersionSummary(version: unknown) {
   const entry = version as { version?: unknown; createdAt?: unknown; changelog?: unknown };
   const value = typeof entry.version === "string" ? entry.version : null;
   if (!value) return;
-  console.log(`Selected: ${value}`);
+  printInspectRow("Selected", value);
   if (typeof entry.createdAt === "number") {
-    console.log(`Selected At: ${formatTimestamp(entry.createdAt)}`);
+    printInspectRow("Sel Time", formatTimestamp(entry.createdAt));
   }
   if (typeof entry.changelog === "string" && entry.changelog.trim()) {
-    console.log(`Changelog: ${truncate(entry.changelog, 120)}`);
+    printInspectRow("Change", truncate(entry.changelog, 120));
   }
+}
+
+function printModerationSummary(moderation: unknown) {
+  const status = normalizeModeration(moderation);
+  if (!status) return;
+  const label = status.isMalwareBlocked
+    ? "MALICIOUS"
+    : status.isSuspicious
+      ? "SUSPICIOUS"
+      : (status.verdict ?? "clean").toUpperCase();
+  printInspectRow("Moderate", label);
+  if (status.reasonCodes?.length) {
+    printInspectRow("Reasons", status.reasonCodes.join(", "));
+  }
+  if (status.legacyReason) {
+    printInspectRow("Reason", status.legacyReason);
+  }
+  if (typeof status.updatedAt === "number") {
+    printInspectRow("Mod Time", formatTimestamp(status.updatedAt));
+  }
+  if (status.engineVersion) {
+    printInspectRow("Engine", status.engineVersion);
+  }
+  if (status.summary) {
+    printInspectRow("Mod Note", truncate(status.summary, 160));
+  }
+  if (status.legacyReason === "quality.low") {
+    printInspectRow(
+      "Guidance",
+      "Visibility Guidance: publish a substantive update that passes quality assessment, then re-run inspect.",
+    );
+  }
+}
+
+function normalizeModeration(moderation: unknown): ModerationStatus | null {
+  if (!moderation || typeof moderation !== "object") return null;
+  const value = moderation as {
+    isSuspicious?: unknown;
+    isMalwareBlocked?: unknown;
+    verdict?: unknown;
+    reasonCodes?: unknown;
+    updatedAt?: unknown;
+    engineVersion?: unknown;
+    summary?: unknown;
+    legacyReason?: unknown;
+  };
+  if (typeof value.isSuspicious !== "boolean") return null;
+  if (typeof value.isMalwareBlocked !== "boolean") return null;
+  const verdict =
+    value.verdict === "clean" || value.verdict === "suspicious" || value.verdict === "malicious"
+      ? value.verdict
+      : undefined;
+  const reasonCodes = Array.isArray(value.reasonCodes)
+    ? value.reasonCodes.filter((reason): reason is string => typeof reason === "string")
+    : undefined;
+  return {
+    isSuspicious: value.isSuspicious,
+    isMalwareBlocked: value.isMalwareBlocked,
+    verdict,
+    reasonCodes,
+    updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : null,
+    engineVersion: typeof value.engineVersion === "string" ? value.engineVersion : null,
+    summary: typeof value.summary === "string" && value.summary.trim() ? value.summary : null,
+    legacyReason: typeof value.legacyReason === "string" ? value.legacyReason : null,
+  };
 }
 
 function normalizeTags(tags: unknown): Record<string, string> {
@@ -244,6 +615,29 @@ function normalizeTags(tags: unknown): Record<string, string> {
     if (typeof version === "string") resolved[tag] = version;
   }
   return resolved;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readString(record: Record<string, unknown> | null, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readBoolean(value: unknown, key: string): boolean {
+  const record = readRecord(value);
+  return record?.[key] === true;
+}
+
+function readSkillCardUrl(result: unknown): string | null {
+  const root = readRecord(result);
+  const card = readRecord(root?.["card"]);
+  if (!readBoolean(card, "available")) return null;
+  return readString(card, "url");
 }
 
 function normalizeFiles(files: unknown): FileEntry[] {
@@ -286,15 +680,15 @@ function printSecuritySummary(version: unknown) {
   if (!version || typeof version !== "object") return;
   const sec = normalizeSecurity((version as { security?: unknown }).security);
   if (!sec) return;
-  console.log(`Security: ${sec.status.toUpperCase()}`);
+  printInspectRow("Security", sec.status.toUpperCase());
   if (sec.hasWarnings) {
-    console.log("Warnings: yes");
+    printInspectRow("Warnings", "yes");
   }
   if (typeof sec.checkedAt === "number") {
-    console.log(`Checked: ${formatTimestamp(sec.checkedAt)}`);
+    printInspectRow("Checked", formatTimestamp(sec.checkedAt));
   }
   if (sec.model) {
-    console.log(`Model: ${sec.model}`);
+    printInspectRow("Model", sec.model);
   }
 }
 
@@ -335,7 +729,13 @@ function formatFileLine(file: FileEntry) {
 
 function formatTimestamp(timestamp: number) {
   if (!Number.isFinite(timestamp)) return "unknown";
-  return new Date(timestamp).toISOString();
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
 }
 
 function formatBytes(bytes: number) {

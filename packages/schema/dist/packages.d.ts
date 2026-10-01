@@ -1,9 +1,21 @@
 import { type inferred } from "arktype";
-export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"skill" | "code-plugin" | "bundle-plugin", {}>;
+export declare const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
+export declare const PACKAGE_CATEGORY_BATCH_LIMIT = 200;
+export declare function normalizePackageOwnerHandle(handle: string | null | undefined): string | undefined;
+export declare function inferPackageNameScope(name: string): string | undefined;
+export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined): {
+    scope: string;
+    selectedOwner: string;
+    suggestedName: string;
+    message: string;
+} | null;
+export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "claw" | "code-plugin" | "skill", {}>;
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
-export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"official" | "community" | "private", {}>;
+export declare const PackagePublishFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "claw" | "code-plugin" | "skill", {}>;
+export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
+export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"community" | "official" | "private", {}>;
 export type PackageChannel = (typeof PackageChannelSchema)[inferred];
-export declare const PackageVerificationTierSchema: import("arktype/internal/variants/string.ts").StringType<"structural" | "source-linked" | "provenance-verified" | "rebuild-verified", {}>;
+export declare const PackageVerificationTierSchema: import("arktype/internal/variants/string.ts").StringType<"provenance-verified" | "rebuild-verified" | "source-linked" | "structural", {}>;
 export type PackageVerificationTier = (typeof PackageVerificationTierSchema)[inferred];
 export declare const PackageVerificationScopeSchema: import("arktype/internal/variants/string.ts").StringType<"artifact-only" | "dependency-graph-aware", {}>;
 export type PackageVerificationScope = (typeof PackageVerificationScopeSchema)[inferred];
@@ -14,36 +26,72 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
     minGatewayVersion?: string | undefined;
 }, {}>;
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
-export declare const PackageCapabilitySummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    executesCode: boolean;
-    runtimeId?: string | undefined;
-    pluginKind?: string | undefined;
-    channels?: string[] | undefined;
+export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schemaVersion: number;
+    contracts?: {
+        [x: string]: string[];
+    } | undefined;
     providers?: string[] | undefined;
-    hooks?: string[] | undefined;
-    bundledSkills?: string[] | undefined;
-    setupEntry?: boolean | undefined;
-    configSchema?: boolean | undefined;
-    configUiHints?: boolean | undefined;
-    materializesDependencies?: boolean | undefined;
-    toolNames?: string[] | undefined;
-    commandNames?: string[] | undefined;
-    serviceNames?: string[] | undefined;
-    capabilityTags?: string[] | undefined;
-    httpRouteCount?: number | undefined;
-    bundleFormat?: string | undefined;
-    hostTargets?: string[] | undefined;
+    channels?: string[] | undefined;
+    categories?: string[] | undefined;
+    icon?: string | undefined;
+    compatibility?: {
+        pluginApiRange?: string | undefined;
+        builtWithOpenClawVersion?: string | undefined;
+        pluginSdkVersion?: string | undefined;
+        minGatewayVersion?: string | undefined;
+    } | undefined;
+    manifestIdentity?: {
+        name?: string | undefined;
+        description?: string | undefined;
+        version?: string | undefined;
+        family?: string | undefined;
+    } | undefined;
+    configFields: {
+        name: string;
+        description?: string | undefined;
+        required: boolean;
+        sensitive: boolean;
+    }[];
+    mcpServers: {
+        name: string;
+    }[];
+    bundledSkills: {
+        name: string;
+        description?: string | undefined;
+        rootPath: string;
+        skillMdPath: string;
+        sha256: string;
+        size: number;
+    }[];
 }, {}>;
-export type PackageCapabilitySummary = (typeof PackageCapabilitySummarySchema)[inferred];
+export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
+export declare const ApiV1PackageCategoriesBatchRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packages: {
+        name: string;
+        version: string;
+    }[];
+}, {}>;
+export type ApiV1PackageCategoriesBatchRequest = (typeof ApiV1PackageCategoriesBatchRequestSchema)[inferred];
+export declare const ApiV1PackageCategoriesBatchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packages: {
+        name: string;
+        version: string;
+        categories: string[] | null;
+    }[];
+}, {}>;
+export type ApiV1PackageCategoriesBatchResponse = (typeof ApiV1PackageCategoriesBatchResponseSchema)[inferred];
 export declare const PackageVerificationSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
+    tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
     scope: "artifact-only" | "dependency-graph-aware";
     summary?: string | undefined;
     sourceRepo?: string | undefined;
     sourceCommit?: string | undefined;
     sourceTag?: string | undefined;
+    sourcePath?: string | undefined;
     hasProvenance?: boolean | undefined;
-    scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
+    trustedOpenClawPlugin?: boolean | undefined;
+    scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
 }, {}>;
 export type PackageVerificationSummary = (typeof PackageVerificationSummarySchema)[inferred];
 export declare const PackageStatsSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -53,14 +101,137 @@ export declare const PackageStatsSchema: import("arktype/internal/variants/objec
     versions: number;
 }, {}>;
 export type PackageStats = (typeof PackageStatsSchema)[inferred];
+export declare const PackageArtifactKindSchema: import("arktype/internal/variants/string.ts").StringType<"legacy-zip" | "npm-pack", {}>;
+export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
+export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "quarantined" | "revoked", {}>;
+export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
+export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"confirmed" | "dismissed" | "open", {}>;
+export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
+export declare const PackageReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "quarantine" | "revoke", {}>;
+export type PackageReportFinalAction = (typeof PackageReportFinalActionSchema)[inferred];
+export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "confirmed" | "dismissed" | "open", {}>;
+export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
+export declare const PackageAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"accepted" | "open" | "rejected", {}>;
+export type PackageAppealStatus = (typeof PackageAppealStatusSchema)[inferred];
+export declare const PackageAppealFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"approve" | "none", {}>;
+export type PackageAppealFinalAction = (typeof PackageAppealFinalActionSchema)[inferred];
+export declare const PackageAppealListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"accepted" | "all" | "open" | "rejected", {}>;
+export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inferred];
+export declare const PackageOfficialMigrationPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "planned" | "published" | "ready-for-openclaw", {}>;
+export type PackageOfficialMigrationPhase = (typeof PackageOfficialMigrationPhaseSchema)[inferred];
+export declare const PackageOfficialMigrationListPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "blocked" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "planned" | "published" | "ready-for-openclaw", {}>;
+export type PackageOfficialMigrationListPhase = (typeof PackageOfficialMigrationListPhaseSchema)[inferred];
+export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "legacy-zip" | "npm-pack";
+    sha256?: string | undefined;
+    size?: number | undefined;
+    format?: string | undefined;
+    npmIntegrity?: string | undefined;
+    npmShasum?: string | undefined;
+    npmTarballName?: string | undefined;
+    npmUnpackedSize?: number | undefined;
+    npmFileCount?: number | undefined;
+    source?: "clawhub" | undefined;
+    artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+    artifactSha256?: string | undefined;
+    packageName?: string | undefined;
+    version?: string | undefined;
+}, {}>;
+export type PackageArtifactSummary = (typeof PackageArtifactSummarySchema)[inferred];
+export declare const PackagePublishArtifactSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    kind: "npm-pack";
+    storageId: string;
+    sha256: string;
+    size: number;
+    format: "tgz";
+    npmIntegrity: string;
+    npmShasum: string;
+    npmTarballName: string;
+    npmUnpackedSize: number;
+    npmFileCount: number;
+}, {}>;
+export type PackagePublishArtifact = (typeof PackagePublishArtifactSchema)[inferred];
 export declare const PackageVtAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: string;
-    checkedAt: number;
     verdict?: string | undefined;
     analysis?: string | undefined;
     source?: string | undefined;
+    checkedAt: number;
 }, {}>;
 export type PackageVtAnalysis = (typeof PackageVtAnalysisSchema)[inferred];
+export declare const PackageSkillSpectorIssueSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    issueId: string;
+    category?: string | undefined;
+    pattern?: string | undefined;
+    severity: string;
+    confidence?: number | undefined;
+    file?: string | undefined;
+    startLine?: number | undefined;
+    endLine?: number | undefined;
+    explanation: string;
+    remediation?: string | undefined;
+    finding?: string | undefined;
+    codeSnippet?: string | undefined;
+}, {}>;
+export type PackageSkillSpectorIssue = (typeof PackageSkillSpectorIssueSchema)[inferred];
+export declare const PackageSkillSpectorAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    score?: number | undefined;
+    severity?: string | undefined;
+    recommendation?: string | undefined;
+    issueCount: number;
+    issues: {
+        issueId: string;
+        category?: string | undefined;
+        pattern?: string | undefined;
+        severity: string;
+        confidence?: number | undefined;
+        file?: string | undefined;
+        startLine?: number | undefined;
+        endLine?: number | undefined;
+        explanation: string;
+        remediation?: string | undefined;
+        finding?: string | undefined;
+        codeSnippet?: string | undefined;
+    }[];
+    scannerVersion?: string | undefined;
+    summary?: string | undefined;
+    error?: string | undefined;
+    checkedAt: number;
+}, {}>;
+export type PackageSkillSpectorAnalysis = (typeof PackageSkillSpectorAnalysisSchema)[inferred];
+export declare const PackageAigFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ruleId: string;
+    level: string;
+    message: string;
+    title?: string | undefined;
+    description?: string | undefined;
+    file?: string | undefined;
+    startLine?: number | undefined;
+    endLine?: number | undefined;
+    remediation?: string | undefined;
+}, {}>;
+export type PackageAigFinding = (typeof PackageAigFindingSchema)[inferred];
+export declare const PackageAigAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: string;
+    issueCount: number;
+    findings: {
+        ruleId: string;
+        level: string;
+        message: string;
+        title?: string | undefined;
+        description?: string | undefined;
+        file?: string | undefined;
+        startLine?: number | undefined;
+        endLine?: number | undefined;
+        remediation?: string | undefined;
+    }[];
+    scannerVersion?: string | undefined;
+    summary?: string | undefined;
+    error?: string | undefined;
+    checkedAt: number;
+}, {}>;
+export type PackageAigAnalysis = (typeof PackageAigAnalysisSchema)[inferred];
 export declare const PackageLlmAnalysisDimensionSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     label: string;
@@ -70,7 +241,6 @@ export declare const PackageLlmAnalysisDimensionSchema: import("arktype/internal
 export type PackageLlmAnalysisDimension = (typeof PackageLlmAnalysisDimensionSchema)[inferred];
 export declare const PackageLlmAnalysisSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: string;
-    checkedAt: number;
     verdict?: string | undefined;
     confidence?: string | undefined;
     summary?: string | undefined;
@@ -82,7 +252,10 @@ export declare const PackageLlmAnalysisSchema: import("arktype/internal/variants
     }[] | undefined;
     guidance?: string | undefined;
     findings?: string | undefined;
+    agenticRiskFindings?: unknown[] | undefined;
+    riskSummary?: unknown;
     model?: string | undefined;
+    checkedAt: number;
 }, {}>;
 export type PackageLlmAnalysis = (typeof PackageLlmAnalysisSchema)[inferred];
 export declare const PackageStaticFindingSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -126,23 +299,35 @@ export declare const PackageTrustedPublisherSchema: import("arktype/internal/var
     environment?: string | undefined;
 }, {}>;
 export type PackageTrustedPublisher = (typeof PackageTrustedPublisherSchema)[inferred];
-export declare const PackagePublishRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export declare const MAX_PACKAGE_MULTIPART_BYTES: number;
+export declare const MAX_PACKAGE_CLAWPACK_BYTES: number;
+export type PackageMultipartUploadField = "files" | "clawpack";
+export type PackageMultipartUploadPart = {
     name: string;
-    family: "skill" | "code-plugin" | "bundle-plugin";
-    version: string;
-    changelog: string;
-    files: {
-        path: string;
-        size: number;
-        storageId: string;
-        sha256: string;
-        contentType?: string | undefined;
-    }[];
+    size: number;
+    type?: string;
+};
+export type PackageMultipartUploadSizeInput = {
+    payloadJson: string;
+    fileFieldName: PackageMultipartUploadField;
+    files: readonly PackageMultipartUploadPart[];
+};
+export declare function estimatePackageMultipartUploadBytes(input: PackageMultipartUploadSizeInput): number;
+export declare function isPackageMultipartUploadTooLarge(input: PackageMultipartUploadSizeInput): boolean;
+export declare function getPackageMultipartSizeError(): string;
+export declare const PackagePublishMetadataSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    version: string;
+    changelog: string;
+    expectedArtifactSha256?: string | undefined;
     manualOverrideReason?: string | undefined;
-    channel?: "official" | "community" | "private" | undefined;
+    channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
     source?: {
         kind: "github";
         url: string;
@@ -158,62 +343,331 @@ export declare const PackagePublishRequestSchema: import("arktype/internal/varia
         hostTargets?: string[] | undefined;
     } | undefined;
 }, {}>;
-export type PackagePublishRequest = (typeof PackagePublishRequestSchema)[inferred];
+export type PackagePublishMetadata = (typeof PackagePublishMetadataSchema)[inferred];
+export declare const ServerPackagePublishRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    displayName?: string | undefined;
+    ownerHandle?: string | undefined;
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    version: string;
+    changelog: string;
+    expectedArtifactSha256?: string | undefined;
+    manualOverrideReason?: string | undefined;
+    channel?: "community" | "official" | "private" | undefined;
+    tags?: string[] | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
+    source?: {
+        kind: "github";
+        url: string;
+        repo: string;
+        ref: string;
+        commit: string;
+        path: string;
+        importedAt: number;
+    } | undefined;
+    bundle?: {
+        id?: string | undefined;
+        format?: string | undefined;
+        hostTargets?: string[] | undefined;
+    } | undefined;
+    artifact?: {
+        kind: "npm-pack";
+        storageId: string;
+        sha256: string;
+        size: number;
+        format: "tgz";
+        npmIntegrity: string;
+        npmShasum: string;
+        npmTarballName: string;
+        npmUnpackedSize: number;
+        npmFileCount: number;
+    } | undefined;
+    files: {
+        path: string;
+        size: number;
+        storageId: string;
+        sha256: string;
+        contentType?: string | undefined;
+        uploadTicket?: string | undefined;
+    }[];
+}, {}>;
+export type ServerPackagePublishRequest = (typeof ServerPackagePublishRequestSchema)[inferred];
 export declare const PackageListItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     displayName: string;
-    family: "skill" | "code-plugin" | "bundle-plugin";
-    channel: "official" | "community" | "private";
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    runtimeId?: string | null | undefined;
+    channel: "community" | "official" | "private";
     isOfficial: boolean;
+    summary?: string | null | undefined;
+    icon?: string | null | undefined;
+    ownerHandle?: string | null | undefined;
+    ownerImage?: string | null | undefined;
+    ownerOfficial?: boolean | undefined;
     createdAt: number;
     updatedAt: number;
-    runtimeId?: string | null | undefined;
-    summary?: string | null | undefined;
-    ownerHandle?: string | null | undefined;
     latestVersion?: string | null | undefined;
-    capabilityTags?: string[] | undefined;
-    executesCode?: boolean | undefined;
-    verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
+    featuredAt?: number | undefined;
+    trending24h?: {
+        downloads: number;
+        installs: number;
+        windowStart: number;
+        windowEnd: number;
+    } | undefined;
+    verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+    stats?: {
+        downloads: number;
+        installs: number;
+        stars: number;
+        versions: number;
+    } | undefined;
 }, {}>;
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
+export declare const PluginOverviewItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    displayName: string;
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    runtimeId?: string | null | undefined;
+    channel: "community" | "official" | "private";
+    isOfficial: boolean;
+    summary?: string | null | undefined;
+    icon?: string | null | undefined;
+    ownerHandle?: string | null | undefined;
+    ownerImage?: string | null | undefined;
+    ownerOfficial?: boolean | undefined;
+    createdAt: number;
+    updatedAt: number;
+    latestVersion?: string | null | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
+    featuredAt?: number | undefined;
+    trending24h?: {
+        downloads: number;
+        installs: number;
+        windowStart: number;
+        windowEnd: number;
+    } | undefined;
+    verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+    stats?: {
+        downloads: number;
+        installs: number;
+        stars: number;
+        versions: number;
+    } | undefined;
+    featured?: boolean | undefined;
+    featuredRank?: number | undefined;
+    trending?: boolean | undefined;
+    trendingRank?: number | undefined;
+}, {}>;
+export type PluginOverviewItem = (typeof PluginOverviewItemSchema)[inferred];
+export declare const PluginDiscoveryCategorySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    slug: string;
+    label: string;
+    description: string;
+    icon: string;
+    order: number;
+    pinnedPackages?: string[] | undefined;
+}, {}>;
+export declare const ApiV1PluginOverviewResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    categories: {
+        slug: string;
+        label: string;
+        description: string;
+        icon: string;
+        order: number;
+        pinnedPackages?: string[] | undefined;
+    }[];
+    items: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        ownerImage?: string | null | undefined;
+        ownerOfficial?: boolean | undefined;
+        createdAt: number;
+        updatedAt: number;
+        latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        featuredAt?: number | undefined;
+        trending24h?: {
+            downloads: number;
+            installs: number;
+            windowStart: number;
+            windowEnd: number;
+        } | undefined;
+        verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
+        featured?: boolean | undefined;
+        featuredRank?: number | undefined;
+        trending?: boolean | undefined;
+        trendingRank?: number | undefined;
+    }[];
+}, {}>;
+export type ApiV1PluginOverviewResponse = (typeof ApiV1PluginOverviewResponseSchema)[inferred];
 export declare const ApiV1PackageListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         name: string;
         displayName: string;
-        family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        ownerImage?: string | null | undefined;
+        ownerOfficial?: boolean | undefined;
         createdAt: number;
         updatedAt: number;
-        runtimeId?: string | null | undefined;
-        summary?: string | null | undefined;
-        ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
-        capabilityTags?: string[] | undefined;
-        executesCode?: boolean | undefined;
-        verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        featuredAt?: number | undefined;
+        trending24h?: {
+            downloads: number;
+            installs: number;
+            windowStart: number;
+            windowEnd: number;
+        } | undefined;
+        verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
     }[];
     nextCursor: string | null;
+    categories?: {
+        slug: string;
+        label: string;
+        description: string;
+        icon: string;
+        order: number;
+        pinnedPackages?: string[] | undefined;
+    }[] | undefined;
 }, {}>;
 export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
+export declare const PackageValidationReportScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"clean" | "error" | "not-scanned" | "skipped" | "warning", {}>;
+export type PackageValidationReportScanStatus = (typeof PackageValidationReportScanStatusSchema)[inferred];
+export declare const PackageValidationReportFindingSeveritySchema: import("arktype/internal/variants/string.ts").StringType<"error" | "info" | "warning", {}>;
+export type PackageValidationReportFindingSeverity = (typeof PackageValidationReportFindingSeveritySchema)[inferred];
+export declare const PackageValidationReportItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        id: string;
+        name: string;
+        displayName: string;
+    };
+    release: {
+        id: string;
+        version: string;
+        createdAt: number;
+    };
+    references: {
+        packagePage: string;
+        release: string;
+    };
+    scan: {
+        status: "clean" | "error" | "not-scanned" | "skipped" | "warning";
+        scannedAt: number | null;
+        target: {
+            channel: string;
+            version: string;
+        } | null;
+        inspectorVersion: string | null;
+        skipReason: string | null;
+    };
+    findings: {
+        severity: "error" | "info" | "warning";
+        code: string;
+        message: string;
+    }[];
+}, {}>;
+export type PackageValidationReportItem = (typeof PackageValidationReportItemSchema)[inferred];
+export declare const ApiV1PackageValidationReportPageSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        package: {
+            id: string;
+            name: string;
+            displayName: string;
+        };
+        release: {
+            id: string;
+            version: string;
+            createdAt: number;
+        };
+        references: {
+            packagePage: string;
+            release: string;
+        };
+        scan: {
+            status: "clean" | "error" | "not-scanned" | "skipped" | "warning";
+            scannedAt: number | null;
+            target: {
+                channel: string;
+                version: string;
+            } | null;
+            inspectorVersion: string | null;
+            skipReason: string | null;
+        };
+        findings: {
+            severity: "error" | "info" | "warning";
+            code: string;
+            message: string;
+        }[];
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageValidationReportPage = (typeof ApiV1PackageValidationReportPageSchema)[inferred];
 export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;
         package: {
             name: string;
             displayName: string;
-            family: "skill" | "code-plugin" | "bundle-plugin";
-            channel: "official" | "community" | "private";
+            family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+            runtimeId?: string | null | undefined;
+            channel: "community" | "official" | "private";
             isOfficial: boolean;
+            summary?: string | null | undefined;
+            icon?: string | null | undefined;
+            ownerHandle?: string | null | undefined;
+            ownerImage?: string | null | undefined;
+            ownerOfficial?: boolean | undefined;
             createdAt: number;
             updatedAt: number;
-            runtimeId?: string | null | undefined;
-            summary?: string | null | undefined;
-            ownerHandle?: string | null | undefined;
             latestVersion?: string | null | undefined;
-            capabilityTags?: string[] | undefined;
-            executesCode?: boolean | undefined;
-            verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+            categories?: string[] | undefined;
+            topics?: string[] | undefined;
+            featuredAt?: number | undefined;
+            trending24h?: {
+                downloads: number;
+                installs: number;
+                windowStart: number;
+                windowEnd: number;
+            } | undefined;
+            verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
+            stats?: {
+                downloads: number;
+                installs: number;
+                stars: number;
+                versions: number;
+            } | undefined;
         };
     }[];
 }, {}>;
@@ -222,52 +676,94 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
     package: {
         name: string;
         displayName: string;
-        family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
         createdAt: number;
         updatedAt: number;
-        tags: unknown;
-        runtimeId?: string | null | undefined;
-        summary?: string | null | undefined;
-        ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        tags: unknown;
         compatibility?: {
             pluginApiRange?: string | undefined;
             builtWithOpenClawVersion?: string | undefined;
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
         } | null | undefined;
-        capabilities?: {
-            executesCode: boolean;
-            runtimeId?: string | undefined;
-            pluginKind?: string | undefined;
-            channels?: string[] | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
             providers?: string[] | undefined;
-            hooks?: string[] | undefined;
-            bundledSkills?: string[] | undefined;
-            setupEntry?: boolean | undefined;
-            configSchema?: boolean | undefined;
-            configUiHints?: boolean | undefined;
-            materializesDependencies?: boolean | undefined;
-            toolNames?: string[] | undefined;
-            commandNames?: string[] | undefined;
-            serviceNames?: string[] | undefined;
-            capabilityTags?: string[] | undefined;
-            httpRouteCount?: number | undefined;
-            bundleFormat?: string | undefined;
-            hostTargets?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
         } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
         verification?: {
-            tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
             scope: "artifact-only" | "dependency-graph-aware";
             summary?: string | undefined;
             sourceRepo?: string | undefined;
             sourceCommit?: string | undefined;
             sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
             hasProvenance?: boolean | undefined;
-            scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
         } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
         stats?: {
             downloads: number;
             installs: number;
@@ -279,6 +775,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
+        official?: boolean | undefined;
     } | null;
 }, {}>;
 export type ApiV1PackageResponse = (typeof ApiV1PackageResponseSchema)[inferred];
@@ -296,61 +793,142 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
     package: {
         name: string;
         displayName: string;
-        family: "skill" | "code-plugin" | "bundle-plugin";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     } | null;
     version: {
         version: string;
         createdAt: number;
         changelog: string;
-        files: unknown;
         distTags?: string[] | undefined;
+        files: unknown;
         compatibility?: {
             pluginApiRange?: string | undefined;
             builtWithOpenClawVersion?: string | undefined;
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
         } | null | undefined;
-        capabilities?: {
-            executesCode: boolean;
-            runtimeId?: string | undefined;
-            pluginKind?: string | undefined;
-            channels?: string[] | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
             providers?: string[] | undefined;
-            hooks?: string[] | undefined;
-            bundledSkills?: string[] | undefined;
-            setupEntry?: boolean | undefined;
-            configSchema?: boolean | undefined;
-            configUiHints?: boolean | undefined;
-            materializesDependencies?: boolean | undefined;
-            toolNames?: string[] | undefined;
-            commandNames?: string[] | undefined;
-            serviceNames?: string[] | undefined;
-            capabilityTags?: string[] | undefined;
-            httpRouteCount?: number | undefined;
-            bundleFormat?: string | undefined;
-            hostTargets?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
         } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
         verification?: {
-            tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
             scope: "artifact-only" | "dependency-graph-aware";
             summary?: string | undefined;
             sourceRepo?: string | undefined;
             sourceCommit?: string | undefined;
             sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
             hasProvenance?: boolean | undefined;
-            scanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "not-run" | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
         } | null | undefined;
-        sha256hash?: string | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        sha256hash?: string | null | undefined;
         vtAnalysis?: {
             status: string;
-            checkedAt: number;
             verdict?: string | undefined;
             analysis?: string | undefined;
             source?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        skillSpectorAnalysis?: {
+            status: string;
+            score?: number | undefined;
+            severity?: string | undefined;
+            recommendation?: string | undefined;
+            issueCount: number;
+            issues: {
+                issueId: string;
+                category?: string | undefined;
+                pattern?: string | undefined;
+                severity: string;
+                confidence?: number | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                explanation: string;
+                remediation?: string | undefined;
+                finding?: string | undefined;
+                codeSnippet?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        aigAnalysis?: {
+            status: string;
+            issueCount: number;
+            findings: {
+                ruleId: string;
+                level: string;
+                message: string;
+                title?: string | undefined;
+                description?: string | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                remediation?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
         } | null | undefined;
         llmAnalysis?: {
             status: string;
-            checkedAt: number;
             verdict?: string | undefined;
             confidence?: string | undefined;
             summary?: string | undefined;
@@ -362,7 +940,10 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             }[] | undefined;
             guidance?: string | undefined;
             findings?: string | undefined;
+            agenticRiskFindings?: unknown[] | undefined;
+            riskSummary?: unknown;
             model?: string | undefined;
+            checkedAt: number;
         } | null | undefined;
         staticScan?: {
             status: string;
@@ -382,12 +963,877 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
     } | null;
 }, {}>;
 export type ApiV1PackageVersionResponse = (typeof ApiV1PackageVersionResponseSchema)[inferred];
+export declare const ApiV1PackageVersionPublicationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    name: string;
+    version: string;
+    state: "absent" | "published";
+} | {
+    name: string;
+    version: string;
+    state: "pending";
+    stage: "staging";
+} | {
+    name: string;
+    version: string;
+    state: "pending";
+    stage: "checks" | "finalization";
+    attemptId: string;
+} | {
+    name: string;
+    version: string;
+    state: "failed";
+    attemptId?: string | undefined;
+    recoverable: boolean;
+}, {}>;
+export type ApiV1PackageVersionPublicationResponse = (typeof ApiV1PackageVersionPublicationResponseSchema)[inferred];
+export declare const ApiV1PackageArtifactResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    };
+    version: string;
+    artifact: {
+        kind: "legacy-zip" | "npm-pack";
+        sha256?: string | undefined;
+        size?: number | undefined;
+        format?: string | undefined;
+        npmIntegrity?: string | undefined;
+        npmShasum?: string | undefined;
+        npmTarballName?: string | undefined;
+        npmUnpackedSize?: number | undefined;
+        npmFileCount?: number | undefined;
+        downloadUrl: string;
+        tarballUrl?: string | undefined;
+        legacyDownloadUrl?: string | undefined;
+        source?: "clawhub" | undefined;
+        artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+        artifactSha256?: string | undefined;
+        packageName?: string | undefined;
+        version?: string | undefined;
+    };
+}, {}>;
+export type ApiV1PackageArtifactResponse = (typeof ApiV1PackageArtifactResponseSchema)[inferred];
+export declare const ApiV1PackageSecurityResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    overview: string;
+    verdict?: string | undefined;
+    securityAuditUrl: string;
+    package: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+    };
+    release: {
+        releaseId: string;
+        version: string;
+        artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+        artifactSha256?: string | undefined;
+        npmIntegrity?: string | undefined;
+        npmShasum?: string | undefined;
+        npmTarballName?: string | undefined;
+        createdAt: number;
+    };
+    trust: {
+        scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";
+        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        blockedFromDownload: boolean;
+        reasons: string[];
+        pending: boolean;
+        stale: boolean;
+    };
+}, {}>;
+export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
+export declare const ApiV1PluginDetailResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        runtimeId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        summary?: string | null | undefined;
+        icon?: string | null | undefined;
+        ownerHandle?: string | null | undefined;
+        createdAt: number;
+        updatedAt: number;
+        latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
+        tags: unknown;
+        compatibility?: {
+            pluginApiRange?: string | undefined;
+            builtWithOpenClawVersion?: string | undefined;
+            pluginSdkVersion?: string | undefined;
+            minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
+        } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
+        verification?: {
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
+            scope: "artifact-only" | "dependency-graph-aware";
+            summary?: string | undefined;
+            sourceRepo?: string | undefined;
+            sourceCommit?: string | undefined;
+            sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
+            hasProvenance?: boolean | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
+    } | null;
+    owner: {
+        handle: string | null;
+        displayName?: string | null | undefined;
+        image?: string | null | undefined;
+        official?: boolean | undefined;
+    } | null;
+    versions: {
+        items: {
+            version: string;
+            createdAt: number;
+            changelog: string;
+            distTags?: string[] | undefined;
+        }[];
+        nextCursor: string | null;
+    };
+    version: {
+        version: string;
+        createdAt: number;
+        changelog: string;
+        distTags?: string[] | undefined;
+        files: unknown;
+        compatibility?: {
+            pluginApiRange?: string | undefined;
+            builtWithOpenClawVersion?: string | undefined;
+            pluginSdkVersion?: string | undefined;
+            minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            contracts?: {
+                [x: string]: string[];
+            } | undefined;
+            providers?: string[] | undefined;
+            channels?: string[] | undefined;
+            categories?: string[] | undefined;
+            icon?: string | undefined;
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+            configFields: {
+                name: string;
+                description?: string | undefined;
+                required: boolean;
+                sensitive: boolean;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                description?: string | undefined;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+            }[];
+        } | null | undefined;
+        clawManifestSummary?: import("./claws.js").ClawManifestSummary | null | undefined;
+        verification?: {
+            tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
+            scope: "artifact-only" | "dependency-graph-aware";
+            summary?: string | undefined;
+            sourceRepo?: string | undefined;
+            sourceCommit?: string | undefined;
+            sourceTag?: string | undefined;
+            sourcePath?: string | undefined;
+            hasProvenance?: boolean | undefined;
+            trustedOpenClawPlugin?: boolean | undefined;
+            scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+        } | null | undefined;
+        artifact?: {
+            kind: "legacy-zip" | "npm-pack";
+            sha256?: string | undefined;
+            size?: number | undefined;
+            format?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            npmUnpackedSize?: number | undefined;
+            npmFileCount?: number | undefined;
+            source?: "clawhub" | undefined;
+            artifactKind?: "legacy-zip" | "npm-pack" | undefined;
+            artifactSha256?: string | undefined;
+            packageName?: string | undefined;
+            version?: string | undefined;
+        } | null | undefined;
+        sha256hash?: string | null | undefined;
+        vtAnalysis?: {
+            status: string;
+            verdict?: string | undefined;
+            analysis?: string | undefined;
+            source?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        skillSpectorAnalysis?: {
+            status: string;
+            score?: number | undefined;
+            severity?: string | undefined;
+            recommendation?: string | undefined;
+            issueCount: number;
+            issues: {
+                issueId: string;
+                category?: string | undefined;
+                pattern?: string | undefined;
+                severity: string;
+                confidence?: number | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                explanation: string;
+                remediation?: string | undefined;
+                finding?: string | undefined;
+                codeSnippet?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        aigAnalysis?: {
+            status: string;
+            issueCount: number;
+            findings: {
+                ruleId: string;
+                level: string;
+                message: string;
+                title?: string | undefined;
+                description?: string | undefined;
+                file?: string | undefined;
+                startLine?: number | undefined;
+                endLine?: number | undefined;
+                remediation?: string | undefined;
+            }[];
+            scannerVersion?: string | undefined;
+            summary?: string | undefined;
+            error?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        llmAnalysis?: {
+            status: string;
+            verdict?: string | undefined;
+            confidence?: string | undefined;
+            summary?: string | undefined;
+            dimensions?: {
+                name: string;
+                label: string;
+                rating: string;
+                detail: string;
+            }[] | undefined;
+            guidance?: string | undefined;
+            findings?: string | undefined;
+            agenticRiskFindings?: unknown[] | undefined;
+            riskSummary?: unknown;
+            model?: string | undefined;
+            checkedAt: number;
+        } | null | undefined;
+        staticScan?: {
+            status: string;
+            reasonCodes: string[];
+            findings: {
+                code: string;
+                severity: string;
+                file: string;
+                line: number;
+                message: string;
+                evidence: string;
+            }[];
+            summary: string;
+            engineVersion: string;
+            checkedAt: number;
+        } | null | undefined;
+    } | null;
+    readme: string | null;
+    security: {
+        overview: string;
+        verdict?: string | undefined;
+        securityAuditUrl: string;
+        package: {
+            name: string;
+            displayName: string;
+            family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        };
+        release: {
+            releaseId: string;
+            version: string;
+            artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+            artifactSha256?: string | undefined;
+            npmIntegrity?: string | undefined;
+            npmShasum?: string | undefined;
+            npmTarballName?: string | undefined;
+            createdAt: number;
+        };
+        trust: {
+            scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";
+            moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+            blockedFromDownload: boolean;
+            reasons: string[];
+            pending: boolean;
+            stale: boolean;
+        };
+    } | null;
+}, {}>;
+export type ApiV1PluginDetailResponse = (typeof ApiV1PluginDetailResponseSchema)[inferred];
+export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    state: "approved" | "quarantined" | "revoked";
+    reason: string;
+}, {}>;
+export type PackageReleaseModerationRequest = (typeof PackageReleaseModerationRequestSchema)[inferred];
+export declare const PackageReportRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    reason: string;
+    version?: string | undefined;
+}, {}>;
+export type PackageReportRequest = (typeof PackageReportRequestSchema)[inferred];
+export declare const ApiV1PackageReportResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    reported: boolean;
+    alreadyReported: boolean;
+    packageId: string;
+    releaseId: string | null;
+    reportCount: number;
+}, {}>;
+export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchema)[inferred];
+export declare const PackageReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "confirmed" | "dismissed" | "open";
+    note?: string | undefined;
+    finalAction?: "none" | "quarantine" | "revoke" | undefined;
+}, {}>;
+export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
+export declare const PackageAppealRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    version: string;
+    message: string;
+}, {}>;
+export type PackageAppealRequest = (typeof PackageAppealRequestSchema)[inferred];
+export declare const ApiV1PackageAppealResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    submitted: boolean;
+    alreadyOpen: boolean;
+    appealId: string;
+    packageId: string;
+    releaseId: string;
+    status: "accepted" | "open" | "rejected";
+}, {}>;
+export type ApiV1PackageAppealResponse = (typeof ApiV1PackageAppealResponseSchema)[inferred];
+export declare const PackageAppealResolveRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "accepted" | "open" | "rejected";
+    note?: string | undefined;
+    finalAction?: "approve" | "none" | undefined;
+}, {}>;
+export type PackageAppealResolveRequest = (typeof PackageAppealResolveRequestSchema)[inferred];
+export declare const ApiV1PackageAppealListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        appealId: string;
+        packageId: string;
+        releaseId: string;
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        version: string;
+        message: string;
+        status: "accepted" | "open" | "rejected";
+        createdAt: number;
+        submitter: {
+            userId: string;
+            handle?: string | null | undefined;
+            displayName?: string | null | undefined;
+        };
+        resolvedAt?: number | null | undefined;
+        resolvedBy?: string | null | undefined;
+        resolutionNote?: string | null | undefined;
+        actionTaken?: "approve" | "none" | null | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageAppealListResponse = (typeof ApiV1PackageAppealListResponseSchema)[inferred];
+export declare const ApiV1PackageAppealResolveResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    appealId: string;
+    packageId: string;
+    releaseId: string;
+    status: "accepted" | "open" | "rejected";
+    actionTaken?: "approve" | "none" | undefined;
+}, {}>;
+export type ApiV1PackageAppealResolveResponse = (typeof ApiV1PackageAppealResolveResponseSchema)[inferred];
+export declare const ApiV1PackageReportListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        reportId: string;
+        packageId: string;
+        releaseId?: string | null | undefined;
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        version?: string | null | undefined;
+        reason?: string | null | undefined;
+        status: "confirmed" | "dismissed" | "open";
+        createdAt: number;
+        reporter: {
+            userId: string;
+            handle?: string | null | undefined;
+            displayName?: string | null | undefined;
+        };
+        triagedAt?: number | null | undefined;
+        triagedBy?: string | null | undefined;
+        triageNote?: string | null | undefined;
+        actionTaken?: "none" | "quarantine" | "revoke" | null | undefined;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageReportListResponse = (typeof ApiV1PackageReportListResponseSchema)[inferred];
+export declare const ApiV1PackageReportTriageResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    reportId: string;
+    packageId: string;
+    status: "confirmed" | "dismissed" | "open";
+    reportCount: number;
+    actionTaken?: "none" | "quarantine" | "revoke" | undefined;
+}, {}>;
+export type ApiV1PackageReportTriageResponse = (typeof ApiV1PackageReportTriageResponseSchema)[inferred];
+export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        packageId: string;
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        reportCount: number;
+        lastReportedAt?: number | null | undefined;
+        scanStatus?: "clean" | "malicious" | "not-run" | "pending" | "suspicious" | undefined;
+    };
+    latestRelease: {
+        releaseId: string;
+        version: string;
+        artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+        scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";
+        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        moderationReason?: string | null | undefined;
+        blockedFromDownload: boolean;
+        reasons: string[];
+        createdAt: number;
+    } | null;
+}, {}>;
+export type ApiV1PackageModerationStatusResponse = (typeof ApiV1PackageModerationStatusResponseSchema)[inferred];
+export declare const PackageReadinessCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    id: string;
+    label: string;
+    status: "fail" | "pass" | "warn";
+    message: string;
+}, {}>;
+export type PackageReadinessCheck = (typeof PackageReadinessCheckSchema)[inferred];
+export declare const ApiV1PackageReadinessResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        isOfficial: boolean;
+        latestVersion?: string | null | undefined;
+    };
+    ready: boolean;
+    checks: {
+        id: string;
+        label: string;
+        status: "fail" | "pass" | "warn";
+        message: string;
+    }[];
+    blockers: string[];
+}, {}>;
+export type ApiV1PackageReadinessResponse = (typeof ApiV1PackageReadinessResponseSchema)[inferred];
+export declare const PackageTransferRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    toOwner: string;
+    reason?: string | undefined;
+}, {}>;
+export type PackageTransferRequest = (typeof PackageTransferRequestSchema)[inferred];
+export declare const ApiV1PackageTransferResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    packageId: string;
+    name: string;
+    ownerUserId: string;
+    ownerPublisherId?: string | undefined;
+    channel: "community" | "official" | "private";
+    isOfficial: boolean;
+}, {}>;
+export type ApiV1PackageTransferResponse = (typeof ApiV1PackageTransferResponseSchema)[inferred];
+export declare const PackageHardDeleteRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ownerHandle: string;
+    reason: string;
+    dryRun?: boolean | undefined;
+    confirmationToken?: string | undefined;
+}, {}>;
+export type PackageHardDeleteRequest = (typeof PackageHardDeleteRequestSchema)[inferred];
+export declare const ApiV1PackageHardDeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    packageId: string;
+    name: string;
+    ownerHandle: string;
+    displayName: string;
+    runtimeId?: string | null | undefined;
+    dryRun: boolean;
+    deleted: boolean;
+    confirmationToken: string;
+}, {}>;
+export type ApiV1PackageHardDeleteResponse = (typeof ApiV1PackageHardDeleteResponseSchema)[inferred];
+export declare const PackageRepairNameRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    nextName: string;
+    retireTarget?: boolean | undefined;
+    owner?: string | undefined;
+    reason: string;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type PackageRepairNameRequest = (typeof PackageRepairNameRequestSchema)[inferred];
+export declare const PackageRepairNamePackageSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    packageId: string;
+    name: string;
+    runtimeId?: string | null | undefined;
+    ownerUserId: string;
+    ownerPublisherId?: string | null | undefined;
+    channel: "community" | "official" | "private";
+    softDeletedAt?: number | null | undefined;
+}, {}>;
+export type PackageRepairNamePackage = (typeof PackageRepairNamePackageSchema)[inferred];
+export declare const PackageRepairNameOperationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    action: "rename-source" | "retire-target" | "transfer-owner";
+    packageId?: string | undefined;
+    from?: string | undefined;
+    to?: string | undefined;
+    owner?: string | undefined;
+}, {}>;
+export type PackageRepairNameOperation = (typeof PackageRepairNameOperationSchema)[inferred];
+export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    source: {
+        packageId: string;
+        name: string;
+        runtimeId?: string | null | undefined;
+        ownerUserId: string;
+        ownerPublisherId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        softDeletedAt?: number | null | undefined;
+    };
+    target: {
+        packageId: string;
+        name: string;
+        runtimeId?: string | null | undefined;
+        ownerUserId: string;
+        ownerPublisherId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        softDeletedAt?: number | null | undefined;
+    } | null;
+    retiredName?: string | null | undefined;
+    operations: {
+        action: "rename-source" | "retire-target" | "transfer-owner";
+        packageId?: string | undefined;
+        from?: string | undefined;
+        to?: string | undefined;
+        owner?: string | undefined;
+    }[];
+}, {}>;
+export type ApiV1PackageRepairNameResponse = (typeof ApiV1PackageRepairNameResponseSchema)[inferred];
+export declare const PackageRepairRuntimeIdRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    nextRuntimeId: string;
+    reason: string;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdRequest = (typeof PackageRepairRuntimeIdRequestSchema)[inferred];
+export declare const PackageRepairRuntimeIdOperationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    action: "repair-runtime-id";
+    packageId?: string | undefined;
+    from?: string | null | undefined;
+    to?: string | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdOperation = (typeof PackageRepairRuntimeIdOperationSchema)[inferred];
+export declare const ApiV1PackageRepairRuntimeIdResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    source: {
+        packageId: string;
+        name: string;
+        runtimeId?: string | null | undefined;
+        ownerUserId: string;
+        ownerPublisherId?: string | null | undefined;
+        channel: "community" | "official" | "private";
+        softDeletedAt?: number | null | undefined;
+    };
+    operations: {
+        action: "repair-runtime-id";
+        packageId?: string | undefined;
+        from?: string | null | undefined;
+        to?: string | undefined;
+    }[];
+}, {}>;
+export type ApiV1PackageRepairRuntimeIdResponse = (typeof ApiV1PackageRepairRuntimeIdResponseSchema)[inferred];
+export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    bundledPluginId: string;
+    packageName: string;
+    owner?: string | undefined;
+    sourceRepo?: string | undefined;
+    sourcePath?: string | undefined;
+    sourceCommit?: string | undefined;
+    phase?: "blocked" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "planned" | "published" | "ready-for-openclaw" | undefined;
+    blockers?: string[] | undefined;
+    hostTargetsComplete?: boolean | undefined;
+    scanClean?: boolean | undefined;
+    moderationApproved?: boolean | undefined;
+    runtimeBundlesReady?: boolean | undefined;
+    notes?: string | undefined;
+}, {}>;
+export type PackageOfficialMigrationUpsertRequest = (typeof PackageOfficialMigrationUpsertRequestSchema)[inferred];
+export declare const PackageOfficialMigrationItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    migrationId: string;
+    bundledPluginId: string;
+    packageName: string;
+    packageId?: string | null | undefined;
+    owner?: string | null | undefined;
+    sourceRepo?: string | null | undefined;
+    sourcePath?: string | null | undefined;
+    sourceCommit?: string | null | undefined;
+    phase: "blocked" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "planned" | "published" | "ready-for-openclaw";
+    blockers: string[];
+    hostTargetsComplete: boolean;
+    scanClean: boolean;
+    moderationApproved: boolean;
+    runtimeBundlesReady: boolean;
+    notes?: string | null | undefined;
+    createdAt: number;
+    updatedAt: number;
+}, {}>;
+export type PackageOfficialMigrationItem = (typeof PackageOfficialMigrationItemSchema)[inferred];
+export declare const ApiV1PackageOfficialMigrationListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        migrationId: string;
+        bundledPluginId: string;
+        packageName: string;
+        packageId?: string | null | undefined;
+        owner?: string | null | undefined;
+        sourceRepo?: string | null | undefined;
+        sourcePath?: string | null | undefined;
+        sourceCommit?: string | null | undefined;
+        phase: "blocked" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "planned" | "published" | "ready-for-openclaw";
+        blockers: string[];
+        hostTargetsComplete: boolean;
+        scanClean: boolean;
+        moderationApproved: boolean;
+        runtimeBundlesReady: boolean;
+        notes?: string | null | undefined;
+        createdAt: number;
+        updatedAt: number;
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageOfficialMigrationListResponse = (typeof ApiV1PackageOfficialMigrationListResponseSchema)[inferred];
+export declare const ApiV1PackageOfficialMigrationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    migration: {
+        migrationId: string;
+        bundledPluginId: string;
+        packageName: string;
+        packageId?: string | null | undefined;
+        owner?: string | null | undefined;
+        sourceRepo?: string | null | undefined;
+        sourcePath?: string | null | undefined;
+        sourceCommit?: string | null | undefined;
+        phase: "blocked" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "planned" | "published" | "ready-for-openclaw";
+        blockers: string[];
+        hostTargetsComplete: boolean;
+        scanClean: boolean;
+        moderationApproved: boolean;
+        runtimeBundlesReady: boolean;
+        notes?: string | null | undefined;
+        createdAt: number;
+        updatedAt: number;
+    };
+}, {}>;
+export type ApiV1PackageOfficialMigrationResponse = (typeof ApiV1PackageOfficialMigrationResponseSchema)[inferred];
+export declare const PackageModerationQueueStatusSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "blocked" | "manual" | "open", {}>;
+export type PackageModerationQueueStatus = (typeof PackageModerationQueueStatusSchema)[inferred];
+export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        packageId: string;
+        releaseId: string;
+        name: string;
+        displayName: string;
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
+        channel: "community" | "official" | "private";
+        isOfficial: boolean;
+        version: string;
+        createdAt: number;
+        artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
+        scanStatus: "clean" | "malicious" | "not-run" | "pending" | "suspicious";
+        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        moderationReason?: string | null | undefined;
+        sourceRepo?: string | null | undefined;
+        sourceCommit?: string | null | undefined;
+        reportCount: number;
+        lastReportedAt?: number | null | undefined;
+        reasons: string[];
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageModerationQueueResponse = (typeof ApiV1PackageModerationQueueResponseSchema)[inferred];
+export declare const ApiV1PackageReleaseModerationResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    packageId: string;
+    releaseId: string;
+    state: "approved" | "quarantined" | "revoked";
+    scanStatus: "clean" | "malicious";
+}, {}>;
+export type ApiV1PackageReleaseModerationResponse = (typeof ApiV1PackageReleaseModerationResponseSchema)[inferred];
 export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     packageId: string;
     releaseId: string;
+    artifactSha256?: string | undefined;
+    publicationStatus?: "pending" | "published" | undefined;
+    attemptId?: string | undefined;
+    inspectorFindings?: {
+        findingKind: "error" | "warning";
+        code: string;
+        severity?: string | undefined;
+        level?: string | undefined;
+        issueClass?: string | undefined;
+        message: string;
+        authorRemediation?: {
+            summary: string;
+            docsUrl?: string | undefined;
+        } | undefined;
+        inspectorVersion?: string | undefined;
+        targetOpenClawVersion?: string | undefined;
+    }[] | undefined;
 }, {}>;
 export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
+export declare const PackagePublishAttemptStatusSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize", {}>;
+export type PackagePublishAttemptStatus = (typeof PackagePublishAttemptStatusSchema)[inferred];
+export declare const PackagePublicationStatusSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "expired" | "failed" | "pending" | "published", {}>;
+export type PackagePublicationStatus = (typeof PackagePublicationStatusSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    manualOverrideReason: string;
+}, {}>;
+export type ApiV1PackagePublishRecoveryRequest = (typeof ApiV1PackagePublishRecoveryRequestSchema)[inferred];
+export declare const ApiV1PackagePublishRecoveryResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    attemptId: string;
+    recoveredFromAttemptId: string;
+    packageId: string;
+    releaseId: string;
+    name: string;
+    version: string;
+    status: "blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize";
+    publicationStatus: "blocked" | "expired" | "failed" | "pending" | "published";
+    reused: boolean;
+}, {}>;
+export type ApiV1PackagePublishRecoveryResponse = (typeof ApiV1PackagePublishRecoveryResponseSchema)[inferred];
+export declare const PackagePublishAttemptCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    status: "blocked" | "clean" | "failed" | "pending";
+    summary?: string | undefined;
+}, {}>;
+export type PackagePublishAttemptCheck = (typeof PackagePublishAttemptCheckSchema)[inferred];
+export declare const ApiV1PackagePublishAttemptResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    attemptId: string;
+    packageId: string;
+    releaseId: string;
+    artifactSha256?: string | undefined;
+    name: string;
+    version: string;
+    status: "blocked" | "expired" | "failed" | "finalized" | "finalizing" | "pending_checks" | "ready_to_finalize";
+    publicationStatus: "blocked" | "expired" | "failed" | "pending" | "published";
+    terminal: boolean;
+    checks: {
+        trufflehog: {
+            status: "blocked" | "clean" | "failed" | "pending";
+            summary?: string | undefined;
+        };
+        clawscan: {
+            status: "blocked" | "clean" | "failed" | "pending";
+            summary?: string | undefined;
+        };
+    };
+    error?: string | undefined;
+}, {}>;
+export type ApiV1PackagePublishAttemptResponse = (typeof ApiV1PackagePublishAttemptResponseSchema)[inferred];
 export declare const PackageTrustedPublisherUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     repository: string;
     workflowFilename: string;
@@ -410,6 +1856,9 @@ export declare const PublishTokenMintRequestSchema: import("arktype/internal/var
     packageName: string;
     version: string;
     githubOidcToken: string;
+    scope?: "publish" | "upload" | undefined;
+    inventoryDigest?: string | undefined;
+    trustedToolingIdentityJson?: string | undefined;
 }, {}>;
 export type PublishTokenMintRequest = (typeof PublishTokenMintRequestSchema)[inferred];
 export declare const ApiV1PublishTokenMintResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

@@ -5,8 +5,8 @@ import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
   [
-    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-200 ease-out",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]",
+    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-[var(--oc-duration-ui)] ease-[var(--oc-ease-out)]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oc-focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--oc-bg-page)]",
     "cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-60",
     "!no-underline hover:!no-underline",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0",
@@ -46,7 +46,7 @@ const buttonVariants = cva(
   },
 );
 
-export interface ButtonProps
+interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   /** Render as the child element (e.g. a Link) instead of a <button>. */
   asChild?: boolean;
@@ -88,4 +88,4 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 );
 Button.displayName = "Button";
 
-export { Button, buttonVariants };
+export { Button };

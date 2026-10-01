@@ -27,6 +27,11 @@ const explicitIntentRules = [
       /\b(?:re[-\s]?classif(?:y|ication)|remove\s+(?:the\s+)?suspicious\s+flag|clear\s+(?:the\s+)?suspicious\s+flag|mark\s+(?:it\s+)?(?:as\s+)?(?:clean|benign))\b/i,
   },
   {
+    id: "false-positive-flag",
+    pattern:
+      /\b(?:false\s+positive|(?:incorrectly|wrongly|mistakenly)\s+(?:flagged|marked|classified)|(?:skill|plugin|package)\s+(?:flagged|marked)|(?:flagged|marked|classified)\s+(?:as\s+)?(?:sus?picious|malicious)|sus?picious\s+flag)\b/i,
+  },
+  {
     id: "review-after-fix",
     pattern:
       /\b(?:security\s+flag\s+review|scan\s+flag\s+review|(?:request(?:ing)?|please)\s+(?:a\s+)?(?:manual\s+)?(?:review|security\s+review)\b[\s\S]{0,120}\b(?:after|fix(?:ed|es|ing)?|updated?|metadata|current\s+version|latest\s+version|new\s+version)|review\s+request\b[\s\S]{0,120}\b(?:after|fix(?:ed|es|ing)?|updated?|metadata|current\s+version|latest\s+version|new\s+version))\b/i,
@@ -46,7 +51,7 @@ const moderationContextRules = [
   {
     id: "moderation-signal",
     pattern:
-      /\b(?:suspicious|flagged\s+(?:as\s+)?suspicious|security\s+scan|scanner|virustotal|vt\b|openclaw\s+verdict|moderation|malicious|benign|clean)\b/i,
+      /\b(?:sus?picious|flagged\s+(?:as\s+)?sus?picious|security\s+scan|scanner|virustotal|vt\b|openclaw\s+verdict|moderation|malicious|benign|clean)\b/i,
   },
 ];
 
@@ -67,13 +72,9 @@ const negativeContextRules = [
 
 export const rescanGuidanceComment = [
   RESCAN_GUIDANCE_COMMENT_MARKER,
-  'Thanks for the report. Please use the "Rescan" button on the skill/plugin page while signed in as the owner.',
+  "Thanks for the report. The dedicated owner-requested rescan flow has been removed.",
   "",
-  "You can also request a fresh scan from the CLI:",
-  "- Skill: `clawhub skill rescan <slug>`",
-  "- Plugin/package: `clawhub package rescan <name>`",
-  "",
-  "If the content or metadata changed, publish the fixed version first, then request the rescan for the latest release. I'm closing this issue after posting this guidance. If you're still having trouble after rescanning, please reopen this issue with the ClawHub URL, version, and latest scan result.",
+  "If the content or metadata changed, publish a fixed version or release first. This issue is staying open so you can reply with the ClawHub URL, version, and latest scan result if the flag remains.",
 ].join("\n");
 
 function normalizeLabel(label) {
@@ -177,7 +178,7 @@ export function classifyRescanRequest(issue) {
 
   const negativeMatches = matchingRuleIds(negativeContextRules, text);
   const hasStrongModerationLanguage =
-    /\b(?:suspicious|flagged|virustotal|vt\b|malicious|benign|clean|security\s+scan|scanner|moderation)\b/i.test(
+    /\b(?:sus?picious|flagged|virustotal|vt\b|malicious|benign|clean|security\s+scan|scanner|moderation)\b/i.test(
       text,
     );
   if (negativeMatches.length > 0 && !hasStrongModerationLanguage) {
@@ -247,10 +248,6 @@ export function planCommentForLabeledIssue(issue) {
         type: "comment",
         body: rescanGuidanceComment,
         bodySha256: commentHash(rescanGuidanceComment),
-      },
-      {
-        type: "close",
-        stateReason: "not_planned",
       },
     ],
   };

@@ -22,14 +22,32 @@ export function createHttpModuleMocks() {
   const apiRequest = vi.fn();
   const apiRequestForm = vi.fn();
   const downloadZip = vi.fn();
+  const fetchBinary = vi.fn();
   const fetchText = vi.fn();
+  const uploadBinary = vi.fn();
   const registryUrl = vi.fn(buildRegistryUrl);
+  const getHttpErrorStatus = (error: unknown) => {
+    if (!error || typeof error !== "object" || !("status" in error)) return undefined;
+    const status = error.status;
+    return typeof status === "number" ? status : undefined;
+  };
+  const isRetryableHttpError = (error: unknown) => {
+    const status = getHttpErrorStatus(error);
+    return (
+      status === 408 ||
+      status === 429 ||
+      (typeof status === "number" && status >= 500) ||
+      error instanceof TypeError
+    );
+  };
 
   return {
     apiRequest,
     apiRequestForm,
     downloadZip,
+    fetchBinary,
     fetchText,
+    uploadBinary,
     registryUrl,
     moduleFactory: () => ({
       apiRequest: (registry: unknown, args: unknown, schema?: unknown) =>
@@ -37,8 +55,12 @@ export function createHttpModuleMocks() {
       apiRequestForm: (registry: unknown, args: unknown, schema?: unknown) =>
         apiRequestForm(registry, args, schema),
       downloadZip: (registry: unknown, args: unknown) => downloadZip(registry, args),
+      fetchBinary: (registry: unknown, args: unknown) => fetchBinary(registry, args),
       fetchText: (registry: unknown, args: unknown) => fetchText(registry, args),
+      uploadBinary: (args: unknown, schema?: unknown) => uploadBinary(args, schema),
       registryUrl: (...args: [string, string]) => registryUrl(...args),
+      getHttpErrorStatus,
+      isRetryableHttpError,
     }),
   };
 }
@@ -88,11 +110,12 @@ export function createUiModuleMocks(options?: { interactive?: boolean }) {
     fail,
     promptConfirm,
     moduleFactory: () => ({
-      createSpinner: vi.fn(() => spinner),
+      createCrabLoader: vi.fn(() => spinner),
       fail: (message: string) => fail(message),
       formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
       isInteractive: () => interactive,
       promptConfirm,
+      styleText: (value: string) => value,
     }),
   };
 }

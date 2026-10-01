@@ -1,0 +1,581 @@
+{
+  "charts": [
+    {
+      "filters": [
+        {
+          "active": true,
+          "apl": {
+            "apl": "['axiom-audit'] | where action == 'usageCalculated' | distinct ['resource.id'] | project key=['resource.id'], value=['resource.id'] | sort by key asc",
+            "queryOptions": {
+              "quickRange": "24h"
+            }
+          },
+          "id": "org_filter",
+          "name": "Organization",
+          "options": [
+            {
+              "default": true,
+              "key": "All Orgs",
+              "value": ""
+            }
+          ],
+          "selectType": "apl",
+          "type": "select"
+        },
+        {
+          "active": true,
+          "apl": {
+            "apl": "['axiom-audit'] | where action == 'usageCalculated' | distinct tostring(['properties.dataset']) | project key=tostring(['properties.dataset']), value=tostring(['properties.dataset']) | sort by key asc",
+            "queryOptions": {
+              "quickRange": "24h"
+            }
+          },
+          "id": "dataset_filter",
+          "name": "Dataset",
+          "options": [
+            {
+              "default": true,
+              "key": "All Datasets",
+              "value": ""
+            }
+          ],
+          "selectType": "apl",
+          "type": "select"
+        },
+        {
+          "active": true,
+          "apl": {
+            "apl": "[\"axiom-audit\"] | where action == \"runAPLQueryCost\" | extend User = case(isnotempty([\"actor.email\"]), [\"actor.email\"], isnotempty([\"actor.name\"]), strcat(\"[\", [\"actor.name\"], \"]\"), \"[unknown]\") | distinct User | project key=User, value=User | sort by key asc",
+            "queryOptions": {
+              "quickRange": "24h"
+            }
+          },
+          "id": "user_filter",
+          "name": "User",
+          "options": [
+            {
+              "default": true,
+              "key": "All Users",
+              "value": ""
+            }
+          ],
+          "selectType": "apl",
+          "type": "select"
+        },
+        {
+          "active": true,
+          "id": "contract_gb",
+          "name": "Contract (GB/mo)",
+          "type": "search",
+          "options": [
+            {
+              "default": true,
+              "key": "",
+              "value": ""
+            }
+          ]
+        }
+      ],
+      "id": "filters",
+      "name": "Filters",
+      "query": {
+        "apl": ""
+      },
+      "type": "SmartFilter"
+    },
+    {
+      "colorScheme": "Blue",
+      "customUnits": "GB",
+      "id": "total-ingest-gb",
+      "name": "Total Ingest",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n['axiom-audit']\n| where action == 'usageCalculated'\n| where isempty(org_filter) or ['resource.id'] == org_filter\n| where isempty(dataset_filter) or tostring(['properties.dataset']) == dataset_filter\n| summarize total_bytes = sum(['properties.hourly_ingest_bytes'])\n| extend ['Total'] = total_bytes / 1000000000\n| project ['Total']"
+      },
+      "type": "Statistic"
+    },
+    {
+      "colorScheme": "Orange",
+      "customUnits": "GB/day",
+      "id": "daily-burn-rate",
+      "name": "Daily Burn Rate",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n['axiom-audit']\n| where action == 'usageCalculated'\n| where isempty(org_filter) or ['resource.id'] == org_filter\n| where isempty(dataset_filter) or tostring(['properties.dataset']) == dataset_filter\n| summarize total_bytes = sum(['properties.hourly_ingest_bytes']), day_count = dcount(bin(_time, 1d))\n| extend days = iff(day_count == 0, 1.0, todouble(day_count))\n| extend ['GB/day'] = round(total_bytes / days / 1000000000, 0)\n| project ['GB/day']"
+      },
+      "showChart": true,
+      "type": "Statistic",
+      "unit": "Gigabyte"
+    },
+    {
+      "colorScheme": "Purple",
+      "customUnits": "GB",
+      "errorThreshold": "Above",
+      "errorThresholdValue": "15000000",
+      "id": "monthly-projection",
+      "name": "30-Day Projection",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n['axiom-audit']\n| where action == 'usageCalculated'\n| where isempty(org_filter) or ['resource.id'] == org_filter\n| where isempty(dataset_filter) or tostring(['properties.dataset']) == dataset_filter\n| summarize total_bytes = sum(['properties.hourly_ingest_bytes']), day_count = dcount(bin(_time, 1d))\n| extend days = iff(day_count == 0, 1.0, todouble(day_count))\n| extend daily_rate = total_bytes / days\n| extend ['30d GB'] = round(daily_rate * 30 / 1000000000, 0)\n| project ['30d GB']"
+      },
+      "type": "Statistic",
+      "warningThreshold": "Above",
+      "warningThresholdValue": "5000000"
+    },
+    {
+      "colorScheme": "Teal",
+      "customUnits": "GB·ms",
+      "id": "total-query-cost",
+      "name": "Query Cost",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize [\"GB·ms\"] = round(sum([\"properties.hourly_billable_query_gbms\"]), 0)\n| project [\"GB·ms\"]"
+      },
+      "type": "Statistic"
+    },
+    {
+      "colorScheme": "Yellow",
+      "customUnits": "%",
+      "errorThreshold": "Above",
+      "errorThresholdValue": "25",
+      "id": "wow-change",
+      "name": "Week-over-Week",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n['axiom-audit']\n| where _time between (ago(14d) .. now())\n| where action == 'usageCalculated'\n| where isempty(org_filter) or ['resource.id'] == org_filter\n| where isempty(dataset_filter) or tostring(['properties.dataset']) == dataset_filter\n| summarize this_week = sumif(['properties.hourly_ingest_bytes'], _time >= ago(7d)), last_week = sumif(['properties.hourly_ingest_bytes'], _time < ago(7d) and _time >= ago(14d))\n| extend ['WoW %'] = iff(last_week == 0, real(null), round(100.0 * (this_week - last_week) / last_week, 1))\n| project ['WoW %']"
+      },
+      "type": "Statistic",
+      "warningThreshold": "Above",
+      "warningThresholdValue": "10"
+    },
+    {
+      "colorScheme": "Green",
+      "id": "active-datasets",
+      "name": "Active Datasets",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n['axiom-audit']\n| where action == 'usageCalculated'\n| where isempty(org_filter) or ['resource.id'] == org_filter\n| where isempty(dataset_filter) or tostring(['properties.dataset']) == dataset_filter\n| summarize ['Datasets'] = dcount(['properties.dataset'])"
+      },
+      "type": "Statistic"
+    },
+    {
+      "datasetId": "axiom-audit",
+      "id": "ingest-by-dataset-ts",
+      "modified": 1769193868070,
+      "name": "Daily Ingest by Dataset (GB)",
+      "numSeries": 1,
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize [\"GB\"] = round(sum([\"properties.hourly_ingest_bytes\"]) / 1000000000, 1) by bin(_time, 1d), Dataset = tostring([\"properties.dataset\"])",
+        "endTime": "",
+        "libraries": [],
+        "queryOptions": {
+          "additionalQueryOptions": {
+            "aggChartOpts": "{\"*\":{\"variant\":\"bars\"},\"{\\\"alias\\\":\\\"GB\\\",\\\"field\\\":\\\"properties.hourly_ingest_bytes\\\",\\\"op\\\":\\\"computed\\\"}\":{\"displayNull\":\"auto\",\"variant\":\"bars\"}}"
+          },
+          "aggChartOpts": "{\"*\":{\"variant\":\"bars\"},\"{\\\"alias\\\":\\\"GB\\\",\\\"field\\\":\\\"properties.hourly_ingest_bytes\\\",\\\"op\\\":\\\"computed\\\"}\":{\"displayNull\":\"auto\",\"variant\":\"bars\"}}",
+          "containsTimeFilter": "false",
+          "endTime": "2026-01-23T18:44:21.579Z",
+          "quickRange": "7d",
+          "startTime": "2026-01-16T18:44:21.579Z",
+          "timeSeriesView": "charts"
+        },
+        "resolution": "auto",
+        "startTime": ""
+      },
+      "type": "TimeSeries"
+    },
+    {
+      "id": "top-datasets-ingest",
+      "name": "Top Datasets by Ingest",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize ingest_gb = round(sum([\"properties.hourly_ingest_bytes\"]) / 1000000000, 1), query_gbms = round(sum([\"properties.hourly_billable_query_gbms\"]), 0) by Dataset = tostring([\"properties.dataset\"])\n| sort by ingest_gb desc\n| limit 15\n| project Dataset, [\"Ingest GB\"] = ingest_gb, [\"Query GB·ms\"] = query_gbms"
+      },
+      "tableSettings": {
+        "columns": [
+          {
+            "name": "Dataset",
+            "width": 200
+          },
+          {
+            "name": "Ingest GB",
+            "width": 100
+          },
+          {
+            "name": "Query GB·ms",
+            "width": 120
+          }
+        ]
+      },
+      "type": "Table"
+    },
+    {
+      "id": "waste-candidates",
+      "name": "Lowest Query Activity",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize ingest_bytes = sum([\"properties.hourly_ingest_bytes\"]), query_gbms = sum([\"properties.hourly_billable_query_gbms\"]) by Dataset = tostring([\"properties.dataset\"])\n| extend ingest_gb = round(ingest_bytes / 1000000000, 1)\n| extend work_per_gb = round(query_gbms / (ingest_gb + 0.001), 0)\n| where ingest_gb > 1\n| order by work_per_gb asc\n| project Dataset, [\"Ingest GB\"] = ingest_gb, [\"Query GB·ms\"] = round(query_gbms, 0), [\"Work/GB\"] = work_per_gb\n| take 10"
+      },
+      "tableSettings": {
+        "columns": [
+          {
+            "name": "Dataset",
+            "width": 200
+          },
+          {
+            "name": "Ingest GB",
+            "width": 100
+          },
+          {
+            "name": "Query GB·ms",
+            "width": 120
+          },
+          {
+            "name": "Work/GB",
+            "width": 90
+          }
+        ]
+      },
+      "type": "Table"
+    },
+    {
+      "id": "top-orgs",
+      "name": "Top Orgs by Usage",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize ingest_gb = round(sum([\"properties.hourly_ingest_bytes\"]) / 1000000000, 1), query_gbms = round(sum([\"properties.hourly_billable_query_gbms\"]), 0), datasets = dcount([\"properties.dataset\"]) by Org = [\"resource.id\"]\n| sort by ingest_gb desc\n| limit 10\n| project Org, [\"Ingest GB\"] = ingest_gb, [\"Query GB·ms\"] = query_gbms, Datasets = datasets"
+      },
+      "tableSettings": {
+        "columns": [
+          {
+            "name": "Org",
+            "width": 180
+          },
+          {
+            "name": "Ingest GB",
+            "width": 100
+          },
+          {
+            "name": "Query GB·ms",
+            "width": 120
+          },
+          {
+            "name": "Datasets",
+            "width": 80
+          }
+        ]
+      },
+      "type": "Table"
+    },
+    {
+      "id": "note-actions",
+      "name": "Cost Optimization Actions",
+      "query": {},
+      "text": "## Cost Control Playbook\n\n### Understanding Work/GB\n\n**Work/GB** = Query Cost (GB·ms) ÷ Ingest GB\n\nThis ratio measures how much query activity occurs relative to the amount of data ingested. Lower values indicate data that is stored but rarely queried.\n\n- **0** = Data ingested but never queried\n- **Low values** = Candidates for optimization\n- **Higher values** = Actively used data\n\nThe **Lowest Query Activity** panel ranks datasets by this ratio, with the least-queried at the top.\n\n### Optimization Actions\n\n| Signal | Action |\n|--------|--------|\n| **Work/GB = 0** | Consider dropping or stop ingesting |\n| **Low Work/GB + High Ingest** | Partition, sample, or filter at source |\n| **WoW spike** | Investigate recent deploys or new services |\n\n### Investigate Further\n\nUse **[axiom-sre](https://github.com/axiomhq/skills)** to investigate which logs are ingested but never queried, or which applications contribute the most events.\n\n```\nnpx skills add axiomhq/skills -s axiom-sre\n```",
+      "type": "Note"
+    },
+    {
+      "id": "query-cost-by-dataset-ts",
+      "name": "Daily Query Cost by Dataset (GB·ms)",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize [\"GB·ms\"] = round(sum([\"properties.hourly_billable_query_gbms\"]), 0) by bin(_time, 1d), Dataset = tostring([\"properties.dataset\"])",
+        "queryOptions": {
+          "aggChartOpts": "{\"{\\\"alias\\\":\\\"GB·ms\\\",\\\"field\\\":\\\"properties.hourly_billable_query_gbms\\\",\\\"op\\\":\\\"computed\\\"}\":{\"variant\":\"bars\",\"displayNull\":\"auto\"}}"
+        }
+      },
+      "type": "TimeSeries"
+    },
+    {
+      "id": "wow-ingest-delta",
+      "name": "Top Ingest Movers (WoW)",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-audit\"]\n| where _time between (ago(14d) .. now())\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize this_week = sumif([\"properties.hourly_ingest_bytes\"], _time >= ago(7d)), last_week = sumif([\"properties.hourly_ingest_bytes\"], _time < ago(7d) and _time >= ago(14d)) by Dataset = tostring([\"properties.dataset\"])\n| extend delta_gb = (this_week - last_week) / 1000000000\n| extend [\"This Week GB\"] = round(this_week / 1000000000, 1), [\"Last Week GB\"] = round(last_week / 1000000000, 1)\n| extend [\"Delta GB\"] = round(delta_gb, 1)\n| extend [\"Delta %\"] = iff(last_week == 0, 100.0, round(100.0 * (this_week - last_week) / last_week, 1))\n| where delta_gb > 10\n| sort by delta_gb desc\n| limit 10\n| project Dataset, [\"This Week GB\"], [\"Last Week GB\"], [\"Delta GB\"], [\"Delta %\"]"
+      },
+      "tableSettings": {
+        "columns": [
+          {
+            "name": "Dataset",
+            "width": 180
+          },
+          {
+            "name": "This Week GB",
+            "width": 110
+          },
+          {
+            "name": "Last Week GB",
+            "width": 110
+          },
+          {
+            "name": "Delta GB",
+            "width": 90
+          },
+          {
+            "name": "Delta %",
+            "width": 80
+          }
+        ]
+      },
+      "type": "Table"
+    },
+    {
+      "id": "top-users-query-cost",
+      "name": "Top 10 Users by Query Cost",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\", user_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"runAPLQueryCost\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| extend User = case(isnotempty([\"actor.email\"]), [\"actor.email\"], isnotempty([\"actor.name\"]), strcat(\"[\", [\"actor.name\"], \"]\"), isnotempty([\"actor.userAgent\"]), strcat(\"[\", [\"actor.userAgent\"], \"]\"), isnotempty([\"actor.id\"]), strcat(\"[id:\", substring([\"actor.id\"], 0, 8), \"]\"), isnotempty(source), strcat(\"[source:\", source, \"]\"), \"[unknown]\")\n| where isempty(user_filter) or User == user_filter\n| summarize query_cost = sum([\"properties.query_cost_gbms\"]), queries = count() by User\n| sort by query_cost desc\n| limit 10\n| project User, [\"Cost GB·ms\"] = round(query_cost, 0), Queries = queries"
+      },
+      "tableSettings": {
+        "columns": [
+          {
+            "name": "User",
+            "width": 250
+          },
+          {
+            "name": "Cost GB·ms",
+            "width": 120
+          },
+          {
+            "name": "Queries",
+            "width": 80
+          }
+        ]
+      },
+      "type": "Table"
+    },
+    {
+      "id": "top-expensive-queries",
+      "name": "Top 10 Expensive Queries",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\", user_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"runAPLQueryCost\"\n| where [\"properties.query_cost_gbms\"] > 0\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| extend User = case(isnotempty([\"actor.email\"]), [\"actor.email\"], isnotempty([\"actor.name\"]), strcat(\"[\", [\"actor.name\"], \"]\"), isnotempty([\"actor.userAgent\"]), strcat(\"[\", [\"actor.userAgent\"], \"]\"), isnotempty([\"actor.id\"]), strcat(\"[id:\", substring([\"actor.id\"], 0, 8), \"]\"), isnotempty(source), strcat(\"[source:\", source, \"]\"), \"[unknown]\")\n| where isempty(user_filter) or User == user_filter\n| sort by [\"properties.query_cost_gbms\"] desc\n| limit 10\n| project User, [\"Cost GB·ms\"] = round([\"properties.query_cost_gbms\"], 0), Query = substring([\"properties.query_string\"], 0, 100)"
+      },
+      "tableSettings": {
+        "columns": [
+          {
+            "name": "User",
+            "width": 180
+          },
+          {
+            "name": "Cost GB·ms",
+            "width": 100
+          },
+          {
+            "name": "Query",
+            "width": 300
+          }
+        ]
+      },
+      "type": "Table"
+    },
+    {
+      "id": "queries-per-user-ts",
+      "name": "Queries per User",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\", user_filter:string = \"\");\n[\"axiom-audit\"]\n| where action == \"runAPLQueryCost\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| extend User = case(isnotempty([\"actor.email\"]), [\"actor.email\"], isnotempty([\"actor.name\"]), strcat(\"[\", [\"actor.name\"], \"]\"), isnotempty([\"actor.userAgent\"]), strcat(\"[\", [\"actor.userAgent\"], \"]\"), isnotempty([\"actor.id\"]), strcat(\"[id:\", substring([\"actor.id\"], 0, 8), \"]\"), isnotempty(source), strcat(\"[source:\", source, \"]\"), \"[unknown]\")\n| where isempty(user_filter) or User == user_filter\n| summarize Queries = count() by bin(_time, 1d), User",
+        "queryOptions": {
+          "aggChartOpts": "{\"{\\\"alias\\\":\\\"Queries\\\",\\\"op\\\":\\\"count\\\"}\":{\"variant\":\"line\",\"scaleDistr\":\"log\"}}"
+        }
+      },
+      "type": "TimeSeries"
+    },
+    {
+      "id": "over-contract-pct",
+      "name": "% Over Contract",
+      "type": "Statistic",
+      "colorScheme": "Red",
+      "customUnits": "%",
+      "errorThreshold": "Above",
+      "errorThresholdValue": "50",
+      "warningThreshold": "Above",
+      "warningThresholdValue": "20",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\", contract_gb:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize total_bytes = sum([\"properties.hourly_ingest_bytes\"]), day_count = dcount(bin(_time, 1d))\n| extend days = iff(day_count == 0, 1.0, todouble(day_count))\n| extend daily_gb = total_bytes / days / 1000000000\n| extend monthly_gb = daily_gb * 30\n| extend contract = todouble(contract_gb)\n| extend [\"%\"] = iff(isempty(contract_gb) or contract <= 0, real(null), round(100.0 * (monthly_gb - contract) / contract, 0))\n| project [\"%\"]"
+      }
+    },
+    {
+      "id": "required-cut-pct",
+      "name": "Required Cut",
+      "type": "Statistic",
+      "colorScheme": "Orange",
+      "customUnits": "%",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\", contract_gb:string = \"\");\n[\"axiom-audit\"]\n| where action == \"usageCalculated\"\n| where isempty(org_filter) or [\"resource.id\"] == org_filter\n| where isempty(dataset_filter) or tostring([\"properties.dataset\"]) == dataset_filter\n| summarize total_bytes = sum([\"properties.hourly_ingest_bytes\"]), day_count = dcount(bin(_time, 1d))\n| extend days = iff(day_count == 0, 1.0, todouble(day_count))\n| extend daily_gb = total_bytes / days / 1000000000\n| extend monthly_gb = daily_gb * 30\n| extend contract = todouble(contract_gb)\n| extend [\"%\"] = iff(isempty(contract_gb) or contract <= 0 or monthly_gb <= contract, real(null), round(100.0 * (monthly_gb - contract) / monthly_gb, 0))\n| project [\"%\"]"
+      }
+    },
+    {
+      "id": "top-queried-fields",
+      "name": "Query Filter Patterns",
+      "type": "Table",
+      "query": {
+        "apl": "declare query_parameters (org_filter:string = \"\", dataset_filter:string = \"\");\n[\"axiom-history\"]\n| where isnotempty([\"query.apl\"])\n| extend parsed = parse_apl([\"query.apl\"])\n| extend dataset = tostring(parsed.body.source.name.name)\n| where isempty(dataset_filter) or dataset == dataset_filter\n| extend ops = todynamic(tostring(parsed.body.operations))\n| mv-expand ops\n| where ops.kind == \"Where\"\n| extend p = ops.predicate\n| extend is_logical = p.op in (\"and\", \"or\")\n| extend f1 = iff(not(is_logical) and p.kind == \"BinaryExpr\", tostring(p.left.name), \"\")\n| extend o1 = iff(not(is_logical) and p.kind == \"BinaryExpr\", tostring(p.op), \"\")\n| extend v1 = iff(not(is_logical) and p.kind == \"BinaryExpr\", coalesce(tostring(p.right.value), tostring(p.right.name)), \"\")\n| extend f2 = iff(tostring(p.left.op) !in (\"and\", \"or\", \"\"), tostring(p.left.left.name), \"\")\n| extend o2 = iff(tostring(p.left.op) !in (\"and\", \"or\", \"\"), tostring(p.left.op), \"\")\n| extend v2 = coalesce(tostring(p.left.right.value), tostring(p.left.right.name))\n| extend f3 = iff(tostring(p.right.op) !in (\"and\", \"or\", \"\"), tostring(p.right.left.name), \"\")\n| extend o3 = iff(tostring(p.right.op) !in (\"and\", \"or\", \"\"), tostring(p.right.op), \"\")\n| extend v3 = coalesce(tostring(p.right.right.value), tostring(p.right.right.name))\n| extend in_field = iff(p.kind == \"InExpr\", tostring(p.left.name), \"\")\n| extend in_op = iff(p.kind == \"InExpr\", tostring(p.op), \"\")\n| extend in_vals = iff(p.kind == \"InExpr\", strcat(tostring(p.right.list[0].value), \", \", tostring(p.right.list[1].value), \"...\"), \"\")\n| extend func_name = case(p.kind == \"CallExpr\", tostring(p.func.name), p.left.kind == \"CallExpr\", tostring(p.left.func.name), p.right.kind == \"CallExpr\", tostring(p.right.func.name), \"\")\n| extend func_params_arr = case(p.kind == \"CallExpr\", p.params, p.left.kind == \"CallExpr\", p.left.params, p.right.kind == \"CallExpr\", p.right.params, dynamic([]))\n| extend func_fields = strcat(tostring(func_params_arr[0].expr.name), iff(array_length(func_params_arr) > 1, strcat(\", \", tostring(func_params_arr[1].expr.name)), \"\"))\n| extend field = coalesce(iff(isnotempty(in_field), in_field, \"\"), iff(isnotempty(func_fields) and func_fields != \"_time\", func_fields, \"\"), iff(isnotempty(f1) and f1 != \"_time\", f1, \"\"), iff(isnotempty(f2) and f2 != \"_time\", f2, \"\"), iff(isnotempty(f3) and f3 != \"_time\", f3, \"\"))\n| extend op = coalesce(iff(isnotempty(in_op), in_op, \"\"), iff(isnotempty(func_name), func_name, \"\"), iff(isnotempty(o1), o1, \"\"), iff(isnotempty(o2), o2, \"\"), iff(isnotempty(o3), o3, \"\"))\n| extend val = coalesce(iff(isnotempty(in_vals), in_vals, \"\"), iff(isnotempty(v1), v1, \"\"), iff(isnotempty(v2), v2, \"\"), iff(isnotempty(v3), v3, \"\"))\n| where isnotempty(field) and isnotempty(op)\n| summarize Queries = count() by dataset, field, op, val\n| sort by Queries desc\n| limit 20\n| project Dataset=dataset, Field=field, Op=op, Value=substring(val, 0, 40), Queries"
+      },
+      "tableSettings": {
+        "columns": [
+          {
+            "name": "Dataset",
+            "width": 140
+          },
+          {
+            "name": "Field",
+            "width": 180
+          },
+          {
+            "name": "Op",
+            "width": 70
+          },
+          {
+            "name": "Value",
+            "width": 150
+          },
+          {
+            "name": "Queries",
+            "width": 80
+          }
+        ]
+      }
+    }
+  ],
+  "datasets": [
+    "axiom-audit",
+    "axiom-history"
+  ],
+  "description": "Usage monitoring dashboard for tracking ingest volume, query costs, burn rate projections, and waste identification. Filter by org to scope analysis.",
+  "layout": [
+    {
+      "i": "filters",
+      "x": 0,
+      "y": 0,
+      "w": 12,
+      "h": 1
+    },
+    {
+      "i": "total-ingest-gb",
+      "x": 0,
+      "y": 1,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "daily-burn-rate",
+      "x": 3,
+      "y": 1,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "monthly-projection",
+      "x": 6,
+      "y": 1,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "over-contract-pct",
+      "x": 9,
+      "y": 1,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "required-cut-pct",
+      "x": 0,
+      "y": 3,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "wow-change",
+      "x": 3,
+      "y": 3,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "total-query-cost",
+      "x": 6,
+      "y": 3,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "active-datasets",
+      "x": 9,
+      "y": 3,
+      "w": 3,
+      "h": 2
+    },
+    {
+      "i": "ingest-by-dataset-ts",
+      "x": 0,
+      "y": 5,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "query-cost-by-dataset-ts",
+      "x": 6,
+      "y": 5,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "wow-ingest-delta",
+      "x": 0,
+      "y": 9,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "waste-candidates",
+      "x": 6,
+      "y": 9,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "top-datasets-ingest",
+      "x": 0,
+      "y": 13,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "top-orgs",
+      "x": 6,
+      "y": 13,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "top-queried-fields",
+      "x": 0,
+      "y": 17,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "note-actions",
+      "x": 6,
+      "y": 17,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "top-users-query-cost",
+      "x": 0,
+      "y": 21,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "top-expensive-queries",
+      "x": 6,
+      "y": 21,
+      "w": 6,
+      "h": 4
+    },
+    {
+      "i": "queries-per-user-ts",
+      "x": 0,
+      "y": 25,
+      "w": 12,
+      "h": 4
+    }
+  ],
+  "name": "Org Usage & Cost Control",
+  "owner": "8bc79245-bc38-4a2b-a37e-2e5b2fd5ec70",
+  "refreshTime": 300,
+  "schemaVersion": 2,
+  "timeWindowEnd": "qr-now",
+  "timeWindowStart": "qr-now-30d",
+  "version": "1769205867543185447"
+}

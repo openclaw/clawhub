@@ -1,3 +1,5 @@
+import { buildGitHubApiHeaders, buildGitHubHeaders } from "./githubAuth";
+
 type JwtHeader = {
   alg?: unknown;
   kid?: unknown;
@@ -28,6 +30,7 @@ export type VerifiedGitHubActionsIdentity = {
   workflowName: string;
   workflowRef: string;
   jobWorkflowRef?: string;
+  jobWorkflowSha?: string;
   environment?: string;
   runnerEnvironment: string;
   eventName: string;
@@ -43,6 +46,12 @@ export type VerifiedGitHubActionsIdentity = {
 type VerifyGitHubActionsOidcOptions = {
   fetchImpl?: typeof fetch;
   now?: () => number;
+};
+
+type GitHubActionsWorkflowPolicy = {
+  allowedEvents: readonly string[];
+  expectedRef?: string;
+  reusableWorkflow: { repository: string; workflowFilename: string } | null;
 };
 
 type GitHubRepositoryIdentity = {
@@ -64,6 +73,14 @@ const CLOCK_SKEW_MS = 60_000;
 const JWKS_CACHE_TTL_MS = 5 * 60_000;
 const OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY = "openclaw/clawhub";
 const OFFICIAL_REUSABLE_WORKFLOW_FILENAME = "package-publish.yml";
+const SKILLS_SH_SYNC_WORKFLOW: TrustedGitHubActionsPublisher = {
+  repository: "openclaw/clawhub",
+  repositoryId: "1127248221",
+  repositoryOwner: "openclaw",
+  repositoryOwnerId: "252820863",
+  workflowFilename: "skills-sh-sync.yml",
+  environment: "Production",
+};
 
 let cachedJwks: { value: JwkSet; fetchedAt: number } | null = null;
 
@@ -71,6 +88,42 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   jwt: string,
   trustedPublisher: TrustedGitHubActionsPublisher,
   options: VerifyGitHubActionsOidcOptions = {},
+): Promise<VerifiedGitHubActionsIdentity> {
+  return await verifyGitHubActionsWorkflowJwt(
+    jwt,
+    trustedPublisher,
+    {
+      allowedEvents: ["workflow_dispatch"],
+      reusableWorkflow: {
+        repository: OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY,
+        workflowFilename: OFFICIAL_REUSABLE_WORKFLOW_FILENAME,
+      },
+    },
+    options,
+  );
+}
+
+export async function verifyGitHubActionsSkillsShSyncJwt(
+  jwt: string,
+  options: VerifyGitHubActionsOidcOptions = {},
+): Promise<VerifiedGitHubActionsIdentity> {
+  return await verifyGitHubActionsWorkflowJwt(
+    jwt,
+    SKILLS_SH_SYNC_WORKFLOW,
+    {
+      allowedEvents: ["schedule", "workflow_dispatch"],
+      expectedRef: "refs/heads/main",
+      reusableWorkflow: null,
+    },
+    options,
+  );
+}
+
+async function verifyGitHubActionsWorkflowJwt(
+  jwt: string,
+  trustedPublisher: TrustedGitHubActionsPublisher,
+  workflowPolicy: GitHubActionsWorkflowPolicy,
+  options: VerifyGitHubActionsOidcOptions,
 ): Promise<VerifiedGitHubActionsIdentity> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = (options.now ?? Date.now)();
@@ -122,6 +175,7 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   const workflowRef = requireString(payload.workflow_ref, "workflow_ref");
   const workflow = parseWorkflowRef(workflowRef, repository);
   const jobWorkflowRef = optionalString(payload.job_workflow_ref);
+  const jobWorkflowSha = optionalString(payload.job_workflow_sha);
   const runnerEnvironment = requireString(payload.runner_environment, "runner_environment");
   const environment = optionalString(payload.environment);
   const eventName = requireString(payload.event_name, "event_name");
@@ -159,11 +213,16 @@ export async function verifyGitHubActionsTrustedPublishJwt(
       `GitHub OIDC workflow mismatch: expected ${trustedPublisher.workflowFilename}, got ${workflow.workflowFilename}`,
     );
   }
-  if (jobWorkflowRef) {
+  // GitHub now includes job_workflow_ref for direct jobs too; only a different
+  // workflow ref represents a reusable-workflow delegation.
+  if (jobWorkflowRef && jobWorkflowRef !== workflowRef) {
     const reusableWorkflow = parseWorkflowRef(jobWorkflowRef);
+    if (!workflowPolicy.reusableWorkflow) {
+      throw new Error("Reusable workflows may not run the skills.sh production sync");
+    }
     const usesOfficialReusableWorkflow =
-      reusableWorkflow.repository === OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY &&
-      reusableWorkflow.workflowFilename === OFFICIAL_REUSABLE_WORKFLOW_FILENAME;
+      reusableWorkflow.repository === workflowPolicy.reusableWorkflow.repository &&
+      reusableWorkflow.workflowFilename === workflowPolicy.reusableWorkflow.workflowFilename;
     if (!usesOfficialReusableWorkflow) {
       throw new Error(
         "Only the official ClawHub reusable workflow is supported for trusted publishing",
@@ -175,17 +234,18 @@ export async function verifyGitHubActionsTrustedPublishJwt(
       `Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`,
     );
   }
-  // v1 keeps secretless publishing behind a manual entry point. Environment
-  // pinning is optional, but if configured it must match exactly.
-  if (eventName !== "workflow_dispatch") {
-    throw new Error(`Trusted publishing requires workflow_dispatch, got ${eventName}`);
+  if (!workflowPolicy.allowedEvents.includes(eventName)) {
+    const expected = workflowPolicy.allowedEvents.join(" or ");
+    throw new Error(`GitHub OIDC workflow requires ${expected}, got ${eventName}`);
   }
   if (trustedPublisher.environment && environment !== trustedPublisher.environment) {
     throw new Error(
       `GitHub OIDC environment mismatch: expected ${trustedPublisher.environment}, got ${formatClaimValue(environment ?? "<missing>")}`,
     );
   }
-
+  if (workflowPolicy.expectedRef && ref !== workflowPolicy.expectedRef) {
+    throw new Error(`GitHub OIDC ref mismatch: expected ${workflowPolicy.expectedRef}, got ${ref}`);
+  }
   return {
     repository,
     repositoryId,
@@ -195,6 +255,7 @@ export async function verifyGitHubActionsTrustedPublishJwt(
     workflowName,
     workflowRef,
     ...(jobWorkflowRef ? { jobWorkflowRef } : {}),
+    ...(jobWorkflowSha ? { jobWorkflowSha } : {}),
     ...(environment ? { environment } : {}),
     runnerEnvironment,
     eventName,
@@ -216,19 +277,62 @@ export async function fetchGitHubRepositoryIdentity(
   if (!normalizedRepository) {
     throw new Error(`Invalid GitHub repository: ${repository}`);
   }
-  const response = await fetchImpl(`https://api.github.com/repos/${normalizedRepository}`, {
-    headers: buildGitHubRepositoryLookupHeaders(),
+  const url = `https://api.github.com/repos/${normalizedRepository}`;
+  const headers = await buildGitHubRepositoryLookupHeaders(fetchImpl);
+  let response = await fetchImpl(url, {
+    headers,
   });
+  if (shouldRetryRepositoryLookupWithoutAppAuth(response, headers)) {
+    response = await fetchImpl(url, {
+      headers: await buildGitHubRepositoryLookupHeaders(fetchImpl, { useGitHubApp: false }),
+    });
+  }
   if (!response.ok) {
     throw new Error(
       `GitHub repository lookup failed for ${normalizedRepository}: ${response.status}`,
     );
   }
-  const body = (await response.json()) as {
-    id?: unknown;
-    full_name?: unknown;
-    owner?: { login?: unknown; id?: unknown };
-  };
+  const body = await readPublicGitHubRepositoryLookupResponse({
+    response,
+    normalizedRepository,
+    url,
+    headers,
+    fetchImpl,
+  });
+  return repositoryIdentityFromLookupResponse(body);
+}
+
+async function readPublicGitHubRepositoryLookupResponse(options: {
+  response: Response;
+  normalizedRepository: string;
+  url: string;
+  headers: Record<string, string>;
+  fetchImpl: typeof fetch;
+}) {
+  const body = (await options.response.json()) as GitHubRepositoryLookupResponse;
+  if (!isPublicGitHubRepository(body)) {
+    if (options.headers.Authorization) {
+      const publicResponse = await options.fetchImpl(options.url, {
+        headers: buildGitHubAnonymousRepositoryLookupHeaders(),
+      });
+      if (!publicResponse.ok) {
+        throw new Error(
+          `GitHub repository lookup failed for ${options.normalizedRepository}: ${publicResponse.status}`,
+        );
+      }
+      const publicBody = (await publicResponse.json()) as GitHubRepositoryLookupResponse;
+      if (isPublicGitHubRepository(publicBody)) {
+        return publicBody;
+      }
+    }
+    throw new Error(
+      `GitHub repository lookup failed for ${options.normalizedRepository}: repository must be public`,
+    );
+  }
+  return body;
+}
+
+function repositoryIdentityFromLookupResponse(body: GitHubRepositoryLookupResponse) {
   const resolvedRepository = requireString(body.full_name, "full_name");
   const ownerLogin = requireString(body.owner?.login, "owner.login");
   return {
@@ -239,16 +343,44 @@ export async function fetchGitHubRepositoryIdentity(
   };
 }
 
-function buildGitHubRepositoryLookupHeaders() {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "User-Agent": "clawhub/package-trusted-publisher",
-  };
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
+type GitHubRepositoryLookupResponse = {
+  id?: unknown;
+  full_name?: unknown;
+  owner?: { login?: unknown; id?: unknown };
+  private?: unknown;
+  visibility?: unknown;
+};
+
+function isPublicGitHubRepository(body: GitHubRepositoryLookupResponse) {
+  return body.private === false && (body.visibility === undefined || body.visibility === "public");
+}
+
+async function buildGitHubRepositoryLookupHeaders(
+  fetchImpl: typeof fetch,
+  options: { useGitHubApp?: boolean } = {},
+) {
+  return await buildGitHubApiHeaders({
+    accept: "application/vnd.github+json",
+    fetchImpl,
+    userAgent: "clawhub/package-trusted-publisher",
+    // Prefer authenticated app/PAT requests for public repository metadata so
+    // trusted-publisher setup does not depend on anonymous GitHub API limits.
+    useGitHubApp: options.useGitHubApp,
+  });
+}
+
+function buildGitHubAnonymousRepositoryLookupHeaders() {
+  return buildGitHubHeaders({
+    accept: "application/vnd.github+json",
+    userAgent: "clawhub/package-trusted-publisher",
+  });
+}
+
+function shouldRetryRepositoryLookupWithoutAppAuth(
+  response: Response,
+  headers: Record<string, string>,
+) {
+  return Boolean(headers.Authorization) && [401, 403, 404].includes(response.status);
 }
 
 export function normalizeGitHubRepository(repository: string) {

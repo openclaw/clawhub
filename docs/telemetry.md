@@ -1,5 +1,5 @@
 ---
-summary: "Install telemetry collected via `clawhub sync` + opt-out."
+summary: "Install telemetry collected by the ClawHub CLI and how to opt out."
 read_when:
   - Working on telemetry / privacy controls
   - Questions about what data is collected
@@ -7,78 +7,66 @@ read_when:
 
 # Telemetry
 
-ClawHub uses **minimal telemetry** to compute **install counts** (what’s actually in use) and to power better sorting/filtering.
-This is based on the CLI `clawhub sync` command.
+ClawHub uses minimal CLI telemetry to compute aggregate skill and plugin install counts.
 
 ## When telemetry is collected
 
 Telemetry is only sent when:
 
-- You are **logged in** in the CLI (we already require auth for sync/publish flows).
-- You run `clawhub sync`.
+- You are logged in in the CLI.
+- You complete `clawhub install <skill>`, an update that replaces a skills.sh
+  catalog skill through `clawhub update`, or an authenticated
+  `openclaw plugins install clawhub:<package>` install.
 - Telemetry is **not disabled** (see “How to disable” below).
 
 If you are not logged in, nothing is reported.
 
 ## What we collect
 
-On each `clawhub sync`, the CLI reports a **full snapshot** of what it found, grouped by scan root (“folder/root”).
+After a skill or plugin has installed and its local install record has been persisted, the CLI
+sends one best-effort install event.
 
-For each root we store:
+The event includes:
 
-- `rootId`: a **SHA-256 hash** of the canonical root path (server never sees the raw path).
-- `label`: a human-readable label derived from the last two path segments (home paths are shown with `~`).
-- `firstSeenAt`, `lastSeenAt`, optional `expiredAt`.
-
-For each skill found under a root we store:
-
-- `skillId` (resolved by slug; only skills that exist in the registry are tracked).
-- `firstSeenAt`, `lastSeenAt`.
-- `lastVersion` (best-effort; currently the registry-matched version if known).
-- optional `removedAt` when a previously-reported install disappears from a root.
+- The installed skill slug or canonical plugin package name.
+- `version`: the installed version, when known.
+- Skill events may also include the publisher handle, source reference and kind,
+  repository, repository-relative source path, source URL, canonical reference,
+  scan status, and trust label, when available.
 
 ### What we do _not_ collect
 
-- No raw absolute folder paths (only hashed `rootId` + a short display label).
+- No local filesystem paths or identifiers derived from local folder paths.
+  A repository-relative source path identifies the skill within its source repository.
 - No file contents.
 - No per-run logs, prompts, or other CLI output.
-- No tracking for skills that aren’t uploaded to the registry (unknown slugs are ignored).
 
 ## Install counts
 
-We maintain two counters per skill:
+For skills, ClawHub maintains:
 
-- `installsCurrent`: unique users who currently have the skill installed in at least one active root.
-- `installsAllTime`: unique users who have ever reported the skill installed.
+- `installsAllTime`: unique users who have reported at least one CLI install for the skill.
+- `installsCurrent`: unique users who have reported an install and have not deleted their
+  telemetry.
 
-### Multiple roots
+Install events record presence, not a snapshot of your installed skills.
+Uninstalling does not send telemetry or decrement counts, and `clawhub sync`
+does not reconcile removals. Legacy snapshot reports also only add reported
+installs; omitted skills are not removed from the counts.
 
-If you sync from multiple folders, we treat each scan root independently. A skill is “currently installed” if it exists in **any** active root.
+The server discards skills.sh install events; they do not increment native
+ClawHub skill counters.
 
-### Uninstall detection
-
-Because `sync` reports the full set per root:
-
-- If a skill disappears from a root on the next sync, we mark it removed for that root.
-- If the skill is removed from all of your roots, it no longer counts toward `installsCurrent`.
-- `installsAllTime` never decreases unless you delete telemetry (see below).
-
-### Staleness (120 days)
-
-Roots that don’t report telemetry for **120 days** are marked stale and their installs stop counting toward `installsCurrent`.
-This is evaluated lazily (on the next telemetry report) to avoid background jobs.
+For plugins, ClawHub counts the first successful install reported by each user and package.
+Repeated installs and updates refresh the recorded version without increasing the aggregate
+install count.
 
 ## Transparency + user controls
 
-ClawHub provides a private “Installed” tab on your own profile:
+Everyone only sees **aggregated install counters**.
 
-- Shows the exact roots + installed skills we store.
-- Includes a **JSON export** view.
-- Includes a **Delete telemetry** action to remove all stored telemetry for your account.
-
-Everyone else only sees **aggregated install counters**; no one else can see your roots/folders.
-
-Deleting your account also deletes your telemetry data.
+Deleting your account also deletes your telemetry data and removes its contribution from install
+counters.
 
 ## How to disable telemetry
 
@@ -88,4 +76,4 @@ Set the environment variable:
 export CLAWHUB_DISABLE_TELEMETRY=1
 ```
 
-With this set, the CLI will not send telemetry during `clawhub sync`.
+With this set, the CLI will not send install telemetry.

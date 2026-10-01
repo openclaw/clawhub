@@ -1,43 +1,47 @@
-import { CliPublishRequestSchema, normalizeTextContentType, parseArk } from "clawhub-schema";
+import {
+  CliPublishRequestSchema,
+  decodeUtf8Text,
+  normalizeContentType,
+  parseArk,
+} from "clawhub-schema";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { assertAdmin } from "../lib/access";
+import { assertAdmin, assertModerator } from "../lib/access";
 import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
+import type { PublicSkillVersionSelection } from "../lib/skills/publicVersions";
+export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
 export const MAX_RAW_FILE_BYTES = 200 * 1024;
+const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-function isSvgLike(contentType: string | undefined, path: string) {
-  return contentType?.toLowerCase().includes("svg") || path.toLowerCase().endsWith(".svg");
+function attachmentDisposition(path: string) {
+  return `attachment; filename*=UTF-8''${encodeURIComponent(path.split("/").at(-1) || "download")}`;
 }
 
-export function safeTextFileResponse(params: {
-  textContent: string;
+type SafeFileResponseParams = {
   path: string;
   contentType?: string;
   sha256: string;
   size: number;
   headers?: HeadersInit;
-}) {
-  const contentType =
-    normalizeTextContentType(params.path, params.contentType) ?? params.contentType;
-  const isSvg = isSvgLike(contentType, params.path);
+};
 
-  // For any text response that a browser might try to render, lock it down.
-  // In particular, this prevents SVG <foreignObject> script execution from reading
-  // localStorage tokens on this origin.
-  const headers = mergeHeaders(
+function safeFileResponseHeaders(
+  params: SafeFileResponseParams,
+  contentType: string,
+  forceAttachment: boolean,
+) {
+  return mergeHeaders(
     params.headers,
     {
-      "Content-Type": contentType
-        ? `${contentType}; charset=utf-8`
-        : "text/plain; charset=utf-8",
+      "Content-Type": contentType,
       "Cache-Control": "private, max-age=60",
       ETag: params.sha256,
       "X-Content-SHA256": params.sha256,
@@ -45,12 +49,49 @@ export function safeTextFileResponse(params: {
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Content-Security-Policy": SAFE_TEXT_FILE_CSP,
-      ...(isSvg ? { "Content-Disposition": "attachment" } : {}),
+      ...(forceAttachment ? { "Content-Disposition": attachmentDisposition(params.path) } : {}),
     },
     corsHeaders(),
   );
+}
+
+export function safeTextFileResponse(params: SafeFileResponseParams & { textContent: string }) {
+  const normalized = normalizeContentType(params.contentType);
+  const contentType = normalized ? `${normalized}; charset=utf-8` : "text/plain; charset=utf-8";
+  const headers = safeFileResponseHeaders(params, contentType, false);
 
   return new Response(params.textContent, { status: 200, headers });
+}
+
+export async function safeStoredFileResponse(
+  params: SafeFileResponseParams & {
+    blob: Blob;
+  },
+) {
+  const bytes = new Uint8Array(await params.blob.arrayBuffer());
+  const contentType = normalizeContentType(params.contentType) ?? "application/octet-stream";
+
+  return new Response(bytes, {
+    status: 200,
+    headers: safeFileResponseHeaders(params, contentType, true),
+  });
+}
+
+export async function safeStoredFilePreviewResponse(
+  params: SafeFileResponseParams & {
+    blob: Blob;
+  },
+) {
+  const bytes = new Uint8Array(await params.blob.arrayBuffer());
+  const textContent = decodeUtf8Text(bytes);
+  if (textContent === null) {
+    return text("File cannot be previewed as text", 415, params.headers);
+  }
+
+  return new Response(textContent, {
+    status: 200,
+    headers: safeFileResponseHeaders(params, "text/plain; charset=utf-8", false),
+  });
 }
 
 export function json(value: unknown, status = 200, headers?: HeadersInit) {
@@ -81,6 +122,44 @@ export function text(value: string, status: number, headers?: HeadersInit) {
   });
 }
 
+export type AmbiguousSkillSlugChoice = {
+  ownerHandle: string;
+  slug: string;
+  ref: string;
+  url: string;
+};
+
+export function ambiguousSkillSlugMessage(slug: string, examplePath?: string) {
+  if (!examplePath) {
+    return `Found multiple skills with the slug "${slug}"; specify which one you want to install:`;
+  }
+  return (
+    `Ambiguous skill slug "${slug}". Multiple publishers use this slug. ` +
+    `Retry with ownerHandle, for example: ${examplePath}.`
+  );
+}
+
+export function ambiguousSkillSlugResponse(
+  slug: string,
+  examplePath: string,
+  headers?: HeadersInit,
+  choices?: AmbiguousSkillSlugChoice[],
+) {
+  if (choices && choices.length > 0) {
+    return json(
+      {
+        code: "AMBIGUOUS_SKILL_SLUG",
+        message: ambiguousSkillSlugMessage(slug),
+        slug,
+        matches: choices,
+      },
+      409,
+      headers,
+    );
+  }
+  return text(ambiguousSkillSlugMessage(slug, examplePath), 409, headers);
+}
+
 export async function parseJsonPayload(request: Request, headers: HeadersInit) {
   try {
     const payload = (await request.json()) as Record<string, unknown>;
@@ -90,6 +169,65 @@ export async function parseJsonPayload(request: Request, headers: HeadersInit) {
   }
 }
 
+function normalizeOrigin(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return null;
+  }
+}
+
+function firstForwardedValue(value: string | null) {
+  return value?.split(",")[0]?.trim() || null;
+}
+
+function isProductionDeployment() {
+  const deployment = process.env.CONVEX_DEPLOYMENT?.trim() ?? "";
+  return deployment.startsWith("prod:") || deployment.includes("production");
+}
+
+function isTrustedForwardedHost(value: string) {
+  try {
+    const hostname = new URL(`https://${value}`).hostname.toLowerCase();
+    return (
+      hostname === "clawhub.ai" ||
+      hostname === "www.clawhub.ai" ||
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function publicApiOrigin(request: Request) {
+  const configured = normalizeOrigin(process.env.SITE_URL ?? process.env.VITE_SITE_URL);
+  if (configured) return configured;
+
+  const forwardedHost = firstForwardedValue(request.headers.get("x-forwarded-host"));
+  if (
+    forwardedHost &&
+    !forwardedHost.endsWith(".convex.site") &&
+    isTrustedForwardedHost(forwardedHost)
+  ) {
+    const forwardedProto =
+      firstForwardedValue(request.headers.get("x-forwarded-proto")) ??
+      firstForwardedValue(request.headers.get("x-forwarded-protocol")) ??
+      "https";
+    const proto = forwardedProto === "http" ? "http" : "https";
+    return `${proto}://${forwardedHost}`;
+  }
+
+  const requestUrl = new URL(request.url);
+  if (isProductionDeployment() && requestUrl.hostname.endsWith(".convex.site")) {
+    return DEFAULT_PUBLIC_SITE_URL;
+  }
+  return requestUrl.origin;
+}
+
 export async function requireApiTokenUserOrResponse(
   ctx: ActionCtx,
   request: Request,
@@ -97,9 +235,14 @@ export async function requireApiTokenUserOrResponse(
 ) {
   try {
     const auth = await requireApiTokenUser(ctx, request);
-    return { ok: true as const, userId: auth.userId, user: auth.user as Doc<"users"> };
-  } catch {
-    return { ok: false as const, response: text("Unauthorized", 401, headers) };
+    return {
+      ok: true as const,
+      userId: auth.userId,
+      user: auth.user as Doc<"users">,
+      apiTokenId: auth.apiTokenId,
+    };
+  } catch (error) {
+    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
   }
 }
 
@@ -110,8 +253,8 @@ export async function requirePackagePublishAuthOrResponse(
 ) {
   try {
     return { ok: true as const, auth: await requirePackagePublishAuth(ctx, request) };
-  } catch {
-    return { ok: false as const, response: text("Unauthorized", 401, headers) };
+  } catch (error) {
+    return { ok: false as const, response: text(formatAuthFailure(error), 401, headers) };
   }
 }
 
@@ -120,19 +263,17 @@ export function requireAdminOrResponse(user: Doc<"users">, headers: HeadersInit)
     assertAdmin(user);
     return { ok: true as const };
   } catch {
-    return { ok: false as const, response: text("Forbidden", 403, headers) };
+    return { ok: false as const, response: text("Admin role required.", 403, headers) };
   }
 }
 
-export function getPathSegments(request: Request, prefix: string) {
-  const pathname = new URL(request.url).pathname;
-  if (!pathname.startsWith(prefix)) return [];
-  const rest = pathname.slice(prefix.length);
-  return rest
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment));
+export function requireModeratorOrResponse(user: Doc<"users">, headers: HeadersInit) {
+  try {
+    assertModerator(user);
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, response: text("Moderator role required.", 403, headers) };
+  }
 }
 
 export function toOptionalNumber(value: string | null) {
@@ -141,63 +282,60 @@ export function toOptionalNumber(value: string | null) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-/**
- * Batch resolve soul version tags to version strings.
- * Collects all version IDs, fetches them in a single query, then maps back.
- * Reduces N sequential queries to 1 batch query.
- */
-export async function resolveSoulTagsBatch(
+/** Batch checked selections without one action RPC per catalog item. */
+export async function readPublicSkillVersionSelections(
   ctx: ActionCtx,
-  tagsList: Array<Record<string, Id<"soulVersions">>>,
-): Promise<Array<Record<string, string>>> {
-  return resolveVersionTagsBatch(ctx, tagsList, internal.souls.getVersionsByIdsInternal);
+  selections: Array<{ skillId: Id<"skills">; versionId: Id<"skillVersions"> }>,
+): Promise<PublicSkillVersionSelection[]> {
+  const results: PublicSkillVersionSelection[] = [];
+  // A selection reads two potentially large documents; keep each transaction
+  // below the read-byte limit even for near-limit version file manifests.
+  const batchSize = 5;
+  for (let offset = 0; offset < selections.length; offset += batchSize * 4) {
+    const batches: Array<Promise<PublicSkillVersionSelection[]>> = [];
+    for (
+      let start = offset;
+      start < Math.min(selections.length, offset + batchSize * 4);
+      start += batchSize
+    ) {
+      batches.push(
+        ctx.runQuery(internal.skills.getPublicVersionSelectionsInternal, {
+          selections: selections.slice(start, start + batchSize),
+        }),
+      );
+    }
+    for (const batch of await Promise.all(batches)) results.push(...batch);
+  }
+  return results;
 }
 
+/** Resolve every tag through current documents; cached summaries omit lifecycle state. */
 export async function resolveTagsBatch(
   ctx: ActionCtx,
   tagsList: Array<Record<string, Id<"skillVersions">>>,
+  skillIds: Array<Id<"skills">>,
 ): Promise<Array<Record<string, string>>> {
-  return resolveVersionTagsBatch(ctx, tagsList, internal.skills.getVersionsByIdsInternal);
-}
-
-/**
- * Batch resolve version tags to version strings.
- * Collects all version IDs, fetches them in a single query, then maps back.
- *
- * Notes:
- * - Uses `internal.*` queries to avoid expanding the public Convex API surface.
- * - Sorts ids for stable query args (helps caching/log diffs).
- */
-export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "soulVersions">(
-  ctx: ActionCtx,
-  tagsList: Array<Record<string, Id<TTable>>>,
-  getVersionsByIdsQuery: unknown,
-): Promise<Array<Record<string, string>>> {
-  const allVersionIds = new Set<Id<TTable>>();
-  for (const tags of tagsList) {
-    for (const versionId of Object.values(tags)) allVersionIds.add(versionId);
-  }
-
-  if (allVersionIds.size === 0) return tagsList.map(() => ({}));
-
-  const versionIds = [...allVersionIds].sort() as Array<Id<TTable>>;
-  const versions =
-    ((await ctx.runQuery(getVersionsByIdsQuery as never, { versionIds } as never)) as Array<{
-      _id: Id<TTable>;
-      version: string;
-      softDeletedAt?: unknown;
-    }> | null) ?? [];
-
-  const versionMap = new Map<Id<TTable>, string>();
-  for (const v of versions) {
-    if (!v?.softDeletedAt) versionMap.set(v._id, v.version);
-  }
-
-  return tagsList.map((tags) => {
+  const selections = new Map<string, { skillId: Id<"skills">; versionId: Id<"skillVersions"> }>();
+  const selectionKey = (skillId: Id<"skills">, versionId: Id<"skillVersions">) =>
+    `${skillId}/${versionId}`;
+  tagsList.forEach((tags, index) => {
+    const skillId = skillIds[index];
+    for (const versionId of Object.values(tags))
+      selections.set(selectionKey(skillId, versionId), { skillId, versionId });
+  });
+  const keys = [...selections.keys()].sort();
+  const selected = await readPublicSkillVersionSelections(
+    ctx,
+    keys.map((key) => selections.get(key)!),
+  );
+  const selectionMap = new Map(keys.map((key, index) => [key, selected[index]]));
+  return tagsList.map((tags, index) => {
     const resolved: Record<string, string> = {};
     for (const [tag, versionId] of Object.entries(tags)) {
-      const version = versionMap.get(versionId);
-      if (version) resolved[tag] = version;
+      const selection = selectionMap.get(selectionKey(skillIds[index], versionId));
+      // A published target can outlive a removed or repointed tag in a cached snapshot.
+      if (selection?.status === "available" && selection.skill.tags[tag] === versionId)
+        resolved[tag] = selection.version.version;
     }
     return resolved;
   });
@@ -233,17 +371,94 @@ function toFileLike(entry: FormDataEntryValue): FileLikeEntry | null {
   return entry as FileLikeEntry;
 }
 
+export async function deleteStoredMultipartFiles(
+  ctx: ActionCtx,
+  files: Array<{ storageId: Id<"_storage"> }>,
+) {
+  await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
+}
+
 export async function parseMultipartPublish(
   ctx: ActionCtx,
   request: Request,
+): Promise<ReturnType<typeof parsePublishBody>> {
+  const form = await request.formData();
+  const payloadRaw = form.get("payload");
+  if (!payloadRaw || typeof payloadRaw !== "string") {
+    throw new Error("Missing payload");
+  }
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(payloadRaw) as Record<string, unknown>;
+  } catch {
+    throw new Error("Invalid JSON payload");
+  }
+
+  const fileEntries = form
+    .getAll("files")
+    .map((entry) => toFileLike(entry))
+    .filter((file): file is FileLikeEntry => Boolean(file))
+    .filter((file) => !isMacJunkPath(file.name));
+  const oversized = fileEntries.find((file) => file.size > MAX_PUBLISH_FILE_BYTES);
+  if (oversized) throw new Error(getPublishFileSizeError(oversized.name));
+
+  const files: Array<{
+    path: string;
+    size: number;
+    storageId: Id<"_storage">;
+    sha256: string;
+    contentType?: string;
+  }> = [];
+
+  try {
+    for (const file of fileEntries) {
+      const path = file.name;
+      const size = file.size;
+      const contentType = file.type || undefined;
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const sha256 = await sha256Hex(buffer);
+      const storageId = await ctx.storage.store(file as Blob);
+      files.push({ path, size, storageId, sha256, contentType });
+    }
+
+    const forkOf =
+      payload.forkOf && typeof payload.forkOf === "object" ? payload.forkOf : undefined;
+    const hasAcceptLicenseTerms = Object.prototype.hasOwnProperty.call(
+      payload,
+      "acceptLicenseTerms",
+    );
+    const body = {
+      slug: payload.slug,
+      displayName: payload.displayName,
+      ...(typeof payload.ownerHandle === "string" ? { ownerHandle: payload.ownerHandle } : {}),
+      ...(typeof payload.sourceOwnerHandle === "string"
+        ? { sourceOwnerHandle: payload.sourceOwnerHandle }
+        : {}),
+      ...(typeof payload.migrateOwner === "boolean" ? { migrateOwner: payload.migrateOwner } : {}),
+      version: payload.version,
+      changelog: typeof payload.changelog === "string" ? payload.changelog : "",
+      ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
+      tags: Array.isArray(payload.tags) ? payload.tags : undefined,
+      ...(Array.isArray(payload.categories) ? { categories: payload.categories } : {}),
+      ...(Array.isArray(payload.topics) ? { topics: payload.topics } : {}),
+      ...(payload.source ? { source: payload.source } : {}),
+      files,
+      ...(forkOf ? { forkOf } : {}),
+    };
+
+    return parsePublishBody(body);
+  } catch (error) {
+    await deleteStoredMultipartFiles(ctx, files);
+    throw error;
+  }
+}
+
+export async function parseMultipartSkillScan(
+  ctx: ActionCtx,
+  request: Request,
+  validatePayload?: (payload: Record<string, unknown>) => Record<string, unknown>,
 ): Promise<{
-  slug: string;
-  displayName: string;
-  version: string;
-  changelog: string;
-  acceptLicenseTerms?: boolean;
-  tags?: string[];
-  forkOf?: { slug: string; version?: string };
+  payload: Record<string, unknown>;
   files: Array<{
     path: string;
     size: number;
@@ -263,6 +478,19 @@ export async function parseMultipartPublish(
   } catch {
     throw new Error("Invalid JSON payload");
   }
+  const validatedPayload = validatePayload ? validatePayload(payload) : payload;
+
+  const fileEntries = form
+    .getAll("files")
+    .map((entry) => toFileLike(entry))
+    .filter((file): file is FileLikeEntry => Boolean(file))
+    .filter((file) => !isMacJunkPath(file.name));
+  if (fileEntries.length === 0) throw new Error("files required");
+  if (!fileEntries.some((file) => file.name.trim().toLowerCase() === "skill.md")) {
+    throw new Error("SKILL.md required");
+  }
+  const oversized = fileEntries.find((file) => file.size > MAX_PUBLISH_FILE_BYTES);
+  if (oversized) throw new Error(getPublishFileSizeError(oversized.name));
 
   const files: Array<{
     path: string;
@@ -272,37 +500,22 @@ export async function parseMultipartPublish(
     contentType?: string;
   }> = [];
 
-  for (const entry of form.getAll("files")) {
-    const file = toFileLike(entry);
-    if (!file) continue;
-    const path = file.name;
-    if (isMacJunkPath(path)) continue;
-    const size = file.size;
-    if (size > MAX_PUBLISH_FILE_BYTES) {
-      throw new Error(getPublishFileSizeError(path));
+  try {
+    for (const file of fileEntries) {
+      const path = file.name;
+      const size = file.size;
+      const contentType = file.type || undefined;
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const sha256 = await sha256Hex(buffer);
+      const storageId = await ctx.storage.store(file as Blob);
+      files.push({ path, size, storageId, sha256, contentType });
     }
-    const contentType = file.type || undefined;
-    const buffer = new Uint8Array(await file.arrayBuffer());
-    const sha256 = await sha256Hex(buffer);
-    const storageId = await ctx.storage.store(file as Blob);
-    files.push({ path, size, storageId, sha256, contentType });
+  } catch (error) {
+    await deleteStoredMultipartFiles(ctx, files);
+    throw error;
   }
 
-  const forkOf = payload.forkOf && typeof payload.forkOf === "object" ? payload.forkOf : undefined;
-  const hasAcceptLicenseTerms = Object.prototype.hasOwnProperty.call(payload, "acceptLicenseTerms");
-  const body = {
-    slug: payload.slug,
-    displayName: payload.displayName,
-    version: payload.version,
-    changelog: typeof payload.changelog === "string" ? payload.changelog : "",
-    ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
-    tags: Array.isArray(payload.tags) ? payload.tags : undefined,
-    ...(payload.source ? { source: payload.source } : {}),
-    files,
-    ...(forkOf ? { forkOf } : {}),
-  };
-
-  return parsePublishBody(body);
+  return { payload: validatedPayload, files };
 }
 
 export function parsePublishBody(body: unknown) {
@@ -312,37 +525,113 @@ export function parsePublishBody(body: unknown) {
   return {
     slug: parsed.slug,
     displayName: parsed.displayName,
+    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
+    sourceOwnerHandle: parsed.sourceOwnerHandle?.trim().replace(/^@+/, "") || undefined,
+    migrateOwner: parsed.migrateOwner === true ? true : undefined,
     version: parsed.version,
     changelog: parsed.changelog,
     acceptLicenseTerms: parsed.acceptLicenseTerms,
     tags,
+    categories: parsed.categories,
+    topics: parsed.topics,
     source: parsed.source ?? undefined,
     forkOf: parsed.forkOf
       ? {
           slug: parsed.forkOf.slug,
+          ownerHandle: parsed.forkOf.ownerHandle?.trim().replace(/^@+/, "") || undefined,
           version: parsed.forkOf.version ?? undefined,
         }
       : undefined,
     files: parsed.files.map((file) => ({
       ...file,
       storageId: file.storageId as Id<"_storage">,
+      uploadTicket: file.uploadTicket as Id<"skillPublishUploadTickets"> | undefined,
     })),
   };
 }
 
+// Substrings that indicate user-input validation failures from the underlying
+// mutations (e.g. `normalizePackageName` ConvexErrors). These are surfaced as
+// 400s with the cleaned message so CLI/API clients can see the actual reason
+// instead of an opaque 500.
+const SOFT_DELETE_BAD_REQUEST_HINTS = [
+  "slug required",
+  "package name required",
+  "package name must be",
+  "must be lowercase",
+  "npm-safe",
+  "reserved for clawhub routes",
+  "version required",
+] as const;
+
 export function softDeleteErrorToResponse(
-  entity: "skill" | "soul" | "package",
+  entity: "skill" | "package",
   error: unknown,
   headers: HeadersInit,
 ) {
-  const message = error instanceof Error ? error.message : `${entity} delete failed`;
-  const lower = message.toLowerCase();
+  const rawMessage = error instanceof Error ? error.message : `${entity} delete failed`;
+  const cleaned = cleanUserFacingErrorMessage(rawMessage) || rawMessage;
+  const lower = cleaned.toLowerCase();
 
-  if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
-  if (lower.includes("forbidden")) return text("Forbidden", 403, headers);
-  if (lower.includes("not found")) return text(message, 404, headers);
-  if (lower.includes("slug required")) return text("Slug required", 400, headers);
+  if (lower.includes("unauthorized"))
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  if (lower.includes("forbidden"))
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
+  if (lower.includes("not found")) return text(cleaned, 404, headers);
+  if (lower.includes("multiple publishers") || lower.includes("owner-qualified")) {
+    return text(cleaned, 409, headers);
+  }
+  if (SOFT_DELETE_BAD_REQUEST_HINTS.some((hint) => lower.includes(hint))) {
+    return text(cleaned, 400, headers);
+  }
 
-  // Unknown: server-side failure. Keep body generic.
+  // Unknown: server-side failure. Keep the body generic; only known
+  // user-input validation failures above surface the cleaned mutation message.
   return text("Internal Server Error", 500, headers);
+}
+
+export function cleanUserFacingErrorMessage(message: string) {
+  let cleaned = message
+    .replace(/\[CONVEX[^\]]*\]\s*/g, "")
+    .replace(/\[Request ID:[^\]]*\]\s*/g, "")
+    .replace(/\n\s+at [\s\S]*$/, "")
+    .replace(/^Server Error Called by client\s*/i, "")
+    .trim();
+
+  for (let i = 0; i < 3; i += 1) {
+    const next = cleaned
+      .replace(/^Error:\s*/i, "")
+      .replace(/^(?:Uncaught\s+)?ConvexError:\s*/i, "")
+      .trim();
+    if (next === cleaned) break;
+    cleaned = next;
+  }
+
+  return cleaned;
+}
+
+export function formatUserFacingErrorMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  return cleanUserFacingErrorMessage(message) || fallback;
+}
+
+function formatAuthFailure(error: unknown) {
+  const message = formatUserFacingErrorMessage(error, "");
+  if (!message || /^unauthorized$/i.test(message)) return "Unauthorized";
+  return message || "Unauthorized";
+}
+
+// Shared formatter for authz responses.
+// - Returns the clean fallback ("Unauthorized" | "Forbidden") when the error
+//   carries no additional context beyond the fallback itself (so existing
+//   callers that throw `new Error("Forbidden")` keep their body unchanged).
+// - Otherwise returns the full message (minus the `ConvexError:` prefix) so
+//   CLI/API clients can surface actionable reasons such as
+//   "Forbidden: This skill was hidden by moderation ...".
+export function formatAuthzMessage(error: unknown, fallback: "Unauthorized" | "Forbidden") {
+  const message = formatUserFacingErrorMessage(error, "");
+  if (!message) return fallback;
+  const stripped = cleanUserFacingErrorMessage(message);
+  if (!stripped || stripped.toLowerCase() === fallback.toLowerCase()) return fallback;
+  return stripped;
 }

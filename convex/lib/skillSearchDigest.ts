@@ -1,6 +1,16 @@
+import {
+  getCatalogTopicSlugs,
+  resolveCatalogTopics,
+  resolveStoredSkillCategories,
+} from "clawhub-schema/catalogMetadata";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
+import { type PublicBrowseVersionState, resolvePublicBrowseVersionState } from "./publicBrowse";
+import { getOwnerPublisher } from "./publishers";
+import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
+import { tokenize } from "./searchText";
+import { readCanonicalStat } from "./skillStats";
 
 function pick<T extends Record<string, unknown>, K extends keyof T>(obj: T, keys: K[]): Pick<T, K> {
   return Object.fromEntries(keys.map((k) => [k, obj[k]])) as Pick<T, K>;
@@ -17,24 +27,34 @@ const SHARED_KEYS = [
   "slug",
   "displayName",
   "summary",
+  "icon",
   "ownerUserId",
   "ownerPublisherId",
   "canonicalSkillId",
   "forkOf",
   "latestVersionId",
+  "installKind",
+  "githubHasSkillCard",
+  "githubCurrentStatus",
+  "githubScanStatus",
   "latestVersionSummary",
   "tags",
-  "capabilityTags",
+  "categories",
+  "topics",
   "badges",
   "stats",
   "statsDownloads",
   "statsStars",
   "statsInstallsCurrent",
   "statsInstallsAllTime",
+  "statsSkillsShInstalls",
+  "statsGithubStars",
   "softDeletedAt",
   "moderationStatus",
   "moderationFlags",
+  "moderationVerdict",
   "moderationReason",
+  "isSuspicious",
   "createdAt",
   "updatedAt",
 ] as const satisfies readonly SharedSkillKey[];
@@ -42,21 +62,94 @@ const SHARED_KEYS = [
 /** Fields stored in the skillSearchDigest table. */
 export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[number]> & {
   skillId: Id<"skills">;
-  isSuspicious?: boolean;
+  latestVersionSkillId?: Id<"skills">;
+  normalizedSlug?: string;
+  normalizedSlugFirstToken?: string;
+  normalizedDisplayName?: string;
+  normalizedDisplayNameFirstToken?: string;
   ownerHandle?: string;
   ownerKind?: "user" | "org";
   ownerName?: string;
   ownerDisplayName?: string;
   ownerImage?: string;
+  recommendedScore?: number;
+  recommendedScoreVersion?: number;
+  publicVersion?: PublicBrowseVersionState;
 };
 
 /** Pick the subset of fields from a full skill doc needed for the digest. */
 export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFields {
+  const statsDownloads = readCanonicalStat(skill, "downloads");
+  const statsStars = readCanonicalStat(skill, "stars");
+  const statsInstallsCurrent = readCanonicalStat(skill, "installsCurrent");
+  const statsInstallsAllTime = readCanonicalStat(skill, "installsAllTime");
+  const inferenceCurrent =
+    Boolean(skill.latestVersionId) && skill.latestVersionId === skill.inferredFromVersionId;
   return {
     ...pick(skill, [...SHARED_KEYS]),
+    categories: resolveStoredSkillCategories(skill),
+    topics: resolveCatalogTopics({
+      declared: skill.topics,
+      inferred: skill.inferredTopics,
+      inferenceCurrent,
+    }),
+    statsDownloads,
+    statsStars,
+    statsInstallsCurrent,
+    statsInstallsAllTime,
+    recommendedScore: computeRecommendationScore(
+      {
+        downloads: statsDownloads,
+        installs: statsInstallsAllTime,
+        stars: statsStars,
+      },
+      {
+        createdAt: skill.createdAt,
+        updatedAt: skill.updatedAt,
+      },
+    ),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
     skillId: skill._id,
-    isSuspicious: skill.isSuspicious,
+    normalizedSlug: normalizeSkillSearchText(skill.slug),
+    normalizedSlugFirstToken: getFirstSearchToken(skill.slug),
+    normalizedDisplayName: normalizeSkillSearchText(skill.displayName),
+    normalizedDisplayNameFirstToken: getFirstSearchToken(skill.displayName),
   };
+}
+
+export async function extractValidatedDigestFields(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills">,
+): Promise<SkillSearchDigestFields> {
+  const fields = extractDigestFields(skill);
+  const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+  const publicVersion = await resolvePublicBrowseVersionState(ctx, skill, {
+    latestVersion: version,
+  });
+  if (!version || version.softDeletedAt || version.skillId !== skill._id) {
+    return {
+      ...fields,
+      latestVersionId: undefined,
+      latestVersionSkillId: undefined,
+      latestVersionSummary: undefined,
+      publicVersion,
+    };
+  }
+  return { ...fields, latestVersionSkillId: version.skillId, publicVersion };
+}
+
+export function normalizeSkillSearchText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+export function getFirstSearchToken(value: string) {
+  return tokenize(value)[0];
+}
+
+// The skills.sh mirror persists the same tokenizer-derived first tokens, but its columns
+// are required, so it falls back to the normalized text when the tokenizer yields nothing.
+export function getMirrorFirstSearchToken(value: string) {
+  return getFirstSearchToken(value) ?? normalizeSkillSearchText(value);
 }
 
 /**
@@ -83,17 +176,149 @@ export async function upsertSkillSearchDigest(
     .withIndex("by_skill", (q) => q.eq("skillId", fields.skillId))
     .unique();
   if (existing) {
-    if (!hasDigestChanged(existing, fields)) return;
-    await ctx.db.patch(existing._id, fields);
+    if (hasDigestChanged(existing, fields)) {
+      await ctx.db.patch(existing._id, fields);
+    }
   } else {
     await ctx.db.insert("skillSearchDigest", fields);
   }
+  if ((existing?.topics?.length ?? 0) > 0 || (fields.topics?.length ?? 0) > 0) {
+    await syncSkillTopicSearchDigests(ctx, fields);
+  }
+  await syncCuratedSkillSearchDigest(
+    ctx,
+    fields,
+    Boolean(existing?.badges?.official || existing?.badges?.highlighted),
+  );
+}
+
+async function syncCuratedSkillSearchDigest(
+  ctx: Pick<MutationCtx, "db">,
+  fields: SkillSearchDigestFields,
+  wasCurated: boolean,
+) {
+  const isCurated = Boolean(fields.badges?.official || fields.badges?.highlighted);
+  if (!isCurated && !wasCurated) return;
+  const existing = await ctx.db
+    .query("curatedSkillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", fields.skillId))
+    .unique();
+  if (!isCurated) {
+    if (existing) await ctx.db.delete(existing._id);
+    return;
+  }
+
+  const next = {
+    skillId: fields.skillId,
+    slug: fields.slug,
+    displayName: fields.displayName,
+    summary: fields.summary,
+    categories: fields.categories,
+    topics: fields.topics,
+    statsDownloads: fields.statsDownloads,
+    statsStars: fields.statsStars,
+    statsInstallsAllTime: fields.statsInstallsAllTime,
+    recommendedScore: fields.recommendedScore,
+    softDeletedAt: fields.softDeletedAt,
+    isSuspicious: fields.isSuspicious,
+    createdAt: fields.createdAt,
+    updatedAt: fields.updatedAt,
+  };
+  if (existing) {
+    if (hasDigestChanged(existing, next)) await ctx.db.patch(existing._id, next);
+  } else {
+    await ctx.db.insert("curatedSkillSearchDigest", next);
+  }
+}
+
+async function syncSkillTopicSearchDigests(
+  ctx: Pick<MutationCtx, "db">,
+  fields: SkillSearchDigestFields,
+) {
+  const existing = await ctx.db
+    .query("skillTopicSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", fields.skillId))
+    .collect();
+  const nextByTopic = new Map(
+    getCatalogTopicSlugs(fields.topics).map((topic) => [
+      topic,
+      {
+        skillId: fields.skillId,
+        topic,
+        softDeletedAt: fields.softDeletedAt,
+        isSuspicious: fields.isSuspicious,
+        normalizedDisplayName: fields.normalizedDisplayName,
+        statsDownloads: fields.statsDownloads,
+        statsStars: fields.statsStars,
+        statsInstallsAllTime: fields.statsInstallsAllTime,
+        recommendedScore: fields.recommendedScore,
+        createdAt: fields.createdAt,
+        updatedAt: fields.updatedAt,
+      },
+    ]),
+  );
+  for (const row of existing) {
+    const next = nextByTopic.get(row.topic);
+    if (!next) {
+      await ctx.db.delete(row._id);
+      continue;
+    }
+    if (hasDigestChanged(row, next)) {
+      await ctx.db.patch(row._id, next);
+    }
+    nextByTopic.delete(row.topic);
+  }
+  for (const next of nextByTopic.values()) {
+    await ctx.db.insert("skillTopicSearchDigest", next);
+  }
+}
+
+export async function deleteSkillSearchDigests(
+  ctx: Pick<MutationCtx, "db">,
+  skillId: Id<"skills">,
+) {
+  const digest = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .unique();
+  if (digest) await ctx.db.delete(digest._id);
+  for (const topicDigest of await ctx.db
+    .query("skillTopicSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect()) {
+    await ctx.db.delete(topicDigest._id);
+  }
+  const curatedDigest = await ctx.db
+    .query("curatedSkillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .unique();
+  if (curatedDigest) await ctx.db.delete(curatedDigest._id);
+}
+
+export async function syncSkillSearchDigestForSkill(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills"> | null | undefined,
+) {
+  if (!skill) return;
+  const fields = await extractValidatedDigestFields(ctx, skill);
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: skill.ownerPublisherId,
+    ownerUserId: skill.ownerUserId,
+  });
+  await upsertSkillSearchDigest(ctx, {
+    ...fields,
+    ownerHandle: owner?.handle ?? "",
+    ownerKind: owner?.kind,
+    ownerName: owner?.linkedUserId ? owner.handle : undefined,
+    ownerDisplayName: owner?.displayName,
+    ownerImage: owner?.image,
+  });
 }
 
 /** Compare new fields against existing row. Returns true if any field differs. */
 function hasDigestChanged(
-  existing: Doc<"skillSearchDigest">,
-  fields: SkillSearchDigestFields,
+  existing: Record<string, unknown>,
+  fields: Record<string, unknown>,
 ): boolean {
   for (const key of Object.keys(fields)) {
     const oldVal = (existing as Record<string, unknown>)[key];

@@ -4,65 +4,291 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  VITE_CONVEX_URL: https://example.invalid
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  static:
+    name: static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: oven-sh/setup-bun@e3914758a49697077f7bcd190d36582a61667aad
+      - uses: ./.github/actions/setup-bun
+
+      - name: Static checks
+        run: bun run ci:static
+
+  claws-openclaw-contract:
+    name: claws-openclaw-contract
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 25
+    env:
+      OPENCLAW_CONTRACT_REPOSITORY: openclaw/openclaw
+      OPENCLAW_CONTRACT_SHA: f8c0e1b8325b1fc36e039cf357a2c4602f76d5aa
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Check out the pinned OpenClaw contract source
+        uses: actions/checkout@v7.0.1
         with:
-          bun-version: 1.3.10
+          repository: ${{ env.OPENCLAW_CONTRACT_REPOSITORY }}
+          ref: ${{ env.OPENCLAW_CONTRACT_SHA }}
+          path: .artifacts/openclaw-contract
 
-      - name: Install
-        run: bun install --frozen-lockfile
-      - name: Peer deps
-        run: bun run check:peers
+      - name: Set up OpenClaw Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
 
-      - name: Format
-        if: github.event_name == 'pull_request'
+      - name: Install pinned OpenClaw dependencies
+        working-directory: .artifacts/openclaw-contract
         run: |
-          mapfile -d '' changed_files < <(
-            git diff --name-only --diff-filter=ACMR -z \
-              "${{ github.event.pull_request.base.sha }}" \
-              "${{ github.event.pull_request.head.sha }}" \
-              -- \
-              '*.css' '*.js' '*.jsx' '*.json' '*.md' '*.mjs' '*.ts' '*.tsx' '*.yaml' '*.yml'
-          )
+          corepack enable
+          corepack pnpm install --frozen-lockfile
 
-          if (( ${#changed_files[@]} == 0 )); then
-            echo "No changed files supported by oxfmt."
-            exit 0
+      - name: Run ClawHub to OpenClaw contract proof
+        env:
+          OPENCLAW_CLAWS_CHECKOUT: ${{ github.workspace }}/.artifacts/openclaw-contract
+        run: bunx vitest run scripts/claws-feed-openclaw-e2e.test.ts --maxWorkers=1
+
+  unit:
+    name: unit
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 2
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Record runner capacity
+        run: |
+          printf 'logical_cpus='
+          nproc
+          printf 'memory_total_kib='
+          awk '/^MemTotal:/ { print $2 }' /proc/meminfo
+          if [[ -r /sys/fs/cgroup/cpu.max ]]; then
+            printf 'cpu_max='
+            cat /sys/fs/cgroup/cpu.max
+          fi
+          if [[ -r /sys/fs/cgroup/cpu.stat ]]; then
+            cat /sys/fs/cgroup/cpu.stat
           fi
 
-          bun run format:check -- "${changed_files[@]}"
+      - name: Unit coverage
+        run: bun run ci:unit
 
-      - name: Lint
-        run: bun run lint
+  packages:
+    name: packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
 
-      - name: Test
-        run: bun run test
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Package checks
+        run: bun run ci:packages
+
+  types-build:
+    name: types-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Typecheck and build
+        run: bun run ci:types-build
+
+  e2e-http:
+    name: e2e-http
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up Node.js for CLI compatibility
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: HTTP e2e
+        run: bun run ci:e2e-http
+
+  playwright-smoke:
+    name: playwright-smoke
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright browsers
+        run: bunx playwright install chromium
+
+      - name: Browser e2e
+        run: bun run ci:playwright-smoke
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
+
+  playwright-local-auth-shard:
+    name: playwright-local-auth / ${{ matrix.name }}
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - name: account-cleanup
+            specs: |
+              e2e/local-auth/delete-account-resources.pw.test.ts
+              e2e/local-auth/delete-org-resources.pw.test.ts
+          - name: profile-context
+            specs: |
+              e2e/local-auth/header-profile-link.pw.test.ts
+              e2e/local-auth/manage-context-proof.pw.test.ts
+              e2e/local-auth/publisher-github-profile.pw.test.ts
+              e2e/local-auth/skill-hero-metadata.pw.test.ts
+          - name: moderation-malicious
+            specs: e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
+          - name: star-sync
+            specs: e2e/local-auth/skill-star-sync.pw.test.ts
+          - name: inspector-version
+            specs: |
+              e2e/local-auth/plugin-inspector-findings.pw.test.ts
+              e2e/local-auth/version-delete.pw.test.ts
+          - name: publish-generated-card
+            specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
+            grep: publishing a skill queues scan
+          - name: publish-new-version
+            specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
+            grep: skill publishers can create a skill
+          - name: old-cli-publish
+            specs: e2e/local-auth/old-cli-publish-compat.pw.test.ts
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Cache npm packages for local Convex external dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-local-auth-npm-${{ hashFiles('bun.lock', 'convex.json') }}
+          restore-keys: |
+            ${{ runner.os }}-local-auth-npm-
+
+      - name: Install Playwright browsers
+        run: bunx playwright install chromium
+
+      - name: Local-auth browser e2e
         env:
-          VITE_CONVEX_URL: https://example.invalid
-
-      - name: Coverage
-        run: bun run coverage
-        env:
-          VITE_CONVEX_URL: https://example.invalid
-
-      - name: ClawHub CLI Verify
-        run: bun run --cwd packages/clawhub verify
-
-      - name: Typecheck
+          PLAYWRIGHT_GREP: ${{ matrix.grep || '' }}
+          PLAYWRIGHT_SPECS: ${{ matrix.specs }}
         run: |
-          bunx tsc --noEmit
-          bunx tsc -p packages/schema/tsconfig.json --noEmit
-          bunx tsc -p packages/clawhub/tsconfig.json --noEmit
+          set -euo pipefail
+          pressure_phase=before
+          report_runner_pressure() {
+            echo "::group::Local-auth runner pressure ($pressure_phase)"
+            date --utc --iso-8601=seconds
+            printf 'logical_cpus='
+            nproc
+            printf 'loadavg='
+            cat /proc/loadavg
+            if [[ -r /sys/fs/cgroup/cpu.stat ]]; then
+              cat /sys/fs/cgroup/cpu.stat
+            fi
+            if [[ -r /proc/pressure/memory ]]; then
+              cat /proc/pressure/memory
+            fi
+            free -h || true
+            echo "::endgroup::"
+          }
+          report_runner_pressure
+          pressure_phase=after
+          trap report_runner_pressure EXIT
 
-      - name: Build
-        run: bun run build
+          mapfile -t specs < <(printf '%s\n' "$PLAYWRIGHT_SPECS" | sed '/^[[:space:]]*$/d')
+          args=(--project=chromium "${specs[@]}")
+          if [[ -n "$PLAYWRIGHT_GREP" ]]; then
+            args+=(--grep "$PLAYWRIGHT_GREP")
+          fi
+          bun run test:pw:local-auth -- "${args[@]}"
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-local-auth-report-${{ matrix.name }}
+          path: playwright-report/
+          if-no-files-found: ignore
+
+  playwright-local-auth:
+    name: playwright-local-auth
+    runs-on: ubuntu-latest
+    needs: playwright-local-auth-shard
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Check local-auth shards
+        env:
+          LOCAL_AUTH_RESULT: ${{ needs.playwright-local-auth-shard.result }}
+        run: |
+          if [[ "$LOCAL_AUTH_RESULT" != "success" ]]; then
+            echo "playwright-local-auth shards finished with result: $LOCAL_AUTH_RESULT"
+            exit 1
+          fi
+          echo "playwright-local-auth shards passed."

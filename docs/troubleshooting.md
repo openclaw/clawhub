@@ -1,93 +1,157 @@
 ---
-summary: "Common setup/runtime issues (CLI + backend) and fixes."
+summary: "Troubleshooting ClawHub sign-in, install, publish, update, and API issues."
 read_when:
-  - Something is broken and you need a fix-fast checklist
+  - ClawHub CLI or OpenClaw registry commands fail
+  - A package cannot be installed, published, or updated
 ---
 
 # Troubleshooting
 
-## `clawhub login` opens browser but never completes
+## `clawhub login` waits for authorization
 
-- Ensure your browser can reach `http://127.0.0.1:<port>/callback` (local firewalls/VPNs can interfere).
-- Use headless mode:
-  - create a token in the web UI (Settings → API tokens)
-  - `clawhub login --token clh_...`
+Open the verification URL printed by the CLI, sign in with GitHub if needed,
+and select **Authorize** for the displayed code. You can use a browser on
+another device; no localhost callback is required.
 
-## `whoami` / `publish` returns `Unauthorized` (401)
+If the code expires, run `clawhub login` again. For unattended login, create an
+API token in ClawHub Settings → API tokens and run:
 
-- Token missing or revoked: check your config file (`CLAWHUB_CONFIG_PATH` override?).
-- Ensure requests include `Authorization: Bearer ...` (CLI does this automatically).
-
-## CLI/API returns `Rate limit exceeded` (429)
-
-- Read headers in the response:
-  - `Retry-After` = wait seconds before retry
-  - `RateLimit-Remaining` + `RateLimit-Limit` = current budget
-  - `RateLimit-Reset` (or `X-RateLimit-Reset`) = reset timing
-- The CLI now includes retry hints in 429 errors (retry delay + remaining budget).
-- If many users share one egress IP (NAT/proxy), IP limit can be hit even with valid tokens.
-- For non-Cloudflare deploys behind trusted proxies, set `TRUST_FORWARDED_IPS=true` so forwarded client IPs can be used.
-
-## `search` / `install` fails with `fetch failed` behind a proxy
-
-If your system requires an HTTP proxy for outbound connections (e.g. corporate
-firewalls, Docker containers with proxy-only internet, Hetzner VPS), the CLI
-will fail with:
-
-```
-✖ fetch failed
-Error: fetch failed
+```bash
+clawhub login --token <token>
 ```
 
-**Fix:** Set the standard proxy environment variables:
+## `whoami` or `publish` returns `Unauthorized` (401)
+
+- Sign in again with `clawhub login`.
+- If you use a custom config path, confirm `CLAWHUB_CONFIG_PATH` points at the
+  file that contains your current token.
+- If you use an API token, confirm it was not revoked in the web UI.
+
+## Search or install returns `Rate limit exceeded` (429)
+
+Read the retry information in the response:
+
+- `Retry-After`: seconds to wait before retrying.
+- `RateLimit-Limit`: the limit applied to this request.
+- `RateLimit-Remaining`: your exact remaining budget when the header is present. On `429`, it is `0`.
+- `RateLimit-Reset` or `X-RateLimit-Reset`: reset timing.
+
+If many users share one egress IP, anonymous IP limits can be hit even when each
+person only sends a few requests. Sign in where possible and retry after the
+reported delay.
+
+## Search or install fails behind a proxy
+
+The CLI respects standard proxy variables:
 
 ```bash
 export HTTPS_PROXY=http://proxy.example.com:3128
 clawhub search "my query"
 ```
 
-The CLI respects `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, and `http_proxy`.
+Supported names include `HTTPS_PROXY`, `HTTP_PROXY`, `https_proxy`, and
+`http_proxy`.
 
-## `publish` fails with `OPENAI_API_KEY is not configured`
+## A skill does not appear in search
 
-- Set `OPENAI_API_KEY` in the Convex environment (not only locally).
-- Re-run `bunx convex dev` / `bunx convex deploy` after setting env.
+- Check the exact slug or owner page if you know it.
+- Confirm the release is public and not held by scan or moderation.
+- If you own the skill, sign in and inspect it:
 
-## `publish` fails with `GitHub API rate limit exceeded`
+```bash
+clawhub inspect @openclaw/demo
+```
 
-- This is a GitHub publish-gate lookup hitting unauthenticated limits.
-- Set `GITHUB_TOKEN` in Convex environment to use authenticated GitHub API limits.
-- Retry publish after a short wait if the limit was already exhausted.
+Owner-visible diagnostics may explain scan, upload-gate, or moderation state.
 
-## `sync` says “No skills found”
+## Publish fails because required metadata is missing
 
-- `sync` looks for folders containing `SKILL.md` (or `skill.md`).
-- It scans:
-  - workdir first
-  - then fallback roots (legacy `~/clawdis/skills`, `~/clawdbot/skills`, etc.)
-- Provide explicit roots:
+For skills, check `SKILL.md` frontmatter. Required environment variables and
+tools should be declared so users and scanners can understand the package.
+
+For plugins, check `package.json` compatibility metadata. Code-plugin publishes
+need OpenClaw compatibility fields such as `openclaw.compat.pluginApi` and
+`openclaw.build.openclawVersion`.
+
+Preview the publish payload first:
+
+```bash
+clawhub package publish <source> --family code-plugin --dry-run
+```
+
+## Publish fails with a GitHub owner or source error
+
+ClawHub uses GitHub identity and source attribution to connect packages to their
+publishers.
+
+- Make sure you are signed in with the GitHub account that owns or can publish
+  the package.
+- Check that the source URL is public or accessible to ClawHub.
+- For GitHub sources, use `owner/repo`, `owner/repo@ref`, or a full GitHub URL.
+
+## Publish fails because a namespace is claimed or reserved
+
+If a publish fails because the owner handle, org namespace, package scope, skill
+slug, or package name is already claimed or reserved, first confirm that you are
+publishing with the owner that matches the namespace. For plugin packages,
+scoped names such as `@example-org/example-plugin` must be published as the
+matching `example-org` owner.
+
+If you believe your org, project, or brand is the rightful namespace owner but
+you cannot manage the current ClawHub owner, open an
+[Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
+with public, non-sensitive proof. See
+[Org and Namespace Claims](./namespace-claims.md) for evidence guidance and what
+to keep out of public issues.
+
+## `sync` says no skills were found
+
+`sync` looks for folders containing `SKILL.md` or `skill.md`.
+
+Point it at the roots you want to scan:
 
 ```bash
 clawhub sync --root /path/to/skills
 ```
 
-## `update` refuses due to “local changes (no match)”
+Preview first if you are unsure what will publish:
 
-- Your local files don’t match any published fingerprint.
-- Options:
-  - keep local edits; skip updating
-  - overwrite: `clawhub update <slug> --force`
-  - publish as fork: copy to new folder/slug then `clawhub skill publish ... --fork-of upstream@version`
+```bash
+clawhub sync --all --dry-run --no-input
+```
 
-## `GET /api/*` works locally but not on Vercel
+## `update` refuses because of local changes
 
-- Check `vercel.json` rewrite destination points at your Convex site URL.
-- Ensure `VITE_CONVEX_SITE_URL` and `CONVEX_SITE_URL` match your deployment.
+The local files do not match any version ClawHub knows about. Choose one:
 
-## `deploy.yml` fails before deploy or smoke runs
+- Keep local edits and skip the update.
+- Overwrite with the published version:
 
-- Ensure GitHub Actions secrets exist on the `Production` environment:
-  - `CONVEX_DEPLOY_KEY`
-  - Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`
-- Missing required deploy secrets now fails the preflight job immediately.
-- If the optional Playwright auth secret is missing, authenticated smoke canaries will skip; deploy should still proceed.
+```bash
+clawhub update @openclaw/demo --force
+```
+
+- Publish your edited copy as a new slug or fork.
+
+## A plugin install fails in OpenClaw
+
+- Use an explicit ClawHub source:
+
+```bash
+openclaw plugins install clawhub:<package>
+```
+
+- Check the package detail page for scan status and compatibility metadata.
+- Confirm your OpenClaw version satisfies the package's advertised
+  compatibility range.
+- If the package is hidden, held, or blocked, it may not be installable until
+  the owner resolves the issue.
+
+## Public API requests fail
+
+- Respect `429` retry headers and cache public list/search responses.
+- Link users back to the canonical ClawHub listing.
+- Do not mirror hidden, private, held, or moderation-blocked content outside the
+  public API surface.
+
+See [HTTP API](./http-api.md) for endpoint details.

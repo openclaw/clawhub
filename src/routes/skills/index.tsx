@@ -1,235 +1,317 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { ConvexHttpClient } from "convex/browser";
 import { useQuery } from "convex/react";
-import { Search } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import { api } from "../../../convex/_generated/api";
-import { BrowseSidebar } from "../../components/BrowseSidebar";
-import { SKILL_CATEGORIES } from "../../lib/categories";
-import { formatCompactStat } from "../../lib/numberFormat";
-import { parseDir, parseSort } from "./-params";
+import {
+  BrowseCategorySelect,
+  BrowseCategorySidebar,
+  BrowseControls,
+  BrowseSearchInput,
+  BrowseTopicChips,
+} from "../../components/BrowseControls";
+import { convexHttp } from "../../convex/client";
+import { formatBrowseCount } from "../../lib/browseCount";
+import {
+  parseBrowseTopicFromSearchInput,
+  sanitizeBrowseTopicSearch,
+} from "../../lib/browseTopicSearch";
+import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
+import {
+  consumeManualCatalogSearch,
+  takeManualCatalogSearch,
+  type ManualCatalogSearch,
+} from "../../lib/manualCatalogSearch";
+import { fetchSkillSearch } from "../../lib/skillSearchApi";
+import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
+import { parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
-import { useSkillsBrowseModel, type SkillsSearchState } from "./-useSkillsBrowseModel";
+import type { SkillSearchEntry } from "./-types";
+import {
+  buildSkillsSearchKey,
+  buildSkillsBrowseArgs,
+  buildSkillsBrowseKey,
+  type InitialSkillsListData,
+  type InitialSkillsSearchData,
+  useSkillsBrowseModel,
+  type SkillsSearchState,
+} from "./-useSkillsBrowseModel";
 
-const SORT_OPTIONS = [
-  { value: "downloads", label: "Most downloaded" },
-  { value: "stars", label: "Most starred" },
-  { value: "installs", label: "Most installed" },
-  { value: "updated", label: "Recently updated" },
-  { value: "newest", label: "Newest" },
-  { value: "name", label: "Name" },
-];
+const SKILLS_INITIAL_SEARCH_LIMIT = 25;
+export const SKILLS_INITIAL_PAGE_TIMEOUT_MS = 250;
+
+type InitialSkillsLoaderData = InitialSkillsSearchData | InitialSkillsListData;
+
+function parseSkillCategorySlug(value: unknown) {
+  return typeof value === "string" ? resolveSkillBrowseCategorySlug(value) : undefined;
+}
 
 export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
+    const category = parseSkillCategorySlug(search.category);
+    const topic = parseBrowseTopicFromSearchInput(search as Record<string, unknown>);
+    const sort =
+      typeof search.sort === "string" && search.sort !== "trending"
+        ? parseSort(search.sort)
+        : undefined;
     return {
       q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
-      sort: typeof search.sort === "string" ? parseSort(search.sort) : undefined,
+      sort,
       dir: search.dir === "asc" || search.dir === "desc" ? search.dir : undefined,
-      highlighted:
-        search.highlighted === "1" || search.highlighted === "true" || search.highlighted === true
-          ? true
-          : undefined,
-      featured:
-        search.featured === "1" || search.featured === "true" || search.featured === true
-          ? true
-          : undefined,
-      nonSuspicious:
-        search.nonSuspicious === "1" ||
-        search.nonSuspicious === "true" ||
-        search.nonSuspicious === true
-          ? true
-          : undefined,
-      view: search.view === "cards" || search.view === "list" ? search.view : undefined,
+      category,
+      topic,
       focus: search.focus === "search" ? "search" : undefined,
     };
   },
-  beforeLoad: ({ search }) => {
+  loaderDeps: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
-    if (hasQuery || search.sort || search.featured || search.highlighted || search.nonSuspicious) {
-      return;
-    }
-    throw redirect({
-      to: "/skills",
-      search: {
-        q: search.q || undefined,
-        sort: "downloads",
-        dir: search.dir || undefined,
-        highlighted: search.highlighted || undefined,
-        featured: search.featured || undefined,
-        nonSuspicious: search.nonSuspicious || undefined,
-        view: search.view || undefined,
-        focus: search.focus || undefined,
-      },
-      replace: true,
-    });
+    return {
+      q: search.q,
+      category: search.category,
+      topic: search.topic,
+      sort: hasQuery ? undefined : search.sort,
+      dir: hasQuery ? undefined : search.dir,
+    };
   },
+  beforeLoad: ({ search, preload }) => ({
+    manualCatalogSearch: preload ? null : takeManualCatalogSearch(search.q),
+  }),
+  loader: async ({ deps, abortController, context }): Promise<InitialSkillsLoaderData> =>
+    !deps.q?.trim()
+      ? await loadInitialSkillsDataWithinBudget(deps, abortController.signal)
+      : await loadInitialSkillsData(deps, abortController.signal, context?.manualCatalogSearch),
   component: SkillsIndex,
 });
 
+export async function loadInitialSkillsData(
+  search: SkillsSearchState,
+  signal?: AbortSignal,
+  manualCatalogSearch?: ManualCatalogSearch | null,
+): Promise<InitialSkillsLoaderData> {
+  const query = search.q?.trim();
+  if (query) {
+    const featuredOnly = false;
+    const key = buildSkillsSearchKey({
+      query,
+      featuredOnly,
+      categorySlug: search.category,
+      topic: search.topic,
+    });
+    try {
+      const args = {
+        query,
+        highlightedOnly: featuredOnly,
+        categorySlug: search.category,
+        topic: search.topic,
+        limit: SKILLS_INITIAL_SEARCH_LIMIT,
+      };
+      const results = consumeManualCatalogSearch(manualCatalogSearch, "skill", query)
+        ? ((await fetchSkillSearch({
+            ...args,
+            searchSource: "clawhub-web",
+            signal,
+          })) as SkillSearchEntry[])
+        : ((await convexHttp.action(api.search.searchSkills, args)) as SkillSearchEntry[]);
+      return { key, limit: SKILLS_INITIAL_SEARCH_LIMIT, results };
+    } catch (error) {
+      console.error("Failed to load initial skills search:", error);
+      return null;
+    }
+  }
+
+  try {
+    // Keep timeout/navigation cancellation scoped to this request, never the shared client.
+    const client = signal
+      ? new ConvexHttpClient(convexHttp.url, {
+          fetch: (input, init) => fetch(input, { ...init, signal }),
+        })
+      : convexHttp;
+    const result = await client.query(api.skills.listPublicPageV4, buildSkillsBrowseArgs(search));
+    signal?.throwIfAborted();
+    // Let the client continue filtered scans instead of hydrating an empty transport page.
+    if (result.page.length === 0 && result.hasMore) return null;
+    return {
+      kind: "browse",
+      key: buildSkillsBrowseKey(search),
+      results: result.page,
+      nextCursor: result.hasMore ? result.nextCursor : null,
+    };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.error("Failed to load initial skills page:", error);
+    return null;
+  }
+}
+
+async function loadInitialSkillsDataWithinBudget(
+  search: SkillsSearchState,
+  navigationSignal: AbortSignal,
+): Promise<InitialSkillsLoaderData> {
+  if (navigationSignal.aborted) throw navigationSignal.reason;
+
+  const requestController = new AbortController();
+  let rejectOnNavigationAbort: (reason: unknown) => void = () => {};
+  const navigationAbort = new Promise<never>((_, reject) => {
+    rejectOnNavigationAbort = reject;
+  });
+  const abortFromNavigation = () => {
+    requestController.abort(navigationSignal.reason);
+    rejectOnNavigationAbort(navigationSignal.reason);
+  };
+  navigationSignal.addEventListener("abort", abortFromNavigation, { once: true });
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timeoutId = setTimeout(() => {
+      resolve(null);
+      requestController.abort(
+        new DOMException("Initial Skills catalog request timed out", "TimeoutError"),
+      );
+    }, SKILLS_INITIAL_PAGE_TIMEOUT_MS);
+  });
+
+  try {
+    // Slow catalog dependencies must not hold the document response open.
+    // Hydration falls back to the existing client fetch after this budget.
+    return await Promise.race([
+      loadInitialSkillsData(search, requestController.signal),
+      timeout,
+      navigationAbort,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    navigationSignal.removeEventListener("abort", abortFromNavigation);
+  }
+}
+
 export function SkillsIndex() {
   const navigate = Route.useNavigate();
-  const search = Route.useSearch();
+  const routeSearch = Route.useSearch();
+  const initialData = Route.useLoaderData() as InitialSkillsLoaderData | undefined;
+  const initialList = initialData && "kind" in initialData ? initialData : undefined;
+  const initialSearch = initialData && !("kind" in initialData) ? initialData : undefined;
+  const { search, activeTopic } = useBrowseTopicSearch(routeSearch, navigate);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const totalSkills = useQuery(api.skills.countPublicSkills);
-  const totalSkillsText = typeof totalSkills === "number" ? formatCompactStat(totalSkills) : null;
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const model = useSkillsBrowseModel({
+    initialList,
+    initialSearch,
     navigate,
     search,
     searchInputRef,
   });
 
-  const sortOptionsWithRelevance = model.hasQuery
-    ? [{ value: "relevance", label: "Relevance" }, ...SORT_OPTIONS]
-    : SORT_OPTIONS;
-
-  const handleFilterToggle = useCallback(
-    (key: string) => {
-      if (key === "nonSuspicious") model.onToggleNonSuspicious();
-    },
-    [model.onToggleNonSuspicious],
+  const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || Boolean(activeTopic);
+  const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
+  const categoryTopics = useQuery(
+    api.catalogTopics.listTopByCategory,
+    model.activeCategory
+      ? {
+          kind: "skill",
+          category: model.activeCategory,
+        }
+      : "skip",
   );
-
-  const handleSortChange = useCallback(
-    (value: string) => {
-      if (value === "featured") {
-        if (!model.featuredOnly) model.onToggleFeatured();
-        return;
-      }
-
-      if (model.featuredOnly) {
-        const nextSort = parseSort(value);
-        void navigate({
-          search: (prev) => ({
-            ...prev,
-            sort: nextSort,
-            dir: parseDir(prev.dir, nextSort),
-            featured: undefined,
-            highlighted: undefined,
-          }),
-          replace: true,
-        });
-        return;
-      }
-
-      model.onSortChange(value);
-    },
-    [model.featuredOnly, model.onSortChange, model.onToggleFeatured, navigate],
-  );
-
-  const handleClear = useCallback(() => {
-    model.onQueryChange("");
-    if (model.featuredOnly) model.onToggleFeatured();
-    if (model.nonSuspiciousOnly) model.onToggleNonSuspicious();
-  }, [
-    model.featuredOnly,
-    model.onQueryChange,
-    model.onToggleFeatured,
-    model.onToggleNonSuspicious,
-    model.nonSuspiciousOnly,
-  ]);
+  const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {
-      if (slug) {
-        const cat = SKILL_CATEGORIES.find((c) => c.slug === slug);
-        if (cat?.keywords[0]) {
-          model.onQueryChange(cat.keywords[0]);
-        }
-      } else {
-        model.onQueryChange("");
-      }
+      const category = parseSkillCategorySlug(slug);
+      void navigate({
+        search: (prev: SkillsSearchState) => ({
+          ...prev,
+          category,
+          topic: undefined,
+          featured: undefined,
+          highlighted: undefined,
+        }),
+        replace: true,
+      });
     },
-    [model.onQueryChange],
+    [navigate],
   );
 
-  const activeCategory = useMemo(() => {
-    if (!model.query) return undefined;
-    return (
-      SKILL_CATEGORIES.find((c) => c.keywords.some((k) => k === model.query.trim().toLowerCase()))
-        ?.slug ?? undefined
-    );
-  }, [model.query]);
+  const handleTopicChange = useCallback(
+    (topic: string | undefined) => {
+      void navigate({
+        search: (prev: SkillsSearchState) =>
+          sanitizeBrowseTopicSearch(
+            {
+              ...prev,
+              featured: undefined,
+              highlighted: undefined,
+            },
+            topic ?? null,
+          ),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
 
   return (
-    <main className="browse-page">
+    <main className="browse-page browse-page-borderless-header skills-browse-page catalog-browse-page">
       <div className="browse-page-header">
-        <button
-          className="browse-sidebar-toggle"
-          type="button"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          aria-label="Toggle filters"
-        >
-          Filters
-        </button>
-        <h1 className="browse-title">
-          Skills
-          {totalSkillsText ? <span className="browse-count">{totalSkillsText}</span> : null}
-        </h1>
+        <div className="browse-page-header-main">
+          <h1 className="browse-title">
+            Skills
+            {formattedCount ? (
+              <>
+                {" "}
+                <span className="browse-count">{formattedCount}</span>
+              </>
+            ) : null}
+          </h1>
+        </div>
       </div>
-      <div className="browse-page-search">
-        <Search size={15} className="navbar-search-icon" aria-hidden="true" />
-        <input
-          ref={searchInputRef}
-          className="browse-search-input"
-          value={model.query}
-          onChange={(event) => model.onQueryChange(event.target.value)}
+      <BrowseControls>
+        <BrowseSearchInput
+          inputRef={searchInputRef}
+          focusShortcut
+          label="skill search"
           placeholder="Search skills..."
+          value={model.query}
+          onChange={model.onQueryChange}
+          onClear={model.onClearQuery}
         />
-      </div>
-      <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
-        <BrowseSidebar
+        <BrowseCategorySelect
           categories={SKILL_CATEGORIES}
-          activeCategory={activeCategory}
-          onCategoryChange={handleCategoryChange}
-          sortOptions={[{ value: "featured", label: "Featured" }, ...sortOptionsWithRelevance]}
-          activeSort={model.featuredOnly ? "featured" : model.sort}
-          onSortChange={handleSortChange}
-          filters={[
-            { key: "nonSuspicious", label: "Hide suspicious", active: model.nonSuspiciousOnly },
-          ]}
-          onFilterToggle={handleFilterToggle}
+          value={model.activeCategory}
+          onChange={handleCategoryChange}
+          responsive
+        />
+        <BrowseTopicChips
+          topics={categoryTopics ?? []}
+          activeTopic={activeTopic}
+          onChange={handleTopicChange}
+          loading={Boolean(model.activeCategory && categoryTopics === undefined)}
+        />
+      </BrowseControls>
+      <div className="browse-layout browse-layout-with-sidebar">
+        <BrowseCategorySidebar
+          ariaLabel="Skill categories"
+          categories={SKILL_CATEGORIES}
+          value={model.activeCategory}
+          onChange={handleCategoryChange}
         />
         <div className="browse-results">
-          <div className="browse-results-toolbar">
-            <span className="browse-results-count">
-              {model.isLoadingSkills ? "\u2014" : `${model.sorted.length} results`}
-              {model.hasQuery || model.featuredOnly || model.nonSuspiciousOnly ? (
-                <button className="browse-clear-btn" type="button" onClick={handleClear}>
-                  Clear
-                </button>
-              ) : null}
-            </span>
-            <div className="browse-view-toggle">
-              <button
-                className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}
-                type="button"
-                onClick={model.view === "cards" ? model.onToggleView : undefined}
-              >
-                List
-              </button>
-              <button
-                className={`browse-view-btn${model.view === "cards" ? " is-active" : ""}`}
-                type="button"
-                onClick={model.view === "list" ? model.onToggleView : undefined}
-              >
-                Cards
-              </button>
-            </div>
-          </div>
-          <SkillsResults
-            isLoadingSkills={model.isLoadingSkills}
-            sorted={model.sorted}
-            view={model.view}
-            listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
-            hasQuery={model.hasQuery}
-            canLoadMore={model.canLoadMore}
-            isLoadingMore={model.isLoadingMore}
-            canAutoLoad={model.canAutoLoad}
-            loadMoreRef={model.loadMoreRef}
-            loadMore={model.loadMore}
-          />
+          {model.searchError ? (
+            <p role="alert">Unable to search skills. Refresh to retry.</p>
+          ) : (
+            <SkillsResults
+              isLoadingSkills={model.isLoadingSkills}
+              sorted={model.sorted}
+              listDoneLoading={!model.isLoadingSkills && !model.canLoadMore && !model.isLoadingMore}
+              hasQuery={model.hasQuery}
+              canLoadMore={model.canLoadMore}
+              isLoadingMore={model.isLoadingMore}
+              canAutoLoad={model.canAutoLoad}
+              loadMoreRef={model.loadMoreRef}
+              loadMore={model.loadMore}
+              listFailed={model.listFailed}
+              retryLoad={model.retryLoad}
+            />
+          )}
         </div>
       </div>
     </main>

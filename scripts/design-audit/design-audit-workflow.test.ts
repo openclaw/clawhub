@@ -1,0 +1,180 @@
+/* @vitest-environment node */
+import { readFile } from "node:fs/promises";
+import { parseConfigFileTextToJson } from "typescript";
+import { describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
+
+type Step = {
+  "continue-on-error"?: boolean;
+  env?: Record<string, unknown>;
+  id?: string;
+  name?: string;
+  if?: string;
+  run?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
+};
+
+describe("weekly design-system audit workflow", () => {
+  it("runs Monday and manually, with one guarded draft PR branch", async () => {
+    const source = await readFile(".github/workflows/design-system-audit.yml", "utf8");
+    const workflow = parseYaml(source) as {
+      on: {
+        schedule: Array<{ cron: string }>;
+        workflow_dispatch: unknown;
+      };
+      env: Record<string, string>;
+      jobs: { audit: { "runs-on": string; steps: Step[] } };
+    };
+    const steps = workflow.jobs.audit.steps;
+
+    expect(workflow.jobs.audit["runs-on"]).toBe("blacksmith-8vcpu-ubuntu-2404");
+    expect(workflow.on.schedule).toEqual([{ cron: "17 15 * * 1" }]);
+    expect(workflow.on.workflow_dispatch).toBeDefined();
+    expect(workflow.env.AUDIT_BRANCH).toBe("automation/design-system-audit");
+    expect(workflow.env.ARTIFACT_DIRECTORY).toBe("artifacts/design-audit");
+    expect(source.toLowerCase()).not.toContain("linear");
+    expect(source).not.toContain("gh pr merge");
+
+    const createPr = steps.find((step) => step.name === "Open or update draft pull request");
+    expect(createPr?.run).toContain("--draft");
+    expect(createPr?.run).toContain("gh pr edit");
+    expect(createPr?.run).toContain('--head "$AUDIT_BRANCH"');
+
+    const primaryToken = steps.find((step) => step.id === "app-token");
+    expect(primaryToken).toMatchObject({
+      uses: "actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3",
+      "continue-on-error": true,
+      if: "steps.finalize.outputs.open_pr == 'true'",
+      with: {
+        "app-id": "2729701",
+        "private-key": "${{ secrets.GH_APP_PRIVATE_KEY }}",
+        owner: "${{ github.repository_owner }}",
+        repositories: "${{ github.event.repository.name }}",
+        "permission-pull-requests": "write",
+      },
+    });
+
+    const fallbackToken = steps.find((step) => step.id === "app-token-fallback");
+    expect(fallbackToken).toMatchObject({
+      uses: "actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3",
+      "continue-on-error": true,
+      if: "steps.finalize.outputs.open_pr == 'true' && steps.app-token.outcome == 'failure'",
+      with: {
+        "app-id": "2971289",
+        "private-key": "${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}",
+        owner: "${{ github.repository_owner }}",
+        repositories: "${{ github.event.repository.name }}",
+        "permission-pull-requests": "write",
+      },
+    });
+
+    expect(createPr?.env).toEqual({
+      GH_TOKEN: "${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token }}",
+    });
+    const createPrRun = createPr?.run ?? "";
+    const tokenGuard = 'if [[ -z "${GH_TOKEN:-}" ]]';
+    expect(createPrRun).toContain(tokenGuard);
+    expect(createPrRun).toContain("primary GH_APP_PRIVATE_KEY");
+    expect(createPrRun).toContain("fallback GH_APP_PRIVATE_KEY_FALLBACK");
+    expect(createPrRun.indexOf(tokenGuard)).toBeLessThan(createPrRun.indexOf("gh pr list"));
+    expect(JSON.stringify(createPr)).not.toContain("github.token");
+    expect(createPrRun).not.toContain("git push");
+
+    const commit = steps.find((step) => step.name === "Commit audit branch");
+    expect(commit?.run).toContain('git push --force-with-lease origin "HEAD:$AUDIT_BRANCH"');
+    expect(JSON.stringify(commit)).not.toContain("steps.app-token");
+
+    const closeClean = steps.find(
+      (step) => step.name === "Close obsolete clean audit pull request",
+    );
+    expect(closeClean?.if).toContain("steps.validation.outcome == 'success'");
+    expect(closeClean?.run).toContain("gh pr close");
+    expect(closeClean?.env).toEqual({ GH_TOKEN: "${{ github.token }}" });
+    expect(JSON.stringify(closeClean)).not.toContain("steps.app-token");
+
+    expect(source).not.toContain("DESIGN_SYSTEM_READ_TOKEN");
+  });
+
+  it("preserves artifacts and suppresses PRs when validation fails", async () => {
+    const workflow = parseYaml(
+      await readFile(".github/workflows/design-system-audit.yml", "utf8"),
+    ) as { jobs: { audit: { steps: Step[] } } };
+    const vitestConfig = await readFile("vitest.config.ts", "utf8");
+    const steps = workflow.jobs.audit.steps;
+    const upload = steps.find((step) => step.name === "Upload audit artifacts");
+    const commit = steps.find((step) => step.name === "Commit audit branch");
+    const failure = steps.find((step) => step.name === "Fail unsuccessful audit");
+
+    expect(vitestConfig).toContain('"artifacts/**"');
+    expect(vitestConfig).not.toContain('"**/artifacts/**"');
+    expect(upload?.if).toBe("always()");
+    expect(upload?.uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
+    expect(commit?.if).toBe("steps.finalize.outputs.open_pr == 'true'");
+    expect(failure?.if).toContain("steps.validation.outcome == 'failure'");
+  });
+
+  it("keeps Codex workspace-scoped with restricted networking", async () => {
+    const runCodex = await readFile("scripts/design-audit/run-codex.ts", "utf8");
+    const forbiddenOverrides = [
+      "danger-full-access",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "use_legacy_landlock=true",
+      "use_legacy_landlock = true",
+      "network_access=true",
+      "network_access = true",
+    ];
+
+    expect(runCodex).toContain('"--sandbox",\n    "workspace-write"');
+    for (const override of forbiddenOverrides) {
+      expect(runCodex).not.toContain(override);
+    }
+  });
+
+  it("excludes generated audit artifacts from the root TypeScript project", async () => {
+    const source = await readFile("tsconfig.json", "utf8");
+    const parsed = parseConfigFileTextToJson("tsconfig.json", source);
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.config.exclude).toContain("artifacts/**");
+  });
+
+  it("enforces the agent change boundary before running repository scripts", async () => {
+    const workflow = parseYaml(
+      await readFile(".github/workflows/design-system-audit.yml", "utf8"),
+    ) as { jobs: { audit: { steps: Step[] } } };
+    const steps = workflow.jobs.audit.steps;
+    const boundaryIndex = steps.findIndex((step) => step.name === "Validate agent change boundary");
+    const deterministicIndex = steps.findIndex(
+      (step) => step.name === "Re-run deterministic checks on agent patch",
+    );
+    const validationIndex = steps.findIndex(
+      (step) => step.name === "Validate proposed source fixes",
+    );
+
+    expect(boundaryIndex).toBeGreaterThan(-1);
+    expect(boundaryIndex).toBeLessThan(deterministicIndex);
+    expect(deterministicIndex).toBeLessThan(validationIndex);
+    expect(steps[boundaryIndex]?.run).toContain("validate-changes.ts");
+    expect(steps[deterministicIndex]?.run).toContain("--working-tree");
+    expect(steps[deterministicIndex]?.run).toContain("--fail-on-findings");
+    expect(steps[validationIndex]?.if).toContain("steps.change_boundary.outcome == 'success'");
+    expect(steps[validationIndex]?.if).toContain("steps.post_source.outcome == 'success'");
+  });
+
+  it("pins the design release and audit inputs in every report", async () => {
+    const source = await readFile(".github/workflows/design-system-audit.yml", "utf8");
+    expect(source).toContain("require('./node_modules/@openclaw/carapace/package.json').version");
+    expect(source).toContain("repos/openclaw/carapace/releases/tags/${release}");
+    expect(source).toContain("https://github.com/openclaw/carapace.git");
+    expect(source).toContain('clone \\\n            --branch "$release"');
+    expect(source).toContain("--consumer-sha");
+    expect(source).toContain("--base-sha");
+    expect(source).toContain("--release");
+    expect(source).toContain("browser-check.ts");
+    expect(source).toContain("run-codex.ts");
+    expect(source).toContain(
+      "set -euo pipefail\n          {\n            bun run test:ui-contract",
+    );
+  });
+});

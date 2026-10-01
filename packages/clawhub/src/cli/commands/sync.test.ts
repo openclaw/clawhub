@@ -8,6 +8,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
+import type { SkillOrigin } from "../../skills.js";
 
 const mockIntro = vi.fn();
 const mockOutro = vi.fn();
@@ -20,9 +21,9 @@ const mocked = <T>(value: T) =>
 const defaultFindSkillFolders = async (root: string) => {
   if (!root.endsWith("/scan")) return [];
   return [
-    { folder: "/scan/new-skill", slug: "new-skill", displayName: "New Skill" },
-    { folder: "/scan/synced-skill", slug: "synced-skill", displayName: "Synced Skill" },
-    { folder: "/scan/update-skill", slug: "update-skill", displayName: "Update Skill" },
+    { folder: `${root}/new-skill`, slug: "new-skill", displayName: "New Skill" },
+    { folder: `${root}/synced-skill`, slug: "synced-skill", displayName: "Synced Skill" },
+    { folder: `${root}/update-skill`, slug: "update-skill", displayName: "Update Skill" },
   ];
 };
 
@@ -30,7 +31,6 @@ vi.mock("@clack/prompts", () => ({
   intro: (value: string) => mockIntro(value),
   outro: (value: string) => mockOutro(value),
   multiselect: (args: unknown) => mockMultiselect(args),
-  text: vi.fn(async () => ""),
   isCancel: () => false,
 }));
 
@@ -38,9 +38,6 @@ const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
 const uiMocks = createUiModuleMocks();
-httpMocks.downloadZip.mockImplementation(
-  async (_registry?: unknown, _args?: unknown) => new Uint8Array([1, 2, 3]),
-);
 const mockApiRequest = httpMocks.apiRequest;
 const mockFail = uiMocks.fail;
 const mockSpinner = uiMocks.spinner;
@@ -48,27 +45,15 @@ vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => mockSpinner),
+  createCrabLoader: vi.fn(() => mockSpinner),
   fail: (message: string) => mockFail(message),
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isInteractive: () => interactive,
-  promptConfirm: uiMocks.promptConfirm,
 }));
 
 vi.mock("../scanSkills.js", () => ({
   findSkillFolders: vi.fn(defaultFindSkillFolders),
   getFallbackSkillRoots: vi.fn(() => []),
-}));
-
-const mockResolveClawdbotSkillRoots = vi.fn(
-  async () =>
-    ({
-      roots: [] as string[],
-      labels: {} as Record<string, string>,
-    }) as const,
-);
-vi.mock("../clawdbotConfig.js", () => ({
-  resolveClawdbotSkillRoots: () => mockResolveClawdbotSkillRoots(),
 }));
 
 const mockListTextFiles = vi.fn(async (folder: string) => [
@@ -80,23 +65,21 @@ const mockHashSkillFiles = vi.fn((files: Array<{ relPath: string; bytes: Uint8Ar
     .join("|"),
   files: [],
 }));
-const mockHashSkillZip = vi.fn((_zip?: Uint8Array) => ({
-  fingerprint: "remote-fingerprint",
-  files: [],
-}));
-const mockReadSkillOrigin = vi.fn(async (_folder?: string) => null);
+const mockReadSkillOrigin = vi.fn(async (_folder?: string): Promise<SkillOrigin | null> => null);
 vi.mock("../../skills.js", () => ({
-  listTextFiles: (folder: string) => mockListTextFiles(folder),
+  listSkillFiles: (folder: string) => mockListTextFiles(folder),
   hashSkillFiles: (files: Array<{ relPath: string; bytes: Uint8Array }>) =>
     mockHashSkillFiles(files),
-  hashSkillZip: (zip: Uint8Array) => mockHashSkillZip(zip),
   readSkillOrigin: (folder: string) => mockReadSkillOrigin(folder),
 }));
 
 const mockCmdPublish = vi.fn();
+const mockPrepareSkillFilesForPublish = vi.fn(async (folder: string) => mockListTextFiles(folder));
 vi.mock("./publish.js", () => ({
   cmdPublish: (opts: unknown, folder: unknown, options?: unknown) =>
     mockCmdPublish(opts, folder, options),
+  prepareSkillFilesForPublish: (folder: string) => mockPrepareSkillFilesForPublish(folder),
+  resolveDefaultOwnerHandle: async (_registry: string, _token: string) => "steipete",
 }));
 
 const { cmdSync } = await import("./sync");
@@ -107,8 +90,15 @@ function makeOpts() {
 
 afterEach(async () => {
   vi.clearAllMocks();
-  const { findSkillFolders } = await import("../scanSkills.js");
+  mockCmdPublish.mockReset();
+  mockPrepareSkillFilesForPublish.mockImplementation(async (folder: string) =>
+    mockListTextFiles(folder),
+  );
+  mockReadSkillOrigin.mockImplementation(async (_folder?: string) => null);
+  process.exitCode = undefined;
+  const { findSkillFolders, getFallbackSkillRoots } = await import("../scanSkills.js");
   mocked(findSkillFolders).mockImplementation(defaultFindSkillFolders);
+  mocked(getFallbackSkillRoots).mockImplementation(() => []);
 });
 
 vi.spyOn(console, "log").mockImplementation((...args) => {
@@ -116,17 +106,14 @@ vi.spyOn(console, "log").mockImplementation((...args) => {
 });
 
 describe("cmdSync", () => {
-  it("classifies skills as new/update/synced (dry-run, mocked HTTP)", async () => {
+  it("emits CI JSON dry-run without requiring auth", async () => {
     interactive = false;
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
-      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
-      if (args.path.startsWith("/api/v1/resolve?")) {
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") {
-          throw new Error("Skill not found");
-        }
+        if (slug === "new-skill") throw new Error("Skill not found");
         if (slug === "synced-skill") {
           return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
         }
@@ -134,36 +121,73 @@ describe("cmdSync", () => {
           return { match: null, latestVersion: { version: "1.0.0" } };
         }
       }
-      throw new Error(`Unexpected apiRequest: ${args.path}`);
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
+    let output = "";
+    try {
+      await cmdSync(
+        makeOpts(),
+        {
+          root: ["/scan"],
+          all: true,
+          dryRun: true,
+          json: true,
+          owner: "nvidia",
+        },
+        false,
+      );
+      output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
 
+    expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
     expect(mockCmdPublish).not.toHaveBeenCalled();
+    expect(mockPrepareSkillFilesForPublish).toHaveBeenCalledTimes(3);
+    for (const call of mockApiRequest.mock.calls) {
+      const path = String(call[1]?.path ?? "");
+      if (path.startsWith("/api/v1/resolve?")) {
+        expect(new URL(`https://x.test${path}`).searchParams.get("ownerHandle")).toBe("nvidia");
+      }
+    }
+    expect(mockLog).not.toHaveBeenCalled();
+    expect(mockIntro).not.toHaveBeenCalled();
+    expect(mockOutro).not.toHaveBeenCalled();
 
-    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(output).toMatch(/Already synced/);
-    expect(output).toMatch(/synced-skill/);
-
-    const dryRunOutro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(dryRunOutro)).toMatch(/Dry run: would upload 2 skill/);
+    const parsed = JSON.parse(output) as {
+      ok: boolean;
+      dryRun: boolean;
+      owner?: string;
+      summary: { wouldPublish: number; alreadySynced: number; failed: number };
+      wouldPublish: Array<{ slug: string; version: string; status: string }>;
+      alreadySynced: Array<{ slug: string; version: string }>;
+      published: unknown[];
+      failed: unknown[];
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.dryRun).toBe(true);
+    expect(parsed.owner).toBe("nvidia");
+    expect(parsed.summary).toMatchObject({ wouldPublish: 2, alreadySynced: 1, failed: 0 });
+    expect(parsed.wouldPublish.map((entry) => [entry.slug, entry.version, entry.status])).toEqual([
+      ["new-skill", "1.0.0", "new"],
+      ["update-skill", "1.0.1", "update"],
+    ]);
+    expect(parsed.alreadySynced).toEqual([
+      expect.objectContaining({ slug: "synced-skill", version: "1.2.3" }),
+    ]);
+    expect(parsed.published).toEqual([]);
+    expect(parsed.failed).toEqual([]);
   });
 
-  it("prints bullet lists and selects all actionable by default", async () => {
-    interactive = true;
-    mockMultiselect.mockImplementation(async (args?: unknown) => {
-      const { initialValues } = args as { initialValues: string[] };
-      return initialValues;
-    });
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+  it("publishes selected skills without reporting install telemetry", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
-      if (args.path.startsWith("/api/v1/resolve?")) {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
         const u = new URL(`https://x.test${args.path}`);
         const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") {
-          throw new Error("Skill not found");
-        }
+        if (slug === "new-skill") throw new Error("Skill not found");
         if (slug === "synced-skill") {
           return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
         }
@@ -171,150 +195,367 @@ describe("cmdSync", () => {
           return { match: null, latestVersion: { version: "1.0.0" } };
         }
       }
-      throw new Error(`Unexpected apiRequest: ${args.path}`);
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: false, dryRun: false, bump: "patch" }, true);
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false }, true);
 
-    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(output).toMatch(/To sync/);
-    expect(output).toMatch(/- new-skill/);
-    expect(output).toMatch(/- update-skill/);
-    expect(output).toMatch(/Already synced/);
-    expect(output).toMatch(/- synced-skill/);
-
-    const lastCall = mockMultiselect.mock.calls.at(-1);
-    const promptArgs = lastCall ? (lastCall[0] as { initialValues: string[] }) : undefined;
-    expect(promptArgs?.initialValues.length).toBe(2);
     expect(mockCmdPublish).toHaveBeenCalledTimes(2);
+    expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { slug: string }).slug)).toEqual([
+      "new-skill",
+      "update-skill",
+    ]);
+    for (const call of mockApiRequest.mock.calls) {
+      const path = String(call[1]?.path ?? "");
+      if (path.startsWith("/api/v1/resolve?")) {
+        expect(new URL(`https://x.test${path}`).searchParams.get("ownerHandle")).toBe("steipete");
+      }
+    }
+    expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { owner: string }).owner)).toEqual([
+      "steipete",
+      "steipete",
+    ]);
+    expect(
+      mockApiRequest.mock.calls.some((call) => call[1]?.path === "/api/cli/telemetry/install"),
+    ).toBe(false);
   });
 
-  it("shows condensed synced list when nothing to sync", async () => {
+  it("owner-qualifies fork provenance from installed origins", async () => {
     interactive = false;
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+    mockReadSkillOrigin.mockImplementation(async (folder?: string) =>
+      folder?.endsWith("/new-skill")
+        ? {
+            version: 1,
+            registry: "https://clawhub.ai",
+            slug: "new-skill",
+            ownerHandle: "openclaw",
+            installedVersion: "1.2.3",
+            installedAt: 1,
+          }
+        : null,
+    );
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
       if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
-      if (args.path.startsWith("/api/v1/resolve?")) {
-        return { match: { version: "1.0.0" }, latestVersion: { version: "1.0.0" } };
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
       }
-      throw new Error(`Unexpected apiRequest: ${args.path}`);
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
     });
 
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false }, true);
-
-    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(output).toMatch(/Already synced/);
-    expect(output).toMatch(/new-skill@1.0.0/);
-    expect(output).toMatch(/synced-skill@1.0.0/);
-    expect(output).not.toMatch(/\n-/);
-
-    const outro = mockOutro.mock.calls.at(-1)?.[0];
-    expect(String(outro)).toMatch(/Nothing to sync/);
-  });
-
-  it("dedupes duplicate slugs before publishing", async () => {
-    interactive = false;
-    const { findSkillFolders } = await import("../scanSkills.js");
-    mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (!root.endsWith("/scan")) return [];
-      return [
-        { folder: "/scan/dup-skill", slug: "dup-skill", displayName: "Dup Skill" },
-        { folder: "/scan/dup-skill-copy", slug: "dup-skill", displayName: "Dup Skill" },
-      ];
-    });
-
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
-      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
-      if (args.path.startsWith("/api/v1/resolve?")) {
-        return { match: null, latestVersion: null };
-      }
-      throw new Error(`Unexpected apiRequest: ${args.path}`);
-    });
-
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false }, true);
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false }, false);
 
     expect(mockCmdPublish).toHaveBeenCalledTimes(1);
-    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(output).toMatch(/Skipped duplicate slugs/);
-    expect(output).toMatch(/dup-skill/);
+    expect(mockCmdPublish.mock.calls[0]?.[2]).toMatchObject({
+      slug: "new-skill",
+      forkOf: "@openclaw/new-skill@1.2.3",
+    });
   });
 
-  it("prints labeled roots when clawdbot roots are detected", async () => {
+  it("resolves relative roots against --workdir and keeps source paths relative", async () => {
     interactive = false;
-    mockResolveClawdbotSkillRoots.mockResolvedValueOnce({
-      roots: ["/auto"],
-      labels: { "/auto": "Agent: Work" },
-    });
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/workspace/scan");
     const { findSkillFolders } = await import("../scanSkills.js");
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+
+    try {
+      await cmdSync(
+        makeGlobalOpts("/workspace"),
+        {
+          root: ["scan"],
+          all: true,
+          dryRun: false,
+          sourceRepo: "example/tools",
+          sourceCommit: "1234567890abcdef",
+        },
+        false,
+      );
+    } finally {
+      cwdSpy.mockRestore();
+    }
+
+    expect(findSkillFolders).toHaveBeenCalledWith("/workspace/scan");
+    expect(
+      mockCmdPublish.mock.calls.map((call) => (call[2] as { sourcePath?: string }).sourcePath),
+    ).toEqual(["scan/new-skill", "scan/update-skill"]);
+  });
+
+  it("uses scan-root-relative source paths for skills outside --workdir", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+
+    await cmdSync(
+      makeGlobalOpts("/workspace"),
+      {
+        root: ["/external/scan"],
+        all: true,
+        dryRun: false,
+        sourceRepo: "example/tools",
+        sourceCommit: "1234567890abcdef",
+      },
+      false,
+    );
+
+    expect(
+      mockCmdPublish.mock.calls.map((call) => (call[2] as { sourcePath?: string }).sourcePath),
+    ).toEqual(["new-skill", "update-skill"]);
+  });
+
+  it("keeps real sync JSON output owned by sync", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+    mockCmdPublish.mockImplementation((_opts: unknown, _folder: unknown, options?: unknown) => {
+      if (!(options as { quiet?: boolean } | undefined)?.quiet) {
+        process.stdout.write("child publish output\n");
+      }
+      return {
+        status: "published",
+        version: (options as { version?: string } | undefined)?.version ?? "1.0.0",
+        publicationStatus: "published",
+      };
+    });
+
+    let output = "";
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, json: true }, false);
+      expect(stdoutWrite).toHaveBeenCalledTimes(1);
+      output = String(stdoutWrite.mock.calls[0]?.[0] ?? "");
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    const parsed = JSON.parse(output);
+    expect(parsed).toMatchObject({
+      ok: true,
+      summary: { published: 2, failed: 0 },
+    });
+    expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { quiet?: boolean }).quiet)).toEqual(
+      [true, true],
+    );
+  });
+
+  it("keeps pending sync submissions out of the published json summary", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+    mockCmdPublish.mockImplementation(
+      (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
+        options?.slug === "new-skill"
+          ? {
+              status: "pending-publication",
+              version: options.version,
+              publicationStatus: "pending",
+            }
+          : {
+              status: "published",
+              version: options?.version,
+              publicationStatus: "published",
+            },
+    );
+
+    let output = "";
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, json: true }, false);
+      output = String(stdoutWrite.mock.calls[0]?.[0] ?? "");
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    const parsed = JSON.parse(output);
+    expect(parsed.summary).toMatchObject({ published: 1, submitted: 1, failed: 0 });
+    expect(parsed.published).toEqual([
+      expect.objectContaining({ slug: "update-skill", version: "1.0.1" }),
+    ]);
+    expect(parsed.submitted).toEqual([
+      expect.objectContaining({
+        slug: "new-skill",
+        version: "1.0.0",
+        status: "pending-publication",
+        publicationStatus: "pending",
+      }),
+    ]);
+  });
+
+  it("does not call pending sync submissions published in human summaries", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+    mockCmdPublish.mockImplementation(
+      (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
+        options?.slug === "new-skill"
+          ? {
+              status: "pending-publication",
+              version: options.version,
+              publicationStatus: "pending",
+            }
+          : {
+              status: "published",
+              version: options?.version,
+              publicationStatus: "published",
+            },
+    );
+
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true }, false);
+
+    expect(mockOutro).toHaveBeenCalledWith("Published 1 skill(s). Submitted 1 update(s).");
+  });
+
+  it("does not report a raced unchanged publish as uploaded", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+    mockCmdPublish.mockImplementation(
+      (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
+        options?.slug === "new-skill"
+          ? { status: "unchanged", version: options.version }
+          : { status: "published", version: options?.version },
+    );
+
+    let output = "";
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, json: true }, false);
+      output = String(stdoutWrite.mock.calls[0]?.[0] ?? "");
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    const parsed = JSON.parse(output);
+    expect(parsed.summary).toMatchObject({ published: 1, alreadySynced: 2, failed: 0 });
+    expect(parsed.published).toEqual([
+      expect.objectContaining({ slug: "update-skill", version: "1.0.1" }),
+    ]);
+    expect(parsed.alreadySynced).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: "synced-skill", version: "1.2.3" }),
+        expect.objectContaining({ slug: "new-skill", version: "1.0.0" }),
+      ]),
+    );
+  });
+
+  it("requires --all for non-interactive publish mode", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+
+    await expect(cmdSync(makeOpts(), { root: ["/scan"], dryRun: false }, false)).rejects.toThrow(
+      "Pass --all",
+    );
+
+    expect(mockMultiselect).not.toHaveBeenCalled();
+    expect(mockCmdPublish).not.toHaveBeenCalled();
+  });
+
+  it("refuses real --all publishes from fallback roots", async () => {
+    interactive = false;
+    const { findSkillFolders, getFallbackSkillRoots } = await import("../scanSkills.js");
     mocked(findSkillFolders).mockImplementation(async (root: string) => {
-      if (root === "/auto") {
-        return [{ folder: "/auto/alpha", slug: "alpha", displayName: "Alpha" }];
+      if (root === "/work" || root === "/work/skills") return [];
+      if (root === "/fallback/skills") {
+        return [
+          {
+            folder: "/fallback/skills/private-skill",
+            slug: "private-skill",
+            displayName: "Private Skill",
+          },
+        ];
       }
       return [];
     });
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
-      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
-      if (args.path.startsWith("/api/v1/resolve?")) {
-        throw new Error("Skill not found");
-      }
-      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    mocked(getFallbackSkillRoots).mockImplementation(() => ["/fallback/skills"]);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) throw new Error("Skill not found");
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
     });
 
-    await cmdSync(makeOpts(), { all: true, dryRun: true }, true);
-
-    const output = mockLog.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(output).toMatch(/Roots with skills/);
-    expect(output).toMatch(/Agent: Work/);
-  });
-
-  it("allows empty changelog for updates (interactive)", async () => {
-    interactive = true;
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
-      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path === "/api/cli/telemetry/sync") return { ok: true };
-      if (args.path.startsWith("/api/v1/resolve?")) {
-        const u = new URL(`https://x.test${args.path}`);
-        const slug = u.searchParams.get("slug");
-        if (slug === "new-skill") {
-          throw new Error("Skill not found");
-        }
-        if (slug === "synced-skill") {
-          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
-        }
-        if (slug === "update-skill") {
-          return { match: null, latestVersion: { version: "1.0.0" } };
-        }
-      }
-      throw new Error(`Unexpected apiRequest: ${args.path}`);
-    });
-
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, bump: "patch" }, true);
-
-    const calls = mockCmdPublish.mock.calls.map(
-      (call) => call[2] as { slug: string; changelog: string },
+    await expect(cmdSync(makeOpts(), { all: true, dryRun: false }, false)).rejects.toThrow(
+      "Refusing to publish fallback skill roots with --all",
     );
-    const update = calls.find((c) => c.slug === "update-skill");
-    if (!update) throw new Error("Missing update-skill publish");
-    expect(update.changelog).toBe("");
-  });
 
-  it("skips telemetry when CLAWHUB_DISABLE_TELEMETRY is set", async () => {
-    interactive = false;
-    process.env.CLAWHUB_DISABLE_TELEMETRY = "1";
-    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
-      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
-      if (args.path.startsWith("/api/v1/resolve?")) {
-        return { match: { version: "1.0.0" }, latestVersion: { version: "1.0.0" } };
-      }
-      throw new Error(`Unexpected apiRequest: ${args.path}`);
-    });
-
-    await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: true }, true);
-    expect(
-      mockApiRequest.mock.calls.some((call) => call[1]?.path === "/api/cli/telemetry/sync"),
-    ).toBe(false);
-    delete process.env.CLAWHUB_DISABLE_TELEMETRY;
+    expect(mockCmdPublish).not.toHaveBeenCalled();
+    expect(mockPrepareSkillFilesForPublish).not.toHaveBeenCalled();
+    expect(mockApiRequest).not.toHaveBeenCalled();
   });
 });

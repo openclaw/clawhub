@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Generate shareable Pyroscope UI links
+# Usage: pyroscope-link <deployment> <query> [time-range] [view]
+# Example: pyroscope-link prod 'process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="axiom-api"}' "1h"
+# Example: pyroscope-link prod 'process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="axiom-api"}' "1h" diff
+#
+# Time range can be:
+#   - Quick range: "1h", "6h", "24h", "7d", "30d"
+#   - Absolute: "2024-01-01T00:00:00Z,2024-01-02T00:00:00Z"
+#
+# View can be:
+#   - single (default): Single flamegraph
+#   - comparison: Side-by-side comparison
+#   - diff: Diff view
+#   - explore: Tag explorer
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+QUERY="${2:-}"
+TIME_RANGE="${3:-1h}"
+VIEW="${4:-single}"
+
+if [[ -z "$DEPLOYMENT" || -z "$QUERY" ]]; then
+  echo "Usage: pyroscope-link <deployment> <query> [time-range] [view]" >&2
+  echo "" >&2
+  echo "Views: single (default), comparison, diff, explore" >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  pyroscope-link prod 'process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name=\"axiom-api\"}' 1h" >&2
+  echo "  pyroscope-link prod 'goroutine:goroutine:count:goroutine:count{service_name=\"axiom-db\"}' 6h diff" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT")"
+
+URL="${PYROSCOPE_URL%/}"
+
+if [[ -z "$URL" ]]; then
+  echo "Error: Missing url for deployment '$DEPLOYMENT'" >&2
+  exit 1
+fi
+
+# Map view name to URL path
+case "$VIEW" in
+  single)     VIEW_PATH="" ;;
+  comparison) VIEW_PATH="/comparison" ;;
+  diff)       VIEW_PATH="/comparison-diff" ;;
+  explore)    VIEW_PATH="/explore" ;;
+  *)
+    echo "Error: Unknown view '$VIEW'. Use: single, comparison, diff, explore" >&2
+    exit 1
+    ;;
+esac
+
+# Build time range query params
+TIME_PARAMS=""
+if [[ "$TIME_RANGE" == *","* ]]; then
+  FROM="${TIME_RANGE%%,*}"
+  UNTIL="${TIME_RANGE##*,}"
+  # Convert ISO timestamps to epoch seconds
+  if command -v gdate &>/dev/null; then
+    FROM_EPOCH=$(gdate -d "$FROM" +%s)
+    UNTIL_EPOCH=$(gdate -d "$UNTIL" +%s)
+  else
+    FROM_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$FROM" +%s 2>/dev/null || date -d "$FROM" +%s)
+    UNTIL_EPOCH=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$UNTIL" +%s 2>/dev/null || date -d "$UNTIL" +%s)
+  fi
+  TIME_PARAMS="&from=${FROM_EPOCH}&until=${UNTIL_EPOCH}"
+else
+  # Validate relative time format
+  if ! [[ "$TIME_RANGE" =~ ^[0-9]+[smhd]$ ]]; then
+    echo "Error: Invalid time range '$TIME_RANGE'. Use format like 1h, 30m, 7d, 300s" >&2
+    exit 1
+  fi
+  NOW=$(date +%s)
+  NUM="${TIME_RANGE%[smhd]}"
+  UNIT="${TIME_RANGE: -1}"
+  case "$UNIT" in
+    s) OFFSET=$NUM ;;
+    m) OFFSET=$((NUM * 60)) ;;
+    h) OFFSET=$((NUM * 3600)) ;;
+    d) OFFSET=$((NUM * 86400)) ;;
+  esac
+  FROM_EPOCH=$((NOW - OFFSET))
+  TIME_PARAMS="&from=${FROM_EPOCH}&until=${NOW}"
+fi
+
+# URL-encode the query
+ENCODED_QUERY=$(printf '%s' "$QUERY" | jq -sRr @uri)
+
+echo "${URL}${VIEW_PATH}?query=${ENCODED_QUERY}${TIME_PARAMS}"

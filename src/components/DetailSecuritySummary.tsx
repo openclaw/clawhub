@@ -1,155 +1,80 @@
-import { useState } from "react";
-import {
-  getScanStatusInfo,
-  type LlmAnalysis,
-  type StaticFinding,
-  type VtAnalysis,
-} from "./SkillSecurityScanResults";
-import { Badge, type BadgeProps } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-
-type RescanRequest = {
-  _id: string;
-  targetKind: "skill" | "plugin";
-  targetVersion: string;
-  status: "in_progress" | "completed" | "failed";
-  createdAt: number;
-  updatedAt: number;
-  completedAt?: number;
-};
-
-export type DetailRescanState = {
-  maxRequests: number;
-  requestCount: number;
-  remainingRequests: number;
-  canRequest: boolean;
-  inProgressRequest: RescanRequest | null;
-  latestRequest: RescanRequest | null;
-};
+import { Info } from "lucide-react";
+import { aggregateAuditVerdict, SECURITY_AUDIT_SUBTEXT } from "./securityAuditModel";
+import { getScanStatusInfo, type LlmAnalysis, type VtAnalysis } from "./SkillSecurityScanResults";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type DetailSecuritySummaryProps = {
-  scannerBasePath: string;
-  sha256hash?: string | null;
+  auditHref: string;
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
-  staticScan?: {
-    status: string;
-    reasonCodes: string[];
-    findings: StaticFinding[];
-    summary: string;
-    engineVersion: string;
-    checkedAt: number;
-  } | null;
-  rescanState?: DetailRescanState | null;
-  onRequestRescan?: (() => Promise<void>) | null;
+  githubScanStatus?: string | null;
 };
 
-function statusFromStaticScan(staticScan: DetailSecuritySummaryProps["staticScan"]) {
-  if (staticScan?.status) return staticScan.status;
-  return "pending";
-}
-
-function badgeVariantForScanStatus(status: string): BadgeProps["variant"] {
-  const normalized = status.toLowerCase();
-  if (normalized === "clean" || normalized === "benign") return "success";
-  if (normalized === "suspicious") return "warning";
-  if (normalized === "malicious" || normalized === "error") return "destructive";
-  if (normalized === "pending" || normalized === "queued" || normalized === "loading") {
-    return "pending";
+export function auditVerdictMeterLevel(status: string) {
+  switch (status.toLowerCase()) {
+    case "malicious":
+      return 1;
+    case "warn":
+    case "warning":
+    case "suspicious":
+    case "review":
+      return 2;
+    case "benign":
+    case "clean":
+      return 3;
+    default:
+      return 0;
   }
-  return "compact";
 }
 
-function ScannerRow({ href, label, status }: { href: string; label: string; status: string }) {
-  const info = getScanStatusInfo(status);
+export function DetailSecuritySummary({
+  auditHref,
+  vtAnalysis,
+  llmAnalysis,
+  githubScanStatus,
+}: DetailSecuritySummaryProps) {
+  const hasVersionScanResult = Boolean(vtAnalysis || llmAnalysis);
+  const auditVerdict = hasVersionScanResult
+    ? aggregateAuditVerdict({ llmAnalysis })
+    : (githubScanStatus ?? "pending");
+  const auditVerdictInfo = getScanStatusInfo(auditVerdict);
+  const meterLevel = auditVerdictMeterLevel(auditVerdict);
   return (
-    <a
-      href={href}
-      className="flex min-w-0 items-center justify-between gap-3 rounded-[var(--radius-sm)] px-1 py-2 text-sm !no-underline hover:bg-[color:var(--surface-muted)] hover:!no-underline"
-    >
-      <span className="flex min-w-0 items-center gap-2 font-semibold text-[color:var(--ink)]">
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="flex shrink-0 items-center gap-2">
-        <Badge variant={badgeVariantForScanStatus(status)}>{info.label}</Badge>
-      </span>
+    <a href={auditHref} className="security-audit-sidebar-value" aria-label="View Security Audit">
+      <div className="security-audit-sidebar-value-row">
+        <span className="security-audit-sidebar-verdict" data-status={auditVerdict}>
+          {auditVerdictInfo.label}
+        </span>
+        <div className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
     </a>
   );
 }
 
-function rescanDisabledReason(state: DetailRescanState | null | undefined) {
-  if (!state) return null;
-  if (state.inProgressRequest) return "A rescan is already in progress.";
-  if (state.remainingRequests <= 0) {
-    return `Rescan limit reached (${state.requestCount}/${state.maxRequests}).`;
-  }
-  if (!state.canRequest) return "This release is not eligible for another rescan.";
-  return null;
-}
-
-export function DetailSecuritySummary({
-  scannerBasePath,
-  vtAnalysis,
-  llmAnalysis,
-  staticScan,
-  rescanState,
-  onRequestRescan,
-}: DetailSecuritySummaryProps) {
-  const [isRequestingRescan, setIsRequestingRescan] = useState(false);
-  const vtStatus = vtAnalysis?.verdict ?? vtAnalysis?.status ?? "pending";
-  const llmStatus = llmAnalysis?.verdict ?? llmAnalysis?.status ?? "pending";
-  const staticStatus = statusFromStaticScan(staticScan);
-  const rescanButtonDisabledReason = rescanDisabledReason(rescanState);
-  const isScanInProgress = Boolean(rescanState?.inProgressRequest);
-  const rescanButtonLabel = isScanInProgress
-    ? "Scanning"
-    : isRequestingRescan
-      ? "Requesting..."
-      : "Rescan";
-
-  async function handleRequestRescan() {
-    if (!onRequestRescan || rescanButtonDisabledReason || isRequestingRescan) return;
-    setIsRequestingRescan(true);
-    try {
-      await onRequestRescan();
-    } finally {
-      setIsRequestingRescan(false);
-    }
-  }
-
+export function DetailSecuritySummaryLabel() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-          Security Scans
-          {rescanState && onRequestRescan ? (
-            <Button
+    <span className="security-audit-sidebar-label">
+      <span>Security audit</span>
+      <TooltipProvider delayDuration={400}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="w-full justify-center sm:ml-auto sm:w-auto"
-              loading={isRequestingRescan || isScanInProgress}
-              disabled={Boolean(rescanButtonDisabledReason)}
-              title={rescanButtonDisabledReason ?? "Request a fresh scan"}
-              onClick={() => void handleRequestRescan()}
+              className="security-audit-sidebar-info"
+              aria-label={SECURITY_AUDIT_SUBTEXT}
             >
-              {rescanButtonLabel}
-            </Button>
-          ) : null}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col gap-2">
-          <ScannerRow href={`${scannerBasePath}/virustotal`} label="VirusTotal" status={vtStatus} />
-          <ScannerRow href={`${scannerBasePath}/openclaw`} label="ClawScan" status={llmStatus} />
-          <ScannerRow
-            href={`${scannerBasePath}/static-analysis`}
-            label="Static analysis"
-            status={staticStatus}
-          />
-        </div>
-      </CardContent>
-    </Card>
+              <Info size={13} aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start" className="security-report-title-tooltip">
+            {SECURITY_AUDIT_SUBTEXT}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </span>
   );
 }

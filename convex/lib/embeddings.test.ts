@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./embeddings";
+import { EMBEDDING_DIMENSIONS, generateEmbedding, generateEmbeddings } from "./embeddings";
 
 const fetchMock = vi.fn<typeof fetch>();
 const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -51,7 +51,9 @@ describe("generateEmbedding", () => {
   it("retries on 429 responses and then succeeds", async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(new Response("rate limited", { status: 429 }));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ data: [{ embedding: [0.25, 0.75] }] }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ data: [{ index: 0, embedding: [0.25, 0.75] }] }),
+    );
 
     const promise = generateEmbedding("retry me");
     await vi.runAllTimersAsync();
@@ -70,7 +72,7 @@ describe("generateEmbedding", () => {
   it("retries on network failures and then succeeds", async () => {
     vi.useFakeTimers();
     fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ data: [{ embedding: [1, 2, 3] }] }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ data: [{ index: 0, embedding: [1, 2, 3] }] }));
 
     const promise = generateEmbedding("network retry");
     await vi.runAllTimersAsync();
@@ -91,5 +93,52 @@ describe("generateEmbedding", () => {
 
     await rejection;
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("generateEmbeddings", () => {
+  it("embeds a batch once and restores input order from response indexes", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [
+          { index: 1, embedding: [0, 1] },
+          { index: 0, embedding: [1, 0] },
+        ],
+      }),
+    );
+    await expect(generateEmbeddings(["first", "second"])).resolves.toEqual([
+      [1, 0],
+      [0, 1],
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string).input).toEqual([
+      "first",
+      "second",
+    ]);
+  });
+  it("rejects an incomplete or duplicate-index batch instead of assigning another query's vector", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [
+          { index: 0, embedding: [1] },
+          { index: 0, embedding: [2] },
+        ],
+      }),
+    );
+    await expect(generateEmbeddings(["first", "second"])).rejects.toThrow(
+      "Embedding missing from response",
+    );
+  });
+  it("does not request empty batches and preserves no-key behavior for every input", async () => {
+    await expect(generateEmbeddings([])).resolves.toEqual([]);
+    delete process.env.OPENAI_API_KEY;
+    const result = await generateEmbeddings(["first", "second"]);
+    expect(result).toHaveLength(2);
+    expect(
+      result.every(
+        (vector) => vector.length === EMBEDDING_DIMENSIONS && vector.every((value) => value === 0),
+      ),
+    ).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

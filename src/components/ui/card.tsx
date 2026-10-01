@@ -7,7 +7,7 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
       ref={ref}
       className={cn(
         // Matches .card
-        "flex w-full flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-space-5 transition-all duration-200 ease-out",
+        "flex w-full flex-col gap-3 rounded-[var(--oc-radius-surface)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-surface-card)] p-space-5 transition-all duration-[var(--oc-duration-ui)] ease-[var(--oc-ease-out)]",
         className,
       )}
       {...props}
@@ -37,14 +37,6 @@ const CardTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTML
 );
 CardTitle.displayName = "CardTitle";
 
-const CardDescription = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLParagraphElement>
->(({ className, ...props }, ref) => (
-  <p ref={ref} className={cn("text-sm text-[color:var(--ink-soft)]", className)} {...props} />
-));
-CardDescription.displayName = "CardDescription";
-
 const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div ref={ref} className={cn("flex flex-col gap-3", className)} {...props} />
@@ -52,11 +44,4 @@ const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
 );
 CardContent.displayName = "CardContent";
 
-const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("flex items-center gap-3 pt-2", className)} {...props} />
-  ),
-);
-CardFooter.displayName = "CardFooter";
-
-export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter };
+export { Card, CardHeader, CardTitle, CardContent };

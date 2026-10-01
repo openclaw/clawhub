@@ -1,0 +1,201 @@
+#!/usr/bin/env bash
+# eval-init: Initialize eval infrastructure in a project
+#
+# Usage: eval-init [project-dir]
+#
+# Creates (if missing):
+#   1. src/app-scope.ts      - Flag schema with createAppScope()
+#   2. axiom.config.ts       - Eval configuration with defineConfig()
+#
+# Also checks:
+#   - package.json exists
+#   - axiom SDK is installed
+#   - vitest is installed
+#
+# Arguments:
+#   project-dir  - Target project directory (default: current directory)
+#
+# Examples:
+#   eval-init
+#   eval-init ./my-ai-project
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${1:-.}"
+
+# Resolve to absolute path
+PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd)
+
+echo "=== Eval Init: $PROJECT_DIR ==="
+echo ""
+
+errors=0
+warnings=0
+created=0
+
+error() {
+    echo "ERROR: $1"
+    errors=$((errors + 1))
+}
+
+warn() {
+    echo "WARN:  $1"
+    warnings=$((warnings + 1))
+}
+
+info() {
+    echo "OK:    $1"
+}
+
+created() {
+    echo "CREATED: $1"
+    created=$((created + 1))
+}
+
+skipped() {
+    echo "SKIP:  $1 (already exists)"
+}
+
+# --- Check package.json ---
+echo "[1/5] Checking project..."
+
+if [[ ! -f "$PROJECT_DIR/package.json" ]]; then
+    error "No package.json found in $PROJECT_DIR"
+    echo "  Run 'npm init' first."
+    exit 1
+fi
+info "package.json found"
+
+# --- Check axiom SDK ---
+echo ""
+echo "[2/5] Checking dependencies..."
+
+if grep -q '"axiom"' "$PROJECT_DIR/package.json" 2>/dev/null; then
+    info "axiom SDK found in package.json"
+else
+    warn "axiom SDK not found in package.json"
+    echo "       Install it: npm install axiom"
+fi
+
+if grep -q '"vitest"' "$PROJECT_DIR/package.json" 2>/dev/null; then
+    info "vitest found in package.json (bundled with axiom SDK)"
+fi
+
+if grep -q '"zod"' "$PROJECT_DIR/package.json" 2>/dev/null; then
+    info "zod found in package.json"
+else
+    warn "zod not found in package.json"
+    echo "       Install it: npm install zod"
+fi
+
+# --- Create src/app-scope.ts ---
+echo ""
+echo "[3/5] Checking app-scope..."
+
+# Look for existing app-scope file
+APP_SCOPE=""
+for candidate in \
+    "$PROJECT_DIR/src/app-scope.ts" \
+    "$PROJECT_DIR/src/lib/app-scope.ts" \
+    "$PROJECT_DIR/app-scope.ts"; do
+    if [[ -f "$candidate" ]]; then
+        APP_SCOPE="$candidate"
+        break
+    fi
+done
+
+if [[ -n "$APP_SCOPE" ]]; then
+    skipped "$APP_SCOPE"
+else
+    # Create in src/ if it exists, otherwise project root
+    if [[ -d "$PROJECT_DIR/src" ]]; then
+        APP_SCOPE="$PROJECT_DIR/src/app-scope.ts"
+    else
+        APP_SCOPE="$PROJECT_DIR/app-scope.ts"
+    fi
+
+    cat > "$APP_SCOPE" << 'APPSCOPE'
+import { createAppScope } from 'axiom/ai';
+import z from 'zod';
+
+export const flagSchema = z.object({
+  // Add one object per capability. Example:
+  // myCapability: z.object({
+  //   model: z.enum(['gpt-4o-mini-2024-07-18', 'gpt-5-mini-2025-08-07']).default('gpt-5-mini-2025-08-07'),
+  //   temperature: z.number().min(0).max(2).default(0.7),
+  // }),
+});
+
+export const { flag, pickFlags } = createAppScope({ flagSchema });
+APPSCOPE
+
+    created "$APP_SCOPE"
+fi
+
+# --- Create axiom.config.ts ---
+echo ""
+echo "[4/5] Checking axiom.config.ts..."
+
+CONFIG_FILE="$PROJECT_DIR/axiom.config.ts"
+
+if [[ -f "$CONFIG_FILE" ]]; then
+    skipped "$CONFIG_FILE"
+else
+    # Determine the relative import path for app-scope
+    REL_APP_SCOPE=$(echo "$APP_SCOPE" | sed "s|$PROJECT_DIR/||" | sed 's/\.ts$//')
+
+    cat > "$CONFIG_FILE" << CONFIGEOF
+import { defineConfig } from 'axiom/ai/config';
+import { flagSchema } from './$REL_APP_SCOPE';
+
+export default defineConfig({
+  eval: {
+    url: process.env.AXIOM_URL,
+    token: process.env.AXIOM_TOKEN,
+    dataset: process.env.AXIOM_DATASET,
+    flagSchema,
+    include: ['**/*.eval.{ts,js}'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+    timeoutMs: 60_000,
+  },
+});
+CONFIGEOF
+
+    created "$CONFIG_FILE"
+fi
+
+# --- Check environment variables ---
+echo ""
+echo "[5/5] Checking environment..."
+
+if [[ -n "${AXIOM_TOKEN:-}" ]]; then
+    info "AXIOM_TOKEN is set"
+else
+    warn "AXIOM_TOKEN not set (needed for non-debug runs)"
+fi
+
+if [[ -n "${AXIOM_DATASET:-}" ]]; then
+    info "AXIOM_DATASET is set"
+else
+    warn "AXIOM_DATASET not set (needed for non-debug runs)"
+fi
+
+# --- Summary ---
+echo ""
+echo "=== Init Complete ==="
+echo "  $created file(s) created, $warnings warning(s), $errors error(s)"
+echo ""
+
+if [[ $created -gt 0 ]]; then
+    echo "Next steps:"
+    echo "  1. Edit $(basename "$APP_SCOPE") — add your capability flags"
+    echo "  2. Create an eval:  scripts/eval-scaffold minimal my-capability"
+    echo "  3. Test locally:    npx axiom eval --debug"
+    echo ""
+fi
+
+if [[ $errors -gt 0 ]]; then
+    exit 1
+fi
+exit 0

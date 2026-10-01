@@ -1,12 +1,13 @@
 import type { PackageCompatibility } from "clawhub-schema";
 import {
+  derivePluginCategoryTags,
   normalizeOpenClawExternalPluginCompatibility,
   validateOpenClawExternalCodePluginPackageJson,
 } from "clawhub-schema";
 
 type JsonRecord = Record<string, unknown>;
 
-export type PluginPublishPrefill = {
+type PluginPublishPrefill = {
   family?: "code-plugin" | "bundle-plugin";
   name?: string;
   displayName?: string;
@@ -15,8 +16,15 @@ export type PluginPublishPrefill = {
   bundleFormat?: string;
   hostTargets?: string;
   compatibility?: PackageCompatibility;
+  suggestedCategories?: string[];
   missingRequiredFields?: string[];
 };
+
+const REAL_BUNDLE_MANIFESTS = [
+  { path: ".codex-plugin/plugin.json", format: "codex" },
+  { path: ".claude-plugin/plugin.json", format: "claude" },
+  { path: ".cursor-plugin/plugin.json", format: "cursor" },
+] as const;
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -100,33 +108,41 @@ export async function derivePluginPrefill(
 ): Promise<PluginPublishPrefill> {
   const packageJson = await readJsonUploadFile(files, "package.json");
   const pluginManifest = await readJsonUploadFile(files, "openclaw.plugin.json");
-  const bundleManifest = await readJsonUploadFile(files, "openclaw.bundle.json");
+  let bundleManifest: JsonRecord | null = null;
+  let bundleFormat: string | undefined;
+  for (const marker of REAL_BUNDLE_MANIFESTS) {
+    bundleManifest = await readJsonUploadFile(files, marker.path);
+    if (bundleManifest) {
+      bundleFormat = marker.format;
+      break;
+    }
+  }
   const openclaw = isRecord(packageJson?.openclaw) ? packageJson.openclaw : undefined;
-  const hostTargets = bundleManifest
-    ? [
-        ...new Set([
-          ...getStringList(bundleManifest.hostTargets),
-          ...getStringList(openclaw?.hostTargets),
-        ]),
-      ]
-    : [];
+  const hostTargets = [...new Set(getStringList(openclaw?.hostTargets))];
 
   return {
-    family: pluginManifest ? "code-plugin" : bundleManifest ? "bundle-plugin" : undefined,
+    family: pluginManifest ? (bundleManifest ? "bundle-plugin" : "code-plugin") : undefined,
     name:
       getString(packageJson?.name) ??
       getString(pluginManifest?.id) ??
       getString(bundleManifest?.id),
     displayName:
-      getString(packageJson?.displayName) ??
       getString(pluginManifest?.name) ??
+      getString(packageJson?.displayName) ??
       getString(bundleManifest?.name),
     version: getString(packageJson?.version),
     sourceRepo: extractSourceRepo(packageJson),
-    bundleFormat: getString(bundleManifest?.format) ?? getString(openclaw?.bundleFormat),
+    bundleFormat:
+      getString(bundleManifest?.format) ?? getString(openclaw?.bundleFormat) ?? bundleFormat,
     hostTargets: hostTargets.length > 0 ? hostTargets.join(", ") : undefined,
     compatibility: pluginManifest
       ? normalizeOpenClawExternalPluginCompatibility(packageJson)
+      : undefined,
+    suggestedCategories: pluginManifest
+      ? derivePluginCategoryTags({
+          family: bundleManifest ? "bundle-plugin" : "code-plugin",
+          pluginManifest,
+        })
       : undefined,
     missingRequiredFields: pluginManifest
       ? validateOpenClawExternalCodePluginPackageJson(packageJson).issues.map(
@@ -147,17 +163,4 @@ export function listPrefilledFields(prefill: PluginPublishPrefill) {
   if (prefill.bundleFormat) fields.push("bundle format");
   if (prefill.hostTargets) fields.push("host targets");
   return fields;
-}
-
-export function formatPackageCompatibility(compatibility: PackageCompatibility) {
-  return [
-    compatibility.pluginApiRange ? `pluginApi=${compatibility.pluginApiRange}` : null,
-    compatibility.builtWithOpenClawVersion
-      ? `builtWith=${compatibility.builtWithOpenClawVersion}`
-      : null,
-    compatibility.pluginSdkVersion ? `sdk=${compatibility.pluginSdkVersion}` : null,
-    compatibility.minGatewayVersion ? `minGateway=${compatibility.minGatewayVersion}` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
 }

@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""List configured Axiom deployments WITHOUT exposing secrets."""
+
+import os
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # fallback for Python < 3.11
+
+config_dir = Path(os.environ.get("SRE_CONFIG_DIR", Path.home() / ".config/axiom-sre"))
+config_file = Path(os.environ.get("SRE_CONFIG", config_dir / "config.toml"))
+
+if not config_file.exists():
+    print(f"No config found at {config_file}")
+    print("Run: scripts/init")
+    sys.exit(1)
+
+try:
+    config = tomllib.loads(config_file.read_text())
+except Exception as e:
+    print(f"Error parsing {config_file}: {e}")
+    sys.exit(1)
+
+deployments = config.get("axiom", {}).get("deployments", {})
+
+if not deployments:
+    print(f"No Axiom deployments configured in {config_file}")
+    print("Add [axiom.deployments.NAME] sections to your config.")
+    sys.exit(0)
+
+print("Configured Axiom deployments:")
+for name in deployments.keys():
+    print(f"  - {name}")

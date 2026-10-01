@@ -6,6 +6,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, type Plugin } from "vite";
+import { copyOgAssets } from "./scripts/copy-og-assets";
 
 const require = createRequire(import.meta.url);
 
@@ -41,7 +42,8 @@ function handleRollupWarning(
 
 type SourceReplacement = readonly [from: string, to: string];
 
-const reflectHas = (target: string, key: string) => `Reflect.has(${target}, ${JSON.stringify(key)})`;
+const reflectHas = (target: string, key: string) =>
+  `Reflect.has(${target}, ${JSON.stringify(key)})`;
 
 const arkSafariInOperatorFixes = [
   {
@@ -89,15 +91,21 @@ const arkSafariInOperatorFixes = [
   },
   {
     suffix: "/node_modules/@ark/schema/out/node.js",
-    replacements: [['"value" in transformedInner', reflectHas("transformedInner", "value")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"value" in transformedInner', reflectHas("transformedInner", "value")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/scope.js",
-    replacements: [['"branches" in schema', reflectHas("schema", "branches")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"branches" in schema', reflectHas("schema", "branches")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/structure/optional.js",
-    replacements: [['"default" in this.inner', reflectHas("this.inner", "default")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"default" in this.inner', reflectHas("this.inner", "default")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/structure/sequence.js",
@@ -112,11 +120,15 @@ const arkSafariInOperatorFixes = [
   },
   {
     suffix: "/node_modules/@ark/schema/out/structure/prop.js",
-    replacements: [['"default" in this.inner', reflectHas("this.inner", "default")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"default" in this.inner', reflectHas("this.inner", "default")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/shared/implement.js",
-    replacements: [['"description" in ctx', reflectHas("ctx", "description")]] satisfies SourceReplacement[],
+    replacements: [
+      ['"description" in ctx', reflectHas("ctx", "description")],
+    ] satisfies SourceReplacement[],
   },
   {
     suffix: "/node_modules/@ark/schema/out/shared/errors.js",
@@ -156,6 +168,16 @@ function patchArkSafariInOperator(): Plugin {
   };
 }
 
+function copyOgAssetsPlugin(): Plugin {
+  return {
+    name: "copy-og-assets",
+    apply: "build",
+    async closeBundle() {
+      await copyOgAssets();
+    },
+  };
+}
+
 const config = defineConfig({
   resolve: {
     dedupe: ["convex", "@convex-dev/auth", "react", "react-dom"],
@@ -164,6 +186,9 @@ const config = defineConfig({
       "convex/browser": convexBrowserPath,
       "convex/values": convexValuesPath,
       "@convex-dev/auth/react": convexAuthReactPath,
+      // MarkdownPreview uses Shiki's JavaScript engine; keep rehype from
+      // selecting the WASM-only `shiki/core` export condition.
+      "shiki/core": "shiki/dist/core.mjs",
     },
     // Use native Vite tsconfig paths resolution instead of the plugin
     tsconfigPaths: true,
@@ -176,6 +201,10 @@ const config = defineConfig({
     devtools(),
     nitro({
       serverDir: "server",
+      handlers: [
+        { route: "/api/**", handler: "./server/handlers/convexProxy.ts" },
+        { route: "/v1/feeds/**", handler: "./server/handlers/convexProxy.ts" },
+      ],
       rollupConfig: {
         onwarn: handleRollupWarning,
       },
@@ -183,6 +212,7 @@ const config = defineConfig({
     tailwindcss(),
     tanstackStart(),
     viteReact(),
+    copyOgAssetsPlugin(),
   ],
   build: {
     // Keep the shipped client bundle parseable in Safari/WebKit.

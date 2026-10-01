@@ -13,15 +13,118 @@ vi.mock("./_generated/api", () => ({
   internal: {
     statsMaintenance: {
       backfillSkillStatFieldsInternal: Symbol("backfillSkillStatFieldsInternal"),
+      backfillSkillDigestRecommendationScoresInternal: Symbol(
+        "backfillSkillDigestRecommendationScoresInternal",
+      ),
+      backfillPackageRecommendationScoresInternal: Symbol(
+        "backfillPackageRecommendationScoresInternal",
+      ),
       getSkillStatBackfillStateInternal: Symbol("getSkillStatBackfillStateInternal"),
       setSkillStatBackfillStateInternal: Symbol("setSkillStatBackfillStateInternal"),
       reconcileSkillStarCounts: Symbol("reconcileSkillStarCounts"),
+      countPublicDigestPageInternal: Symbol("countPublicDigestPageInternal"),
+      listExactNativeExternalIdsPageInternal: Symbol("listExactNativeExternalIdsPageInternal"),
+      listPublicExternalSkillIdsPageInternal: Symbol("listPublicExternalSkillIdsPageInternal"),
+      countPublicPackageDigestPageInternal: Symbol("countPublicPackageDigestPageInternal"),
+      writeGlobalStatsInternal: Symbol("writeGlobalStatsInternal"),
     },
   },
 }));
 
-const { __test, reconcileSkillStarCountsHandler } = await import("./statsMaintenance");
-const { buildSkillStatPatch } = __test;
+const {
+  __test,
+  backfillPackageRecommendationScoresInternal,
+  backfillSkillDigestRecommendationScoresInternal,
+  countPublicDigestPageInternal,
+  countPublicPackageDigestPageInternal,
+  listExactNativeExternalIdsPageInternal,
+  listPublicExternalSkillIdsPageInternal,
+  reconcileSkillStarCountsHandler,
+  runRecommendationScoreBackfillInternal,
+  updateGlobalStatsAction,
+} = await import("./statsMaintenance");
+const {
+  buildSkillStatPatch,
+  computePackageRecommendationScore,
+  computeSkillDigestRecommendationScore,
+} = __test;
+const { RECOMMENDATION_SCORE_VERSION } = await import("./lib/recommendationScore");
+
+type WrappedHandler<TArgs, TResult> = {
+  handler?: (ctx: unknown, args: TArgs) => Promise<TResult>;
+  _handler?: (ctx: unknown, args: TArgs) => Promise<TResult>;
+};
+
+function getHandler<TArgs, TResult>(fn: WrappedHandler<TArgs, TResult>) {
+  const handler = fn.handler ?? fn._handler;
+  if (!handler) throw new Error("Missing function handler");
+  return handler;
+}
+
+const countPublicPackageDigestPageHandler = getHandler<
+  { cursor?: string; pageSize?: number },
+  { count: number; isDone: boolean; cursor: string }
+>(countPublicPackageDigestPageInternal as never);
+
+const countPublicDigestPageHandler = getHandler<
+  { cursor?: string; pageSize?: number },
+  { count: number; isDone: boolean; cursor: string }
+>(countPublicDigestPageInternal as never);
+
+const listPublicExternalSkillIdsPageHandler = getHandler<
+  { cursor?: string; pageSize?: number },
+  { externalIds: string[]; isDone: boolean; cursor: string }
+>(listPublicExternalSkillIdsPageInternal as never);
+
+const listExactNativeExternalIdsPageHandler = getHandler<
+  { cursor?: string; pageSize?: number },
+  {
+    matches: Array<{ externalId: string; nativeSkillId: string }>;
+    isDone: boolean;
+    cursor: string;
+  }
+>(listExactNativeExternalIdsPageInternal as never);
+
+const backfillSkillDigestRecommendationScoresHandler = getHandler<
+  { cursor?: string; batchSize?: number; dryRun?: boolean },
+  { scanned: number; patched: number; cursor: string | null; isDone: boolean; dryRun: boolean }
+>(backfillSkillDigestRecommendationScoresInternal as never);
+
+const backfillPackageRecommendationScoresHandler = getHandler<
+  { cursor?: string; batchSize?: number; dryRun?: boolean },
+  { scanned: number; patched: number; cursor: string | null; isDone: boolean; dryRun: boolean }
+>(backfillPackageRecommendationScoresInternal as never);
+
+const runRecommendationScoreBackfillHandler = getHandler<
+  {
+    skillCursor?: string;
+    packageCursor?: string;
+    skillsDone?: boolean;
+    packagesDone?: boolean;
+    batchSize?: number;
+    maxBatches?: number;
+    dryRun?: boolean;
+  },
+  {
+    ok: true;
+    dryRun: boolean;
+    scoreVersion: number;
+    isDone: boolean;
+    skillsDone: boolean;
+    packagesDone: boolean;
+    skillCursor: string | null;
+    packageCursor: string | null;
+    stats: {
+      skills: { scanned: number; patched: number; batches: number };
+      packages: { scanned: number; patched: number; batches: number };
+    };
+  }
+>(runRecommendationScoreBackfillInternal as never);
+
+const updateGlobalStatsActionHandler = getHandler<
+  Record<string, never>,
+  { activeSkillsCount: number; activeExternalSkillsCount: number; activePluginsCount: number }
+>(updateGlobalStatsAction as never);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +148,14 @@ function makeSkill(overrides: {
   };
 }) {
   return overrides as never;
+}
+
+function oldRecommendationScore(stats: { downloads: number; installs: number; stars: number }) {
+  return Math.round(
+    Math.log1p(stats.downloads) * 100 +
+      Math.log1p(stats.installs) * 60 +
+      Math.log1p(stats.stars) * 120,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +260,509 @@ describe("buildSkillStatPatch", () => {
   });
 });
 
+describe("public package digest count maintenance", () => {
+  it("counts one eligible native listing and excludes duplicates and non-public rows", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          skillId: "skills:public",
+          moderationStatus: "active",
+          softDeletedAt: undefined,
+          canonicalSkillId: undefined,
+        },
+        {
+          moderationStatus: "active",
+          softDeletedAt: undefined,
+          canonicalSkillId: "skills:canonical",
+        },
+        { moderationStatus: "hidden", softDeletedAt: undefined, canonicalSkillId: undefined },
+        { moderationStatus: "active", softDeletedAt: 123, canonicalSkillId: undefined },
+        {
+          moderationStatus: "active",
+          moderationVerdict: "malicious",
+          softDeletedAt: undefined,
+          canonicalSkillId: undefined,
+        },
+      ],
+      continueCursor: "next",
+      isDone: true,
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          expect(table).toBe("skillSearchDigest");
+          return { paginate };
+        }),
+      },
+    };
+
+    await expect(countPublicDigestPageHandler(ctx, {})).resolves.toEqual({
+      count: 1,
+      nativeSkillIds: ["skills:public"],
+      isDone: true,
+      cursor: "next",
+    });
+  });
+
+  it("counts only public code and bundle plugin digests", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          latestVersion: "1.0.0",
+          family: "code-plugin",
+          channel: "community",
+          scanStatus: "clean",
+          softDeletedAt: undefined,
+        },
+        {
+          latestVersion: "1.0.0",
+          family: "bundle-plugin",
+          channel: "official",
+          scanStatus: "not-run",
+          softDeletedAt: undefined,
+        },
+        {
+          latestVersion: "1.0.0",
+          family: "skill",
+          channel: "community",
+          scanStatus: "clean",
+          softDeletedAt: undefined,
+        },
+        {
+          latestVersion: "1.0.0",
+          family: "code-plugin",
+          channel: "private",
+          scanStatus: "clean",
+          softDeletedAt: undefined,
+        },
+        {
+          latestVersion: "1.0.0",
+          family: "bundle-plugin",
+          channel: "community",
+          scanStatus: "malicious",
+          softDeletedAt: undefined,
+        },
+        {
+          latestVersion: "1.0.0",
+          family: "code-plugin",
+          channel: "community",
+          scanStatus: "clean",
+          softDeletedAt: 123,
+        },
+      ],
+      continueCursor: "next",
+      isDone: true,
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          expect(table).toBe("packageSearchDigest");
+          return {
+            paginate,
+          };
+        }),
+      },
+    };
+
+    const result = await countPublicPackageDigestPageHandler(ctx, {});
+
+    expect(result).toEqual({ count: 2, isDone: true, cursor: "next" });
+  });
+
+  it("returns only eligible public skills.sh identities for action-level deduplication", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          externalId: "owner/repo/public",
+          active: true,
+          publicVisible: true,
+          installable: true,
+          sourceFreshnessStatus: "observed-only",
+        },
+        {
+          externalId: "owner/repo/stale",
+          active: true,
+          publicVisible: true,
+          installable: true,
+          sourceFreshnessStatus: "stale",
+        },
+      ],
+      continueCursor: "next",
+      isDone: true,
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ withIndex: () => ({ paginate }) })),
+      },
+    };
+
+    await expect(listPublicExternalSkillIdsPageHandler(ctx, {})).resolves.toEqual({
+      externalIds: ["owner/repo/public"],
+      isDone: true,
+      cursor: "next",
+    });
+  });
+
+  it("returns exact-native reconciliations for cross-source deduplication", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          externalId: "owner/repo/native-match",
+          reconciliation: { kind: "exact-native", nativeSkillId: "skills:native" },
+        },
+        { externalId: "owner/repo/external", reconciliation: { kind: "new" } },
+        { externalId: "owner/repo/unreconciled" },
+      ],
+      continueCursor: "next",
+      isDone: true,
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          expect(table).toBe("skillsShCatalogEntries");
+          return { withIndex: () => ({ paginate }) };
+        }),
+      },
+    };
+
+    await expect(listExactNativeExternalIdsPageHandler(ctx, {})).resolves.toEqual({
+      matches: [
+        {
+          externalId: "owner/repo/native-match",
+          nativeSkillId: "skills:native",
+        },
+      ],
+      isDone: true,
+      cursor: "next",
+    });
+  });
+
+  it("deduplicates identities within and across native and skills.sh sources", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        count: 70_300,
+        nativeSkillIds: ["skills:native"],
+        isDone: true,
+        cursor: "",
+      })
+      .mockResolvedValueOnce({
+        matches: [
+          {
+            externalId: "owner/repo/native-match",
+            nativeSkillId: "skills:native",
+          },
+        ],
+        isDone: true,
+        cursor: "",
+      })
+      .mockResolvedValueOnce({
+        externalIds: [
+          "owner/repo/native-match",
+          "owner/repo/one",
+          "owner/repo/one",
+          "owner/repo/two",
+        ],
+        isDone: true,
+        cursor: "",
+      })
+      .mockResolvedValueOnce({ count: 321, isDone: true, cursor: "" });
+    const runMutation = vi.fn();
+
+    const result = await updateGlobalStatsActionHandler({ runQuery, runMutation }, {});
+
+    expect(result).toEqual({
+      activeSkillsCount: 70_300,
+      activeExternalSkillsCount: 2,
+      activePluginsCount: 321,
+    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      activeSkillsCount: 70_300,
+      activeExternalSkillsCount: 2,
+      activePluginsCount: 321,
+    });
+  });
+
+  it("keeps a public mirror count when its exact-native match is not publicly countable", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        count: 0,
+        nativeSkillIds: [],
+        isDone: true,
+        cursor: "",
+      })
+      .mockResolvedValueOnce({
+        matches: [
+          {
+            externalId: "owner/repo/native-match",
+            nativeSkillId: "skills:hidden",
+          },
+        ],
+        isDone: true,
+        cursor: "",
+      })
+      .mockResolvedValueOnce({
+        externalIds: ["owner/repo/native-match"],
+        isDone: true,
+        cursor: "",
+      })
+      .mockResolvedValueOnce({ count: 0, isDone: true, cursor: "" });
+    const runMutation = vi.fn();
+
+    await expect(
+      updateGlobalStatsActionHandler({ runQuery, runMutation }, {}),
+    ).resolves.toMatchObject({ activeExternalSkillsCount: 1 });
+  });
+});
+
+describe("recommendation score backfills", () => {
+  it("computes skill digest recommendation scores from top-level stats first", () => {
+    expect(
+      computeSkillDigestRecommendationScore({
+        statsDownloads: 43_080,
+        statsInstallsAllTime: 2,
+        statsStars: 0,
+        stats: { downloads: 1, installsAllTime: 1, installsCurrent: 0, stars: 20 },
+      } as never),
+    ).toBeGreaterThan(
+      computeSkillDigestRecommendationScore({
+        statsDownloads: 1,
+        statsInstallsAllTime: 0,
+        statsStars: 1,
+        stats: { downloads: 43_080, installsAllTime: 2, installsCurrent: 0, stars: 0 },
+      } as never),
+    );
+  });
+
+  it("patches stale skill digest recommendation scores in bounded pages", async () => {
+    const patch = vi.fn();
+    const stats = { downloads: 393, installsAllTime: 74, installsCurrent: 0, stars: 0 };
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:one",
+          statsDownloads: stats.downloads,
+          statsInstallsAllTime: stats.installsAllTime,
+          statsStars: 0,
+          recommendedScore: oldRecommendationScore({
+            downloads: stats.downloads,
+            installs: stats.installsAllTime,
+            stars: 0,
+          }),
+          stats,
+        },
+      ],
+      isDone: false,
+      continueCursor: "next",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          expect(table).toBe("skillSearchDigest");
+          return { order: vi.fn(() => ({ paginate })) };
+        }),
+        patch,
+      },
+    };
+
+    const result = await backfillSkillDigestRecommendationScoresHandler(ctx, {
+      cursor: "current",
+      batchSize: 1,
+    });
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      patched: 1,
+      cursor: "next",
+      isDone: false,
+      dryRun: false,
+    });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "current", numItems: 1 });
+    expect(patch).toHaveBeenCalledWith("skillSearchDigest:one", {
+      recommendedScore: computeSkillDigestRecommendationScore({
+        statsDownloads: stats.downloads,
+        statsInstallsAllTime: stats.installsAllTime,
+        statsStars: 0,
+        stats,
+      } as never),
+      recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+    });
+  });
+
+  it("dry-runs package recommendation score backfills without patching", async () => {
+    const patch = vi.fn();
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "packages:one",
+          stats: { downloads: 100, installs: 5, stars: 2, versions: 1 },
+          recommendedScore: -1,
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          expect(table).toBe("packages");
+          return { order: vi.fn(() => ({ paginate })) };
+        }),
+        patch,
+      },
+    };
+
+    const result = await backfillPackageRecommendationScoresHandler(ctx, {
+      batchSize: 5,
+      dryRun: true,
+    });
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      patched: 1,
+      cursor: null,
+      isDone: true,
+      dryRun: true,
+    });
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 5 });
+    expect(patch).not.toHaveBeenCalled();
+    expect(
+      computePackageRecommendationScore({
+        stats: { downloads: 100, installs: 5, stars: 2, versions: 1 },
+      } as never),
+    ).toBeGreaterThan(0);
+  });
+
+  it("patches old-formula package recommendation scores", async () => {
+    const patch = vi.fn();
+    const stats = { downloads: 393, installs: 74, stars: 0, versions: 1 };
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "packages:one",
+          stats,
+          recommendedScore: oldRecommendationScore(stats),
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          expect(table).toBe("packages");
+          return { order: vi.fn(() => ({ paginate })) };
+        }),
+        patch,
+      },
+    };
+
+    const result = await backfillPackageRecommendationScoresHandler(ctx, {
+      batchSize: 5,
+    });
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      patched: 1,
+      cursor: null,
+      isDone: true,
+      dryRun: false,
+    });
+    expect(patch).toHaveBeenCalledWith("packages:one", {
+      recommendedScore: computePackageRecommendationScore({ stats } as never),
+      recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+    });
+  });
+
+  it("runs skill and package recommendation score backfills with resumable cursors", async () => {
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        scanned: 5,
+        patched: 4,
+        cursor: "skill-next",
+        isDone: false,
+      })
+      .mockResolvedValueOnce({
+        scanned: 3,
+        patched: 2,
+        cursor: null,
+        isDone: true,
+      })
+      .mockResolvedValueOnce({
+        scanned: 2,
+        patched: 1,
+        cursor: null,
+        isDone: true,
+      });
+
+    const result = await runRecommendationScoreBackfillHandler(
+      { runMutation },
+      { batchSize: 10, maxBatches: 2, dryRun: true },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      scoreVersion: RECOMMENDATION_SCORE_VERSION,
+      isDone: true,
+      skillsDone: true,
+      packagesDone: true,
+      skillCursor: null,
+      packageCursor: null,
+      stats: {
+        skills: { scanned: 7, patched: 5, batches: 2 },
+        packages: { scanned: 3, patched: 2, batches: 1 },
+      },
+    });
+    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(runMutation.mock.calls.map((call) => call[1])).toEqual([
+      { cursor: undefined, batchSize: 10, dryRun: true },
+      { cursor: undefined, batchSize: 10, dryRun: true },
+      { cursor: "skill-next", batchSize: 10, dryRun: true },
+    ]);
+  });
+
+  it("skips completed recommendation score backfill sides when resuming", async () => {
+    const runMutation = vi.fn().mockResolvedValueOnce({
+      scanned: 2,
+      patched: 1,
+      cursor: null,
+      isDone: true,
+    });
+
+    const result = await runRecommendationScoreBackfillHandler(
+      { runMutation },
+      {
+        skillCursor: "skill-next",
+        skillsDone: false,
+        packagesDone: true,
+        batchSize: 10,
+        maxBatches: 1,
+      },
+    );
+
+    expect(result).toMatchObject({
+      isDone: true,
+      skillsDone: true,
+      packagesDone: true,
+      skillCursor: null,
+      packageCursor: null,
+      stats: {
+        skills: { scanned: 2, patched: 1, batches: 1 },
+        packages: { scanned: 0, patched: 0, batches: 0 },
+      },
+    });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation.mock.calls[0]?.[1]).toEqual({
+      cursor: "skill-next",
+      batchSize: 10,
+      dryRun: false,
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // reconcileSkillStarCountsHandler
 // ---------------------------------------------------------------------------
@@ -156,7 +770,7 @@ describe("buildSkillStatPatch", () => {
 describe("reconcileSkillStarCounts", () => {
   /**
    * Build a minimal db mock that returns a single-page result for skills and
-   * configurable star / comment record counts.
+   * configurable star record counts.
    */
   function makeCtx(options: {
     skill: {
@@ -166,19 +780,12 @@ describe("reconcileSkillStarCounts", () => {
       softDeletedAt?: number;
     };
     actualStarCount: number;
-    actualCommentCount: number;
   }) {
-    const { skill, actualStarCount, actualCommentCount } = options;
+    const { skill, actualStarCount } = options;
 
     const starRecords = Array.from({ length: actualStarCount }, (_, i) => ({
       _id: `stars:${i}`,
       skillId: skill._id,
-    }));
-
-    const commentRecords = Array.from({ length: actualCommentCount }, (_, i) => ({
-      _id: `comments:${i}`,
-      skillId: skill._id,
-      softDeletedAt: undefined,
     }));
 
     const paginate = vi.fn().mockResolvedValue({
@@ -187,10 +794,7 @@ describe("reconcileSkillStarCounts", () => {
       isDone: true,
     });
 
-    const collect = vi
-      .fn()
-      .mockResolvedValueOnce(starRecords)
-      .mockResolvedValueOnce(commentRecords);
+    const collect = vi.fn().mockResolvedValueOnce(starRecords);
 
     const withIndex = vi.fn().mockReturnValue({ collect });
 
@@ -215,11 +819,11 @@ describe("reconcileSkillStarCounts", () => {
     // it should NOT trigger a patch based on the star count alone.
     const skill = {
       _id: "skills:1",
-      statsStars: 5,           // canonical value — correct
+      statsStars: 5, // canonical value — correct
       stats: { stars: 99, comments: 0 }, // legacy value — stale, but not reconcile's concern
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 
@@ -237,7 +841,7 @@ describe("reconcileSkillStarCounts", () => {
       stats: { stars: 3, comments: 0 },
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 3, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 3 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 
@@ -249,38 +853,23 @@ describe("reconcileSkillStarCounts", () => {
   it("patches both statsStars and stats.stars when canonical value drifts from actual count", async () => {
     const skill = {
       _id: "skills:1",
-      statsStars: 10,           // canonical value — out of sync with actual
+      statsStars: 10, // canonical value — out of sync with actual
       stats: { stars: 10, comments: 0 },
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 7, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 7 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 
     expect(result.scanned).toBe(1);
     expect(result.patched).toBe(1);
-    expect(patch).toHaveBeenCalledWith("skills:1", expect.objectContaining({
-      statsStars: 7,
-      stats: expect.objectContaining({ stars: 7 }),
-    }));
-  });
-
-  it("patches when comment count drifts even if star count is correct", async () => {
-    const skill = {
-      _id: "skills:1",
-      statsStars: 5,
-      stats: { stars: 5, comments: 10 }, // comments out of sync
-    };
-
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5, actualCommentCount: 3 });
-
-    const result = await reconcileSkillStarCountsHandler(ctx, {});
-
-    expect(result.scanned).toBe(1);
-    expect(result.patched).toBe(1);
-    expect(patch).toHaveBeenCalledWith("skills:1", expect.objectContaining({
-      stats: expect.objectContaining({ comments: 3 }),
-    }));
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        statsStars: 7,
+        stats: expect.objectContaining({ stars: 7 }),
+      }),
+    );
   });
 
   it("skips soft-deleted skills", async () => {
@@ -291,7 +880,7 @@ describe("reconcileSkillStarCounts", () => {
       stats: { stars: 0, comments: 0 },
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 

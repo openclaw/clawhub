@@ -2,8 +2,13 @@
 
 import { Agent, setGlobalDispatcher } from "undici";
 import { describe, expect, it } from "vitest";
+import { loadSmokeSkillFixture } from "../scripts/lib/smokeSkillFixture";
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_RATE_LIMIT_RETRIES = 3;
+const MAX_RATE_LIMIT_WAIT_MS = 15_000;
+const TRANSIENT_RETRY_DELAY_MS = 1_000;
+const OG_IMAGE_TIMEOUT_MS = 45_000;
 
 try {
   setGlobalDispatcher(
@@ -21,26 +26,88 @@ function getSiteBase() {
   );
 }
 
-function getSkillSlug() {
-  return process.env.CLAWHUB_E2E_SKILL_SLUG?.trim() || "gifgrep";
+function getCanonicalSiteBase() {
+  return process.env.CLAWHUB_E2E_CANONICAL_SITE?.trim() || getSiteBase();
 }
 
-function getSkillOwner() {
-  return process.env.CLAWHUB_E2E_SKILL_OWNER?.trim() || "steipete";
+function withDeploymentProtection(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers);
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (bypassSecret) {
+    headers.set("x-vercel-protection-bypass", bypassSecret);
+  }
+  return { ...init, headers };
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error("Timeout")), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(new Error("Timeout")), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetch(input, {
+      ...withDeploymentProtection(init),
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timeout);
   }
 }
 
+function parsePositiveNumber(value: string | null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getRetryDelayMs(response: Response) {
+  const retryAfterSeconds = parsePositiveNumber(response.headers.get("Retry-After"));
+  if (retryAfterSeconds !== null) {
+    return Math.min(retryAfterSeconds * 1000, MAX_RATE_LIMIT_WAIT_MS);
+  }
+
+  const relativeResetSeconds = parsePositiveNumber(response.headers.get("RateLimit-Reset"));
+  if (relativeResetSeconds !== null) {
+    return Math.min(relativeResetSeconds * 1000, MAX_RATE_LIMIT_WAIT_MS);
+  }
+
+  const absoluteResetSeconds = parsePositiveNumber(response.headers.get("X-RateLimit-Reset"));
+  if (absoluteResetSeconds !== null) {
+    return Math.min(Math.max(absoluteResetSeconds * 1000 - Date.now(), 0), MAX_RATE_LIMIT_WAIT_MS);
+  }
+
+  return 1000;
+}
+
+async function fetchWithRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options: { maxAttempts?: number; timeoutMs?: number } = {},
+) {
+  const maxAttempts = options.maxAttempts ?? MAX_RATE_LIMIT_RETRIES;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(input, init, options.timeoutMs);
+      if (attempt >= maxAttempts) return response;
+      if (response.status === 429) {
+        await new Promise((resolve) => setTimeout(resolve, getRetryDelayMs(response)));
+        continue;
+      }
+      if (response.status >= 500) {
+        await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      if (attempt >= maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
+    }
+  }
+}
+
 async function fetchHtml(pathname: string) {
-  const response = await fetchWithTimeout(new URL(pathname, getSiteBase()), {
+  const response = await fetchWithRetry(new URL(pathname, getSiteBase()), {
     headers: { Accept: "text/html" },
   });
   expect(response.ok).toBe(true);
@@ -48,19 +115,39 @@ async function fetchHtml(pathname: string) {
   return response.text();
 }
 
-async function fetchSkillDetail() {
-  const response = await fetchWithTimeout(
-    new URL(`/api/v1/skills/${getSkillSlug()}`, getSiteBase()),
-    {
-      headers: { Accept: "application/json" },
-    },
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function expectLinkWithRelAndHref(html: string, rel: string, href: string) {
+  const relPattern = new RegExp(`\\brel=["']${escapeRegExp(rel)}["']`, "i");
+  const hrefPattern = new RegExp(`\\bhref=["']${escapeRegExp(href)}["']`, "i");
+  const hasLink = [...html.matchAll(/<link\b[^>]*>/gi)].some(
+    ([tag]) => relPattern.test(tag) && hrefPattern.test(tag),
   );
-  expect(response.ok).toBe(true);
-  return (await response.json()) as {
-    skill: { slug: string; displayName: string; summary: string | null };
-    latestVersion: { version: string | null } | null;
-    owner: { handle: string | null };
-  };
+
+  expect(hasLink, `expected HTML to contain <link> with rel="${rel}" and href="${href}"`).toBe(
+    true,
+  );
+}
+
+let skillDetailPromise: ReturnType<typeof loadSmokeSkillFixture> | null = null;
+
+async function fetchSkillDetail() {
+  if (!skillDetailPromise) {
+    skillDetailPromise = loadSmokeSkillFixture(async (path) => {
+      const response = await fetchWithRetry(new URL(path, getSiteBase()), {
+        headers: { Accept: "application/json" },
+      });
+      const expectedTestBackend = process.env.CLAWHUB_E2E_EXPECT_TEST_BACKEND?.trim();
+      if (expectedTestBackend) {
+        expect(response.headers.get("x-clawhub-test-backend")).toBe(expectedTestBackend);
+      }
+      return response;
+    });
+  }
+
+  return skillDetailPromise;
 }
 
 describe("prod http smoke", () => {
@@ -69,18 +156,20 @@ describe("prod http smoke", () => {
 
     expect(html).toContain("<title>ClawHub");
     expect(html).toContain('href="/skills"');
-    expect(html).toContain('href="/publish-skill"');
+    expect(html).toMatch(/href="\/(?:skills\/publish|publish-skill)"/);
     expect(html).not.toContain("Something went wrong!");
   });
 
   it("serves SSR skill html for a public skill page", async () => {
     const detail = await fetchSkillDetail();
-    const owner = detail.owner.handle || getSkillOwner();
+    const owner = detail.owner.handle;
     const html = await fetchHtml(`/${owner}/${detail.skill.slug}`);
 
     expect(html).toContain(`<title>${detail.skill.displayName} — ClawHub</title>`);
-    expect(html).toContain(
-      `<link rel="canonical" href="${getSiteBase()}/${owner}/${detail.skill.slug}"/>`,
+    expectLinkWithRelAndHref(
+      html,
+      "canonical",
+      `${getCanonicalSiteBase()}/${owner}/skills/${detail.skill.slug}`,
     );
     if (detail.skill.summary) {
       expect(html).toContain(detail.skill.summary);
@@ -90,7 +179,7 @@ describe("prod http smoke", () => {
 
   it("serves the skill og image for the latest published version", async () => {
     const detail = await fetchSkillDetail();
-    const owner = detail.owner.handle || getSkillOwner();
+    const owner = detail.owner.handle;
     const params = new URLSearchParams({
       slug: detail.skill.slug,
       owner,
@@ -99,8 +188,10 @@ describe("prod http smoke", () => {
       params.set("version", detail.latestVersion.version);
     }
 
-    const response = await fetchWithTimeout(
+    const response = await fetchWithRetry(
       new URL(`/og/skill.png?${params.toString()}`, getSiteBase()),
+      undefined,
+      { timeoutMs: OG_IMAGE_TIMEOUT_MS },
     );
 
     expect(response.ok).toBe(true);
@@ -108,5 +199,15 @@ describe("prod http smoke", () => {
     if (detail.latestVersion?.version) {
       expect(response.headers.get("cache-control")).toContain("immutable");
     }
+  });
+
+  it("serves the published SKILL.md file", async () => {
+    const detail = await fetchSkillDetail();
+    const response = await fetchWithRetry(new URL(detail.filePath, getSiteBase()), {
+      headers: { Accept: "text/plain" },
+    });
+
+    expect(response.ok).toBe(true);
+    expect((await response.text()).trim().length).toBeGreaterThan(0);
   });
 });

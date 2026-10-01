@@ -2,6 +2,7 @@ import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type CopyState = "idle" | "copied" | "failed";
 
@@ -36,14 +37,22 @@ export function InstallCopyButton({
   text,
   label = "Copy",
   ariaLabel,
+  title,
+  tooltip,
   className,
   showLabel = true,
+  variant = "outline",
+  size = "sm",
 }: {
   text: string;
   label?: string;
   ariaLabel?: string;
+  title?: string;
+  tooltip?: string;
   className?: string;
   showLabel?: boolean;
+  variant?: "default" | "primary" | "secondary" | "destructive" | "ghost" | "outline" | "link";
+  size?: "default" | "xs" | "sm" | "lg" | "icon" | "icon-xs" | "icon-sm" | "icon-lg";
 }) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const resetTimeoutRef = useRef<number | null>(null);
@@ -71,13 +80,14 @@ export function InstallCopyButton({
   const buttonLabel =
     copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy Failed" : label;
 
-  return (
+  const button = (
     <Button
       type="button"
-      size="sm"
-      variant="outline"
+      size={size}
+      variant={variant}
       className={cn("skill-install-copy-button", className)}
       aria-label={ariaLabel ?? label}
+      title={tooltip ? undefined : title}
       data-copy-state={copyState}
       onClick={() => {
         void copyText(text)
@@ -98,5 +108,20 @@ export function InstallCopyButton({
       )}
       {showLabel ? <span aria-live="polite">{buttonLabel}</span> : null}
     </Button>
+  );
+
+  if (!tooltip) {
+    return button;
+  }
+
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="top" align="end">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

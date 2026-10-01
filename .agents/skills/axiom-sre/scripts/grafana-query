@@ -1,0 +1,369 @@
+#!/bin/bash
+# Query a Grafana datasource (Prometheus, Loki, CloudWatch, etc.)
+# Usage: grafana-query <deployment> <datasource_uid> <query> [options]
+#
+# For Prometheus/Loki (PromQL/LogQL):
+#   --range <duration>  Range query duration (e.g., 30m, 1h, 6h, 7d)
+#   --start <time>      Start time (ISO 8601, epoch, or relative like -2h)
+#   --end <time>        End time (ISO 8601, epoch, or relative like -1h)
+#   --step <duration>   Range query step (e.g., 15s, 1m)
+#   --time <timestamp>  Evaluation time for instant query
+#   --values            Show all values with timestamps
+#   --json              Output raw JSON
+#
+# For CloudWatch (CloudWatch Metrics Insights query):
+#   Query format: namespace:metricName[:stat[:dimensions]]
+#   Examples:
+#     'AWS/RDS:CPUUtilization'                  # All RDS instances, Average
+#     'AWS/RDS:CPUUtilization:Maximum'          # Maximum stat
+#     'AWS/RDS:CPUUtilization:Average:DBInstanceIdentifier=mydb'
+#
+# Examples:
+#   grafana-query prod prometheus 'up{job="axiom-db"}'
+#   grafana-query prod prometheus 'rate(http_requests_total[5m])' --range 30m --step 1m
+#   grafana-query prod CloudWatch 'AWS/RDS:CPUUtilization' --range 1h
+#   grafana-query prod P034F075C744B399F 'AWS/EC2:CPUUtilization:Average:InstanceId=i-1234'
+
+set -euo pipefail
+
+# jq is required for URL encoding
+if ! command -v jq &>/dev/null; then
+    echo "Error: jq is required but not installed" >&2
+    echo "Install with: brew install jq" >&2
+    exit 1
+fi
+
+DEPLOYMENT="${1:-}"
+datasource="${2:-}"
+query="${3:-}"
+shift 3 2>/dev/null || true
+
+# Parse options
+range_duration=""
+start_time=""
+end_time=""
+step=""
+eval_time=""
+show_values=""
+output_json=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --range)
+            range_duration="$2"
+            shift 2
+            ;;
+        --start)
+            start_time="$2"
+            shift 2
+            ;;
+        --end)
+            end_time="$2"
+            shift 2
+            ;;
+        --step)
+            step="$2"
+            shift 2
+            ;;
+        --time)
+            eval_time="$2"
+            shift 2
+            ;;
+        --values)
+            show_values="1"
+            shift
+            ;;
+        --json)
+            output_json="1"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$DEPLOYMENT" || -z "$datasource" || -z "$query" ]]; then
+    echo "Usage: grafana-query <deployment> <datasource_uid> <query> [options]" >&2
+    echo "" >&2
+    echo "Arguments:" >&2
+    echo "  deployment     - Environment (prod, staging, dev, prod-eu)" >&2
+    echo "  datasource_uid - Datasource UID (use grafana-datasources to list)" >&2
+    echo "  query          - Query expression (PromQL, LogQL, etc.)" >&2
+    echo "" >&2
+    echo "Options:" >&2
+    echo "  --range <dur>   - Range query duration (30m, 1h, 6h, 7d)" >&2
+    echo "  --start <time>  - Start time (ISO 8601, epoch, or -2h)" >&2
+    echo "  --end <time>    - End time (ISO 8601, epoch, or -1h)" >&2
+    echo "  --step <dur>    - Range query step (15s, 30s, 1m)" >&2
+    echo "  --time <ts>     - Instant query evaluation time" >&2
+    echo "  --values        - Show all values with timestamps" >&2
+    echo "  --json          - Output raw JSON" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  grafana-query prod prometheus 'up{job=\"axiom-db\"}'" >&2
+    echo "  grafana-query prod prometheus 'rate(http_requests_total[5m])' --range 30m --step 1m" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" grafana "$DEPLOYMENT")"
+
+# Helper function for authenticated requests
+grafana_curl() {
+    local method="${1:-GET}"
+    local url="$2"
+    local data="${3:-}"
+    
+    if [[ -n "$data" ]]; then
+        "$SCRIPT_DIR/curl-auth" grafana "$DEPLOYMENT" -X "$method" -d "$data" "$url"
+    else
+        "$SCRIPT_DIR/curl-auth" grafana "$DEPLOYMENT" "$url"
+    fi
+}
+
+# Get datasource info to determine type
+get_datasource_type() {
+    local ds_uid="$1"
+    grafana_curl GET "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" | jq -r '.type // empty'
+}
+
+# Parse duration to seconds
+parse_duration() {
+    local dur="$1"
+    local num="${dur%[smhd]*}"
+    local unit="${dur#$num}"
+    case "$unit" in
+        s) echo "$num" ;;
+        m) echo $((num * 60)) ;;
+        h) echo $((num * 3600)) ;;
+        d) echo $((num * 86400)) ;;
+        *) echo $((num * 60)) ;;
+    esac
+}
+
+# Parse time value to epoch seconds
+# Accepts: epoch seconds, ISO 8601, or relative (-2h, -30m)
+parse_time() {
+    local t="$1"
+    local now=$(date +%s)
+    
+    if [[ "$t" =~ ^-?[0-9]+$ ]]; then
+        # Already epoch or negative relative
+        if [[ "$t" -lt 0 ]]; then
+            echo $((now + t))
+        elif [[ "$t" -gt 1000000000 ]]; then
+            echo "$t"
+        else
+            echo $((now - t))
+        fi
+    elif [[ "$t" =~ ^- ]]; then
+        # Relative time like -2h, -30m
+        local dur="${t#-}"
+        local secs=$(parse_duration "$dur")
+        echo $((now - secs))
+    elif [[ "$t" == "now" ]]; then
+        echo "$now"
+    else
+        # ISO 8601 - parse with date command
+        # Use TZ=UTC for Z suffix to ensure correct UTC interpretation
+        if [[ "$t" == *Z ]]; then
+            TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$t" +%s 2>/dev/null && return
+        fi
+        if date -j -f "%Y-%m-%dT%H:%M:%S" "$t" +%s 2>/dev/null; then
+            return
+        elif date -j -f "%Y-%m-%d" "$t" +%s 2>/dev/null; then
+            return
+        else
+            # Linux date (handles Z correctly)
+            date -d "$t" +%s 2>/dev/null || echo "$t"
+        fi
+    fi
+}
+
+# Calculate time range
+now=$(date +%s)
+if [[ -n "$start_time" && -n "$end_time" ]]; then
+    start=$(parse_time "$start_time")
+    end=$(parse_time "$end_time")
+elif [[ -n "$range_duration" ]]; then
+    duration_sec=$(parse_duration "$range_duration")
+    start=$((now - duration_sec))
+    end=$now
+else
+    # Default to 1h range
+    start=$((now - 3600))
+    end=$now
+fi
+step="${step:-1m}"
+
+# Detect datasource type
+ds_type=$(get_datasource_type "$datasource")
+
+if [[ "$ds_type" == "cloudwatch" ]]; then
+    # CloudWatch uses /api/ds/query with POST
+    # Parse query format: namespace:metricName[:stat[:dimensions]]
+    IFS=':' read -r namespace metric stat dimensions <<< "$query"
+    stat="${stat:-Average}"
+    
+    # Build dimensions JSON
+    dims_json="{}"
+    if [[ -n "$dimensions" ]]; then
+        dims_json=$(echo "$dimensions" | jq -R 'split(",") | map(split("=") | {(.[0]): .[1]}) | add // {}')
+    fi
+    
+    # Build CloudWatch query payload
+    payload=$(jq -n \
+        --arg namespace "$namespace" \
+        --arg metric "$metric" \
+        --arg stat "$stat" \
+        --argjson dims "$dims_json" \
+        --arg uid "$datasource" \
+        --arg from "now-$((end - start))s" \
+        --arg to "now" \
+        '{
+            queries: [{
+                refId: "A",
+                datasource: {type: "cloudwatch", uid: $uid},
+                namespace: $namespace,
+                metricName: $metric,
+                statistics: [$stat],
+                dimensions: $dims,
+                region: "default",
+                matchExact: false
+            }],
+            from: $from,
+            to: $to
+        }')
+    
+    result=$(grafana_curl POST "${GRAFANA_URL}/api/ds/query" "$payload")
+    
+    # Check for errors
+    if echo "$result" | jq -e '.results.A.error' >/dev/null 2>&1; then
+        error=$(echo "$result" | jq -r '.results.A.error')
+        echo "Error: $error" >&2
+        exit 1
+    fi
+    
+    # Raw JSON output
+    if [[ -n "$output_json" ]]; then
+        echo "$result" | jq '.results.A.frames'
+        exit 0
+    fi
+    
+    # Format CloudWatch output
+    echo "Deployment: $DEPLOYMENT"
+    echo "Datasource: $datasource (CloudWatch)"
+    echo "Namespace: $namespace"
+    echo "Metric: $metric"
+    echo "Statistic: $stat"
+    echo "Range: $((end - start))s"
+    echo ""
+    
+    # Extract and display time series data from frames
+    echo "$result" | jq -r '
+        .results.A.frames[] |
+        .schema.fields[1].labels as $labels |
+        .data.values as $vals |
+        ($vals[0] | length) as $len |
+        (if $labels then "Instance: \($labels | to_entries | map("\(.key)=\(.value)") | join(", "))" else "" end),
+        "Samples: \($len)",
+        (if $len > 0 then
+            ($vals[1] | map(select(. != null))) as $numbers |
+            if ($numbers | length) > 0 then
+                "Min: \($numbers | min | . * 100 | round / 100)%",
+                "Max: \($numbers | max | . * 100 | round / 100)%",
+                "Avg: \($numbers | add / length | . * 100 | round / 100)%"
+            else
+                "No data points"
+            end
+        else
+            "No data"
+        end),
+        ""
+    '
+    exit 0
+fi
+
+# Prometheus/Loki: Build the API URL
+if [[ -n "$range_duration" || -n "$start_time" ]]; then
+    params="query=$(printf '%s' "$query" | jq -sRr @uri)&start=${start}&end=${end}&step=${step}"
+    url="${GRAFANA_URL}/api/datasources/proxy/uid/${datasource}/api/v1/query_range?${params}"
+else
+    # Instant query
+    params="query=$(printf '%s' "$query" | jq -sRr @uri)"
+    if [[ -n "$eval_time" ]]; then
+        params="${params}&time=$(printf '%s' "$eval_time" | jq -sRr @uri)"
+    fi
+    url="${GRAFANA_URL}/api/datasources/proxy/uid/${datasource}/api/v1/query?${params}"
+fi
+
+result=$(grafana_curl GET "$url")
+
+if command -v jq &>/dev/null; then
+    status=$(echo "$result" | jq -r '.status // empty')
+    if [[ "$status" != "success" ]]; then
+        error=$(echo "$result" | jq -r '.error // .message // "unknown error"')
+        echo "Error: $error" >&2
+        exit 1
+    fi
+    
+    # Raw JSON output
+    if [[ -n "$output_json" ]]; then
+        echo "$result" | jq '.data.result'
+        exit 0
+    fi
+    
+    result_type=$(echo "$result" | jq -r '.data.resultType')
+    
+    if [[ -n "$range_duration" || -n "$start_time" ]]; then
+        echo "Deployment: $DEPLOYMENT"
+        echo "Datasource: $datasource"
+        echo "Query: $query"
+        if [[ -n "$start_time" ]]; then
+            echo "Time: $start_time to $end_time (step: $step)"
+        else
+            echo "Range: $range_duration (step: $step)"
+        fi
+        echo ""
+        
+        num_series=$(echo "$result" | jq -r '.data.result | length')
+        echo "Series: $num_series"
+        echo ""
+        
+        if [[ -n "$show_values" ]]; then
+            # Show all values with human-readable timestamps
+            echo "$result" | jq -r '.data.result[] | 
+                (if .metric | length > 0 then "Metric: \(.metric)\n" else "" end),
+                "Values:",
+                (.values[] | "  \(.[0] | tonumber | strftime("%Y-%m-%d %H:%M:%S")): \(.[1])"),
+                ""'
+        else
+            # Summary view with timestamps for min/max
+            echo "$result" | jq -r '.data.result[] | 
+                (.values | map({ts: .[0] | tonumber, val: .[1] | tonumber})) as $pts |
+                ($pts | min_by(.val)) as $min |
+                ($pts | max_by(.val)) as $max |
+                (if .metric | length > 0 then "Metric: \(.metric)" else "" end),
+                "Samples: \(.values | length)",
+                "Range: \(.values[0][0] | tonumber | strftime("%Y-%m-%d %H:%M")) to \(.values[-1][0] | tonumber | strftime("%Y-%m-%d %H:%M"))",
+                "Min: \($min.val) @ \($min.ts | strftime("%Y-%m-%d %H:%M"))",
+                "Max: \($max.val) @ \($max.ts | strftime("%Y-%m-%d %H:%M"))",
+                "Avg: \([$pts[].val] | add / length | . * 1000 | round / 1000)",
+                ""'
+        fi
+    else
+        echo "Type: $result_type"
+        echo ""
+        
+        if [[ "$result_type" == "vector" ]]; then
+            echo "$result" | jq -r '.data.result[] | "\(.metric | to_entries | map("\(.key)=\"\(.value)\"") | join(", ") | "{" + . + "}"): \(.value[1])"'
+        elif [[ "$result_type" == "scalar" ]]; then
+            echo "$result" | jq -r '.data.result[1]'
+        else
+            echo "$result" | jq '.data.result'
+        fi
+    fi
+else
+    echo "$result"
+fi

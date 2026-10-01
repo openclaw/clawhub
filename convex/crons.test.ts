@@ -1,0 +1,460 @@
+/* @vitest-environment node */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => {
+  const interval = vi.fn();
+  const githubSkillSyncRef = Symbol("github-skill-source-sync");
+  const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
+  const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
+  const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
+  const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
+  const publisherTemporalAbuseScanPruneRef = Symbol("publisher-temporal-abuse-scan-prune");
+  const httpRateLimitKeysPruneRef = Symbol("http-rate-limit-keys-prune");
+  const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
+  const skillHourlyStatsPruneRef = Symbol("skill-hourly-stats-prune");
+  const packageStatEventPruneRef = Symbol("package-stat-event-prune");
+  const pluginSearchObservationPruneRef = Symbol("plugin-search-observation-prune");
+  const authSessionsPruneRef = Symbol("auth-sessions-prune");
+  const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
+  const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
+  const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
+  const canonicalTrendingMaterializeRef = Symbol("canonical-trending-materialize");
+  const canonicalTrendingPruneRef = Symbol("canonical-trending-prune");
+  const prepublicationQueueHealthRef = Symbol("prepublication-queue-health");
+  const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
+  const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
+  const skillEvaluationExpiredLeaseRecoveryRef = Symbol("skill-evaluation-expired-lease-recovery");
+  const skillEvaluationDispatchWatchdogRef = Symbol("skill-evaluation-dispatch-watchdog");
+  return {
+    interval,
+    cron: vi.fn(),
+    searchWeeklyTick: Symbol("search-weekly-tick"),
+    searchWeeklyPrune: Symbol("search-weekly-prune"),
+    searchReportsPrune: Symbol("search-reports-prune"),
+    githubSkillSyncRef,
+    installTelemetryDedupePruneRef,
+    publisherAbuseAutobanRef,
+    publisherAbuseScoreRefreshRef,
+    publisherTemporalAbuseScanRef,
+    publisherTemporalAbuseScanPruneRef,
+    httpRateLimitKeysPruneRef,
+    skillStatEventPruneRef,
+    skillHourlyStatsPruneRef,
+    packageStatEventPruneRef,
+    pluginSearchObservationPruneRef,
+    authSessionsPruneRef,
+    authRefreshTokensPruneRef,
+    publisherInvitesPruneRef,
+    promotionsFeedPublishRef,
+    canonicalTrendingMaterializeRef,
+    canonicalTrendingPruneRef,
+    prepublicationQueueHealthRef,
+    securityScanExpiredLeaseRecoveryRef,
+    securityScanDispatchWatchdogRef,
+    skillEvaluationExpiredLeaseRecoveryRef,
+    skillEvaluationDispatchWatchdogRef,
+  };
+});
+
+vi.mock("convex/server", () => ({
+  cronJobs: () => ({
+    interval: mocks.interval,
+    cron: mocks.cron,
+  }),
+}));
+
+vi.mock("./_generated/api", () => ({
+  internal: {
+    searchWeeklyDigest: {
+      tickInternal: mocks.searchWeeklyTick,
+      pruneExpiredInternal: mocks.searchWeeklyPrune,
+    },
+    searchReports: {
+      pruneExpiredInternal: mocks.searchReportsPrune,
+    },
+    searchInsights: {
+      aggregateInternal: Symbol("search-insights-aggregate"),
+      pruneExpiredInternal: Symbol("search-insights-retention"),
+    },
+    canonicalTrending: {
+      materializeInternal: mocks.canonicalTrendingMaterializeRef,
+      pruneExpiredActionInternal: mocks.canonicalTrendingPruneRef,
+    },
+    githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
+    leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
+    packageLeaderboards: {
+      rebuildTrendingLeaderboardAction: Symbol("package-trending-leaderboard"),
+    },
+    statsMaintenance: {
+      runSkillStatBackfillInternal: Symbol("skill-stats-backfill"),
+      runRecommendationScoreBackfillInternal: Symbol("recommendation-score-refresh"),
+      updateGlobalStatsAction: Symbol("global-stats-update"),
+    },
+    skillStatEvents: {
+      processSkillStatEventsAction: Symbol("skill-stat-events"),
+      processSkillStatEventsInternal: Symbol("skill-doc-stat-sync"),
+      pruneProcessedSkillStatEventsInternal: mocks.skillStatEventPruneRef,
+    },
+    skillHourlyStats: {
+      pruneExpiredInternal: mocks.skillHourlyStatsPruneRef,
+    },
+    packages: {
+      processPackageStatEventsInternal: Symbol("package-stat-events"),
+      pruneProcessedPackageStatEventsInternal: mocks.packageStatEventPruneRef,
+      backfillPackageReleaseScansInternal: Symbol("package-scan-backfill"),
+    },
+    pluginSearchObservations: {
+      pruneExpiredInternal: mocks.pluginSearchObservationPruneRef,
+    },
+    publisherAbuse: {
+      runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
+      processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
+    },
+    publisherAbuseTemporalScan: {
+      runScheduledTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
+      pruneExpiredTemporalScanRowsInternal: mocks.publisherTemporalAbuseScanPruneRef,
+    },
+    promotionsFeed: {
+      publishInternal: mocks.promotionsFeedPublishRef,
+    },
+    prepublicationObservability: {
+      logPrePublicationQueueHealthInternal: mocks.prepublicationQueueHealthRef,
+    },
+    vt: {
+      pollPendingScans: Symbol("vt-pending-scans"),
+      backfillActiveSkillsVTCache: Symbol("vt-cache-backfill"),
+    },
+    securityScan: {
+      pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
+      requeueExpiredCodexScanJobsInternal: mocks.securityScanExpiredLeaseRecoveryRef,
+    },
+    securityScanDispatch: {
+      requestSecurityScanDispatchInternal: mocks.securityScanDispatchWatchdogRef,
+    },
+    skillEvaluationDispatch: {
+      requestSkillEvaluationDispatchInternal: mocks.skillEvaluationDispatchWatchdogRef,
+    },
+    skillEvaluations: {
+      requeueExpiredSkillEvaluationLeasesInternal: mocks.skillEvaluationExpiredLeaseRecoveryRef,
+    },
+    downloadMetrics: {
+      pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
+    },
+    telemetry: {
+      pruneInstallTelemetryDedupesInternal: mocks.installTelemetryDedupePruneRef,
+    },
+    rateLimits: {
+      pruneHttpRateLimitKeysInternal: mocks.httpRateLimitKeysPruneRef,
+    },
+    retention: {
+      pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
+      pruneExpiredAuthRefreshTokensInternal: mocks.authRefreshTokensPruneRef,
+      pruneExpiredPublisherInvitesInternal: mocks.publisherInvitesPruneRef,
+    },
+  },
+}));
+
+describe("crons", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mocks.interval.mockReset();
+    mocks.cron.mockReset();
+    delete process.env.CLAWHUB_DISABLE_CRONS;
+    delete process.env.CLAWHUB_PREVIEW;
+  });
+
+  afterEach(() => {
+    delete process.env.CLAWHUB_DISABLE_CRONS;
+    delete process.env.CLAWHUB_PREVIEW;
+  });
+
+  it("does not register production cron work when explicitly disabled", async () => {
+    process.env.CLAWHUB_DISABLE_CRONS = "1";
+
+    await import("./crons");
+
+    expect(mocks.interval).not.toHaveBeenCalled();
+    expect(mocks.cron).not.toHaveBeenCalled();
+  });
+
+  it("does not register side-effecting cron work in disposable previews", async () => {
+    process.env.CLAWHUB_PREVIEW = "1";
+
+    await import("./crons");
+
+    expect(mocks.interval).not.toHaveBeenCalled();
+    expect(mocks.cron).not.toHaveBeenCalled();
+  });
+
+  it("checks the Pacific weekly release at the top of each hour and retains bounded delivery history", async () => {
+    await import("./crons");
+    expect(mocks.cron).toHaveBeenCalledWith(
+      "search-weekly-digest",
+      "0 * * * *",
+      mocks.searchWeeklyTick,
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "search-report-retention-prune",
+      { hours: 1 },
+      mocks.searchReportsPrune,
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "search-weekly-digest-retention",
+      { hours: 24 },
+      mocks.searchWeeklyPrune,
+      {},
+    );
+  });
+
+  it("runs GitHub skill source sync every 15 minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "github-skill-source-sync",
+      { minutes: 15 },
+      mocks.githubSkillSyncRef,
+      {},
+    );
+  });
+
+  it("refreshes the promotions feed before its publication expires", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "promotions-feed-refresh",
+      { hours: 6 },
+      mocks.promotionsFeedPublishRef,
+      {},
+    );
+  });
+
+  it("materializes the canonical Trending snapshot hourly", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "canonical-trending-snapshot",
+      { hours: 1 },
+      mocks.canonicalTrendingMaterializeRef,
+      {},
+    );
+  });
+
+  it("prunes canonical Trending snapshots independently each hour", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "canonical-trending-prune",
+      { hours: 1 },
+      mocks.canonicalTrendingPruneRef,
+      {},
+    );
+  });
+
+  it("prunes expired hourly skill stats independently each hour", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-hourly-stats-prune",
+      { hours: 1 },
+      mocks.skillHourlyStatsPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired skill scan requests in bounded continuation batches", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-scan-request-prune",
+      { hours: 6 },
+      expect.anything(),
+      { batchSize: 10 },
+    );
+  });
+
+  it("runs the security scan dispatch recovery watchdog every five minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "codex-scan-dispatch-watchdog",
+      { minutes: 5 },
+      mocks.securityScanDispatchWatchdogRef,
+      {},
+    );
+  });
+
+  it("logs pre-publication queue health every five minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "prepublication-queue-health",
+      { minutes: 5 },
+      mocks.prepublicationQueueHealthRef,
+      {},
+    );
+  });
+
+  it("recovers expired security scan leases outside the claim hot path", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "codex-scan-expired-lease-recovery",
+      { minutes: 5 },
+      mocks.securityScanExpiredLeaseRecoveryRef,
+      {},
+    );
+  });
+
+  it("runs the skill evaluation dispatch watchdog every five minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-evaluation-dispatch-watchdog",
+      { minutes: 5 },
+      mocks.skillEvaluationDispatchWatchdogRef,
+      {},
+    );
+  });
+
+  it("recovers expired skill evaluation leases outside the claim hot path", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-evaluation-expired-lease-recovery",
+      { minutes: 5 },
+      mocks.skillEvaluationExpiredLeaseRecoveryRef,
+      {},
+    );
+  });
+
+  it("prunes install telemetry dedupe rows daily", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "install-telemetry-dedupe-prune",
+      { hours: 24 },
+      mocks.installTelemetryDedupePruneRef,
+      {},
+    );
+  });
+
+  it("registers publisher abuse cron jobs", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-abuse-score-refresh",
+      { hours: 24 },
+      mocks.publisherAbuseScoreRefreshRef,
+      {
+        batchSize: 250,
+        maxPages: 20,
+        trigger: "cron",
+      },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-temporal-abuse-scan",
+      { hours: 24 },
+      mocks.publisherTemporalAbuseScanRef,
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-temporal-abuse-scan-row-prune",
+      { hours: 24 },
+      mocks.publisherTemporalAbuseScanPruneRef,
+      { batchSize: 500 },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-abuse-autobans",
+      { hours: 24 },
+      mocks.publisherAbuseAutobanRef,
+      {
+        batchSize: 1,
+        maxPages: 50,
+      },
+    );
+  });
+
+  it("prunes stale component HTTP rate limit keys hourly", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "http-rate-limit-keys-prune",
+      { hours: 1 },
+      mocks.httpRateLimitKeysPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired auth sessions and refresh tokens with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-session-retention-prune",
+      { hours: 1 },
+      mocks.authSessionsPruneRef,
+      { batchSize: 500 },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-refresh-token-retention-prune",
+      { hours: 6 },
+      mocks.authRefreshTokensPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired publisher invites with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-invite-retention-prune",
+      { hours: 6 },
+      mocks.publisherInvitesPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes plugin search observations daily with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "plugin-search-observations-prune",
+      { hours: 24 },
+      mocks.pluginSearchObservationPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes processed skill stat events daily with a seven-day retention window", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-stat-events-prune",
+      { hours: 24 },
+      mocks.skillStatEventPruneRef,
+      {
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 20,
+        confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+      },
+    );
+  });
+
+  it("prunes processed package stat events daily with a seven-day retention window", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "package-stat-events-prune",
+      { hours: 24 },
+      mocks.packageStatEventPruneRef,
+      {
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 20,
+        confirmationToken: "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS",
+      },
+    );
+  });
+});

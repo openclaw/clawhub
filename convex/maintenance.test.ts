@@ -1,5 +1,10 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+  authTables: {},
+}));
 
 vi.mock("./_generated/api", () => ({
   internal: {
@@ -11,24 +16,64 @@ vi.mock("./_generated/api", () => ({
       getUserOwnedSkillsBackfillPageInternal: Symbol("getUserOwnedSkillsBackfillPageInternal"),
       applyUserStatsBackfillPatchInternal: Symbol("applyUserStatsBackfillPatchInternal"),
       backfillUserStatsInternal: Symbol("backfillUserStatsInternal"),
+      getPublisherStatsBackfillPageInternal: Symbol("getPublisherStatsBackfillPageInternal"),
+      recomputePublisherStatsInternal: Symbol("recomputePublisherStatsInternal"),
+      backfillPublisherStatsInternal: Symbol("backfillPublisherStatsInternal"),
       getSkillFingerprintBackfillPageInternal: Symbol("getSkillFingerprintBackfillPageInternal"),
       applySkillFingerprintBackfillPatchInternal: Symbol(
         "applySkillFingerprintBackfillPatchInternal",
       ),
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
+      resyncPluginCatalogMetadataDigestsBatchInternal: Symbol(
+        "resyncPluginCatalogMetadataDigestsBatchInternal",
+      ),
+      resyncPluginCatalogMetadataDigestsInternal: Symbol(
+        "resyncPluginCatalogMetadataDigestsInternal",
+      ),
+      backfillSkillSearchDigestModerationVerdictsInternal: Symbol(
+        "backfillSkillSearchDigestModerationVerdictsInternal",
+      ),
+      backfillSkillSearchDigestFirstTokensInternal: Symbol(
+        "backfillSkillSearchDigestFirstTokensInternal",
+      ),
+      backfillSkillsShMirrorDigestFirstTokensInternal: Symbol(
+        "backfillSkillsShMirrorDigestFirstTokensInternal",
+      ),
       getEmptySkillCleanupPageInternal: Symbol("getEmptySkillCleanupPageInternal"),
       applyEmptySkillCleanupInternal: Symbol("applyEmptySkillCleanupInternal"),
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
       cleanupEmptySkillsInternal: Symbol("cleanupEmptySkillsInternal"),
       nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
+      getLegacyPluginSkillSpectorRepairPageInternal: Symbol(
+        "getLegacyPluginSkillSpectorRepairPageInternal",
+      ),
+      repairLegacyPluginSkillSpectorBatchInternal: Symbol(
+        "repairLegacyPluginSkillSpectorBatchInternal",
+      ),
+      getSkillLineageCycleRepairPageInternal: Symbol("getSkillLineageCycleRepairPageInternal"),
+      inspectSkillLineageCycleInternal: Symbol("inspectSkillLineageCycleInternal"),
+      applySkillLineageCycleRepairInternal: Symbol("applySkillLineageCycleRepairInternal"),
+      repairSkillLineageCyclesInternal: Symbol("repairSkillLineageCyclesInternal"),
+      inspectHeartflowDuplicateSkillsInternal: Symbol("inspectHeartflowDuplicateSkillsInternal"),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
       getVersionByIdInternal: Symbol("skills.getVersionByIdInternal"),
       getOwnerSkillActivityInternal: Symbol("skills.getOwnerSkillActivityInternal"),
+      mergeSamePublisherDuplicateSkillByIdInternal: Symbol(
+        "skills.mergeSamePublisherDuplicateSkillByIdInternal",
+      ),
     },
     users: {
       getByIdInternal: Symbol("users.getByIdInternal"),
+    },
+    packages: {
+      updateReleaseSkillSpectorAnalysisInternal: Symbol(
+        "packages.updateReleaseSkillSpectorAnalysisInternal",
+      ),
+    },
+    securityScan: {
+      enqueuePackageReleaseScanInternal: Symbol("securityScan.enqueuePackageReleaseScanInternal"),
     },
   },
 }));
@@ -39,19 +84,544 @@ vi.mock("./lib/skillSummary", () => ({
 
 const {
   backfillLatestVersionSummaryInternal,
+  backfillSkillSearchDigestModerationVerdictsInternal,
+  backfillSkillSearchDigestFirstTokensInternal,
+  backfillSkillsShMirrorDigestFirstTokensInternal,
+  backfillPublisherStatsInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
   cleanupEmptySkillsInternalHandler,
+  applySkillLineageCycleRepairInternalHandler,
+  inspectSkillLineageCycleInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
+  repairLegacyPluginSkillSpectorBatchInternalHandler,
+  repairLegacyPublisherOwnershipForUserHandler,
+  repairHeartflowDuplicateSkillsInternalHandler,
+  repairSkillLineageCyclesInternalHandler,
+  resyncPluginCatalogMetadataDigestsBatchInternal,
+  resyncPluginCatalogMetadataDigestsInternal,
   upsertSkillBadgeRecordInternal,
 } = await import("./maintenance");
 const { internal } = await import("./_generated/api");
 const { generateSkillSummary } = await import("./lib/skillSummary");
+const { getAuthUserId } = await import("@convex-dev/auth/server");
+
+beforeEach(() => {
+  vi.mocked(getAuthUserId).mockReset();
+  vi.mocked(getAuthUserId).mockResolvedValue(null);
+});
+
+describe("maintenance HeartFlow duplicate repair", () => {
+  it("defaults to a zero-write dry run and returns the guarded repair pairs", async () => {
+    const pairs = [
+      {
+        slug: "heartflow",
+        sourceSkillId: "skills:old",
+        targetSkillId: "skills:new",
+        expectedTargetVersion: "6.4.1",
+        status: "ready",
+        source: { version: "6.4.0" },
+        target: { version: "6.4.1" },
+      },
+    ];
+    const runQuery = vi.fn().mockResolvedValue(pairs);
+    const runMutation = vi.fn();
+
+    const result = await repairHeartflowDuplicateSkillsInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      writesApplied: 0,
+      confirmRequired: "merge-heartflow-duplicate-skills-2026-08-04",
+      pairs,
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("refuses an apply without the exact confirmation token", async () => {
+    await expect(
+      repairHeartflowDuplicateSkillsInternalHandler(
+        { runQuery: vi.fn(), runMutation: vi.fn() } as never,
+        { dryRun: false },
+      ),
+    ).rejects.toThrow("merge-heartflow-duplicate-skills-2026-08-04");
+  });
+});
 
 function makeBlob(text: string) {
   return { text: () => Promise.resolve(text) } as unknown as Blob;
 }
+
+type QueryEq = {
+  eq: (field: string, value: unknown) => QueryEq;
+};
+
+function makeLegacyPublisherOwnershipDb() {
+  const now = 1_717_456_000_000;
+  let nextPublisherId = 2;
+  let nextMemberId = 1;
+  const users = new Map<string, Record<string, unknown>>([
+    [
+      "users:legacy",
+      {
+        _id: "users:legacy",
+        _creationTime: now - 1000,
+        handle: "legacy-owner",
+        name: "Legacy Owner",
+        displayName: "Legacy Owner",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+      },
+    ],
+    [
+      "users:deleted",
+      {
+        _id: "users:deleted",
+        _creationTime: now - 1000,
+        handle: "deleted-owner",
+        deletedAt: now - 10,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+      },
+    ],
+  ]);
+  const publishers = new Map<string, Record<string, unknown>>([
+    [
+      "publishers:existing",
+      {
+        _id: "publishers:existing",
+        _creationTime: now - 500,
+        kind: "user",
+        handle: "existing-owner",
+        displayName: "Existing Owner",
+        linkedUserId: "users:existing",
+        publishedSkills: 0,
+        publishedPackages: 0,
+        totalInstalls: 0,
+        totalDownloads: 0,
+        totalStars: 0,
+        skillTotalInstalls: 0,
+        skillTotalDownloads: 0,
+        skillTotalStars: 0,
+        createdAt: now - 500,
+        updatedAt: now - 500,
+      },
+    ],
+  ]);
+  const publisherMembers = new Map<string, Record<string, unknown>>();
+  const skills = new Map<string, Record<string, unknown>>([
+    [
+      "skills:legacy",
+      {
+        _id: "skills:legacy",
+        _creationTime: now - 400,
+        slug: "legacy-skill",
+        displayName: "Legacy Skill",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        latestVersionId: "skillVersions:legacy",
+        tags: { latest: "skillVersions:legacy" },
+        stats: {
+          downloads: 10,
+          stars: 3,
+          installsCurrent: 2,
+          installsAllTime: 5,
+          comments: 0,
+          versions: 1,
+        },
+        statsDownloads: 10,
+        statsStars: 3,
+        statsInstallsCurrent: 2,
+        statsInstallsAllTime: 5,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+    [
+      "skills:deleted-owner",
+      {
+        _id: "skills:deleted-owner",
+        _creationTime: now - 400,
+        slug: "deleted-owner-skill",
+        displayName: "Deleted Owner Skill",
+        ownerUserId: "users:deleted",
+        ownerPublisherId: undefined,
+        latestVersionId: "skillVersions:deleted-owner",
+        tags: { latest: "skillVersions:deleted-owner" },
+        stats: {
+          downloads: 1,
+          stars: 0,
+          installsCurrent: 0,
+          installsAllTime: 0,
+          comments: 0,
+          versions: 1,
+        },
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const skillVersions = new Map<string, Record<string, unknown>>([
+    [
+      "skillVersions:legacy",
+      {
+        _id: "skillVersions:legacy",
+        skillId: "skills:legacy",
+        version: "1.0.0",
+        softDeletedAt: undefined,
+      },
+    ],
+    [
+      "skillVersions:deleted-owner",
+      {
+        _id: "skillVersions:deleted-owner",
+        skillId: "skills:deleted-owner",
+        version: "1.0.0",
+        softDeletedAt: undefined,
+      },
+    ],
+  ]);
+  const skillSlugAliases = new Map<string, Record<string, unknown>>([
+    [
+      "skillSlugAliases:legacy",
+      {
+        _id: "skillSlugAliases:legacy",
+        slug: "old-legacy-skill",
+        skillId: "skills:legacy",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        createdAt: now - 250,
+        updatedAt: now - 250,
+      },
+    ],
+  ]);
+  const skillEmbeddings = new Map<string, Record<string, unknown>>([
+    [
+      "skillEmbeddings:legacy",
+      {
+        _id: "skillEmbeddings:legacy",
+        skillId: "skills:legacy",
+        versionId: "skillVersions:legacy",
+        ownerId: "users:legacy",
+        ownerPublisherId: undefined,
+        embedding: [0.1, 0.2],
+        isLatest: true,
+        isApproved: true,
+        visibility: "public",
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const skillSearchDigest = new Map<string, Record<string, unknown>>([
+    [
+      "skillSearchDigest:legacy",
+      {
+        _id: "skillSearchDigest:legacy",
+        skillId: "skills:legacy",
+        slug: "legacy-skill",
+        displayName: "Legacy Skill",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        ownerHandle: "legacy-owner",
+        ownerKind: "user",
+        stats: {
+          downloads: 10,
+          stars: 3,
+          installsCurrent: 2,
+          installsAllTime: 5,
+          comments: 0,
+          versions: 1,
+        },
+        statsDownloads: 10,
+        statsStars: 3,
+        statsInstallsCurrent: 2,
+        statsInstallsAllTime: 5,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packages = new Map<string, Record<string, unknown>>([
+    [
+      "packages:legacy",
+      {
+        _id: "packages:legacy",
+        _creationTime: now - 400,
+        name: "@legacy-owner/demo-plugin",
+        normalizedName: "@legacy-owner/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        summary: "Demo package",
+        latestReleaseId: undefined,
+        tags: {},
+        compatibility: undefined,
+        capabilities: undefined,
+        verification: undefined,
+        scanStatus: "clean",
+        stats: { downloads: 7, installs: 4, stars: 2, versions: 1 },
+        softDeletedAt: undefined,
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packageSearchDigest = new Map<string, Record<string, unknown>>([
+    [
+      "packageSearchDigest:legacy",
+      {
+        _id: "packageSearchDigest:legacy",
+        packageId: "packages:legacy",
+        name: "@legacy-owner/demo-plugin",
+        normalizedName: "@legacy-owner/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        ownerHandle: "legacy-owner",
+        ownerKind: "user",
+        summary: "Demo package",
+        scanStatus: "clean",
+        softDeletedAt: undefined,
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packageTopicSearchDigest = new Map<string, Record<string, unknown>>();
+  const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
+
+  const tableMap: Record<string, Map<string, Record<string, unknown>>> = {
+    users,
+    publishers,
+    publisherMembers,
+    skills,
+    skillVersions,
+    skillSlugAliases,
+    skillEmbeddings,
+    skillSearchDigest,
+    packages,
+    packageSearchDigest,
+    packageTopicSearchDigest,
+    packagePluginCategorySearchDigest,
+  };
+  const patchCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const insertCalls: Array<{ table: string; value: Record<string, unknown> }> = [];
+
+  const getRows = (table: string) => Array.from(tableMap[table]?.values() ?? []);
+  const getTableForId = (id: string) => id.split(":")[0];
+  const readField = (row: Record<string, unknown>, field: string) =>
+    field.split(".").reduce<unknown>((value, part) => {
+      if (!value || typeof value !== "object") return undefined;
+      return (value as Record<string, unknown>)[part];
+    }, row);
+  const makeQuery = (table: string, rows: Record<string, unknown>[]) => ({
+    collect: vi.fn(async () => rows),
+    unique: vi.fn(async () => rows[0] ?? null),
+    take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+    order: vi.fn(() => ({
+      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+      paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) =>
+        paginateRows(rows, cursor, numItems),
+      ),
+    })),
+    paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) =>
+      paginateRows(rows, cursor, numItems),
+    ),
+    withIndex: vi.fn((indexName: string, build?: (q: QueryEq) => unknown) => {
+      const filters: Array<{ field: string; value: unknown }> = [];
+      const q: QueryEq = {
+        eq: (field, value) => {
+          filters.push({ field, value });
+          return q;
+        },
+      };
+      build?.(q);
+      let indexedRows = getRows(table).filter((row) =>
+        filters.every((filter) => readField(row, filter.field) === filter.value),
+      );
+      if (table === "users" && indexName === "by_active_handle") {
+        indexedRows = indexedRows.filter(
+          (row) => row.deletedAt === undefined && row.deactivatedAt === undefined,
+        );
+      }
+      return makeQuery(table, indexedRows);
+    }),
+  });
+
+  const db = {
+    get: vi.fn(async (id: string) => tableMap[getTableForId(id)]?.get(id) ?? null),
+    query: vi.fn((table: string) => makeQuery(table, getRows(table))),
+    patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+      patchCalls.push({ id, patch });
+      const row = tableMap[getTableForId(id)]?.get(id);
+      if (row) Object.assign(row, patch);
+    }),
+    insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const id =
+        table === "publishers"
+          ? `publishers:created${nextPublisherId++}`
+          : table === "publisherMembers"
+            ? `publisherMembers:created${nextMemberId++}`
+            : `${table}:created`;
+      insertCalls.push({ table, value });
+      tableMap[table].set(id, { _id: id, _creationTime: now, ...value });
+      return id;
+    }),
+    delete: vi.fn(async (id: string) => {
+      tableMap[getTableForId(id)]?.delete(id);
+    }),
+    normalizeId: vi.fn(),
+  };
+
+  return {
+    db,
+    patchCalls,
+    insertCalls,
+    tableMap,
+  };
+}
+
+function paginateRows(rows: Record<string, unknown>[], cursor: string | null, numItems: number) {
+  const start = cursor ? Number(cursor) : 0;
+  const page = rows.slice(start, start + numItems);
+  const next = start + page.length;
+  return {
+    page,
+    continueCursor: next >= rows.length ? null : String(next),
+    isDone: next >= rows.length,
+  };
+}
+
+describe("maintenance legacy publisher ownership repair", () => {
+  it("repairs legacy owner projections for one targeted user by handle", async () => {
+    const { db, tableMap } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    const skillsResult = await repairLegacyPublisherOwnershipForUserHandler(
+      { db, scheduler } as never,
+      {
+        handle: "legacy-owner",
+        phase: "skills",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      },
+    );
+    const createdPublisher = Array.from(tableMap.publishers.values()).find(
+      (publisher) => publisher.handle === "legacy-owner",
+    );
+    expect(skillsResult).toMatchObject({
+      phase: "skills",
+      dryRun: false,
+      userId: "users:legacy",
+      publisherId: createdPublisher?._id,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(tableMap.skills.get("skills:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skills.get("skills:deleted-owner")).toMatchObject({
+      ownerPublisherId: undefined,
+    });
+    expect(tableMap.skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).not.toHaveProperty(
+      "ownerPublisherId",
+      createdPublisher?._id,
+    );
+
+    const packagesResult = await repairLegacyPublisherOwnershipForUserHandler(
+      { db, scheduler } as never,
+      {
+        handle: "legacy-owner",
+        phase: "packages",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      },
+    );
+    expect(packagesResult).toMatchObject({
+      phase: "packages",
+      dryRun: false,
+      userId: "users:legacy",
+      publisherId: createdPublisher?._id,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(tableMap.packages.get("packages:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+  });
+
+  it("does not touch skill embeddings during apply-mode skill repair", async () => {
+    const { db } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    const patch = db.patch;
+    db.patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === "skillEmbeddings:legacy") throw new Error("embedding sync failed");
+      await patch(id, value);
+    });
+
+    await expect(
+      repairLegacyPublisherOwnershipForUserHandler({ db, scheduler } as never, {
+        handle: "legacy-owner",
+        phase: "skills",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      }),
+    ).resolves.toMatchObject({
+      phase: "skills",
+      repaired: 1,
+    });
+  });
+
+  it("propagates apply-mode package patch failures", async () => {
+    const { db } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    const patch = db.patch;
+    db.patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === "packages:legacy") throw new Error("package patch failed");
+      await patch(id, value);
+    });
+
+    await expect(
+      repairLegacyPublisherOwnershipForUserHandler({ db, scheduler } as never, {
+        handle: "legacy-owner",
+        phase: "packages",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      }),
+    ).rejects.toThrow("package patch failed");
+  });
+});
 
 describe("maintenance backfill", () => {
   it("repairs summary + parsed by reparsing SKILL.md", async () => {
@@ -285,10 +855,11 @@ describe("maintenance backfill", () => {
       });
     const runMutation = vi.fn().mockResolvedValue({ ok: true });
 
-    const result = await backfillUserStatsInternalHandler(
-      { runQuery, runMutation } as never,
-      { batchSize: 10, skillBatchSize: 50, maxBatches: 1 },
-    );
+    const result = await backfillUserStatsInternalHandler({ runQuery, runMutation } as never, {
+      batchSize: 10,
+      skillBatchSize: 50,
+      maxBatches: 1,
+    });
 
     expect(result).toEqual({
       ok: true,
@@ -299,10 +870,14 @@ describe("maintenance backfill", () => {
       isDone: true,
       cursor: null,
     });
-    expect(runQuery).toHaveBeenNthCalledWith(1, internal.maintenance.getUserStatsBackfillPageInternal, {
-      cursor: undefined,
-      batchSize: 10,
-    });
+    expect(runQuery).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.getUserStatsBackfillPageInternal,
+      {
+        cursor: undefined,
+        batchSize: 10,
+      },
+    );
     expect(runQuery).toHaveBeenNthCalledWith(
       2,
       internal.maintenance.getUserOwnedSkillsBackfillPageInternal,
@@ -322,13 +897,61 @@ describe("maintenance backfill", () => {
       },
     );
   });
+
+  it("backfills denormalized publisher stats through the recompute mutation", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      items: [{ _id: "publishers:1" }, { _id: "publishers:2" }],
+      cursor: "next",
+      isDone: false,
+    });
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+
+    const result = await backfillPublisherStatsInternalHandler({ runQuery, runMutation } as never, {
+      dryRun: true,
+      batchSize: 2,
+      maxBatches: 1,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      stats: {
+        publishersScanned: 2,
+        publishersPatched: 0,
+      },
+      isDone: false,
+      cursor: "next",
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.maintenance.getPublisherStatsBackfillPageInternal,
+      {
+        cursor: undefined,
+        batchSize: 2,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.recomputePublisherStatsInternal,
+      {
+        publisherId: "publishers:1",
+        dryRun: true,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.recomputePublisherStatsInternal,
+      {
+        publisherId: "publishers:2",
+        dryRun: true,
+      },
+    );
+  });
 });
 
 describe("maintenance badge denormalization", () => {
   it("upserts table badge and keeps skill.badges in sync", async () => {
     const unique = vi.fn().mockResolvedValue(null);
     const query = vi.fn().mockReturnValue({
-      withIndex: () => ({ unique }),
+      withIndex: () => ({ unique, take: vi.fn().mockResolvedValue([]) }),
     });
     const insert = vi.fn().mockResolvedValue("skillBadges:1");
     const get = vi.fn().mockResolvedValue({ _id: "skills:1", badges: undefined });
@@ -402,6 +1025,397 @@ describe("maintenance badge denormalization", () => {
         official: { byUserId: "users:2", at: 456 },
       },
     });
+  });
+});
+
+describe("maintenance plugin catalog metadata digest resync", () => {
+  it("detects stale plugin category digests during dry run without mutating", async () => {
+    const packageRow = {
+      _id: "packages:1",
+      family: "bundle-plugin",
+      categories: undefined,
+    };
+    const paginate = vi.fn().mockResolvedValue({
+      page: [packageRow],
+      continueCursor: null,
+      isDone: true,
+    });
+    const query = vi.fn((table: string) => {
+      if (table === "packages") {
+        return { withIndex: () => ({ paginate }) };
+      }
+      if (table === "packageSearchDigest") {
+        return {
+          withIndex: () => ({
+            unique: vi.fn().mockResolvedValue({ pluginCategoryTags: ["tools"] }),
+          }),
+        };
+      }
+      if (table === "packagePluginCategorySearchDigest") {
+        return {
+          withIndex: () => ({
+            collect: vi.fn().mockResolvedValue([
+              {
+                pluginCategory: "tools",
+                pluginCategoryTags: ["tools"],
+              },
+            ]),
+          }),
+        };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+    const db = {
+      query,
+      get: vi.fn(),
+      insert: vi.fn(),
+      patch: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    const result = await (
+      resyncPluginCatalogMetadataDigestsBatchInternal as unknown as { _handler: Function }
+    )._handler({ db } as never, {
+      family: "bundle-plugin",
+      dryRun: true,
+      batchSize: 10,
+    });
+
+    expect(result).toEqual({
+      family: "bundle-plugin",
+      cursor: null,
+      isDone: true,
+      scanned: 1,
+      matched: 1,
+      mutated: 0,
+    });
+  });
+
+  it("requires confirmation before applying plugin digest resync", async () => {
+    const db = {
+      query: vi.fn(),
+      get: vi.fn(),
+      insert: vi.fn(),
+      patch: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+    await expect(
+      (
+        resyncPluginCatalogMetadataDigestsBatchInternal as unknown as { _handler: Function }
+      )._handler({ db } as never, {
+        family: "code-plugin",
+        dryRun: false,
+      }),
+    ).rejects.toThrow('Pass confirm="resync-plugin-catalog-metadata-digests" to apply.');
+  });
+
+  it("resyncs stale plugin category digests when confirmed", async () => {
+    const { db, tableMap } = makeLegacyPublisherOwnershipDb();
+
+    const result = await (
+      resyncPluginCatalogMetadataDigestsBatchInternal as unknown as { _handler: Function }
+    )._handler({ db } as never, {
+      family: "bundle-plugin",
+      dryRun: false,
+      confirm: "resync-plugin-catalog-metadata-digests",
+      batchSize: 10,
+    });
+
+    expect(result).toMatchObject({ scanned: 1, matched: 1, mutated: 1, isDone: true });
+    expect(tableMap.packageSearchDigest.get("packageSearchDigest:legacy")).toMatchObject({
+      pluginCategoryTags: ["other"],
+    });
+    expect(Array.from(tableMap.packagePluginCategorySearchDigest.values())).toEqual([
+      expect.objectContaining({
+        packageId: "packages:legacy",
+        pluginCategory: "other",
+        pluginCategoryTags: ["other"],
+      }),
+    ]);
+  });
+
+  it("walks plugin families and returns a resumable cursor", async () => {
+    const runMutation = vi.fn(async (_endpoint, args) => {
+      if (args.family === "code-plugin") {
+        return {
+          family: "code-plugin",
+          cursor: null,
+          isDone: true,
+          scanned: 1,
+          matched: 1,
+          mutated: 0,
+        };
+      }
+      return {
+        family: "bundle-plugin",
+        cursor: "next-page",
+        isDone: false,
+        scanned: 2,
+        matched: 1,
+        mutated: 0,
+      };
+    });
+
+    const result = await (
+      resyncPluginCatalogMetadataDigestsInternal as unknown as { _handler: Function }
+    )._handler({ runMutation } as never, {
+      dryRun: true,
+      maxBatches: 2,
+      batchSize: 10,
+    });
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.resyncPluginCatalogMetadataDigestsBatchInternal,
+      expect.objectContaining({ family: "code-plugin", dryRun: true, batchSize: 10 }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.resyncPluginCatalogMetadataDigestsBatchInternal,
+      expect.objectContaining({ family: "bundle-plugin", dryRun: true, batchSize: 10 }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "resync-plugin-catalog-metadata-digests",
+      family: "bundle-plugin",
+      cursor: "next-page",
+      isDone: false,
+      stats: {
+        "code-plugin": { scanned: 1, matched: 1, mutated: 0 },
+        "bundle-plugin": { scanned: 2, matched: 1, mutated: 0 },
+      },
+    });
+  });
+});
+
+describe("maintenance legacy plugin SkillSpector repair", () => {
+  const handler = repairLegacyPluginSkillSpectorBatchInternalHandler;
+
+  function page() {
+    return {
+      items: [
+        {
+          packageId: "packages:no-skills",
+          packageName: "no-skills",
+          releaseId: "packageReleases:no-skills",
+          version: "1.0.0",
+          bundledSkillCount: 0,
+        },
+        {
+          packageId: "packages:bundled",
+          packageName: "bundled",
+          releaseId: "packageReleases:bundled",
+          version: "2.0.0",
+          bundledSkillCount: 2,
+        },
+      ],
+      scanned: 10,
+      cursor: "next",
+      isDone: false,
+    };
+  }
+
+  it("requires confirmation before applying", async () => {
+    await expect(
+      handler(
+        {
+          runQuery: vi.fn(),
+          runMutation: vi.fn(),
+        },
+        {
+          family: "code-plugin",
+          dryRun: false,
+        },
+      ),
+    ).rejects.toThrow('Pass confirm="repair-legacy-plugin-skillspector" to apply.');
+  });
+
+  it("dry-runs without queueing or clearing releases", async () => {
+    const runQuery = vi.fn().mockResolvedValue(page());
+    const runMutation = vi.fn();
+
+    const result = await handler(
+      { runQuery, runMutation },
+      {
+        family: "code-plugin",
+        dryRun: true,
+        batchSize: 10,
+      },
+    );
+
+    expect(result.stats).toEqual({
+      packagesScanned: 10,
+      staleReleases: 2,
+      staleReleasesWithoutBundledSkills: 1,
+      bundledSkillReleases: 1,
+      releasesCleared: 0,
+      rescansQueued: 0,
+      rescansAlreadyQueued: 0,
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("queues bundled releases before clearing their stale analysis", async () => {
+    const runQuery = vi.fn().mockResolvedValue(page());
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ jobId: "securityScanJobs:bundled", alreadyQueued: false })
+      .mockResolvedValue({ ok: true });
+
+    const result = await handler(
+      { runQuery, runMutation },
+      {
+        family: "code-plugin",
+        dryRun: false,
+        confirm: "repair-legacy-plugin-skillspector",
+        batchSize: 10,
+      },
+    );
+
+    expect(result.stats).toMatchObject({
+      releasesCleared: 2,
+      rescansQueued: 1,
+      rescansAlreadyQueued: 0,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(1, expect.anything(), {
+      releaseId: "packageReleases:no-skills",
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:bundled",
+        source: "backfill",
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(3, expect.anything(), {
+      releaseId: "packageReleases:bundled",
+    });
+  });
+});
+
+describe("skill search digest moderation verdict backfill", () => {
+  it("patches digest moderation verdicts from canonical skill rows and schedules the next page", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:malicious",
+          skillId: "skills:malicious",
+          moderationVerdict: undefined,
+        },
+        {
+          _id: "skillSearchDigest:clean",
+          skillId: "skills:clean",
+          moderationVerdict: "clean",
+        },
+        {
+          _id: "skillSearchDigest:missing",
+          skillId: "skills:missing",
+          moderationVerdict: undefined,
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "skills:malicious",
+        moderationVerdict: "malicious",
+        updatedAt: 123,
+      })
+      .mockResolvedValueOnce({
+        _id: "skills:clean",
+        moderationVerdict: "clean",
+        updatedAt: 456,
+      })
+      .mockResolvedValueOnce(null);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestModerationVerdictsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { cursor: "start", batchSize: 25 },
+    );
+
+    expect(result).toEqual({
+      scanned: 3,
+      patched: 1,
+      missingSkills: 1,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: false,
+    });
+    expect(query).toHaveBeenCalledWith("skillSearchDigest");
+    expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
+    expect(patch).toHaveBeenCalledWith("skillSearchDigest:malicious", {
+      moderationVerdict: "malicious",
+      updatedAt: 123,
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+      {
+        cursor: "next-page",
+        batchSize: 25,
+        dryRun: false,
+      },
+    );
+  });
+
+  it("reports would-be patches without writing or scheduling in dry run mode", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:malicious",
+          skillId: "skills:malicious",
+          moderationVerdict: undefined,
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:malicious",
+      moderationVerdict: "malicious",
+      updatedAt: 123,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestModerationVerdictsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 25, dryRun: true },
+    );
+
+    expect(result).toEqual({
+      scanned: 1,
+      patched: 1,
+      missingSkills: 0,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: true,
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 });
 
@@ -546,6 +1560,295 @@ describe("maintenance fingerprint backfill", () => {
       replaceEntries: true,
       existingEntryIds: ["skillVersionFingerprints:1"],
     });
+  });
+
+  it("ignores generated Skill Cards and bundle fingerprints for source backfills", async () => {
+    const { hashSkillFiles } = await import("./lib/skills");
+    const sourceFingerprint = await hashSkillFiles([{ path: "SKILL.md", sha256: "abc" }]);
+    const bundleFingerprint = await hashSkillFiles([
+      { path: "SKILL.md", sha256: "abc" },
+      { path: "skill-card.md", sha256: "def" },
+    ]);
+
+    const runQuery = vi.fn().mockResolvedValue({
+      items: [
+        {
+          skillId: "skills:1",
+          versionId: "skillVersions:1",
+          versionFingerprint: sourceFingerprint,
+          files: [
+            { path: "SKILL.md", sha256: "abc" },
+            { path: "skill-card.md", sha256: "def" },
+          ],
+          hasGeneratedBundleFingerprint: true,
+          existingEntries: [
+            {
+              id: "skillVersionFingerprints:source",
+              fingerprint: sourceFingerprint,
+              kind: "source",
+            },
+            {
+              id: "skillVersionFingerprints:bundle",
+              fingerprint: bundleFingerprint,
+              kind: "generated-bundle",
+            },
+          ],
+        },
+      ],
+      cursor: null,
+      isDone: true,
+    });
+
+    const runMutation = vi.fn();
+
+    const result = await backfillSkillFingerprintsInternalHandler(
+      { runQuery, runMutation } as never,
+      { dryRun: false, batchSize: 10, maxBatches: 1 },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.stats.versionsPatched).toBe(0);
+    expect(result.stats.fingerprintsInserted).toBe(0);
+    expect(result.stats.fingerprintMismatches).toBe(0);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+});
+
+function makeSkillLineageCycleDb(options?: { includeMergeAudit?: boolean }) {
+  const finalSkill = {
+    _id: "skills:final",
+    slug: "graincrawl",
+    canonicalSkillId: "skills:source",
+    forkOf: {
+      skillId: "skills:final",
+      kind: "duplicate",
+      at: 200,
+    },
+  };
+  const sourceSkill = {
+    _id: "skills:source",
+    slug: "archive-graincrawl",
+    canonicalSkillId: "skills:source",
+    forkOf: {
+      skillId: "skills:final",
+      kind: "duplicate",
+      at: 300,
+    },
+    softDeletedAt: 300,
+    moderationStatus: "hidden",
+    moderationReason: "owner.merged",
+  };
+  const patch = vi.fn();
+  const insert = vi.fn();
+  const get = vi.fn(async (id: string) => {
+    if (id === finalSkill._id) return finalSkill;
+    if (id === sourceSkill._id) return sourceSkill;
+    return null;
+  });
+  const query = vi.fn((table: string) => {
+    if (table !== "auditLogs") throw new Error(`Unexpected table: ${table}`);
+    return {
+      withIndex: (index: string) => {
+        if (index !== "by_target_action") throw new Error(`Unexpected index: ${index}`);
+        return {
+          order: () => ({
+            take: async () =>
+              options?.includeMergeAudit === false
+                ? []
+                : [
+                    {
+                      action: "skill.merge",
+                      targetType: "skill",
+                      targetId: sourceSkill._id,
+                      metadata: { targetSkillId: finalSkill._id },
+                      createdAt: sourceSkill.forkOf.at,
+                    },
+                  ],
+          }),
+        };
+      },
+    };
+  });
+
+  return {
+    db: { get, query, patch, insert },
+    finalSkill,
+    sourceSkill,
+    patch,
+    insert,
+  };
+}
+
+describe("maintenance skill lineage cycle repair", () => {
+  it("recognizes the exact malformed merge pair from its audit history", async () => {
+    const fixture = makeSkillLineageCycleDb();
+
+    const finalResult = await inspectSkillLineageCycleInternalHandler(
+      fixture as never,
+      fixture.finalSkill._id as never,
+    );
+    const sourceResult = await inspectSkillLineageCycleInternalHandler(
+      fixture as never,
+      fixture.sourceSkill._id as never,
+    );
+
+    expect(finalResult).toEqual({
+      status: "repairable",
+      skillId: "skills:final",
+      slug: "graincrawl",
+      sourceSkillId: "skills:source",
+      sourceSlug: "archive-graincrawl",
+    });
+    expect(sourceResult).toEqual({
+      status: "paired_source",
+      skillId: "skills:source",
+      slug: "archive-graincrawl",
+      finalSkillId: "skills:final",
+      finalSlug: "graincrawl",
+    });
+  });
+
+  it("leaves a self-reference untouched without matching merge history", async () => {
+    const fixture = makeSkillLineageCycleDb({ includeMergeAudit: false });
+
+    const result = await inspectSkillLineageCycleInternalHandler(
+      fixture as never,
+      fixture.finalSkill._id as never,
+    );
+
+    expect(result).toEqual({
+      status: "uncertain",
+      skillId: "skills:final",
+      slug: "graincrawl",
+      reason: "missing_matching_merge_audit",
+      linkedSkillId: "skills:source",
+      linkedSlug: "archive-graincrawl",
+    });
+  });
+
+  it("repairs both sides of the pair and writes their prior state to the audit", async () => {
+    const fixture = makeSkillLineageCycleDb();
+
+    const result = await applySkillLineageCycleRepairInternalHandler(fixture as never, {
+      skillId: fixture.finalSkill._id as never,
+      sourceSkillId: fixture.sourceSkill._id as never,
+    });
+
+    expect(result).toEqual({ repaired: true });
+    expect(fixture.patch).toHaveBeenCalledTimes(2);
+    expect(fixture.patch).toHaveBeenCalledWith(
+      "skills:final",
+      expect.objectContaining({
+        canonicalSkillId: undefined,
+        forkOf: undefined,
+      }),
+    );
+    expect(fixture.patch).toHaveBeenCalledWith(
+      "skills:source",
+      expect.objectContaining({
+        canonicalSkillId: "skills:final",
+        forkOf: fixture.sourceSkill.forkOf,
+      }),
+    );
+    expect(fixture.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "skill.lineage_cycle.repair",
+        targetType: "skill",
+        targetId: "skills:final",
+        metadata: expect.objectContaining({
+          sourceSkillId: "skills:source",
+          previousFinalCanonicalSkillId: "skills:source",
+          previousFinalForkOf: fixture.finalSkill.forkOf,
+          previousSourceCanonicalSkillId: "skills:source",
+          previousSourceForkOf: fixture.sourceSkill.forkOf,
+        }),
+      }),
+    );
+  });
+
+  it("defaults to preview and reports resumable progress", async () => {
+    const runQuery = vi.fn(async (endpoint: unknown, args?: { skillId?: string }) => {
+      if (endpoint === internal.maintenance.getSkillLineageCycleRepairPageInternal) {
+        return {
+          items: [
+            { skillId: "skills:final", slug: "graincrawl" },
+            { skillId: "skills:source", slug: "archive-graincrawl" },
+          ],
+          scanned: 200,
+          cursor: "next-page",
+          isDone: false,
+        };
+      }
+      if (endpoint === internal.maintenance.inspectSkillLineageCycleInternal) {
+        if (args?.skillId === "skills:source") {
+          return {
+            status: "paired_source",
+            skillId: "skills:source",
+            slug: "archive-graincrawl",
+            finalSkillId: "skills:final",
+            finalSlug: "graincrawl",
+          };
+        }
+        return {
+          status: "repairable",
+          skillId: "skills:final",
+          slug: "graincrawl",
+          sourceSkillId: "skills:source",
+          sourceSlug: "archive-graincrawl",
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairSkillLineageCyclesInternalHandler(
+      { runQuery, runMutation } as never,
+      { batchSize: 200, maxBatches: 1 },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "repair-skill-lineage-cycles-2026-07-23",
+      cursor: "next-page",
+      isDone: false,
+      stats: {
+        skillsScanned: 200,
+        selfReferencesFound: 2,
+        repairable: 1,
+        pairedSources: 1,
+        uncertain: 0,
+        repaired: 0,
+        changedBeforeApply: 0,
+      },
+      samples: [
+        {
+          status: "repairable",
+          skillId: "skills:final",
+          slug: "graincrawl",
+          sourceSkillId: "skills:source",
+          sourceSlug: "archive-graincrawl",
+        },
+        {
+          status: "paired_source",
+          skillId: "skills:source",
+          slug: "archive-graincrawl",
+          finalSkillId: "skills:final",
+          finalSlug: "graincrawl",
+        },
+      ],
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("requires the confirmation phrase before applying", async () => {
+    await expect(
+      repairSkillLineageCyclesInternalHandler(
+        { runQuery: vi.fn(), runMutation: vi.fn() } as never,
+        { dryRun: false },
+      ),
+    ).rejects.toThrow('Pass confirm="repair-skill-lineage-cycles-2026-07-23" to apply.');
   });
 });
 
@@ -755,5 +2058,421 @@ describe("maintenance empty skill nominations", () => {
         sampleSlugs: ["spam-a", "spam-b"],
       },
     ]);
+  });
+});
+
+const SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM =
+  "backfill-skill-search-digest-first-tokens";
+const SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM =
+  "backfill-skills-sh-mirror-digest-first-tokens";
+
+describe("backfillSkillSearchDigestFirstTokensInternal", () => {
+  it("repairs digest rows whose stored first tokens predate the tokenizer", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+        {
+          _id: "skillSearchDigest:fresh",
+          skillId: "skills:fresh",
+          normalizedSlugFirstToken: "deploy",
+          normalizedDisplayNameFirstToken: "deploy",
+        },
+        {
+          _id: "skillSearchDigest:orphan",
+          skillId: "skills:missing",
+          normalizedSlugFirstToken: "gone",
+          normalizedDisplayNameFirstToken: "gone",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "skills:stale",
+        slug: "database",
+        displayName: "データベース管理",
+      })
+      .mockResolvedValueOnce({
+        _id: "skills:fresh",
+        slug: "deploy",
+        displayName: "Deploy helper",
+      })
+      .mockResolvedValueOnce(null);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      {
+        cursor: "start",
+        batchSize: 25,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
+    );
+
+    expect(result).toEqual({
+      scanned: 3,
+      patched: 1,
+      missingSkills: 1,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: false,
+      confirmRequired: undefined,
+    });
+    expect(query).toHaveBeenCalledWith("skillSearchDigest");
+    expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("skillSearchDigest:stale", {
+      normalizedSlugFirstToken: "database",
+      normalizedDisplayNameFirstToken: "データベース",
+    });
+    // The scheduled page has to carry the token, otherwise the run stalls on its own guard.
+    expect(runAfter).toHaveBeenCalledWith(
+      500,
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      {
+        cursor: "next-page",
+        batchSize: 25,
+        delayMs: undefined,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
+    );
+  });
+
+  it("previews without writing or scheduling when arguments are omitted", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:stale",
+      slug: "database",
+      displayName: "データベース管理",
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      {},
+    );
+
+    expect(result.dryRun).toBe(true);
+    expect(result.patched).toBe(1);
+    expect(result.confirmRequired).toBe(SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rejects an apply that omits the confirmation token", async () => {
+    const paginate = vi.fn();
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn();
+    const runAfter = vi.fn();
+    const ctx = {
+      db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+      scheduler: { runAfter },
+    } as never;
+    const handler = (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler;
+
+    await expect(handler(ctx, { dryRun: false })).rejects.toThrow(
+      `Pass confirm="${SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    await expect(handler(ctx, { dryRun: false, confirm: "wrong-token" })).rejects.toThrow(
+      `Pass confirm="${SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    expect(paginate).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("spaces the next batch by the requested delay and clamps it", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:stale",
+      slug: "database",
+      displayName: "データベース管理",
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const handler = (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler;
+    const ctx = {
+      db: { query, get, patch, normalizeId: vi.fn() },
+      scheduler: { runAfter },
+    } as never;
+
+    await handler(ctx, {
+      delayMs: 2_000,
+      dryRun: false,
+      confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+    });
+    expect(runAfter).toHaveBeenLastCalledWith(
+      2_000,
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      {
+        cursor: "next-page",
+        batchSize: undefined,
+        delayMs: 2_000,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
+    );
+
+    await handler(ctx, {
+      delayMs: 600_000,
+      dryRun: false,
+      confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+    });
+    expect(runAfter).toHaveBeenLastCalledWith(
+      60_000,
+      internal.maintenance.backfillSkillSearchDigestFirstTokensInternal,
+      {
+        cursor: "next-page",
+        batchSize: undefined,
+        delayMs: 600_000,
+        dryRun: false,
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
+    );
+  });
+});
+
+describe("backfillSkillsShMirrorDigestFirstTokensInternal", () => {
+  const mirrorPage = () => [
+    {
+      _id: "skillsShMirrorDigests:stale",
+      slug: "database",
+      displayName: "データベース管理",
+      normalizedSlugFirstToken: "database",
+      normalizedDisplayNameFirstToken: "デ",
+    },
+    {
+      _id: "skillsShMirrorDigests:fresh",
+      slug: "deploy",
+      displayName: "Deploy helper",
+      normalizedSlugFirstToken: "deploy",
+      normalizedDisplayNameFirstToken: "deploy",
+    },
+  ];
+
+  it("repairs mirrored rows whose stored first tokens predate the tokenizer", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: mirrorPage(),
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      {
+        cursor: "start",
+        batchSize: 25,
+        dryRun: false,
+        confirm: SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
+    );
+
+    expect(result).toEqual({
+      scanned: 2,
+      patched: 1,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: false,
+      confirmRequired: undefined,
+    });
+    expect(query).toHaveBeenCalledWith("skillsShMirrorDigests");
+    expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
+    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledWith("skillsShMirrorDigests:stale", {
+      normalizedSlugFirstToken: "database",
+      normalizedDisplayNameFirstToken: "データベース",
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      500,
+      internal.maintenance.backfillSkillsShMirrorDigestFirstTokensInternal,
+      {
+        cursor: "next-page",
+        batchSize: 25,
+        delayMs: undefined,
+        dryRun: false,
+        confirm: SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      },
+    );
+  });
+
+  it("previews without writing or scheduling when arguments are omitted", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: mirrorPage(),
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      {},
+    );
+
+    expect(result.dryRun).toBe(true);
+    expect(result.patched).toBe(1);
+    expect(result.confirmRequired).toBe(SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rejects an apply that omits the confirmation token", async () => {
+    const paginate = vi.fn();
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn();
+    const runAfter = vi.fn();
+    const ctx = {
+      db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+      scheduler: { runAfter },
+    } as never;
+    const handler = (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler;
+
+    await expect(handler(ctx, { dryRun: false })).rejects.toThrow(
+      `Pass confirm="${SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    await expect(
+      handler(ctx, {
+        dryRun: false,
+        // The native token must not unlock the mirror path.
+        confirm: SKILL_SEARCH_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM,
+      }),
+    ).rejects.toThrow(
+      `Pass confirm="${SKILLS_SH_MIRROR_DIGEST_FIRST_TOKEN_BACKFILL_CONFIRM}" to apply.`,
+    );
+    expect(paginate).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("reports would-be patches without writing or scheduling in dry run mode", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: mirrorPage(),
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillsShMirrorDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get: vi.fn(), patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { dryRun: true },
+    );
+
+    expect(result.patched).toBe(1);
+    expect(result.dryRun).toBe(true);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+});
+
+describe("backfillSkillSearchDigestFirstTokensInternal dry run", () => {
+  it("reports would-be patches without writing or scheduling in dry run mode", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:stale",
+          skillId: "skills:stale",
+          normalizedSlugFirstToken: "database",
+          normalizedDisplayNameFirstToken: "デ",
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:stale",
+      slug: "database",
+      displayName: "データベース管理",
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestFirstTokensInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { dryRun: true },
+    );
+
+    expect(result.patched).toBe(1);
+    expect(result.dryRun).toBe(true);
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 });

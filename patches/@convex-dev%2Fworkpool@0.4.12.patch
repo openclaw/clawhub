@@ -1,0 +1,10 @@
+diff --git a/src/component/shared.ts b/src/component/shared.ts
+index 6c778a76c3cf7fb934643ea6dfdf5094952c7071..53bf8a9e6d7fe85becbed9c1f78fb307c47ba428 100644
+--- a/src/component/shared.ts
++++ b/src/component/shared.ts
+@@ -70,4 +70,4 @@ export const DEFAULT_RETRY_BEHAVIOR: RetryBehavior = {
+   base: 2,
+ };
+ // This ensures that the type satisfies the schema.
+-const _ = {} as RetryBehavior satisfies Infer<typeof retryBehavior>;
++void ({} as RetryBehavior satisfies Infer<typeof retryBehavior>);

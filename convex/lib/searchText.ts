@@ -1,4 +1,10 @@
-const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\uac00-\ud7af]/;
+// U+30FC (ー) and U+3005 (々) extend the word they follow, so the pre-split in tokenize()
+// must keep them with that word instead of treating them as separators.
+const CJK_RE = /[\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\u30fc\u3005\uac00-\ud7af]/;
+
+// The same two marks the class above admits: they extend the preceding character rather
+// than standing on their own, so the per-character fallback must not emit them alone.
+const CJK_EXTENDER_RE = /[\u30fc\u3005]/;
 
 const hasSegmenter = typeof Intl !== "undefined" && "Segmenter" in Intl;
 
@@ -34,9 +40,12 @@ function getKoSegmenter(): Intl.Segmenter {
 function segmentCJKByChar(text: string): string[] {
   const tokens: string[] = [];
   for (const ch of text) {
-    if (CJK_RE.test(ch)) {
-      tokens.push(ch);
+    if (!CJK_RE.test(ch)) continue;
+    if (CJK_EXTENDER_RE.test(ch) && tokens.length > 0) {
+      tokens[tokens.length - 1] += ch;
+      continue;
     }
+    tokens.push(ch);
   }
   return tokens;
 }
@@ -116,7 +125,7 @@ export function tokenize(value: string): string[] {
   const tokens: string[] = [];
 
   const parts = normalized.split(
-    /([^\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\uac00-\ud7af]+)/g,
+    /([^\u4e00-\u9fff\u3400-\u4dbf\u3041-\u3096\u30a1-\u30fa\u30fc\u3005\uac00-\ud7af]+)/g,
   );
 
   for (const part of parts) {
@@ -138,14 +147,45 @@ export function matchesExactTokens(
   queryTokens: string[],
   parts: Array<string | null | undefined>,
 ): boolean {
-  if (queryTokens.length === 0) return false;
+  return matchesTokenPrefixes(queryTokens, parts);
+}
+
+export function matchesTokenPrefixes(
+  queryTokens: string[],
+  parts: Array<string | null | undefined>,
+  options: { minQueryTokenLength?: number } = {},
+): boolean {
+  const minQueryTokenLength = options.minQueryTokenLength ?? 1;
+  const eligibleQueryTokens = queryTokens.filter((token) => token.length >= minQueryTokenLength);
+  if (eligibleQueryTokens.length === 0) return false;
   const text = parts.filter((part) => Boolean(part?.trim())).join(" ");
   if (!text) return false;
   const textTokens = tokenize(text);
   if (textTokens.length === 0) return false;
-  // Require every query token to prefix-match so partial matches do not crowd out better results.
-  return queryTokens.every((queryToken) =>
+  // Require every eligible query token to prefix-match so partial matches do not crowd out better results.
+  return eligibleQueryTokens.every((queryToken) =>
     textTokens.some((textToken) => textToken.startsWith(queryToken)),
+  );
+}
+
+export function matchesExploratoryTokenPrefixes(
+  queryTokens: string[],
+  parts: Array<string | null | undefined>,
+  minQueryTokenLength: number,
+): boolean {
+  if (queryTokens.length === 0) return false;
+  if (!queryTokens.every((token) => token.length >= minQueryTokenLength)) return false;
+  return matchesTokenPrefixes(queryTokens, parts, { minQueryTokenLength });
+}
+
+export function matchesAllTokens(
+  queryTokens: string[],
+  candidateTokens: string[],
+  matcher: (candidate: string, query: string) => boolean,
+) {
+  if (queryTokens.length === 0 || candidateTokens.length === 0) return false;
+  return queryTokens.every((queryToken) =>
+    candidateTokens.some((candidateToken) => matcher(candidateToken, queryToken)),
   );
 }
 

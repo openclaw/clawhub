@@ -1,0 +1,136 @@
+name: Plugin Inspector Bulk Scan
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Maximum plugin releases to scan"
+        required: false
+        default: "25"
+      dry_run:
+        description: "Preview impact without persisting findings or sending emails"
+        required: false
+        default: "true"
+        type: boolean
+      dry_run_max_batches:
+        description: "Maximum preview batches to scan when dry_run is enabled"
+        required: false
+        default: "20"
+      notify_owners:
+        description: "Email plugin owners from an explicitly selected reviewed scan"
+        required: false
+        default: false
+        type: boolean
+      notification_only:
+        description: "Notify from the exact stored scan result without inspecting packages again"
+        required: false
+        default: false
+        type: boolean
+      notification_source_run_id:
+        description: "Successful no-email scan run whose exact artifact is approved for notification"
+        required: false
+        default: ""
+      package_names:
+        description: "Optional comma or newline separated package names to scan instead of the rolling cursor"
+        required: false
+        default: ""
+      source_pr:
+        description: "Merged PR number that triggered this scan, when dispatched automatically"
+        required: false
+        default: ""
+      source_sha:
+        description: "Merged commit SHA that triggered this scan, when dispatched automatically"
+        required: false
+        default: ""
+
+permissions:
+  actions: read
+  contents: read
+
+# Side-effecting scans queue behind the active run instead of overlapping.
+concurrency:
+  group: clawhub-plugin-inspector-bulk-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan published plugins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify notification source run
+        if: ${{ inputs.notification_only }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.notification_source_run_id }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_RUN_ID" || { echo "notification_source_run_id is required" >&2; exit 1; }
+          RUN_JSON="$(gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json workflowName,headBranch,event,conclusion,url)"
+          printf '%s' "$RUN_JSON" | node --input-type=module -e '
+            const chunks = [];
+            process.stdin.on("data", (chunk) => chunks.push(chunk));
+            process.stdin.on("end", () => {
+              const run = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+              const checks = [
+                ["workflowName", "Plugin Inspector Bulk Scan"],
+                ["headBranch", "main"],
+                ["event", "workflow_dispatch"],
+                ["conclusion", "success"],
+              ];
+              for (const [key, expected] of checks) {
+                if (run[key] !== expected) {
+                  console.error(`Notification source run must have ${key}=${expected}, got ${run[key] ?? "<missing>"}.`);
+                  process.exit(1);
+                }
+              }
+              console.log(`Using reviewed no-email scan: ${run.url}`);
+            });'
+
+      - name: Download reviewed scan artifact
+        if: ${{ inputs.notification_only }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: plugin-inspector-bulk-scan-reports
+          path: notification-source
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.notification_source_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Run plugin inspector bulk scan
+        if: ${{ github.ref == 'refs/heads/main' }}
+        env:
+          CLAWHUB_SITE_URL: ${{ vars.CLAWHUB_SITE_URL || 'https://clawhub.ai' }}
+          CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN: ${{ secrets.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN }}
+          PLUGIN_INSPECTOR_BATCH_SIZE: ${{ inputs.batch_size || '25' }}
+          PLUGIN_INSPECTOR_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES: ${{ inputs.dry_run_max_batches || '20' }}
+          PLUGIN_INSPECTOR_PACKAGE_NAMES: ${{ inputs.package_names || '' }}
+          PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta
+          PLUGIN_INSPECTOR_NOTIFY_OWNERS: ${{ github.event_name == 'schedule' && '0' || (inputs.notify_owners && '1' || '0') }}
+          PLUGIN_INSPECTOR_NOTIFICATION_ONLY: ${{ github.event_name == 'schedule' && '0' || (inputs.notification_only && '1' || '0') }}
+          PLUGIN_INSPECTOR_NOTIFICATION_MANIFEST: ${{ inputs.notification_only && 'notification-source/run-summary.json' || '' }}
+          PLUGIN_INSPECTOR_SOURCE_PR: ${{ inputs.source_pr || '' }}
+          PLUGIN_INSPECTOR_SOURCE_SHA: ${{ inputs.source_sha || '' }}
+          PLUGIN_INSPECTOR_ARTIFACT_DIR: plugin-inspector-bulk-scan-reports
+        run: bun scripts/package-inspector-nightly-scan.ts
+
+      - name: Upload inspector reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-inspector-bulk-scan-reports
+          path: plugin-inspector-bulk-scan-reports
+          if-no-files-found: warn

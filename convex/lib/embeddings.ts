@@ -65,10 +65,15 @@ function sleep(ms: number) {
 }
 
 export async function generateEmbedding(text: string) {
+  return (await generateEmbeddings([text]))[0];
+}
+
+export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.warn("OPENAI_API_KEY is not configured; using zero embeddings");
-    return emptyEmbedding();
+    return texts.map(() => emptyEmbedding());
   }
 
   let lastRetryableError: RetryableEmbeddingError | null = null;
@@ -86,7 +91,7 @@ export async function generateEmbedding(text: string) {
         },
         body: JSON.stringify({
           model: EMBEDDING_MODEL,
-          input: text,
+          input: texts,
         }),
         signal: controller.signal,
       });
@@ -117,11 +122,14 @@ export async function generateEmbedding(text: string) {
       }
 
       const payload = (await response.json()) as {
-        data?: Array<{ embedding: number[] }>;
+        data?: Array<{ index: number; embedding: number[] }>;
       };
-      const embedding = payload.data?.[0]?.embedding;
-      if (!embedding) throw new Error("Embedding missing from response");
-      return embedding;
+      // Batched responses identify their input by index, not response order.
+      const byIndex = new Map(payload.data?.map((row) => [row.index, row.embedding]));
+      const embeddings = texts.map((_, index) => byIndex.get(index));
+      if (embeddings.some((embedding) => !embedding))
+        throw new Error("Embedding missing from response");
+      return embeddings as number[][];
     } catch (error) {
       const retryableNetworkError = normalizeRetryableNetworkError(error);
       if (retryableNetworkError) {

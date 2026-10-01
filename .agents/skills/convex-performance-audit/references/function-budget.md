@@ -1,14 +1,19 @@
 # Function Budget
 
-Use these rules when functions are hitting execution limits, transaction size errors, or returning excessively large payloads to the client.
+Use these rules when functions are hitting execution limits, transaction size
+errors, or returning excessively large payloads to the client.
 
 ## Core Principle
 
-Convex functions run inside transactions with budgets for time, reads, and writes. Staying well within these limits is not just about avoiding errors, it reduces latency and contention.
+Convex functions run inside transactions with budgets for time, reads, and
+writes. Staying well within these limits is not just about avoiding errors, it
+reduces latency and contention.
 
 ## Limits to Know
 
-These are the current values from the [Convex limits docs](https://docs.convex.dev/production/state/limits). Check that page for the latest numbers.
+These are the current values from the
+[Convex limits docs](https://docs.convex.dev/production/state/limits). Check
+that page for the latest numbers.
 
 | Resource                          | Limit                                                 |
 | --------------------------------- | ----------------------------------------------------- |
@@ -34,15 +39,18 @@ These are the current values from the [Convex limits docs](https://docs.convex.d
 
 ### Unbounded collection
 
-A query that calls `.collect()` on a table without a reasonable limit. As the table grows, the query reads more and more documents.
+A query that calls `.collect()` on a table without a reasonable limit. As the
+table grows, the query reads more and more documents.
 
 ### Large document reads on hot paths
 
-Reading documents with large fields (rich text, embedded media references, long arrays) when only a small subset of the data is needed for the current view.
+Reading documents with large fields (rich text, embedded media references, long
+arrays) when only a small subset of the data is needed for the current view.
 
 ### Mutation doing too much work
 
-A single mutation that updates hundreds of documents, backfills data, or rebuilds derived state in one transaction.
+A single mutation that updates hundreds of documents, backfills data, or
+rebuilds derived state in one transaction.
 
 ### Returning too much data to the client
 
@@ -70,13 +78,16 @@ const messages = await ctx.db
 
 ### 2. Read smaller shapes
 
-If the list page only needs title, author, and date, do not read full documents with rich content fields.
+If the list page only needs title, author, and date, do not read full documents
+with rich content fields.
 
-Use digest or summary tables for hot list pages. See `hot-path-rules.md` for the digest table pattern.
+Use digest or summary tables for hot list pages. See `hot-path-rules.md` for the
+digest table pattern.
 
 ### 3. Break large mutations into batches
 
-If a mutation needs to update hundreds of documents, split it into a self-scheduling chain.
+If a mutation needs to update hundreds of documents, split it into a
+self-scheduling chain.
 
 ```ts
 // Bad: one mutation updating every row
@@ -118,9 +129,12 @@ export const backfillBatch = internalMutation({
 
 ### 4. Move heavy work to actions
 
-Queries and mutations run inside Convex's transactional runtime with strict budgets. If you need to do CPU-intensive computation, call external APIs, or process large files, use an action instead.
+Queries and mutations run inside Convex's transactional runtime with strict
+budgets. If you need to do CPU-intensive computation, call external APIs, or
+process large files, use an action instead.
 
-Actions run outside the transaction and can call mutations to write results back.
+Actions run outside the transaction and can call mutations to write results
+back.
 
 ```ts
 // Bad: heavy computation inside a mutation
@@ -144,7 +158,8 @@ export const processUpload = action({
 
 ### 5. Trim return values
 
-Only return what the client needs. If a query fetches full documents but the component only renders a few fields, map the results before returning.
+Only return what the client needs. If a query fetches full documents but the
+component only renders a few fields, map the results before returning.
 
 ```ts
 // Bad: returns full documents including large content fields
@@ -172,7 +187,9 @@ export const list = query({
 
 ### 6. Replace `ctx.runQuery` and `ctx.runMutation` with helper functions
 
-Inside queries and mutations, `ctx.runQuery` and `ctx.runMutation` have overhead compared to calling a plain TypeScript helper function. They run in the same transaction but pay extra per-call cost.
+Inside queries and mutations, `ctx.runQuery` and `ctx.runMutation` have overhead
+compared to calling a plain TypeScript helper function. They run in the same
+transaction but pay extra per-call cost.
 
 ```ts
 // Bad: unnecessary overhead from ctx.runQuery inside a mutation
@@ -194,11 +211,15 @@ export const createProject = mutation({
 });
 ```
 
-Exception: components require `ctx.runQuery`/`ctx.runMutation`. Use them there, but prefer helpers everywhere else.
+Exception: components require `ctx.runQuery`/`ctx.runMutation`. Use them there,
+but prefer helpers everywhere else.
 
 ### 7. Avoid unnecessary `runAction` calls
 
-`runAction` from within an action creates a separate function invocation with its own memory and CPU budget. The parent action just sits idle waiting. Replace with a plain TypeScript function call unless you need a different runtime (e.g. calling Node.js code from the Convex runtime).
+`runAction` from within an action creates a separate function invocation with
+its own memory and CPU budget. The parent action just sits idle waiting. Replace
+with a plain TypeScript function call unless you need a different runtime (e.g.
+calling Node.js code from the Convex runtime).
 
 ```ts
 // Bad: runAction overhead for no reason
@@ -228,5 +249,6 @@ export const processItems = action({
 2. `npx convex insights --details` shows reduced bytes read
 3. Large mutations are batched and self-scheduling
 4. Client payloads are reasonably sized for the UI they serve
-5. `ctx.runQuery`/`ctx.runMutation` in queries and mutations replaced with helpers where possible
+5. `ctx.runQuery`/`ctx.runMutation` in queries and mutations replaced with
+   helpers where possible
 6. Sibling functions with similar patterns were checked

@@ -9,6 +9,7 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
+    "types": ["node"],
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
 

@@ -1,0 +1,853 @@
+/// <reference types="vite/client" />
+/* @vitest-environment edge-runtime */
+import { convexTest } from "convex-test";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { reviewHash } from "../scripts/plugin-category-operator";
+import { api, internal } from "./_generated/api";
+import schema from "./schema";
+
+const modules = import.meta.glob("./**/*.ts");
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+async function fixture() {
+  const t = convexTest({ schema, modules });
+  const { userId, publisherId } = await t.run(async (ctx) => {
+    const createdUserId = await ctx.db.insert("users", { handle: "category-proof" });
+    const createdPublisherId = await ctx.db.insert("publishers", {
+      kind: "user",
+      handle: "category-proof",
+      displayName: "Category proof",
+      linkedUserId: createdUserId,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return { userId: createdUserId, publisherId: createdPublisherId };
+  });
+  const publish = async (
+    version: string,
+    declared?: string[],
+    name = "@category-proof/appointments",
+  ) =>
+    t.mutation(internal.packages.insertReleaseInternal, {
+      actorUserId: userId,
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      name,
+      displayName: "Appointments",
+      family: "code-plugin",
+      version,
+      changelog: "Fixture",
+      summary: "Manage appointments",
+      tags: ["latest"],
+      categories: ["tools"],
+      channel: "community",
+      files: [],
+      integritySha256: version.padEnd(64, "0"),
+      sha256hash: version.padEnd(64, "0"),
+      extractedPluginManifest: {
+        id: "appointments",
+        description: "Manage appointments and availability.",
+        ...(declared ? { categories: declared } : {}),
+      },
+      pluginManifestSummary: {
+        schemaVersion: 1,
+        categories: ["tools"],
+        configFields: [],
+        mcpServers: [],
+        bundledSkills: [],
+      },
+    });
+  await publish("1.0.0");
+  const latest = await publish("2.0.0");
+  vi.stubEnv("OPENAI_API_KEY", "test-key");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      Response.json({
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  categories: ["scheduling"],
+                  evidence: "Manages appointments.",
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+  const readCategories = () =>
+    t.query(internal.packages.resolveVersionCategoriesBatchInternal, {
+      packages: ["1.0.0", "2.0.0"].map((version) => ({
+        name: "@category-proof/appointments",
+        version,
+      })),
+    });
+  return { t, publish, latest, readCategories, publisherId };
+}
+
+const reviewProvenance = {
+  actor: "category-reviewer",
+  repository: "openclaw/clawhub" as const,
+  runId: "123",
+  runAttempt: "1",
+  sha: "a".repeat(40),
+};
+
+async function staffFixture(fallback = false) {
+  const state = await fixture();
+  if (fallback) vi.stubEnv("OPENAI_API_KEY", "");
+  await state.t.action(internal.pluginCategoryRefresh.preview, { runId: "review-boundary" });
+  const rows = await state.t.query(internal.pluginCategoryRefresh.list, {
+    runId: "review-boundary",
+    paginationOpts: { cursor: null, numItems: 10 },
+  });
+  const row = rows.page[0];
+  const corrections = [
+    {
+      id: row._id,
+      category: "productivity",
+      evidence: "The source organizes personal activities.",
+    },
+  ];
+  const args = {
+    ids: [row._id],
+    corrections,
+    reviewHash: reviewHash(rows.page, corrections),
+    provenance: reviewProvenance,
+    confirm: "apply-plugin-category-refresh",
+  };
+  return { ...state, row, args };
+}
+
+describe("latest plugin category refresh", () => {
+  it("previews only the exact named packages and reuses their journal rows on retry", async () => {
+    const { t, publish, readCategories } = await fixture();
+    await publish("1.0.0", undefined, "@category-proof/unselected");
+    const selected = await publish("1.0.0", ["web"], "@category-proof/selected");
+    const args = { runId: "named-preview", packageNames: ["@category-proof/selected"] };
+    expect(
+      await t.query(internal.pluginCategoryRefresh.getPage, {
+        packageNames: args.packageNames,
+        batchSize: 10,
+      }),
+    ).toEqual({ ids: [selected.packageId], cursor: "", isDone: true });
+    await expect(t.action(internal.pluginCategoryRefresh.preview, args)).resolves.toMatchObject({
+      isDone: true,
+      previewed: 1,
+      skipped: 0,
+    });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: args.runId,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(rows.page.map((row) => row.packageName)).toEqual(args.packageNames);
+    expect(rows.page[0].classification.source).toBe("manifest");
+    expect(await t.run(async (ctx) => (await ctx.db.get(selected.packageId))?.categories)).toEqual([
+      "tools",
+    ]);
+    await expect(t.action(internal.pluginCategoryRefresh.preview, args)).resolves.toMatchObject({
+      previewed: 0,
+      skipped: 1,
+    });
+    expect((await readCategories()).map((row) => row.categories)).toEqual([["tools"], ["tools"]]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid named selections before previewing any package", async () => {
+    const { t, latest } = await fixture();
+    for (const packageNames of [
+      [],
+      ["@category-proof/appointments", "@category-proof/appointments"],
+      [" @category-proof/appointments"],
+      ["@category-proof/appointments", "@category-proof/missing"],
+      Array.from({ length: 11 }, (_, index) => `plugin-${index}`),
+    ]) {
+      await expect(
+        t.action(internal.pluginCategoryRefresh.preview, {
+          runId: "invalid-selection",
+          packageNames,
+        }),
+      ).rejects.toThrow();
+    }
+    await expect(
+      t.query(internal.pluginCategoryRefresh.getPage, {
+        packageNames: ["@category-proof/appointments"],
+        batchSize: 10,
+        cursor: "existing-cursor",
+      }),
+    ).rejects.toThrow("cursor");
+    await t.run(async (ctx) => ctx.db.patch(latest.packageId, { family: "skill" }));
+    await expect(
+      t.action(internal.pluginCategoryRefresh.preview, {
+        runId: "invalid-selection",
+        packageNames: ["@category-proof/appointments"],
+      }),
+    ).rejects.toThrow("plugin package");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(await t.run(async (ctx) => ctx.db.query("pluginCategoryRefreshes").collect())).toEqual(
+      [],
+    );
+  });
+
+  it("requires an explicit source review to correct a fallback, and records its provenance", async () => {
+    const { t, row, args, latest } = await staffFixture(true);
+    expect(row.classification.source).toBe("fallback");
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.accept, { ids: [row._id], confirm: args.confirm }),
+    ).rejects.toThrow("explicit reviewed correction");
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+    expect(await t.run(async (ctx) => ctx.db.get(row._id))).toMatchObject({
+      classification: row.classification,
+      review: { provenance: reviewProvenance },
+    });
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.categoryClassification,
+    ).toMatchObject({ source: "reviewed", reviewId: row._id });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["category", "evidence"] as const)(
+    "rejects an altered %s under the approved decision hash",
+    async (field) => {
+      const { t, row, args } = await staffFixture();
+      const corrections = [
+        {
+          ...args.corrections[0],
+          [field]: field === "category" ? "channels" : "Different rationale",
+        },
+      ];
+      await expect(
+        t.mutation(internal.pluginCategoryRefresh.accept, { ...args, corrections }),
+      ).rejects.toThrow("Review hash changed");
+      expect(await t.run(async (ctx) => ctx.db.get(row._id))).toEqual(row);
+    },
+  );
+
+  it.each(["manifest", "stored-manifest", "bundled"])(
+    "cannot correct authoritative %s evidence",
+    async (source) => {
+      const { t, latest, publisherId } = await fixture();
+      await t.run(async (ctx) => {
+        if (source === "bundled") {
+          await ctx.db.patch(publisherId, { kind: "org", handle: "openclaw" });
+          await ctx.db.patch(latest.packageId, {
+            name: "@openclaw/imap",
+            normalizedName: "@openclaw/imap",
+          });
+          await ctx.db.patch(latest.releaseId, {
+            extractedPluginManifest: { id: "imap", categories: ["tools", "channels"] },
+            source: { repo: "openclaw/openclaw" },
+          });
+        } else if (source === "stored-manifest") {
+          const content = JSON.stringify({ id: "appointments", categories: ["scheduling"] });
+          const storageId = await ctx.storage.store(new Blob([content]));
+          await ctx.db.patch(latest.releaseId, {
+            extractedPluginManifest: undefined,
+            files: [
+              { path: "openclaw.plugin.json", size: content.length, sha256: "stored", storageId },
+            ],
+          });
+        } else
+          await ctx.db.patch(latest.releaseId, {
+            extractedPluginManifest: { id: "appointments", categories: ["scheduling"] },
+          });
+      });
+      await t.action(internal.pluginCategoryRefresh.preview, { runId: "authoritative" });
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "authoritative",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      const row = rows.page[0];
+      const corrections = [
+        { id: row._id, category: "productivity", evidence: "Attempted override" },
+      ];
+      await expect(
+        t.mutation(internal.pluginCategoryRefresh.accept, {
+          ids: [row._id],
+          corrections,
+          reviewHash: reviewHash(rows.page, corrections),
+          provenance: reviewProvenance,
+          confirm: "apply-plugin-category-refresh",
+        }),
+      ).rejects.toThrow("authoritative");
+      expect(await t.run(async (ctx) => ctx.db.get(row._id))).toEqual(row);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["before-accept", "after-accept"])(
+    "rejects changed artifact evidence %s",
+    async (stage) => {
+      const { t, row, args, latest, readCategories } = await staffFixture();
+      if (stage === "after-accept") await t.mutation(internal.pluginCategoryRefresh.accept, args);
+      await t.run(async (ctx) =>
+        ctx.db.patch(latest.releaseId, { integritySha256: "c".repeat(64) }),
+      );
+      if (stage === "before-accept")
+        await expect(t.mutation(internal.pluginCategoryRefresh.accept, args)).rejects.toThrow(
+          "source evidence",
+        );
+      else
+        await expect(
+          t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id }),
+        ).resolves.toEqual({ applied: false });
+      expect((await readCategories())[1].categories).toEqual(["tools"]);
+      expect((await t.run(async (ctx) => ctx.db.get(row._id)))?.status).toBe(
+        stage === "before-accept" ? "preview" : "stale",
+      );
+    },
+  );
+
+  it("does not replace a sealed correction and keeps its hash stable after acceptance", async () => {
+    const { t, row, args } = await staffFixture();
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    const accepted = (await t.run(async (ctx) => ctx.db.get(row._id)))!;
+    expect(reviewHash([accepted])).toBe(args.reviewHash);
+    const corrections = [{ ...args.corrections[0], category: "channels" }];
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.accept, {
+        ...args,
+        corrections,
+        reviewHash: reviewHash([accepted], corrections),
+      }),
+    ).resolves.toEqual({ accepted: 0 });
+    expect(await t.run(async (ctx) => ctx.db.get(row._id))).toEqual(accepted);
+  });
+
+  it("reuses a reviewed survivor after a newer publication is quarantined, without inheriting it forward", async () => {
+    const { t, row, args, latest, publish } = await staffFixture();
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+    const newer = await publish("3.0.0");
+    expect((await t.run(async (ctx) => ctx.db.get(newer.packageId)))?.categories).toEqual([
+      "tools",
+    ]);
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(newer.releaseId)))?.categoryClassification,
+    ).toBeUndefined();
+    await t.mutation(internal.packages.updateReleaseLlmAnalysisInternal, {
+      releaseId: newer.releaseId,
+      llmAnalysis: { status: "malicious", verdict: "malicious", checkedAt: 1 },
+    });
+    expect(await t.run(async (ctx) => ctx.db.get(latest.packageId))).toMatchObject({
+      latestReleaseId: latest.releaseId,
+      categories: ["productivity"],
+    });
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "reviewed-survivor" });
+    const retained = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "reviewed-survivor",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(retained.page[0]).toMatchObject({
+      categories: ["productivity"],
+      classification: { source: "reviewed", reviewId: row._id },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks an invalidated same-release staff decision for fresh review", async () => {
+    const { t, row, args, latest } = await staffFixture();
+    await t.mutation(internal.pluginCategoryRefresh.accept, args);
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id });
+    await t.run(async (ctx) => ctx.db.patch(latest.releaseId, { integritySha256: "d".repeat(64) }));
+    const result = await t.action(internal.pluginCategoryRefresh.preview, {
+      runId: "changed-reviewed-source",
+    });
+    expect(result.diagnostics).toContainEqual({
+      packageId: latest.packageId,
+      reason: "Prior staff decision no longer matches this source. Fresh review required.",
+    });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "changed-reviewed-source",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(rows.page[0].classification.source).toBe("generated");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.rollback, {
+        id: row._id,
+        confirm: "rollback-plugin-category-refresh",
+      }),
+    ).rejects.toThrow("overwrite newer work");
+  });
+
+  it("records a source-bound staff correction without replacing the model proposal", async () => {
+    const { t, latest, readCategories } = await fixture();
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "staff-correction" });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "staff-correction",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    const original = rows.page[0];
+    const corrections = [
+      {
+        id: original._id,
+        category: "productivity",
+        evidence: "The reviewed artifact organizes personal activities.",
+      },
+    ];
+    await t.mutation(internal.pluginCategoryRefresh.accept, {
+      ids: [original._id],
+      confirm: "apply-plugin-category-refresh",
+      corrections,
+      reviewHash: reviewHash(rows.page, corrections),
+      provenance: {
+        actor: "category-reviewer",
+        repository: "openclaw/clawhub",
+        runId: "123",
+        runAttempt: "1",
+        sha: "a".repeat(40),
+      },
+    });
+    const accepted = await t.run(async (ctx) => ctx.db.get(original._id));
+    expect(accepted).toMatchObject({
+      categories: original.categories,
+      classification: original.classification,
+      status: "accepted",
+      review: { category: "productivity", evidence: corrections[0].evidence },
+    });
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: original._id });
+    expect((await readCategories())[1].categories).toEqual(["productivity"]);
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.categoryClassification,
+    ).toMatchObject({ source: "reviewed", reviewId: original._id });
+    await t.action(internal.pluginCategoryRefresh.preview, {
+      runId: "same-artifact",
+      packageNames: ["@category-proof/appointments"],
+    });
+    const retained = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "same-artifact",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(retained.page[0]).toMatchObject({
+      categories: ["productivity"],
+      classification: { source: "reviewed", reviewId: original._id },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await t.mutation(internal.pluginCategoryRefresh.rollback, {
+      id: original._id,
+      confirm: "rollback-plugin-category-refresh",
+    });
+    expect((await readCategories())[1].categories).toEqual(["tools"]);
+  });
+  it.each([
+    "normalized",
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+  ])(
+    "refreshes a rootless historical bundle from %s evidence and restores its missing summary",
+    async (source) => {
+      const { t, latest, readCategories } = await fixture();
+      await t.run(async (ctx) => {
+        const bundle = {
+          name: "Appointments",
+          description: "Manage appointments and availability.",
+          skills: ["skills"],
+          categories: ["models"],
+        };
+        const text = JSON.stringify(bundle);
+        const storageId = await ctx.storage.store(new Blob([text]));
+        const skillStorageId = await ctx.storage.store(new Blob(["Manage appointments."]));
+        await ctx.db.patch(latest.packageId, { family: "bundle-plugin" });
+        await ctx.db.patch(latest.releaseId, {
+          extractedPluginManifest: undefined,
+          pluginManifestSummary: undefined,
+          normalizedBundleManifest: source === "normalized" ? bundle : undefined,
+          files: [
+            ...(source === "normalized"
+              ? []
+              : [{ path: source, size: text.length, sha256: "bundle", storageId }]),
+            {
+              path: "skills/appointments/SKILL.md",
+              size: 20,
+              sha256: "skill",
+              storageId: skillStorageId,
+            },
+          ],
+        });
+      });
+      const before = await readCategories();
+      const beforeRelease = await t.run(async (ctx) => ctx.db.get(latest.releaseId));
+      const preview = await t.action(internal.pluginCategoryRefresh.preview, { runId: "rootless" });
+      expect(preview).toMatchObject({ previewed: 1, skipped: 0, failed: 0 });
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "rootless",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(rows.page[0]).toMatchObject({
+        categories: ["scheduling"],
+        classification: { source: "generated" },
+        newReleaseSummary: {
+          bundledSkills: [{ name: "appointments", skillMdPath: "skills/appointments/SKILL.md" }],
+        },
+      });
+      const request = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+      expect(JSON.parse(JSON.parse(request.input).bundle)).toMatchObject({ name: "Appointments" });
+      expect(JSON.parse(JSON.parse(request.input).manifest)).toEqual({});
+      await t.mutation(internal.pluginCategoryRefresh.accept, {
+        ids: [rows.page[0]._id],
+        confirm: "apply-plugin-category-refresh",
+      });
+      await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
+      expect(await readCategories()).toEqual([
+        { name: "@category-proof/appointments", version: "1.0.0", categories: ["tools"] },
+        { name: "@category-proof/appointments", version: "2.0.0", categories: ["scheduling"] },
+      ]);
+      await t.mutation(internal.pluginCategoryRefresh.rollback, {
+        id: rows.page[0]._id,
+        confirm: "rollback-plugin-category-refresh",
+      });
+      expect(await readCategories()).toEqual(before);
+      expect(await t.run(async (ctx) => ctx.db.get(latest.releaseId))).toEqual(beforeRelease);
+    },
+  );
+
+  it.each([
+    "code-plugin",
+    "missing-evidence",
+    "empty-bundle",
+    "malformed-bundle",
+    "malformed-root",
+    "oversized-root-metadata",
+    "oversized-root-blob",
+    "missing-root-blob",
+  ])("does not classify %s by bypassing missing or unreadable evidence", async (scenario) => {
+    const { t, latest } = await fixture();
+    await t.run(async (ctx) => {
+      const root = scenario.endsWith("root") || scenario.includes("root-");
+      const text =
+        scenario === "malformed-root" || scenario === "malformed-bundle"
+          ? "[invalid JSON"
+          : scenario === "oversized-root-blob"
+            ? " ".repeat(512_001)
+            : JSON.stringify({ categories: ["models"] });
+      const storageId = await ctx.storage.store(new Blob([text]));
+      if (scenario === "missing-root-blob") await ctx.storage.delete(storageId);
+      await ctx.db.patch(latest.packageId, {
+        family: scenario === "code-plugin" ? "code-plugin" : "bundle-plugin",
+      });
+      await ctx.db.patch(latest.releaseId, {
+        extractedPluginManifest: undefined,
+        normalizedBundleManifest:
+          scenario === "empty-bundle"
+            ? {}
+            : scenario === "missing-evidence" || scenario === "malformed-bundle"
+              ? undefined
+              : { name: "Appointments", description: "Manage appointments." },
+        files:
+          root || scenario === "malformed-bundle"
+            ? [
+                {
+                  path: root ? "openclaw.plugin.json" : ".claude-plugin/plugin.json",
+                  size: scenario === "oversized-root-metadata" ? 512_001 : 20,
+                  sha256: "unreadable",
+                  storageId,
+                },
+              ]
+            : [],
+      });
+    });
+    const result = await t.action(internal.pluginCategoryRefresh.preview, { runId: "unusable" });
+    expect(result.previewed).toBe(0);
+    expect(result.skipped + result.failed).toBe(1);
+    expect(fetch).not.toHaveBeenCalled();
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "unusable",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(rows.page).toEqual([]);
+  });
+
+  it.each([false, true])(
+    "preserves actual root declaration validation for a bundle (invalid=%s)",
+    async (invalid) => {
+      const { t, latest } = await fixture();
+      await t.run(async (ctx) => {
+        const text = JSON.stringify({
+          id: "appointments",
+          categories: invalid ? [] : ["models"],
+        });
+        const storageId = await ctx.storage.store(new Blob([text]));
+        await ctx.db.patch(latest.packageId, { family: "bundle-plugin" });
+        await ctx.db.patch(latest.releaseId, {
+          extractedPluginManifest: undefined,
+          normalizedBundleManifest: { name: "Appointments", categories: ["scheduling"] },
+          files: [{ path: "openclaw.plugin.json", size: text.length, sha256: "root", storageId }],
+        });
+      });
+      const result = await t.action(internal.pluginCategoryRefresh.preview, {
+        runId: "bundle-declared",
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "bundle-declared",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      if (invalid) {
+        expect(result).toMatchObject({ previewed: 0, failed: 1 });
+        expect(rows.page).toEqual([]);
+      } else {
+        expect(result).toMatchObject({ previewed: 1, failed: 0 });
+        expect(rows.page[0]).toMatchObject({
+          categories: ["models"],
+          classification: { source: "manifest" },
+        });
+      }
+    },
+  );
+
+  it.each([
+    "plugin-product-categories-v1",
+    "plugin-single-category-v4",
+    "plugin-single-category-v5",
+  ])(
+    "rejects superseded %s previews, including rows accepted before a classifier upgrade",
+    async (classifierVersion) => {
+      const { t, readCategories } = await fixture();
+      const before = await readCategories();
+      await t.action(internal.pluginCategoryRefresh.preview, { runId: "old-classifier" });
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "old-classifier",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      const row = rows.page[0];
+      await t.run(async (ctx) =>
+        ctx.db.patch(row._id, {
+          classification: {
+            ...row.classification,
+            classifierVersion,
+          },
+        }),
+      );
+      await expect(
+        t.mutation(internal.pluginCategoryRefresh.accept, {
+          ids: [row._id],
+          confirm: "apply-plugin-category-refresh",
+        }),
+      ).rejects.toThrow("Classifier changed");
+      await t.run(async (ctx) => ctx.db.patch(row._id, { status: "accepted" }));
+      await expect(
+        t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: row._id }),
+      ).resolves.toEqual({ applied: false });
+      expect(await readCategories()).toEqual(before);
+      expect((await t.run(async (ctx) => ctx.db.get(row._id)))?.status).toBe("stale");
+    },
+  );
+
+  it("preserves manifest details when a legacy release only has a stored manifest", async () => {
+    const { t, latest } = await fixture();
+    await t.run(async (ctx) => {
+      const manifest = JSON.stringify({
+        id: "appointments",
+        categories: ["scheduling"],
+        configSchema: { type: "object", properties: { apiKey: { type: "string" } } },
+        mcpServers: { appointments: { command: "appointments" } },
+      });
+      const storageId = await ctx.storage.store(new Blob([manifest]));
+      await ctx.db.patch(latest.releaseId, {
+        extractedPluginManifest: undefined,
+        pluginManifestSummary: undefined,
+        files: [
+          { path: "openclaw.plugin.json", size: manifest.length, sha256: "manifest", storageId },
+        ],
+      });
+    });
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "stored-manifest" });
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "stored-manifest",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    await t.mutation(internal.pluginCategoryRefresh.accept, {
+      ids: [rows.page[0]._id],
+      confirm: "apply-plugin-category-refresh",
+    });
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
+    const release = await t.run(async (ctx) => ctx.db.get(latest.releaseId));
+    expect(release?.pluginManifestSummary).toMatchObject({
+      categories: ["scheduling"],
+      configFields: [{ name: "apiKey" }],
+      mcpServers: [{ name: "appointments" }],
+    });
+    await t.mutation(internal.pluginCategoryRefresh.rollback, {
+      id: rows.page[0]._id,
+      confirm: "rollback-plugin-category-refresh",
+    });
+    expect(
+      (await t.run(async (ctx) => ctx.db.get(latest.releaseId)))?.pluginManifestSummary,
+    ).toBeUndefined();
+  });
+
+  it("uses reviewed bundled assignments only for verified OpenClaw package identities", async () => {
+    const { t, latest, publisherId } = await fixture();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(latest.packageId, {
+        name: "@openclaw/imap",
+        normalizedName: "@openclaw/imap",
+      });
+      await ctx.db.patch(latest.releaseId, {
+        extractedPluginManifest: { id: "imap", categories: ["tools", "channels"] },
+        source: { repo: "openclaw/openclaw" },
+      });
+    });
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "unverified" });
+    const unverified = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "unverified",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(unverified.page).toMatchObject([
+      { categories: ["scheduling"], classification: { source: "generated" } },
+    ]);
+    await t.run(async (ctx) => ctx.db.patch(publisherId, { handle: "openclaw", kind: "org" }));
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "verified" });
+    const verified = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "verified",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(verified.page).toMatchObject([
+      { categories: ["inbox-collaboration"], classification: { source: "bundled" } },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([{ categories: ["scheduling"] }, { categories: ["productivity"] }])(
+    "preserves explicit bundled release categories $categories through preview and apply",
+    async ({ categories }) => {
+      const { t, latest, publisherId } = await fixture();
+      await t.run(async (ctx) => {
+        await ctx.db.patch(publisherId, { handle: "openclaw", kind: "org" });
+        await ctx.db.patch(latest.packageId, {
+          name: "@openclaw/imap",
+          normalizedName: "@openclaw/imap",
+        });
+        await ctx.db.patch(latest.releaseId, {
+          extractedPluginManifest: { id: "imap", categories },
+          source: { repo: "openclaw/openclaw" },
+        });
+      });
+      await t.action(internal.pluginCategoryRefresh.preview, { runId: "bundled-declaration" });
+      const rows = await t.query(internal.pluginCategoryRefresh.list, {
+        runId: "bundled-declaration",
+        paginationOpts: { cursor: null, numItems: 10 },
+      });
+      expect(rows.page).toMatchObject([{ categories, classification: { source: "manifest" } }]);
+      await t.mutation(internal.pluginCategoryRefresh.accept, {
+        ids: [rows.page[0]._id],
+        confirm: "apply-plugin-category-refresh",
+      });
+      await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
+      const exactVersion = await t.query(internal.packages.resolveVersionCategoriesBatchInternal, {
+        packages: [{ name: "@openclaw/imap", version: "2.0.0" }],
+      });
+      expect(exactVersion[0].categories).toEqual(categories);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not overwrite a newer release or category edit after preview approval", async () => {
+    const { t, publish, latest, readCategories } = await fixture();
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "edited" });
+    const edited = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "edited",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    await t.mutation(internal.pluginCategoryRefresh.accept, {
+      ids: [edited.page[0]._id],
+      confirm: "apply-plugin-category-refresh",
+    });
+    await t.run(async (ctx) => ctx.db.patch(latest.packageId, { categories: ["productivity"] }));
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: edited.page[0]._id }),
+    ).resolves.toEqual({ applied: false });
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "new-release" });
+    const changed = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "new-release",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    await t.mutation(internal.pluginCategoryRefresh.accept, {
+      ids: [changed.page[0]._id],
+      confirm: "apply-plugin-category-refresh",
+    });
+    await publish("3.0.0", ["productivity"]);
+    await expect(
+      t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: changed.page[0]._id }),
+    ).resolves.toEqual({ applied: false });
+    expect((await readCategories()).map((item) => item.categories)).toEqual([["tools"], ["tools"]]);
+  });
+
+  it("keeps explicit categories and preserves a reviewed run when preview restarts", async () => {
+    const { t, publish } = await fixture();
+    await publish("3.0.0", ["productivity"]);
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "declared" });
+    const first = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "declared",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(first.page).toMatchObject([
+      { categories: ["productivity"], classification: { source: "manifest" } },
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
+    await t.mutation(internal.pluginCategoryRefresh.accept, {
+      ids: [first.page[0]._id],
+      confirm: "apply-plugin-category-refresh",
+    });
+    await t.action(internal.pluginCategoryRefresh.preview, { runId: "declared" });
+    const resumed = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "declared",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(resumed.page).toHaveLength(1);
+    expect(resumed.page[0].status).toBe("accepted");
+  });
+
+  it("previews without changing reads, applies only an accepted latest release, and can roll it back", async () => {
+    const { t, readCategories } = await fixture();
+    const preview = await t.action(internal.pluginCategoryRefresh.preview, { runId: "proof" });
+    expect(preview.isDone).toBe(true);
+    const rows = await t.query(internal.pluginCategoryRefresh.list, {
+      runId: "proof",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(rows.page).toMatchObject([
+      {
+        categories: ["scheduling"],
+        beforeCategories: ["tools"],
+        status: "preview",
+        version: "2.0.0",
+      },
+    ]);
+    expect((await readCategories()).map((item) => item.categories)).toEqual([["tools"], ["tools"]]);
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
+    expect((await readCategories())[1].categories).toEqual(["tools"]);
+    await t.mutation(internal.pluginCategoryRefresh.accept, {
+      ids: [rows.page[0]._id],
+      confirm: "apply-plugin-category-refresh",
+    });
+    await t.mutation(internal.pluginCategoryRefresh.applyAccepted, { id: rows.page[0]._id });
+    expect((await readCategories()).map((item) => item.categories)).toEqual([
+      ["tools"],
+      ["scheduling"],
+    ]);
+    const page = await t.query(api.packages.listPublicPage, {
+      family: "code-plugin",
+      category: "scheduling",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(page.page.map((pkg) => pkg.name)).toEqual(["@category-proof/appointments"]);
+    await t.mutation(internal.pluginCategoryRefresh.rollback, {
+      id: rows.page[0]._id,
+      confirm: "rollback-plugin-category-refresh",
+    });
+    expect((await readCategories()).map((item) => item.categories)).toEqual([["tools"], ["tools"]]);
+  });
+});

@@ -1,0 +1,157 @@
+name: Security Scan Codex Worker
+
+on:
+  repository_dispatch:
+    types: [clawhub-security-scan]
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Deprecated alias for batch-limit"
+        required: false
+        default: ""
+      batch-limit:
+        description: "Maximum Codex scans to run in parallel per worker shard"
+        required: true
+        default: "4"
+      assigned-jobs:
+        description: "Optional JSON of disjoint bulk skill job ID arrays, one per shared worker"
+        required: false
+        default: ""
+      shared-workers:
+        description: "Shared machines for assigned jobs; drain the old pool before changing"
+        type: choice
+        options: ["9", "18"]
+        default: "9"
+      max-jobs:
+        description: "Optional total jobs cap per worker shard"
+        required: false
+        default: ""
+      max-runtime-minutes:
+        description: "Stop claiming new jobs after this many minutes"
+        required: true
+        default: "12"
+permissions:
+  contents: read
+
+jobs:
+  codex-security-scan:
+    name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    timeout-minutes: 40
+    environment: Production
+    concurrency:
+      # Bulk assignments must not wait behind ordinary queue workers on the same shard.
+      # Priority remains one reserved lane shared by every dispatch mode.
+      group: clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: 19
+      matrix:
+        lane: [shared]
+        shard: ${{ fromJSON(inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
+        include:
+          - lane: priority
+            shard: priority-0
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
+      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
+      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
+      CODEX_SECURITY_SCAN_SHARED_WORKERS: ${{ inputs['shared-workers'] || '9' }}
+      CODEX_SECURITY_SCAN_ASSIGNED_JOBS: ${{ inputs['assigned-jobs'] || '' }}
+      CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
+      CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}
+      # The runner is disposable and installs the reviewed, hash-locked host scanners above.
+      CODEX_SECURITY_SCAN_CLAWSCAN_SANDBOX: "off"
+      CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
+      CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
+      CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}
+      CODEX_SECURITY_SCAN_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
+      SKILLSPECTOR_PROVIDER: openai
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Codex CLI
+        run: |
+          set -euo pipefail
+          if ! command -v codex >/dev/null 2>&1; then
+            npm install -g @openai/codex@0.142.3
+          fi
+          codex --version
+
+      - name: Install ClawScan CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openclaw/clawscan@0.1.8
+          clawscan --version
+
+      - name: Install A.I.G scanner
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r scripts/security/aig-worker-requirements.txt
+          python -c 'from importlib.metadata import version; assert version("aig-skill-scan") == "0.2.2"'
+          python -c 'import inspect; from skill_scan.utils.llm import LLM; assert "temperature=" not in inspect.getsource(LLM.chat_stream)'
+          aig-skill-scan --help >/dev/null
+
+      - name: Install SkillSpector
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/skillspector-venv"
+          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
+          python -m pip install --upgrade pip
+          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@69dcdfb74487d361ba4c811d088cfdea2ff3a9dc'
+          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
+          skillspector --help >/dev/null
+
+      - name: Authenticate Codex CLI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
+
+      - name: Run Codex security worker
+        env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
+          DEFAULT_BASE_URL: https://api.openai.com/v1
+          DEFAULT_MODEL: gpt-5.6
+          LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+        run: |
+          bun scripts/security/run-codex-scan-worker.ts \
+            --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \
+            --lane "$CODEX_SECURITY_SCAN_LANE" \
+            --max-jobs "$CODEX_SECURITY_SCAN_MAX_JOBS" \
+            --max-runtime-minutes "$CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES" \
+            --lease-minutes "$CODEX_SECURITY_SCAN_LEASE_MINUTES"
+
+      - name: Prepare Codex security diagnostics scan
+        if: ${{ !cancelled() }}
+        run: mkdir -p "$CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR"
+
+      - name: Scan Codex security diagnostics for verified secrets
+        id: diagnostics_secret_scan
+        if: ${{ !cancelled() }}
+        run: |
+          docker run --rm \
+            -v "$PWD/$CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR:/scan:ro" \
+            ghcr.io/trufflesecurity/trufflehog:3.95.5@sha256:56c25710275c4b8d74c4f1346a5e7c606fa7ff4afe996f680b288d0fae3fcd9c \
+            filesystem /scan \
+            --only-verified \
+            --fail \
+            --no-update \
+            --github-actions
+
+      - name: Upload Codex security diagnostics
+        if: ${{ !cancelled() && steps.diagnostics_secret_scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-security-scan-diagnostics-${{ github.run_id }}-${{ matrix.shard }}
+          path: ${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}
+          if-no-files-found: ignore

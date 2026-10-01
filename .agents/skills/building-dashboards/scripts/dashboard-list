@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# dashboard-list: List all dashboards
+#
+# Usage: dashboard-list <deployment> [--json]
+#
+# Examples:
+#   dashboard-list prod              # tab-separated id, name
+#   dashboard-list prod --json       # full JSON
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+FORMAT="${2:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: dashboard-list <deployment> [--json]" >&2
+    exit 1
+fi
+
+RESPONSE=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "/dashboards?limit=1000")
+
+if [[ "$FORMAT" == "--json" ]]; then
+    echo "$RESPONSE" | jq .
+else
+    echo "$RESPONSE" | jq -r '.[] | [.uid, .dashboard.name] | @tsv'
+fi

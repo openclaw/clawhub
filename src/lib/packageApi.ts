@@ -1,12 +1,13 @@
 import type {
   ApiV1PackageResponse,
-  PackageCapabilitySummary,
+  ApiV1PackageVersionListResponse,
   PackageCompatibility,
+  PluginManifestSummary,
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { hasOwnProperty } from "./hasOwnProperty";
-import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
+import { publicApiUrl } from "./publicApiUrl";
 
 export type PackageListItem = {
   name: string;
@@ -16,13 +17,24 @@ export type PackageListItem = {
   channel: "official" | "community" | "private";
   isOfficial: boolean;
   summary?: string | null;
+  icon?: string | null;
   ownerHandle?: string | null;
+  ownerImage?: string | null;
+  ownerOfficial?: boolean;
   createdAt: number;
   updatedAt: number;
   latestVersion?: string | null;
-  capabilityTags?: string[];
-  executesCode?: boolean;
+  categories?: string[];
+  topics?: string[];
+  featuredAt?: number;
+  trending24h?: { downloads: number; installs: number; windowStart: number; windowEnd: number };
   verificationTier?: string | null;
+  stats?: {
+    downloads: number;
+    installs: number;
+    stars: number;
+    versions: number;
+  };
 };
 
 export type PackageDetailResponse = ApiV1PackageResponse;
@@ -45,14 +57,70 @@ export type PackageVersionDetail = {
       contentType?: string;
     }>;
     compatibility?: PackageCompatibility | null;
-    capabilities?: PackageCapabilitySummary | null;
+    pluginManifestSummary?: PluginManifestSummary | null;
     verification?: PackageVerificationSummary | null;
+    artifact?: {
+      kind: "legacy-zip" | "npm-pack";
+      sha256?: string;
+      size?: number;
+      format?: string;
+      npmIntegrity?: string;
+      npmShasum?: string;
+      npmTarballName?: string;
+      npmUnpackedSize?: number;
+      npmFileCount?: number;
+    } | null;
+    /** @deprecated Compatibility hash for exact /download ZIP bytes. Use artifact.sha256. */
     sha256hash?: string | null;
     vtAnalysis?: {
       status: string;
       verdict?: string;
       analysis?: string;
       source?: string;
+      checkedAt: number;
+    } | null;
+    skillSpectorAnalysis?: {
+      status: string;
+      score?: number;
+      severity?: string;
+      recommendation?: string;
+      issueCount: number;
+      issues: Array<{
+        issueId: string;
+        category?: string;
+        pattern?: string;
+        severity: string;
+        confidence?: number;
+        file?: string;
+        startLine?: number;
+        endLine?: number;
+        explanation: string;
+        remediation?: string;
+        finding?: string;
+        codeSnippet?: string;
+      }>;
+      scannerVersion?: string;
+      summary?: string;
+      error?: string;
+      checkedAt: number;
+    } | null;
+    aigAnalysis?: {
+      status: string;
+      issueCount: number;
+      findings: Array<{
+        ruleId: string;
+        level: string;
+        message: string;
+        title?: string;
+        description?: string;
+        file?: string;
+        startLine?: number;
+        endLine?: number;
+        remediation?: string;
+      }>;
+      scannerVersion?: string;
+      summary?: string;
+      error?: string;
       checkedAt: number;
     } | null;
     llmAnalysis?: {
@@ -68,6 +136,41 @@ export type PackageVersionDetail = {
       }>;
       guidance?: string;
       findings?: string;
+      agenticRiskFindings?: Array<{
+        categoryId: string;
+        categoryLabel: string;
+        riskBucket:
+          | "abnormal_behavior_control"
+          | "permission_boundary"
+          | "sensitive_data_protection";
+        status: "none" | "note" | "concern";
+        severity: string;
+        confidence: "high" | "medium" | "low";
+        evidence?: {
+          path: string;
+          snippet: string;
+          explanation: string;
+        };
+        userImpact: string;
+        recommendation: string;
+      }>;
+      riskSummary?: {
+        abnormal_behavior_control: {
+          status: "none" | "note" | "concern";
+          summary: string;
+          highestSeverity?: string;
+        };
+        permission_boundary: {
+          status: "none" | "note" | "concern";
+          summary: string;
+          highestSeverity?: string;
+        };
+        sensitive_data_protection: {
+          status: "none" | "note" | "concern";
+          summary: string;
+          highestSeverity?: string;
+        };
+      };
       model?: string;
       checkedAt: number;
     } | null;
@@ -90,21 +193,26 @@ export type PackageVersionDetail = {
 };
 
 type PluginFamily = "code-plugin" | "bundle-plugin";
+type PackageCatalogSort = "updated" | "recommended" | "downloads" | "trending";
 
 type PluginCatalogResult = {
   items: PackageListItem[];
   nextCursor: string | null;
+  totalCount?: number | null;
 };
 
 type PackageCatalogBrowseResponse = {
   items: PackageListItem[];
   nextCursor: string | null;
+  totalCount?: number | null;
 };
 
 type PackageApiErrorOptions = {
   status: number;
   retryAfterSeconds?: number | null;
 };
+
+type PackageApiViewerMode = "request" | "anonymous";
 
 export class PackageApiError extends Error {
   status: number;
@@ -128,49 +236,8 @@ function normalizeApiPath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
-  for (const candidate of candidates) {
-    const value = candidate?.trim();
-    if (!value) continue;
-    try {
-      return new URL(value).toString();
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
 async function packageApiUrl(path: string) {
-  const normalizedPath = normalizeApiPath(path);
-  if (typeof window !== "undefined") {
-    // In production, Vercel rewrites /api/* to the Convex site, so relative
-    // paths work. In local dev, Nitro intercepts the request before Vite's
-    // proxy, so we must use the Convex site URL directly.
-    const convexClientBaseUrl = resolveAbsoluteBaseUrl(
-      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
-      getRuntimeEnv("VITE_CONVEX_URL"),
-    );
-    if (
-      convexClientBaseUrl &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1" ||
-        window.location.hostname === "0.0.0.0")
-    ) {
-      return new URL(normalizedPath, convexClientBaseUrl);
-    }
-    return new URL(normalizedPath, window.location.origin);
-  }
-  // On the server (SSR / loader), always use the Convex site URL directly.
-  // In production, Vercel rewrites /api/* but SSR loaders run server-side
-  // where the rewrite doesn't apply. Using getRequestUrl() would loop back
-  // into TanStack Start / Nitro, which rejects non-HTML requests.
-  const base =
-    resolveAbsoluteBaseUrl(
-      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
-      getRuntimeEnv("VITE_CONVEX_URL"),
-    ) ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
-  return new URL(normalizedPath, base);
+  return publicApiUrl(path);
 }
 
 export function getPackageDownloadPath(name: string, version?: string | null) {
@@ -179,7 +246,15 @@ export function getPackageDownloadPath(name: string, version?: string | null) {
   return `${path}?version=${encodeURIComponent(version)}`;
 }
 
-async function getForwardedHeaders() {
+export function getPackageArtifactDownloadPath(name: string, version: string) {
+  return normalizeApiPath(
+    `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(
+      version,
+    )}/artifact/download`,
+  );
+}
+
+async function getForwardedHeaders(viewerMode: PackageApiViewerMode) {
   if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
   try {
     const serverRuntimeModule = "@tanstack/react-start/server";
@@ -196,8 +271,10 @@ async function getForwardedHeaders() {
       "x-real-ip",
       "fly-client-ip",
     ] as const;
-    if (cookie) headers.cookie = cookie;
-    if (authorization) headers.authorization = authorization;
+    if (viewerMode === "request") {
+      if (cookie) headers.cookie = cookie;
+      if (authorization) headers.authorization = authorization;
+    }
     for (const headerName of clientIpHeaders) {
       const value = requestHeaders.get(headerName);
       if (value) headers[headerName] = value;
@@ -208,8 +285,13 @@ async function getForwardedHeaders() {
   }
 }
 
-async function packageFetch(url: URL, accept: string) {
-  const forwarded = await getForwardedHeaders();
+async function packageFetch(
+  url: URL,
+  accept: string,
+  signal?: AbortSignal,
+  viewerMode: PackageApiViewerMode = "request",
+) {
+  const forwarded = await getForwardedHeaders(viewerMode);
   const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
   return await fetch(url.toString(), {
     method: "GET",
@@ -217,11 +299,12 @@ async function packageFetch(url: URL, accept: string) {
     // rewrite). Cross-origin requests to the Convex site URL don't need
     // cookies, and `credentials: "include"` is rejected when the server
     // responds with `Access-Control-Allow-Origin: *`.
-    credentials: isSameOrigin ? "include" : "omit",
+    credentials: viewerMode === "request" && isSameOrigin ? "include" : "omit",
     headers: {
       Accept: accept,
       ...forwarded,
     },
+    signal,
   });
 }
 
@@ -238,14 +321,38 @@ function parseRetryAfterSeconds(value: string | null): number | null {
 
 async function createPackageApiError(response: Response) {
   const body = (await response.text()).trim();
-  return new PackageApiError(body || `Request failed with status ${response.status}`, {
+  return new PackageApiError(normalizePackageApiErrorBody(response.status, body), {
     status: response.status,
     retryAfterSeconds: parseRetryAfterSeconds(response.headers.get("Retry-After")),
   });
 }
 
-async function fetchJson<T>(url: URL): Promise<T> {
-  const response = await packageFetch(url, "application/json");
+function normalizePackageApiErrorBody(status: number, body: string) {
+  const lowered = body.toLowerCase();
+  if (body && lowered !== "unauthorized" && lowered !== "forbidden") {
+    if (status === 404 && lowered === "package not found") {
+      return "Package not found or not visible to this account.";
+    }
+    if (status === 404 && lowered === "skill not found") {
+      return "Skill not found or unavailable to this account.";
+    }
+    return body;
+  }
+  if (status === 401) {
+    return "Sign in required. If this ClawHub account was deleted, banned, or disabled, it cannot access private packages.";
+  }
+  if (status === 403) {
+    return "This ClawHub account does not have access to this package or action, or the account is not in good standing.";
+  }
+  return body || `Request failed with status ${status}`;
+}
+
+async function fetchJson<T>(
+  url: URL,
+  signal?: AbortSignal,
+  viewerMode?: PackageApiViewerMode,
+): Promise<T> {
+  const response = await packageFetch(url, "application/json", signal, viewerMode);
   if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as T;
 }
@@ -256,9 +363,16 @@ export async function fetchPackages(params: {
   family?: "skill" | "code-plugin" | "bundle-plugin";
   isOfficial?: boolean;
   featured?: boolean;
-  executesCode?: boolean;
-  capabilityTag?: string;
+  createdAfter?: number;
+  category?: string;
+  topic?: string;
+  officialFirst?: boolean;
+  curated?: boolean;
+  excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
+  sort?: PackageCatalogSort;
   limit?: number;
+  signal?: AbortSignal;
+  viewerMode?: PackageApiViewerMode;
 }) {
   if (params.q?.trim()) {
     const url = await packageApiUrl(`${ApiRoutes.packages}/search`);
@@ -269,11 +383,19 @@ export async function fetchPackages(params: {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
     if (params.featured) url.searchParams.set("featured", "true");
-    if (typeof params.executesCode === "boolean") {
-      url.searchParams.set("executesCode", String(params.executesCode));
+    if (typeof params.createdAfter === "number") {
+      url.searchParams.set("createdAfter", String(params.createdAfter));
     }
-    if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
-    return await fetchJson<{ results: Array<{ score: number; package: PackageListItem }> }>(url);
+    if (params.category) url.searchParams.set("category", params.category);
+    if (params.topic) url.searchParams.set("topic", params.topic);
+    if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+    if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
+    return await fetchJson<{
+      results: Array<{
+        score: number;
+        package: PackageListItem;
+      }>;
+    }>(url, params.signal, params.viewerMode);
   }
 
   const route =
@@ -290,21 +412,38 @@ export async function fetchPackages(params: {
     url.searchParams.set("isOfficial", String(params.isOfficial));
   }
   if (params.featured) url.searchParams.set("featured", "true");
-  if (typeof params.executesCode === "boolean") {
-    url.searchParams.set("executesCode", String(params.executesCode));
+  if (params.category) url.searchParams.set("category", params.category);
+  if (params.topic) url.searchParams.set("topic", params.topic);
+  if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
+  if (params.excludedScanStatuses?.length) {
+    url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }
-  if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
-  return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(url);
+  if (params.sort) url.searchParams.set("sort", params.sort);
+  return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
+    url,
+    params.signal,
+    params.viewerMode,
+  );
 }
 
 export async function fetchPluginCatalog(params: {
   q?: string;
+  searchSource?: "clawhub-web";
   cursor?: string;
   family?: PluginFamily;
   isOfficial?: boolean;
   featured?: boolean;
-  executesCode?: boolean;
+  createdAfter?: number;
+  category?: string;
+  topic?: string;
+  officialFirst?: boolean;
+  curated?: boolean;
+  excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
+  sort?: PackageCatalogSort;
   limit?: number;
+  signal?: AbortSignal;
+  viewerMode?: PackageApiViewerMode;
 }): Promise<PluginCatalogResult> {
   if (params.family) {
     const response = await fetchPackages({
@@ -313,12 +452,20 @@ export async function fetchPluginCatalog(params: {
       family: params.family,
       isOfficial: params.isOfficial,
       featured: params.featured,
-      executesCode: params.executesCode,
+      createdAfter: params.createdAfter,
+      category: params.category,
+      topic: params.topic,
+      officialFirst: params.officialFirst,
+      curated: params.curated,
+      excludedScanStatuses: params.excludedScanStatuses,
+      sort: params.sort,
       limit: params.limit,
+      signal: params.signal,
+      viewerMode: params.viewerMode,
     });
     if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
       return {
-        items: response.results.map((entry) => entry?.package).filter(Boolean) as PackageListItem[],
+        items: response.results.map((entry) => entry?.package).filter(Boolean),
         nextCursor: null,
       };
     }
@@ -327,27 +474,35 @@ export async function fetchPluginCatalog(params: {
     return {
       items: browseResponse?.items ?? [],
       nextCursor: browseResponse?.nextCursor ?? null,
+      totalCount: browseResponse?.totalCount ?? null,
     };
   }
 
   if (params.q?.trim()) {
     const url = await packageApiUrl(`${ApiRoutes.plugins}/search`);
     url.searchParams.set("q", params.q.trim());
+    if (params.searchSource) url.searchParams.set("searchSource", params.searchSource);
     if (typeof params.limit === "number") url.searchParams.set("limit", String(params.limit));
     if (typeof params.isOfficial === "boolean") {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
     if (params.featured) url.searchParams.set("featured", "true");
-    if (typeof params.executesCode === "boolean") {
-      url.searchParams.set("executesCode", String(params.executesCode));
+    if (typeof params.createdAfter === "number") {
+      url.searchParams.set("createdAfter", String(params.createdAfter));
+    }
+    if (params.category) url.searchParams.set("category", params.category);
+    if (params.topic) url.searchParams.set("topic", params.topic);
+    if (params.excludedScanStatuses?.length) {
+      url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
     }
     const response = await fetchJson<{
-      results?: Array<{ score: number; package: PackageListItem }>;
-    }>(url);
+      results?: Array<{
+        score: number;
+        package: PackageListItem;
+      }>;
+    }>(url, params.signal, params.viewerMode);
     return {
-      items: (response?.results ?? [])
-        .map((entry) => entry?.package)
-        .filter(Boolean) as PackageListItem[],
+      items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean),
       nextCursor: null,
     };
   }
@@ -359,13 +514,19 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("isOfficial", String(params.isOfficial));
   }
   if (params.featured) url.searchParams.set("featured", "true");
-  if (typeof params.executesCode === "boolean") {
-    url.searchParams.set("executesCode", String(params.executesCode));
+  if (params.category) url.searchParams.set("category", params.category);
+  if (params.topic) url.searchParams.set("topic", params.topic);
+  if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.curated && !params.q?.trim()) url.searchParams.set("curated", "true");
+  if (params.excludedScanStatuses?.length) {
+    url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }
-  const result = await fetchJson<PluginCatalogResult>(url);
+  if (params.sort) url.searchParams.set("sort", params.sort);
+  const result = await fetchJson<PluginCatalogResult>(url, params.signal, params.viewerMode);
   return {
     items: result?.items ?? [],
     nextCursor: result?.nextCursor ?? null,
+    totalCount: result?.totalCount ?? null,
   };
 }
 
@@ -377,6 +538,20 @@ export async function fetchPackageDetail(name: string): Promise<PackageDetailRes
   }
   if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as PackageDetailResponse;
+}
+
+export async function fetchPackageVersions(
+  name: string,
+  options?: {
+    cursor?: string;
+    limit?: number;
+    signal?: AbortSignal;
+  },
+): Promise<ApiV1PackageVersionListResponse> {
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/versions`);
+  if (options?.cursor) url.searchParams.set("cursor", options.cursor);
+  if (typeof options?.limit === "number") url.searchParams.set("limit", String(options.limit));
+  return await fetchJson<ApiV1PackageVersionListResponse>(url, options?.signal);
 }
 
 export async function fetchPackageVersion(
@@ -400,10 +575,38 @@ export async function fetchPackageReadme(
 ): Promise<string | null> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
   url.searchParams.set("path", "README.md");
+  url.searchParams.set("preview", "1");
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
-  if (response.status === 403 || response.status === 404 || response.status === 423) {
+  if (
+    response.status === 403 ||
+    response.status === 404 ||
+    response.status === 415 ||
+    response.status === 423
+  ) {
+    return null;
+  }
+  throw await createPackageApiError(response);
+}
+
+export async function fetchPackageFile(
+  name: string,
+  path: string,
+  version?: string | null,
+): Promise<string | null> {
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
+  url.searchParams.set("path", path);
+  url.searchParams.set("preview", "1");
+  if (version) url.searchParams.set("version", version);
+  const response = await packageFetch(url, "text/plain");
+  if (response.ok) return await response.text();
+  if (
+    response.status === 403 ||
+    response.status === 404 ||
+    response.status === 415 ||
+    response.status === 423
+  ) {
     return null;
   }
   throw await createPackageApiError(response);
