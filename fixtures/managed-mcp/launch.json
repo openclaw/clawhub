@@ -1,0 +1,1380 @@
+[
+  {
+    "id": "airtable",
+    "name": "Airtable",
+    "company": "Airtable",
+    "description": "Bases, tables, and records from your Airtable workspace.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/PsBwy95AAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHZJREFUSMft0LENwCAMRFFQipSMwCiMZkbLKIxASYEgId3ZCC/g63iFkb5zNptNWagMog6NQRLQGZAOg8EQQPj2XYeUAa4m4WEQEe4qIBQsWCRgsjAnQtwANkwb6Geg7Bk4jw3nFxGT/naAdYAw6fqIAYtqs9leuS5Bypi2QyUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.airtable.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "algolia",
+    "name": "Algolia",
+    "company": "Algolia",
+    "description": "Algolia search: indices, analytics, and settings (read-only).",
+    "category": "web",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/PsBwy95AAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHZJREFUSMft0LENwCAMRFFQipSMwCiMZkbLKIxASYEgId3ZCC/g63iFkb5zNptNWagMog6NQRLQGZAOg8EQQPj2XYeUAa4m4WEQEe4qIBQsWCRgsjAnQtwANkwb6Geg7Bk4jw3nFxGT/naAdYAw6fqIAYtqs9leuS5Bypi2QyUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.algolia.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "alltrails",
+    "name": "AllTrails",
+    "company": "AllTrails",
+    "description": "AllTrails: find hikes and trails with reviews and ratings.",
+    "category": "research",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/PsBwy95AAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHZJREFUSMft0LENwCAMRFFQipSMwCiMZkbLKIxASYEgId3ZCC/g63iFkb5zNptNWagMog6NQRLQGZAOg8EQQPj2XYeUAa4m4WEQEe4qIBQsWCRgsjAnQtwANkwb6Geg7Bk4jw3nFxGT/naAdYAw6fqIAYtqs9leuS5Bypi2QyUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://www.alltrails.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "amplitude",
+    "name": "Amplitude",
+    "company": "Amplitude",
+    "description": "Amplitude analytics: charts, dashboards, experiments, flags.",
+    "category": "data-analytics",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/PsBwy95AAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHZJREFUSMft0LENwCAMRFFQipSMwCiMZkbLKIxASYEgId3ZCC/g63iFkb5zNptNWagMog6NQRLQGZAOg8EQQPj2XYeUAa4m4WEQEe4qIBQsWCRgsjAnQtwANkwb6Geg7Bk4jw3nFxGT/naAdYAw6fqIAYtqs9leuS5Bypi2QyUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.amplitude.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "atlassian",
+    "name": "Atlassian",
+    "company": "Atlassian",
+    "description": "Jira issues and Confluence pages via Atlassian's hosted remote MCP.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/PsBwy95AAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHZJREFUSMft0LENwCAMRFFQipSMwCiMZkbLKIxASYEgId3ZCC/g63iFkb5zNptNWagMog6NQRLQGZAOg8EQQPj2XYeUAa4m4WEQEe4qIBQsWCRgsjAnQtwANkwb6Geg7Bk4jw3nFxGT/naAdYAw6fqIAYtqs9leuS5Bypi2QyUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.atlassian.com/v1/mcp/authv2",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "attio",
+    "name": "Attio",
+    "company": "Attio",
+    "description": "CRM records, lists, and notes in Attio.",
+    "category": "sales-marketing",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/PsBwy95AAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHZJREFUSMft0LENwCAMRFFQipSMwCiMZkbLKIxASYEgId3ZCC/g63iFkb5zNptNWagMog6NQRLQGZAOg8EQQPj2XYeUAa4m4WEQEe4qIBQsWCRgsjAnQtwANkwb6Geg7Bk4jw3nFxGT/naAdYAw6fqIAYtqs9leuS5Bypi2QyUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.attio.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "aws-knowledge",
+    "name": "AWS Knowledge",
+    "company": "Amazon Web Services",
+    "description": "Authoritative AWS docs, API references, and best practices.",
+    "category": "research",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAMRJREFUSMft0rENwyAQBdBDFJSMwCiMBqMxiqMUKUNJFMTlcCTzofAE/I4nS3zuTLSzs3Mbn8geFNICHC8Ih4BimkE3gCxg6gDuYMsCLl9nxUXAHwtADfWtAlBDfwQeUOOEJ9QwuQnUBV4TMNk3gFxJltsNuBSiZUbwHSJCshwG+OiSbR5GypxsnUHG48bzQ4cMAxLIMsIBfIIpK4zHNDJF9nKBqqQLLqpDxVXqP9CAIh/h9js0/D96gRmkIgvALnd2doh+RzOQNpolqzAAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://knowledge-mcp.global.api.aws",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "betterstack",
+    "name": "Better Stack",
+    "company": "Better Stack",
+    "description": "Better Stack: logs, uptime monitors, incidents, and status pages.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPTv5+vptmvF3AAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAALpJREFUSMftk7ENAyEMRY0oXHoERskq2eRuNEZhBJcUCMd3zfmjKAuEXyB4Avl/MERbW1urcnvmL5tExSKwkw6rEdRk1iJo2UwjUAcdAA8ZDzi5s+YIcueWEMgXMPGIhhg36ABY2d0HUNyY0mqd1nAV4y/hmg8YjsRGBJ2SQVpflGj9CpYBXIsIaEolA1AqHXBEGuy4AVYRBeCP0GNZs8EmaN3vY/x+yrTch9uCdrg76MQeS+/9z7b+Wx/6z5r2+NfMTgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.betterstack.com",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "buildkite",
+    "name": "Buildkite",
+    "company": "Buildkite",
+    "description": "CI/CD pipelines, builds, and test results from Buildkite.",
+    "category": "developer-tools",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/Pya6KxfAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAGFJREFUSMdjYBgFo2AU4Af2//+hC/xvQBd4gC7wgaDAD1SBBnZ0AWYMgT9oAow/CAkwExTg/0DQLwdI9/4PQr7F9Ms/NAEGWghg2ILujv///5DqFyxxixFio9loFIwCNAAAHJFTj6QvZjcAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.buildkite.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "calendly",
+    "name": "Calendly",
+    "company": "Calendly",
+    "description": "Scheduling links, events, and invitees from Calendly.",
+    "category": "scheduling",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.calendly.com",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "canva",
+    "name": "Canva",
+    "company": "Canva",
+    "description": "Create, search, and manage Canva designs.",
+    "category": "media",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.canva.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "circleci",
+    "name": "CircleCI",
+    "company": "CircleCI",
+    "description": "CircleCI: diagnose build failures, read logs, rerun workflows.",
+    "category": "developer-tools",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.circleci.com/v1/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "clickup",
+    "name": "ClickUp",
+    "company": "ClickUp",
+    "description": "Tasks, docs, and workspaces in ClickUp.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.clickup.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "close",
+    "name": "Close",
+    "company": "Close",
+    "description": "Sales CRM: leads, opportunities, calls, and emails.",
+    "category": "sales-marketing",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.close.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "cloudflare",
+    "name": "Cloudflare",
+    "company": "Cloudflare",
+    "description": "Full Cloudflare API access via the official remote MCP.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw. Code mode is disabled in the saved endpoint.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.cloudflare.com/mcp?codemode=false",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "cloudinary",
+    "name": "Cloudinary",
+    "company": "Cloudinary",
+    "description": "Upload, search, and transform media assets in Cloudinary.",
+    "category": "media",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://asset-management.mcp.cloudinary.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "comfy-cloud",
+    "name": "Comfy Cloud",
+    "company": "Comfy Cloud",
+    "description": "Generate images, video, audio, and 3D on Comfy Cloud.",
+    "category": "media",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPTv4+fnefJk5AAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAMhJREFUSMftk7sNAyEQRBcREFLCuQwHligNOnAJdimUQgmEGyDGIJ+PPfkjB87MBJx4aLXsDEc0NTUlZUJbsgC+EFmEba8AIoc0KtBOPUaNBSIBZQMLkJQEjpE1znWAtGRTFEbXYNkwCUCGbW6fh0CabRKgko5LoqMArXUck6gnUL4C7gfgc5cXN1UdHORwqYGTBNym9WH4YfZ+rI7tPM2Ghcl317WIoSBpXKpMLu6SW7Pl9+kr1P4+xDSee518Y325zn9t6r91A3kDewd2w2nCAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://cloud.comfy.org/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "context7",
+    "name": "Context7",
+    "company": "Upstash",
+    "description": "Up-to-date, version-specific library docs and code examples.",
+    "category": "developer-tools",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.context7.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "craft",
+    "name": "Craft",
+    "company": "Craft",
+    "description": "Craft: structured docs, tasks, and personal knowledge base.",
+    "category": "documents-files",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.craft.do/my/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "datadog",
+    "name": "Datadog",
+    "company": "Datadog",
+    "description": "Logs, monitors, dashboards, and incidents from Datadog.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/f309K2IAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAF1JREFUSMft07ENwCAMBVGjFBmDUbIaozFKRqCkiCA15yiukf6Vr8M2Zkqp/67ZCdNBIVTCTWgrlNwBJ+F4IkgOBsC2gRRD+Hw3IDdTTt3t5WNzNdr+4H00fSOl0AtBMEkYSVEHXgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "deepwiki",
+    "name": "DeepWiki",
+    "company": "Cognition",
+    "description": "Ask questions about any public GitHub repo (Devin's DeepWiki).",
+    "category": "developer-tools",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/f309K2IAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAF1JREFUSMft07ENwCAMBVGjFBmDUbIaozFKRqCkiCA15yiukf6Vr8M2Zkqp/67ZCdNBIVTCTWgrlNwBJ+F4IkgOBsC2gRRD+Hw3IDdTTt3t5WNzNdr+4H00fSOl0AtBMEkYSVEHXgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.deepwiki.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "dropbox",
+    "name": "Dropbox",
+    "company": "Dropbox",
+    "description": "Search, read, and manage files in Dropbox.",
+    "category": "documents-files",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/f309K2IAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAF1JREFUSMft07ENwCAMBVGjFBmDUbIaozFKRqCkiCA15yiukf6Vr8M2Zkqp/67ZCdNBIVTCTWgrlNwBJ+F4IkgOBsC2gRRD+Hw3IDdTTt3t5WNzNdr+4H00fSOl0AtBMEkYSVEHXgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.dropbox.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "fireflies",
+    "name": "Fireflies",
+    "company": "Fireflies",
+    "description": "Meeting transcripts, summaries, and action items.",
+    "category": "inbox-collaboration",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUkQkAbOzpqsNfgAAAAAnRSTlP/BZXdxMUAAAAJcEhZcwAACxMAAAsTAQCanBgAAAClSURBVEjH7daxDYNAEETRQQQXugRKoTQojVKuBMILEOu1A3vHE2AhmyNgwpcgAvgLsxWvDWYwy29IT0DYA5YIvUOJ0DnkCMlhitA6jBEaB9AMK8OAhaFHYegUZoYbMkNSmBjaL2BkaPbAtTPPP4NyAMyfj60Exp/rn+Asb1sHrlXeL/7aO2KxXSCJ1nbnJI0ST8mrBlgSLRGXzMshIKeCHhN8btwB83mOUNI8HTAAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://api.fireflies.ai/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "gitlab",
+    "name": "GitLab",
+    "company": "GitLab",
+    "description": "GitLab: issues, merge requests, pipelines, and repo context.",
+    "category": "developer-tools",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr4+fmQ/ARJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIJJREFUSMft07ENgCAQBdAjFJaO4Cis4iY4GqMwgiWF4avl/w0klt4vX0K44w4zj8fDiVUgQQAofALgMwtwEqxAI9h6uviScxEooRPkQ8GM4alzJ+ja2xDCDGR8BJuBtz9ubgD5GEGqBnn1yLBB6ngmB53tpdNvuh91sEFh93/m+XtubRRI5EsRw+8AAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://gitlab.com/api/v4/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "globalping",
+    "name": "Globalping",
+    "company": "Globalping",
+    "description": "Ping, traceroute, DNS, and HTTP tests from global probes.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr4+fmQ/ARJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIJJREFUSMft07ENgCAQBdAjFJaO4Cis4iY4GqMwgiWF4avl/w0klt4vX0K44w4zj8fDiVUgQQAofALgMwtwEqxAI9h6uviScxEooRPkQ8GM4alzJ+ja2xDCDGR8BJuBtz9ubgD5GEGqBnn1yLBB6ngmB53tpdNvuh91sEFh93/m+XtubRRI5EsRw+8AAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.globalping.dev/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "grafana",
+    "name": "Grafana Cloud",
+    "company": "Grafana Labs",
+    "description": "Query metrics, logs, dashboards, alerts, and incidents from Grafana Cloud.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPTv5+vptmvF3AAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAM5JREFUSMftkzEOwyAMRY2sijFrh0pco0MljhaOlq3XyA2akcHi10iUmLnqVP6AxIshtr8hmpqaslqSLg8DIESMre8Z0Cgc5wno11jDmgKw04rSQYSGo55rWvN6ODwN2JbMhZD6X5PPLLR2UIjFZ4qfRFwDoQMhl/xBt55ozWg58yTOFexfAgf5PdBaKriSKU60ljAArTaYfrihQYQGTE9Zhp5q14XhjA0CcXjBOifqXLHeZvX2NNtXsyOynY80zIfeOk4QXepyn29t6r/1Bm2GjTXSbwsVAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.grafana.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "hugging-face",
+    "name": "Hugging Face",
+    "company": "Hugging Face",
+    "description": "Models, datasets, Spaces, and papers from the Hugging Face Hub.",
+    "category": "models",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7+/tOgrm+AAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAADdJREFUSMdjYBgFo2AU4APyBxj+Mf///4cOAj/QrR0Agf//QQ77QGOBweLbgREYBaNgFDAwMAAA5k+CzXbqebkAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://huggingface.co/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "indeed",
+    "name": "Indeed",
+    "company": "Indeed",
+    "description": "Search jobs and listings on Indeed.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Connect in OpenClaw with job_seeker.jobs.search offline_access scopes. Account tools remain unverified.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDrq7OzVNnGoAAAAAnRSTlP/SJ2w+egAAAAJcEhZcwAACxMAAAsTAQCanBgAAACVSURBVEjH7daxDYRADETRQQQbUgKlUNpSGqVsCYQECGMuuPNoAk4ICYKd8BXgb5ht+C6bwaz8IH0AYQesEQaHJULvUCIkhylC6zBGaBxAM2wMGSvDgIWhV5gZOhSGpDAxtH/AyNBcgbpXr5srVLgV6p7dHVf7QizOCyTROu+cpFHiKXnVAEuiJeKSeXkE5FXQZ4LfjR2WfHhwmp2eIgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.indeed.com/claude/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth",
+        "scope": "job_seeker.jobs.search offline_access"
+      }
+    }
+  },
+  {
+    "id": "intercom",
+    "name": "Intercom",
+    "company": "Intercom",
+    "description": "Conversations, tickets, and customer data from Intercom.",
+    "category": "inbox-collaboration",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDrq7OzVNnGoAAAAAnRSTlP/SJ2w+egAAAAJcEhZcwAACxMAAAsTAQCanBgAAACVSURBVEjH7daxDYRADETRQQQbUgKlUNpSGqVsCYQECGMuuPNoAk4ICYKd8BXgb5ht+C6bwaz8IH0AYQesEQaHJULvUCIkhylC6zBGaBxAM2wMGSvDgIWhV5gZOhSGpDAxtH/AyNBcgbpXr5srVLgV6p7dHVf7QizOCyTROu+cpFHiKXnVAEuiJeKSeXkE5FXQZ4LfjR2WfHhwmp2eIgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.intercom.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "kiwi",
+    "name": "Kiwi.com",
+    "company": "Kiwi.com",
+    "description": "Kiwi.com flight search: itineraries with direct booking links.",
+    "category": "research",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPDr4+flboNfsAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAMtJREFUSMft07ENAyEMBVCfKCgZgYyRIhKjQSbICLlRyCZIWcBSGgqE40uDcYoMEH6Fnk7c8c0BrKysfAXHsoPt4CgJcA0CFQG+QiQUEBCImoSyzRCzoVsXQMm2jQbw2lYQYPjFCHGAbeCKBFfBFzgP8Ag+i2P1UBTErIDUE8QQZsCfUBW8mtr0qeHRFVzpgNMA+MBFVpj4tDHJTuc++Cu4MZrGYKssGTzaZuQYHBq6T1DV5Lj244QTzNPnDQNlCcQ3SN+xff1mK/+dN0hli4B8W4fOAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.kiwi.com",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "klaviyo",
+    "name": "Klaviyo",
+    "company": "Klaviyo",
+    "description": "Klaviyo marketing: campaigns, flows, segments, and reporting.",
+    "category": "sales-marketing",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw. Only core tools are enabled; tools with user-generated content are disabled.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/f309K2IAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAH9JREFUSMft0rENgCAQhWGMhaUjMAqjqbGwdARHkVEYgZICPWv+S2SBe+WXkBz3zjmLxfKfsA4CGF/AVAFzAfgMCAmwECQS1hY2waT7Czgq4CyAKwNugvCJ1C5wjodQOHpe8LlEiCH2VuhTb+uql6n0qlRlK1D34dqmFFgsFvcB88dEXBgJCwcAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.klaviyo.com/mcp?core-tools-only=true&disable-tools-with-user-generated-content=true",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "linear",
+    "name": "Linear",
+    "company": "Linear",
+    "description": "Find, create, and update Linear issues, projects, and comments.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUiQT8bOzrIFf7nAAAAAnRSTlP/BOLa9FMAAAAJcEhZcwAACxMAAAsTAQCanBgAAACZSURBVEjH7daxDYNAEETRQQQXUgKlUBqURilXAiEBYlk7gB1NgIVsGYmb8BWwf2G2Yl9vBrN8QHoDwl6wROgc5gitQ46QHMYItcMQoXIAzbAy9FgYOswMrcLE0CAzJIWRof4ABobqCpTdeWkq8Bwwvme/gbI/7xtX+0Iszgsk0TrvnKRR4il51QBLoiXiknl5BORV0GeC340NkqqDfKiVZR8AAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.linear.app/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "microsoft-learn",
+    "name": "Microsoft Learn",
+    "company": "Microsoft",
+    "description": "Official Microsoft, Azure, and .NET docs and code samples.",
+    "category": "research",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr4+fmQ/ARJAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFtJREFUSMftyLENgDAMBECjFCkzgkfxZmQUVskmMAJlisimo3AkhJX2rzwiAPhi12atxuJO69HzcugoZzTUx85HNKq4EOFosPnQcJQpxq8wa2/kKXo4kgsAIKIHXh2R+v+sQxkAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://learn.microsoft.com/api/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "miro",
+    "name": "Miro",
+    "company": "Miro",
+    "description": "Read and edit Miro boards, diagrams, and frames.",
+    "category": "media",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr3+Pj1vEKjAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFZJREFUSMftyLERgCAMBdB4FpaMwCjZDNxMR2EESooA1knhXaD9r3xEAPDrmO85b2eUaz9qWIhHRW/RHcI6RJi9MbKJlNyRhwmW/YjNH9VEWIiiAgCIPgPsbAZ9X66OAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.miro.com/",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "mixpanel",
+    "name": "Mixpanel",
+    "company": "Mixpanel",
+    "description": "Mixpanel analytics: events, funnels, retention, dashboards.",
+    "category": "data-analytics",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr3+Pj1vEKjAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFZJREFUSMftyLERgCAMBdB4FpaMwCjZDNxMR2EESooA1knhXaD9r3xEAPDrmO85b2eUaz9qWIhHRW/RHcI6RJi9MbKJlNyRhwmW/YjNH9VEWIiiAgCIPgPsbAZ9X66OAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.mixpanel.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "monday",
+    "name": "monday.com",
+    "company": "monday.com",
+    "description": "Boards, items, docs, and workflows in monday.com.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPTv5+vptmvF3AAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAALxJREFUSMft0zsOAiEQBuDZaEJJbyFH4WYsR+MoeIMxFmKyMs4SA8yuMbGWvyDkK3jMAMDIyMgu5zpTBCrDRNiBzjwuDTyDoSzBEnVgMsxEXsKFQoXAQH4WMPEqsYFdwVS4B+sOC+gGkSGBhg1AB07CDZ1TO8DvsEi4pt/hkeS2+PwAfNJjAyqgfQMsUK+PM8p6rCAq9gYbGkQnqo52hVtrVIG+cwX63qINTnQfDYOiJGGiuHljp/HNRv47L07CooTJqet1AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.monday.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "motherduck",
+    "name": "MotherDuck",
+    "company": "MotherDuck",
+    "description": "MotherDuck: query DuckDB cloud warehouses with SQL.",
+    "category": "data-analytics",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr3+Pj1vEKjAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFZJREFUSMftyLERgCAMBdB4FpaMwCjZDNxMR2EESooA1knhXaD9r3xEAPDrmO85b2eUaz9qWIhHRW/RHcI6RJi9MbKJlNyRhwmW/YjNH9VEWIiiAgCIPgPsbAZ9X66OAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://api.motherduck.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "neon",
+    "name": "Neon",
+    "company": "Neon",
+    "description": "Neon serverless Postgres: projects, branches, and SQL.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHJJREFUSMft0D0NgDAUReFHOnSsBKQgrW0QgASkAE7AAWyQlL+V04QaeGf8cqcromnaf02o0hfGIsyEtQh7ERLhKsKdQQR4wjABakK/ANwG6Aj2ALQEcwLiDRBCyBaeC8J7IhY1F4TguLBcEMRwAdA0TR6IgEo9TxqsRQAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.neon.tech/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "netlify",
+    "name": "Netlify",
+    "company": "Netlify",
+    "description": "Sites, deploys, and env vars via Netlify's hosted MCP.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHJJREFUSMft0D0NgDAUReFHOnSsBKQgrW0QgASkAE7AAWyQlL+V04QaeGf8cqcromnaf02o0hfGIsyEtQh7ERLhKsKdQQR4wjABakK/ANwG6Aj2ALQEcwLiDRBCyBaeC8J7IhY1F4TguLBcEMRwAdA0TR6IgEo9TxqsRQAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://netlify-mcp.netlify.app/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "company": "Notion",
+    "description": "Pages and databases from your Notion workspace.",
+    "category": "documents-files",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHJJREFUSMft0D0NgDAUReFHOnSsBKQgrW0QgASkAE7AAWyQlL+V04QaeGf8cqcromnaf02o0hfGIsyEtQh7ERLhKsKdQQR4wjABakK/ANwG6Aj2ALQEcwLiDRBCyBaeC8J7IhY1F4TguLBcEMRwAdA0TR6IgEo9TxqsRQAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.notion.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "paypal",
+    "name": "PayPal",
+    "company": "PayPal",
+    "description": "Payments, invoices, and subscriptions via PayPal's hosted MCP.",
+    "category": "finance-payments",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFRJREFUSMdjYBgFo2AU4Afy//+hC/xvQBd4gC7wgaDAD1SBA/zoAux/0ASY0QUYSRdgJiiAYa38DwJOx+I5jPA4gC6AHqYf0AQOMAxfgVEwCkYBAwD/OT8uCOwWzwAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.paypal.com/sse",
+      "transport": "sse",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "plaid",
+    "name": "Plaid",
+    "company": "Plaid",
+    "description": "Plaid dashboard: integrations, Items, and usage debugging.",
+    "category": "finance-payments",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFRJREFUSMdjYBgFo2AU4Afy//+hC/xvQBd4gC7wgaDAD1SBA/zoAux/0ASY0QUYSRdgJiiAYa38DwJOx+I5jPA4gC6AHqYf0AQOMAxfgVEwCkYBAwD/OT8uCOwWzwAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://api.dashboard.plaid.com/mcp/",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "postman",
+    "name": "Postman",
+    "company": "Postman",
+    "description": "Postman workspaces, collections, environments, and APIs.",
+    "category": "developer-tools",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw. Uses the minimal tool set.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFRJREFUSMdjYBgFo2AU4Afy//+hC/xvQBd4gC7wgaDAD1SBA/zoAux/0ASY0QUYSRdgJiiAYa38DwJOx+I5jPA4gC6AHqYf0AQOMAxfgVEwCkYBAwD/OT8uCOwWzwAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.postman.com/minimal",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "prisma-postgres",
+    "name": "Prisma Postgres",
+    "company": "Prisma",
+    "description": "Create and manage Prisma Postgres databases.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHVJREFUSMft0LENwCAMRFFHFJQegVGyGqMxikegpEBxLt2FgipV5C/RPCFZtkgURbuKX6J4BF7VvTE0gDEYoDN0wGAYb2g61HQSZEBiSFPt+BzWKc/YzHACytzu0tdtbb1HWy+Gm3olMECnI+OzmvwToigSkRvB8H+lIRHQhwAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.prisma.io/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "railway",
+    "name": "Railway",
+    "company": "Railway",
+    "description": "Railway: projects, services, deployments, and environments.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/f309K2IAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHJJREFUSMft07ENwCAQA0CiFJQZIaMwGk6VtTJKRqCkQE9q/FK8wLs8IR6MSCkSifynzOngYWgSOsNYAZlhZ9gcmFwhwU05ujy6u9zLAIJBFd5GcHHJ4D1QqXUUGovTQROXQ+7yGUy2PgmSg4r4SJHIkg90rEtT6PTIAgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.railway.com",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "robinhood",
+    "name": "Robinhood",
+    "company": "Robinhood",
+    "description": "Robinhood agentic trading: portfolio, balances, and orders.",
+    "category": "finance-payments",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/f309K2IAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHJJREFUSMft07ENwCAQA0CiFJQZIaMwGk6VtTJKRqCkQE9q/FK8wLs8IR6MSCkSifynzOngYWgSOsNYAZlhZ9gcmFwhwU05ujy6u9zLAIJBFd5GcHHJ4D1QqXUUGovTQROXQ+7yGUy2PgmSg4r4SJHIkg90rEtT6PTIAgAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://agent.robinhood.com/mcp/trading",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "semgrep",
+    "name": "Semgrep",
+    "company": "Semgrep",
+    "description": "Scan code for security vulnerabilities with Semgrep.",
+    "category": "security",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIlJREFUSMft07ENxCAMhWFHLigZgVEY7RjNo2QElxTROWn9RzoGOF7HJ4FsAyI7Ozs5xQCfK6+PiAwakfeUiDNBfcHsnqCdFWBlZhgEUwIqb074AioqfwDdlmW3wuakh/OQyaESKkFzIV0OwFiC6QKac6ZXn7w5/323r3k872OgWY5dbf+znX/PDVwkRwEtqYs5AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.semgrep.ai/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "sentry",
+    "name": "Sentry",
+    "company": "Sentry",
+    "description": "Issues, stack traces, and error context from Sentry.",
+    "category": "developer-tools",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIlJREFUSMft07ENxCAMhWFHLigZgVEY7RjNo2QElxTROWn9RzoGOF7HJ4FsAyI7Ozs5xQCfK6+PiAwakfeUiDNBfcHsnqCdFWBlZhgEUwIqb074AioqfwDdlmW3wuakh/OQyaESKkFzIV0OwFiC6QKac6ZXn7w5/323r3k872OgWY5dbf+znX/PDVwkRwEtqYs5AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.sentry.dev/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "square",
+    "name": "Square",
+    "company": "Square",
+    "description": "Catalog, orders, and payments via Square's hosted MCP.",
+    "category": "finance-payments",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIlJREFUSMft07ENxCAMhWFHLigZgVEY7RjNo2QElxTROWn9RzoGOF7HJ4FsAyI7Ozs5xQCfK6+PiAwakfeUiDNBfcHsnqCdFWBlZhgEUwIqb074AioqfwDdlmW3wuakh/OQyaESKkFzIV0OwFiC6QKac6ZXn7w5/323r3k872OgWY5dbf+znX/PDVwkRwEtqYs5AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.squareup.com/sse",
+      "transport": "sse",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "stripe",
+    "name": "Stripe",
+    "company": "Stripe",
+    "description": "Payments, customers, and invoices via Stripe's hosted MCP.",
+    "category": "finance-payments",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIlJREFUSMft07ENxCAMhWFHLigZgVEY7RjNo2QElxTROWn9RzoGOF7HJ4FsAyI7Ozs5xQCfK6+PiAwakfeUiDNBfcHsnqCdFWBlZhgEUwIqb074AioqfwDdlmW3wuakh/OQyaESKkFzIV0OwFiC6QKac6ZXn7w5/323r3k872OgWY5dbf+znX/PDVwkRwEtqYs5AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.stripe.com",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "supabase",
+    "name": "Supabase",
+    "company": "Supabase",
+    "description": "Database, auth, and storage from your Supabase projects.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIlJREFUSMft07ENxCAMhWFHLigZgVEY7RjNo2QElxTROWn9RzoGOF7HJ4FsAyI7Ozs5xQCfK6+PiAwakfeUiDNBfcHsnqCdFWBlZhgEUwIqb074AioqfwDdlmW3wuakh/OQyaESKkFzIV0OwFiC6QKac6ZXn7w5/323r3k872OgWY5dbf+znX/PDVwkRwEtqYs5AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.supabase.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "todoist",
+    "name": "Todoist",
+    "company": "Doist",
+    "description": "Manage Todoist tasks and projects.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUjQT8bOzoDSS1CAAAAAnRSTlP/BOLa9FMAAAAJcEhZcwAACxMAAAsTAQCanBgAAACiSURBVEjH7daxDYNAEETRQQQXUgKlXGlQGqVcCQ4JEOu1A7zjCbCQLZB1Ez4RnvgLsxXbBjOYlRekJyDsAUuE7DBH6B1KhOQwRWgdxgiNA2iGlWHAwpAxM/QKN4YOhSEpTAztBzAyNEeg7srLxm/+N4Du7b0iCZT6xZ98UXfuvvHXPhCL/QJJtPY7J2mUeEpeNcCSaIm4ZF4OATkV9Jjgc+MO1xSEDIqc6rUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://ai.todoist.net/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "trivago",
+    "name": "trivago",
+    "company": "trivago",
+    "description": "trivago hotel search: compare prices by city and dates.",
+    "category": "research",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUjQT8bOzoDSS1CAAAAAnRSTlP/BOLa9FMAAAAJcEhZcwAACxMAAAsTAQCanBgAAACiSURBVEjH7daxDYNAEETRQQQXUgKlXGlQGqVcCQ4JEOu1A7zjCbCQLZB1Ez4RnvgLsxXbBjOYlRekJyDsAUuE7DBH6B1KhOQwRWgdxgiNA2iGlWHAwpAxM/QKN4YOhSEpTAztBzAyNEeg7srLxm/+N4Du7b0iCZT6xZ98UXfuvvHXPhCL/QJJtPY7J2mUeEpeNcCSaIm4ZF4OATkV9Jjgc+MO1xSEDIqc6rUAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.trivago.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "twelve-data",
+    "name": "Twelve Data",
+    "company": "Twelve Data",
+    "description": "Stocks, forex, and crypto market data from Twelve Data.",
+    "category": "finance-payments",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/Pyfp7raAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAGxJREFUSMft07sNgDAMRVGjFJSMwCiM5oyWUTJCSooIU4D4PEu4pXi3PFKkxFZEGGNfmVlTawgbgjnICOUCPaDeZ+YiKksDmBDGNYLkoEcw/BXiq6fw+W5AbqY4dbeX5+ZOyAgC0BEqvxJjr3bLh3TQUIEtJQAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.twelvedata.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "twilio-docs",
+    "name": "Twilio Docs",
+    "company": "Twilio",
+    "description": "Twilio developer docs search (public beta, read-only).",
+    "category": "research",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr7/Pyfp7raAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAGxJREFUSMft07sNgDAMRVGjFJSMwCiM5oyWUTJCSooIU4D4PEu4pXi3PFKkxFZEGGNfmVlTawgbgjnICOUCPaDeZ+YiKksDmBDGNYLkoEcw/BXiq6fw+W5AbqY4dbeX5+ZOyAgC0BEqvxJjr3bLh3TQUIEtJQAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.twilio.com/docs",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "vercel",
+    "name": "Vercel",
+    "company": "Vercel",
+    "description": "Deployments, logs, and projects via Vercel's hosted MCP.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+vohXNJeAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHFJREFUSMftyrEJACEMheGIhaUjOIqbXRzNURzB0kLigZWJcOH6/Lzq4wFYlvUdASCDtXeE+3RCucBxyMVNDvUCzyFVPzi0C0JnEC/oAkKPTYEhwI9UFZgC3MxFARIAhKDAegQgaZDnb0jjN8SugWVZL3jROTeLxIu4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.vercel.com",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "webflow",
+    "name": "Webflow",
+    "company": "Webflow",
+    "description": "Sites, CMS collections, and pages via Webflow's hosted MCP.",
+    "category": "sales-marketing",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIRJREFUSMftyLERwyAMBVBxFJSMwChshtjAK7FJGAF3+MLhOJ31kzML6JWPSCn1iMl3mvfIEDGHbsYixnOEEofpEBZiQrAMXznZJiIlB8EQU4arI7p6j/YnNhE7hN17kHFcUSBeIt4/0bwIczZ/5kU4iCqDvkGLsBAFgoudi8hmEUop+gDcsWp90/CaGAAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.webflow.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "wolfram",
+    "name": "Wolfram",
+    "company": "Wolfram",
+    "description": "Wolfram|Alpha computation, math, and curated knowledge.",
+    "category": "research",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAIRJREFUSMftyLERwyAMBVBxFJSMwChshtjAK7FJGAF3+MLhOJ31kzML6JWPSCn1iMl3mvfIEDGHbsYixnOEEofpEBZiQrAMXznZJiIlB8EQU4arI7p6j/YnNhE7hN17kHFcUSBeIt4/0bwIczZ/5kU4iCqDvkGLsBAFgoudi8hmEUop+gDcsWp90/CaGAAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://agenttools.wolfram.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "wordpress-com",
+    "name": "WordPress.com",
+    "company": "Automattic",
+    "description": "WordPress.com: posts, pages, drafts, stats, and comments.",
+    "category": "sales-marketing",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPTv6+/sBwE75AAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAANRJREFUSMft07sRwyAMBmBxFJSMwCjaLODNyGURurSUzh1GkV+AcTYIf8V9BSAJAEZGRm6R/lxlwCBnwNQB0RUkkS9go4qKKBxAG2iieIDdwCTbQdBzAZpVQK9a0AGdPC+CbgXrRIVlBRDnPXBakg5Uq8Lpk7TPFcxzTuYCrzvkDmI2rgH9ig+8wPsGwfaACA2oG1BArhjAFfBIDCJWMNxoKOXLHWqDfoBjaHrKoBOYaDrIZS5iA11HKQgYVB02A+/H03cXaN4H7FBf0HmYG/9s5K/zBZgypqIwLYAFAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://public-api.wordpress.com/wpcom/v2/mcp/v1",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "brex",
+    "name": "Brex",
+    "company": "Brex",
+    "description": "Company spending and financial account data through Brex's official MCP service.",
+    "category": "finance-payments",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr8/Pya6KxfAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAGFJREFUSMdjYBgFo2AU4Af2//+hC/xvQBd4gC7wgaDAD1SBBnZ0AWYMgT9oAow/CAkwExTg/0DQLwdI9/4PQr7F9Ms/NAEGWghg2ILujv///5DqFyxxixFio9loFIwCNAAAHJFTj6QvZjcAAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://api.brex.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "clay",
+    "name": "Clay",
+    "company": "Clay",
+    "description": "Sales research and enrichment workflows through Clay's official MCP service.",
+    "category": "sales-marketing",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAHpJREFUSMftk7ENwCAMBI0oKDMCozAajOZRGIGSIsKp/5FCHcXXcZIl229EHMdBYieRF4lqDd7BDGui2QCRzCaIaxUUeaQbRY8oigZspLRNCPZRG3cuHxKNZ5k87TosSONhp3lcnEudnNzgbDunr+/3sV9QUP9nzt95AKubOihm1e+4AAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://api.clay.com/v3/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "excalidraw",
+    "name": "Excalidraw",
+    "company": "Excalidraw",
+    "description": "Diagram creation and rendering through Excalidraw's official MCP service.",
+    "category": "media",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAADhJREFUSMdjYBgFo2AU4Afy////oIPAAXRr6SPwANO3H6gv8GrVgkHhW8IC////ob3AKBgFo4ABAPiJRZh7ra2mAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.excalidraw.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "godaddy",
+    "name": "GoDaddy Domains",
+    "company": "GoDaddy",
+    "description": "Public domain suggestions and availability through GoDaddy Domains's official MCP service.",
+    "category": "infrastructure",
+    "version": "1.0.0",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPDr7+/uF3mobAAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAALFJREFUSMft07ERwyAMBVBxXI7SI3gURoPRGCUjUFLorHxiG6SkzKVDHQ/bwBcmWrVqla4tf4AwBZE59hgAnvMNkQKoA3bMAtqAiFkAD0gtdTgmlK2F6ucykgOAJhzkGZDu7bkL4gAmlzX4vl6HckM7Yf8JnPD/AWcx4C6IX6DysIDsnEkMmb4TE506m9QTYx+6L+gcm86ht830NpzNrvp+ZEAh9VU8dagr9Vi/2apV9AJhXJ0U/LAK5gAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://api.godaddy.com/v1/domains/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "none"
+      }
+    }
+  },
+  {
+    "id": "otter",
+    "name": "Otter.ai",
+    "company": "Otter.ai",
+    "description": "Meeting transcripts and summaries through Otter.ai's official MCP service.",
+    "category": "inbox-collaboration",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUdPTv6+/sBwE75AAAAAXRSTlP0+jbuYwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAM5JREFUSMft08ENwyAMBVAjDhx6YARGYbRw67ErsUFHKCPkSCXEr9NWsSEr4EMkPykG2wnRihUrdPg05gaVH13AgROrwAOJLAQCkAeIQOH3BLaKnUGOQg6VCykgd0A+r9HJtiuE1wmcGYZn0dApPAS4k07xsU9wn2BzJ7g/1AnsBJ0PG8G0oai5QJOh/gDQYLoFMPQyQ3MKvvM4IAm4AQjJV79TzHrqvijY3tgZQtab4ywUvVsGX/T2uYCXGXIbMSkg/oIYZKh0W7/ZihX0Ab5vktTKNAwBAAAAAElFTkSuQmCC",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.otter.ai/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  },
+  {
+    "id": "posthog",
+    "name": "PostHog",
+    "company": "PostHog",
+    "description": "Product analytics and project data through PostHog's official MCP service.",
+    "category": "data-analytics",
+    "version": "1.0.0",
+    "setup": "Set POSTHOG_MCP_TOKEN to your PostHog MCP token in the OpenClaw runtime environment. Account testing requires a valid token.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr5+vojGmwHAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFRJREFUSMdjYBgFo2AU4Afy//+hC/xvQBd4gC7wgaDAD1SBA/zoAux/0ASY0QUYSRdgJiiAYa38DwJOx+I5jPA4gC6AHqYf0AQOMAxfgVEwCkYBAwD/OT8uCOwWzwAAAABJRU5ErkJggg==",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.posthog.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "api-key",
+        "header": "Authorization",
+        "placeholder": "Bearer ${POSTHOG_MCP_TOKEN}"
+      }
+    }
+  },
+  {
+    "id": "upwork",
+    "name": "Upwork",
+    "company": "Upwork",
+    "description": "Freelance work and account information through Upwork's official MCP service.",
+    "category": "productivity",
+    "version": "1.0.0",
+    "setup": "Enable this plugin and connect your account in OpenClaw.",
+    "icon": {
+      "pngBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACAAQMAAAD58POIAAAABlBMVEUcPDr6+/tPQNOJAAAAAXRSTlP1jTHe9QAAAAlwSFlzAAALEwAACxMBAJqcGAAAAFVJREFUSMdjYBgFo2AU4Af2DYx/RgUGowDzDwICB9AE5B+wowl84EcT+Ff/AUWA//9/VAH2//8foAgw//9/AEWA8f//BtQkVP8PLU0xN4zmq1Ew0gEALelC0RVeu/0AAAAASUVORK5CYII=",
+      "license": "MIT",
+      "attribution": "Copyright (c) 2026 OpenClaw contributors. Original typographic icon; not a provider logo."
+    },
+    "connection": {
+      "url": "https://mcp.upwork.com/mcp",
+      "transport": "streamable-http",
+      "auth": {
+        "kind": "oauth"
+      }
+    }
+  }
+]
