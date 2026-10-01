@@ -232,6 +232,63 @@ describe("Staging deploy workflow", () => {
     expect(execute(selectedSha, "failure").status).not.toBe(0);
   });
 
+  it("rejects an already deployed SHA on rerun or dispatch before changing Convex", async () => {
+    const workflow = await readStagingWorkflow();
+    const deploy = workflow.jobs["deploy-staging"]!;
+    const guard = namedStep(deploy, "Reject previously deployed staging SHA");
+    const index = (name: string) => deploy.steps.findIndex((step) => step.name === name);
+    const selectedSha = "a".repeat(40);
+    const existing = {
+      id: 42,
+      sha: selectedSha,
+      creator: { login: "vercel[bot]" },
+      environment: "Preview – clawhub",
+    };
+    const execute = (pages: unknown[][]) =>
+      spawnSync("bash", ["-e"], {
+        input: `
+          gh() {
+            [[ "$*" == *"repos/$GITHUB_REPOSITORY/deployments"* ]] || return 91
+            [[ "$*" == *"sha=$DEPLOY_SHA"* ]] || return 92
+            [[ "$*" == *"--paginate"* ]] || return 93
+            printf '%s' "$STUB_DEPLOYMENTS"
+          }
+          ${guard.run}
+        `,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          DEPLOY_SHA: selectedSha,
+          GITHUB_REPOSITORY: "openclaw/clawhub",
+          STUB_DEPLOYMENTS: JSON.stringify(pages),
+        },
+      });
+
+    expect(guard.if).toBe(
+      "fromJSON(github.run_attempt) > 1 || github.event_name == 'workflow_dispatch'",
+    );
+    expect(guard.env?.GH_TOKEN).toBe("${{ github.token }}");
+    expect(index("Recheck staging head after CI")).toBeLessThan(
+      index("Reject previously deployed staging SHA"),
+    );
+    expect(index("Reject previously deployed staging SHA")).toBeLessThan(
+      index("Configure Staging backend"),
+    );
+    expect(execute([[]]).status).toBe(0);
+    expect(
+      execute([
+        [
+          { ...existing, sha: "b".repeat(40) },
+          { ...existing, creator: { login: "other-bot" } },
+          { ...existing, environment: "Production – clawhub" },
+        ],
+      ]).status,
+    ).toBe(0);
+    const rejected = execute([[{ ...existing, sha: "b".repeat(40) }], [existing]]);
+    expect(rejected.status).not.toBe(0);
+    expect(rejected.stdout).toContain("Push a new commit for environment-only changes");
+  });
+
   it("deploys Convex before stamping the verified SHA and triggering the hook", async () => {
     const workflow = await readStagingWorkflow();
     const deploy = workflow.jobs["deploy-staging"]!;

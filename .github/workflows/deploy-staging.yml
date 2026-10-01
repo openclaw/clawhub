@@ -133,6 +133,31 @@ jobs:
             exit 1
           fi
 
+      - name: Reject previously deployed staging SHA
+        if: fromJSON(github.run_attempt) > 1 || github.event_name == 'workflow_dispatch'
+        env:
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! deployments_json="$(gh api --method GET --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/deployments" \
+            -f sha="$DEPLOY_SHA" -f per_page=100)"; then
+            echo "::error::Could not check prior Vercel deployments for $DEPLOY_SHA"
+            exit 1
+          fi
+          deployment_id="$(jq -r --arg sha "$DEPLOY_SHA" '
+            [.[][] | select(
+              .sha == $sha and
+              .creator.login == "vercel[bot]" and
+              .environment == "Preview – clawhub"
+            )] | first | .id // empty
+          ' <<< "$deployments_json")"
+          if [[ -n "$deployment_id" ]]; then
+            echo "::error::Staging SHA $DEPLOY_SHA already has Vercel Preview deployment $deployment_id. Push a new commit for environment-only changes, then deploy the new SHA."
+            exit 1
+          fi
+
       - name: Check Staging configuration
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

@@ -98,7 +98,12 @@ gh workflow run deploy-staging.yml --repo openclaw/clawhub --ref staging \
 ```
 
 GitHub requires `workflow_dispatch` workflows to exist on the default branch.
-Before that merge, rerun the staging push workflow from its Actions run page.
+Before that merge, rerun the staging push workflow from its Actions run page
+only if its SHA has not already created a Vercel Preview deployment. Reruns
+and manual dispatches reject an already deployed SHA before changing Convex.
+The first attempt of a staging push skips that guard because the same commit
+may already have a PR Preview deployment. For environment-only changes, push a
+new staging commit and let its exact-SHA CI pass before deploying it.
 
 The deployment checks that the selected, checked-out, and current remote SHAs
 match. Before first use, fast-forward the formerly stale `staging` branch to a
@@ -136,6 +141,16 @@ One-time target configuration:
   `CONVEX_DEPLOY_KEY`, `VERCEL_DEPLOY_HOOK_URL`, and
   `VERCEL_AUTOMATION_BYPASS_SECRET`. The bypass secret lets the API and UI smoke
   tests reach SSO-protected Preview URLs.
+- [Vercel automation bypass secrets](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation)
+  work across every deployment in the project, even when a copy is stored in
+  the branch-restricted GitHub `Staging` environment. Keep a separately labeled
+  staging CI secret and a distinct labeled secret selected as Vercel's default
+  `VERCEL_AUTOMATION_BYPASS_SECRET` system environment variable. To rotate them,
+  create replacements, update the affected GitHub environment secrets and
+  Vercel default, then push a fresh staging SHA. Verify its exact-SHA workflow
+  and candidate/stable URLs with the replacements before revoking old secrets.
+  Redeploy other consumers of the Vercel system default before revocation:
+  Vercel snapshots that value when each deployment is built.
 - On the staging Convex deployment, configure `AUTH_GITHUB_ID`,
   `AUTH_GITHUB_SECRET`, `JWT_PRIVATE_KEY`, and `JWKS` for staging sign-in. The
   workflow checks the names without printing their values. It stamps
