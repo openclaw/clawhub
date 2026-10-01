@@ -67,7 +67,9 @@ export async function dispatchPublishAttemptWorkflow(
     {
       eventType: "clawhub-prepublication-publish",
       clientPayload: {
-        ...(process.env.CLAWHUB_ENV === "staging" || process.env.CLAWHUB_ENV === "test"
+        // Preserve the retired marker until the old backend is deleted so
+        // main drops its events instead of treating them as Production work.
+        ...(process.env.CLAWHUB_ENV === "test" || process.env.CLAWHUB_ENV === "staging"
           ? { environment: process.env.CLAWHUB_ENV }
           : {}),
         attempt_id: target.attemptId,

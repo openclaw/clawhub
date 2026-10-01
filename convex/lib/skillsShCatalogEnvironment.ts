@@ -19,7 +19,7 @@ export type SkillsShFixtureEnvironmentPolicy =
     }
   | {
       allowed: false;
-      environment: "preview" | "test" | "staging" | "production" | "unknown";
+      environment: "preview" | "test" | "production" | "unknown";
       reason: string;
     };
 
@@ -146,6 +146,13 @@ export function getSkillsShMirrorEnvironmentPolicy(
     };
   }
   const rollout = getClawHubRolloutCapabilities(env);
+  if (rollout.environment === "unknown") {
+    return {
+      allowed: false,
+      environment: "unknown",
+      reason: "skills.sh mirror work requires a recognized deployment",
+    };
+  }
   if (rollout.environment !== "production") return getSkillsShFixtureEnvironmentPolicy(env);
   if (!rollout.skillsSh.runtimeEnabled) {
     return {

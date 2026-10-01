@@ -57,41 +57,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ (github.ref == 'refs/heads/staging' || github.event.client_payload.environment == 'staging') && format('staging-{0}-', github.ref_name) || ((github.event.client_payload.environment == 'test' || inputs['target-environment'] == 'test') && 'test-' || '') }}${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}
+  group: ${{ (github.event.client_payload.environment == 'test' || inputs['target-environment'] == 'test') && 'test-' || '' }}${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}
   cancel-in-progress: false
 
 jobs:
-  dispatch-staging:
-    if: >-
-      github.repository == 'openclaw/clawhub' &&
-      github.event_name == 'repository_dispatch' &&
-      github.event.client_payload.environment == 'staging'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - name: Dispatch staging worker
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ATTEMPT_ID: ${{ github.event.client_payload.attempt_id || '' }}
-          KIND: ${{ github.event.client_payload.kind || '' }}
-          SLUG: ${{ github.event.client_payload.slug || '' }}
-          VERSION: ${{ github.event.client_payload.version || '' }}
-          BATCH_LIMIT: ${{ github.event.client_payload.batch_limit || '1' }}
-          MAX_JOBS: ${{ github.event.client_payload.max_jobs || '1' }}
-          MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || '20' }}
-        run: |
-          set -euo pipefail
-          gh workflow run prepublication-publish-checks.yml --repo openclaw/clawhub --ref staging \
-            -f attempt-id="$ATTEMPT_ID" \
-            -f kind="$KIND" \
-            -f slug="$SLUG" \
-            -f version="$VERSION" \
-            -f batch-limit="$BATCH_LIMIT" \
-            -f max-jobs="$MAX_JOBS" \
-            -f max-runtime-minutes="$MAX_RUNTIME_MINUTES"
-
   dispatch-test:
     if: >-
       github.repository == 'openclaw/clawhub' &&
@@ -124,43 +93,26 @@ jobs:
             -f max-jobs="$MAX_JOBS" \
             -f max-runtime-minutes="$MAX_RUNTIME_MINUTES"
 
-  reject-test-target-on-staging-ref:
-    if: >-
-      github.repository == 'openclaw/clawhub' &&
-      github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/staging' &&
-      inputs['target-environment'] == 'test'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Reject mismatched branch and target
-        run: |
-          echo "::error::Test recovery must run from main so the worker code matches the Test deployment"
-          exit 1
-
   prepublication-publish-checks:
+    # Drop stale events from the retired Staging deployment.
     if: >-
       github.repository == 'openclaw/clawhub' &&
-      ((github.ref == 'refs/heads/main' &&
-        (github.event_name != 'repository_dispatch' ||
-         (github.event.client_payload.environment != 'staging' &&
-          github.event.client_payload.environment != 'test')) &&
-        (github.event_name != 'workflow_dispatch' || inputs['target-environment'] != 'test')) ||
-       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging' &&
-        inputs['target-environment'] != 'test') ||
-       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' &&
-        inputs['target-environment'] == 'test'))
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'repository_dispatch' ||
+       (github.event.client_payload.environment != 'staging' &&
+        github.event.client_payload.environment != 'test'))
     name: Pre-publication publish checks shard ${{ matrix.shard }}
     runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 25
-    environment: ${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}
+    environment: ${{ inputs['target-environment'] == 'test' && 'Test' || 'Production' }}
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
         shard: ${{ fromJSON((github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && '[0]' || '[0,1]') }}
     env:
-      CONVEX_URL: ${{ github.ref == 'refs/heads/staging' && 'https://cheery-civet-733.convex.cloud' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'https://academic-chihuahua-392.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud') }}
-      PREPUBLICATION_WORKER_ENVIRONMENT: ${{ github.ref == 'refs/heads/staging' && 'staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'test' || 'production') }}
+      CONVEX_URL: ${{ inputs['target-environment'] == 'test' && 'https://academic-chihuahua-392.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      PREPUBLICATION_WORKER_ENVIRONMENT: ${{ inputs['target-environment'] == 'test' && 'test' || 'production' }}
       PREPUBLICATION_CHECK_LIMIT: ${{ github.event.client_payload.batch_limit || inputs['batch-limit'] || '2' }}
       PREPUBLICATION_CHECK_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '15' }}
@@ -177,10 +129,6 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
-
-      - name: Verify staging worker target
-        if: github.ref == 'refs/heads/staging'
-        run: bun scripts/security/check-staging-worker-target.ts
 
       - name: Verify permanent Test worker target
         if: github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test'
@@ -256,7 +204,7 @@ jobs:
           unset worker_token
 
       - name: Run pre-publication publish worker
-        if: github.ref != 'refs/heads/main' || inputs['target-environment'] != 'test'
+        if: inputs['target-environment'] != 'test'
         env:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           DEFAULT_BASE_URL: https://api.openai.com/v1

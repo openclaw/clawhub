@@ -37,15 +37,14 @@ describe("skills.sh mirror environment policy", () => {
     ).toMatchObject({ allowed: false, environment: "production" });
   });
 
-  it("does not treat the permanent staging deployment as production importer", () => {
+  it("does not treat the retired deployment as a production importer", () => {
     expect(
       getSkillsShMirrorEnvironmentPolicy({
         CLAWHUB_DEPLOYMENT_NAME: "cheery-civet-733",
-        CLAWHUB_ENV: "staging",
         CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "production",
         CONVEX_CLOUD_URL: "https://cheery-civet-733.convex.cloud",
       }),
-    ).toMatchObject({ allowed: false, environment: "staging" });
+    ).toMatchObject({ allowed: false, environment: "unknown" });
   });
 });
 

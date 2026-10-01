@@ -12,7 +12,6 @@ import {
   signArchivePayload,
   type SkillArchiveManifest,
 } from "../convex/lib/archiveManifest";
-import { STAGING_EDGE_SECRET_HEADER } from "../convex/lib/clawhubVercelOidc";
 import {
   buildConvexProxyTarget,
   isConvexProxyMethodAllowed,
@@ -30,7 +29,6 @@ const TEST_ARCHIVE_DEPENDENCIES = {
     audience: ARCHIVE_MANIFEST_AUDIENCE,
   }),
 };
-const STAGING_EDGE_SECRET = "s".repeat(48);
 
 describe("Convex HTTP proxy", () => {
   afterEach(() => {
@@ -72,17 +70,6 @@ describe("Convex HTTP proxy", () => {
     expect(isConvexProxyMethodAllowed("DELETE", testEnv)).toBe(true);
   });
 
-  it("allows writes in the permanent custom staging environment", () => {
-    const stagingEnv = {
-      VERCEL_ENV: "preview",
-      VERCEL_TARGET_ENV: "preview",
-      VITE_CLAWHUB_DEPLOY_ENV: "staging",
-    };
-
-    expect(isConvexProxyMethodAllowed("POST", stagingEnv)).toBe(true);
-    expect(isConvexProxyMethodAllowed("DELETE", stagingEnv)).toBe(true);
-  });
-
   it("prefers the build-paired Convex URL over stale Vercel runtime values", () => {
     expect(
       resolveConvexProxyEnv(
@@ -102,30 +89,6 @@ describe("Convex HTTP proxy", () => {
       VITE_CLAWHUB_DEPLOY_ENV: "preview",
       VITE_CONVEX_SITE_URL: "https://paired-preview-123.convex.site",
       VITE_CONVEX_URL: "https://paired-preview-123.convex.cloud",
-    });
-  });
-
-  it("prefers the bundled staging marker and SHA over stale runtime values", () => {
-    expect(
-      resolveConvexProxyEnv(
-        {
-          VERCEL_ENV: "preview",
-          VERCEL_TARGET_ENV: "preview",
-          VITE_APP_BUILD_SHA: "b".repeat(40),
-          VITE_CLAWHUB_DEPLOY_ENV: "preview",
-        },
-        {
-          VITE_APP_BUILD_SHA: "a".repeat(40),
-          VITE_CLAWHUB_DEPLOY_ENV: "staging",
-          VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
-          VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
-        },
-      ),
-    ).toMatchObject({
-      VITE_APP_BUILD_SHA: "a".repeat(40),
-      VITE_CLAWHUB_DEPLOY_ENV: "staging",
-      VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
-      VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
     });
   });
 
@@ -185,7 +148,6 @@ describe("Convex HTTP proxy", () => {
           "x-forwarded-for": "198.51.100.8",
           "x-clawhub-client-ip": "198.51.100.9",
           "x-clawhub-vercel-oidc-token": "forged",
-          [STAGING_EDGE_SECRET_HEADER]: "forged",
         },
       });
       const response = await proxyConvexRequest(
@@ -198,7 +160,6 @@ describe("Convex HTTP proxy", () => {
       const headers = new Headers(init?.headers);
       expect(headers.get("x-clawhub-client-ip")).toBe("203.0.113.7");
       expect(headers.get("x-clawhub-vercel-oidc-token")).toBe("verified-vercel-oidc");
-      expect(headers.get(STAGING_EDGE_SECRET_HEADER)).toBe("");
     },
   );
 
@@ -211,7 +172,6 @@ describe("Convex HTTP proxy", () => {
       headers: {
         "x-clawhub-client-ip": "198.51.100.9",
         "x-clawhub-vercel-oidc-token": "forged",
-        [STAGING_EDGE_SECRET_HEADER]: "forged",
       },
     });
     await proxyConvexRequest(
@@ -223,7 +183,6 @@ describe("Convex HTTP proxy", () => {
     const headers = new Headers(init?.headers);
     expect(headers.get("x-clawhub-client-ip")).toBe("");
     expect(headers.get("x-clawhub-vercel-oidc-token")).toBe("");
-    expect(headers.get(STAGING_EDGE_SECRET_HEADER)).toBe("");
   });
 
   it.each(["none", "missing", "body error"])("requires complete archives (%s)", async (failure) => {
@@ -1228,66 +1187,6 @@ describe("Convex HTTP proxy", () => {
 
     expect(response.headers.get("X-ClawHub-Test-Backend")).toBe("academic-chihuahua-392");
     expect(response.headers.get("X-ClawHub-Preview-Backend")).toBeNull();
-  });
-
-  it("exposes the permanent Staging backend name for deployment proof", async () => {
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(JSON.stringify({ items: [], nextCursor: null })),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const event = mockEvent("https://stg.clawhub.ai/api/v1/skills?limit=1", {
-      headers: { [STAGING_EDGE_SECRET_HEADER]: "forged" },
-    });
-
-    const response = await proxyConvexRequest(
-      event,
-      {
-        VERCEL_ENV: "preview",
-        VERCEL_TARGET_ENV: "preview",
-        CLAWHUB_STAGING_EDGE_SECRET: STAGING_EDGE_SECRET,
-        VITE_APP_BUILD_SHA: "a".repeat(40),
-        VITE_CLAWHUB_DEPLOY_ENV: "staging",
-        VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
-      },
-      TEST_ARCHIVE_DEPENDENCIES,
-    );
-
-    expect(response.headers.get("X-ClawHub-Staging-Backend")).toBe("cheery-civet-733");
-    expect(response.headers.get("X-ClawHub-Staging-Build-SHA")).toBe("a".repeat(40));
-    expect(response.headers.get("X-ClawHub-Preview-Backend")).toBeNull();
-    expect(response.headers.get("X-ClawHub-Test-Backend")).toBeNull();
-    const proxiedHeaders = new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit)?.headers);
-    expect(proxiedHeaders.get(STAGING_EDGE_SECRET_HEADER)).toBe(STAGING_EDGE_SECRET);
-  });
-
-  it("fails closed before proxying if the staging secret or target is wrong", async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    const event = mockEvent("https://stg.clawhub.ai/api/v1/skills?limit=1");
-    const stagingEnv = {
-      VERCEL_ENV: "preview",
-      VITE_CLAWHUB_DEPLOY_ENV: "staging",
-      VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
-    };
-
-    expect((await proxyConvexRequest(event, stagingEnv, TEST_ARCHIVE_DEPENDENCIES)).status).toBe(
-      503,
-    );
-    expect(
-      (
-        await proxyConvexRequest(
-          event,
-          {
-            ...stagingEnv,
-            CLAWHUB_STAGING_EDGE_SECRET: STAGING_EDGE_SECRET,
-            VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
-          },
-          TEST_ARCHIVE_DEPENDENCIES,
-        )
-      ).status,
-    ).toBe(503);
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejects preview writes without contacting Convex", async () => {

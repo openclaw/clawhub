@@ -42,19 +42,6 @@ describe("securityScanDispatch", () => {
     vi.unstubAllEnvs();
   });
 
-  it("marks staging scan events for the branch relay", async () => {
-    vi.stubEnv("CLAWHUB_ENV", "staging");
-    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-    await dispatchSecurityScanWorkflow(
-      { token: "installation-token", permissions: { contents: "write" } },
-      fetchImpl,
-    );
-    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
-      event_type: "clawhub-security-scan",
-      client_payload: { environment: "staging" },
-    });
-  });
-
   it("schedules an immediate worker dispatch for claimable queue work", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -496,6 +483,23 @@ describe("securityScanDispatch", () => {
         }),
       }),
     );
+  });
+
+  it("marks retired Staging events so the Production worker can reject them", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "staging");
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+
+    await expect(
+      dispatchSecurityScanWorkflow(
+        { token: "installation-token", permissions: { contents: "write" } },
+        fetchImpl,
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      event_type: "clawhub-security-scan",
+      client_payload: { environment: "staging" },
+    });
   });
 
   it("releases a rejected dispatch lease and schedules a bounded retry", async () => {

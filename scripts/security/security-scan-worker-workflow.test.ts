@@ -43,6 +43,8 @@ describe("security-scan-codex workflow", () => {
             group?: string;
           };
           env?: Record<string, unknown>;
+          environment?: string;
+          if?: string;
           steps: WorkflowStep[];
           strategy?: {
             "max-parallel"?: number;
@@ -96,9 +98,14 @@ describe("security-scan-codex workflow", () => {
     expect(workflow.concurrency).toBeUndefined();
     expect(workflow.jobs["codex-security-scan"].concurrency).toEqual({
       group:
-        "${{ github.ref == 'refs/heads/staging' && 'staging-' || '' }}clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}",
+        "clawhub-security-scan-${{ matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '' }}${{ matrix.shard }}",
       "cancel-in-progress": false,
     });
+    expect(workflow.jobs["codex-security-scan"].environment).toBe("Production");
+    expect(workflow.jobs["codex-security-scan"].if).toContain("github.ref == 'refs/heads/main'");
+    expect(workflow.jobs["codex-security-scan"].if).toContain(
+      "github.event.client_payload.environment != 'staging'",
+    );
     expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(19);
     const matrix = workflow.jobs["codex-security-scan"].strategy?.matrix;
     expect(matrix?.lane).toEqual(["shared"]);
@@ -107,7 +114,6 @@ describe("security-scan-codex workflow", () => {
       JSON.parse(match[1]),
     );
     expect(choices).toEqual([
-      ["shared-0"],
       Array.from({ length: 18 }, (_, n) => `shared-${n}`),
       Array.from({ length: 9 }, (_, n) => `shared-${n}`),
     ]);
