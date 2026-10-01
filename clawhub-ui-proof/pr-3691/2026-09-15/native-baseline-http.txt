@@ -1,3 +1,0 @@
-GET /api/v1/packages/pagination-proof/versions?limit=2
-HTTP 500 Internal Server Error
-Convex error: This query or mutation function ran multiple paginated queries. Convex only supports a single paginated query in each function.
