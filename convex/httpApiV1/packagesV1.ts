@@ -94,6 +94,7 @@ import {
   type MergedExportManifestEntry,
 } from "../lib/skillZip";
 import { generateToken, hashToken } from "../lib/tokens";
+import { managedMcpV1Handler } from "./managedMcpV1";
 import {
   MAX_RAW_FILE_BYTES,
   getPathSegments,
@@ -3060,6 +3061,8 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[0] === "-" && segments[1] === "managed-mcp")
+    return managedMcpV1Handler(ctx, request, segments);
   if (
     segments[0] === "-" &&
     segments[1] === "scan" &&
@@ -4278,6 +4281,8 @@ async function searchPackages(
 
 export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
+  if (segments[0] === "-" && segments[1] === "managed-mcp")
+    return managedMcpV1Handler(ctx, request, segments);
   if (segments.length === 0) return text("Not found", 404);
   if (segments[0] === "search" && segments.length === 1) {
     return await searchPackages(ctx, request, { includeSkills: true });
