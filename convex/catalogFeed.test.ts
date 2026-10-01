@@ -7,9 +7,10 @@ import {
   listOfficialSkillEntries,
   publish,
 } from "./catalogFeed";
+import { getOwnerPublisher } from "./lib/publishers";
 
 vi.mock("./lib/publishers", () => ({
-  getOwnerPublisher: vi.fn().mockResolvedValue({ handle: "openclaw" }),
+  getOwnerPublisher: vi.fn().mockResolvedValue({ kind: "org", handle: "openclaw" }),
 }));
 vi.mock("./lib/officialPublishers", () => ({
   isOfficialPublisher: vi.fn().mockResolvedValue(true),
@@ -333,6 +334,55 @@ describe("catalog feed projection", () => {
         },
       }),
     ]);
+  });
+
+  it("omits Claws from another Official publisher while retaining @openclaw entries", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    vi.mocked(getOwnerPublisher).mockResolvedValueOnce({ kind: "org", handle: "other" } as never);
+    const summary = {
+      schemaVersion: 1,
+      agent: { id: "demo" },
+      workspace: { bootstrapFiles: [], fileCount: 0 },
+      packages: { skillCount: 0, pluginCount: 0 },
+      mcpServerCount: 0,
+      cronJobCount: 0,
+    };
+    const result = await listOfficialClawEntriesHandler(
+      makeCtx(
+        [
+          makePackage({
+            _id: "packages:other",
+            name: "@other/demo",
+            normalizedName: "@other/demo",
+            ownerPublisherId: "publishers:other",
+            family: "claw",
+            latestReleaseId: "packageReleases:other",
+          }),
+          makePackage({
+            _id: "packages:openclaw",
+            name: "@openclaw/demo",
+            normalizedName: "@openclaw/demo",
+            ownerPublisherId: "publishers:openclaw",
+            family: "claw",
+            latestReleaseId: "packageReleases:openclaw",
+          }),
+        ],
+        {
+          "packageReleases:other": makeRelease({
+            packageId: "packages:other",
+            clawManifestSummary: summary,
+          }),
+          "packageReleases:openclaw": makeRelease({
+            packageId: "packages:openclaw",
+            clawManifestSummary: summary,
+          }),
+        },
+      ),
+      {},
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: "@openclaw/demo" });
   });
 
   it("excludes Claw releases without a validated manifest summary", async () => {

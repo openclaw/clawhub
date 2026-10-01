@@ -14,10 +14,14 @@ OpenClaw owns local preview, consent, apply, update, and removal.
 
 Claw publication is experimental. The ClawHub deployment must set
 `CLAWHUB_EXPERIMENTAL_CLAWS=1`; otherwise the server rejects publication.
-This registry gate is independent from OpenClaw's
-`OPENCLAW_EXPERIMENTAL_CLAWS=1` consumer gate. Hosting does not enable local
-preview or installation, and enabling the OpenClaw CLI does not enable ClawHub
-publication or hosted discovery.
+This registry gate is independent from OpenClaw's local Claws controls. Hosting
+does not enable local preview or installation.
+
+For the initial public catalog, ClawHub accepts and exposes Claws only when the
+package name is `@openclaw/*` and the owner is the OpenClaw publisher
+organization. This restriction does not apply to skills or plugins. Existing
+Claws owned by other publishers remain unavailable through public discovery
+and downloads.
 
 ## Package shape
 
@@ -26,7 +30,7 @@ points to its manifest:
 
 ```json
 {
-  "name": "@acme/github-triage",
+  "name": "@openclaw/github-triage",
   "version": "1.0.0",
   "openclaw": {
     "claw": "CLAW.md"
@@ -158,6 +162,7 @@ publication and returns the same digest through pending and final responses.
 
 Publication rejects:
 
+- a Claw outside the `@openclaw/*` scope or owned by another publisher;
 - a missing, invalid, or escaping `openclaw.claw` path;
 - a source folder instead of a built `.tgz`;
 - package identity or version mismatches;
@@ -182,7 +187,7 @@ Enabled deployments expose Claws through the existing package API:
 ```bash
 curl "https://clawhub.ai/api/v1/packages?family=claw"
 curl "https://clawhub.ai/api/v1/packages/search?q=triage&family=claw"
-curl "https://clawhub.ai/api/v1/packages/@acme%2Fgithub-triage"
+curl "https://clawhub.ai/api/v1/packages/@openclaw%2Fgithub-triage"
 ```
 
 List and search results use the normal package summary fields. Package and
@@ -198,7 +203,8 @@ projected through public release responses.
 
 ## Consume the experimental feed
 
-Enabled deployments publish eligible official Claws as a separate hosted feed:
+Enabled deployments publish eligible Official `@openclaw` Claws as a separate
+hosted feed:
 
 ```bash
 curl "https://clawhub.ai/v1/feeds/claws"

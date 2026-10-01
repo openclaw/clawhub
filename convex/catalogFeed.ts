@@ -22,7 +22,11 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import type { QueryCtx } from "./_generated/server";
 import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
-import { experimentalClawsEnabled } from "./lib/experimentalClaws";
+import {
+  experimentalClawsEnabled,
+  isOpenClawClawName,
+  isOpenClawClawPublisher,
+} from "./lib/experimentalClaws";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -175,6 +179,12 @@ async function buildEntry(
     ownerUserId: pkg.ownerUserId,
   });
   if (!(await isOfficialPublisher(ctx, owner))) return null;
+  if (
+    pkg.family === "claw" &&
+    (!isOpenClawClawName(pkg.normalizedName) || !isOpenClawClawPublisher(owner))
+  ) {
+    return null;
+  }
   const publisherId = owner?.handle?.trim();
   if (!publisherId) return null;
 

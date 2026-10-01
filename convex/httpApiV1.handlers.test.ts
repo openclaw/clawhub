@@ -17900,6 +17900,52 @@ describe("httpApiV1 handlers", () => {
     },
   );
 
+  it.each(["direct-tgz", "staged-tgz"] as const)(
+    "non-OpenClaw Claw publication rejects %s before multipart storage or ticket mutation",
+    async (mode) => {
+      vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const runAction = vi.fn();
+      const storageGet = vi.fn();
+      const storageStore = vi.fn();
+      const form = packagePublishForm(
+        packagePublishMetadata({ name: "@other/demo-claw", family: "claw" }),
+      );
+      if (mode === "direct-tgz") {
+        form.set("clawpack", new File(["archive"], "demo-claw-1.0.0.tgz"));
+      } else {
+        form.set("clawpack", "storage:clawpack");
+        form.set("clawpackUploadTicket", "packagePublishUploadTickets:1");
+      }
+
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({ runAction, runMutation, storage: { get: storageGet, store: storageStore } }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Claw packages are limited to the @openclaw publisher");
+      expect(storageGet).not.toHaveBeenCalled();
+      expect(storageStore).not.toHaveBeenCalled();
+      expect(runAction).not.toHaveBeenCalled();
+      expect(
+        runMutation.mock.calls.some(([, args]) =>
+          Boolean(args && typeof args === "object" && "uploadTicket" in args),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("rejects loose Claw files before multipart storage when the experiment is enabled", async () => {
     vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
@@ -17908,7 +17954,9 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { _id: "users:1", handle: "p" },
     } as never);
-    const form = packagePublishForm(packagePublishMetadata({ family: "claw" }));
+    const form = packagePublishForm(
+      packagePublishMetadata({ family: "claw", name: "@openclaw/demo-claw" }),
+    );
     form.append("files", new File(["manifest"], "CLAW.md", { type: "text/markdown" }));
     const storageStore = vi.fn();
     const runAction = vi.fn();
@@ -18314,7 +18362,7 @@ describe("httpApiV1 handlers", () => {
     const storageStore = vi.fn(async (_blob: Blob) => `storage:${storageStore.mock.calls.length}`);
     const pack = npmPackFixture({
       "package/package.json": JSON.stringify({
-        name: "demo-claw",
+        name: "@openclaw/demo-claw",
         version: "1.0.0",
         openclaw: { claw: "CLAW.md" },
       }),
@@ -18332,7 +18380,7 @@ describe("httpApiV1 handlers", () => {
     form.set(
       "payload",
       JSON.stringify({
-        name: "demo-claw",
+        name: "@openclaw/demo-claw",
         family: "claw",
         version: "1.0.0",
         changelog: "init",
@@ -18380,19 +18428,19 @@ describe("httpApiV1 handlers", () => {
   it.each([
     {
       label: "package name",
-      metadata: { name: "other-claw", version: "1.0.0" },
+      metadata: { name: "@openclaw/other-claw", version: "1.0.0" },
       digest: "actual",
       message: "Claw package name mismatch",
     },
     {
       label: "package version",
-      metadata: { name: "demo-claw", version: "2.0.0" },
+      metadata: { name: "@openclaw/demo-claw", version: "2.0.0" },
       digest: "actual",
       message: "Claw package version mismatch",
     },
     {
       label: "artifact digest",
-      metadata: { name: "demo-claw", version: "1.0.0" },
+      metadata: { name: "@openclaw/demo-claw", version: "1.0.0" },
       digest: "0".repeat(64),
       message: "Claw artifact SHA-256 mismatch",
     },
@@ -18406,7 +18454,7 @@ describe("httpApiV1 handlers", () => {
     } as never);
     const pack = npmPackFixture({
       "package/package.json": JSON.stringify({
-        name: "demo-claw",
+        name: "@openclaw/demo-claw",
         version: "1.0.0",
         openclaw: { claw: "CLAW.md" },
       }),

@@ -50,7 +50,7 @@ import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { recordCatalogSearchObservation } from "../lib/catalogSearchObservations";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
-import { experimentalClawsEnabled } from "../lib/experimentalClaws";
+import { experimentalClawsEnabled, isOpenClawClawName } from "../lib/experimentalClaws";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -1640,6 +1640,9 @@ async function parseMultipartPackagePublish(
   );
   if (metadata.family === "claw" && !experimentalClawsEnabled()) {
     throw new Error("Experimental Claw publication is disabled");
+  }
+  if (metadata.family === "claw" && !isOpenClawClawName(metadata.name)) {
+    throw new Error("Claw packages are limited to the @openclaw publisher");
   }
 
   const tarballPart = getTarballPart(form);

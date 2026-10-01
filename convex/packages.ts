@@ -70,7 +70,12 @@ import {
   buildPackageInspectorFindingsEmail,
   buildPackageInspectorValidationUrl,
 } from "./lib/emails";
-import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
+import {
+  experimentalClawsEnabled,
+  isClawFamilyPubliclyVisible,
+  isOpenClawClawName,
+  isOpenClawClawPublisher,
+} from "./lib/experimentalClaws";
 import { assertFeaturedCapacity } from "./lib/featuredPolicy";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -1457,6 +1462,14 @@ function packageArtifactSummary(
   };
 }
 
+function isClawOutsideOpenClawPublisher(digest: PackageDigestLike) {
+  return (
+    digest.family === "claw" &&
+    (!isOpenClawClawName(digest.normalizedName) ||
+      !isOpenClawClawPublisher({ kind: digest.ownerKind, handle: digest.ownerHandle }))
+  );
+}
+
 function digestMatchesFilters(
   digest: PackageDigestLike,
   args: {
@@ -1472,6 +1485,7 @@ function digestMatchesFilters(
   if (digest.channel === "private" && args.channel !== "private") return false;
   if (isPackageBlockedFromPublic(digest.scanStatus)) return false;
   if (!isClawFamilyPubliclyVisible(digest.family)) return false;
+  if (isClawOutsideOpenClawPublisher(digest)) return false;
   if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
     if (digest.pluginCategory) {
@@ -3008,6 +3022,13 @@ async function getPackageByNormalizedName(ctx: DbReaderCtx, normalizedName: stri
     .unique()) as Doc<"packages"> | null;
 }
 
+async function isPackageAllowedInPublicClawCatalog(ctx: DbReaderCtx, pkg: Doc<"packages">) {
+  if (pkg.family !== "claw") return true;
+  if (!experimentalClawsEnabled() || !isOpenClawClawName(pkg.normalizedName)) return false;
+  const ownerPublisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+  return isOpenClawClawPublisher(ownerPublisher);
+}
+
 async function getReadablePackageByName(
   ctx: DbReaderCtx,
   name: string,
@@ -3016,7 +3037,7 @@ async function getReadablePackageByName(
   const normalizedName = normalizePackageName(name);
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
   if (!pkg || pkg.softDeletedAt !== undefined) return null;
-  if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
+  if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) return null;
   if (pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)) {
     const canAccessOwner = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
     if (pkg.channel === "private" && !canAccessOwner) return null;
@@ -3095,7 +3116,7 @@ async function getPackageReadableForPublicTrust(
 ) {
   const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(name));
   if (!pkg || pkg.softDeletedAt !== undefined) return null;
-  if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
+  if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) return null;
   if (pkg.channel === "private" && !(await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId))) {
     return null;
   }
@@ -3784,7 +3805,7 @@ export const getPublicReleaseSelectionsInternal = internalQuery({
         if (
           !pkg ||
           pkg.softDeletedAt !== undefined ||
-          !isClawFamilyPubliclyVisible(pkg.family) ||
+          !(await isPackageAllowedInPublicClawCatalog(ctx, pkg)) ||
           !(await canViewerReadPackage(ctx, pkg, undefined))
         )
           return null;
@@ -4926,6 +4947,7 @@ async function listPackagePageImpl(
       if (getPluginDiscoveryExclusion(pkg.categories) || !isEnglishPluginListing(pkg)) continue;
       if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
       if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
+      if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) continue;
       page.push({
         ...(await toPublicPackageListItemFromPackage(ctx, pkg)),
         ...(currentLeaderboard &&
@@ -5046,6 +5068,12 @@ async function listPackagePageImpl(
     let pageOffset = offset;
     let pageSize: number | null = decodedCursor.pageSize ?? null;
     let done = decodedCursor.done;
+    let scanPages = 0;
+    let skippedPolicyClaw = false;
+    let remainingScanBudget =
+      !family || family === "claw"
+        ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
+        : MAX_PUBLIC_LIST_PAGE_SIZE;
     const buildSortedQuery = () => {
       if (family) {
         if (sortedPackageIndex === "family-official-downloads" && typeof isOfficial === "boolean") {
@@ -5077,13 +5105,21 @@ async function listPackagePageImpl(
       return ctx.db.query("packages").withIndex(indexName, (q) => q.eq("softDeletedAt", undefined));
     };
 
-    if (pageOffset > 0 || !done) {
+    while (
+      (pageOffset > 0 || !done) &&
+      scanPages <
+        (family === "claw" || skippedPolicyClaw ? MAX_PUBLIC_LIST_FILTER_SCAN_PAGES : 1) &&
+      remainingScanBudget > 0
+    ) {
+      scanPages += 1;
       const scanPageSize = Math.min(
+        remainingScanBudget,
         MAX_PUBLIC_LIST_PAGE_SIZE,
         pageOffset > 0 && pageSize
           ? Math.max(pageSize, pageOffset + targetCount)
           : Math.max(targetCount * 5, targetCount, 50),
       );
+      remainingScanBudget -= scanPageSize;
       const currentCursor = cursor;
       const page = await buildSortedQuery()
         .order("desc")
@@ -5093,6 +5129,10 @@ async function listPackagePageImpl(
         const pkg = page.page[index];
         if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
         if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
+        if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) {
+          if (pkg.family === "claw") skippedPolicyClaw = true;
+          continue;
+        }
         collected.push(await toPublicPackageListItemFromPackage(ctx, pkg));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
@@ -5168,17 +5208,23 @@ async function listPackagePageImpl(
   let pageOffset = offset;
   let pageSize: number | null = decodedCursor.pageSize ?? null;
   let done = decodedCursor.done;
+  let skippedPolicyClaw = false;
   const requiresDigestPostFilterScan =
-    hasCatalogMetadataFilter || Boolean(args.excludedScanStatuses?.length);
+    family === "claw" ||
+    (!family && experimentalClawsEnabled()) ||
+    hasCatalogMetadataFilter ||
+    Boolean(args.excludedScanStatuses?.length);
   let digestScanPages = 0;
   let remainingDigestScanBudget = requiresDigestPostFilterScan
     ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
     : MAX_PUBLIC_LIST_PAGE_SIZE;
 
-  if (
+  // Ordinary list filters keep their one-page query budget; Claw catalog reads backfill.
+  while (
     (pageOffset > 0 || !done) &&
     collected.length < targetCount &&
-    digestScanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
+    digestScanPages <
+      (family === "claw" || skippedPolicyClaw ? MAX_PUBLIC_LIST_FILTER_SCAN_PAGES : 1) &&
     remainingDigestScanBudget > 0
   ) {
     const scanPageSize = Math.min(
@@ -5186,7 +5232,9 @@ async function listPackagePageImpl(
       MAX_PUBLIC_LIST_PAGE_SIZE,
       pageOffset > 0 && pageSize
         ? Math.max(pageSize, pageOffset + targetCount)
-        : Math.max(effectivePageSize, targetCount),
+        : family === "claw" || skippedPolicyClaw
+          ? MAX_PUBLIC_LIST_PAGE_SIZE
+          : Math.max(effectivePageSize, targetCount),
     );
     if (scanPageSize > 0) {
       digestScanPages += 1;
@@ -5208,6 +5256,7 @@ async function listPackagePageImpl(
         if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
           continue;
         }
+        if (isClawOutsideOpenClawPublisher(digest)) skippedPolicyClaw = true;
         if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
         collected.push(await toPublicPackageListItem(ctx, digest));
         if (collected.length >= targetCount) {
@@ -5527,7 +5576,7 @@ async function searchPackagesImpl(
       topic,
     });
     const entries = highlightedEntries
-      .filter(({ digest }) => isClawFamilyPubliclyVisible(digest.family))
+      .filter(({ digest }) => digestMatchesFilters(digest, args))
       .filter(({ digest }) =>
         args.createdAfter === undefined ? true : digest.createdAt >= args.createdAfter,
       )
@@ -5647,7 +5696,10 @@ async function searchPackagesImpl(
       .length;
 
   if (authoritativeMatchCount() < targetCount) {
-    const scanLimit = Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
+    const scanLimit =
+      args.family === "claw"
+        ? MAX_SEARCH_PAGE_SIZE
+        : Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
     const collectDigestMatches = async (digests: PackageDigestLike[]) => {
       for (const digest of digests) {
         if (!(await canViewPackage(digest))) continue;
@@ -5662,7 +5714,7 @@ async function searchPackagesImpl(
       }
     };
 
-    if ((topic && category) || args.createdAfter !== undefined) {
+    if ((topic && category) || args.createdAfter !== undefined || args.family === "claw") {
       const scanStates = searchFamilies.map((family) => ({
         family,
         cursor: null as string | null,
@@ -5714,7 +5766,37 @@ async function searchPackagesImpl(
           ),
         ).then((groups) => groups.flat());
       if (batchReads) batchReads.fallback = fallback;
-      await collectDigestMatches(await fallback);
+      const fallbackDigests = await fallback;
+      await collectDigestMatches(fallbackDigests);
+      if (
+        !args.family &&
+        experimentalClawsEnabled() &&
+        fallbackDigests.some(isClawOutsideOpenClawPublisher) &&
+        authoritativeMatchCount() < targetCount
+      ) {
+        let cursor: string | null = null;
+        let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
+        for (
+          let pageNumber = 0;
+          pageNumber < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
+          remainingScanBudget > 0 &&
+          authoritativeMatchCount() < targetCount;
+          pageNumber += 1
+        ) {
+          const pageSize = Math.min(MAX_SEARCH_PAGE_SIZE, remainingScanBudget);
+          const page: {
+            page: PackageDigestLike[];
+            isDone: boolean;
+            continueCursor: string;
+          } = await buildSearchDigestQuery("claw")
+            .order("desc")
+            .paginate({ cursor, numItems: pageSize });
+          remainingScanBudget -= pageSize;
+          await collectDigestMatches(page.page);
+          if (page.isDone) break;
+          cursor = page.continueCursor;
+        }
+      }
     }
   }
 
@@ -9111,6 +9193,9 @@ async function publishPackageImpl(
   if (payload.family === "claw" && payload.name !== name) {
     throw new ConvexError(`Claw package name must use canonical form ${name}`);
   }
+  if (family === "claw" && !isOpenClawClawName(name)) {
+    throw new ConvexError("Claw packages are limited to the @openclaw publisher");
+  }
   const version = assertPackageVersion(family, payload.version);
   if (family === "claw") {
     if (payload.artifact?.kind !== "npm-pack") {
@@ -9243,6 +9328,17 @@ async function publishPackageImpl(
       );
     }
     publishActor = { kind: "user", userId: actorUserId };
+  }
+
+  if (family === "claw") {
+    const ownerPublisher = ownerPublisherId
+      ? await runQueryRef<Doc<"publishers"> | null>(ctx, internalRefs.publishers.getByIdInternal, {
+          publisherId: ownerPublisherId,
+        })
+      : null;
+    if (!isOpenClawClawPublisher(ownerPublisher)) {
+      throw new ConvexError("Claw packages are limited to the @openclaw publisher");
+    }
   }
 
   const displayName = payload.displayName?.trim() || name;
@@ -12123,6 +12219,12 @@ export const publishPendingReleaseInternal = internalMutation({
     const firstPublishedRelease = hasNoPublishedPackageVersions(pkg);
     const pendingFamily = stringPendingField(metadata, "family", pkg.family) as PackageFamily;
     const packageFamily = firstPublishedRelease ? pendingFamily : pkg.family;
+    if (packageFamily === "claw") {
+      const ownerPublisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
+      if (!isOpenClawClawName(pkg.normalizedName) || !isOpenClawClawPublisher(ownerPublisher)) {
+        throw new ConvexError("Claw packages are limited to the @openclaw publisher");
+      }
+    }
     const currentLatest = await resolvePackageCurrentLatestForPublish(ctx, pkg);
     const { effectiveTags, shouldPromoteLatest } = resolvePackageReleaseTagsForPublish({
       family: packageFamily,
@@ -12373,6 +12475,12 @@ export const insertReleaseInternal = internalMutation({
       (!ownerPublisher || ownerPublisher.deletedAt || ownerPublisher.deactivatedAt)
     ) {
       throw new ConvexError("Package owner publisher is unavailable");
+    }
+    if (
+      args.family === "claw" &&
+      (!isOpenClawClawName(normalizedName) || !isOpenClawClawPublisher(ownerPublisher))
+    ) {
+      throw new ConvexError("Claw packages are limited to the @openclaw publisher");
     }
     if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId) {
       const linkedPublisherUser = await ctx.db.get(ownerPublisher.linkedUserId);
