@@ -26,7 +26,9 @@ describe("staging worker relays", () => {
         "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/staging'",
       );
       expect(worker.environment).toBe(
-        "${{ github.ref == 'refs/heads/staging' && 'Staging' || 'Production' }}",
+        workflowName === "prepublication-publish-checks"
+          ? "${{ github.ref == 'refs/heads/staging' && 'Staging' || (github.ref == 'refs/heads/main' && inputs['target-environment'] == 'test' && 'Test' || 'Production') }}"
+          : "${{ github.ref == 'refs/heads/staging' && 'Staging' || 'Production' }}",
       );
       const guard = worker.steps.findIndex(
         (step: { name?: string }) => step.name === "Verify staging worker target",

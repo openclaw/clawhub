@@ -400,6 +400,24 @@ malicious presentation states used locally. Permanent Test remains
 snapshot-backed. The separate Staging deployment and production are never
 seeded by Preview builds.
 
+### Permanent Test plugin pre-publication scans
+
+Test plugin uploads can run the same pre-publication scanners as production
+without enabling Test's general Convex crons. Configure
+`PREPUBLICATION_PUBLISH_EVENT_DISPATCH_ENABLED=1` and the GitHub App dispatch
+credentials on `academic-chihuahua-392`. The `Test` GitHub Actions environment's
+Convex deploy key is used to load that deployment's `SECURITY_SCAN_WORKER_TOKEN`
+inside the pre-publication worker process; do not copy the Test worker token to
+Production or the repository-wide GitHub secret.
+
+The Convex upload dispatch marks its event with `environment=test`. A secretless
+repository-dispatch relay then starts the pre-publication worker from `main`
+with the GitHub `Test` environment and a target guard pinned to
+`academic-chihuahua-392`. The worker checks the exact pending upload attempt.
+Test crons remain disabled, so this does not scan the catalog on a nightly or
+periodic schedule. The five-minute scheduled pre-publication worker remains a
+Production-only recovery path.
+
 Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
 requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview
 responses so smoke proof can record the paired non-secret deployment name.
