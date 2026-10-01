@@ -1,6 +1,7 @@
 import { PLUGIN_CATEGORY_DEFINITIONS, type ManagedMcpDefinition } from "clawhub-schema";
 import { useAction } from "convex/react";
-import { useState, type FormEvent } from "react";
+import type { FunctionReturnType } from "convex/server";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "../../components/ui/button";
 import {
@@ -26,6 +27,11 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : "The operation could not be completed.";
 }
 
+type PublicationReceipt = Pick<
+  FunctionReturnType<typeof api.managedMcp.publish>,
+  "releaseId" | "attemptId" | "publicationStatus"
+> & { name: string; version: string };
+
 export function ManagedMcpTools({ packageName }: { packageName?: string }) {
   const getDefinition = useAction(api.managedMcp.getDefinition);
   const unpublish = useAction(api.managedMcp.unpublish);
@@ -33,15 +39,36 @@ export function ManagedMcpTools({ packageName }: { packageName?: string }) {
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const [publishedName, setPublishedName] = useState<string | null>(null);
+  const [publication, setPublication] = useState<PublicationReceipt | null>(null);
+  const [managedId, setManagedId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const id = packageName?.startsWith("@openclaw/") ? packageName.slice("@openclaw/".length) : null;
 
+  useEffect(() => {
+    let current = true;
+    setManagedId(null);
+    if (id) {
+      // The scope alone does not establish ownership or a managed bundle's eligibility.
+      void getDefinition({ id }).then(
+        (definition) => {
+          if (current && definition) setManagedId(id);
+        },
+        () => {
+          // Ordinary packages and failed verification must not expose managed actions.
+        },
+      );
+    }
+    return () => {
+      current = false;
+    };
+  }, [getDefinition, id]);
+
   async function edit() {
-    if (!id) return;
+    if (!id || managedId !== id) return;
     setBusy(true);
     setError("");
     setStatus("");
+    setPublication(null);
     try {
       const definition = await getDefinition({ id });
       if (!definition) throw new Error("Managed integration not found.");
@@ -54,12 +81,13 @@ export function ManagedMcpTools({ packageName }: { packageName?: string }) {
   }
 
   async function remove() {
-    if (!id) return;
+    if (!id || managedId !== id) return;
     setBusy(true);
     setError("");
     try {
       await unpublish({ id });
       setConfirmUnpublish(false);
+      setPublication(null);
       setStatus("Unpublished. Existing installations have not been changed.");
     } catch (caught) {
       setError(message(caught));
@@ -75,17 +103,25 @@ export function ManagedMcpTools({ packageName }: { packageName?: string }) {
           onClick={() => {
             setError("");
             setStatus("");
+            setPublication(null);
             setEditor({});
           }}
         >
           Add MCP integration
         </Button>
-        {id ? (
+        {id && managedId === id ? (
           <>
             <Button variant="outline" disabled={busy} onClick={() => void edit()}>
               Edit MCP integration
             </Button>
-            <Button variant="outline" disabled={busy} onClick={() => setConfirmUnpublish(true)}>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setError("");
+                setConfirmUnpublish(true);
+              }}
+            >
               Unpublish MCP integration
             </Button>
           </>
@@ -96,12 +132,20 @@ export function ManagedMcpTools({ packageName }: { packageName?: string }) {
           {status}
         </p>
       ) : null}
-      {publishedName ? (
-        <a href={buildPluginDetailHref(publishedName, { ownerHandle: "openclaw" })}>
-          View package and publication status
-        </a>
+      {publication ? (
+        <div className="grid gap-2">
+          <p className="section-subtitle m-0">
+            Submission receipt · Release: {publication.releaseId}
+            {publication.attemptId ? ` · Publish attempt: ${publication.attemptId}` : ""}
+          </p>
+          {publication.publicationStatus === "published" ? (
+            <a href={buildPluginDetailHref(publication.name, { ownerHandle: "openclaw" })}>
+              View published package
+            </a>
+          ) : null}
+        </div>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error && !confirmUnpublish ? <p role="alert">{error}</p> : null}
       <Dialog
         open={editor !== null}
         onOpenChange={(open) => {
@@ -121,11 +165,11 @@ export function ManagedMcpTools({ packageName }: { packageName?: string }) {
           {editor ? (
             <ManagedMcpForm
               initial={editor.definition}
-              onPublished={(name, pending) => {
+              onPublished={(receipt) => {
                 setEditor(null);
-                setPublishedName(name);
+                setPublication(receipt);
                 setStatus(
-                  `${name} ${pending ? "submitted for security checks. It is not available for installation yet." : "published."}`,
+                  `${receipt.name}@${receipt.version} ${receipt.publicationStatus === "published" ? "published." : "submitted for security checks. It was pending publication at submission and is not yet confirmed available for installation."}`,
                 );
               }}
             />
@@ -141,6 +185,7 @@ export function ManagedMcpTools({ packageName }: { packageName?: string }) {
               installations.
             </DialogDescription>
           </DialogHeader>
+          {error ? <p role="alert">{error}</p> : null}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setConfirmUnpublish(false)}>
               Cancel
@@ -160,7 +205,7 @@ function ManagedMcpForm({
   onPublished,
 }: {
   initial?: ManagedMcpDefinition;
-  onPublished: (name: string, pending: boolean) => void;
+  onPublished: (receipt: PublicationReceipt) => void;
 }) {
   const publish = useAction(api.managedMcp.publish);
   const [auth, setAuth] = useState<string>(initial?.connection.auth.kind ?? "oauth");
@@ -221,7 +266,13 @@ function ManagedMcpForm({
       };
       const result = await publish({ definition });
       const name = `@openclaw/${definition.id}`;
-      onPublished(name, result.publicationStatus === "pending");
+      onPublished({
+        name,
+        version: definition.version,
+        releaseId: result.releaseId,
+        attemptId: result.attemptId,
+        publicationStatus: result.publicationStatus,
+      });
     } catch (caught) {
       setError(message(caught));
     } finally {
