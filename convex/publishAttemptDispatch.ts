@@ -63,6 +63,7 @@ export async function dispatchPublishAttemptWorkflow(
     {
       eventType: "clawhub-prepublication-publish",
       clientPayload: {
+        ...(process.env.CLAWHUB_ENV === "staging" ? { environment: "staging" } : {}),
         attempt_id: target.attemptId,
         kind: target.kind,
         slug: target.slug,

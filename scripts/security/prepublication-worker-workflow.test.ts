@@ -104,7 +104,9 @@ describe("pre-publication publish worker workflow", () => {
       required: false,
       default: "",
     });
-    expect(job.environment).toBe("Production");
+    expect(job.environment).toBe(
+      "${{ github.ref == 'refs/heads/staging' && 'Staging' || 'Production' }}",
+    );
     expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(job["timeout-minutes"]).toBe(25);
     expect(job.strategy?.matrix?.shard).toBe(
@@ -113,7 +115,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(job.strategy?.["max-parallel"]).toBe(2);
     expect(job.env).toMatchObject({
       CONVEX_URL:
-        "${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
+        "${{ github.ref == 'refs/heads/staging' && 'https://cheery-civet-733.convex.cloud' || vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
         "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}",
       PREPUBLICATION_CLAWSCAN_SANDBOX: "off",
@@ -136,7 +138,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(workflow).toMatchObject({
       concurrency: {
         group:
-          "${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}",
+          "${{ (github.ref == 'refs/heads/staging' || github.event.client_payload.environment == 'staging') && format('staging-{0}-', github.ref_name) || '' }}${{ (github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '')) && format('clawhub-prepublication-{0}', github.event.client_payload.attempt_id || inputs['attempt-id']) || 'clawhub-prepublication-publish-checks' }}",
         "cancel-in-progress": false,
       },
     });

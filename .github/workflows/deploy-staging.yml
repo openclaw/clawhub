@@ -257,7 +257,7 @@ jobs:
           set -euo pipefail
           names="$(bunx convex env list --names-only --prod)"
           missing=()
-          for name in AUTH_GITHUB_ID AUTH_GITHUB_SECRET JWT_PRIVATE_KEY JWKS CLAWHUB_STAGING_EDGE_SECRET; do
+          for name in AUTH_GITHUB_ID AUTH_GITHUB_SECRET JWT_PRIVATE_KEY JWKS CLAWHUB_STAGING_EDGE_SECRET SECURITY_SCAN_WORKER_TOKEN; do
             if ! grep -Fxq "$name" <<< "$names"; then
               missing+=("$name")
             fi

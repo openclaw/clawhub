@@ -173,6 +173,34 @@ its API and UI, and then checks the stable branch/custom URL. The API smoke
 requires staging backend and frontend SHA headers, and works with an empty
 staging database. No Test backend or fixture seed is involved.
 
+### Staging scan and publish workers
+
+`SECURITY_SCAN_WORKER_TOKEN` must match between `cheery-civet-733` and the
+GitHub `Staging` environment. Generate a separate random value for staging;
+never reuse the production worker token. Workers use the repository's existing
+OpenAI credential, supplied only to the scanner steps.
+
+Both `prepublication-publish-checks.yml` and `security-scan-codex.yml` support
+manual runs with `--ref staging`. They select the `Staging` environment, pin
+`CONVEX_URL` to `cheery-civet-733`, and check that the deployed backend SHA
+matches the workflow SHA before claiming work. Staging concurrency groups are
+separate from production; staging security scans use one shared and one priority
+worker instead of the production pool.
+
+For automatic dispatch, configure the existing GitHub App integration on staging
+(`GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`), then set
+`SECURITY_SCAN_EVENT_DISPATCH_ENABLED=1` and
+`CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES=1`. Keep `CLAWHUB_DISABLE_CRONS=1`; upload
+and queue events start workers through Convex's existing scheduled actions.
+Staging dispatch payloads carry `environment: staging`. The workflows on `main`
+relay these events to the same workflow on `staging`, using only a job-scoped
+Actions token. They skip their production worker jobs for these events. The
+GitHub App continues to require only its existing Contents write permission.
+
+**Land the relay workflows on `main` before enabling staging event dispatch.**
+GitHub receives repository dispatch events on the default branch. Before the
+relay is available, verify workers with manual staging workflow runs.
+
 ### Skill Card lease capacity
 
 Skill Card jobs own one of 64 capacity slots while running. Discovery runs in a

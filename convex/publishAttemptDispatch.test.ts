@@ -91,7 +91,7 @@ describe("publishAttemptDispatch", () => {
   });
 
   it("dispatches the exact prepublication worker payload", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
 
     await expect(
       dispatchPublishAttemptWorkflow(
@@ -168,6 +168,25 @@ describe("publishAttemptDispatch", () => {
       retryCount: 3,
     });
     expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("marks staging publish events for the branch relay", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "staging");
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    await dispatchPublishAttemptWorkflow(
+      { token: "installation-token", permissions: { contents: "write" } },
+      {
+        attemptId: "publishAttempts:staging" as never,
+        kind: "skill",
+        slug: "staging-proof",
+        version: "1.0.0",
+      },
+      fetchImpl,
+    );
+    expect(JSON.parse(fetchImpl.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      event_type: "clawhub-prepublication-publish",
+      client_payload: { environment: "staging", attempt_id: "publishAttempts:staging" },
+    });
   });
 
   it("does not dispatch after the attempt leaves pending checks", async () => {
