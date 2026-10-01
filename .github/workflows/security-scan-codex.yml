@@ -127,14 +127,9 @@ jobs:
           }
           JS
           [[ "$(bunx convex env get APP_BUILD_SHA --prod)" == "$GITHUB_SHA" ]]
-          umask 077
-          previous_token="$(bunx convex env get SECURITY_SCAN_WORKER_TOKEN --prod)"
-          printf '%s' "$previous_token" > "$RUNNER_TEMP/endor-test-previous-token.tmp"
-          mv "$RUNNER_TEMP/endor-test-previous-token.tmp" "$RUNNER_TEMP/endor-test-previous-token"
-          worker_token="$(openssl rand -hex 32)"
+          worker_token="$(bunx convex env get SECURITY_SCAN_WORKER_TOKEN --prod)"
+          [[ -n "$worker_token" ]] || { echo 'Test SECURITY_SCAN_WORKER_TOKEN is missing' >&2; exit 1; }
           printf '::add-mask::%s\n' "$worker_token"
-          printf '%s' "$worker_token" > "$RUNNER_TEMP/endor-test-worker-token"
-          bunx convex env set SECURITY_SCAN_WORKER_TOKEN --from-file "$RUNNER_TEMP/endor-test-worker-token" --prod
           printf 'token=%s\n' "$worker_token" >> "$GITHUB_OUTPUT"
 
       - name: Build Endor scanner for Test
@@ -223,19 +218,6 @@ jobs:
             --max-jobs "$CODEX_SECURITY_SCAN_MAX_JOBS" \
             --max-runtime-minutes "$CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES" \
             --lease-minutes "$CODEX_SECURITY_SCAN_LEASE_MINUTES"
-
-      - name: Restore Test scan authentication
-        if: ${{ always() && steps.test-target.outcome == 'success' }}
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: |
-          set -euo pipefail
-          previous="$RUNNER_TEMP/endor-test-previous-token"
-          if [[ -s "$previous" ]]; then
-            bunx convex env set SECURITY_SCAN_WORKER_TOKEN --from-file "$previous" --prod
-          elif [[ -f "$previous" ]]; then
-            bunx convex env remove SECURITY_SCAN_WORKER_TOKEN --prod
-          fi
 
       - name: Prepare Codex security diagnostics scan
         if: ${{ !cancelled() }}
