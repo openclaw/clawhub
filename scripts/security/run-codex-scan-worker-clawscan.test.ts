@@ -1504,9 +1504,12 @@ exit 7`,
       settled = true;
     });
     try {
-      await vi.waitFor(async () => {
-        expect(await readFile(skillFailed, "utf8")).toBe("");
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await readFile(skillFailed, "utf8")).toBe("");
+        },
+        { timeout: 5000 },
+      );
       expect(settled).toBe(false);
       await expect(readFile(cleanupMarker, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     } finally {

@@ -89,6 +89,20 @@ Git dependency prepare scripts from bypassing script suppression.
 Image publication, hosted configuration, and ClawHub deployment remain separate
 manual rollout actions.
 
+### Isolated Staging trial
+
+Merge this feature into `staging` and wait for its exact revision to deploy to
+`https://stg.clawhub.openclaw.org` (`cheery-civet-733`). Dispatch
+`security-scan-codex.yml` from `staging` with `environment=Staging`,
+`expected-sha` equal to that deployed revision, `shared-workers=9`, `max-jobs=3`,
+and 1–3 ready `bulk-rescan` native plugin job IDs assigned only to shared shard 0. The trial builds
+an immutable local Endor image and reuses the backend worker credential. Its
+concurrency group serializes it with Staging deployments; wrong branches,
+backends, deployed revisions, and unclaimable assignments are rejected. The trial
+succeeds only after every assigned job stores completed Endor and judge results
+from this worker and releases its lease. Endor failure still saves moderation in
+the normal pipeline, but fails this acceptance trial.
+
 ### Deployment and rollback order
 
 1. Deploy the additive backend schema and result handlers first. Existing

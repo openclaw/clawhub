@@ -60,4 +60,60 @@ describe("Vercel frontend build environment", () => {
     expect(env.VITE_CONVEX_SITE_URL).toBe("https://academic-chihuahua-392.convex.site");
     expect(env.VITE_CLAWHUB_DEPLOY_ENV).toBe("test");
   });
+
+  it.each(["preview", "staging"])(
+    "preserves the permanent staging backend with Vercel target %s",
+    (targetEnvironment) => {
+      const env = resolveFrontendBuildEnv({
+        CLAWHUB_ENV: "staging",
+        CLAWHUB_STAGING_EDGE_SECRET: "s".repeat(48),
+        SITE_URL: "https://stg.clawhub.ai",
+        VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: targetEnvironment,
+        VERCEL_GIT_COMMIT_REF: "staging",
+        VERCEL_GIT_COMMIT_SHA: "a".repeat(40),
+        VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+        VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
+        VITE_SITE_URL: "https://stg.clawhub.ai",
+        VITE_APP_BUILD_SHA: "old-build",
+      });
+
+      expect(env.VITE_CONVEX_SITE_URL).toBe("https://cheery-civet-733.convex.site");
+      expect(env.VITE_CLAWHUB_DEPLOY_ENV).toBe("staging");
+      expect(env.VITE_APP_BUILD_SHA).toBe("a".repeat(40));
+      expect(env.VITE_SITE_URL).toBe("https://stg.clawhub.ai");
+    },
+  );
+
+  it("rejects staging frontend builds without a Git commit SHA", () => {
+    expect(() =>
+      resolveFrontendBuildEnv({
+        CLAWHUB_ENV: "staging",
+        CLAWHUB_STAGING_EDGE_SECRET: "s".repeat(48),
+        SITE_URL: "https://stg.clawhub.ai",
+        VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: "preview",
+        VERCEL_GIT_COMMIT_REF: "staging",
+        VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+        VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
+        VITE_SITE_URL: "https://stg.clawhub.ai",
+      }),
+    ).toThrow("Staging Vercel builds require a full VERCEL_GIT_COMMIT_SHA");
+  });
+
+  it("rejects a production canonical URL when invoked directly", () => {
+    expect(() =>
+      resolveFrontendBuildEnv({
+        CLAWHUB_ENV: "staging",
+        CLAWHUB_STAGING_EDGE_SECRET: "s".repeat(48),
+        SITE_URL: "https://stg.clawhub.ai",
+        VERCEL_ENV: "preview",
+        VERCEL_GIT_COMMIT_REF: "staging",
+        VERCEL_GIT_COMMIT_SHA: "a".repeat(40),
+        VITE_CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+        VITE_CONVEX_SITE_URL: "https://cheery-civet-733.convex.site",
+        VITE_SITE_URL: "https://clawhub.ai",
+      }),
+    ).toThrow("Staging Vercel builds require matching SITE_URL and VITE_SITE_URL");
+  });
 });

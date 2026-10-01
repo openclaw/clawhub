@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Deployment to scan; Test requires exact revision and at most three assigned jobs"
+        description: "Deployment to scan; Staging requires exact revision and at most three assigned jobs"
         type: choice
-        options: [Production, Test]
+        options: [Production, Staging]
         default: Production
       expected-sha:
-        description: "Exact deployed revision required for a Test scan"
+        description: "Exact deployed revision required for a Staging scan"
         required: false
         default: ""
       limit:
@@ -52,15 +52,15 @@ jobs:
     concurrency:
       # Bulk assignments must not wait behind ordinary queue workers on the same shard.
       # Priority remains one reserved lane shared by every dispatch mode.
-      group: ${{ inputs.environment == 'Test' && 'deploy-test' || format('clawhub-security-scan-{0}{1}', matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '', matrix.shard) }}
+      group: ${{ inputs.environment == 'Staging' && 'deploy-staging' || format('clawhub-security-scan-{0}{1}', matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '', matrix.shard) }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
       max-parallel: 19
       matrix:
         lane: [shared]
-        shard: ${{ fromJSON(inputs.environment == 'Test' && '["shared-0"]' || inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
-        include: ${{ fromJSON(inputs.environment == 'Test' && '[]' || '[{"lane":"priority","shard":"priority-0"}]') }}
+        shard: ${{ fromJSON(inputs.environment == 'Staging' && '["shared-0"]' || inputs['assigned-jobs'] && inputs['shared-workers'] == '18' && '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8","shared-9","shared-10","shared-11","shared-12","shared-13","shared-14","shared-15","shared-16","shared-17"]' || '["shared-0","shared-1","shared-2","shared-3","shared-4","shared-5","shared-6","shared-7","shared-8"]') }}
+        include: ${{ fromJSON(inputs.environment == 'Staging' && '[]' || '[{"lane":"priority","shard":"priority-0"}]') }}
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
@@ -83,28 +83,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - name: Check Test scan target
-        id: test-target
-        if: inputs.environment == 'Test'
+      - name: Check Staging scan target
+        id: staging-target
+        if: inputs.environment == 'Staging'
         env:
           EXPECTED_SHA: ${{ inputs['expected-sha'] }}
           SELECTED_SHA: ${{ github.sha }}
           SELECTED_REF: ${{ github.ref }}
-          SELECTED_ACTOR: ${{ github.actor }}
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          [[ "$SELECTED_REF" == refs/heads/main || ( "$SELECTED_REF" == refs/heads/jesse/endor-plugin-scan-pipeline && "$SELECTED_ACTOR" == jesse-merhi ) ]] || exit 1
+          [[ "$SELECTED_REF" == refs/heads/staging ]] || exit 1
           [[ "$EXPECTED_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_SHA" == "$SELECTED_SHA" ]] || exit 1
-          [[ "$CONVEX_URL" == https://academic-chihuahua-392.convex.cloud ]] || exit 1
-          [[ "$CONVEX_DEPLOY_KEY" == prod:academic-chihuahua-392\|* ]] || exit 1
+          [[ "$CONVEX_URL" == https://cheery-civet-733.convex.cloud ]] || exit 1
+          [[ "$CONVEX_DEPLOY_KEY" == prod:cheery-civet-733\|* ]] || exit 1
           [[ "$CODEX_SECURITY_SCAN_SHARED_WORKERS" == 9 && "$CODEX_SECURITY_SCAN_MAX_JOBS" == 3 ]] || exit 1
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Prepare Test scan authentication
-        id: test-auth
-        if: inputs.environment == 'Test'
+      - name: Prepare Staging scan authentication
+        id: staging-auth
+        if: inputs.environment == 'Staging'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
@@ -114,31 +113,39 @@ jobs:
           import { readWorkerAssignment } from "./packages/clawhub-admin/src/scanAssignments.ts";
           const raw = process.env.CODEX_SECURITY_SCAN_ASSIGNED_JOBS;
           const ids = readWorkerAssignment(raw, "shared", "shared-0", 9);
-          if (!ids?.length || ids.length > 3 || Array.from({length: 8}, (_, i) => readWorkerAssignment(raw, "shared", "shared-" + (i + 1), 9)?.length).some(Boolean)) {
-            throw new Error("Test requires 1–3 assigned jobs on shared-0 only");
+          if (!ids?.length || ids.length > 3) {
+            throw new Error("Staging requires 1–3 assigned jobs on shared-0 only");
+          }
+          for (let shard = 1; shard < 9; shard++) {
+            if (readWorkerAssignment(raw, "shared", `shared-${shard}`, 9)?.length) {
+              throw new Error("Staging assignments must use shared-0 only");
+            }
           }
           for (const jobId of ids) {
             const result = spawnSync("bunx", ["convex", "run", "securityScan:getJobTargetInternal", JSON.stringify({jobId}), "--prod"], {encoding: "utf8"});
-            if (result.status !== 0) throw new Error("Cannot read assigned Test plugin job");
+            if (result.status !== 0) throw new Error("Cannot read assigned Staging plugin job");
             const target = JSON.parse(result.stdout);
             if (target?.job?.targetKind !== "packageRelease" || !target.release || !["code-plugin", "bundle-plugin"].includes(target.package?.family)) {
-              throw new Error("Test assignments must be native plugin jobs");
+              throw new Error("Staging assignments must be native plugin jobs");
+            }
+            if (target.job.status !== "queued" || target.job.source !== "bulk-rescan" || target.job.rolloutGate || !(target.job.nextRunAt <= Date.now())) {
+              throw new Error("Staging assignments must be ready bulk-rescan jobs");
             }
           }
           JS
-          [[ "$(bunx convex env get APP_BUILD_SHA --prod)" == "$GITHUB_SHA" ]]
+          [[ "$(bunx convex env get APP_BUILD_SHA --prod)" == "$GITHUB_SHA" ]] || { echo 'Staging deployed SHA does not match the selected revision' >&2; exit 1; }
           worker_token="$(bunx convex env get SECURITY_SCAN_WORKER_TOKEN --prod)"
-          [[ -n "$worker_token" ]] || { echo 'Test SECURITY_SCAN_WORKER_TOKEN is missing' >&2; exit 1; }
+          [[ -n "$worker_token" ]] || { echo 'Staging SECURITY_SCAN_WORKER_TOKEN is missing' >&2; exit 1; }
           printf '::add-mask::%s\n' "$worker_token"
           printf 'token=%s\n' "$worker_token" >> "$GITHUB_OUTPUT"
 
-      - name: Build Endor scanner for Test
-        if: inputs.environment == 'Test'
+      - name: Build Endor scanner for Staging
+        if: inputs.environment == 'Staging'
         run: |
           set -euo pipefail
           curl --fail --location --retry 3 https://api.endorlabs.com/download/endorlabs/v1.7.1115/binaries/endorctl_v1.7.1115_linux_amd64 --output scripts/security/endor/endorctl
-          docker build --platform linux/amd64 --build-arg ENDORCTL_SHA256=4022e91a39d04f852f8a6195a5f98297af6cf2738f4012b1591bc87976136d4b --tag "clawhub-endor-test:$GITHUB_SHA" scripts/security/endor
-          image="$(docker image inspect --format '{{.Id}}' "clawhub-endor-test:$GITHUB_SHA")"
+          docker build --platform linux/amd64 --build-arg ENDORCTL_SHA256=4022e91a39d04f852f8a6195a5f98297af6cf2738f4012b1591bc87976136d4b --tag "clawhub-endor-staging:$GITHUB_SHA" scripts/security/endor
+          image="$(docker image inspect --format '{{.Id}}' "clawhub-endor-staging:$GITHUB_SHA")"
           [[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]]
           docker run --rm --network none "$image" test -x /usr/local/bin/clawhub-endor-scan
           printf 'CODEX_SECURITY_SCAN_ENDOR_IMAGE=%s\nCODEX_SECURITY_SCAN_ENDOR_ENABLED=1\n' "$image" >> "$GITHUB_ENV"
@@ -163,7 +170,7 @@ jobs:
           clawscan --version
 
       - name: Prepare Endor scanner
-        if: ${{ inputs.environment != 'Test' && env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}
+        if: ${{ inputs.environment != 'Staging' && env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -206,7 +213,7 @@ jobs:
           DEFAULT_MODEL: gpt-5.6
           LLM_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SECURITY_SCAN_WORKER_TOKEN: ${{ steps.test-auth.outputs.token || secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          SECURITY_SCAN_WORKER_TOKEN: ${{ steps.staging-auth.outputs.token || secrets.SECURITY_SCAN_WORKER_TOKEN }}
           ENDOR_NAMESPACE: ${{ vars.ENDOR_NAMESPACE }}
           ENDOR_API: ${{ vars.ENDOR_API }}
           ENDOR_API_CREDENTIALS_KEY: ${{ secrets.ENDOR_API_CREDENTIALS_KEY }}
@@ -218,6 +225,27 @@ jobs:
             --max-jobs "$CODEX_SECURITY_SCAN_MAX_JOBS" \
             --max-runtime-minutes "$CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES" \
             --lease-minutes "$CODEX_SECURITY_SCAN_LEASE_MINUTES"
+
+      - name: Verify Staging scan results
+        if: inputs.environment == 'Staging'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          bun - <<'JS'
+          import { spawnSync } from "node:child_process";
+          import { readWorkerAssignment } from "./packages/clawhub-admin/src/scanAssignments.ts";
+          const ids = readWorkerAssignment(process.env.CODEX_SECURITY_SCAN_ASSIGNED_JOBS, "shared", "shared-0", 9);
+          for (const jobId of ids) {
+            const result = spawnSync("bunx", ["convex", "run", "securityScan:getJobTargetInternal", JSON.stringify({jobId}), "--prod"], {encoding: "utf8"});
+            if (result.status !== 0) throw new Error("Cannot read Staging scan result");
+            const target = JSON.parse(result.stdout);
+            if (target?.job?.status !== "succeeded" || target.job.workerId !== process.env.CODEX_SECURITY_SCAN_WORKER_ID || target.job.leaseToken || target.job.leaseExpiresAt || target.release?.endorAnalysis?.status !== "completed" || typeof target.release?.llmAnalysis?.checkedAt !== "number") {
+              throw new Error("Assigned Staging plugin has no completed Endor and judge results from this worker");
+            }
+            console.log(JSON.stringify({package: target.package.name, version: target.release.version, reachableFunctions: target.release.endorAnalysis.reachableFunctionCount, verdict: target.release.llmAnalysis.verdict}));
+          }
+          JS
 
       - name: Prepare Codex security diagnostics scan
         if: ${{ !cancelled() }}

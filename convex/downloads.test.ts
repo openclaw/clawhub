@@ -498,6 +498,36 @@ describe("downloads helpers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
+  it("requires the branch secret before issuing Staging download manifests", async () => {
+    const secret = "s".repeat(48);
+    vi.stubEnv("CLAWHUB_ENV", "staging");
+    vi.stubEnv("CLAWHUB_STAGING_EDGE_SECRET", secret);
+    const runQuery = vi.fn(async () => null);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+    const verifyArchiveRequester = vi.fn(async () => undefined);
+    const ctx = { runQuery, runMutation } as unknown as ActionCtx;
+    const request = (edgeSecret?: string) =>
+      new Request("https://cheery-civet-733.convex.site/api/v1/download?slug=demo", {
+        headers: {
+          "x-clawhub-archive-manifest": "v1",
+          "x-clawhub-vercel-oidc-token": "vercel-preview-oidc",
+          ...(edgeSecret ? { "x-clawhub-staging-edge-secret": edgeSecret } : {}),
+        },
+      });
+
+    expect((await downloadZipHandler(ctx, request(), { verifyArchiveRequester })).status).toBe(401);
+    expect(verifyArchiveRequester).not.toHaveBeenCalled();
+    expect(runQuery).not.toHaveBeenCalled();
+
+    expect(
+      (await downloadZipHandler(ctx, request(secret), { verifyArchiveRequester })).status,
+    ).toBe(404);
+    expect(verifyArchiveRequester).toHaveBeenCalledWith("vercel-preview-oidc", "preview");
+  });
+
   it("records only a valid, unexpired archive metric capability", async () => {
     const keyPair = await generateKeyPair("RS256", { extractable: true });
     const privateKey = await exportPKCS8(keyPair.privateKey);

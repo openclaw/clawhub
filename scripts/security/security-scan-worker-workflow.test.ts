@@ -103,7 +103,7 @@ describe("security-scan-codex workflow", () => {
     );
     expect(workflow.jobs["codex-security-scan"].concurrency).toEqual({
       group:
-        "${{ inputs.environment == 'Test' && 'deploy-test' || format('clawhub-security-scan-{0}{1}', matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '', matrix.shard) }}",
+        "${{ inputs.environment == 'Staging' && 'deploy-staging' || format('clawhub-security-scan-{0}{1}', matrix.lane == 'shared' && inputs['assigned-jobs'] && 'assigned-' || '', matrix.shard) }}",
       "cancel-in-progress": false,
     });
     expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(19);
@@ -122,7 +122,7 @@ describe("security-scan-codex workflow", () => {
       "${{ inputs['shared-workers'] || '9' }}",
     );
     expect(matrix?.include).toBe(
-      '${{ fromJSON(inputs.environment == \'Test\' && \'[]\' || \'[{"lane":"priority","shard":"priority-0"}]\') }}',
+      '${{ fromJSON(inputs.environment == \'Staging\' && \'[]\' || \'[{"lane":"priority","shard":"priority-0"}]\') }}',
     );
     expect(jobEnv.CODEX_SECURITY_SCAN_LANE).toBe("${{ matrix.lane }}");
     expect(jobEnv.CODEX_SECURITY_SCAN_LIMIT).toBe(
@@ -153,8 +153,9 @@ describe("security-scan-codex workflow", () => {
     expectSecretStepAllowlist(steps, "LLM_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "CONVEX_DEPLOY_KEY", [
-      "Check Test scan target",
-      "Prepare Test scan authentication",
+      "Check Staging scan target",
+      "Prepare Staging scan authentication",
+      "Verify Staging scan results",
     ]);
     expectSecretStepAllowlist(steps, "ENDOR_API_CREDENTIALS_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "ENDOR_API_CREDENTIALS_SECRET", ["Run Codex security worker"]);
@@ -182,7 +183,7 @@ describe("security-scan-codex workflow", () => {
     expect(clawScanInstall).not.toContain("@latest");
     const endorPrepare = steps.find((step) => step.name === "Prepare Endor scanner");
     expect(endorPrepare?.if).toBe(
-      "${{ inputs.environment != 'Test' && env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}",
+      "${{ inputs.environment != 'Staging' && env.CODEX_SECURITY_SCAN_ENDOR_ENABLED == '1' }}",
     );
     expect(endorPrepare?.run).toContain("test -x /usr/local/bin/clawhub-endor-scan");
     expect(endorPrepare?.run).toContain("@sha256:[a-f0-9]{64}$");
@@ -208,7 +209,7 @@ describe("security-scan-codex workflow", () => {
       LLM_API_KEY: "${{ secrets.OPENAI_API_KEY || secrets.CODEX_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN:
-        "${{ steps.test-auth.outputs.token || secrets.SECURITY_SCAN_WORKER_TOKEN }}",
+        "${{ steps.staging-auth.outputs.token || secrets.SECURITY_SCAN_WORKER_TOKEN }}",
       ENDOR_NAMESPACE: "${{ vars.ENDOR_NAMESPACE }}",
       ENDOR_API: "${{ vars.ENDOR_API }}",
       ENDOR_API_CREDENTIALS_KEY: "${{ secrets.ENDOR_API_CREDENTIALS_KEY }}",
@@ -216,25 +217,24 @@ describe("security-scan-codex workflow", () => {
     });
   });
 
-  it("rejects unsafe Test targets before setup or deployment access", async () => {
+  it("rejects unsafe Staging targets before setup or deployment access", async () => {
     const workflow = parseYaml(
       await readFile(".github/workflows/security-scan-codex.yml", "utf8"),
     ) as {
       jobs: Record<string, { steps: WorkflowStep[] }>;
     };
     const steps = workflow.jobs["codex-security-scan"].steps;
-    const guard = steps.find((step) => step.id === "test-target");
+    const guard = steps.find((step) => step.id === "staging-target");
     expect(steps.indexOf(guard!)).toBeLessThan(
       steps.findIndex((step) => step.uses === "./.github/actions/setup-bun"),
     );
-    expect(guard?.if).toBe("inputs.environment == 'Test'");
+    expect(guard?.if).toBe("inputs.environment == 'Staging'");
     const target = {
-      SELECTED_REF: "refs/heads/jesse/endor-plugin-scan-pipeline",
-      SELECTED_ACTOR: "jesse-merhi",
+      SELECTED_REF: "refs/heads/staging",
       EXPECTED_SHA: "a".repeat(40),
       SELECTED_SHA: "a".repeat(40),
-      CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
-      CONVEX_DEPLOY_KEY: "prod:academic-chihuahua-392|fixture-only",
+      CONVEX_URL: "https://cheery-civet-733.convex.cloud",
+      CONVEX_DEPLOY_KEY: "prod:cheery-civet-733|fixture-only",
       CODEX_SECURITY_SCAN_SHARED_WORKERS: "9",
       CODEX_SECURITY_SCAN_MAX_JOBS: "3",
     };
@@ -245,7 +245,10 @@ describe("security-scan-codex workflow", () => {
     expect(run({}).status).toBe(0);
     for (const rejected of [
       { SELECTED_REF: "refs/heads/unapproved" },
-      { SELECTED_ACTOR: "someone-else" },
+      { SELECTED_REF: "refs/heads/main" },
+      { SELECTED_REF: "refs/heads/jesse/endor-plugin-scan-pipeline" },
+      { CONVEX_URL: "https://academic-chihuahua-392.convex.cloud" },
+      { CONVEX_DEPLOY_KEY: "prod:academic-chihuahua-392|fixture-only" },
       { EXPECTED_SHA: "b".repeat(40) },
       { EXPECTED_SHA: "" },
       { CONVEX_URL: "https://wry-manatee-359.convex.cloud" },
@@ -257,15 +260,15 @@ describe("security-scan-codex workflow", () => {
       expect(run(rejected).status, JSON.stringify(rejected)).not.toBe(0);
   });
 
-  it("bounds Test assignments and preserves the existing worker credential", async () => {
+  it("bounds Staging assignments and preserves the existing worker credential", async () => {
     const workflow = parseYaml(
       await readFile(".github/workflows/security-scan-codex.yml", "utf8"),
     ) as {
       jobs: Record<string, { steps: WorkflowStep[] }>;
     };
     const steps = workflow.jobs["codex-security-scan"].steps;
-    const prepare = steps.find((step) => step.id === "test-auth");
-    const root = await mkdtemp(join(tmpdir(), "endor-test-auth-"));
+    const prepare = steps.find((step) => step.id === "staging-auth");
+    const root = await mkdtemp(join(tmpdir(), "endor-staging-auth-"));
     try {
       const state = join(root, "backend-token");
       const output = join(root, "output");
@@ -276,28 +279,36 @@ describe("security-scan-codex workflow", () => {
 set -euo pipefail
 case "$3:$4" in
   securityScan:getJobTargetInternal:*) printf '%s\\n' "$TEST_JOB_TARGET" ;;
-  get:APP_BUILD_SHA) printf '%s\\n' "$GITHUB_SHA" ;;
+  get:APP_BUILD_SHA) printf '%s\\n' "$TEST_DEPLOYED_SHA" ;;
   get:SECURITY_SCAN_WORKER_TOKEN) if [[ -f "$TEST_TOKEN_STATE" ]]; then cat "$TEST_TOKEN_STATE"; printf '\\n'; fi ;;
   *) exit 99 ;;
 esac
 `,
       );
       await chmod(bunx, 0o755);
-      const assignments = (count: number, otherShard = false) =>
-        JSON.stringify(
-          Array.from({ length: 9 }, (_, i) =>
-            i === (otherShard ? 1 : 0) ? Array.from({ length: count }, (_, n) => `job-${n}`) : [],
-          ),
-        );
+      const assignments = (count: number, otherShard = false) => {
+        const shards: string[][] = Array.from({ length: 9 }, () => []);
+        shards[0] = Array.from({ length: count }, (_, n) => `job-${n}`);
+        if (otherShard) shards[8] = ["other-shard-job"];
+        return JSON.stringify(shards);
+      };
+      const queuedJob = {
+        targetKind: "packageRelease",
+        status: "queued",
+        source: "bulk-rescan",
+        nextRunAt: 0,
+      };
       const env = {
         ...process.env,
         PATH: `${root}:${process.env.PATH}`,
         RUNNER_TEMP: root,
         GITHUB_SHA: "a".repeat(40),
+        CODEX_SECURITY_SCAN_WORKER_ID: "fixture-worker",
         GITHUB_OUTPUT: output,
+        TEST_DEPLOYED_SHA: "a".repeat(40),
         TEST_TOKEN_STATE: state,
         TEST_JOB_TARGET: JSON.stringify({
-          job: { targetKind: "packageRelease" },
+          job: queuedJob,
           release: {},
           package: { family: "code-plugin" },
         }),
@@ -309,10 +320,20 @@ esac
           encoding: "utf8",
         });
       await writeFile(state, "shared-fixture-token");
+      const unclaimableJobs = [
+        { ...queuedJob, source: "publish" },
+        { ...queuedJob, status: "succeeded" },
+        { ...queuedJob, status: "running" },
+        { ...queuedJob, nextRunAt: Date.now() + 60_000 },
+      ].map((job) => ({
+        TEST_JOB_TARGET: JSON.stringify({ job, release: {}, package: { family: "code-plugin" } }),
+      }));
       for (const invalid of [
+        ...unclaimableJobs,
         { CODEX_SECURITY_SCAN_ASSIGNED_JOBS: assignments(0) },
         { CODEX_SECURITY_SCAN_ASSIGNED_JOBS: assignments(4) },
         { CODEX_SECURITY_SCAN_ASSIGNED_JOBS: assignments(1, true) },
+        { TEST_DEPLOYED_SHA: "b".repeat(40) },
         { TEST_JOB_TARGET: JSON.stringify({ job: { targetKind: "skillVersion" } }) },
         {
           TEST_JOB_TARGET: JSON.stringify({
@@ -322,17 +343,56 @@ esac
           }),
         },
       ]) {
-        expect(run(prepare?.run, invalid).status).not.toBe(0);
+        expect(run(prepare?.run, invalid).status, JSON.stringify(invalid)).not.toBe(0);
         expect(await readFile(state, "utf8")).toBe("shared-fixture-token");
         await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" });
       }
-      const result = run(prepare?.run);
-      expect(result.status).toBe(0);
-      expect(await readFile(state, "utf8")).toBe("shared-fixture-token");
-      expect(await readFile(output, "utf8")).toBe("token=shared-fixture-token\n");
-      expect(result.stdout).toContain("::add-mask::shared-fixture-token");
+      for (const { count, family } of [
+        { count: 1, family: "bundle-plugin" },
+        { count: 3, family: "code-plugin" },
+      ]) {
+        const result = run(prepare?.run, {
+          CODEX_SECURITY_SCAN_ASSIGNED_JOBS: assignments(count),
+          TEST_JOB_TARGET: JSON.stringify({
+            job: queuedJob,
+            release: {},
+            package: { family },
+          }),
+        });
+        expect(result.status, result.stderr).toBe(0);
+        expect(await readFile(state, "utf8")).toBe("shared-fixture-token");
+        expect(await readFile(output, "utf8")).toBe("token=shared-fixture-token\n");
+        expect(result.stdout).toContain("::add-mask::shared-fixture-token");
+        await rm(output);
+      }
+      const verify = steps.find((step) => step.name === "Verify Staging scan results");
+      expect(verify?.if).toBe("inputs.environment == 'Staging'");
+      expect(steps.indexOf(verify!)).toBeGreaterThan(
+        steps.findIndex((step) => step.name === "Run Codex security worker"),
+      );
+      const completed = {
+        job: { ...queuedJob, status: "succeeded", workerId: "fixture-worker" },
+        release: {
+          version: "1.0.0",
+          endorAnalysis: { status: "completed", reachableFunctionCount: 0 },
+          llmAnalysis: { checkedAt: 1, verdict: "benign" },
+        },
+        package: { name: "trial-plugin", family: "code-plugin" },
+      };
+      const stored = (target: unknown) => ({ TEST_JOB_TARGET: JSON.stringify(target) });
+      const verified = run(verify?.run, stored(completed));
+      expect(verified.status, verified.stderr).toBe(0);
+      expect(verified.stdout.match(/trial-plugin/g)).toHaveLength(3);
+      for (const target of [
+        { ...completed, job: { ...completed.job, status: "queued" } },
+        { ...completed, job: { ...completed.job, workerId: "previous-worker" } },
+        { ...completed, job: { ...completed.job, leaseToken: "active-lease" } },
+        { ...completed, release: { ...completed.release, endorAnalysis: { status: "failed" } } },
+        { ...completed, release: { ...completed.release, endorAnalysis: { status: "skipped" } } },
+        { ...completed, release: { ...completed.release, llmAnalysis: undefined } },
+      ])
+        expect(run(verify?.run, stored(target)).status, JSON.stringify(target)).not.toBe(0);
       await rm(state);
-      await rm(output);
       expect(run(prepare?.run).status).not.toBe(0);
       await expect(readFile(state)).rejects.toMatchObject({ code: "ENOENT" });
       await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" });
