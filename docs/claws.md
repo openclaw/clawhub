@@ -24,6 +24,9 @@ apply to skills or plugins. Existing Claws owned by other publishers or whose
 owner loses Official status remain unavailable through public discovery and
 downloads. A stored Claw feed from before this restriction is unavailable
 until a new restricted snapshot is published.
+If `@openclaw` loses Official status, an existing nonempty Claw feed fails
+closed with `503` and `Cache-Control: no-store`. Publish a new feed snapshot
+after revocation to serve an empty eligible Claws list.
 
 ## Package shape
 
