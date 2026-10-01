@@ -113,12 +113,15 @@ describe("Vercel build plan", () => {
     },
   );
 
-  it("accepts the staging branch URL as the paired site origin", () => {
+  it.each([
+    "https://clawhub-git-staging-openclaw-foundation.vercel.app",
+    "https://stg.clawhub.openclaw.org",
+  ])("accepts %s as the paired staging site origin", (siteUrl) => {
     expect(
       resolveVercelBuildPlan({
         ...stagingEnv,
-        SITE_URL: "https://clawhub-git-staging-openclaw-foundation.vercel.app",
-        VITE_SITE_URL: "https://clawhub-git-staging-openclaw-foundation.vercel.app",
+        SITE_URL: siteUrl,
+        VITE_SITE_URL: siteUrl,
       }),
     ).toEqual([{ command: "bun", args: ["scripts/vercel-build-frontend.ts"] }]);
   });

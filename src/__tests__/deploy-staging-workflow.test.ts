@@ -170,6 +170,7 @@ describe("Staging deploy workflow", () => {
     expect(run({ STAGING_SITE_URL: "https://clawhub.com" }).status).not.toBe(0);
     expect(run({ STAGING_SITE_URL: "https://evil.example" }).status).not.toBe(0);
     expect(run({ STAGING_SITE_URL: "https://stg.clawhub.ai" }).status).toBe(0);
+    expect(run({ STAGING_SITE_URL: "https://stg.clawhub.openclaw.org" }).status).toBe(0);
     expect(run({ VERCEL_AUTOMATION_BYPASS_SECRET: "" }).status).not.toBe(0);
     expect(run({ VITE_CONVEX_SITE_URL: "https://wry-manatee-359.convex.site" }).status).not.toBe(0);
     expect(

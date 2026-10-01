@@ -2,6 +2,7 @@ export const STAGING_CONVEX_URL = "https://cheery-civet-733.convex.cloud";
 export const STAGING_CONVEX_SITE_URL = "https://cheery-civet-733.convex.site";
 const STAGING_SITE_URLS = new Set([
   "https://stg.clawhub.ai",
+  "https://stg.clawhub.openclaw.org",
   "https://clawhub-git-staging-openclaw-foundation.vercel.app",
 ]);
 

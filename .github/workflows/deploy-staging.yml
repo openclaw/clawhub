@@ -180,8 +180,9 @@ jobs:
             exit 1
           fi
           if [[ "$STAGING_SITE_URL" != https://stg.clawhub.ai &&
+                "$STAGING_SITE_URL" != https://stg.clawhub.openclaw.org &&
                 "$STAGING_SITE_URL" != https://clawhub-git-staging-openclaw-foundation.vercel.app ]]; then
-            echo "::error::SITE_URL must be the approved staging domain or branch URL"
+            echo "::error::SITE_URL must be an approved staging domain or branch URL"
             exit 1
           fi
 

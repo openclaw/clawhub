@@ -130,8 +130,9 @@ One-time target configuration:
   `VERCEL_SCOPE=openclaw-foundation`, `VITE_CONVEX_URL`,
   and `VITE_CONVEX_SITE_URL`. Set `SITE_URL` for a custom staging domain;
   otherwise the workflow uses the stable Git branch URL
-  `https://clawhub-git-staging-openclaw-foundation.vercel.app`. The only allowed
-  custom domain is `https://stg.clawhub.ai`. Set secrets
+  `https://clawhub-git-staging-openclaw-foundation.vercel.app`. Allowed custom
+  domains are `https://stg.clawhub.openclaw.org` (temporary public hostname)
+  and `https://stg.clawhub.ai` (pending DNS verification). Set secrets
   `CONVEX_DEPLOY_KEY`, `VERCEL_DEPLOY_HOOK_URL`, and
   `VERCEL_AUTOMATION_BYPASS_SECRET`. The bypass secret lets the API and UI smoke
   tests reach SSO-protected Preview URLs.
