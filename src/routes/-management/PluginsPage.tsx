@@ -3,6 +3,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { familyLabel } from "../../lib/packageLabels";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
+import { ManagedMcpTools } from "./ManagedMcpTools";
 import { formatTimestamp, type PluginByNameResult } from "./managementShared";
 
 type PluginPackageId = NonNullable<NonNullable<PluginByNameResult>["package"]>["_id"];
@@ -14,6 +15,7 @@ export function PluginsPage({
   onChangePluginSearch,
   onManagePlugin,
   onSetPackageBatch,
+  isAdmin,
 }: {
   pluginSearch: string;
   selectedPlugin: PluginByNameResult | undefined;
@@ -21,6 +23,7 @@ export function PluginsPage({
   onChangePluginSearch: (value: string) => void;
   onManagePlugin: () => void;
   onSetPackageBatch: (packageId: PluginPackageId, batch: "highlighted" | undefined) => void;
+  isAdmin?: boolean;
 }) {
   return (
     <div className="management-view">
@@ -28,6 +31,7 @@ export function PluginsPage({
       <p className="section-subtitle m-0 mt-1">
         Look up a plugin package to open its moderation tooling.
       </p>
+      {isAdmin ? <ManagedMcpTools packageName={selectedPluginName} /> : null}
       <div className="management-controls">
         <div className="management-control management-search">
           <span className="mono">Package</span>
