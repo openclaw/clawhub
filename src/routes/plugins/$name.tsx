@@ -45,6 +45,7 @@ import { InlineMarkdownSummary } from "../../components/InlineMarkdownSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { PluginMcpServersPanel } from "../../components/PluginMcpServersPanel";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -520,7 +521,6 @@ type PluginManifestSummary = NonNullable<
 >;
 type BundledPluginSkill = PluginManifestSummary["bundledSkills"][number];
 type PluginConfigField = PluginManifestSummary["configFields"][number];
-type PluginMcpServer = PluginManifestSummary["mcpServers"][number];
 
 type PluginKvRowProps = {
   label: string;
@@ -593,22 +593,6 @@ function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigFiel
                 {field.sensitive ? <Badge variant="review">Sensitive</Badge> : null}
               </div>
             </article>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function PluginManifestMcpServersPanel({ servers }: { servers: PluginMcpServer[] }) {
-  return (
-    <div className="plugin-manifest-capabilities">
-      <section className="plugin-manifest-section">
-        <div className="plugin-manifest-chip-list">
-          {servers.map((server) => (
-            <Badge key={server.name} variant="compact">
-              {server.name}
-            </Badge>
           ))}
         </div>
       </section>
@@ -1302,7 +1286,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ) : null;
   const mcpServersPanel =
     pluginManifestSummary && pluginManifestSummary.mcpServers.length > 0 ? (
-      <PluginManifestMcpServersPanel servers={pluginManifestSummary.mcpServers} />
+      <PluginMcpServersPanel
+        servers={pluginManifestSummary.mcpServers}
+        packageName={pkg.name}
+        version={latestRelease?.version ?? pkg.latestVersion ?? null}
+      />
     ) : null;
   const skillsPanel =
     pluginManifestSummary && pluginManifestSummary.bundledSkills.length > 0 ? (

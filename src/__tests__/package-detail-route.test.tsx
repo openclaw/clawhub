@@ -99,6 +99,7 @@ vi.mock("convex/react", () => ({
     query = convexQueryMock;
   },
   useConvex: () => convexClientMock,
+  useAction: () => vi.fn().mockResolvedValue({ status: "unavailable", observedAt: 0 }),
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
   usePaginatedQuery: () => ({
