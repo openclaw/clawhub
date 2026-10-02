@@ -16,6 +16,7 @@ import { DeploymentDriftBanner } from "../components/DeploymentDriftBanner";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Footer } from "../components/Footer";
 import { GenericNotFoundPage } from "../components/GenericNotFoundPage";
+import { GoogleAnalytics } from "../components/GoogleAnalytics";
 import Header from "../components/Header";
 import { PromotionsBar } from "../components/PromotionsBar";
 import {
@@ -221,6 +222,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             }}
           />
           <ClientOnly>
+            <GoogleAnalytics />
             {showAnalytics ? (
               <>
                 <Analytics />

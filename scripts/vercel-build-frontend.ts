@@ -27,10 +27,15 @@ export function resolveFrontendBuildEnv(env: NodeJS.ProcessEnv) {
     VITE_CONVEX_SITE_URL: targetEnvironment === "preview" ? undefined : env.VITE_CONVEX_SITE_URL,
     VITE_CONVEX_URL: env.VITE_CONVEX_URL,
   });
+  const analyticsRelease =
+    stagingBuildSha ?? env.VERCEL_GIT_COMMIT_SHA?.trim() ?? env.VITE_APP_BUILD_SHA?.trim();
   return {
     ...env,
     VITE_CONVEX_SITE_URL: convexSiteUrl,
     VITE_CLAWHUB_DEPLOY_ENV: targetEnvironment ?? "development",
+    ...(analyticsRelease && /^[a-f0-9]{40}$/i.test(analyticsRelease)
+      ? { VITE_GA4_RELEASE: analyticsRelease }
+      : {}),
     ...(stagingBuild
       ? { VITE_APP_BUILD_SHA: stagingBuildSha, VITE_SITE_URL: env.VITE_SITE_URL }
       : {}),

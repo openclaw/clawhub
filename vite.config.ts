@@ -202,6 +202,7 @@ const config = defineConfig({
     nitro({
       serverDir: "server",
       handlers: [
+        { route: "/api/analytics-consent", handler: "./server/handlers/analyticsConsent.ts" },
         { route: "/api/**", handler: "./server/handlers/convexProxy.ts" },
         { route: "/v1/feeds/**", handler: "./server/handlers/convexProxy.ts" },
       ],

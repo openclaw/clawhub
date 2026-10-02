@@ -3,6 +3,7 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
+import { analyticsSearchFilter } from "../../lib/analyticsEvents";
 import {
   ALL_CATEGORY_KEYWORDS,
   getSkillCategoryBySlug,
@@ -12,6 +13,7 @@ import {
   navigateWithManualCatalogSearch,
   type ManualCatalogSearch,
 } from "../../lib/manualCatalogSearch";
+import { useAnalyticsSearchResults } from "../../lib/useAnalyticsSearchResults";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import {
   isExternalSkillListEntry,
@@ -419,6 +421,15 @@ export function useSkillsBrowseModel({
     return results;
   }, [activeCategory, activeTopic, baseItems, dir, hasQuery, sort]);
 
+  useAnalyticsSearchResults({
+    filter: analyticsSearchFilter(search),
+    query: search.q,
+    count: sorted.length,
+    loading: isSearching,
+    failed: searchError,
+    context: "skills",
+    complete: searchResults.length < searchLimit,
+  });
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0

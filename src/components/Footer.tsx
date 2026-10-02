@@ -11,6 +11,7 @@ import {
   OPENCLAW_ECOSYSTEM_URL,
   OPENCLAW_LOGO_URL,
 } from "../lib/nav-items";
+import { AnalyticsChoices } from "./AnalyticsChoices";
 
 const FOOTER_BRAND_MARK_SRC = "/logo-transparent.png";
 const FOOTER_EASTER_ASCII = [
@@ -348,6 +349,7 @@ export function Footer() {
         </div>
 
         <div className="footer-v2-bottom">
+          <AnalyticsChoices />
           <p className="footer-v2-copy">© 2026 OpenClaw Foundation</p>
           <p className="footer-v2-meta">
             {FOOTER_PLATFORM_LINKS.map((link, index) => (

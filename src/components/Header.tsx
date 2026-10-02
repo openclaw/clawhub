@@ -23,6 +23,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import {
+  emitPublicSearchSubmission,
+  emitAnalytics,
+  publicAnalyticsContentId,
+} from "../lib/analyticsEvents";
+import {
   getUserFacingAuthError,
   isBannedAccountAuthError,
   routeToBannedAccountPage,
@@ -299,6 +304,8 @@ export default function Header() {
   };
 
   const openSearchResults = (type?: TypeaheadSection) => {
+    if (type !== "creators")
+      emitPublicSearchSubmission(trimmedNavSearchQuery, type ?? "all", "header");
     void navigateWithManualCatalogSearch(manualCatalogSearchRef.current, () =>
       navigate({ to: "/search", search: { q: trimmedNavSearchQuery, type } }),
     );
@@ -316,6 +323,11 @@ export default function Header() {
   const navigateToTypeaheadItem = (item: TypeaheadItem) => {
     if (item.kind === "skill") {
       if (!isUnifiedNativeSkillResult(item.result)) {
+        emitAnalytics("select_content", {
+          content_type: "catalog_skill",
+          content_id: publicAnalyticsContentId("catalog_skill", item.result.result.externalId),
+          ui_location: "header",
+        });
         void navigate({ to: item.result.result.route });
         setNavSearchQuery("");
         setTypeaheadOpen(false);
@@ -330,10 +342,20 @@ export default function Header() {
         setMobileSearchOpen(false);
         return;
       }
+      emitAnalytics("select_content", {
+        content_type: "skill",
+        content_id: publicAnalyticsContentId("skill", item.result.skill._id),
+        ui_location: "header",
+      });
       void navigate({
         to: buildSkillDetailHref(resultOwnerHandle, item.result.skill.slug),
       });
     } else if (item.kind === "plugin") {
+      emitAnalytics("select_content", {
+        content_type: "plugin",
+        content_id: publicAnalyticsContentId("plugin", item.result.plugin.name),
+        ui_location: "header",
+      });
       void navigate({
         to: buildPluginDetailHref(item.result.plugin.name, {
           ownerHandle: item.result.plugin.ownerHandle,

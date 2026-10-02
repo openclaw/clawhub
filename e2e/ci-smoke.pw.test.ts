@@ -3,6 +3,34 @@ import { stubExternalMediaInVitePreview } from "./helpers/externalMedia";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 import { routeVercelProtectionBypass } from "./helpers/vercelProtection";
 
+test("regional analytics policy is uncached and rejects client geography spoofing", async ({
+  page,
+}) => {
+  await routeVercelProtectionBypass(page);
+  const response = await page.goto("/api/analytics-consent");
+  expect(response?.status()).toBe(200);
+  const policy = await response!.json();
+  expect(Object.keys(policy).sort()).toEqual(["policy_version", "region_class", "schema_version"]);
+  expect(policy.schema_version).toBe(1);
+  expect(policy.policy_version).toBe("2026-10-02.v2");
+  expect(["opt_in", "notice_opt_out", "unknown"]).toContain(policy.region_class);
+  expect(response!.headers()["cache-control"]).toContain("private");
+  expect(response!.headers()["cache-control"]).toContain("no-store");
+
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(page.url()).hostname);
+  if (!local)
+    expect(
+      policy.region_class,
+      "Hosted deployment must provide trusted platform geography",
+    ).not.toBe("unknown");
+  for (const country of ["GB", "US", "ZZ"]) {
+    await page.setExtraHTTPHeaders({ "x-vercel-ip-country": country });
+    const probe = await page.goto("/api/analytics-consent");
+    expect(probe?.status()).toBe(200);
+    expect(await probe!.json()).toEqual(policy);
+  }
+});
+
 test("framework hydration scripts use the response CSP nonce", async ({ page }) => {
   await routeVercelProtectionBypass(page);
   await stubExternalMediaInVitePreview(page);
