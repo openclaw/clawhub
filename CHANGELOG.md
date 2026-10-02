@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Refresh the bundled autoreview skill from its canonical source so reviews no longer require TruffleHog.
+
 ## 0.24.0 - 2026-09-30
 
 ### Changes
