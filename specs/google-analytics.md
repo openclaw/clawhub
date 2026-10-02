@@ -179,6 +179,11 @@ values must never enter its stdout or receipt.
 The browser proof proxy uses the same native fetch transport as the protected
 HTTP checks. Authenticated redirects are never followed; decoded response bytes
 retain security/cache headers and separate cookies when fulfilled into the browser.
+Normal production UI smoke uses a separate Playwright fixture that applies GPC
+before application scripts, preserving all supplied auth cookies and storage. It
+also aborts and fails on any Google request, including in explicitly created auth
+contexts. This applies only to automated smoke at the exact production origin;
+the separately authorized GA acceptance harness and real visitor policy are unchanged.
 `VITE_GA4_RELEASE` comes from the validated deployment Git SHA and does not change the
 existing application drift banner. User-provided-data activation
 must be off; an unrelated internal SDK capability flag is not proof of activation.
