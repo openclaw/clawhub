@@ -55,17 +55,20 @@ until navigation without changing its destination; ordinary public outbound rema
 native. Sanitized config and application fields are necessary but do not prove that
 native or previously queued requests are safe. Browser tests inspect delayed flushes.
 
-## Regional Google Analytics choices
+## Saved Google Analytics consent
 
 Approved shared policy version: `2026-10-02.v2`.
 
-- EEA + GB + CH and EU territories AX/GF/GP/MQ/RE/YT/MF require opt-in (39 codes).
-- Other validated, trusted ISO countries use notice/opt-out.
-- Unknown region requires explicit choice; an explicit allow can grant collection.
+The notice, dialog and footer control have been removed at the user's request.
+Only a still-valid previously saved explicit grant permits collection. No regional
+classification can create a new grant without a notice. This reduces measured
+traffic to existing explicit opt-ins; new visitors and prior notice-only visitors
+remain off. The nonvisible storage, expiry, privacy-signal and navigation gates stay
+in place. Existing v2 records and their original 180-day lifetime are unchanged.
+
 - GPC, DNT `1`, explicit deny, and storage failure override all grants.
-- Explicit choices are versioned, origin-local, and expire after 180 days.
-- Old-version, malformed, or expired stored choices fail closed until a fresh choice.
-- A late region response cannot override a choice. Default-on is not an explicit grant.
+- Old-version, malformed, expired or missing choices remain off without renewal prompts.
+- The retained regional endpoint is metadata only for this stricter collection gate.
 
 The uncached same-origin `GET /api/analytics-consent` returns schema/policy versions
 and a region class only. It does not return or log IP/country, create tracking cookies,
@@ -73,13 +76,9 @@ or contact a geolocation vendor. Vercel execution plus approved server policy is
 required to trust `x-vercel-ip-country`; missing/reserved/malformed values are unknown.
 Actual header availability and spoof resistance remain deployment acceptance gates.
 
-The footer control and non-blocking notice use the approved common copy, equal buttons,
-and an accessible inline privacy disclosure. The choice applies to Google Analytics
-only; it explicitly preserves Vercel and basic server counts. Closing is not consent. A GPC/DNT or permission panel is not a displayed regional
-notice; after a signal is removed, the actual regional notice must be shown before
-a first default-on grant.
-GPC/DNT cannot be silently overridden. Reading/writing storage failures keep collection
-off and explain the problem.
+No analytics UI is rendered and no replacement popup or privacy destination is
+introduced. Existing footer links and Vercel/basic counts are preserved. GPC/DNT
+cannot be silently overridden, and storage failures keep collection off.
 
 Basic Consent Mode holds the SDK and all measurement until allowed. Queue denied
 analytics/advertising defaults before config/events; grant only analytics. Keep Google
@@ -91,8 +90,7 @@ Actual SDK chronology distinguishes events captured with valid consent before de
 from new denied-state events. A pre-decline public batch can finish delivery later;
 this is not new private collection. Do not automatically reload or discard drafts.
 Tests must prove no fresh denied app/native capture, cookies, or later replay after
-regrant. Persisted denial propagates to same-origin tabs. If persistence fails, keep
-this tab denied and explicitly state the choice may not survive another tab/visit.
+regrant. Persisted denial propagates to same-origin tabs. If storage fails, keep this tab denied; the controller must not invent a saved choice.
 
 Web Vitals observers register only after an eligible gate. A valid explicit grant
 whose saved timestamp is no later than this document’s `performance.timeOrigin`

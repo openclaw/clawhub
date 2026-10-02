@@ -11,24 +11,20 @@ ClawHub keeps website Google Analytics choices separate from CLI install telemet
 
 ## Website Google Analytics
 
-Where enabled, **Google Analytics choices** in the footer controls optional Google
-Analytics for page visits, public content and link metadata, selected interactions,
-filtered public searches, and performance. It does not send visitor account identity,
-private messages, other typed form contents, copied text, or raw error messages.
-It is not used for advertising. Existing Vercel analytics and basic server traffic
-counts continue separately.
+Google Analytics stays off unless a still-valid allow choice was previously saved on
+this site. Saved denials and GPC/DNT browser privacy signals are honored. A missing,
+expired, invalid, or unreadable choice leaves analytics off, regardless of region.
+Existing choices keep their original expiry, up to 180 days.
 
-Visitors in the EEA, UK, Switzerland, and covered EU territories must allow Google Analytics first. Other
-validated regions receive a notice and can turn it off. If the site cannot establish
-a trusted region, analytics remains off unless explicitly allowed. GPC and DNT privacy
-signals override an allow choice. Your explicit choice is saved on this origin for
-up to 180 days; each ecosystem site keeps its own choice.
+When allowed, Google Analytics measures page visits, public content and link metadata,
+selected interactions, filtered public searches, and performance. It does not send
+visitor account identity, private messages, other typed form contents, copied text,
+or raw error messages. It is not used for advertising. Existing Vercel analytics and
+basic server traffic counts continue separately.
 
-Turning Google Analytics off stops new collection on this site. Events already
-collected while allowed may finish sending, and sent information is not recalled.
-A saved change applies to other open tabs on the same site. Withdrawal does not reload
-the page or discard unsaved work. If the choice cannot be saved, this tab remains off,
-but the choice may not carry over to another tab or visit.
+Events already collected while allowed may finish sending; sent information is not
+recalled. Saved denials apply to other open tabs on the same site without reloading
+the page or discarding unsaved work.
 
 The shared property is configured for 14-month event-level exploration retention and
 14-month user-associated retention, with the latter timer reset by new activity.
