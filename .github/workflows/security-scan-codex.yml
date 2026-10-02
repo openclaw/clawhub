@@ -44,6 +44,27 @@ permissions:
   packages: read
 
 jobs:
+  dispatch-staging:
+    if: >-
+      github.repository == 'openclaw/clawhub' &&
+      github.event_name == 'repository_dispatch' &&
+      github.event.client_payload.environment == 'staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch staging worker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BATCH_LIMIT: ${{ github.event.client_payload.batch_limit || '2' }}
+          MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || '12' }}
+        run: |
+          set -euo pipefail
+          gh workflow run security-scan-codex.yml --repo openclaw/clawhub --ref staging \
+            -f batch-limit="$BATCH_LIMIT" \
+            -f max-runtime-minutes="$MAX_RUNTIME_MINUTES"
+
   codex-security-scan:
     if: >-
       github.repository == 'openclaw/clawhub' &&
