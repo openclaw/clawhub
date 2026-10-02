@@ -340,7 +340,7 @@ export function assertFreshPreviewCache(headers: Headers) {
 
 type PreviewRouteFailure = {
   path_class: "unknown" | "home" | "asset" | "api" | "other" | "external" | "google";
-  phase: "classify" | "fetch" | "redirect" | "fulfill" | "continue" | "abort";
+  phase: "classify" | "fetch" | "redirect" | "read" | "fulfill" | "continue" | "abort";
   status: number | null;
   elapsed_ms: number;
 };
@@ -352,6 +352,7 @@ export async function routePreviewRequest(
   google: Array<{ host: string; path: string }>,
   errors: string[],
   failures: PreviewRouteFailure[] = [],
+  fetchImpl: typeof fetch = fetch,
 ) {
   const started = Date.now();
   let recorded = false;
@@ -393,20 +394,35 @@ export async function routePreviewRequest(
       failure.phase = "fetch";
       // Existing job credential stays on this origin. Never follow an authenticated
       // redirect or pass it to a third-party browser request; do not record headers.
-      const response = await route.fetch({
-        headers: { ...route.request().headers(), "x-vercel-protection-bypass": credential },
-        maxRedirects: 0,
-        timeout: 20_000,
+      const request = route.request();
+      const postData = request.postDataBuffer();
+      // Use the same native fetch transport as the successful protected HTTP
+      // reads. Reject redirects: the credential must never follow one.
+      const response = await fetchImpl(url.href, {
+        method: request.method(),
+        headers: { ...(await request.allHeaders()), "x-vercel-protection-bypass": credential },
+        body: postData ? Uint8Array.from(postData).buffer : undefined,
+        redirect: "error",
+        signal: AbortSignal.timeout(20_000),
       });
-      const status = response.status();
+      const status = response.status;
       failure.status = Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
-      if (response.status() >= 300 && response.status() < 400) {
+      if (status >= 300 && status < 400) {
         failure.phase = "redirect";
         recordFailure();
         await route.abort();
       } else {
+        failure.phase = "read";
+        const body = Buffer.from(await response.arrayBuffer());
+        const headers = Object.fromEntries(response.headers);
+        // Fetch decoded the payload; don't ask the browser to decode it again.
+        delete headers["content-encoding"];
+        delete headers["content-length"];
+        delete headers["transfer-encoding"];
+        const cookies = response.headers.getSetCookie();
+        if (cookies.length) headers["set-cookie"] = cookies.join("\n");
         failure.phase = "fulfill";
-        await route.fulfill({ response });
+        await route.fulfill({ status, headers, body });
       }
     } else {
       failure.path_class = "external";

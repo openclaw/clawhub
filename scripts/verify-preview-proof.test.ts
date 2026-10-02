@@ -92,71 +92,92 @@ describe("exact-head preview proof orchestration", () => {
 
 // This is a dummy canary, never a real credential. Check the bytes of the exact
 // receipt path uploaded by the workflow, as well as the final stdout writer.
-it.each(["timeout", "network", "browser-timeout", "browser-network", "non-error-rejection"])(
-  "discards credential-bearing %s failures before final receipt and stdout",
-  async (kind) => {
-    const { mkdir, mkdtemp, readFile, rm } = await import("node:fs/promises");
-    await mkdir(".artifacts", { recursive: true });
-    const dir = await mkdtemp(".artifacts/preview-proof-canary-");
-    const canary = "DUMMY_READ_CREDENTIAL_CANARY_51204";
-    const raw = `${kind}\nCall log:\n - x-vercel-protection-bypass: ${canary}`;
-    const stdout: string[] = [];
-    const fetchImpl = vi.fn<typeof fetch>();
-    const analyticsProof = vi.fn();
-    if (kind.startsWith("browser-")) {
-      fetchImpl
-        .mockResolvedValueOnce(Response.json(detail))
-        .mockResolvedValueOnce(new Response("# Skill"))
-        .mockResolvedValueOnce(new Response("<title>ClawHub</title>"));
-      analyticsProof.mockImplementation(async (_origin, _credential, _sha, evidence) => {
-        const errors: string[] = [];
-        const failures: Parameters<typeof routePreviewRequest>[5] = [];
-        evidence.browser_route_failures = failures;
-        const route = {
-          request: () => ({
-            url: () => `${origin}/api/private-${canary}?secret=${canary}`,
-            headers: () => ({}),
+it.each([
+  "timeout",
+  "network",
+  "browser-timeout",
+  "browser-network",
+  "browser-read",
+  "browser-fulfill",
+  "non-error-rejection",
+])("discards credential-bearing %s failures before final receipt and stdout", async (kind) => {
+  const { mkdir, mkdtemp, readFile, rm } = await import("node:fs/promises");
+  await mkdir(".artifacts", { recursive: true });
+  const dir = await mkdtemp(".artifacts/preview-proof-canary-");
+  const canary = "DUMMY_READ_CREDENTIAL_CANARY_51204";
+  const raw = `${kind}\nCall log:\n - x-vercel-protection-bypass: ${canary}`;
+  const stdout: string[] = [];
+  const fetchImpl = vi.fn<typeof fetch>();
+  const analyticsProof = vi.fn();
+  if (kind.startsWith("browser-")) {
+    fetchImpl
+      .mockResolvedValueOnce(Response.json(detail))
+      .mockResolvedValueOnce(new Response("# Skill"))
+      .mockResolvedValueOnce(new Response("<title>ClawHub</title>"));
+    analyticsProof.mockImplementation(async (_origin, _credential, _sha, evidence) => {
+      const errors: string[] = [];
+      const failures: Parameters<typeof routePreviewRequest>[5] = [];
+      evidence.browser_route_failures = failures;
+      const route = {
+        request: () => ({
+          url: () => `${origin}/api/private-${canary}?secret=${canary}`,
+          allHeaders: async () => ({}),
+          method: () => "GET",
+          postDataBuffer: () => null,
+        }),
+        abort: vi.fn().mockResolvedValue(undefined),
+        fulfill: vi.fn().mockRejectedValue(new Error(raw)),
+      } as unknown as Route;
+      const browserFetch = vi.fn<typeof fetch>();
+      if (kind === "browser-read") {
+        const response = new Response("body");
+        vi.spyOn(response, "arrayBuffer").mockRejectedValue(new Error(raw));
+        browserFetch.mockResolvedValue(response);
+      } else if (kind === "browser-fulfill") browserFetch.mockResolvedValue(new Response("body"));
+      else
+        browserFetch.mockRejectedValue(
+          Object.assign(new Error(raw), {
+            name: kind === "browser-timeout" ? "TimeoutError" : "Error",
           }),
-          fetch: vi.fn().mockRejectedValue(
-            Object.assign(new Error(raw), {
-              name: kind === "browser-timeout" ? "TimeoutError" : "Error",
-            }),
-          ),
-          abort: vi.fn().mockResolvedValue(undefined),
-        } as unknown as Route;
-        await routePreviewRequest(route, origin, canary, [], errors, failures);
-        expect(errors).toEqual(["BROWSER_ROUTE_FAILED"]);
-        expect(failures).toEqual([
-          { path_class: "api", phase: "fetch", status: null, elapsed_ms: expect.any(Number) },
-        ]);
-        if (errors.length) throw new PreviewProofFailure("BROWSER_ROUTE_FAILED");
-      });
-    } else fetchImpl.mockRejectedValue(kind === "non-error-rejection" ? raw : new Error(raw));
-    try {
-      const result = await runAndWritePreviewProof(
+        );
+      await routePreviewRequest(route, origin, canary, [], errors, failures, browserFetch);
+      expect(errors).toEqual(["BROWSER_ROUTE_FAILED"]);
+      expect(failures).toEqual([
         {
-          env: { ...env, VERCEL_AUTOMATION_BYPASS_SECRET: canary },
-          fetchImpl,
-          analyticsProof,
-          readHead: () => sha,
+          path_class: "api",
+          phase:
+            kind === "browser-read" ? "read" : kind === "browser-fulfill" ? "fulfill" : "fetch",
+          status: kind === "browser-read" || kind === "browser-fulfill" ? 200 : null,
+          elapsed_ms: expect.any(Number),
         },
-        `${dir}/preview-proof.json`,
-        (text) => stdout.push(text),
-      );
-      const bytes = await readFile(`${dir}/preview-proof.json`, "utf8");
-      expect(result.status).toBe("failed");
-      expect(JSON.parse(bytes).error_code).toBeTypeOf("string");
-      for (const output of [bytes, ...stdout]) {
-        expect(output).not.toContain(canary);
-        expect(output).not.toContain("x-vercel-protection-bypass");
-        expect(output).not.toContain("Call log");
-        expect(output).not.toContain("stack");
-      }
-    } finally {
-      await rm(dir, { recursive: true, force: true });
+      ]);
+      if (errors.length) throw new PreviewProofFailure("BROWSER_ROUTE_FAILED");
+    });
+  } else fetchImpl.mockRejectedValue(kind === "non-error-rejection" ? raw : new Error(raw));
+  try {
+    const result = await runAndWritePreviewProof(
+      {
+        env: { ...env, VERCEL_AUTOMATION_BYPASS_SECRET: canary },
+        fetchImpl,
+        analyticsProof,
+        readHead: () => sha,
+      },
+      `${dir}/preview-proof.json`,
+      (text) => stdout.push(text),
+    );
+    const bytes = await readFile(`${dir}/preview-proof.json`, "utf8");
+    expect(result.status).toBe("failed");
+    expect(JSON.parse(bytes).error_code).toBeTypeOf("string");
+    for (const output of [bytes, ...stdout]) {
+      expect(output).not.toContain(canary);
+      expect(output).not.toContain("x-vercel-protection-bypass");
+      expect(output).not.toContain("Call log");
+      expect(output).not.toContain("stack");
     }
-  },
-);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 it("fails closed rather than publishing returned data containing the read credential", async () => {
   const { mkdir, mkdtemp, readFile, rm } = await import("node:fs/promises");

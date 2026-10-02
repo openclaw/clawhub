@@ -176,6 +176,9 @@ independent exact canonical origin and production deployment checks still block
 collection. Route failure evidence contains only fixed path/phase categories,
 numeric status/timing, and at most 32 diagnostic entries; raw errors and credential
 values must never enter its stdout or receipt.
+The browser proof proxy uses the same native fetch transport as the protected
+HTTP checks. Authenticated redirects are never followed; decoded response bytes
+retain security/cache headers and separate cookies when fulfilled into the browser.
 `VITE_GA4_RELEASE` comes from the validated deployment Git SHA and does not change the
 existing application drift banner. User-provided-data activation
 must be off; an unrelated internal SDK capability flag is not proof of activation.

@@ -96,21 +96,34 @@ it.each([
   "retains only bounded %s diagnostics and confines authenticated redirects",
   async (phase, url, pathClass, status) => {
     const raw = new Error("PRIVATE header and redirect value");
-    const response = { status: () => status };
+    const response = new Response("OK", { status: status ?? 200 });
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        phase === "fetch" ? Promise.reject(raw) : Promise.resolve(response),
+      );
     const route = {
-      request: () => ({ url: () => url, headers: () => ({}) }),
-      fetch: vi
-        .fn()
-        .mockImplementation(() =>
-          phase === "fetch" ? Promise.reject(raw) : Promise.resolve(response),
-        ),
+      request: () => ({
+        url: () => url,
+        allHeaders: async () => ({}),
+        method: () => "GET",
+        postDataBuffer: () => null,
+      }),
       fulfill: vi.fn().mockRejectedValue(raw),
       continue: vi.fn().mockRejectedValue(raw),
       abort: vi.fn().mockResolvedValue(undefined),
     };
     const errors: string[] = [];
     const failures: Parameters<typeof routePreviewRequest>[5] = [];
-    await routePreviewRequest(route as unknown as Route, origin, "PRIVATE", [], errors, failures);
+    await routePreviewRequest(
+      route as unknown as Route,
+      origin,
+      "PRIVATE",
+      [],
+      errors,
+      failures,
+      fetchImpl,
+    );
     expect(errors).toEqual(["BROWSER_ROUTE_FAILED"]);
     expect(failures).toEqual([
       { path_class: pathClass, phase, status, elapsed_ms: expect.any(Number) },
@@ -118,12 +131,14 @@ it.each([
     expect(failures[0].elapsed_ms).toBeGreaterThanOrEqual(0);
     expect(failures[0].elapsed_ms).toBeLessThanOrEqual(60_000);
     expect(JSON.stringify(failures)).not.toMatch(/PRIVATE|secret|https|header/);
-    if (phase === "continue") expect(route.fetch).not.toHaveBeenCalled();
+    if (phase === "continue") expect(fetchImpl).not.toHaveBeenCalled();
     else
-      expect(route.fetch).toHaveBeenCalledExactlyOnceWith({
+      expect(fetchImpl).toHaveBeenCalledExactlyOnceWith(url, {
+        method: "GET",
+        body: undefined,
         headers: { "x-vercel-protection-bypass": "PRIVATE" },
-        maxRedirects: 0,
-        timeout: 20_000,
+        redirect: "error",
+        signal: expect.any(AbortSignal),
       });
     if (phase === "redirect") {
       expect(route.fulfill).not.toHaveBeenCalled();
@@ -135,15 +150,83 @@ it.each([
 it("bounds retained route failures while every failure still fails the proof", async () => {
   const errors: string[] = [];
   const failures: Parameters<typeof routePreviewRequest>[5] = [];
+  const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error("not retained"));
   const route = {
-    request: () => ({ url: () => origin, headers: () => ({}) }),
-    fetch: vi.fn().mockRejectedValue(new Error("not retained")),
+    request: () => ({
+      url: () => origin,
+      allHeaders: async () => ({}),
+      method: () => "GET",
+      postDataBuffer: () => null,
+    }),
     abort: vi.fn().mockResolvedValue(undefined),
   };
   for (let index = 0; index < 33; index++)
-    await routePreviewRequest(route as unknown as Route, origin, "PRIVATE", [], errors, failures);
+    await routePreviewRequest(
+      route as unknown as Route,
+      origin,
+      "PRIVATE",
+      [],
+      errors,
+      failures,
+      fetchImpl,
+    );
   expect(errors).toHaveLength(33);
   expect(failures).toHaveLength(32);
+});
+
+it("fulfills decoded bytes and separate cookies without changing security/cache headers", async () => {
+  const response = new Response("decoded document", {
+    headers: {
+      "content-type": "text/html",
+      "content-encoding": "gzip",
+      "content-length": "99",
+      "transfer-encoding": "chunked",
+      "cache-control": "private, no-store",
+      "content-security-policy": "default-src 'self'",
+    },
+  });
+  response.headers.append("set-cookie", "first=1; Path=/; HttpOnly");
+  response.headers.append("set-cookie", "second=2; Path=/; HttpOnly");
+  const binaryRequest = Buffer.from([9, 9, 0, 255, 128, 1, 9]).subarray(2, 6);
+  const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response);
+  const route = {
+    request: () => ({
+      url: () => origin,
+      allHeaders: async () => ({ cookie: "first=1; second=2" }),
+      method: () => "POST",
+      postDataBuffer: () => binaryRequest,
+    }),
+    fulfill: vi.fn().mockResolvedValue(undefined),
+    abort: vi.fn(),
+  };
+  const errors: string[] = [];
+  await routePreviewRequest(
+    route as unknown as Route,
+    origin,
+    "PRIVATE",
+    [],
+    errors,
+    [],
+    fetchImpl,
+  );
+  expect(errors).toEqual([]);
+  expect(fetchImpl.mock.calls[0][1]?.method).toBe("POST");
+  expect(fetchImpl.mock.calls[0][1]?.headers).toEqual({
+    cookie: "first=1; second=2",
+    "x-vercel-protection-bypass": "PRIVATE",
+  });
+  expect(Buffer.from(fetchImpl.mock.calls[0][1]?.body as ArrayBuffer)).toEqual(binaryRequest);
+  expect(route.fulfill).toHaveBeenCalledExactlyOnceWith({
+    status: 200,
+    body: Buffer.from("decoded document"),
+    headers: {
+      "content-type": "text/html",
+      "cache-control": "private, no-store",
+      "content-security-policy": "default-src 'self'",
+      "set-cookie": "first=1; Path=/; HttpOnly\nsecond=2; Path=/; HttpOnly",
+    },
+  });
+  expect(route.abort).not.toHaveBeenCalled();
 });
 
 it("drains pending route work before context disposal and preserves failures", async () => {
