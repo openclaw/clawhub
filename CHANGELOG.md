@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Refresh the bundled autoreview skill from its canonical source so reviews no longer require TruffleHog.
+- Use one shared autoreview installation from `openclaw/agent-skills`; repository entrypoints now receive upstream fixes without copied helpers or test suites.
 
 ## 0.24.0 - 2026-09-30
 
