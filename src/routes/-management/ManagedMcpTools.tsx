@@ -1,7 +1,7 @@
 import { PLUGIN_CATEGORY_DEFINITIONS, type ManagedMcpDefinition } from "clawhub-schema";
 import { useAction } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "../../components/ui/button";
 import {
@@ -211,12 +211,60 @@ function ManagedMcpForm({
   const [auth, setAuth] = useState<string>(initial?.connection.auth.kind ?? "oauth");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [iconPreview, setIconPreview] = useState(initial?.icon.pngBase64 ?? "");
+  const [iconReading, setIconReading] = useState(false);
+  const [iconError, setIconError] = useState("");
+  const [iconLicense, setIconLicense] = useState(initial?.icon.license ?? "");
+  const [iconAttribution, setIconAttribution] = useState(initial?.icon.attribution ?? "");
+  const [iconSourceUrl, setIconSourceUrl] = useState(initial?.icon.sourceUrl ?? "");
+  const [iconLicenseUrl, setIconLicenseUrl] = useState(initial?.icon.licenseUrl ?? "");
+  const iconReader = useRef<FileReader | null>(null);
+  useEffect(() => () => iconReader.current?.abort(), []);
   const nextVersion = initial
     ? initial.version.replace(/\d+$/, (patch) => String(Number(patch) + 1))
     : "1.0.0";
 
+  function selectIcon(file?: File) {
+    iconReader.current?.abort();
+    setIconError("");
+    setIconReading(false);
+    if (!file) {
+      setIconPreview(initial?.icon.pngBase64 ?? "");
+      setIconLicense(initial?.icon.license ?? "");
+      setIconAttribution(initial?.icon.attribution ?? "");
+      setIconSourceUrl(initial?.icon.sourceUrl ?? "");
+      setIconLicenseUrl(initial?.icon.licenseUrl ?? "");
+      return;
+    }
+    setIconPreview("");
+    // A replacement asset does not inherit the previous image's license or attribution.
+    setIconLicense("");
+    setIconAttribution("");
+    setIconSourceUrl("");
+    setIconLicenseUrl("");
+    if (file.size > 512 * 1024 || file.type !== "image/png") {
+      setIconError("Choose a PNG icon no larger than 512KB.");
+      return;
+    }
+    setIconReading(true);
+    const reader = new FileReader();
+    iconReader.current = reader;
+    reader.addEventListener("load", () => {
+      if (iconReader.current !== reader) return;
+      setIconPreview(typeof reader.result === "string" ? (reader.result.split(",")[1] ?? "") : "");
+      setIconReading(false);
+    });
+    reader.addEventListener("error", () => {
+      if (iconReader.current !== reader) return;
+      setIconError("Could not read icon.");
+      setIconReading(false);
+    });
+    reader.readAsDataURL(file);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (iconReading || iconError) return;
     setBusy(true);
     setError("");
     const data = new FormData(event.currentTarget);
@@ -225,25 +273,6 @@ function ManagedMcpForm({
       return typeof value === "string" ? value : "";
     };
     try {
-      let pngBase64 = initial?.icon.pngBase64 ?? "";
-      const file = data.get("icon");
-      if (file instanceof File && file.size) {
-        if (file.size > 512 * 1024 || file.type !== "image/png")
-          throw new Error("Choose a PNG icon no larger than 512KB.");
-        pngBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.addEventListener(
-            "load",
-            () =>
-              resolve(typeof reader.result === "string" ? (reader.result.split(",")[1] ?? "") : ""),
-            { once: true },
-          );
-          reader.addEventListener("error", () => reject(new Error("Could not read icon.")), {
-            once: true,
-          });
-          reader.readAsDataURL(file);
-        });
-      }
       const definition = {
         id: text("id"),
         name: text("name"),
@@ -252,7 +281,13 @@ function ManagedMcpForm({
         category: text("category"),
         version: text("version"),
         ...(text("setup") ? { setup: text("setup") } : {}),
-        icon: { pngBase64, license: text("iconLicense"), attribution: text("iconAttribution") },
+        icon: {
+          pngBase64: iconPreview,
+          license: iconLicense,
+          attribution: iconAttribution,
+          ...(iconSourceUrl ? { sourceUrl: iconSourceUrl } : {}),
+          ...(iconLicenseUrl ? { licenseUrl: iconLicenseUrl } : {}),
+        },
         connection: {
           url: text("url"),
           transport: text("transport"),
@@ -385,28 +420,58 @@ function ManagedMcpForm({
           type="file"
           accept="image/png"
           required={!initial}
+          onChange={(event) => selectIcon(event.currentTarget.files?.[0])}
         />
-        {initial ? (
-          <img
-            src={`data:image/png;base64,${initial.icon.pngBase64}`}
-            width="40"
-            height="40"
-            alt="Current integration icon"
-          />
+        {iconReading ? <p role="status">Reading icon…</p> : null}
+        {iconError ? <p role="alert">{iconError}</p> : null}
+        {iconPreview ? (
+          <figure className="m-0 flex items-center gap-3">
+            <img
+              src={`data:image/png;base64,${iconPreview}`}
+              width="64"
+              height="64"
+              className="object-contain"
+              alt="Icon for this version"
+              onError={() => setIconError("This image could not be displayed. Choose a valid PNG.")}
+            />
+            <figcaption className="section-subtitle m-0">Icon for this version</figcaption>
+          </figure>
         ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField
-            label="Icon license"
+          <Field
+            label="Icon license or rights"
             name="iconLicense"
-            defaultValue={initial?.icon.license ?? "MIT"}
-            items={["MIT"].map((value) => ({ value, label: value }))}
+            value={iconLicense}
+            onChange={(event) => setIconLicense(event.currentTarget.value)}
+            placeholder="MIT or provider brand terms"
           />
           <Field
             label="Icon attribution"
             name="iconAttribution"
-            defaultValue={initial?.icon.attribution}
+            value={iconAttribution}
+            onChange={(event) => setIconAttribution(event.currentTarget.value)}
+          />
+          <Field
+            label="Official icon source URL"
+            name="iconSourceUrl"
+            type="url"
+            value={iconSourceUrl}
+            required={iconLicense !== "MIT"}
+            onChange={(event) => setIconSourceUrl(event.currentTarget.value)}
+          />
+          <Field
+            label="Icon license or brand terms URL"
+            name="iconLicenseUrl"
+            type="url"
+            value={iconLicenseUrl}
+            required={iconLicense !== "MIT"}
+            onChange={(event) => setIconLicenseUrl(event.currentTarget.value)}
           />
         </div>
+        <p className="section-subtitle m-0">
+          Company logos keep their own rights and attribution. The wrapper’s MIT license does not
+          license the logo.
+        </p>
         <label className="flex items-start gap-2 text-sm">
           <input className="mt-1" type="checkbox" required />I have the rights to publish this
           wrapper and icon under their stated licenses.
@@ -417,7 +482,7 @@ function ManagedMcpForm({
         Normal publication checks apply. Scanning the package does not certify the remote service or
         its future tools.
       </p>
-      <Button type="submit" disabled={busy}>
+      <Button type="submit" disabled={busy || iconReading || Boolean(iconError)}>
         {busy ? "Submitting…" : "Publish version"}
       </Button>
     </form>
