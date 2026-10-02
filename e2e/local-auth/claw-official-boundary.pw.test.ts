@@ -242,7 +242,7 @@ async function searchNames(request: APIRequestContext, registry: string, slug: s
   return body.results.map((item) => item.package.name);
 }
 
-test("current Official @openclaw owns every Claw publish and public-read boundary", async ({
+test("the official catalog stays @openclaw-only while gated direct Claw access remains available", async ({
   request,
 }) => {
   const registry = registryUrl();
@@ -271,8 +271,34 @@ test("current Official @openclaw owns every Claw publish and public-read boundar
       community,
       "claw",
     );
-    expect(communityPublish.status()).toBe(400);
-    expect(await communityPublish.text()).toContain("limited to the @openclaw publisher");
+    expect(communityPublish.status(), await communityPublish.text()).toBe(200);
+    expect((await communityPublish.json()) as Record<string, unknown>).toMatchObject({
+      publicationStatus: "pending",
+      artifactSha256: community.sha256,
+    });
+    await completeMockPrePublicationChecks({
+      kind: "package",
+      slug: community.name,
+      version: community.version,
+    });
+    const communityUrl = `${registry}/api/v1/packages/${encodeURIComponent(community.name)}`;
+    const communityRead = await request.get(communityUrl);
+    expect(communityRead.status(), await communityRead.text()).toBe(200);
+    expect((await communityRead.json()) as Record<string, unknown>).toMatchObject({
+      package: { name: community.name, family: "claw", channel: "community" },
+    });
+    const communityArtifact = await request.get(
+      `${communityUrl}/versions/${community.version}/artifact/download`,
+    );
+    expect(communityArtifact.status(), await communityArtifact.text()).toBe(200);
+    expect(
+      createHash("sha256")
+        .update(await communityArtifact.body())
+        .digest("hex"),
+    ).toBe(community.sha256);
+    expect(await searchNames(request, registry, community.name.split("/")[1] ?? "")).not.toContain(
+      community.name,
+    );
 
     const admitted = await publishPackage(request, registry, tokens.admin.token, visible, "claw");
     expect(admitted.status(), await admitted.text()).toBe(200);
@@ -330,6 +356,7 @@ test("current Official @openclaw owns every Claw publish and public-read boundar
         publisher: { id: "openclaw", trust: "official" },
       }),
     );
+    expect(feedBody.entries.map((entry) => entry.id)).not.toContain(community.name);
 
     const raceAdmission = await publishPackage(request, registry, tokens.admin.token, race, "claw");
     expect(raceAdmission.status(), await raceAdmission.text()).toBe(200);
@@ -342,14 +369,12 @@ test("current Official @openclaw owns every Claw publish and public-read boundar
       version: race.version,
     });
     await setOfficial(request, registry, tokens.admin.token, "remove");
-    await expect(
-      completeMockPrePublicationChecks({
-        kind: "package",
-        slug: race.name,
-        version: race.version,
-        claim: raceClaim,
-      }),
-    ).rejects.toThrow(/active official @openclaw publisher/);
+    await completeMockPrePublicationChecks({
+      kind: "package",
+      slug: race.name,
+      version: race.version,
+      claim: raceClaim,
+    });
 
     const revokedPublish = await publishPackage(
       request,
@@ -358,12 +383,26 @@ test("current Official @openclaw owns every Claw publish and public-read boundar
       denied,
       "claw",
     );
-    expect(revokedPublish.status()).toBe(400);
-    expect(await revokedPublish.text()).toContain("active official @openclaw publisher");
-    expect((await request.get(directUrl)).status()).toBe(404);
+    expect(revokedPublish.status(), await revokedPublish.text()).toBe(200);
+    expect((await revokedPublish.json()) as Record<string, unknown>).toMatchObject({
+      publicationStatus: "pending",
+    });
+    await completeMockPrePublicationChecks({
+      kind: "package",
+      slug: denied.name,
+      version: denied.version,
+    });
+    expect((await request.get(directUrl)).status()).toBe(200);
     expect(
       (await request.get(`${registry}/api/v1/packages/${encodeURIComponent(race.name)}`)).status(),
-    ).toBe(404);
+    ).toBe(200);
+    const afterRevocation = await request.get(
+      `${registry}/api/v1/packages/${encodeURIComponent(denied.name)}`,
+    );
+    expect(afterRevocation.status()).toBe(200);
+    expect((await afterRevocation.json()) as Record<string, unknown>).toMatchObject({
+      package: { channel: "community" },
+    });
     expect(await searchNames(request, registry, visibleSlug)).not.toContain(visible.name);
     const staleFeed = await request.get(feedUrl, {
       headers: { "If-None-Match": feed.headers().etag ?? "" },
@@ -406,12 +445,12 @@ test("current Official @openclaw owns every Claw publish and public-read boundar
       `CLAW_OFFICIAL_BOUNDARY_PROOF ${JSON.stringify({
         registry,
         officialPublish: "pending-to-published",
-        officialRead: "200-to-404-after-revocation",
+        officialRead: "200-after-revocation",
         officialSearch: "included-to-excluded-after-revocation",
         officialFeed: "200-to-503-after-revocation-then-empty-after-rebuild",
         communityClawPublish: communityPublish.status(),
         revokedClawPublish: revokedPublish.status(),
-        revocationRace: "finalization-denied",
+        revocationRace: "finalized-but-not-in-catalog",
         pluginAfterRevocation: pluginRead.status(),
       })}`,
     );

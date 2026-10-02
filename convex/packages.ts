@@ -3065,7 +3065,7 @@ async function getReadablePackageByName(
   const normalizedName = normalizePackageName(name);
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
   if (!pkg || pkg.softDeletedAt !== undefined) return null;
-  if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) return null;
+  if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
   if (pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)) {
     const canAccessOwner = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
     if (pkg.channel === "private" && !canAccessOwner) return null;
@@ -3144,7 +3144,7 @@ async function getPackageReadableForPublicTrust(
 ) {
   const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(name));
   if (!pkg || pkg.softDeletedAt !== undefined) return null;
-  if (!(await isPackageAllowedInPublicClawCatalog(ctx, pkg))) return null;
+  if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
   if (pkg.channel === "private" && !(await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId))) {
     return null;
   }
@@ -3833,7 +3833,7 @@ export const getPublicReleaseSelectionsInternal = internalQuery({
         if (
           !pkg ||
           pkg.softDeletedAt !== undefined ||
-          !(await isPackageAllowedInPublicClawCatalog(ctx, pkg)) ||
+          !isClawFamilyPubliclyVisible(pkg.family) ||
           !(await canViewerReadPackage(ctx, pkg, undefined))
         )
           return null;
@@ -9143,9 +9143,6 @@ async function publishPackageImpl(
   if (payload.family === "claw" && payload.name !== name) {
     throw new ConvexError(`Claw package name must use canonical form ${name}`);
   }
-  if (family === "claw" && !isOpenClawClawName(name)) {
-    throw new ConvexError("Claw packages are limited to the @openclaw publisher");
-  }
   const version = assertPackageVersion(family, payload.version);
   if (family === "claw") {
     if (payload.artifact?.kind !== "npm-pack") {
@@ -9280,15 +9277,17 @@ async function publishPackageImpl(
     publishActor = { kind: "user", userId: actorUserId };
   }
 
-  if (family === "claw") {
-    const ownerPublisher = ownerPublisherId
-      ? await runQueryRef<Doc<"publishers"> | null>(ctx, internalRefs.publishers.getByIdInternal, {
-          publisherId: ownerPublisherId,
-        })
-      : null;
-    if (!isOpenClawClawPublisher(ownerPublisher)) {
-      throw new ConvexError("Claw packages are limited to the @openclaw publisher");
+  if (family === "claw" && ownerPublisherId) {
+    const ownerPublisher = await runQueryRef<Doc<"publishers"> | null>(
+      ctx,
+      internalRefs.publishers.getByIdInternal,
+      { publisherId: ownerPublisherId },
+    );
+    if (!ownerPublisher || ownerPublisher.deletedAt || ownerPublisher.deactivatedAt) {
+      throw new ConvexError("Claw package owner publisher is unavailable");
     }
+    const ownerMismatch = getPackageScopeOwnerMismatch(name, ownerPublisher.handle);
+    if (ownerMismatch) throw new ConvexError(ownerMismatch.message);
   }
 
   const displayName = payload.displayName?.trim() || name;
@@ -12169,14 +12168,14 @@ export const publishPendingReleaseInternal = internalMutation({
     const firstPublishedRelease = hasNoPublishedPackageVersions(pkg);
     const pendingFamily = stringPendingField(metadata, "family", pkg.family) as PackageFamily;
     const packageFamily = firstPublishedRelease ? pendingFamily : pkg.family;
-    if (packageFamily === "claw") {
-      const ownerPublisher = pkg.ownerPublisherId ? await ctx.db.get(pkg.ownerPublisherId) : null;
-      if (!isOpenClawClawName(pkg.normalizedName) || !isOpenClawClawPublisher(ownerPublisher)) {
-        throw new ConvexError("Claw packages are limited to the @openclaw publisher");
+    // Legacy user-owned Claws may not have a publisher row; keep their existing path.
+    if (packageFamily === "claw" && pkg.ownerPublisherId) {
+      const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
+      if (!ownerPublisher || ownerPublisher.deletedAt || ownerPublisher.deactivatedAt) {
+        throw new ConvexError("Claw package owner publisher is unavailable");
       }
-      if (!(await isOfficialPublisher(ctx, ownerPublisher))) {
-        throw new ConvexError("Claw packages require an active official @openclaw publisher");
-      }
+      const ownerMismatch = getPackageScopeOwnerMismatch(pkg.normalizedName, ownerPublisher.handle);
+      if (ownerMismatch) throw new ConvexError(ownerMismatch.message);
     }
     const currentLatest = await resolvePackageCurrentLatestForPublish(ctx, pkg);
     const { effectiveTags, shouldPromoteLatest } = resolvePackageReleaseTagsForPublish({
@@ -12429,11 +12428,9 @@ export const insertReleaseInternal = internalMutation({
     ) {
       throw new ConvexError("Package owner publisher is unavailable");
     }
-    if (
-      args.family === "claw" &&
-      (!isOpenClawClawName(normalizedName) || !isOpenClawClawPublisher(ownerPublisher))
-    ) {
-      throw new ConvexError("Claw packages are limited to the @openclaw publisher");
+    if (args.family === "claw" && ownerPublisher) {
+      const ownerMismatch = getPackageScopeOwnerMismatch(normalizedName, ownerPublisher.handle);
+      if (ownerMismatch) throw new ConvexError(ownerMismatch.message);
     }
     if (ownerPublisher?.kind === "user" && ownerPublisher.linkedUserId) {
       const linkedPublisherUser = await ctx.db.get(ownerPublisher.linkedUserId);
@@ -12468,9 +12465,6 @@ export const insertReleaseInternal = internalMutation({
       ownerUserId: args.ownerUserId,
     });
     const publisherOfficial = await isOfficialPublisher(ctx, officialPublisher);
-    if (args.family === "claw" && !publisherOfficial) {
-      throw new ConvexError("Claw packages require an active official @openclaw publisher");
-    }
     if (args.channel === "official" && !publisherOfficial) {
       throw new ConvexError("Only official publishers may publish to the official channel");
     }

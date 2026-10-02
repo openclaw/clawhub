@@ -17,13 +17,14 @@ Claw publication is experimental. The ClawHub deployment must set
 This registry gate is independent from OpenClaw's local Claws controls. Hosting
 does not enable local preview or installation.
 
-For the initial public catalog, ClawHub accepts and exposes Claws only when the
-package name is `@openclaw/*` and the owner is the active OpenClaw publisher
-organization with a current Official designation. This restriction does not
-apply to skills or plugins. Existing Claws owned by other publishers or whose
-owner loses Official status remain unavailable through public discovery and
-downloads. A stored Claw feed from before this restriction is unavailable
-until a new restricted snapshot is published.
+For the initial public catalog, package lists, search, and the Official Claw
+feed include only `@openclaw/*` Claws owned by the active OpenClaw publisher
+organization with a current Official designation. This catalog filter does not
+change Claw publication or exact-name metadata and artifact downloads on a
+deployment with the experimental gate enabled. Other publishers remain subject
+to the normal ownership, scanning, moderation, and access rules; their Claws
+are not offered in the initial catalog. A stored Claw feed from before this
+restriction is unavailable until a new restricted snapshot is published.
 If `@openclaw` loses Official status, an existing nonempty Claw feed fails
 closed with `503` and `Cache-Control: no-store`. Publish a new feed snapshot
 after revocation to serve an empty eligible Claws list.
@@ -167,7 +168,6 @@ publication and returns the same digest through pending and final responses.
 
 Publication rejects:
 
-- a Claw outside the `@openclaw/*` scope or owned by another publisher;
 - a missing, invalid, or escaping `openclaw.claw` path;
 - a source folder instead of a built `.tgz`;
 - package identity or version mismatches;

@@ -10059,7 +10059,7 @@ describe("packages public queries", () => {
     );
   });
 
-  it("rejects a Claw release when the active @openclaw owner is no longer Official", async () => {
+  it("publishes a Claw in the community channel when its owner is not Official", async () => {
     const ctx = makeInsertReleaseCtx(
       null,
       [],
@@ -10085,9 +10085,11 @@ describe("packages public queries", () => {
         files: [],
         integritySha256: "abc123",
       }),
-    ).rejects.toThrow(/active official @openclaw publisher/);
-    expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
-    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+    );
   });
 
   it("keeps plugin release admission available after its publisher loses Official status", async () => {
@@ -10143,8 +10145,59 @@ describe("packages public queries", () => {
         files: [],
         integritySha256: "abc123",
       }),
-    ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@other"');
     expect(ctx.insert).not.toHaveBeenCalledWith("packages", expect.anything());
+  });
+
+  it("publishes a Claw under its matching third-party organization", async () => {
+    const ctx = makeInsertReleaseCtx(null, [], {
+      "publishers:other": { _id: "publishers:other", kind: "org", handle: "other" },
+    });
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:other",
+        name: "@other/demo-claw",
+        displayName: "Demo Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+    );
+  });
+
+  it("keeps the existing user-owned Claw publication path without a publisher row", async () => {
+    const ctx = makeInsertReleaseCtx(null);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "legacy-claw",
+        displayName: "Legacy Claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+        tags: ["latest"],
+        summary: "demo",
+        files: [],
+        integritySha256: "abc123",
+      }),
+    ).resolves.toMatchObject({ ok: true, packageId: "packages:new" });
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packages",
+      expect.objectContaining({ family: "claw", channel: "community", isOfficial: false }),
+    );
   });
 
   it("pins a reserved package when its first published release is a Claw", async () => {
@@ -10222,6 +10275,39 @@ describe("packages public queries", () => {
     );
   });
 
+  it("finalizes a pending user-owned Claw without a publisher row", async () => {
+    const reservation = makePackageDoc({
+      name: "legacy-claw",
+      normalizedName: "legacy-claw",
+      family: "code-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+    });
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      packageId: "packages:demo",
+      publicationStatus: "pending",
+      pendingPublication: {
+        family: "claw",
+        displayName: "Legacy Claw",
+        tags: ["latest"],
+      },
+    });
+    const ctx = makeInsertReleaseCtx(reservation, [pendingRelease], {
+      "packages:demo": reservation,
+      "packageReleases:pending": pendingRelease,
+    });
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
+    ).resolves.toMatchObject({ ok: true, releaseId: "packageReleases:pending" });
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packageReleases:pending",
+      expect.objectContaining({ publicationStatus: "published" }),
+    );
+  });
+
   it("does not finalize a pending Claw after its reserved package has a different owner", async () => {
     const reservation = makePackageDoc({
       name: "@openclaw/demo-claw",
@@ -10250,7 +10336,7 @@ describe("packages public queries", () => {
 
     await expect(
       publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
-    ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@other"');
     expect(ctx.patch).not.toHaveBeenCalled();
   });
 
@@ -10276,12 +10362,12 @@ describe("packages public queries", () => {
 
       await expect(
         publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:pending" }),
-      ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
+      ).rejects.toThrow("Claw package owner publisher is unavailable");
       expect(ctx.patch).not.toHaveBeenCalled();
     },
   );
 
-  it("does not finalize a staged Claw after @openclaw loses Official status", async () => {
+  it("finalizes a staged Claw after @openclaw loses Official status", async () => {
     const reservation = makeOpenClawClawPackageDoc({
       family: "code-plugin",
       latestReleaseId: undefined,
@@ -10330,8 +10416,11 @@ describe("packages public queries", () => {
 
     await expect(
       publishPendingReleaseInternalHandler(ctx, { releaseId: "packageReleases:new" }),
-    ).rejects.toThrow(/active official @openclaw publisher/);
-    expect(ctx.patch).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ ok: true, releaseId: "packageReleases:new" });
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packageReleases:new",
+      expect.objectContaining({ publicationStatus: "published" }),
+    );
   });
 
   it("preserves trusted GitHub Actions package publishes without org membership", async () => {
@@ -11346,38 +11435,6 @@ describe("packages public queries", () => {
     }
   });
 
-  it("rejects non-OpenClaw Claw publication before querying package ownership", async () => {
-    const runQuery = vi.fn();
-    const runMutation = vi.fn();
-    await expect(
-      publishPackageForUserInternalHandler({ runQuery, runMutation } as never, {
-        actorUserId: "users:owner",
-        payload: {
-          name: "@other/demo-claw",
-          family: "claw",
-          version: "1.0.0",
-          changelog: "init",
-          files: [],
-          expectedArtifactSha256: "a".repeat(64),
-          artifact: {
-            kind: "npm-pack",
-            storageId: "storage:archive",
-            sha256: "a".repeat(64),
-            size: 3,
-            format: "tgz",
-            npmIntegrity: "sha512-demo",
-            npmShasum: "b".repeat(40),
-            npmTarballName: "demo-claw-1.0.0.tgz",
-            npmUnpackedSize: 3,
-            npmFileCount: 3,
-          },
-        },
-      }),
-    ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
-    expect(runQuery).not.toHaveBeenCalled();
-    expect(runMutation).not.toHaveBeenCalled();
-  });
-
   it("rejects a Claw publish when the resolved @openclaw owner is another publisher", async () => {
     const runQuery = vi
       .fn()
@@ -11423,12 +11480,12 @@ describe("packages public queries", () => {
           },
         },
       ),
-    ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
+    ).rejects.toThrow('Package scope "@openclaw" must match selected owner "@other"');
     expect(storageGet).not.toHaveBeenCalled();
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects a non-OpenClaw Claw through trusted publishing too", async () => {
+  it("still requires a first manual publish for a third-party trusted Claw", async () => {
     const token = {
       _id: "packagePublishTokens:other",
       packageId: "packages:other",
@@ -11482,7 +11539,7 @@ describe("packages public queries", () => {
           },
         },
       }),
-    ).rejects.toThrow("Claw packages are limited to the @openclaw publisher");
+    ).rejects.toThrow("First publish must be manual by a logged-in package owner");
     expect(runMutation).not.toHaveBeenCalled();
   });
 
@@ -11517,155 +11574,163 @@ describe("packages public queries", () => {
     }
   });
 
-  it("publishes a profile-bearing Claw through the existing release pipeline when enabled", async () => {
-    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
-    const longClawDescription = "x".repeat(1_100);
-    const artifactSha256 = "a".repeat(64);
-    const storedFiles = new Map<string, string>([
-      [
-        "storage:package",
-        JSON.stringify({
-          name: "@openclaw/demo-claw",
-          version: "1.0.0",
-          openclaw: { claw: "manifests/CLAW.md" },
-        }),
-      ],
-      [
-        "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
-      ],
-      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
-      ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
-      ["storage:bootstrap", "Ask which repositories the user owns.\n"],
-    ]);
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if (args.minimumRole === "publisher") {
-        return { publisherId: openClawPublisher._id };
-      }
-      if (args.family === "claw") {
-        return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
-      }
-      return null;
-    });
-    const ctx = {
-      runQuery: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce({
-          _id: "users:owner",
-          role: "user",
-          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
-        })
-        .mockResolvedValueOnce(openClawPublisher),
-      runMutation,
-      scheduler: { runAfter: vi.fn() },
-      storage: {
-        get: vi.fn(async (storageId: string) => {
-          const content = storedFiles.get(storageId);
-          return content === undefined ? null : new Blob([content]);
-        }),
-        store: vi.fn(async () => "storage:legacy-zip"),
-      },
-      runAction: makePublishRunActionMock(),
-    };
-
-    try {
-      await expect(
-        publishPackageForUserInternalHandler(ctx as never, {
-          actorUserId: "users:owner",
-          payload: {
-            name: "@openclaw/demo-claw",
-            displayName: "Demo Claw",
-            family: "claw",
+  it.each([
+    { scope: "official", handle: "openclaw", publisherId: openClawPublisher._id },
+    { scope: "third-party", handle: "other", publisherId: "publishers:other" },
+  ])(
+    "publishes a profile-bearing $scope Claw through the release pipeline",
+    async ({ handle, publisherId }) => {
+      const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+      const name = `@${handle}/demo-claw`;
+      const publisher = { _id: publisherId, kind: "org", handle };
+      const longClawDescription = "x".repeat(1_100);
+      const artifactSha256 = "a".repeat(64);
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name,
             version: "1.0.0",
-            changelog: "init",
-            expectedArtifactSha256: artifactSha256,
-            files: [
-              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
-              {
-                path: "manifests/CLAW.md",
-                size: 1,
-                storageId: "storage:claw",
-                sha256: "claw",
-              },
-              {
-                path: "profiles/openclaw.yml",
-                size: 1,
-                storageId: "storage:profile",
-                sha256: "profile",
-              },
-              {
-                path: "profiles/codex.yml",
-                size: 1,
-                storageId: "storage:codex-profile",
-                sha256: "codex-profile",
-              },
-              {
-                path: "BOOTSTRAP.md",
-                size: 1,
-                storageId: "storage:bootstrap",
-                sha256: "bootstrap",
-              },
-            ],
-            artifact: {
-              kind: "npm-pack",
-              storageId: "storage:archive",
-              sha256: artifactSha256,
-              size: 3,
-              format: "tgz",
-              npmIntegrity: "sha512-demo",
-              npmShasum: "b".repeat(40),
-              npmTarballName: "demo-claw-1.0.0.tgz",
-              npmUnpackedSize: 3,
-              npmFileCount: 3,
-            },
-          },
-        }),
-      ).resolves.toEqual({
-        ok: true,
-        packageId: "packages:claw",
-        releaseId: "releases:claw-1",
-        publicationStatus: "published",
-        artifactSha256,
-      });
-
-      expect(runMutation).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          family: "claw",
-          summary: expect.any(String),
-          artifactKind: "npm-pack",
-          clawpackStorageId: "storage:archive",
-          clawpackSha256: artifactSha256,
-          clawpackSize: 3,
-          clawManifestSummary: expect.objectContaining({
-            agent: expect.objectContaining({
-              id: "demo-claw",
-              description: "x".repeat(1_024),
-            }),
-            workspace: expect.objectContaining({
-              bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
-            }),
+            openclaw: { claw: "manifests/CLAW.md" },
           }),
-          pluginManifestSummary: undefined,
-        }),
-      );
-      const publishMutationArgs = runMutation.mock.calls.find(
-        ([, args]) => args.family === "claw",
-      )?.[1];
-      expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
-      expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
-    } finally {
-      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
-    }
-  });
+        ],
+        [
+          "storage:claw",
+          `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\n---\nRun the demo workflow precisely.\n`,
+        ],
+        ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: minimal\n"],
+        ["storage:codex-profile", "version: 1\nfeatures: [future]\n"],
+        ["storage:bootstrap", "Ask which repositories the user owns.\n"],
+      ]);
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (args.minimumRole === "publisher") {
+          return { publisherId };
+        }
+        if (args.family === "claw") {
+          return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
+        }
+        return null;
+      });
+      const ctx = {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce(publisher),
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content === undefined ? null : new Blob([content]);
+          }),
+          store: vi.fn(async () => "storage:legacy-zip"),
+        },
+        runAction: makePublishRunActionMock(),
+      };
+
+      try {
+        await expect(
+          publishPackageForUserInternalHandler(ctx as never, {
+            actorUserId: "users:owner",
+            payload: {
+              name,
+              displayName: "Demo Claw",
+              family: "claw",
+              version: "1.0.0",
+              changelog: "init",
+              expectedArtifactSha256: artifactSha256,
+              files: [
+                { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+                {
+                  path: "manifests/CLAW.md",
+                  size: 1,
+                  storageId: "storage:claw",
+                  sha256: "claw",
+                },
+                {
+                  path: "profiles/openclaw.yml",
+                  size: 1,
+                  storageId: "storage:profile",
+                  sha256: "profile",
+                },
+                {
+                  path: "profiles/codex.yml",
+                  size: 1,
+                  storageId: "storage:codex-profile",
+                  sha256: "codex-profile",
+                },
+                {
+                  path: "BOOTSTRAP.md",
+                  size: 1,
+                  storageId: "storage:bootstrap",
+                  sha256: "bootstrap",
+                },
+              ],
+              artifact: {
+                kind: "npm-pack",
+                storageId: "storage:archive",
+                sha256: artifactSha256,
+                size: 3,
+                format: "tgz",
+                npmIntegrity: "sha512-demo",
+                npmShasum: "b".repeat(40),
+                npmTarballName: "demo-claw-1.0.0.tgz",
+                npmUnpackedSize: 3,
+                npmFileCount: 3,
+              },
+            },
+          }),
+        ).resolves.toEqual({
+          ok: true,
+          packageId: "packages:claw",
+          releaseId: "releases:claw-1",
+          publicationStatus: "published",
+          artifactSha256,
+        });
+
+        expect(runMutation).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            family: "claw",
+            summary: expect.any(String),
+            artifactKind: "npm-pack",
+            clawpackStorageId: "storage:archive",
+            clawpackSha256: artifactSha256,
+            clawpackSize: 3,
+            clawManifestSummary: expect.objectContaining({
+              agent: expect.objectContaining({
+                id: "demo-claw",
+                description: "x".repeat(1_024),
+              }),
+              workspace: expect.objectContaining({
+                bootstrapFiles: ["BOOTSTRAP.md", "SOUL.md"],
+              }),
+            }),
+            pluginManifestSummary: undefined,
+          }),
+        );
+        const publishMutationArgs = runMutation.mock.calls.find(
+          ([, args]) => args.family === "claw",
+        )?.[1];
+        expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
+        expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
+      } finally {
+        if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+        else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+      }
+    },
+  );
 
   it("reuses an in-flight staged Claw publish for the same user and artifact", async () => {
     const previousStage = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
@@ -21298,10 +21363,8 @@ describe("restorePackageInternal", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
-  it.each([
-    { name: "@other/demo-claw", publisher: { kind: "org", handle: "other" } },
-    { name: "@openclaw/demo-claw", publisher: { kind: "org", handle: "other" } },
-  ])("hides a Claw named $name owned by another publisher", async ({ name, publisher }) => {
+  it("keeps a third-party Claw readable by exact name outside the official catalog", async () => {
+    const name = "@other/demo-claw";
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({
         name,
@@ -21310,14 +21373,18 @@ describe("restorePackageInternal", () => {
         ownerPublisherId: "publishers:other",
       }),
       latestRelease: makeReleaseDoc({ files: [], distTags: [] }),
-      ownerPublisher: { _id: "publishers:other", ...publisher },
+      ownerPublisher: { _id: "publishers:other", kind: "org", handle: "other" },
     });
 
-    await expect(getByNameHandler(ctx, { name })).resolves.toBeNull();
-    await expect(getVersionByNameHandler(ctx, { name, version: "1.0.0" })).resolves.toBeNull();
+    await expect(getByNameHandler(ctx, { name })).resolves.toMatchObject({
+      package: { name, family: "claw" },
+    });
+    await expect(getVersionByNameHandler(ctx, { name, version: "1.0.0" })).resolves.toMatchObject({
+      package: { name, family: "claw" },
+    });
     await expect(
       getVersionSecurityByNameForViewerInternalHandler(ctx, { name, version: "1.0.0" }),
-    ).resolves.toBeNull();
+    ).resolves.not.toBeNull();
   });
 
   it("gates Claw named reads and exposes only the safe manifest summary when enabled", async () => {
@@ -21561,7 +21628,7 @@ describe("restorePackageInternal", () => {
   });
 
   it.each(["deletedAt", "deactivatedAt"] as const)(
-    "hides an @openclaw Claw when its publisher has %s",
+    "hides an @openclaw Claw from the catalog when its publisher has %s",
     async (inactiveField) => {
       const inactivePublisher = { ...openClawPublisher, [inactiveField]: 123 };
       const pkg = makeOpenClawClawPackageDoc();
@@ -21571,10 +21638,12 @@ describe("restorePackageInternal", () => {
         ownerPublisher: inactivePublisher,
       });
 
-      await expect(getByNameHandler(namedCtx, { name: pkg.name as string })).resolves.toBeNull();
+      await expect(
+        getByNameHandler(namedCtx, { name: pkg.name as string }),
+      ).resolves.not.toBeNull();
       await expect(
         getVersionByNameHandler(namedCtx, { name: pkg.name as string, version: "1.0.0" }),
-      ).resolves.toBeNull();
+      ).resolves.not.toBeNull();
 
       const digest = makeDigest(pkg.name as string, {
         family: "claw",
@@ -21619,21 +21688,21 @@ describe("restorePackageInternal", () => {
         { db: { get: vi.fn(async (id: string) => rows.get(id) ?? null) } },
         { selections: [{ packageId: pkg._id as string, releaseId: release._id as string }] },
       );
-      expect(selected).toEqual([null]);
+      expect(selected).toEqual([release]);
     },
   );
 
-  it("hides a Claw immediately when @openclaw loses official publisher status", async () => {
+  it("hides a Claw from the catalog when @openclaw loses Official status", async () => {
     const pkg = makeOpenClawClawPackageDoc();
     const { ctx: namedCtx } = makePackageCtx({
       pkg,
       latestRelease: makeReleaseDoc({ files: [] }),
       officialPublisher: false,
     });
-    await expect(getByNameHandler(namedCtx, { name: pkg.name as string })).resolves.toBeNull();
+    await expect(getByNameHandler(namedCtx, { name: pkg.name as string })).resolves.not.toBeNull();
     await expect(
       getVersionByNameHandler(namedCtx, { name: pkg.name as string, version: "1.0.0" }),
-    ).resolves.toBeNull();
+    ).resolves.not.toBeNull();
 
     const digest = makeDigest(pkg.name as string, {
       family: "claw",
@@ -21923,7 +21992,7 @@ describe("restorePackageInternal", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
-  it("does not export a non-OpenClaw Claw release by opaque package and release IDs", async () => {
+  it("exports a third-party Claw release by exact package and release IDs", async () => {
     const other = makePackageDoc({
       _id: "packages:other",
       name: "@other/other-claw",
@@ -21975,7 +22044,7 @@ describe("restorePackageInternal", () => {
         ],
       },
     );
-    expect(result).toEqual([null, officialRelease]);
+    expect(result).toEqual([otherRelease, officialRelease]);
   });
 
   it("does not let disabled Claws starve unfiltered public list pages", async () => {
