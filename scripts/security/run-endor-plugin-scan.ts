@@ -28,6 +28,8 @@ const CHILD_RUNTIME_ENV_KEYS = [
 const DEFAULT_ENDOR_TIMEOUT_MS = 20 * 60 * 1000;
 const DOCKER_CLEANUP_TIMEOUT_MS = 10_000;
 const DOCKER_LATE_CREATE_POLL_MS = 100;
+const MAX_ENDOR_REPORT_BYTES = 8 * 1024 * 1024;
+const MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES = 128 * 1024;
 const ENDOR_RUN_ID_LABEL = "org.openclaw.clawhub.endor-run-id";
 const MAX_ENDOR_DIAGNOSTIC_CHARS = 20_000;
 const MAX_SUMMARY_FINDINGS = 50;
@@ -203,6 +205,8 @@ async function cleanupEndorContainer(input: {
       commandLabel: "Endor Docker cleanup",
       cwd: input.workspace,
       env: cleanupEnv,
+      maxStdoutBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
+      maxStderrBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
       timeoutMs: remainingMs(),
     });
   const name = `clawhub-endor-${input.runId}`;
@@ -350,6 +354,8 @@ export async function runEndorPluginScan(input: {
       commandLabel: "Endor Docker create",
       cwd: input.workspace,
       env: commandEnv,
+      maxStdoutBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
+      maxStderrBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
       timeoutMs: Math.max(1, deadline - Date.now()),
     });
     containerId = created.stdout.trim();
@@ -362,6 +368,8 @@ export async function runEndorPluginScan(input: {
       commandLabel: "Endor Docker start",
       cwd: input.workspace,
       env: endorRuntimeEnv(input.workspace, env),
+      maxStdoutBytes: MAX_ENDOR_REPORT_BYTES,
+      maxStderrBytes: MAX_ENDOR_COMMAND_DIAGNOSTIC_BYTES,
       timeoutMs: Math.max(1, deadline - Date.now()),
     });
     input.onDiagnostic?.({

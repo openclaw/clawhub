@@ -53,6 +53,27 @@ afterEach(async () => {
 });
 
 describe("Endor custom-scanner wrapper", () => {
+  it.each(["stdout", "stderr"] as const)("bounds captured %s output", async (stream) => {
+    const result = runWorkerCommand(
+      process.execPath,
+      ["-e", `process.${stream}.write("x".repeat(4096))`],
+      {
+        commandLabel: "bounded fixture",
+        cwd: process.cwd(),
+        env: process.env,
+        maxStdoutBytes: 1024,
+        maxStderrBytes: 1024,
+        timeoutMs: 10_000,
+      },
+    );
+
+    await expect(result).rejects.toMatchObject({
+      outputLimitExceeded: stream,
+      [stream]: "x".repeat(1024),
+      timedOut: false,
+    });
+  });
+
   it.each([0, 128])("preserves findings when Endor exits %s", async (status) => {
     const report = {
       all_findings: [
