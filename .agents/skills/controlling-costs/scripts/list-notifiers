@@ -6,8 +6,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-AXIOM_API="${AXIOM_API:-$HOME/.config/agents/skills/sre/scripts/axiom-api}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/lib/skill-paths.sh"
+
+AXIOM_API="$(resolve_skill_script sre axiom-api "${AXIOM_API:-}")"
 
 DEPLOYMENT=""
 
@@ -49,7 +51,7 @@ done
 [[ -x "$AXIOM_API" ]] || { echo "Error: axiom-api not found at $AXIOM_API" >&2; exit 1; }
 
 # Fetch notifiers
-NOTIFIERS_RAW=$($AXIOM_API "$DEPLOYMENT" GET "/v2/notifiers" 2>/dev/null || echo "[]")
+NOTIFIERS_RAW=$("$AXIOM_API" "$DEPLOYMENT" GET "/v2/notifiers" 2>/dev/null || echo "[]")
 NOTIFIER_COUNT=$(echo "$NOTIFIERS_RAW" | jq 'length')
 
 if [[ "$NOTIFIER_COUNT" -eq 0 ]]; then

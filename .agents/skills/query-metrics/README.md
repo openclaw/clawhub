@@ -38,7 +38,7 @@ org_id = "your-org-id"
 
 Get your org_id from Settings → Organization. For the token, create a scoped **API token** (Settings → API Tokens) with the permissions your workflow needs. Avoid Personal Access Tokens for automated tooling.
 
-**Tip:** Run `scripts/setup` from the `axiom-sre` skill for interactive configuration.
+**Tip:** This skill uses `~/.axiom.toml`. The SRE skill has a separate [initializer and configuration](../sre/README.md#setup).
 
 ## Usage
 

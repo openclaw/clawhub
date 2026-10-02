@@ -10,8 +10,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-AXIOM_API="${AXIOM_API:-$HOME/.config/agents/skills/sre/scripts/axiom-api}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+source "$SCRIPT_DIR/lib/skill-paths.sh"
+
+AXIOM_API="$(resolve_skill_script sre axiom-api "${AXIOM_API:-}")"
 
 # Source shared utilities
 source "$SCRIPT_DIR/lib/format-bytes.sh"
@@ -127,7 +129,7 @@ echo ""
 
 # Check for existing monitors
 echo "Checking for existing Cost Control monitors..."
-EXISTING_IDS=$($AXIOM_API "$DEPLOYMENT" GET "/v2/monitors" 2>/dev/null | \
+EXISTING_IDS=$("$AXIOM_API" "$DEPLOYMENT" GET "/v2/monitors" 2>/dev/null | \
     jq -r '.[] | select(.name | startswith("Cost Control:")) | .id' 2>/dev/null || true)
 
 if [[ -n "$EXISTING_IDS" ]]; then
@@ -137,12 +139,12 @@ if [[ -n "$EXISTING_IDS" ]]; then
         echo "Found $EXISTING_COUNT existing monitors. Deleting (--force)..."
         echo "$EXISTING_IDS" | while read -r id; do
             echo "  Deleting $id..."
-            $AXIOM_API "$DEPLOYMENT" DELETE "/v2/monitors/$id" >/dev/null 2>&1 || true
+            "$AXIOM_API" "$DEPLOYMENT" DELETE "/v2/monitors/$id" >/dev/null 2>&1 || true
         done
         echo "Deleted. Proceeding with creation..."
         echo ""
     else
-        EXISTING_NAMES=$($AXIOM_API "$DEPLOYMENT" GET "/v2/monitors" 2>/dev/null | \
+        EXISTING_NAMES=$("$AXIOM_API" "$DEPLOYMENT" GET "/v2/monitors" 2>/dev/null | \
             jq -r '.[] | select(.name | startswith("Cost Control:")) | .name' 2>/dev/null || true)
         echo ""
         echo "BLOCKER: MONITORS_ALREADY_EXIST"
@@ -181,7 +183,7 @@ INGEST_GUARD_QUERY="['$AUDIT_DATASET']
 INGEST_GUARD_QUERY_JSON=$(echo "$INGEST_GUARD_QUERY" | jq -Rs '.')
 
 echo "1/3: Creating Total Ingest Guard (>${OVER_CONTRACT_MULTIPLIER}x contract OR >${GROWTH_THRESHOLD}% growth)..."
-$AXIOM_API "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
+"$AXIOM_API" "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
 {
   "name": "Cost Control: Total Ingest Guard",
   "description": "Alerts when daily ingest exceeds $(format_bytes_rate "$OVER_CONTRACT_BYTES") (${OVER_CONTRACT_MULTIPLIER}x contract) OR when 7-day average grows >${GROWTH_THRESHOLD}% vs prior 23-day baseline.",
@@ -244,7 +246,7 @@ ZSCORE_QUERY="['$AUDIT_DATASET']
 ZSCORE_QUERY_JSON=$(echo "$ZSCORE_QUERY" | jq -Rs '.')
 
 echo "2/3: Creating Per-Dataset Spike Detection (robust z-score > $ZSCORE_THRESHOLD, $SPIKE_HOURS_THRESHOLD+ hours)..."
-$AXIOM_API "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
+"$AXIOM_API" "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
 {
   "name": "Cost Control: Per-Dataset Spike",
   "description": "Robust z-score detection of dataset ingest spikes. Uses log-transform + IQR-based sigma. Alerts per dataset when z > $ZSCORE_THRESHOLD AND bytes > p99 for $SPIKE_HOURS_THRESHOLD+ hours.",
@@ -312,7 +314,7 @@ QCOST_ZSCORE_QUERY="['$AUDIT_DATASET']
 QCOST_ZSCORE_QUERY_JSON=$(echo "$QCOST_ZSCORE_QUERY" | jq -Rs '.')
 
 echo "3/3: Creating Query Cost Spike Detection (30d baseline, 5d gap, median_z > $QCOST_MEDIAN_Z_THRESHOLD, p25_z > $QCOST_P25_Z_THRESHOLD)..."
-$AXIOM_API "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
+"$AXIOM_API" "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
 {
   "name": "Cost Control: Query Cost Spike",
   "description": "Hardened query cost spike detection. 30d baseline with 5d exclusion gap prevents sustained spikes from poisoning baseline. Persistence-based gating: median_z > $QCOST_MEDIAN_Z_THRESHOLD AND p25_z > $QCOST_P25_Z_THRESHOLD. Requires ${QCOST_CURRENT_HOURS}+ current hours, ${QCOST_BASELINE_HOURS}+ baseline hours. Floor: ${QCOST_FLOOR_GBMS} GB·ms.",
