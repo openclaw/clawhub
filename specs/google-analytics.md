@@ -77,7 +77,9 @@ required to trust `x-vercel-ip-country`; missing/reserved/malformed values are u
 Actual header availability and spoof resistance remain deployment acceptance gates.
 
 No analytics UI is rendered and no replacement popup or privacy destination is
-introduced. Existing footer links and Vercel/basic counts are preserved. GPC/DNT
+introduced. The task-added website analytics section in docs/telemetry.md is removed;
+that file is restored to its pre-rollout CLI telemetry content. Existing footer links
+and Vercel/basic counts are preserved. GPC/DNT
 cannot be silently overridden, and storage failures keep collection off.
 
 Basic Consent Mode holds the SDK and all measurement until allowed. Queue denied
